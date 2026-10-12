@@ -71,12 +71,12 @@ class Terminal:
         # SGR mouse reports, parsed by ncurses rather than by application code.
         self.send(f"\x1b[<0;{column + 1};{row + 1}M\x1b[<0;{column + 1};{row + 1}m")
 
-    def close(self, interrupt=False):
+    def close(self, signal_number=None, exit_key="\x11"):
         if self.process.poll() is None:
-            if interrupt:
-                self.process.send_signal(signal.SIGTERM)
+            if signal_number is not None:
+                self.process.send_signal(signal_number)
             else:
-                self.send("\x11")
+                self.send(exit_key)
             try:
                 self.process.wait(timeout=5)
             except subprocess.TimeoutExpired:
@@ -91,6 +91,57 @@ class Terminal:
 
 
 class TerminalTests(unittest.TestCase):
+    def test_three_areas_and_wide_text_survive_resize(self):
+        terminal = Terminal()
+        try:
+            self.assertIn("papo", terminal.screen.display[2])
+            self.assertIn("Usuário (username)", terminal.screen.display[8])
+            self.assertIn("[ Entrar ]", terminal.screen.display[18])
+            for row in (4, 17):
+                # pyte leaves DEC line drawing as 'q' in UTF-8 mode.
+                rule = terminal.screen.display[row][10:70]
+                self.assertIn(rule, ("q" * 60, "─" * 60))
+            terminal.send("\tação界語")
+            self.assertIn("ação界語", terminal.screen.display[9])
+            self.assertEqual((terminal.screen.cursor.y, terminal.screen.cursor.x), (9, 20))
+            terminal.resize(16, 40)
+            self.assertIn("Amplie o terminal", terminal.screen.display[0])
+            terminal.resize(2, 18)
+            self.assertEqual(terminal.screen.display[1].rstrip(), "Ctrl+Q: sair")
+            terminal.resize(22, 44)
+            self.assertIn("ação界語", terminal.screen.display[8])
+            self.assertEqual((terminal.screen.cursor.y, terminal.screen.cursor.x), (8, 14))
+            terminal.resize(30, 100)
+            self.assertIn("ação界語", terminal.screen.display[12])
+            self.assertEqual((terminal.screen.cursor.y, terminal.screen.cursor.x), (12, 30))
+            terminal.send("\x7f")
+            self.assertIn("ação界", terminal.screen.display[12])
+            self.assertNotIn("語", terminal.screen.display[12])
+            self.assertEqual((terminal.screen.cursor.y, terminal.screen.cursor.x), (12, 28))
+        finally:
+            restored = terminal.close()
+        self.assertTrue(restored)
+
+    def test_exit_keys_and_signals_restore_terminal(self):
+        for name, exit_key, signal_number in (
+            ("Ctrl+Q", "\x11", None),
+            ("Ctrl+C", "\x03", None),
+            ("SIGINT", None, signal.SIGINT),
+            ("SIGTERM", None, signal.SIGTERM),
+        ):
+            with self.subTest(exit=name):
+                terminal = Terminal()
+                try:
+                    terminal.wait_text("URL do servidor")
+                    self.assertNotEqual(termios.tcgetattr(terminal.slave), terminal.original)
+                finally:
+                    restored = terminal.close(signal_number=signal_number, exit_key=exit_key)
+                self.assertTrue(restored)
+                self.assertEqual(terminal.process.returncode, 0)
+                self.assertIn(b"\x1b[?2004l", terminal.output)
+                self.assertIn(b"\x1b[?1049l", terminal.output)
+                self.assertFalse(terminal.screen.cursor.hidden)
+
     def test_four_fields_resize_password_mask_and_real_request(self):
         with MockServer("private") as server:
             terminal = Terminal()
@@ -122,7 +173,7 @@ class TerminalTests(unittest.TestCase):
                 terminal.wait_text("Login realizado")
                 self.assertNotIn(b"Synthetic!123", terminal.output)
             finally:
-                restored = terminal.close(interrupt=True)
+                restored = terminal.close(signal_number=signal.SIGTERM)
             self.assertTrue(restored)
 
     def test_slow_request_can_be_cancelled_and_terminal_exited(self):
@@ -137,6 +188,23 @@ class TerminalTests(unittest.TestCase):
             finally:
                 restored = terminal.close()
             self.assertTrue(restored)
+
+    def test_slow_ws_and_event_burst_keep_exit_responsive(self):
+        for scenario in ("ws-slow", "ws-queue"):
+            with self.subTest(scenario=scenario), MockServer(scenario) as server:
+                terminal = Terminal()
+                try:
+                    terminal.send(server.url + "\tjosé\tSynthetic!123\n")
+                    deadline = time.monotonic() + 2
+                    while not any(r[1].endswith('/ws') for r in server.requests) and time.monotonic() < deadline:
+                        terminal.read(0.03)
+                    self.assertTrue(any(r[1].endswith('/ws') for r in server.requests))
+                finally:
+                    start = time.monotonic()
+                    restored = terminal.close()
+                self.assertLess(time.monotonic() - start, 0.4)
+                self.assertTrue(restored)
+                self.assertEqual(terminal.process.returncode, 0)
 
     def test_password_spaces_and_editing_are_preserved(self):
         with MockServer() as server:
@@ -199,10 +267,10 @@ class TerminalTests(unittest.TestCase):
                     self.assertEqual(terminal.screen.cursor.y, row)
                 terminal.click(21, 24)
                 terminal.wait_text("Login realizado")
-                self.assertEqual(len(server.requests), 4)
+                self.assertEqual(len(server.requests), 5)
                 terminal.click(21, 24)
                 terminal.wait_text("Você saiu da conta")
-                self.assertEqual(len(server.requests), 5)
+                self.assertEqual(len(server.requests), 6)
                 self.assertNotIn(b"Synthetic!123", terminal.output)
                 self.assertNotIn(b"Server!123", terminal.output)
             finally:

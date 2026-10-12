@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "net/auth.h"
 #include "net/rate_limit.h"
+#include "net/clock.h"
 
 #include <curl/curl.h>
 #include <jansson.h>
@@ -14,6 +15,8 @@
 #define RESPONSE_LIMIT (1024U * 1024U)
 
 struct auth_client {
+    CURLSH *cookies;
+    ws_client *websocket;
     CURL *easy;
     CURLM *multi;
     struct curl_slist *headers;
@@ -21,6 +24,9 @@ struct auth_client {
     bool queued;
     unsigned retry_after;
     auth_state state;
+    auth_state operation;
+    bool ws_requested;
+    uint64_t recheck_at;
     char *base;
     char *username;
     char *password;
@@ -32,6 +38,7 @@ struct auth_client {
     char message[192];
     char name[128];
     char user[128];
+    char user_id[64];
 };
 
 static void erase_free(char **value)
@@ -74,11 +81,13 @@ static void clear_cookies(auth_client *client)
 
 static void fail(auth_client *client, const char *message)
 {
+    ws_abort(client->websocket);
     detach(client);
     forget_inputs(client);
     clear_cookies(client);
     client->state = AUTH_ERROR;
     client->name[0] = client->user[0] = '\0';
+    client->user_id[0] = '\0';
     snprintf(client->message, sizeof(client->message), "%s", message);
 }
 
@@ -148,31 +157,8 @@ static size_t receive_header(char *data, size_t size, size_t count, void *contex
     size_t bytes = size * count;
     if (bytes >= 5 && strncasecmp(data, "HTTP/", 5) == 0)
         client->retry_after = PAPO_RATE_DEFAULT_COOLDOWN_SECONDS;
-    if (bytes > 12 && strncasecmp(data, "Retry-After:", 12) == 0 && bytes < 128) {
-        char value[128];
-        memcpy(value, data + 12, bytes - 12);
-        value[bytes - 12] = '\0';
-        char *start = value;
-        while (*start == ' ' || *start == '\t') ++start;
-        char *end = start + strlen(start);
-        while (end > start && (end[-1] == '\r' || end[-1] == '\n' || end[-1] == ' ' || end[-1] == '\t')) --end;
-        *end = '\0';
-        bool digits = *start != '\0';
-        for (char *p = start; *p; ++p) digits = digits && *p >= '0' && *p <= '9';
-        if (digits) {
-            unsigned seconds = 0;
-            for (char *p = start; *p && seconds < 86400; ++p)
-                seconds = seconds * 10 + (unsigned)(*p - '0');
-            client->retry_after = seconds < 86400 ? seconds : 86400;
-        } else {
-            time_t date = curl_getdate(start, NULL);
-            time_t now = time(NULL);
-            if (date >= 0 && now >= 0) {
-                double delay = difftime(date, now);
-                client->retry_after = delay <= 0 ? 0U : delay >= 86400 ? 86400U : (unsigned)delay;
-            }
-        }
-    }
+    if (bytes > 12 && strncasecmp(data, "Retry-After:", 12) == 0)
+        client->retry_after = net_rate_retry_after(data + 12, bytes - 12);
     return bytes;
 }
 
@@ -201,15 +187,17 @@ static bool request(auth_client *client, auth_state state, const char *path,
         if (!headers) goto error;
         client->headers = headers;
     }
-    curl_easy_setopt(client->easy, CURLOPT_HTTPHEADER, client->headers);
+    if (curl_easy_setopt(client->easy, CURLOPT_HTTPHEADER, client->headers) != CURLE_OK) goto error;
     if (post) {
-        curl_easy_setopt(client->easy, CURLOPT_POSTFIELDS, client->payload ? client->payload : "");
-        curl_easy_setopt(client->easy, CURLOPT_POSTFIELDSIZE, (long)(client->payload ? strlen(client->payload) : 0));
+        if (curl_easy_setopt(client->easy, CURLOPT_POSTFIELDS, client->payload ? client->payload : "") != CURLE_OK ||
+            curl_easy_setopt(client->easy, CURLOPT_POSTFIELDSIZE, (long)(client->payload ? strlen(client->payload) : 0)) != CURLE_OK)
+            goto error;
     } else {
-        curl_easy_setopt(client->easy, CURLOPT_HTTPGET, 1L);
+        if (curl_easy_setopt(client->easy, CURLOPT_HTTPGET, 1L) != CURLE_OK) goto error;
     }
     client->queued = true;
     client->state = state;
+    client->operation = state;
     return true;
 error:
     fail(client, "Não foi possível preparar a conexão.");
@@ -236,25 +224,34 @@ auth_client *auth_create(void)
     if (!client) return NULL;
     client->easy = curl_easy_init();
     client->multi = curl_multi_init();
-    if (!client->easy || !client->multi) {
+    client->cookies = curl_share_init();
+    if (!client->easy || !client->multi || !client->cookies ||
+        curl_share_setopt(client->cookies, CURLSHOPT_SHARE, CURL_LOCK_DATA_COOKIE) != CURLSHE_OK ||
+        curl_easy_setopt(client->easy, CURLOPT_SHARE, client->cookies) != CURLE_OK ||
+        !(client->websocket = ws_create(client->cookies))) {
         if (client->easy) curl_easy_cleanup(client->easy);
         if (client->multi) curl_multi_cleanup(client->multi);
+        if (client->cookies) curl_share_cleanup(client->cookies);
         free(client);
         return NULL;
     }
-    curl_easy_setopt(client->easy, CURLOPT_COOKIEFILE, "");
-    curl_easy_setopt(client->easy, CURLOPT_WRITEFUNCTION, receive);
-    curl_easy_setopt(client->easy, CURLOPT_WRITEDATA, client);
-    curl_easy_setopt(client->easy, CURLOPT_HEADERFUNCTION, receive_header);
-    curl_easy_setopt(client->easy, CURLOPT_HEADERDATA, client);
-    curl_easy_setopt(client->easy, CURLOPT_CONNECTTIMEOUT_MS, 5000L);
-    curl_easy_setopt(client->easy, CURLOPT_TIMEOUT_MS, 15000L);
-    curl_easy_setopt(client->easy, CURLOPT_NOSIGNAL, 1L);
-    curl_easy_setopt(client->easy, CURLOPT_FOLLOWLOCATION, 0L);
-    curl_easy_setopt(client->easy, CURLOPT_PROTOCOLS_STR, "http,https");
-    curl_easy_setopt(client->easy, CURLOPT_USERAGENT, "papo-tui/0.1.0-dev");
+#define SET(option, value) do { if (curl_easy_setopt(client->easy, option, value) != CURLE_OK) { auth_destroy(client); return NULL; } } while (0)
+    SET(CURLOPT_COOKIEFILE, "");
+    SET(CURLOPT_WRITEFUNCTION, receive);
+    SET(CURLOPT_WRITEDATA, client);
+    SET(CURLOPT_HEADERFUNCTION, receive_header);
+    SET(CURLOPT_HEADERDATA, client);
+    SET(CURLOPT_CONNECTTIMEOUT_MS, 5000L);
+    SET(CURLOPT_TIMEOUT_MS, 15000L);
+    SET(CURLOPT_NOSIGNAL, 1L);
+    SET(CURLOPT_FOLLOWLOCATION, 0L);
+    SET(CURLOPT_SSL_VERIFYPEER, 1L);
+    SET(CURLOPT_SSL_VERIFYHOST, 2L);
+    SET(CURLOPT_PROTOCOLS_STR, "http,https");
+    SET(CURLOPT_USERAGENT, "papo-tui/0.1.0-dev");
     const char *ca_bundle = getenv("CURL_CA_BUNDLE");
-    if (ca_bundle && *ca_bundle) curl_easy_setopt(client->easy, CURLOPT_CAINFO, ca_bundle);
+    if (ca_bundle && *ca_bundle) SET(CURLOPT_CAINFO, ca_bundle);
+#undef SET
     snprintf(client->message, sizeof(client->message), "Preencha os dados para entrar.");
     return client;
 }
@@ -264,13 +261,21 @@ bool auth_start(auth_client *client, const char *url, const char *username,
 {
     if (auth_busy(client) || client->state == AUTH_READY) return false;
     detach(client);
+    ws_abort(client->websocket);
+    client->ws_requested = false;
     forget_inputs(client);
     clear_cookies(client);
     curl_free(client->base);
     client->base = NULL;
     client->name[0] = client->user[0] = '\0';
+    client->user_id[0] = '\0';
     if (!username || !*username || !password || !*password) {
         fail(client, "Preencha usuário e senha.");
+        return false;
+    }
+    if (strlen(username) > 1024 || strlen(password) > 4096 ||
+        (server_password && strlen(server_password) > 4096)) {
+        fail(client, "O usuário ou a senha excedeu o limite do cliente.");
         return false;
     }
     char error[192];
@@ -291,7 +296,7 @@ bool auth_start(auth_client *client, const char *url, const char *username,
 
 static void complete(auth_client *client, CURLcode result, long status)
 {
-    auth_state previous = client->state;
+    auth_state previous = client->operation;
     detach(client);
     if (result != CURLE_OK) {
         const char *message = "Não foi possível conectar. Confira a URL e tente novamente.";
@@ -317,9 +322,11 @@ static void complete(auth_client *client, CURLcode result, long status)
         return;
     }
     if (previous == AUTH_LOGOUT) {
+        ws_abort(client->websocket);
         clear_cookies(client);
         client->state = AUTH_IDLE;
         client->user[0] = client->name[0] = '\0';
+        client->user_id[0] = '\0';
         snprintf(client->message, sizeof(client->message), "Você saiu da conta.");
         return;
     }
@@ -361,13 +368,20 @@ static void complete(auth_client *client, CURLcode result, long status)
     } else if (previous == AUTH_WHOAMI) {
         const char *username = json_string_value(json_object_get(body, "username"));
         const char *id = json_string_value(json_object_get(body, "id"));
-        if (!username || !*username || !id || !*id ||
+        if (!username || !*username || !id || !*id || strlen(id) >= sizeof(client->user_id) ||
+            (*client->user_id && strcmp(id, client->user_id) != 0) ||
             json_is_true(json_object_get(body, "connection_violation"))) {
             fail(client, "Não foi possível confirmar a sessão. Entre novamente.");
         } else {
             snprintf(client->user, sizeof(client->user), "%s", username);
-            client->state = AUTH_READY;
-            snprintf(client->message, sizeof(client->message), "Login realizado. Você está conectado.");
+            snprintf(client->user_id, sizeof(client->user_id), "%s", id);
+            uint64_t now;
+            if (!net_now_ms(&now)) fail(client, "Não foi possível acompanhar a sessão.");
+            else {
+                client->recheck_at = now + 30000;
+                client->state = AUTH_READY;
+                snprintf(client->message, sizeof(client->message), "Login realizado. Você está conectado.");
+            }
         }
     }
     json_decref(body);
@@ -375,6 +389,13 @@ static void complete(auth_client *client, CURLcode result, long status)
 
 void auth_poll(auth_client *client)
 {
+    ws_poll(client->websocket);
+    if (client->state == AUTH_READY && client->ws_requested && !client->queued && !client->attached) {
+        uint64_t now;
+        if (!net_now_ms(&now)) { fail(client, "Não foi possível acompanhar a sessão."); return; }
+        if (now >= client->recheck_at && request(client, AUTH_WHOAMI, "/auth/whoami", NULL, false))
+            client->state = AUTH_READY; /* Background REST validation keeps logout available. */
+    }
     if (client->queued) {
         int admitted = net_rate_try_acquire();
         if (admitted == 0) return;
@@ -407,16 +428,19 @@ void auth_poll(auth_client *client)
 bool auth_logout(auth_client *client)
 {
     if (client->state != AUTH_READY) return false;
+    ws_close(client->websocket);
     return request(client, AUTH_LOGOUT, "/auth/logout", NULL, true);
 }
 
 void auth_cancel(auth_client *client)
 {
+    ws_abort(client->websocket);
     detach(client);
     forget_inputs(client);
     clear_cookies(client);
     client->state = AUTH_IDLE;
     client->user[0] = client->name[0] = '\0';
+    client->user_id[0] = '\0';
     snprintf(client->message, sizeof(client->message), "Conexão cancelada.");
 }
 
@@ -424,9 +448,11 @@ void auth_destroy(auth_client *client)
 {
     if (!client) return;
     detach(client);
+    ws_destroy(client->websocket);
     forget_inputs(client);
     curl_easy_cleanup(client->easy);
     curl_multi_cleanup(client->multi);
+    curl_share_cleanup(client->cookies);
     curl_free(client->base);
     free(client->response);
     free(client);
@@ -446,8 +472,33 @@ const char *auth_message(const auth_client *client)
         case AUTH_LOGIN: return "Entrando na sua conta…";
         case AUTH_WHOAMI: return "Confirmando sua sessão…";
         case AUTH_LOGOUT: return "Saindo da conta…";
+        case AUTH_READY:
+            switch (ws_get_state(client->websocket)) {
+                case WS_QUEUED: case WS_CONNECTING: return "Login realizado. Conectando tempo real…";
+                case WS_OPEN: return "Login realizado. Tempo real conectado.";
+                case WS_ERROR: return ws_message(client->websocket);
+                case WS_CLOSED: return "Login realizado. Tempo real encerrado.";
+                default: return client->message;
+            }
         default: return client->message;
     }
 }
 const char *auth_username(const auth_client *client) { return client->user; }
 const char *auth_server_name(const auth_client *client) { return client->name; }
+bool auth_connect_ws(auth_client *client)
+{
+    if (client->state != AUTH_READY) return false;
+    client->ws_requested = true;
+    return ws_connect(client->websocket, client->base);
+}
+ws_state auth_ws_state(const auth_client *client) { return ws_get_state(client->websocket); }
+const char *auth_ws_message(const auth_client *client) { return ws_message(client->websocket); }
+long auth_ws_http_status(const auth_client *client) { return ws_http_status(client->websocket); }
+json_t *auth_next_event(auth_client *client)
+{
+    return client->state == AUTH_READY ? ws_pop(client->websocket) : NULL;
+}
+bool auth_send_event(auth_client *client, const json_t *event)
+{
+    return client->state == AUTH_READY && ws_send(client->websocket, event);
+}

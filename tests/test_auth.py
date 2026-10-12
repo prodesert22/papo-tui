@@ -1,4 +1,5 @@
 import subprocess
+import os
 import sys
 import unittest
 
@@ -8,8 +9,16 @@ PROBE = sys.argv.pop(1)
 
 
 class AuthTests(unittest.TestCase):
-    def run_probe(self, url, mode=""):
-        return subprocess.run([PROBE, url, mode], capture_output=True, text=True, timeout=20)
+    def run_probe(self, url, mode="", env=None):
+        return subprocess.run([PROBE, url, mode], capture_output=True, text=True, timeout=20, env=env)
+
+    def test_oversized_inputs_are_rejected_before_network(self):
+        for name, length in (("PAPO_PROBE_USERNAME", 1025), ("PAPO_PROBE_PASSWORD", 4097),
+                             ("PAPO_PROBE_SERVER_PASSWORD", 4097)):
+            with self.subTest(field=name), MockServer() as server:
+                result = self.run_probe(server.url, env=dict(os.environ, **{name: 'a' * length}))
+                self.assertIn("excedeu o limite do cliente", result.stdout)
+                self.assertEqual(server.requests, [])
 
     def test_public_login_and_prefix(self):
         with MockServer() as server:

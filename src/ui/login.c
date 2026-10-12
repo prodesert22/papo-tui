@@ -23,6 +23,9 @@ enum { NORMAL = 1, MUTED, ACCENT, INPUT, FOCUSED, ERROR, SUCCESS };
 
 typedef struct {
     WINDOW *card;
+    WINDOW *header;
+    WINDOW *body;
+    WINDOW *footer;
     WINDOW *input;
     FORM *form;
     FIELD *fields[FIELD_COUNT + 1];
@@ -84,8 +87,11 @@ static void destroy_layout(login_ui *ui)
         }
     }
     if (ui->input) delwin(ui->input);
+    if (ui->footer) delwin(ui->footer);
+    if (ui->body) delwin(ui->body);
+    if (ui->header) delwin(ui->header);
     if (ui->card) delwin(ui->card);
-    ui->input = ui->card = NULL;
+    ui->input = ui->footer = ui->body = ui->header = ui->card = NULL;
 }
 
 static bool layout(login_ui *ui)
@@ -100,6 +106,15 @@ static bool layout(login_ui *ui)
     ui->card = newwin(CARD_HEIGHT, ui->width, (LINES - CARD_HEIGHT) / 2, (COLS - ui->width) / 2);
     if (!ui->card) return false;
     wbkgd(ui->card, COLOR_PAIR(NORMAL));
+    /* Keep the prototype's three terminal regions separate: identity, form,
+     * and feedback/controls. The form remains a subwindow of the outer card. */
+    ui->header = derwin(ui->card, 3, ui->width - 4, 1, 2);
+    ui->body = derwin(ui->card, 12, ui->width - 4, 4, 2);
+    ui->footer = derwin(ui->card, 5, ui->width - 4, 16, 2);
+    if (!ui->header || !ui->body || !ui->footer) return false;
+    wbkgd(ui->header, COLOR_PAIR(NORMAL));
+    wbkgd(ui->body, COLOR_PAIR(NORMAL));
+    wbkgd(ui->footer, COLOR_PAIR(NORMAL));
     ui->input = derwin(ui->card, 10, ui->width - 8, 5, 4);
     if (!ui->input) return false;
     const int limits[FIELD_COUNT] = {2048, 256, 1024, 1024};
@@ -155,8 +170,8 @@ static void draw(login_ui *ui, auth_client *client)
     curs_set(0);
     if (!ui->card) {
         erase();
-        mvaddstr(0, 0, "Amplie o terminal para 44 colunas e 22 linhas.");
-        if (LINES > 1) mvaddstr(1, 0, "Ctrl+Q: sair");
+        text(stdscr, 0, 0, COLS, "Amplie o terminal para 44 colunas e 22 linhas.");
+        if (LINES > 1) text(stdscr, 1, 0, COLS, "Ctrl+Q: sair");
         curs_set(0);
         refresh();
         return;
@@ -167,53 +182,62 @@ static void draw(login_ui *ui, auth_client *client)
     const char *labels[FIELD_COUNT] = {"URL do servidor", "Usuário (username)", "Senha (password)", "Senha do servidor"};
     wattrset(ui->card, COLOR_PAIR(MUTED));
     box(ui->card, 0, 0);
-    wattrset(ui->card, COLOR_PAIR(ACCENT) | A_BOLD);
-    mvwaddstr(ui->card, 1, 4, "papo");
-    wattrset(ui->card, COLOR_PAIR(NORMAL));
-    mvwaddstr(ui->card, 2, 4, "Entre na sua comunidade");
+    wattrset(ui->header, COLOR_PAIR(ACCENT) | A_BOLD);
+    mvwaddstr(ui->header, 0, 2, "papo");
+    wattrset(ui->header, COLOR_PAIR(NORMAL));
+    text(ui->header, 1, 2, ui->width - 8, "Entre na sua comunidade");
+    wattrset(ui->header, COLOR_PAIR(MUTED));
+    mvwhline(ui->header, 2, 0, ACS_HLINE, ui->width - 4);
+
     for (int i = 0; i < FIELD_COUNT; ++i) {
         bool selected = ui->focus == i && !busy && !ready;
         chtype attributes = COLOR_PAIR(selected ? FOCUSED : INPUT);
         if (field_back(ui->fields[i]) != attributes) set_field_back(ui->fields[i], attributes);
         if (field_fore(ui->fields[i]) != attributes) set_field_fore(ui->fields[i], attributes);
-        wattrset(ui->card, COLOR_PAIR(selected ? ACCENT : MUTED));
-        text(ui->card, 4 + 3 * i, 4, ui->width - 8, labels[i]);
+        wattrset(ui->body, COLOR_PAIR(selected ? ACCENT : MUTED));
+        text(ui->body, 3 * i, 2, ui->width - 8, labels[i]);
         if (i >= 2) {
-            wattrset(ui->card, COLOR_PAIR(selected ? FOCUSED : INPUT));
-            mvwhline(ui->card, 5 + 3 * i, 4, ' ', ui->width - 8);
+            wattrset(ui->body, COLOR_PAIR(selected ? FOCUSED : INPUT));
+            mvwhline(ui->body, 1 + 3 * i, 2, ' ', ui->width - 8);
             if (*ui->saved[i]) {
                 /* Private fields are never made public: overlay only a mask. */
                 size_t count = 0;
                 for (const unsigned char *p = (const unsigned char *)ui->saved[i]; *p; ++p)
                     if ((*p & 0xc0) != 0x80) ++count;
                 int shown = count < (size_t)(ui->width - 9) ? (int)count : ui->width - 9;
-                mvwhline(ui->card, 5 + 3 * i, 4, '*', shown);
+                mvwhline(ui->body, 1 + 3 * i, 2, '*', shown);
             }
         }
     }
-    wattrset(ui->card, COLOR_PAIR(MUTED));
-    text(ui->card, 15, 4, ui->width - 8, "Preencha a senha do servidor se a instância for privada.");
-    wattrset(ui->card, COLOR_PAIR(ui->focus == FIELD_COUNT ? ACCENT : NORMAL) | A_BOLD);
-    mvwhline(ui->card, 17, 4, ' ', ui->width - 8);
+    wattrset(ui->body, COLOR_PAIR(MUTED));
+    text(ui->body, 11, 2, ui->width - 8, "Preencha a senha do servidor se a instância for privada.");
+
+    wattrset(ui->footer, COLOR_PAIR(MUTED));
+    mvwhline(ui->footer, 0, 0, ACS_HLINE, ui->width - 4);
+    wattrset(ui->footer, COLOR_PAIR(ui->focus == FIELD_COUNT ? ACCENT : NORMAL) | A_BOLD);
+    mvwhline(ui->footer, 1, 2, ' ', ui->width - 8);
     const char *button = ready ? "[ Sair da conta ]" : busy ? "[ Conectando… ]" : "[ Entrar ]";
-    mvwaddstr(ui->card, 17, 4, button);
-    int status_color = auth_get_state(client) == AUTH_ERROR ? ERROR : ready ? SUCCESS : MUTED;
-    wattrset(ui->card, COLOR_PAIR(status_color));
-    mvwhline(ui->card, 18, 4, ' ', ui->width - 8);
-    mvwhline(ui->card, 19, 4, ' ', ui->width - 8);
-    text(ui->card, 18, 4, ui->width - 8, auth_message(client));
+    mvwaddstr(ui->footer, 1, 2, button);
+    int status_color = auth_get_state(client) == AUTH_ERROR || auth_ws_state(client) == WS_ERROR ? ERROR : ready ? SUCCESS : MUTED;
+    wattrset(ui->footer, COLOR_PAIR(status_color));
+    mvwhline(ui->footer, 2, 2, ' ', ui->width - 8);
+    mvwhline(ui->footer, 3, 2, ' ', ui->width - 8);
+    text(ui->footer, 2, 2, ui->width - 8, auth_message(client));
     if (ready) {
         char summary[300];
         snprintf(summary, sizeof(summary), "%s · %s", auth_username(client), auth_server_name(client));
-        text(ui->card, 19, 4, ui->width - 8, summary);
+        text(ui->footer, 3, 2, ui->width - 8, summary);
     }
-    wattrset(ui->card, COLOR_PAIR(MUTED));
-    text(ui->card, 20, 2, ui->width - 4, "Tab: foco  Enter: entrar  Ctrl+Q: sair");
+    wattrset(ui->footer, COLOR_PAIR(MUTED));
+    text(ui->footer, 4, 0, ui->width - 4, "Tab: foco  Enter: entrar  Ctrl+Q: sair");
     if (ui->focus < FIELD_COUNT && !busy && !ready) {
         pos_form_cursor(ui->form);
     }
     touchwin(ui->card);
     wnoutrefresh(ui->card);
+    wnoutrefresh(ui->header);
+    wnoutrefresh(ui->body);
+    wnoutrefresh(ui->footer);
     if (ui->focus < FIELD_COUNT && !busy && !ready) wnoutrefresh(ui->input);
     doupdate();
     curs_set(ui->focus < FIELD_COUNT && !busy && !ready ? 1 : 0);
@@ -331,7 +355,10 @@ int login_run(void)
         return 1;
     }
     auth_client *client = auth_create();
-    if (!client) return 1;
+    if (!client) {
+        fputs("Não foi possível preparar a comunicação com o servidor.\n", stderr);
+        return 1;
+    }
     login_ui ui = {0};
     if (!initscr()) { auth_destroy(client); return 1; }
     /* raw also disables IXON, so Ctrl+Q reaches the application. */
@@ -375,11 +402,16 @@ int login_run(void)
     bool redraw = true;
     while (!result && !interrupted) {
         auth_state before = auth_get_state(client);
+        ws_state ws_before = auth_ws_state(client);
         auth_poll(client);
         if (before != auth_get_state(client)) redraw = true;
+        if (ws_before != auth_ws_state(client)) redraw = true;
+        json_t *event;
+        while ((event = auth_next_event(client))) json_decref(event);
         if (before != AUTH_READY && auth_get_state(client) == AUTH_READY) {
             clear_passwords(&ui);
             ui.focus = FIELD_COUNT;
+            auth_connect_ws(client);
         }
         if (redraw) {
             draw(&ui, client);

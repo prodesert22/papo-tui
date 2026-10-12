@@ -2,7 +2,7 @@
 
 ## Requisitos
 
-Compilador C17, CMake 3.21+, pkg-config, ncursesw/formw 6.1+, libcurl 7.85+ e Jansson 2.14+. Use um terminal UTF-8 com pelo menos 44 colunas e 22 linhas.
+Compilador C17, CMake 3.21+, pkg-config, ncursesw/formw 6.1+, libcurl 7.86+ com WS/WSS, TLS e DNS assíncrono, e Jansson 2.14+. Use um terminal UTF-8 com pelo menos 44 colunas e 22 linhas disponíveis ao aplicativo. No tmux, reserve também as linhas da barra de status.
 
 No Arch Linux:
 
@@ -29,7 +29,7 @@ O executável fica em `build/papo-tui`. Para consultar as opções ou a versão:
 
 ## Conectar ao servidor
 
-Preencha os quatro campos da tela:
+A tela apresenta um cabeçalho, o formulário e uma área de estado e controles. Preencha os quatro campos:
 
 | Campo | O que informar |
 | --- | --- |
@@ -42,7 +42,9 @@ Para um servidor local, use `http://127.0.0.1:8080`. HTTP também é aceito em `
 
 Selecione **Entrar** ou pressione Enter. O aplicativo consulta o servidor, solicita acesso à instância privada quando necessário e autentica sua conta. As senhas são ocultas; credenciais e cookies não são salvos entre execuções.
 
-Depois de autenticar, a tela mostra a conta e o servidor. **Sair da conta** encerra a sessão. A versão atual implementa login e logout; a tela de conversas ainda não está disponível.
+Depois de autenticar, a tela mostra a conta, o servidor e o estado da conexão de tempo real. **Sair da conta** encerra essa conexão e a sessão. A versão atual implementa login, logout e recebimento de eventos em memória; a tela de conversas ainda não está disponível.
+
+A sessão é confirmada novamente a cada 30 segundos. Se a confirmação falhar, o aplicativo limpa a sessão e solicita novo login. Para refazer uma conexão de tempo real interrompida, saia da conta e entre novamente.
 
 O aplicativo compartilha um limite de 10 requisições por segundo, com capacidade de burst de 25, entre todas as tentativas de conexão. Ao atingir esse limite, os envios aguardam e a interface continua respondendo. Esses valores são fixos nesta versão.
 

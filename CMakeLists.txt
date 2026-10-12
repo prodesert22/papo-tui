@@ -7,12 +7,30 @@ set(CMAKE_C_EXTENSIONS OFF)
 option(PAPO_SANITIZERS "Enable address and undefined behavior sanitizers" OFF)
 
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(CURL REQUIRED IMPORTED_TARGET libcurl>=7.85)
+pkg_check_modules(CURL REQUIRED IMPORTED_TARGET libcurl>=7.86)
 pkg_check_modules(JANSSON REQUIRED IMPORTED_TARGET jansson>=2.14)
 pkg_check_modules(NCURSES REQUIRED IMPORTED_TARGET ncursesw>=6.1)
 pkg_check_modules(FORM REQUIRED IMPORTED_TARGET formw>=6.1)
 
-add_library(papo_auth src/net/auth.c src/net/rate_limit.c)
+include(CheckCSourceRuns)
+set(CMAKE_REQUIRED_LIBRARIES PkgConfig::CURL)
+check_c_source_runs("#include <curl/curl.h>
+#include <string.h>
+int main(void) {
+  const curl_version_info_data *v = curl_version_info(CURLVERSION_NOW);
+  int ws = 0, wss = 0;
+  if (!v || !v->protocols || !(v->features & CURL_VERSION_ASYNCHDNS) || !(v->features & CURL_VERSION_SSL)) return 1;
+  for (const char *const *p = v->protocols; *p; ++p) {
+    ws |= strcmp(*p, \"ws\") == 0; wss |= strcmp(*p, \"wss\") == 0;
+  }
+  return !(ws && wss);
+}" PAPO_CURL_WS_SUPPORTED)
+unset(CMAKE_REQUIRED_LIBRARIES)
+if(NOT PAPO_CURL_WS_SUPPORTED)
+    message(FATAL_ERROR "libcurl must provide WS/WSS, TLS and asynchronous DNS")
+endif()
+
+add_library(papo_auth src/net/auth.c src/net/rate_limit.c src/net/ws.c)
 target_include_directories(papo_auth PUBLIC src)
 target_link_libraries(papo_auth PUBLIC PkgConfig::CURL PkgConfig::JANSSON)
 
@@ -31,9 +49,13 @@ endif()
 include(CTest)
 if(BUILD_TESTING)
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    find_program(OPENSSL_CLI NAMES openssl REQUIRED)
     add_executable(auth-probe tests/auth_probe.c)
     target_link_libraries(auth-probe PRIVATE papo_auth)
     target_compile_options(auth-probe PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_executable(ws-probe tests/ws_probe.c)
+    target_link_libraries(ws-probe PRIVATE papo_auth)
+    target_compile_options(ws-probe PRIVATE -Wall -Wextra -Wpedantic -Werror)
     add_executable(rate-limit-test tests/test_rate_limit.c)
     target_link_libraries(rate-limit-test PRIVATE papo_auth)
     target_compile_options(rate-limit-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
@@ -42,6 +64,9 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_auth.py $<TARGET_FILE:auth-probe>)
     add_test(NAME login-terminal COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_terminal.py $<TARGET_FILE:papo-tui>)
+    add_test(NAME websocket-integration COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_ws.py $<TARGET_FILE:ws-probe>)
+    set_tests_properties(websocket-integration PROPERTIES TIMEOUT 120)
     add_test(NAME api-contract COMMAND ${Python3_EXECUTABLE}
         -m unittest discover -s tests -p test_contract.py)
     set_tests_properties(api-contract PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} TIMEOUT 30)

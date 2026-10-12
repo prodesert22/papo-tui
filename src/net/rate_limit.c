@@ -2,6 +2,8 @@
 #include "net/rate_limit.h"
 
 #include <time.h>
+#include <curl/curl.h>
+#include <string.h>
 
 #define CAPACITY (PAPO_RATE_INTERVAL_NS * PAPO_REQUEST_BURST)
 
@@ -55,4 +57,29 @@ void net_rate_defer(unsigned seconds)
 {
     uint64_t now;
     if (monotonic_now(&now)) request_budget_defer(&global_budget, now, seconds);
+}
+
+unsigned net_rate_retry_after(const char *value, size_t length)
+{
+    if (!value || !length || length >= 128) return PAPO_RATE_DEFAULT_COOLDOWN_SECONDS;
+    char copy[128];
+    memcpy(copy, value, length);
+    copy[length] = '\0';
+    char *start = copy;
+    while (*start == ' ' || *start == '\t') ++start;
+    char *end = start + strlen(start);
+    while (end > start && (end[-1] == '\r' || end[-1] == '\n' || end[-1] == ' ' || end[-1] == '\t')) --end;
+    *end = '\0';
+    bool digits = *start != '\0';
+    for (char *p = start; *p; ++p) digits = digits && *p >= '0' && *p <= '9';
+    if (digits) {
+        unsigned seconds = 0;
+        for (char *p = start; *p && seconds < 86400; ++p)
+            seconds = seconds * 10 + (unsigned)(*p - '0');
+        return seconds < 86400 ? seconds : 86400;
+    }
+    time_t date = curl_getdate(start, NULL), now = time(NULL);
+    if (date < 0 || now < 0) return PAPO_RATE_DEFAULT_COOLDOWN_SECONDS;
+    double delay = difftime(date, now);
+    return delay <= 0 ? 0U : delay >= 86400 ? 86400U : (unsigned)delay;
 }

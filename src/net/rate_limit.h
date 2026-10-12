@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 
 #define PAPO_REQUESTS_PER_SECOND 10U
 #define PAPO_REQUEST_BURST 25U
@@ -26,5 +27,7 @@ void request_budget_defer(request_budget *budget, uint64_t now, unsigned seconds
  * reset it. Returns 1 when admitted, 0 when queued, -1 on clock failure. */
 int net_rate_try_acquire(void);
 void net_rate_defer(unsigned seconds);
+/* Parses a bounded Retry-After header value, with the shared fallback/cap. */
+unsigned net_rate_retry_after(const char *value, size_t length);
 
 #endif

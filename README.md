@@ -2,11 +2,11 @@
 
 Cliente de conversas para terminal, em C, para conectar-se a instâncias independentes do Papo por URL.
 
-A primeira entrega é uma tela de login com quatro campos: URL do servidor, usuário, senha e senha do servidor. O aplicativo consulta a instância, autoriza o acesso privado quando necessário, autentica a conta e confirma a sessão. As senhas são ocultas e os cookies ficam somente em memória.
+A primeira entrega é uma tela de login com quatro campos: URL do servidor, usuário, senha e senha do servidor. A tela organiza cabeçalho, formulário e estado/controles em três áreas. O aplicativo consulta a instância, autoriza o acesso privado quando necessário, autentica a conta e confirma a sessão. As senhas são ocultas e os cookies ficam somente em memória.
 
 ## Compilar e executar
 
-Pré-requisitos: compilador C17, CMake 3.21+, pkg-config, ncursesw/formw 6.1+, libcurl 7.85+ e Jansson 2.14+. Para os testes, Python 3.10+ e as dependências de `requirements-dev.txt`.
+Pré-requisitos: compilador C17, CMake 3.21+, pkg-config, ncursesw/formw 6.1+, libcurl 7.86+ e Jansson 2.14+. A libcurl precisa oferecer WS/WSS, TLS e DNS assíncrono; o CMake verifica essas capacidades. Para os testes, Python 3.10+, OpenSSL CLI e as dependências de `requirements-dev.txt`.
 
 No Arch Linux:
 
@@ -20,7 +20,7 @@ cmake --build build
 ./build/papo-tui
 ```
 
-Use um terminal UTF-8, com pelo menos 44 colunas e 22 linhas. Para compilar somente o aplicativo, use `-DBUILD_TESTING=OFF` na configuração do CMake. `--help` e `--version` funcionam fora de um terminal interativo.
+Use um terminal UTF-8, com pelo menos 44 colunas e 22 linhas disponíveis ao aplicativo. No tmux, reserve também as linhas da barra de status. Para compilar somente o aplicativo, use `-DBUILD_TESTING=OFF` na configuração do CMake. `--help` e `--version` funcionam fora de um terminal interativo.
 
 ## Login
 
@@ -28,7 +28,9 @@ Informe uma URL HTTPS completa, como `https://chat.exemplo.com`. Para desenvolvi
 
 A senha do servidor é obrigatória quando a instância se identifica como privada. Em instâncias públicas, deixe o campo vazio. **Entrar** consulta `/server`, faz `/auth/login_server` quando necessário, autentica por `/auth/login` e confirma a conta por `/auth/whoami`.
 
-Depois de autenticar, a tela apresenta a conta e a instância e permite **Sair da conta**. A interface de conversas será construída nos próximos marcos. Login e senha não são persistidos.
+Depois de autenticar, a tela apresenta a conta, a instância e o estado da conexão de tempo real, e permite **Sair da conta**. O aplicativo abre um WebSocket autenticado com os cookies dessa sessão e recebe eventos em memória. A interface de conversas será construída nos próximos marcos. Login e senha não são persistidos pelo aplicativo.
+
+A sessão é revalidada por REST a cada 30 segundos; heartbeat/ACK do WebSocket não comprova autenticação. Falhas de tempo real aparecem na área de estado. Para refazer uma conexão interrompida, saia da conta e entre novamente.
 
 As requisições compartilham um limite global de 10 por segundo, com burst de 25. O envio aguarda capacidade sem bloquear a interface. HTTP 429 informa o limite atingido e adia novas tentativas conforme `Retry-After`, sem reenviar a solicitação automaticamente.
 
@@ -58,7 +60,7 @@ Consulte [instalação e uso](docs/uso.md) para os requisitos, execução, conex
 
 - C17 e CMake.
 - ncursesw e formw para renderização, navegação e edição dos campos.
-- libcurl multi para HTTP assíncrono, TLS, URLs e cookies.
+- libcurl multi para HTTP e handshake WS assíncronos, TLS, URLs e cookies; APIs WS para leitura/escrita sem bloquear a interface.
 - Jansson para JSON.
 
 ```text
@@ -84,7 +86,9 @@ As ferramentas em `tools/` auxiliam a validação do contrato durante o desenvol
 - [x] Inventário e fixtures de contrato com validação OpenAPI 3.0.
 - [x] Login público, sessão e handshake WS nativo observados na instância local.
 - [x] R0: contrato e ambiente de integração validados com a conta fornecida, paginação e cenário privado HTTPS/WSS.
-- [ ] Interface de conversas e WebSocket.
+- [x] Transporte WS/WSS em C, com cookies por contexto, filas limitadas e revalidação REST.
+- [x] Base de terminal exercitada em Kitty, Konsole e tmux.
+- [ ] Interface de conversas.
 
 ## Testes
 
@@ -96,7 +100,7 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-Os testes usam credenciais sintéticas e servidor HTTP local. Cobrem acesso público/privado, cookies, logout, erros, limites de resposta, cancelamento, URLs com prefixo, senhas ocultas, espaços em senhas, redimensionamento, Backspace repetido, cliques e restauração do terminal. pyte reconstrói a tela para verificar a posição do cursor. Essas dependências Python são usadas somente nos testes; eles não comprovam integração com a instância real.
+Os testes usam credenciais sintéticas e servidores HTTP/WS locais. Cobrem acesso público/privado, cookies, logout, erros, limites de entrada/resposta/fila, cancelamento, URLs com prefixo, senhas ocultas, espaços em senhas, redimensionamento, Backspace repetido, cliques e restauração do terminal. pyte reconstrói a tela para verificar a posição do cursor. A suíte WS inclui fragmentação dentro de UTF-8, chunks, ping/pong intercalado, encerramento, timeouts, sessão revogada com ACK e WSS com CA/hostname verificados. Essas dependências Python são usadas somente nos testes; os mocks não comprovam integração com a instância real.
 
 A suíte `api-contract` valida 51 fixtures REST e 17 exemplos WS, cursor composto com timestamps iguais, limites de lote, YAML 1.2, isolamento de cookies e relatórios sem segredos. Regerar o inventário local e os exemplos após uma mudança no contrato:
 
@@ -112,6 +116,26 @@ build/test-env/bin/python -m tools.check_backend --url http://127.0.0.1:8080 --u
 ```
 
 Nesse modo, a senha fica somente no ambiente e nenhuma conta é cadastrada. Metadados sem senhas ou cookies ficam em `build/integration/report.json`. O probe revoga somente sua conexão de teste e tenta logout ao terminar. `--prepare-history` cria um canal dedicado com 102 mensagens e guarda apenas IDs em `build/integration/fixture-state.json`; use essa opção quando quiser preparar dados no servidor. `--ca-bundle` indica uma CA confiável para HTTPS/WSS. Consulte `--help` para as opções disponíveis.
+
+Para repetir a validação de R1, defina `PAPO_TEST_USERNAME` e `PAPO_TEST_PASSWORD`. Se mantiver essas variáveis em um `.env` local, carregue-o no shell:
+
+```sh
+set -a
+. ./.env
+set +a
+go build -o build/integration/tls-proxy tools/tls_proxy.go
+build/test-env/bin/python -m tools.check_r1
+```
+
+Esse probe usa o cliente C com a conta indicada, faz logout das sessões de teste e valida HTTP/WS e HTTPS/WSS por proxy TLS local. Go e OpenSSL CLI são necessários para esse cenário. A CA e a chave temporárias são removidas; somente resultados sem segredos ficam em `build/integration/r1-backend.json`. `.env` é ignorado pelo Git e deve ter permissão `600`.
+
+Com Kitty, Konsole, tmux, qdbus6 e xdotool disponíveis numa sessão gráfica X11/XWayland, a validação dos emuladores usa janelas dedicadas e fixtures sintéticas:
+
+```sh
+build/test-env/bin/python -m tools.check_terminals --tmux /usr/bin/tmux
+```
+
+Os resultados e as telas ficam em `build/r1/terminals/`. A ferramenta usa uma configuração temporária de Konsole e um servidor tmux isolado; fecha suas janelas ao terminar.
 
 ```sh
 cmake -S . -B build/sanitized -DPAPO_SANITIZERS=ON -DPython3_EXECUTABLE="$PWD/build/test-env/bin/python"
