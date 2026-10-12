@@ -1,0 +1,53 @@
+# C / CMake build artifacts
+/build/
+/cmake-build-*/
+/out/
+/bin/
+/lib/
+/compile_commands.json
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+Makefile
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.gcda
+*.gcno
+*.profraw
+core
+core.[0-9]*
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+config.local.json
+config.local.*.json
+*.cookiejar
+
+# Editors and operating systems
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Test and analysis caches
+*.gcov
+coverage/
+htmlcov/
+.cache/
+__pycache__/
+*.py[cod]
+
+.roadmap/
+.ai-jail
