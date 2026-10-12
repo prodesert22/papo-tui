@@ -12,7 +12,7 @@ pkg_check_modules(JANSSON REQUIRED IMPORTED_TARGET jansson>=2.14)
 pkg_check_modules(NCURSES REQUIRED IMPORTED_TARGET ncursesw>=6.1)
 pkg_check_modules(FORM REQUIRED IMPORTED_TARGET formw>=6.1)
 
-add_library(papo_auth src/net/auth.c)
+add_library(papo_auth src/net/auth.c src/net/rate_limit.c)
 target_include_directories(papo_auth PUBLIC src)
 target_link_libraries(papo_auth PUBLIC PkgConfig::CURL PkgConfig::JANSSON)
 
@@ -34,10 +34,17 @@ if(BUILD_TESTING)
     add_executable(auth-probe tests/auth_probe.c)
     target_link_libraries(auth-probe PRIVATE papo_auth)
     target_compile_options(auth-probe PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_executable(rate-limit-test tests/test_rate_limit.c)
+    target_link_libraries(rate-limit-test PRIVATE papo_auth)
+    target_compile_options(rate-limit-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_test(NAME request-rate-limit COMMAND rate-limit-test)
     add_test(NAME auth-integration COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_auth.py $<TARGET_FILE:auth-probe>)
     add_test(NAME login-terminal COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_terminal.py $<TARGET_FILE:papo-tui>)
+    add_test(NAME api-contract COMMAND ${Python3_EXECUTABLE}
+        -m unittest discover -s tests -p test_contract.py)
+    set_tests_properties(api-contract PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} TIMEOUT 30)
     set_tests_properties(auth-integration login-terminal PROPERTIES TIMEOUT 45)
 endif()
 

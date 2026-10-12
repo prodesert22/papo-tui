@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include "net/auth.h"
+#include "net/rate_limit.h"
 
 #include <curl/curl.h>
 #include <jansson.h>
@@ -7,6 +8,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
+#include <time.h>
 
 #define RESPONSE_LIMIT (1024U * 1024U)
 
@@ -15,6 +18,8 @@ struct auth_client {
     CURLM *multi;
     struct curl_slist *headers;
     bool attached;
+    bool queued;
+    unsigned retry_after;
     auth_state state;
     char *base;
     char *username;
@@ -49,6 +54,7 @@ static void forget_inputs(auth_client *client)
 
 static void detach(auth_client *client)
 {
+    client->queued = false;
     if (client->attached) {
         curl_multi_remove_handle(client->multi, client->easy);
         client->attached = false;
@@ -135,6 +141,41 @@ static size_t receive(char *data, size_t size, size_t count, void *context)
     return bytes;
 }
 
+static size_t receive_header(char *data, size_t size, size_t count, void *context)
+{
+    auth_client *client = context;
+    if (size && count > SIZE_MAX / size) return 0;
+    size_t bytes = size * count;
+    if (bytes >= 5 && strncasecmp(data, "HTTP/", 5) == 0)
+        client->retry_after = PAPO_RATE_DEFAULT_COOLDOWN_SECONDS;
+    if (bytes > 12 && strncasecmp(data, "Retry-After:", 12) == 0 && bytes < 128) {
+        char value[128];
+        memcpy(value, data + 12, bytes - 12);
+        value[bytes - 12] = '\0';
+        char *start = value;
+        while (*start == ' ' || *start == '\t') ++start;
+        char *end = start + strlen(start);
+        while (end > start && (end[-1] == '\r' || end[-1] == '\n' || end[-1] == ' ' || end[-1] == '\t')) --end;
+        *end = '\0';
+        bool digits = *start != '\0';
+        for (char *p = start; *p; ++p) digits = digits && *p >= '0' && *p <= '9';
+        if (digits) {
+            unsigned seconds = 0;
+            for (char *p = start; *p && seconds < 86400; ++p)
+                seconds = seconds * 10 + (unsigned)(*p - '0');
+            client->retry_after = seconds < 86400 ? seconds : 86400;
+        } else {
+            time_t date = curl_getdate(start, NULL);
+            time_t now = time(NULL);
+            if (date >= 0 && now >= 0) {
+                double delay = difftime(date, now);
+                client->retry_after = delay <= 0 ? 0U : delay >= 86400 ? 86400U : (unsigned)delay;
+            }
+        }
+    }
+    return bytes;
+}
+
 static bool request(auth_client *client, auth_state state, const char *path,
                     json_t *body, bool post)
 {
@@ -143,6 +184,7 @@ static bool request(auth_client *client, auth_state state, const char *path,
     client->response = NULL;
     client->response_length = 0;
     client->overflow = false;
+    client->retry_after = PAPO_RATE_DEFAULT_COOLDOWN_SECONDS;
     size_t length = strlen(client->base) + strlen(path) + 1;
     char *url = malloc(length);
     if (!url) goto error;
@@ -166,8 +208,7 @@ static bool request(auth_client *client, auth_state state, const char *path,
     } else {
         curl_easy_setopt(client->easy, CURLOPT_HTTPGET, 1L);
     }
-    if (curl_multi_add_handle(client->multi, client->easy) != CURLM_OK) goto error;
-    client->attached = true;
+    client->queued = true;
     client->state = state;
     return true;
 error:
@@ -204,12 +245,16 @@ auth_client *auth_create(void)
     curl_easy_setopt(client->easy, CURLOPT_COOKIEFILE, "");
     curl_easy_setopt(client->easy, CURLOPT_WRITEFUNCTION, receive);
     curl_easy_setopt(client->easy, CURLOPT_WRITEDATA, client);
+    curl_easy_setopt(client->easy, CURLOPT_HEADERFUNCTION, receive_header);
+    curl_easy_setopt(client->easy, CURLOPT_HEADERDATA, client);
     curl_easy_setopt(client->easy, CURLOPT_CONNECTTIMEOUT_MS, 5000L);
     curl_easy_setopt(client->easy, CURLOPT_TIMEOUT_MS, 15000L);
     curl_easy_setopt(client->easy, CURLOPT_NOSIGNAL, 1L);
     curl_easy_setopt(client->easy, CURLOPT_FOLLOWLOCATION, 0L);
     curl_easy_setopt(client->easy, CURLOPT_PROTOCOLS_STR, "http,https");
     curl_easy_setopt(client->easy, CURLOPT_USERAGENT, "papo-tui/0.1.0-dev");
+    const char *ca_bundle = getenv("CURL_CA_BUNDLE");
+    if (ca_bundle && *ca_bundle) curl_easy_setopt(client->easy, CURLOPT_CAINFO, ca_bundle);
     snprintf(client->message, sizeof(client->message), "Preencha os dados para entrar.");
     return client;
 }
@@ -262,6 +307,9 @@ static void complete(auth_client *client, CURLcode result, long status)
         const char *message = "O servidor não aceitou a solicitação. Tente novamente.";
         if (status == 401) {
             message = previous == AUTH_SERVER_PASSWORD ? "Senha do servidor incorreta." : "Usuário ou senha inválidos, ou sessão não autorizada.";
+        } else if (status == 429) {
+            net_rate_defer(client->retry_after);
+            message = "Limite de requisições atingido. Aguarde antes de tentar novamente.";
         } else if (status == 403) message = "O servidor recusou o acesso a esta conta.";
         else if (status == 404 && previous == AUTH_SERVER) message = "Instância não inicializada ou URL incompatível com o Papo.";
         else if (status >= 300 && status < 400) message = "O servidor redirecionou a conexão. Informe a URL final.";
@@ -327,6 +375,16 @@ static void complete(auth_client *client, CURLcode result, long status)
 
 void auth_poll(auth_client *client)
 {
+    if (client->queued) {
+        int admitted = net_rate_try_acquire();
+        if (admitted == 0) return;
+        if (admitted < 0 || curl_multi_add_handle(client->multi, client->easy) != CURLM_OK) {
+            fail(client, "Não foi possível iniciar a conexão.");
+            return;
+        }
+        client->queued = false;
+        client->attached = true;
+    }
     if (!client->attached) return;
     int running;
     if (curl_multi_perform(client->multi, &running) != CURLM_OK) {

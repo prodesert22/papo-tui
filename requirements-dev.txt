@@ -1,2 +1,6 @@
-# Terminal screen/cursor assertions; not needed to build or run the application.
+# Development-only terminal, OpenAPI and backend integration checks.
 pyte>=0.8.2,<0.9
+ruamel.yaml>=0.18,<0.19
+openapi-schema-validator>=0.6.3,<0.7
+requests>=2.32,<3
+websocket-client>=1.8,<2

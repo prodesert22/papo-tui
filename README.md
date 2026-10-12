@@ -30,6 +30,8 @@ A senha do servidor é obrigatória quando a instância se identifica como priva
 
 Depois de autenticar, a tela apresenta a conta e a instância e permite **Sair da conta**. A interface de conversas será construída nos próximos marcos. Login e senha não são persistidos.
 
+As requisições compartilham um limite global de 10 por segundo, com burst de 25. O envio aguarda capacidade sem bloquear a interface. HTTP 429 informa o limite atingido e adia novas tentativas conforme `Retry-After`, sem reenviar a solicitação automaticamente.
+
 | Tecla | Ação |
 | --- | --- |
 | Tab / Shift+Tab, ↑ / ↓ | Alternar campo ou botão |
@@ -50,7 +52,7 @@ Colagem delimitada pelo terminal não envia com quebras de linha. Redimensionar 
 
 A primeira versão, v0.1.0, permitirá cadastrar várias instâncias, entrar em uma delas e conversar por canais de texto e mensagens diretas, com histórico, tempo real e reconexão. O login será solicitado a cada abertura. Cada instância mantém suas próprias contas, conversas e sessão. A API atual não especifica federação entre servidores.
 
-O próximo trabalho é validar o fluxo na instância real e completar a verificação do contrato. As decisões técnicas e o comportamento implementado estão documentados em [docs/decisoes.md](docs/decisoes.md) e [docs/contrato.md](docs/contrato.md).
+Consulte [instalação e uso](docs/uso.md) para os requisitos, execução, conexão e solução de problemas.
 
 ## Stack e estrutura
 
@@ -64,23 +66,24 @@ src/main.c       Entrada e ciclo de vida
 src/ui/          Tela de login e formulário
 src/net/         Estado de autenticação e transporte HTTP
 tests/           Backend simulado e testes em pseudoterminal
-docs/            Contrato e decisões técnicas
+docs/            Instalação e uso do programa
 openapi.yml      Contrato do backend
 ```
-
-A escolha de bibliotecas está em [docs/decisoes.md](docs/decisoes.md), e o contrato inicial de autenticação em [docs/contrato.md](docs/contrato.md).
 
 ## API
 
 Use [`openapi.yml`](openapi.yml) como referência para endpoints, autenticação, modelos e eventos WebSocket. Confirme o contrato antes de implementar qualquer comportamento do cliente; não presuma que a API oferece recursos que não estão descritos.
 
+As ferramentas em `tools/` auxiliam a validação do contrato durante o desenvolvimento. Seus relatórios e inventários são gerados em `build/`; não fazem parte da documentação de uso.
+
 ## Estado atual
 
 - [x] Especificação OpenAPI disponível.
-- [x] Plano inicial e roadmap registrados.
 - [x] Tela de login, HTTP e aplicativo compilável.
 - [x] Testes com backend simulado e pseudoterminal.
-- [ ] Integração com a instância real e validação completa de R0.
+- [x] Inventário e fixtures de contrato com validação OpenAPI 3.0.
+- [x] Login público, sessão e handshake WS nativo observados na instância local.
+- [x] R0: contrato e ambiente de integração validados com a conta fornecida, paginação e cenário privado HTTPS/WSS.
 - [ ] Interface de conversas e WebSocket.
 
 ## Testes
@@ -94,6 +97,21 @@ ctest --test-dir build --output-on-failure
 ```
 
 Os testes usam credenciais sintéticas e servidor HTTP local. Cobrem acesso público/privado, cookies, logout, erros, limites de resposta, cancelamento, URLs com prefixo, senhas ocultas, espaços em senhas, redimensionamento, Backspace repetido, cliques e restauração do terminal. pyte reconstrói a tela para verificar a posição do cursor. Essas dependências Python são usadas somente nos testes; eles não comprovam integração com a instância real.
+
+A suíte `api-contract` valida 51 fixtures REST e 17 exemplos WS, cursor composto com timestamps iguais, limites de lote, YAML 1.2, isolamento de cookies e relatórios sem segredos. Regerar o inventário local e os exemplos após uma mudança no contrato:
+
+```sh
+build/test-env/bin/python -m tools.contract_inventory
+build/test-env/bin/python -m tools.contract_fixtures
+```
+
+O inventário fica em `build/contract/api-inventory.md`. Para verificar a instância de desenvolvimento com uma conta fornecida, defina sua senha na variável de ambiente `PAPO_TEST_PASSWORD` e execute:
+
+```sh
+build/test-env/bin/python -m tools.check_backend --url http://127.0.0.1:8080 --username SEU_USUARIO --auth-probe ./build/auth-probe --request-interval 0.25
+```
+
+Nesse modo, a senha fica somente no ambiente e nenhuma conta é cadastrada. Metadados sem senhas ou cookies ficam em `build/integration/report.json`. O probe revoga somente sua conexão de teste e tenta logout ao terminar. `--prepare-history` cria um canal dedicado com 102 mensagens e guarda apenas IDs em `build/integration/fixture-state.json`; use essa opção quando quiser preparar dados no servidor. `--ca-bundle` indica uma CA confiável para HTTPS/WSS. Consulte `--help` para as opções disponíveis.
 
 ```sh
 cmake -S . -B build/sanitized -DPAPO_SANITIZERS=ON -DPython3_EXECUTABLE="$PWD/build/test-env/bin/python"

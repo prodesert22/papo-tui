@@ -1,0 +1,30 @@
+{
+  "channels": [
+    {
+      "id": "00000000-0000-0000-0000-000000000003",
+      "name": "fixture-geral",
+      "type": "text",
+      "position": 1,
+      "topic": null,
+      "permissions": [],
+      "created_at": "2026-10-12T12:00:00Z",
+      "last_message": null,
+      "last_read_message": null,
+      "last_read_at": null,
+      "notification_settings": "only_mentions"
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000007",
+      "name": "Fixture categoria",
+      "type": "category",
+      "position": 2,
+      "topic": null,
+      "permissions": [],
+      "created_at": "2026-10-12T12:00:00Z",
+      "last_message": null,
+      "last_read_message": null,
+      "last_read_at": null,
+      "notification_settings": "only_mentions"
+    }
+  ]
+}

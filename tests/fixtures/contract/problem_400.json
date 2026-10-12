@@ -1,0 +1,6 @@
+{
+  "type": "https://papo.invalid/errors/fixture",
+  "title": "Erro sintético",
+  "status": 400,
+  "detail": "Dados sintéticos para verificar tratamento de falhas."
+}

@@ -1,0 +1,14 @@
+{
+  "notifications": [
+    {
+      "id": "00000000-0000-0000-0000-000000000008",
+      "message_id": "00000000-0000-0000-0000-0000000003e9",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "author_id": null,
+      "message_content": "Fixture",
+      "read": false,
+      "created_at": "2026-10-12T12:00:00Z"
+    }
+  ],
+  "has_more": false
+}

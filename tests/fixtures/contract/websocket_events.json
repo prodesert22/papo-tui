@@ -1,0 +1,111 @@
+[
+  {
+    "type": "message",
+    "id": "00000000-0000-0000-0000-0000000003e9",
+    "channel_id": "00000000-0000-0000-0000-000000000003",
+    "author_id": "00000000-0000-0000-0000-000000000001",
+    "content": "Mensagem sintética 1",
+    "created_at": "2026-10-12T12:00:00Z",
+    "reply_to": null,
+    "attachments": []
+  },
+  {
+    "type": "message_edit",
+    "id": "00000000-0000-0000-0000-0000000003e9",
+    "channel_id": "00000000-0000-0000-0000-000000000003",
+    "content": "Editada",
+    "edited_at": "2026-10-12T12:00:00Z"
+  },
+  {
+    "type": "message_delete",
+    "id": "00000000-0000-0000-0000-0000000003e9",
+    "channel_id": "00000000-0000-0000-0000-000000000003"
+  },
+  {
+    "type": "channel_create",
+    "channel_id": "00000000-0000-0000-0000-000000000003",
+    "name": "fixture-geral",
+    "channel_type": "text",
+    "position": 1,
+    "topic": null
+  },
+  {
+    "type": "channel_update",
+    "channel_id": "00000000-0000-0000-0000-000000000003",
+    "name": "fixture-geral",
+    "position": 1,
+    "topic": null
+  },
+  {
+    "type": "channel_delete",
+    "channel_id": "00000000-0000-0000-0000-000000000003"
+  },
+  {
+    "type": "dm_update",
+    "dm": {
+      "id": "00000000-0000-0000-0000-000000000004",
+      "user": {
+        "id": "00000000-0000-0000-0000-000000000002",
+        "username": "fixture_bob"
+      },
+      "created_at": "2026-10-12T12:00:00Z",
+      "unread_count": 0
+    }
+  },
+  {
+    "type": "new_notification",
+    "id": "00000000-0000-0000-0000-000000000008",
+    "user_id": "00000000-0000-0000-0000-000000000002",
+    "message_id": "00000000-0000-0000-0000-0000000003e9",
+    "message_content": "Fixture"
+  },
+  {
+    "type": "presence_sync",
+    "members": [
+      {
+        "user_id": "00000000-0000-0000-0000-000000000002",
+        "status": "online",
+        "status_message": null,
+        "user_voice": []
+      }
+    ]
+  },
+  {
+    "type": "presence_update",
+    "user_id": "00000000-0000-0000-0000-000000000002",
+    "status": "away",
+    "status_message": null,
+    "typing": null,
+    "nickname": null
+  },
+  {
+    "type": "typing",
+    "channel_id": "00000000-0000-0000-0000-000000000003"
+  },
+  {
+    "type": "typing",
+    "channel_id": "00000000-0000-0000-0000-000000000003",
+    "user_id": "00000000-0000-0000-0000-000000000002",
+    "is_typing": true
+  },
+  {
+    "type": "presence_activity"
+  },
+  {
+    "type": "heartbeat"
+  },
+  {
+    "type": "heartbeat_ack"
+  },
+  {
+    "type": "error",
+    "message": "Erro sintético",
+    "code": "fixture_error"
+  },
+  {
+    "type": "future_event",
+    "payload": {
+      "fixture": true
+    }
+  }
+]

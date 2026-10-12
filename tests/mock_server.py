@@ -9,13 +9,14 @@ class MockServer:
     def __init__(self, scenario="public"):
         self.scenario = scenario
         self.requests = []
+        self.request_times = []
         outer = self
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *_args):
                 pass
 
-            def respond(self, status, body=None, cookie=None):
+            def respond(self, status, body=None, cookie=None, retry_after=None):
                 if status >= 400:
                     body = {"type": "https://papo.invalid/errors/test", "title": "Request rejected", "status": status, **(body or {})}
                 data = json.dumps(body).encode() if body is not None else b""
@@ -24,6 +25,8 @@ class MockServer:
                 self.send_header("Content-Length", str(len(data)))
                 if cookie:
                     self.send_header("Set-Cookie", f"Auth={cookie}; Path=/; HttpOnly; SameSite=Strict")
+                if retry_after is not None:
+                    self.send_header("Retry-After", retry_after)
                 self.end_headers()
                 try:
                     self.wfile.write(data)
@@ -31,8 +34,17 @@ class MockServer:
                     pass
 
             def do_GET(self):
+                outer.request_times.append(time.monotonic())
                 outer.requests.append(("GET", self.path, self.headers.get("Cookie"), None))
                 if self.path.endswith("/server"):
+                    if outer.scenario.startswith("limited") and len(outer.requests) == 1:
+                        if outer.scenario == "limited-date":
+                            from email.utils import formatdate
+                            retry_after = formatdate(time.time() + 2.5, usegmt=True)
+                        else:
+                            retry_after = "1" if outer.scenario == "limited" else "malformed"
+                        self.respond(429, retry_after=retry_after)
+                        return
                     if outer.scenario == "slow":
                         time.sleep(0.6)
                     if outer.scenario == "invalid":
@@ -55,6 +67,7 @@ class MockServer:
                     self.respond(404, {"title": "Not found"})
 
             def do_POST(self):
+                outer.request_times.append(time.monotonic())
                 data = self.rfile.read(int(self.headers.get("Content-Length", 0)))
                 body = json.loads(data) if data else None
                 cookie = self.headers.get("Cookie")
