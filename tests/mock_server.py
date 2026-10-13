@@ -19,6 +19,7 @@ class MockServer:
         self.name = "Comunidade"
         self.redirect_url = "/different"
         self.requests = []
+        self.api_handler = None  # Optional read-only R5 fixture routes.
         self.request_times = []
         self.ws_controls = []
         self.ws_messages = []
@@ -56,6 +57,11 @@ class MockServer:
             def do_GET(self):
                 outer.request_times.append(time.monotonic())
                 outer.requests.append(("GET", self.path, self.headers.get("Cookie"), None))
+                if outer.api_handler:
+                    response = outer.api_handler("GET", self.path, None)
+                    if response is not None:
+                        self.respond(*response)
+                        return
                 if self.path.endswith("/ws"):
                     self.serve_websocket()
                 elif self.path.endswith("/health"):
@@ -112,6 +118,11 @@ class MockServer:
                 body = json.loads(data) if data else None
                 cookie = self.headers.get("Cookie")
                 outer.requests.append(("POST", self.path, cookie, body))
+                if outer.api_handler:
+                    response = outer.api_handler("POST", self.path, body)
+                    if response is not None:
+                        self.respond(*response)
+                        return
                 if self.path.endswith("/auth/login_server"):
                     if body == {"server_password": "Server!123"}:
                         self.respond(204, cookie="temporary-fixture")

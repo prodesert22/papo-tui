@@ -42,6 +42,9 @@ void text_draw(WINDOW *window, const text_buffer *buffer, const text_layout *lay
 void text_click(text_buffer *buffer, int width, int row, int column);
 void text_keep_cursor(text_buffer *buffer, const text_layout *layout, int height);
 bool text_decode(text_buffer *buffer, const char *utf8);
+/* Decode one bounded segment of a long read-only field, sanitizing controls.
+ * Advances input without splitting a grapheme at the segment boundary. */
+bool text_decode_chunk(text_buffer *buffer, const char **utf8);
 bool text_encode(const text_buffer *buffer, char output[TEXT_UTF8_BYTES]);
 int text_label(WINDOW *window, int y, int x, int width, const char *utf8);
 

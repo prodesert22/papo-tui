@@ -2,6 +2,7 @@
 #include "ui/profiles.h"
 #include "ui/text.h"
 #include "ui/theme.h"
+#include "ui/button.h"
 #include "net/auth.h"
 #include "net/rate_limit.h"
 
@@ -123,8 +124,8 @@ static void draw_tabs(profile_ui *ui)
     for (int i = 0; i < 2; ++i) {
         int width = (int)strlen(titles[i]);
         bool current = i == ui->top_tab;
-        int color = current ? (ui->focus == TAB_AREA && !ui->dialog_type ? PROFILE_BUTTON_FOCUS : PROFILE_BUTTON_SELECTED) : PROFILE_TEXT;
-        label(ui->window, 2, x, width, color, titles[i]);
+        button_state state = current ? (ui->focus == TAB_AREA && !ui->dialog_type ? BUTTON_FOCUSED : BUTTON_SELECTED) : BUTTON_NORMAL;
+        button_draw(ui->window, 2, x, width, titles[i], state, BUTTON_CANVAS);
         ui->top_tabs[i] = (hit){2, x, width, i};
         x += width + 2;
     }
@@ -208,11 +209,13 @@ static void draw_dialog(profile_ui *ui)
     ui->buttons[0] = (hit){8, 2, 12, 0};
     ui->buttons[1] = (hit){8, 17, 12, 1};
     ui->buttons[2] = (hit){8, 29, 8, 2};
-    label(ui->dialog, 8, 2, 12, ui->field == 2 && !ui->button ? PROFILE_BUTTON_FOCUS : PROFILE_PANEL, "[Cancelar]");
-    label(ui->dialog, 8, 17, 12, ui->field == 2 && ui->button == 1 ? PROFILE_BUTTON_FOCUS : PROFILE_PANEL,
-          ui->dialog_type == REMOVE_DIALOG ? "[Remover]" : "[Salvar]");
+    button_draw(ui->dialog, 8, 2, 12, "[Cancelar]",
+                ui->field == 2 && !ui->button ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
+    button_draw(ui->dialog, 8, 17, 12, ui->dialog_type == REMOVE_DIALOG ? "[Remover]" : "[Salvar]",
+                ui->field == 2 && ui->button == 1 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     if (ui->dialog_type == RATE_DIALOG)
-        label(ui->dialog, 8, 29, 8, ui->field == 2 && ui->button == 2 ? PROFILE_BUTTON_FOCUS : PROFILE_PANEL, "[Padrão]");
+        button_draw(ui->dialog, 8, 29, 8, "[Padrão]",
+                    ui->field == 2 && ui->button == 2 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     label(ui->dialog, 9, 2, ui->dialog_width - 4, ui->config->writable ? PANEL_MUTED : ERROR, ui->config->message);
     label(ui->dialog, 10, 2, ui->dialog_width - 4, PANEL_MUTED, "Tab: foco · Enter: confirmar · Esc: cancelar");
     if ((ui->dialog_type == EDIT_DIALOG || ui->dialog_type == RATE_DIALOG) && ui->field < 2) {
@@ -272,7 +275,8 @@ static void draw_chooser(profile_ui *ui)
     for (int i = 0; i < 3; ++i) {
         int width = (int)strlen(buttons[i]);
         if (column + width >= ui->width - 1) { ++row; column = 2; }
-        label(ui->window, row, column, width, ui->focus == actions[i] ? PROFILE_BUTTON_FOCUS : PROFILE_PANEL, buttons[i]);
+        button_draw(ui->window, row, column, width, buttons[i],
+                    ui->focus == actions[i] ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
         ui->actions[ui->action_count++] = (hit){row, column, width, actions[i]};
         column += width + 2;
     }
@@ -314,7 +318,8 @@ static void draw(profile_ui *ui)
     for (int i = 0; profile && i < ACTION_COUNT; ++i) {
         int width = (int)strlen(buttons[i]);
         if (column + width >= COLS - 1) { column = 2; ++row; }
-        label(ui->window, row, column, width, ui->focus == i + SELECT && !ui->dialog_type ? PROFILE_BUTTON_FOCUS : PROFILE_TEXT, buttons[i]);
+        button_draw(ui->window, row, column, width, buttons[i],
+                    ui->focus == i + SELECT && !ui->dialog_type ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_CANVAS);
         ui->actions[ui->action_count++] = (hit){row, column, width, i + SELECT};
         column += width + 2;
     }

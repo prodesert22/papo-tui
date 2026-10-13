@@ -28,6 +28,25 @@ class ObservedScreen(pyte.Screen):
         if not self.cursor.hidden:
             self.visible_cursor_rows.append(self.cursor.y)
 
+    def scroll_up(self, count=1):
+        saved_y = self.cursor.y
+        self.cursor.y = self.margins.bottom if self.margins else self.lines - 1
+        for _ in range(min(count or 1, self.lines)): self.index()
+        self.cursor.y = saved_y
+
+    def scroll_down(self, count=1):
+        saved_y = self.cursor.y
+        self.cursor.y = self.margins.top if self.margins else 0
+        for _ in range(min(count or 1, self.lines)): self.reverse_index()
+        self.cursor.y = saved_y
+
+
+class TerminalStream(pyte.ByteStream):
+    # ncurses uses SU/SD within DECSTBM when reflowing history. pyte's default
+    # parser omits these standard controls; ignoring them loses visible lines.
+    csi = dict(pyte.Stream.csi, S='scroll_up', T='scroll_down')
+    events = pyte.Stream.events | {'scroll_up', 'scroll_down'}
+
 
 class Terminal:
     def __init__(self, arguments=(), *, terminal_type="xterm-256color", environment=None, allow_local_http=True):
@@ -45,7 +64,7 @@ class Terminal:
                                         env=env, start_new_session=True)
         self.output = bytearray()
         self.screen = ObservedScreen(80, 24)
-        self.stream = pyte.ByteStream(self.screen)
+        self.stream = TerminalStream(self.screen)
         self.read(0.15)
 
     def read(self, seconds=0.1):
@@ -77,6 +96,22 @@ class Terminal:
     def click(self, row, column):
         # SGR mouse reports, parsed by ncurses rather than by application code.
         self.send(f"\x1b[<0;{column + 1};{row + 1}M\x1b[<0;{column + 1};{row + 1}m")
+
+    def return_to_account(self):
+        """Explicitly return with F6 for tests of account-only controls."""
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            display = '\n'.join(self.screen.display)
+            if '[+ Adicionar]' in display and ('F6: conta' in display or '[Conversa]' in display):
+                self.send('\x1b[17~')
+                deadline = time.monotonic() + 5
+                while '[Canais / F6]' not in '\n'.join(self.screen.display) and time.monotonic() < deadline:
+                    self.read(0.03)
+                if '[Canais / F6]' not in '\n'.join(self.screen.display):
+                    raise AssertionError('F6 did not return to the account screen')
+                return
+            self.read(0.03)
+        raise AssertionError('Expected an authenticated account or channel screen')
 
     def close(self, signal_number=None, exit_key="\x11"):
         if self.process.poll() is None:
@@ -159,6 +194,7 @@ class TerminalTests(unittest.TestCase):
                 terminal.resize(16, 40)
                 terminal.resize(30, 100)
                 terminal.send("\t\n")
+                terminal.return_to_account()
                 terminal.wait_text("Login realizado")
                 self.assertEqual(server.requests[2][3], {"username": "josé", "password": "Synthetic!123"})
                 self.assertNotIn(b"Synthetic!123", terminal.output)
@@ -178,6 +214,7 @@ class TerminalTests(unittest.TestCase):
                 terminal.send("\x1b[200~Synthetic!123\n\x1b[201~")
                 self.assertEqual(server.requests, [])
                 terminal.send("\n")
+                terminal.return_to_account()
                 terminal.wait_text("Login realizado")
                 self.assertNotIn(b"Synthetic!123", terminal.output)
             finally:
@@ -239,6 +276,7 @@ class TerminalTests(unittest.TestCase):
                     self.assertEqual(terminal.screen.cursor.y, 6 + 3 * index)
                     self.assertTrue(all(row == 6 + 3 * index for row in terminal.screen.visible_cursor_rows))
                 terminal.send("\n")
+                terminal.return_to_account()
                 terminal.wait_text("Login realizado")
                 self.assertEqual(server.requests[1][3], {"server_password": "Server!123"})
                 self.assertEqual(server.requests[2][3], {"username": "josé", "password": "Synthetic!123"})
@@ -257,6 +295,7 @@ class TerminalTests(unittest.TestCase):
                     terminal.send("\x7f" * 16)
                     self.assertEqual((terminal.screen.cursor.y, terminal.screen.cursor.x), (9, 12))
                 terminal.send("\tSynthetic!123\n")
+                terminal.return_to_account()
                 terminal.wait_text("Login realizado")
                 self.assertEqual(server.requests[1][3], {"username": "josé", "password": "Synthetic!123"})
             finally:
@@ -274,6 +313,7 @@ class TerminalTests(unittest.TestCase):
                     terminal.send(value)
                     self.assertEqual(terminal.screen.cursor.y, row)
                 terminal.click(21, 24)
+                terminal.return_to_account()
                 terminal.wait_text("Login realizado")
                 self.assertEqual(len(server.requests), 5)
                 terminal.click(21, 24)
@@ -297,6 +337,7 @@ class TerminalTests(unittest.TestCase):
                 self.assertEqual((terminal.screen.cursor.y, terminal.screen.cursor.x), (9, 15))
                 terminal.send("\x7f\tSynthetic!123")
                 terminal.click(18, 14)
+                terminal.return_to_account()
                 terminal.wait_text("Login realizado")
                 self.assertEqual(server.requests[1][3]["username"], "josé")
             finally:

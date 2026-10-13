@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "ui/chat.h"
 #include "ui/theme.h"
+#include "ui/button.h"
 #include "ui/text.h"
 #include "net/clock.h"
 
@@ -248,7 +249,8 @@ static void draw_tabs(chat_ui *ui)
         char label[160];
         snprintf(label, sizeof(label), "%c%s%c", i == ui->server ? '[' : focused ? '>' : ' ',
                  i == SERVERS ? "+ Adicionar" : servers[i].name, i == ui->server ? ']' : focused ? '<' : ' ');
-        int painted = put_text(ui->tabs, 0, x, size, label);
+        int painted = i == SERVERS ? button_draw(ui->tabs, 0, x, size, label,
+                      focused ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL) : put_text(ui->tabs, 0, x, size, label);
         ui->tab_hits[i] = (click_range){x, painted};
         x += size;
     }
@@ -577,15 +579,14 @@ static void draw_modal(chat_ui *ui)
         put_text(window, 2, 2, ui->modal_width - 4, "Esta tela usa servidores simulados.");
         put_text(window, 4, 2, ui->modal_width - 4, "Cadastro de URLs será entregue em R3.");
         put_text(window, 6, 2, ui->modal_width - 4, "Nenhuma credencial é usada aqui.");
-        wattrset(window, COLOR_PAIR(PANEL_ACCENT));
-        put_text(window, ui->modal_height - 2, 2, ui->modal_width - 4, "[Voltar]");
+        button_draw(window, ui->modal_height - 2, 2, ui->modal_width - 4, "[Voltar]", BUTTON_FOCUSED, BUTTON_PANEL);
     } else {
         put_text(window, 2, 2, ui->modal_width - 4, "Há rascunhos não enviados.");
         put_text(window, 4, 2, ui->modal_width - 4, "Sair descarta todos os dados locais.");
-        wattrset(window, COLOR_PAIR(ui->modal_choice == 0 ? FOCUS_AREA : PANEL));
-        put_text(window, ui->modal_height - 2, 2, 6, "[Sair]");
-        wattrset(window, COLOR_PAIR(ui->modal_choice == 1 ? FOCUS_AREA : PANEL));
-        put_text(window, ui->modal_height - 2, 12, 8, "[Voltar]");
+        button_draw(window, ui->modal_height - 2, 2, 6, "[Sair]",
+                    ui->modal_choice == 0 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
+        button_draw(window, ui->modal_height - 2, 12, 8, "[Voltar]",
+                    ui->modal_choice == 1 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     }
     wnoutrefresh(window);
 }

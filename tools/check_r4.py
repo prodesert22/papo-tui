@@ -75,12 +75,14 @@ def terminal_checks(binary, base, username, password, ca, work, session_count):
             wait('Conta criada')
             checks['tui_real_registration_requires_login'] = 'Confirmar senha' not in '\n'.join(terminal.screen.display)
             terminal.send(password + '\n')
+            terminal.return_to_account()
             wait('Login realizado')
             wait('Tempo real conectado')
             checks['tui_new_account_explicit_login'] = True
             terminal.send('\n')
             wait('Você saiu da conta')
             terminal.send('\x1bOA\x15' + username + '\t' + password + '\n')
+            terminal.return_to_account()
             wait("Login realizado")
             wait("Tempo real conectado")
             checks['tui_real_rest_and_wss'] = True

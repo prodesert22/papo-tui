@@ -38,6 +38,7 @@ struct auth_client {
     char *api_path;
     char *refresh_cookie;
     json_t *api_response;
+    json_t *api_body;
     long api_status;
     uint64_t response_generation;
     char *base;
@@ -98,6 +99,8 @@ static void clear_api(auth_client *client)
 {
     free(client->api_path);
     client->api_path = NULL;
+    json_decref(client->api_body);
+    client->api_body = NULL;
     json_decref(client->api_response);
     client->api_response = NULL;
     client->response_ready = client->api_retried = false;
@@ -554,6 +557,44 @@ bool auth_get_json(auth_client *client, const char *path)
 
 bool auth_response_ready(const auth_client *client) { return client->response_ready; }
 
+void auth_cancel_read(auth_client *client)
+{
+    if (!client->api_path && !client->response_ready) return;
+    if (client->operation == AUTH_API_GET && (client->queued || client->attached)) {
+        detach(client);
+        free(client->response); client->response = NULL; client->response_length = 0;
+        client->overflow = false;
+        if (client->authenticated && !client->logout_requested) client->state = AUTH_READY;
+    }
+    clear_api(client);
+}
+
+bool auth_user_summaries(auth_client *client, const json_t *ids)
+{
+    if (!auth_has_session(client) || client->state != AUTH_READY || client->queued || client->attached ||
+        client->api_path || client->response_ready || !json_is_array(ids) ||
+        !json_array_size(ids) || json_array_size(ids) > 1000) return false;
+    size_t index;
+    json_t *id;
+    json_array_foreach(ids, index, id) {
+        const char *value = json_string_value(id);
+        if (!value || json_string_length(id) != 36) return false;
+        for (size_t i = 0; i < 36; ++i)
+            if (i == 8 || i == 13 || i == 18 || i == 23 ? value[i] != '-' :
+                !((value[i] >= '0' && value[i] <= '9') || (value[i] >= 'a' && value[i] <= 'f') ||
+                  (value[i] >= 'A' && value[i] <= 'F'))) return false;
+    }
+    json_t *copy = json_deep_copy(ids);
+    if (!copy) return false;
+    json_t *body = json_pack("{s:o}", "ids", copy);
+    if (!body) return false;
+    client->api_path = strdup("/users/user_summary_batch");
+    if (!client->api_path) { json_decref(body); return false; }
+    client->api_body = body;
+    client->api_retried = false;
+    return request(client, AUTH_API_GET, client->api_path, body, true);
+}
+
 json_t *auth_take_response(auth_client *client, long *status, uint64_t *generation)
 {
     if (!client->response_ready) return NULL;
@@ -591,6 +632,8 @@ static void complete_api(auth_client *client, CURLcode result, long status)
     if (result != CURLE_OK || (!body && status == 200)) status = 0;
     free(client->api_path);
     client->api_path = NULL;
+    json_decref(client->api_body);
+    client->api_body = NULL;
     client->api_retried = false;
     client->api_response = body;
     client->api_status = status;
@@ -766,7 +809,7 @@ static void complete(auth_client *client, CURLcode result, long status)
                 client->recovering = client->after_refresh = false;
                 client->state = AUTH_READY;
                 snprintf(client->message, sizeof(client->message), "Login realizado. Você está conectado.");
-                if (client->api_path) request(client, AUTH_API_GET, client->api_path, NULL, false);
+                if (client->api_path) request(client, AUTH_API_GET, client->api_path, client->api_body, client->api_body != NULL);
                 if (client->ws_requested && ws_get_state(client->websocket) == WS_IDLE)
                     auth_connect_ws(client);
             }
@@ -875,7 +918,8 @@ void auth_destroy(auth_client *client)
 auth_state auth_get_state(const auth_client *client) { return client->state; }
 bool auth_busy(const auth_client *client)
 {
-    return client->state == AUTH_SERVER || client->state == AUTH_SERVER_PASSWORD ||
+    return client->queued || client->attached ||
+           client->state == AUTH_SERVER || client->state == AUTH_SERVER_PASSWORD ||
            client->state == AUTH_LOGIN || client->state == AUTH_WHOAMI || client->state == AUTH_LOGOUT ||
            client->state == AUTH_HEALTH || client->state == AUTH_DISCOVERY_SERVER ||
            client->state == AUTH_REGISTER || client->state == AUTH_REFRESH || client->state == AUTH_API_GET;

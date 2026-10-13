@@ -119,7 +119,7 @@ Se a autorização privada expirar, o campo **Senha do servidor** é limpo, rece
 
 ### Sessão, renovação e saída
 
-Depois de autenticar, a tela mostra a conta, o servidor e o estado da conexão de tempo real. A tela de conversas usa dados locais em **--demo**; canais e mensagens reais serão integrados no próximo marco.
+Depois de autenticar, a lista de canais abre automaticamente em modo de leitura. F6 volta à tela da conta, onde você pode renovar ou sair da sessão e reabrir os canais. **--demo** continua usando dados locais simulados.
 
 A sessão é revalidada por REST a cada 30 segundos. A primeira renovação ocorre até 30 segundos após o login; as seguintes são agendadas antes da expiração informada pelo servidor, com margem de 60 segundos para sessões longas. Validades curtas usam um intervalo menor. **Renovar / Ctrl+R** permite renovar imediatamente. Os campos ficam bloqueados enquanto uma operação aguarda resposta; Esc cancela a operação e encerra a sessão local.
 
@@ -133,7 +133,7 @@ O aplicativo compartilha um limite configurável entre todas as tentativas de co
 
 ## Teclado e mouse
 
-O tema usa fundo quase preto, painéis em cinza escuro e laranja `#ffb347` em títulos, seleções e foco, tanto no login quanto na demonstração. Terminais com paleta fixa usam uma aproximação do tom; marcadores de foco e seleção também permanecem visíveis sem cores.
+O tema usa fundo quase preto, painéis em cinza escuro e laranja `#ffb347` em títulos, seleções e foco, tanto no login quanto na demonstração. Os botões usam texto branco em repouso e laranja quando selecionados ou focados. Terminais com paleta fixa usam uma aproximação do tom; em terminais sem cores, o foco dos botões é indicado por vídeo reverso.
 
 | Controle | Ação |
 | --- | --- |
@@ -157,6 +157,53 @@ No login e no cadastro, os botões de ação ficam na mesma linha: **Entrar / Ca
 Backspace no início do campo mantém o foco. Cliques fora dos controles são ignorados. Durante a conexão, os campos ficam bloqueados. O suporte a mouse depende do terminal.
 
 Redimensionar a janela preserva os campos. Se o terminal ficar menor que o mínimo, amplie-o para continuar. Colagem delimitada pelo terminal não envia o formulário ao encontrar uma quebra de linha.
+
+## Ler canais reais
+
+O layout acompanha a demonstração: abas de servidores no topo, uma linha separadora e uma linha de margem abaixo, lista de canais à esquerda e histórico com área de edição no painel central. **+ Adicionar**, à direita das abas, abre o formulário de login/cadastro. Preencha a URL e as credenciais do outro servidor; depois do login, sua conexão ganha uma aba. Clique numa aba para voltar a uma conexão aberta, sem informar a senha novamente.
+
+Ao abrir a leitura, o foco começa nas abas. Use ←/→ para escolher o servidor ou destacar **+ Adicionar**, e Enter para abrir o formulário. O botão fica branco sem foco e laranja ao selecionar, quando aparece como **>+ Adicionar<**. ↓ entra na lista de canais.
+
+Cada conexão mantém sua própria sessão somente em memória. Há um limite de 64 conexões por execução; entrar novamente na mesma URL substitui a conexão anterior. Ctrl+L sai da conta atual e remove sua aba. Ao fechar o programa, todas as abas e sessões locais são descartadas. Os perfis locais de nome/URL continuam sendo gerenciados por **Selecionar perfil**.
+
+Esc no formulário de adição retorna ao servidor anterior, quando sua sessão ainda está válida. Se houver uma conexão em andamento, a primeira pressão de Esc cancela a tentativa; pressione novamente para voltar. Login, cadastro e renovação usam os mesmos controles do formulário inicial.
+
+Depois do login, a lista de canais abre automaticamente. F6 volta à tela da conta; use **Canais / F6**, F6 ou Tab e Enter nesse botão para reabrir a leitura. A lista é ordenada pela posição informada pelo servidor, sem inferir subcategorias. Use ↑/↓, PageUp/PageDown e Home/End para destacar um canal; Enter, → ou clique abre-o. Categorias são separadores e não abrem histórico. Canais de voz informam que chamadas ainda não estão disponíveis.
+
+Abrir a lista não lê mensagens. Apenas o canal que você abre tem seu histórico consultado; essa consulta também marca leitura no servidor. `*` ao lado do nome indica uma última mensagem ainda não lida nos dados da lista e desaparece quando o histórico cobre essa mensagem.
+
+| Controle | Ação na leitura |
+| --- | --- |
+| Tab / Shift+Tab em tela ampla | Alternar abas, canais e histórico |
+| Tab / Shift+Tab em tela estreita; Esc | Alternar canais e histórico |
+| ← nos canais; ↑ no primeiro canal | Focar as abas |
+| ← / → nas abas | Trocar de servidor; → na última aba destaca **+ Adicionar** |
+| Enter em **+ Adicionar**; clique no botão | Abrir login/cadastro de outro servidor |
+| ↓ nas abas | Focar os canais |
+| Clique numa aba; clique em `‹` / `›` | Trocar de servidor; mostrar abas fora da faixa visível |
+| ← no histórico | Voltar à lista |
+| ↑ / ↓ no histórico | Rolar uma linha |
+| PageUp / PageDown | Rolar uma página; PageUp no início carrega mensagens anteriores |
+| Home no histórico | Ir ao início da janela carregada |
+| End no histórico | Consultar novamente a página recente e ir ao fim |
+| Ctrl+R | Atualizar o canal aberto ou tentar novamente após uma falha |
+| Enter no histórico | Atualizar ou tentar novamente |
+| Clique em Canais / Conversa | Alternar o painel |
+| Roda do mouse sobre o histórico | Rolar o texto |
+| F6 | Voltar à tela da conta |
+| Ctrl+L | Sair da conta e remover sua aba |
+| Ctrl+P | Abrir seleção de perfil e encerrar a sessão local |
+| Ctrl+Q / Ctrl+C | Fechar o programa |
+
+As páginas chegam em grupos de até 100 mensagens e aparecem em ordem cronológica. Ao alcançar o começo da janela, pressione PageUp para carregar uma página anterior. A mensagem e o trecho que estavam no topo continuam no mesmo lugar, inclusive após redimensionar o terminal. Use Home depois do carregamento para ver o novo início. End volta à página recente.
+
+A tela mostra tópico, timestamps, autor ou **Autor indisponível**, indicação e data de edição, texto ausente e resposta cuja mensagem não está na janela atual. Anexos mostram nome, tipo, tamanho e moderação; embeds mostram seus textos e referências de mídia. URLs são apenas texto e não são abertas. A área de edição exibe **Somente leitura** e ainda não aceita envio. Atualize para consultar novas mensagens.
+
+A janela guarda até 1.000 mensagens ou 4 MiB de JSON serializado. Carregar páginas antigas além desse limite libera mensagens recentes; End consulta-as novamente. Não há histórico salvo no disco. Trocar de canal ou servidor libera a janela anterior; voltar exige abrir um canal para uma nova consulta. F6 descarta a janela ao voltar à conta.
+
+Uma falha de página antiga preserva as mensagens já carregadas e o ponto de leitura. Ctrl+R tenta novamente a consulta que falhou. HTTP 429 aguarda o cooldown global e exige nova tentativa manual; nenhuma leitura fica repetindo automaticamente após erro. Canais sem mensagens, sem permissão ou removidos têm uma mensagem própria.
+
+Use ao menos 44 colunas e 14 linhas. Na altura mínima, o tópico fica oculto para preservar espaço de leitura. A partir de 80 colunas, lista e histórico aparecem juntos; em telas estreitas, os controles de foco alternam o painel visível. Ao voltar ao formulário da conta, amplie para 44×22. Colagem delimitada é ignorada na tela de leitura e não aciona controles.
 
 ## Demonstração do layout de conversas
 

@@ -2,7 +2,7 @@
 
 Cliente de conversas para terminal, em C, para conectar-se a instâncias independentes do Papo por URL.
 
-O aplicativo oferece login, cadastro de conta, renovação de sessão e perfis locais com nome e URL. Login e cadastro usam URL do servidor, usuário, senha e senha do servidor. A tela organiza cabeçalho, formulário e estado/controles em três áreas. O aplicativo consulta a instância, autoriza o acesso privado quando necessário, autentica a conta e confirma a sessão. As senhas são ocultas e os cookies ficam somente em memória.
+O aplicativo oferece login, cadastro de conta, renovação de sessão, perfis locais com nome e URL e leitura de canais com histórico paginado. Login e cadastro usam URL do servidor, usuário, senha e senha do servidor. A tela organiza cabeçalho, formulário e estado/controles em três áreas. O aplicativo consulta a instância, autoriza o acesso privado quando necessário, autentica a conta e confirma a sessão. As senhas são ocultas e os cookies ficam somente em memória.
 
 ## Compilar e executar
 
@@ -42,7 +42,7 @@ O editor aceita várias linhas e mantém rascunhos por servidor e conversa, com 
 
 F1 abre a ajuda e Ctrl+K filtra servidores, canais e DMs por nome. PageUp/PageDown ou a roda do mouse rolam o histórico; Home/End com foco no histórico vão ao início/fim. F2 simula a chegada de uma mensagem sem deslocar a leitura quando você estiver vendo mensagens anteriores; o indicador de novas mensagens permite voltar ao fim. Cada conversa aceita até 32 mensagens locais, somando envio e chegada simulada.
 
-Há exemplos de canal vazio, carregamento e erro recuperável: na primeira instância, **ajuda**, **ideias** e **eventos**, respectivamente. No erro, Ctrl+R, Enter com foco no histórico ou clique em **Tentar novamente** repetem o carregamento simulado. Ctrl+Q abre uma confirmação quando há rascunhos; Ctrl+C fecha diretamente. Os dados são descartados ao sair. O cadastro de perfis reais fica no login; a integração de mensagens com o backend permanece nas próximas entregas.
+Há exemplos de canal vazio, carregamento e erro recuperável: na primeira instância, **ajuda**, **ideias** e **eventos**, respectivamente. No erro, Ctrl+R, Enter com foco no histórico ou clique em **Tentar novamente** repetem o carregamento simulado. Ctrl+Q abre uma confirmação quando há rascunhos; Ctrl+C fecha diretamente. Os dados são descartados ao sair. O cadastro de perfis reais fica no login; a leitura de canais reais fica disponível após o login; o envio e a atualização automática de mensagens permanecem nas próximas entregas.
 
 Use um terminal UTF-8, com pelo menos 44 colunas e 22 linhas disponíveis ao aplicativo. No tmux, reserve também as linhas da barra de status. Para compilar somente o aplicativo, use `-DBUILD_TESTING=OFF` na configuração do CMake. `--help` e `--version` funcionam fora de um terminal interativo.
 
@@ -92,7 +92,7 @@ A senha do servidor é obrigatória quando a instância se identifica como priva
 
 Se faltar a senha do servidor numa instância privada, o campo **Senha do servidor** recebe uma borda vermelha e o foco para você digitar. A senha rejeitada pelo servidor também direciona o foco a esse campo e é apagada para uma nova tentativa. O destaque sai quando você começa a corrigir o campo; confirme com Enter para tentar novamente.
 
-Depois de autenticar, a tela apresenta a conta, a instância e o estado da conexão de tempo real, e permite **Sair da conta**. O aplicativo abre um WebSocket autenticado com os cookies dessa sessão e recebe eventos em memória. A interface de conversas será construída nos próximos marcos. Login e senha não são persistidos pelo aplicativo.
+Depois de autenticar, a lista de canais abre automaticamente. Escolha um canal para ler suas mensagens. O aplicativo abre um WebSocket autenticado com os cookies dessa sessão e recebe eventos em memória. F6 volta à tela da conta, onde você pode renovar ou sair da sessão; **Canais / F6** reabre a leitura. Login e senha não são persistidos pelo aplicativo.
 
 **Cadastro / Ctrl+N** alterna entre login e criação de conta, preservando URL e usuário e limpando as senhas. O cadastro exige usuário com pelo menos 3 caracteres e senha com pelo menos 8 caracteres, uma letra maiúscula e um caractere especial; a instância pode impor limites adicionais. Repita a senha em **Confirmar senha**. Senhas diferentes ou confirmação vazia bloqueiam o envio e focam a confirmação. Senha curta, sem maiúscula ou sem caractere especial recebe uma mensagem específica e foco para correção. Em uma instância privada, informe também a senha do servidor. Depois de criar a conta, digite novamente a senha e confirme **Entrar**: cadastro não faz login automático. Usuário já existente recebe foco para correção; falhas de política exibem uma mensagem sem revelar detalhes remotos.
 
@@ -141,7 +141,9 @@ Consulte [instalação e uso](docs/uso.md) para os requisitos, execução, conex
 
 ```text
 src/main.c       Entrada e ciclo de vida
-src/ui/          Login, perfis, conversas simuladas, tema e edição Unicode
+src/app/         Conexões abertas por instância
+src/ui/          Login, perfis, leitura real, demonstração, tema e edição Unicode
+src/model/       Canais, histórico paginado e autores
 src/config/      Perfis públicos e persistência XDG
 src/net/         Estado de autenticação e transporte HTTP
 tests/           Backend simulado e testes em pseudoterminal
@@ -168,7 +170,24 @@ As ferramentas em `tools/` auxiliam a validação do contrato durante o desenvol
 - [x] R2: interface navegável com dados simulados em `--demo`, editor multilinha, mouse e ajuda.
 - [x] R3: perfis XDG, descoberta por URL, isolamento de contextos e preferências de taxa/burst, com validação automatizada e demonstração no backend real.
 - [x] R4: cadastro, login público/privado, renovação serializada, revogação e logout, com identidade REST/WS e cookies somente em memória.
-- [ ] Interface de conversas integrada ao backend.
+- [x] R5: canais ordenados, tópicos, histórico paginado, autores e metadados em modo de leitura.
+- [ ] Envio e atualização automática de conversas pelo backend.
+
+## Ler canais e histórico
+
+Após entrar, a lista de canais abre automaticamente. F6 volta à tela da conta; o botão **Canais / F6** e a tecla F6 permitem reabrir a leitura. Escolha um canal com ↑/↓ e abra com Enter, → ou clique. Categorias são separadores; canais de voz mostram que chamadas ainda não estão disponíveis. A leitura usa apenas o canal aberto, e consultar seu histórico também marca leitura no servidor. `*` indica uma última mensagem ainda não lida nos dados consultados.
+
+A tela segue o layout da demonstração: abas de servidores no topo, com linha separadora e uma linha de margem abaixo, canais à esquerda, histórico e área de edição no painel central. **+ Adicionar**, à direita das abas, abre o formulário de login/cadastro de outro servidor. Depois do login, a nova conexão aparece em uma aba; clique nas abas para trocar de servidor. As sessões ficam separadas e abertas somente nesta execução, até o limite de 64 conexões. Entrar novamente na mesma URL substitui sua conexão anterior. Esc no formulário de adição volta ao servidor anterior; se houver uma conexão em andamento, Esc primeiro a cancela.
+
+No histórico, ↑/↓ e PageUp/PageDown rolam o texto. Home vai ao início da janela carregada; pressione PageUp nesse ponto para buscar a página anterior sem deslocar a mensagem que está lendo. End consulta novamente a página recente. Ctrl+R atualiza o canal aberto ou repete a consulta que falhou; uma falha ao buscar mensagens antigas mantém a janela atual para nova tentativa.
+
+Ao abrir a leitura, o foco começa nas abas. Use ←/→ para escolher o servidor ou destacar **+ Adicionar**, e Enter para abrir o formulário. O botão fica branco sem foco e laranja ao selecionar, quando aparece como **>+ Adicionar<**. ↓ entra na lista de canais.
+
+Em tela ampla, Tab/Shift+Tab alternam entre abas, canais e histórico. ← nos canais, ou ↑ no primeiro canal, volta às abas; ←/→ nas abas trocam de servidor e Enter em **+ Adicionar** abre o formulário. ↓ nas abas foca os canais. Esc alterna canais/histórico. Abaixo de 80 colunas, Tab/Shift+Tab e os controles **Canais / Conversa** alternam o painel visível. F6 volta à conta, Ctrl+L sai da conta e remove sua aba, Ctrl+P abre a seleção de perfil encerrando a sessão local atual, e Ctrl+Q/Ctrl+C fecha o programa. O mínimo dessa tela é 44×14; para abrir o formulário, amplie para 44×22.
+
+Mensagens aparecem em ordem cronológica, com data, autor, indicação de edição e referências de resposta. Anexos e embeds mostram metadados em texto, sem abrir URLs ou baixar mídia. Autores ausentes têm um rótulo de indisponibilidade. A área de edição exibe **Somente leitura**; o envio permanece indisponível. Novas mensagens aparecem quando você atualiza a página recente.
+
+A janela em memória contém até 1.000 mensagens ou 4 MiB de JSON serializado. Ao carregar páginas antigas além desse limite, libera mensagens recentes; End volta a consultá-las. Trocar de canal ou servidor descarta seu histórico local. As abas, sessões e mensagens não são salvas no disco, e abrir a lista de canais não consulta seus históricos em segundo plano.
 
 ## Testes
 
@@ -182,7 +201,7 @@ ctest --test-dir build --output-on-failure
 
 Os testes usam credenciais sintéticas e servidores HTTP/WS locais. Cobrem acesso público/privado, cookies, logout, erros, limites de entrada/resposta/fila, cancelamento, URLs com prefixo, senhas ocultas, espaços em senhas, redimensionamento, Backspace repetido, cliques e restauração do terminal. pyte reconstrói a tela para verificar a posição do cursor. A suíte WS inclui fragmentação dentro de UTF-8, chunks, ping/pong intercalado, encerramento, timeouts, sessão revogada com ACK e WSS com CA/hostname verificados. Essas dependências Python são usadas somente nos testes; os mocks não comprovam integração com a instância real.
 
-As suítes `unicode-editor` e `chat-terminal` exercitam a demonstração local: grafemas, largura em células, cursor nas linhas quebradas, colagem multilinha e fragmentada, limites, mouse, atalhos, modais, estados vazio/carregando/erro, isolamento de rascunhos, preservação da leitura, resize e saída. Também conferem os indicadores de foco e erro em terminal sem cores.
+As suítes `unicode-editor` e `chat-terminal` exercitam a demonstração local: grafemas, largura em células, cursor nas linhas quebradas, colagem multilinha e fragmentada, limites, mouse, atalhos, modais, estados vazio/carregando/erro, isolamento de rascunhos, preservação da leitura, resize e saída. Também conferem os indicadores de foco e erro em terminal sem cores. `history-terminal` verifica a leitura real com backend simulado, abertura automática, paginação, abas, login/cadastro pelo botão de adição, cancelamento, erros e isolamento entre sessões.
 
 As suítes `instance-profiles` e `profiles-terminal` verificam cadastro, IDs estáveis, remoção confirmada, reinício, migração da configuração, permissões, arquivos inválidos, links, concorrência, URLs, descoberta pública/privada, DNS, timeout, TLS, redirecionamento, cookies por contexto e descarte de respostas atrasadas. Cobrem seleção pelo login, navegação, cores, terminal sem cores, senha do servidor com foco/erro, limites configuráveis e resposta da interface durante a espera. `request-rate-limit` verifica também taxa fracionária, mudança de burst e preservação de cooldown.
 
@@ -205,6 +224,17 @@ build/test-env/bin/python -m tools.check_r4 --backend-binary /caminho/papo-serve
 ```
 
 Essa ferramenta cria contas sintéticas somente na cópia temporária, exercita cadastro/login público e privado, REST/WSS, renovação, logout, revogação, banimento, confirmação de senha no cadastro e reinício da TUI. O banco de origem é apenas lido; contas, banco, processos, configuração e chaves TLS temporários são removidos ao terminar. `--postgres-container` escolhe outro container. O relatório contém verificações sem credenciais em `build/r4/validation/summary.json`.
+
+As suítes `history-integration` e `history-terminal` verificam paginação com datas iguais, merge por ID, nomes de autores, campos nulos, erros, descarte de respostas atrasadas, isolamento de instâncias, limite de memória, âncora de leitura, redimensionamento e sanitização de texto remoto.
+
+Para demonstrar R5 com o backend real numa cópia temporária do banco:
+
+```sh
+go build -o build/integration/tls-proxy tools/tls_proxy.go
+build/test-env/bin/python -m tools.check_r5 --backend-binary /caminho/papo-server --tls-proxy build/integration/tls-proxy
+```
+
+A ferramenta cria contas e 250 mensagens somente no banco temporário, testa três páginas com timestamps iguais, retorno ao recente, nomes de autores, permissões, leitura remota e a TUI via HTTPS. O proxy aplica um atraso controlado de 600 ms às respostas de histórico para exercitar troca de canal durante uma consulta. O banco de origem é apenas lido; contas, mensagens, banco, processos e chaves temporários são removidos ao terminar. Evidências sem credenciais ficam em `build/r5/validation/backend.json`.
 
 A suíte `api-contract` valida 51 fixtures REST e 17 exemplos WS, cursor composto com timestamps iguais, limites de lote, YAML 1.2, isolamento de cookies e relatórios sem segredos. Regerar o inventário local e os exemplos após uma mudança no contrato:
 

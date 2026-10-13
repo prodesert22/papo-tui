@@ -268,12 +268,44 @@ bool text_encode(const text_buffer *buffer, char output[TEXT_UTF8_BYTES])
     return true;
 }
 
+bool text_decode_chunk(text_buffer *buffer, const char **utf8)
+{
+    text_clear(buffer);
+    const char *positions[TEXT_LIMIT + 1];
+    const char *p = *utf8;
+    mbstate_t state = {0};
+    while (*p && buffer->length < TEXT_LIMIT) {
+        const char *start = p;
+        wchar_t character;
+        size_t length = mbrtowc(&character, p, MB_CUR_MAX, &state);
+        if (!length || length == (size_t)-1 || length == (size_t)-2) return false;
+        p += length;
+        if (character == '\t') character = ' ';
+        if (character == '\r') continue;
+        if (character != '\n' && !allowed((wint_t)character)) continue;
+        positions[buffer->length] = start;
+        buffer->data[buffer->length++] = (utf32_t)character;
+    }
+    if (*p && buffer->length == TEXT_LIMIT) {
+        char breaks[TEXT_LIMIT];
+        boundaries(buffer, breaks);
+        size_t cut = previous(buffer->length, breaks);
+        if (cut) { p = positions[cut]; buffer->length = cut; }
+        /* A single cluster exceeding the segment capacity uses the existing
+         * placeholder rendering; consume it in bounded pieces. */
+    }
+    buffer->data[buffer->length] = 0;
+    buffer->cursor = buffer->length;
+    *utf8 = p;
+    return true;
+}
+
 int text_label(WINDOW *window, int y, int x, int width, const char *utf8)
 {
     if (width <= 0) return 0;
     text_buffer buffer;
     text_layout layout;
-    if (!text_decode(&buffer, utf8)) return 0;
+    if (!text_decode_chunk(&buffer, &utf8)) return 0;
     text_measure(&buffer, width + 1, &layout);
     int used = 0;
     for (size_t i = 0; i + 1 < layout.count; ++i) {

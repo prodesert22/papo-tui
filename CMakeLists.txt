@@ -31,11 +31,11 @@ if(NOT PAPO_CURL_WS_SUPPORTED)
     message(FATAL_ERROR "libcurl must provide WS/WSS, TLS and asynchronous DNS")
 endif()
 
-add_library(papo_auth src/net/auth.c src/net/session_time.c src/net/rate_limit.c src/net/ws.c src/config/profiles.c)
+add_library(papo_auth src/net/auth.c src/net/session_time.c src/net/rate_limit.c src/net/ws.c src/config/profiles.c src/model/history.c src/app/instances.c)
 target_include_directories(papo_auth PUBLIC src)
 target_link_libraries(papo_auth PUBLIC PkgConfig::CURL PkgConfig::JANSSON)
 
-add_executable(papo-tui src/main.c src/ui/login.c src/ui/chat.c src/ui/profiles.c src/ui/theme.c src/ui/text.c)
+add_executable(papo-tui src/main.c src/ui/login.c src/ui/chat.c src/ui/history.c src/ui/profiles.c src/ui/theme.c src/ui/text.c src/ui/button.c)
 target_link_libraries(papo-tui PRIVATE papo_auth PkgConfig::FORM PkgConfig::NCURSES PkgConfig::UNIBREAK)
 target_compile_definitions(papo-tui PRIVATE PAPO_VERSION="${PROJECT_VERSION}-dev")
 
@@ -51,6 +51,14 @@ include(CTest)
 if(BUILD_TESTING)
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
     find_program(OPENSSL_CLI NAMES openssl REQUIRED)
+    add_executable(history-probe tests/history_probe.c)
+    target_link_libraries(history-probe PRIVATE papo_auth)
+    target_compile_options(history-probe PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_test(NAME history-integration COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_history.py $<TARGET_FILE:history-probe>)
+    add_test(NAME history-terminal COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_history_terminal.py $<TARGET_FILE:papo-tui>)
+    set_tests_properties(history-integration history-terminal PROPERTIES TIMEOUT 120)
     add_executable(session-probe tests/session_probe.c)
     target_link_libraries(session-probe PRIVATE papo_auth)
     target_compile_options(session-probe PRIVATE -Wall -Wextra -Wpedantic -Werror)

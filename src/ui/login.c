@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "ui/login.h"
 #include "ui/theme.h"
+#include "ui/button.h"
 #include "ui/profiles.h"
 #include "net/auth.h"
 
@@ -14,13 +15,15 @@
 #include <unistd.h>
 #include <wchar.h>
 #include <wctype.h>
+#include "ui/history.h"
 
 #define FIELD_COUNT 5
 #define CONFIRM_FIELD 4
 #define LOGIN_FIELD_COUNT 4
 #define EXTRA_FOCUS (FIELD_COUNT + 1)
 #define PROFILE_FOCUS (FIELD_COUNT + 2)
-#define FOCUS_COUNT (FIELD_COUNT + 3)
+#define CHAT_FOCUS (FIELD_COUNT + 3)
+#define FOCUS_COUNT (FIELD_COUNT + 4)
 #define PROFILE_BUTTON "[Selecionar perfil]"
 #define CARD_HEIGHT 22
 #define MIN_COLS 44
@@ -41,6 +44,8 @@ typedef struct {
     int focus;
     int width;
     bool paste;
+    bool open_chat;
+    size_t previous_instance;
     bool profile_active;
     bool allow_local_http;
     bool server_password_error;
@@ -61,6 +66,8 @@ static int field_row(const login_ui *ui, int field)
 static int visible_field_count(const login_ui *ui) { return ui->registering ? FIELD_COUNT : LOGIN_FIELD_COUNT; }
 
 static volatile sig_atomic_t interrupted;
+/* Owned for this invocation of the login/application loop. */
+static instance_connections *connections;
 static void on_signal(int signal_number) { (void)signal_number; interrupted = 1; }
 
 static void erase_text(char *value, size_t length)
@@ -231,9 +238,8 @@ static void draw(login_ui *ui, auth_client *client)
     mvwhline(ui->header, 0, 0, ' ', ui->width - 4);
     wattrset(ui->header, COLOR_PAIR(ACCENT) | A_BOLD);
     mvwaddstr(ui->header, 0, 2, "papo");
-    wattrset(ui->header, COLOR_PAIR(ui->focus == PROFILE_FOCUS ? PROFILE_BUTTON_FOCUS : NORMAL) | A_BOLD |
-             ((!has_colors() && ui->focus == PROFILE_FOCUS) ? A_REVERSE : 0));
-    mvwaddstr(ui->header, 0, ui->width - 6 - (int)strlen(PROFILE_BUTTON), PROFILE_BUTTON);
+    button_draw(ui->header, 0, ui->width - 6 - (int)strlen(PROFILE_BUTTON), (int)strlen(PROFILE_BUTTON),
+                PROFILE_BUTTON, ui->focus == PROFILE_FOCUS ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_CANVAS);
     wattrset(ui->header, COLOR_PAIR(NORMAL));
     mvwhline(ui->header, 1, 2, ' ', ui->width - 8);
     text(ui->header, 1, 2, ui->width - 8, ui->registering ? "Crie sua conta nesta instância" :
@@ -301,14 +307,12 @@ static void draw(login_ui *ui, auth_client *client)
     wattrset(ui->footer, COLOR_PAIR(NORMAL));
     mvwhline(ui->footer, 1, 2, ' ', ui->width - 8);
     const char *button = primary_button(ui, client);
-    wattrset(ui->footer, COLOR_PAIR(ui->focus == FIELD_COUNT ? PROFILE_BUTTON_FOCUS : NORMAL) | A_BOLD |
-             ((!has_colors() && ui->focus == FIELD_COUNT) ? A_REVERSE : 0));
-    mvwaddstr(ui->footer, 1, 2, button);
+    button_draw(ui->footer, 1, 2, ui->width - 8, button,
+                ui->focus == FIELD_COUNT ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_CANVAS);
     if (!busy) {
         int column = 2 + (int)strlen(button) + 2;
-        wattrset(ui->footer, COLOR_PAIR(ui->focus == EXTRA_FOCUS ? PROFILE_BUTTON_FOCUS : NORMAL) | A_BOLD |
-                 ((!has_colors() && ui->focus == EXTRA_FOCUS) ? A_REVERSE : 0));
-        text(ui->footer, 1, column, ui->width - 6 - column, extra_button(ui, client));
+        button_draw(ui->footer, 1, column, ui->width - 6 - column, extra_button(ui, client),
+                    ui->focus == EXTRA_FOCUS ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_CANVAS);
     }
     int status_color = *ui->validation_message || auth_get_state(client) == AUTH_ERROR || auth_ws_state(client) == WS_ERROR ? ERROR :
                        ready || auth_get_state(client) == AUTH_REGISTERED ? SUCCESS : MUTED;
@@ -338,7 +342,11 @@ static void draw(login_ui *ui, auth_client *client)
     while (*remaining == ' ') ++remaining;
     text(ui->footer, 3, 2, ui->width - 8, remaining);
     wattrset(ui->footer, COLOR_PAIR(MUTED));
-    text(ui->footer, 4, 0, ui->width - 4, ui->width >= 64 ?
+    if (ready) {
+        button_draw(ui->footer, 4, 0, 13, "[Canais / F6]",
+                    ui->focus == CHAT_FOCUS ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_CANVAS);
+        text(ui->footer, 4, 13, ui->width - 17, "  Ctrl+R: sessão · Ctrl+P");
+    } else text(ui->footer, 4, 0, ui->width - 4, ui->width >= 64 ?
          "Ctrl+N: cadastro · Ctrl+R: sessão · Ctrl+P: perfis · Ctrl+Q" : "Ctrl+N · Ctrl+R · Ctrl+P · Ctrl+Q");
     if (ui->focus < FIELD_COUNT && !busy && !ready) {
         pos_form_cursor(ui->form);
@@ -371,13 +379,14 @@ static bool focus_available(const login_ui *ui, auth_client *client, int selecte
         return ui->fields[selected] && !auth_busy(client) && !auth_has_session(client) && !(selected == 0 && ui->profile_active);
     if (selected == EXTRA_FOCUS) return !auth_busy(client);
     if (selected == FIELD_COUNT) return !auth_busy(client) || auth_has_session(client);
+    if (selected == CHAT_FOCUS) return auth_has_session(client);
     return selected == PROFILE_FOCUS;
 }
 
 /* Tab follows visual reading order; arrows follow rows and columns. */
 static void focus(login_ui *ui, auth_client *client, int direction)
 {
-    const int order[FOCUS_COUNT] = {0, 1, 2, CONFIRM_FIELD, 3, FIELD_COUNT, EXTRA_FOCUS, PROFILE_FOCUS};
+    const int order[FOCUS_COUNT] = {0, 1, 2, CONFIRM_FIELD, 3, FIELD_COUNT, EXTRA_FOCUS, CHAT_FOCUS, PROFILE_FOCUS};
     int position = 0;
     while (position < FOCUS_COUNT && order[position] != ui->focus) ++position;
     for (int i = 0; i < FOCUS_COUNT; ++i) {
@@ -478,6 +487,10 @@ static bool click(login_ui *ui, auth_client *client)
         return true;
     }
     bool ready = auth_has_session(client);
+    if (ready && y == 20 && x >= 2 && x < 15) {
+        ui->open_chat = true;
+        return true;
+    }
     if (auth_busy(client) && !ready) return false;
     int button_width = (int)strlen(primary_button(ui, client));
     if (y == 17 && x >= 4 && x < 4 + button_width) {
@@ -591,6 +604,7 @@ static int manage_profiles(login_ui *ui, auth_client **client, profile_config **
     if (!*config) return -1;
     /* Remove all transfers, events and cookies before entering another
      * profile context. Recreating the client leaves the global budget intact. */
+    instances_detach(connections, *client);
     auth_destroy(*client);
     *client = NULL;
     destroy_layout(ui);
@@ -628,6 +642,69 @@ static int manage_profiles(login_ui *ui, auth_client **client, profile_config **
     return *client && layout(ui) ? 0 : -1;
 }
 
+/* Returns 0 to the account screen, 1 to exit, or -1 on layout/profile failure. */
+static bool instance_form(login_ui *ui, auth_client *client, const char *url)
+{
+    destroy_layout(ui);
+    erase_text((char *)ui->saved, sizeof(ui->saved));
+    memset(ui->used_columns, 0, sizeof(ui->used_columns));
+    ui->profile_active = ui->registering = ui->mode_changed = ui->server_password_error = false;
+    ui->profile_id[0] = ui->profile_name[0] = ui->validation_message[0] = '\0';
+    ui->session_present = auth_has_session(client);
+    ui->focus = url && *url ? 1 : 0;
+    if (url) {
+        snprintf(ui->saved[0], sizeof(ui->saved[0]), "%s", url);
+        mbstate_t conversion = {0};
+        const char *p = ui->saved[0];
+        while (*p) {
+            wchar_t character;
+            size_t bytes = mbrtowc(&character, p, MB_CUR_MAX, &conversion);
+            if (!bytes || bytes == (size_t)-1 || bytes == (size_t)-2) break;
+            int width = wcwidth(character);
+            if (width > 0) ui->used_columns[0] += width;
+            p += bytes;
+        }
+    }
+    return layout(ui);
+}
+
+static int open_history(login_ui *ui, auth_client **client, profile_config **config)
+{
+    ui->open_chat = false;
+    if (!instances_attach(connections, *client)) return -1;
+    int action;
+    bool focus_tabs = true;
+    for (;;) {
+        size_t selected = SIZE_MAX;
+        action = history_run(*client, connections, &selected, focus_tabs, &interrupted);
+        if (action != HISTORY_SWITCH) break;
+        if (selected >= connections->count) return -1;
+        *client = connections->items[selected].auth;
+        focus_tabs = true;
+        if (!instance_form(ui, *client, connections->items[selected].url)) return -1;
+        if (!auth_has_session(*client) && !auth_busy(*client)) return 0;
+    }
+    if (action == HISTORY_ADD) {
+        if (connections->count == INSTANCE_LIMIT) {
+            snprintf(ui->validation_message, sizeof(ui->validation_message), "Limite de 64 conexões abertas. Saia de uma conta antes de adicionar outra.");
+            return layout(ui) ? 0 : -1;
+        }
+        auth_client *next = auth_create();
+        if (!next) return -1;
+        ui->previous_instance = instances_index(connections, *client);
+        *client = next;
+        return instance_form(ui, next, NULL) ? 0 : -1;
+    }
+    if (!layout(ui)) return -1;
+    if (action == 1) return 1;
+    if (action == 2) {
+        int selected = manage_profiles(ui, client, config, ui->allow_local_http, true);
+        if (selected < 0) return -1;
+        if (selected == 2) return 1;
+    }
+    return 0;
+}
+
 int login_run_profiles(bool open_profiles, bool allow_local_http)
 {
     if (!isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO)) {
@@ -639,12 +716,14 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         fputs("Não foi possível preparar a comunicação com o servidor.\n", stderr);
         return 1;
     }
-    login_ui ui = {0};
+    login_ui ui = {.previous_instance = SIZE_MAX};
+    connections = instances_create();
+    if (!connections) { auth_destroy(client); return 1; }
     ui.allow_local_http = allow_local_http;
     profile_config *config = profiles_create();
-    if (!config) { auth_destroy(client); fputs("Não foi possível carregar os perfis locais.\n", stderr); return 1; }
+    if (!config) { auth_destroy(client); instances_destroy(connections); connections = NULL; fputs("Não foi possível carregar os perfis locais.\n", stderr); return 1; }
     interrupted = 0;
-    if (!initscr()) { auth_destroy(client); profiles_destroy(config); return 1; }
+    if (!initscr()) { auth_destroy(client); instances_destroy(connections); connections = NULL; profiles_destroy(config); return 1; }
     /* raw also disables IXON, so Ctrl+Q reaches the application. */
     raw(); nonl();
     noecho();
@@ -662,6 +741,12 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
     sigaction(SIGTERM, &action, &previous_term);
     define_key("\033[200~", KEY_PASTE_START);
     define_key("\033[201~", KEY_PASTE_END);
+    /* Accept cursor keys from terminals that retain normal cursor mode even
+     * while keypad(stdscr, true) requests application mode. */
+    define_key("\033[A", KEY_UP);
+    define_key("\033[B", KEY_DOWN);
+    define_key("\033[C", KEY_RIGHT);
+    define_key("\033[D", KEY_LEFT);
     fputs("\033[?2004h", stdout);
     fflush(stdout);
     int result = layout(&ui) ? 0 : 1;
@@ -674,16 +759,22 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
     bool redraw = true;
     while (!result && !quit && !interrupted) {
         if (ui.layout_failed) { result = 1; break; }
+        if (instances_poll(connections, client)) redraw = true;
         auth_state before = auth_get_state(client);
+        bool before_busy = auth_busy(client);
         bool before_session = auth_has_session(client);
         ws_state ws_before = auth_ws_state(client);
         auth_poll(client);
-        if (before != auth_get_state(client)) redraw = true;
+        if (before != auth_get_state(client) || before_busy != auth_busy(client)) redraw = true;
         if (before != AUTH_ERROR && auth_get_state(client) == AUTH_ERROR) apply_input_error(&ui, client);
         if (ws_before != auth_ws_state(client)) redraw = true;
         json_t *event;
         while ((event = auth_next_event(client))) json_decref(event);
+        if (auth_response_ready(client)) json_decref(auth_take_response(client, NULL, NULL));
         if (!before_session && auth_has_session(client)) {
+            /* Only a new login opens channels. Returning with F6 or verifying
+             * an existing session after renewal must keep the account view. */
+            if (!ui.session_present) ui.open_chat = true;
             ui.server_password_error = false;
             clear_passwords(&ui);
             ui.focus = FIELD_COUNT;
@@ -699,6 +790,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         }
         if (auth_has_session(client)) ui.session_present = true;
         if (ui.session_present && !auth_has_session(client) && !auth_busy(client)) {
+            if (auth_get_state(client) == AUTH_IDLE) instances_detach(connections, client);
             ui.session_present = false;
             redraw = true;
             clear_passwords(&ui);
@@ -708,6 +800,13 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         if (redraw) {
             draw(&ui, client);
             redraw = false;
+        }
+        if (ui.open_chat && auth_has_session(client) && !ui.paste) {
+            int action = open_history(&ui, &client, &config);
+            if (action < 0) result = 1;
+            else if (action == 1) quit = true;
+            redraw = true;
+            continue;
         }
         wint_t key;
         int type = get_wch(&key);
@@ -721,6 +820,14 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         if (type == KEY_CODE_YES && key == KEY_PASTE_END) { ui.paste = false; continue; }
         bool choose_profile = type == KEY_CODE_YES && key == KEY_MOUSE;
         if (choose_profile && !click(&ui, client)) continue;
+        bool chat_enter = (type == OK && (key == '\n' || key == '\r')) || (type == KEY_CODE_YES && key == KEY_ENTER);
+        if (!ui.paste && auth_has_session(client) && (ui.open_chat ||
+            (type == KEY_CODE_YES && key == KEY_F(6)) || (ui.focus == CHAT_FOCUS && chat_enter))) {
+            int action = open_history(&ui, &client, &config);
+            if (action < 0) result = 1;
+            else if (action == 1) quit = true;
+            continue;
+        }
         if (type == OK && !ui.paste && (key == 17 || key == 3)) break;
         if (type == OK && !ui.paste && ((key == 14 && !auth_has_session(client)) ||
             (key == 18 && auth_has_session(client)))) {
@@ -739,6 +846,14 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         if (!ui.form) continue;
         if (type == OK && !ui.paste && key == 27) {
             if (auth_busy(client)) { auth_cancel(client); clear_passwords(&ui); }
+            else if (!auth_has_session(client) && !instances_contains(connections, client) &&
+                     ui.previous_instance < connections->count &&
+                     auth_has_session(connections->items[ui.previous_instance].auth)) {
+                auth_destroy(client);
+                client = connections->items[ui.previous_instance].auth;
+                if (!instance_form(&ui, client, connections->items[ui.previous_instance].url)) { result = 1; break; }
+                ui.open_chat = true;
+            }
             continue;
         }
         if (!ui.paste && type == OK && key == '\t') {
@@ -790,7 +905,9 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
     endwin();
     sigaction(SIGINT, &previous_int, NULL);
     sigaction(SIGTERM, &previous_term, NULL);
-    auth_destroy(client);
+    if (!instances_contains(connections, client)) auth_destroy(client);
+    instances_destroy(connections);
+    connections = NULL;
     profiles_destroy(config);
     if (result) fputs("Não foi possível criar a tela de login.\n", stderr);
     return result;

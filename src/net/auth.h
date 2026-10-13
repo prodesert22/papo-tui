@@ -55,6 +55,14 @@ bool auth_refresh(auth_client *client);
  * Rejects concurrent submissions; a pending GET may recover one 401. Completed responses are bounded to one owned JSON value.
  * No mutation API or automatic mutation replay is provided. */
 bool auth_get_json(auth_client *client, const char *path);
+/* Read-only POST /users/user_summary_batch. Copies 1..1000 UUID strings;
+ * participates in the same queue/budget and may recover one 401, like GET.
+ * This endpoint has no mutation semantics; no generic POST replay API exists. */
+bool auth_user_summaries(auth_client *client, const json_t *ids);
+/* Discards an external read/result while preserving the verified session and
+ * global budget. An already-started refresh/whoami recovery finishes safely;
+ * its cancelled external read will not be replayed afterward. */
+void auth_cancel_read(auth_client *client);
 /* Readiness is also set for a response without JSON (status 0 on transport
  * failure). Taking clears readiness and transfers a possibly NULL reference;
  * the caller must json_decref(). Generation identifies the verified context.

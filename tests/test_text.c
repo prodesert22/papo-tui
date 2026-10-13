@@ -120,6 +120,20 @@ int main(void)
     text_delete(&buffer, true);
     CHECK(buffer.length == TEXT_LIMIT - 1);
 
+    /* Reading can exceed the editor's capacity and must retain a combining
+     * cluster straddling that boundary, without emitting terminal controls. */
+    char remote[TEXT_LIMIT + 32];
+    memset(remote, 'a', TEXT_LIMIT - 1);
+    strcpy(remote + TEXT_LIMIT - 1, "e\u0301fim\033]52;c;ignored\a");
+    const char *part = remote;
+    CHECK(text_decode_chunk(&buffer, &part));
+    CHECK(buffer.length == TEXT_LIMIT - 1);
+    CHECK(*part == 'e');
+    CHECK(text_decode_chunk(&buffer, &part));
+    CHECK(!*part);
+    CHECK(text_encode(&buffer, output));
+    CHECK(strcmp(output, "e\u0301fim]52;c;ignored") == 0);
+
     puts("Unicode roundtrip, graphemes, cells, wrapping, cursor, controls and limits passed");
     return 0;
 }

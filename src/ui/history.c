@@ -1,0 +1,468 @@
+#define _POSIX_C_SOURCE 200809L
+#include "ui/history.h"
+#include "model/history.h"
+#include "ui/text.h"
+#include "ui/theme.h"
+#include "ui/button.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define PASTE_START (KEY_MAX + 1)
+#define PASTE_END (KEY_MAX + 2)
+#define CONTENT_Y 5
+
+enum { SERVER_TABS, CHANNEL_LIST, HISTORY_PANEL };
+typedef struct { int x, width; } click_range;
+typedef struct {
+    history *model;
+    instance_connections *connections;
+    WINDOW *frame, *tabs, *footer, *list, *body;
+    int width, height, side, visible, first_channel, focus, first, editor_border, history_top;
+    size_t highlighted, active_tab, tab_cursor, first_tab;
+    click_range tab_hits[INSTANCE_LIMIT], add_hit, back_hit, next_hit, channels_hit, conversation_hit;
+    char anchor[37];
+    size_t section, offset;
+    bool at_end, paste, show_channels, layout_failed;
+} view;
+static const char *str(json_t *obj, const char *key)
+{
+    const char *s = json_string_value(json_object_get(obj, key));
+    return s ? s : "";
+}
+static bool line(json_t *out, const char *prefix, const char *value)
+{
+    size_t a = strlen(prefix), b = strlen(value);
+    char *s = malloc(a + b + 1);
+    if (!s) return false;
+    memcpy(s, prefix, a); memcpy(s + a, value, b + 1);
+    json_t *v = json_string(s); free(s);
+    return v && json_array_append_new(out, v) == 0;
+}
+static json_t *presentation(view *ui, json_t *message)
+{
+    json_t *out = json_array();
+    if (!out) return NULL;
+    char header[1200];
+    snprintf(header, sizeof(header), "%s · %s%s", str(message, "created_at"),
+             history_author(ui->model, str(message, "author_id")), *str(message, "edited_at") ? " · editada" : "");
+    if (!line(out, "", header)) goto fail;
+    if (*str(message, "edited_at") && !line(out, "Editada em: ", str(message, "edited_at"))) goto fail;
+    const char *reply = str(message, "reply_to");
+    if (*reply) {
+        json_t *target = NULL;
+        for (size_t i = 0; i < history_message_count(ui->model); ++i) {
+            json_t *m = history_message(ui->model, i);
+            if (!strcmp(reply, str(m, "id"))) { target = m; break; }
+        }
+        if (!line(out, "Resposta: ", target ? str(target, "id") : "mensagem não disponível")) goto fail;
+    }
+    json_t *content = json_object_get(message, "content");
+    if (!line(out, "", json_is_string(content) ? json_string_value(content) : "[Sem conteúdo textual]")) goto fail;
+    size_t i; json_t *item;
+    json_array_foreach(json_object_get(message, "attachments"), i, item) {
+        if (!line(out, "Anexo: ", *str(item, "original_file_name") ? str(item, "original_file_name") : "arquivo sem nome") ||
+            !line(out, "Tipo: ", str(item, "mime_type"))) goto fail;
+        char size[80];
+        snprintf(size, sizeof(size), "%lld bytes", (long long)json_integer_value(json_object_get(item, "size_bytes")));
+        if (!line(out, "Tamanho: ", size) || !line(out, "Moderação: ", str(item, "moderation_status"))) goto fail;
+    }
+    json_array_foreach(json_object_get(message, "embeds"), i, item) {
+        if (!line(out, "Embed: ", *str(item, "title") ? str(item, "title") : "sem título")) goto fail;
+        const char *keys[] = {"description", "url", "provider", "site_name", "source_type", "fetch_method"};
+        const char *labels[] = {"", "URL: ", "Provedor: ", "Site: ", "Origem: ", "Método: "};
+        for (size_t k = 0; k < 6; ++k)
+            if (*str(item, keys[k]) && !line(out, labels[k], str(item, keys[k]))) goto fail;
+        json_t *author = json_object_get(item, "author"), *footer = json_object_get(item, "footer");
+        if (*str(author, "name") && !line(out, "Autor do embed: ", str(author, "name"))) goto fail;
+        if (*str(author, "url") && !line(out, "URL do autor: ", str(author, "url"))) goto fail;
+        if (*str(footer, "text") && !line(out, "Rodapé: ", str(footer, "text"))) goto fail;
+        size_t field_index; json_t *field;
+        json_array_foreach(json_object_get(item, "fields"), field_index, field) {
+            if (field_index >= 25) break;
+            if (!line(out, "Campo: ", str(field, "name")) || !line(out, "", str(field, "value"))) goto fail;
+        }
+        const char *media_keys[] = {"thumbnail", "image", "video"};
+        const char *media_labels[] = {"Miniatura: ", "Imagem: ", "Vídeo: "};
+        for (size_t k = 0; k < 3; ++k) {
+            json_t *media = json_object_get(item, media_keys[k]);
+            if (!json_is_object(media)) continue;
+            if (!line(out, media_labels[k], str(media, "mime_type"))) goto fail;
+            if (*str(media, "url") && !line(out, "URL de mídia: ", str(media, "url"))) goto fail;
+        }
+    }
+    if (!line(out, "", "")) goto fail;
+    return out;
+fail:
+    json_decref(out); return NULL;
+}
+static void destroy_layout(view *ui)
+{
+    if (ui->list) delwin(ui->list);
+    if (ui->body) delwin(ui->body);
+    if (ui->footer) delwin(ui->footer);
+    if (ui->tabs) delwin(ui->tabs);
+    if (ui->frame) delwin(ui->frame);
+    ui->list = ui->body = ui->footer = ui->tabs = ui->frame = NULL;
+}
+static bool layout(view *ui)
+{
+    destroy_layout(ui);
+    erase(); refresh();
+    ui->width = COLS; ui->height = LINES;
+    if (COLS < 44 || LINES < 14) return true;
+    bool wide = COLS >= 80;
+    int rows = LINES - CONTENT_Y - 3;
+    ui->side = wide ? 24 : COLS - 2;
+    ui->editor_border = rows >= 10 ? rows - 5 : rows - 2;
+    ui->history_top = rows >= 8 ? 3 : 2;
+    ui->visible = ui->editor_border - ui->history_top;
+    ui->frame = newwin(LINES, COLS, 0, 0);
+    if (!ui->frame) return false;
+    wbkgd(ui->frame, COLOR_PAIR(NORMAL));
+    ui->tabs = derwin(ui->frame, 2, COLS - 2, 1, 1);
+    ui->footer = derwin(ui->frame, 2, COLS - 2, LINES - 3, 1);
+    if (wide || ui->show_channels) ui->list = derwin(ui->frame, rows, ui->side, CONTENT_Y, 1);
+    if (wide || !ui->show_channels) ui->body = derwin(ui->frame, rows, wide ? COLS - 3 - ui->side : COLS - 2, CONTENT_Y, wide ? ui->side + 2 : 1);
+    bool ok = ui->tabs && ui->footer && (wide ? ui->list && ui->body : ui->list || ui->body);
+    ui->layout_failed = !ok;
+    return ok;
+}
+static bool hit(click_range range, int x)
+{
+    return range.width > 0 && x >= range.x && x < range.x + range.width;
+}
+static int tab_width(view *ui, size_t index, int available)
+{
+    int width = text_label(NULL, 0, 0, 128, ui->connections->items[index].name) + 4;
+    return width > available ? available : width;
+}
+static void draw_tabs(view *ui, auth_client *auth)
+{
+    bool focused = ui->focus == SERVER_TABS;
+    int width = getmaxx(ui->tabs), button_width = 13;
+    ui->add_hit = (click_range){width - button_width, button_width};
+    int available = ui->add_hit.x - 1;
+    wbkgd(ui->tabs, COLOR_PAIR(focused ? FOCUS_AREA : PANEL)); werase(ui->tabs);
+    memset(ui->tab_hits, 0, sizeof(ui->tab_hits));
+    ui->back_hit = ui->next_hit = ui->channels_hit = ui->conversation_hit = (click_range){0};
+    size_t cursor = ui->tab_cursor < ui->connections->count ? ui->tab_cursor : ui->active_tab;
+    if (cursor < ui->first_tab) ui->first_tab = cursor;
+    for (;;) {
+        int needed = ui->first_tab ? 2 : 0;
+        for (size_t i = ui->first_tab; i <= cursor; ++i) needed += tab_width(ui, i, available - 4);
+        if (needed <= available - 2 || ui->first_tab == cursor) break;
+        ++ui->first_tab;
+    }
+    int x = ui->first_tab ? 2 : 0;
+    if (ui->first_tab) {
+        wattrset(ui->tabs, COLOR_PAIR(PANEL_ACCENT));
+        text_label(ui->tabs, 0, 0, 1, "‹"); ui->back_hit = (click_range){0, 1};
+    }
+    for (size_t i = ui->first_tab; i < ui->connections->count; ++i) {
+        int size = tab_width(ui, i, available - 4);
+        if (x + size > available - 2) {
+            wattrset(ui->tabs, COLOR_PAIR(PANEL_ACCENT));
+            text_label(ui->tabs, 0, available - 1, 1, "›"); ui->next_hit = (click_range){available - 1, 1}; break;
+        }
+        bool selected = i == ui->active_tab, active = focused && i == ui->tab_cursor;
+        wattrset(ui->tabs, COLOR_PAIR(active ? FOCUSED : selected ? PANEL_ACTIVE : PANEL_MUTED) | (selected || active ? A_BOLD : A_NORMAL));
+        char label[160];
+        snprintf(label, sizeof(label), "%c%s%c", selected ? '[' : active ? '>' : ' ', ui->connections->items[i].name, selected ? ']' : active ? '<' : ' ');
+        ui->tab_hits[i] = (click_range){x, text_label(ui->tabs, 0, x, size, label)};
+        x += size;
+    }
+    bool adding = focused && ui->tab_cursor == ui->connections->count;
+    button_draw(ui->tabs, 0, ui->add_hit.x, ui->add_hit.width, adding ? ">+ Adicionar<" : "[+ Adicionar]",
+                adding ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
+    const char *areas[] = {"Abas", "Canais", "Histórico"};
+    char summary[1200];
+    snprintf(summary, sizeof(summary), "%s · Foco: %s · F6: conta", auth_username(auth), areas[ui->focus]);
+    wattrset(ui->tabs, COLOR_PAIR(focused ? FOCUS_MUTED : PANEL_MUTED));
+    if (COLS < 80) {
+        text_label(ui->tabs, 1, 0, width - 20, summary);
+        ui->channels_hit = (click_range){width - 19, 8}; ui->conversation_hit = (click_range){width - 10, 10};
+        wattrset(ui->tabs, COLOR_PAIR(ui->show_channels ? PANEL_ACCENT : PANEL_MUTED));
+        text_label(ui->tabs, 1, ui->channels_hit.x, 8, "[Canais]");
+        wattrset(ui->tabs, COLOR_PAIR(ui->show_channels ? PANEL_MUTED : PANEL_ACCENT));
+        text_label(ui->tabs, 1, ui->conversation_hit.x, 10, "[Conversa]");
+    } else text_label(ui->tabs, 1, 0, width, summary);
+}
+/* Walk segments with a stable UUID/section/Unicode-offset anchor. Reflow after
+ * resize maps the offset back to its new row; prepending pages adds no drift. */
+static int walk(view *ui, int first, bool paint, bool save, int *anchor)
+{
+    int total = 0, width = ui->body ? getmaxx(ui->body) - 4 : ui->width - 4;
+    *anchor = 0;
+    for (size_t i = 0; i < history_message_count(ui->model); ++i) {
+        json_t *m = history_message(ui->model, i), *sections = presentation(ui, m);
+        if (!sections) continue;
+        size_t section; json_t *field;
+        json_array_foreach(sections, section, field) {
+            const char *p = json_string_value(field);
+            size_t offset = 0;
+            do {
+                text_buffer buffer; text_layout measured;
+                if (!text_decode_chunk(&buffer, &p)) {
+                    text_decode(&buffer, "Texto indisponível.");
+                    p += strlen(p);
+                }
+                text_measure(&buffer, width, &measured);
+                if (!strcmp(ui->anchor, str(m, "id")) && ui->section == section &&
+                    ui->offset >= offset && ui->offset < offset + buffer.length + 1) {
+                    int row = 0;
+                    for (size_t k = 0; k < measured.count; ++k)
+                        if (measured.cells[k].start <= ui->offset - offset) row = measured.cells[k].row;
+                    *anchor = total + row;
+                }
+                if (save && first >= total && first < total + measured.rows) {
+                    snprintf(ui->anchor, sizeof(ui->anchor), "%s", str(m, "id"));
+                    ui->section = section; ui->offset = offset;
+                    for (size_t k = 0; k < measured.count; ++k)
+                        if (measured.cells[k].row == first - total) { ui->offset += measured.cells[k].start; break; }
+                }
+                if (paint && total < first + ui->visible && total + measured.rows > first) {
+                    wattrset(ui->body, COLOR_PAIR(section == 0 ? (ui->focus == HISTORY_PANEL ? HISTORY_ACCENT : PANEL_ACCENT) : ui->focus == HISTORY_PANEL ? HISTORY_AREA : PANEL));
+                    text_draw(ui->body, &buffer, &measured, first - total, ui->visible, ui->history_top, 2);
+                }
+                total += measured.rows; offset += buffer.length;
+            } while (*p);
+        }
+        json_decref(sections);
+    }
+    return total;
+}
+static int position(view *ui)
+{
+    int anchor;
+    int total = walk(ui, 0, false, false, &anchor);
+    int last = total > ui->visible ? total - ui->visible : 0;
+    return ui->at_end ? last : anchor > last ? last : anchor;
+}
+static void scroll_history(view *ui, int delta)
+{
+    if (!ui->body) return;
+    int anchor, total = walk(ui, 0, false, false, &anchor);
+    int last = total > ui->visible ? total - ui->visible : 0;
+    int first = (ui->at_end ? last : anchor) + delta;
+    if (first < 0) first = 0;
+    if (first > last) first = last;
+    ui->at_end = first == last;
+    walk(ui, first, false, true, &anchor);
+}
+static void draw(view *ui, auth_client *auth)
+{
+    curs_set(0);
+    if (!ui->frame) {
+        erase(); text_label(stdscr, 0, 0, COLS, "Amplie o terminal para 44×14. F6: conta."); refresh(); return;
+    }
+    werase(ui->frame); wattrset(ui->frame, COLOR_PAIR(BORDER)); box(ui->frame, 0, 0);
+    mvwhline(ui->frame, CONTENT_Y - 2, 1, ACS_HLINE, COLS - 2);
+    mvwaddch(ui->frame, CONTENT_Y - 2, 0, ACS_LTEE);
+    mvwaddch(ui->frame, CONTENT_Y - 2, COLS - 1, ACS_RTEE);
+    mvwhline(ui->frame, LINES - 4, 1, ACS_HLINE, COLS - 2);
+    if (COLS >= 80) mvwvline(ui->frame, CONTENT_Y, ui->side + 1, ACS_VLINE, LINES - CONTENT_Y - 3);
+    draw_tabs(ui, auth);
+    wbkgd(ui->footer, COLOR_PAIR(PANEL)); werase(ui->footer);
+    wattrset(ui->footer, COLOR_PAIR(PANEL_MUTED));
+    text_label(ui->footer, 0, 1, COLS - 4, history_status(ui->model));
+    text_label(ui->footer, 1, 1, COLS - 4, ui->focus == SERVER_TABS ? "←→ servidores · Enter: adicionar · ↓ canais · Ctrl+Q: sair" :
+               ui->focus == CHANNEL_LIST ? "↑↓ canais · ← abas · → conversa · Ctrl+L: sair da conta" :
+               "↑↓ rolar · PageUp: anteriores · End: recente · ← canais · Ctrl+R");
+    if (ui->list) {
+        wbkgd(ui->list, COLOR_PAIR(ui->focus == CHANNEL_LIST ? FOCUS_AREA : PANEL)); werase(ui->list);
+        wattrset(ui->list, COLOR_PAIR(ui->focus == CHANNEL_LIST ? FOCUS_MUTED : PANEL_MUTED) | A_BOLD);
+        text_label(ui->list, 0, 1, ui->side - 2, "Canais");
+        int rows = getmaxy(ui->list) - 2;
+        size_t count = history_channel_count(ui->model);
+        if (ui->highlighted >= count) ui->highlighted = count ? count - 1 : 0;
+        if ((int)ui->highlighted < ui->first_channel) ui->first_channel = (int)ui->highlighted;
+        if ((int)ui->highlighted >= ui->first_channel + rows) ui->first_channel = (int)ui->highlighted - rows + 1;
+        if (auth_has_session(auth)) for (int row = 0; row < rows; ++row) {
+            size_t index = (size_t)(ui->first_channel + row);
+            json_t *c = history_channel(ui->model, index);
+            if (!c) break;
+            const char *type = str(c, "type"), *last = str(json_object_get(c, "last_message"), "id");
+            bool unread = *last && strcmp(last, str(c, "last_read_message"));
+            char label[2200];
+            snprintf(label, sizeof(label), "%c %s%s%s", index == history_selected(ui->model) ? '>' : index == ui->highlighted ? '*' : ' ',
+                     !strcmp(type, "category") ? "── " : !strcmp(type, "voice") ? "♪ " : "# ", unread ? "* " : "", str(c, "name"));
+            bool selected = index == ui->highlighted;
+            wattrset(ui->list, COLOR_PAIR(selected && ui->focus == CHANNEL_LIST ? FOCUSED : selected ? PANEL_ACTIVE : ui->focus == CHANNEL_LIST ? FOCUS_AREA : PANEL));
+            text_label(ui->list, row + 1, 1, ui->side - 2, label);
+        }
+        wattrset(ui->list, COLOR_PAIR(ui->focus == CHANNEL_LIST ? FOCUS_MUTED : PANEL_MUTED));
+        text_label(ui->list, getmaxy(ui->list) - 1, 1, ui->side - 2, "↑↓ escolher · Enter abrir");
+    }
+    if (ui->body) {
+        wbkgd(ui->body, COLOR_PAIR(PANEL)); werase(ui->body);
+        if (ui->focus == HISTORY_PANEL) {
+            wattrset(ui->body, COLOR_PAIR(HISTORY_AREA));
+            for (int row = 0; row < ui->editor_border; ++row)
+                mvwhline(ui->body, row, 0, ' ', getmaxx(ui->body));
+        }
+        json_t *c = history_channel(ui->model, history_selected(ui->model));
+        char title[2200]; snprintf(title, sizeof(title), "%s%s · Histórico", c ? "# " : "", c ? str(c, "name") : "Conversa");
+        wattrset(ui->body, COLOR_PAIR(ui->focus == HISTORY_PANEL ? HISTORY_MUTED : PANEL_MUTED) | A_BOLD);
+        text_label(ui->body, 0, 2, getmaxx(ui->body) - 4, title);
+        wattrset(ui->body, COLOR_PAIR(ui->focus == HISTORY_PANEL ? HISTORY_MUTED : PANEL_MUTED));
+        if (ui->history_top == 3) text_label(ui->body, 1, 2, getmaxx(ui->body) - 4, str(c, "topic"));
+        wattrset(ui->body, COLOR_PAIR(ui->focus == HISTORY_PANEL ? HISTORY_BORDER : BORDER)); mvwhline(ui->body, ui->history_top - 1, 0, ACS_HLINE, getmaxx(ui->body));
+        wattrset(ui->body, COLOR_PAIR(ui->focus == HISTORY_PANEL ? HISTORY_MUTED : PANEL_MUTED));
+        if (!auth_has_session(auth)) text_label(ui->body, ui->history_top, 2, getmaxx(ui->body) - 4, "Revalidando sessão…");
+        else if (history_message_count(ui->model)) {
+            int ignored; ui->first = position(ui); walk(ui, ui->first, true, false, &ignored);
+        } else {
+            text_label(ui->body, ui->history_top, 2, getmaxx(ui->body) - 4, history_status(ui->model));
+        }
+        wattrset(ui->body, COLOR_PAIR(BORDER));
+        mvwhline(ui->body, ui->editor_border, 0, ACS_HLINE, getmaxx(ui->body));
+        wattrset(ui->body, COLOR_PAIR(PANEL_MUTED)); text_label(ui->body, ui->editor_border, 2, getmaxx(ui->body) - 4, " Editor ");
+        text_label(ui->body, ui->editor_border + 1, 1, 1, ">");
+        text_label(ui->body, ui->editor_border + 1, 3, getmaxx(ui->body) - 6, "Somente leitura");
+        if (getmaxy(ui->body) >= 10)
+            text_label(ui->body, getmaxy(ui->body) - 1, 2, getmaxx(ui->body) - 4,
+                       history_evicted(ui->model) ? "Janela limitada · End consulta o recente" : "Envio indisponível");
+    }
+    touchwin(ui->frame); wnoutrefresh(ui->frame); wnoutrefresh(ui->tabs);
+    if (ui->list) wnoutrefresh(ui->list);
+    if (ui->body) wnoutrefresh(ui->body);
+    wnoutrefresh(ui->footer); doupdate();
+}
+static void set_focus(view *ui, int focus)
+{
+    ui->focus = focus;
+    if (focus == CHANNEL_LIST) ui->show_channels = true;
+    if (focus == HISTORY_PANEL) ui->show_channels = false;
+    layout(ui);
+}
+static void open_channel(view *ui)
+{
+    if (history_select(ui->model, ui->highlighted)) {
+        ui->at_end = true; ui->anchor[0] = 0; set_focus(ui, HISTORY_PANEL);
+    }
+}
+static int activate_tab(view *ui, size_t index, size_t *selected)
+{
+    ui->tab_cursor = index; ui->focus = SERVER_TABS;
+    if (index == ui->connections->count) return HISTORY_ADD;
+    if (index != ui->active_tab) { *selected = index; return HISTORY_SWITCH; }
+    return -1;
+}
+int history_run(auth_client *auth, instance_connections *connections, size_t *selected,
+                bool focus_tabs, volatile sig_atomic_t *interrupted)
+{
+    init_graphemebreak();
+    view *ui = calloc(1, sizeof(*ui));
+    if (!ui) return HISTORY_ACCOUNT;
+    ui->connections = connections; ui->active_tab = ui->tab_cursor = instances_index(connections, auth);
+    ui->model = history_create(auth); ui->at_end = ui->show_channels = true; ui->focus = focus_tabs ? SERVER_TABS : CHANNEL_LIST;
+    if (!ui->model || ui->active_tab == SIZE_MAX || !layout(ui)) { history_destroy(ui->model); destroy_layout(ui); free(ui); return HISTORY_ACCOUNT; }
+    mmask_t previous_mouse;
+    mousemask(BUTTON1_PRESSED | BUTTON1_CLICKED | BUTTON4_PRESSED | BUTTON5_PRESSED, &previous_mouse);
+    bool redraw = true; int result = HISTORY_ACCOUNT;
+    while (!*interrupted) {
+        if (ui->layout_failed) break;
+        auth_state before = auth_get_state(auth);
+        if (instances_poll(connections, auth)) redraw = true;
+        auth_poll(auth);
+        json_t *event; while ((event = auth_next_event(auth))) json_decref(event);
+        if (history_poll(ui->model) || before != auth_get_state(auth)) redraw = true;
+        if (!auth_has_session(auth) && !auth_busy(auth)) break;
+        if (redraw) { draw(ui, auth); redraw = false; }
+        wint_t key; int type = get_wch(&key);
+        if (type == ERR) continue;
+        if (type == KEY_CODE_YES && key == PASTE_START) { ui->paste = true; continue; }
+        if (type == KEY_CODE_YES && key == PASTE_END) { ui->paste = false; continue; }
+        if (type == KEY_CODE_YES && key == KEY_RESIZE) { layout(ui); redraw = true; continue; }
+        if (ui->paste) continue;
+        redraw = true;
+        if (type == OK && (key == 17 || key == 3)) { result = HISTORY_EXIT; break; }
+        if (type == KEY_CODE_YES && key == KEY_F(6)) break;
+        if (type == OK && key == 16) { result = HISTORY_PROFILES; break; }
+        if (type == OK && key == 12) { auth_logout(auth); break; }
+        if (type == OK && key == 18) {
+            if (history_message_count(ui->model)) {
+                if (!history_retry(ui->model)) { ui->at_end = true; ui->anchor[0] = 0; }
+            } else if (history_selected(ui->model) != SIZE_MAX) history_recent(ui->model);
+            else history_reload_channels(ui->model);
+            continue;
+        }
+        if ((type == OK && key == '\t') || (type == KEY_CODE_YES && key == KEY_BTAB)) {
+            if (COLS < 80) {
+                if (ui->focus == SERVER_TABS) set_focus(ui, CHANNEL_LIST);
+                else if (ui->focus == HISTORY_PANEL) set_focus(ui, CHANNEL_LIST);
+                else if (history_selected(ui->model) != ui->highlighted) open_channel(ui);
+                else set_focus(ui, HISTORY_PANEL);
+            } else set_focus(ui, type == KEY_CODE_YES ? (ui->focus + 2) % 3 : (ui->focus + 1) % 3);
+            continue;
+        }
+        if (type == OK && key == 27) { set_focus(ui, ui->focus == HISTORY_PANEL ? CHANNEL_LIST : HISTORY_PANEL); continue; }
+        if (type == KEY_CODE_YES && key == KEY_MOUSE) {
+            MEVENT e;
+            if (getmouse(&e) != OK || !ui->frame) continue;
+            if (e.bstate & (BUTTON4_PRESSED | BUTTON5_PRESSED)) {
+                if (ui->body && e.x >= getbegx(ui->body) && e.x < getbegx(ui->body) + getmaxx(ui->body) && e.y >= getbegy(ui->body) + ui->history_top && e.y < getbegy(ui->body) + ui->editor_border)
+                    scroll_history(ui, e.bstate & BUTTON4_PRESSED ? -3 : 3);
+                continue;
+            }
+            if (!(e.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED))) continue;
+            int y = e.y, x = e.x;
+            if (wmouse_trafo(ui->tabs, &y, &x, false)) {
+                if (y == 0 && hit(ui->add_hit, x)) { result = HISTORY_ADD; break; }
+                if (y == 0 && hit(ui->back_hit, x)) { if (ui->first_tab) --ui->first_tab; ui->tab_cursor = ui->first_tab; ui->focus = SERVER_TABS; continue; }
+                if (y == 0 && hit(ui->next_hit, x)) { if (ui->first_tab + 1 < connections->count) ++ui->first_tab; ui->tab_cursor = ui->first_tab; ui->focus = SERVER_TABS; continue; }
+                if (y == 0) for (size_t i = 0; i < connections->count; ++i) if (hit(ui->tab_hits[i], x)) {
+                    int action = activate_tab(ui, i, selected); if (action >= 0) { result = action; goto finished; } break;
+                }
+                if (y == 1 && hit(ui->channels_hit, x)) set_focus(ui, CHANNEL_LIST);
+                if (y == 1 && hit(ui->conversation_hit, x)) set_focus(ui, HISTORY_PANEL);
+                continue;
+            }
+            y = e.y; x = e.x;
+            if (ui->list && wmouse_trafo(ui->list, &y, &x, false) && y >= 1 && y < getmaxy(ui->list) - 1) {
+                size_t index = (size_t)(ui->first_channel + y - 1);
+                if (index < history_channel_count(ui->model)) { ui->highlighted = index; open_channel(ui); }
+                continue;
+            }
+            y = e.y; x = e.x;
+            if (ui->body && wmouse_trafo(ui->body, &y, &x, false) && y < ui->editor_border) set_focus(ui, HISTORY_PANEL);
+            continue;
+        }
+        bool enter = (type == OK && (key == '\r' || key == '\n')) || (type == KEY_CODE_YES && key == KEY_ENTER);
+        if (ui->focus == SERVER_TABS) {
+            if (type == KEY_CODE_YES && key == KEY_DOWN) set_focus(ui, CHANNEL_LIST);
+            else if (type == KEY_CODE_YES && (key == KEY_LEFT || key == KEY_RIGHT)) {
+                size_t index = ui->tab_cursor;
+                if (key == KEY_LEFT && index) --index;
+                if (key == KEY_RIGHT && index < connections->count) ++index;
+                ui->tab_cursor = index;
+                if (index < connections->count) { int action = activate_tab(ui, index, selected); if (action >= 0) { result = action; break; } }
+            } else if (enter) { int action = activate_tab(ui, ui->tab_cursor, selected); if (action >= 0) { result = action; break; } }
+        } else if (ui->focus == CHANNEL_LIST) {
+            size_t count = history_channel_count(ui->model);
+            if (type == KEY_CODE_YES && (key == KEY_LEFT || (key == KEY_UP && !ui->highlighted))) set_focus(ui, SERVER_TABS);
+            else if (type == KEY_CODE_YES && key == KEY_UP && ui->highlighted) --ui->highlighted;
+            else if (type == KEY_CODE_YES && key == KEY_DOWN && ui->highlighted + 1 < count) ++ui->highlighted;
+            else if (type == KEY_CODE_YES && key == KEY_HOME) ui->highlighted = 0;
+            else if (type == KEY_CODE_YES && key == KEY_END && count) ui->highlighted = count - 1;
+            else if (type == KEY_CODE_YES && key == KEY_PPAGE)
+                ui->highlighted = ui->highlighted > (size_t)(LINES - CONTENT_Y - 5) ? ui->highlighted - (size_t)(LINES - CONTENT_Y - 5) : 0;
+            else if (type == KEY_CODE_YES && key == KEY_NPAGE && count) {
+                ui->highlighted += (size_t)(LINES - CONTENT_Y - 5); if (ui->highlighted >= count) ui->highlighted = count - 1;
+            } else if (enter || (type == KEY_CODE_YES && key == KEY_RIGHT)) open_channel(ui);
+        } else {
+            if (type == KEY_CODE_YES && key == KEY_LEFT) set_focus(ui, CHANNEL_LIST);
+            else if (type == KEY_CODE_YES && (key == KEY_PPAGE || key == KEY_UP || key == KEY_HOME)) {
+                int first = position(ui);
+                scroll_history(ui, key == KEY_HOME ? -2147483647 : key == KEY_UP ? -1 : -ui->visible);
+                if (first == 0 && key != KEY_HOME && history_has_more(ui->model)) { ui->at_end = false; history_older(ui->model); }
+            } else if (type == KEY_CODE_YES && (key == KEY_DOWN || key == KEY_NPAGE)) scroll_history(ui, key == KEY_DOWN ? 1 : ui->visible);
+            else if (type == KEY_CODE_YES && key == KEY_END) { history_recent(ui->model); ui->at_end = true; ui->anchor[0] = 0; }
+            else if (enter && !history_retry(ui->model)) { ui->at_end = true; ui->anchor[0] = 0; }
+        }
+    }
+finished:
+    mousemask(previous_mouse, NULL);
+    destroy_layout(ui); history_destroy(ui->model); free(ui); touchwin(stdscr); return result;
+}
