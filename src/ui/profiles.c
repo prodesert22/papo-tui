@@ -100,9 +100,19 @@ static bool layout(profile_ui *ui)
     return true;
 }
 
+static chtype attributes(int color)
+{
+    chtype result = COLOR_PAIR(color);
+    if (!has_colors()) {
+        if (color == PROFILE_FOCUS || color == PROFILE_BUTTON_FOCUS) result |= A_REVERSE;
+        else if (color == PROFILE_SELECTED || color == PROFILE_BUTTON_SELECTED) result |= A_BOLD;
+    }
+    return result;
+}
+
 static void label(WINDOW *window, int row, int column, int width, int color, const char *value)
 {
-    wattrset(window, COLOR_PAIR(color));
+    wattrset(window, attributes(color));
     text_label(window, row, column, width, value);
 }
 
@@ -138,7 +148,7 @@ static void draw_profile_list(profile_ui *ui)
         snprintf(name, sizeof(name), "%c %s", ui->cursor == i ? '>' : ' ', ui->config->profiles[i].name);
         bool focused = ui->focus == LIST_AREA && !ui->dialog_type;
         int color = ui->cursor == i ? (focused ? PROFILE_BUTTON_FOCUS : PROFILE_BUTTON_SELECTED) : PROFILE_TEXT;
-        wattrset(ui->window, COLOR_PAIR(color)); mvwhline(ui->window, row, 2, ' ', COLS - 4);
+        wattrset(ui->window, attributes(color)); mvwhline(ui->window, row, 2, ' ', COLS - 4);
         text_label(ui->window, row, 2, COLS - 4, name);
         ui->tabs[ui->tab_count++] = (hit){row, 2, COLS - 4, i};
     }
@@ -151,7 +161,7 @@ static void field_draw(profile_ui *ui, text_buffer *buffer, int index, int row, 
 {
     label(ui->dialog, row - 1, 2, ui->dialog_width - 4, PROFILE_PANEL, name);
     int color = ui->field == index ? PROFILE_FOCUS : PROFILE_PANEL;
-    wattrset(ui->dialog, COLOR_PAIR(color));
+    wattrset(ui->dialog, attributes(color));
     mvwhline(ui->dialog, row, 2, ' ', ui->dialog_width - 4);
     /* One visual row, scrolling in grapheme/cell coordinates. */
     text_layout view;
@@ -169,7 +179,7 @@ static void field_draw(profile_ui *ui, text_buffer *buffer, int index, int row, 
         const text_cell *cell = &view.cells[i];
         if (cell->column < first || cell->column + cell->width > first + width) continue;
         cchar_t glyph;
-        if (setcchar(&glyph, cell->glyph, 0, color, NULL) == OK)
+        if (setcchar(&glyph, cell->glyph, attributes(color) & ~A_COLOR, color, NULL) == OK)
             mvwadd_wch(ui->dialog, row, 2 + cell->column - first, &glyph);
     }
     if (ui->field == index) wmove(ui->dialog, row, 2 + view.cursor_column - first);
@@ -245,7 +255,7 @@ static void draw_chooser(profile_ui *ui)
         char name[PROFILE_NAME_BYTES + 4];
         snprintf(name, sizeof(name), "%c %s", ui->cursor == i ? '>' : ' ', ui->config->profiles[i].name);
         int color = ui->cursor == i ? (ui->focus == TAB_AREA ? PROFILE_BUTTON_FOCUS : PROFILE_BUTTON_SELECTED) : PROFILE_PANEL;
-        wattrset(ui->window, COLOR_PAIR(color)); mvwhline(ui->window, row, 2, ' ', ui->width - 4);
+        wattrset(ui->window, attributes(color)); mvwhline(ui->window, row, 2, ' ', ui->width - 4);
         text_label(ui->window, row, 2, ui->width - 4, name);
         ui->tabs[ui->tab_count++] = (hit){row, 2, ui->width - 4, i};
     }
@@ -316,7 +326,8 @@ static void draw(profile_ui *ui)
                              "←→: ações · ↑: lista · Enter: confirmar";
     label(ui->window, LINES - 3, 2, COLS - 4, MUTED, navigation);
     label(ui->window, LINES - 2, 2, COLS - 4, MUTED, profile ?
-          "Ctrl+L: limites · F5: identificar · Ctrl+R: recarregar · Esc: voltar · Ctrl+Q: sair" :
+          (COLS >= 80 ? "Ctrl+L: limites · F5: retry · Ctrl+R: reler · Esc: voltar · Ctrl+Q: sair" :
+           "F5 · Ctrl+L · Ctrl+R · Esc · Ctrl+Q") :
           "Ctrl+R: recarregar · Esc: voltar · Ctrl+Q: sair");
     wnoutrefresh(ui->window);
     draw_dialog(ui);

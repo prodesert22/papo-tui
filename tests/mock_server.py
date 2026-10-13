@@ -13,10 +13,12 @@ class MockServer:
         self.scenario = scenario
         self.username = username
         self.name = "Comunidade"
+        self.redirect_url = "/different"
         self.requests = []
         self.request_times = []
         self.ws_controls = []
         self.ws_messages = []
+        self.ws_connected = threading.Event()
         self.stopping = threading.Event()
         outer = self
 
@@ -52,6 +54,13 @@ class MockServer:
                 outer.requests.append(("GET", self.path, self.headers.get("Cookie"), None))
                 if self.path.endswith("/ws"):
                     self.serve_websocket()
+                elif self.path.endswith("/health"):
+                    if outer.scenario in ("slow-health", "timeout"):
+                        outer.stopping.wait(0.6 if outer.scenario == "slow-health" else 16)
+                    if outer.scenario == "no-health": self.respond(404)
+                    elif outer.scenario == "unavailable": self.respond(503)
+                    elif outer.scenario == "health-limited": self.respond(429, retry_after="1")
+                    else: self.respond(200)
                 elif self.path.endswith("/server"):
                     if outer.scenario.startswith("limited") and len(outer.requests) == 1:
                         if outer.scenario == "limited-date":
@@ -69,9 +78,11 @@ class MockServer:
                         self.respond(200, {"name": "a" * (1024 * 1024), "public": True})
                     elif outer.scenario == "redirect":
                         self.send_response(302)
-                        self.send_header("Location", "/different")
+                        self.send_header("Location", outer.redirect_url)
                         self.send_header("Content-Length", "0")
                         self.end_headers()
+                    elif outer.scenario == "uninitialized": self.respond(404)
+                    elif outer.scenario == "missing-public": self.respond(200, {"name": outer.name})
                     else:
                         self.respond(200, {"id": "00000000-0000-4000-8000-000000000002", "name": outer.name, "public": outer.scenario != "private"})
                 elif self.path.endswith("/auth/whoami"):
@@ -144,6 +155,7 @@ class MockServer:
                 connection = websocket.WebSocket(skip_utf8_validation=True)
                 connection.sock = self.connection
                 connection.connected = True
+                outer.ws_connected.set()
                 self.connection.settimeout(0.2)
 
                 def send(data, opcode=websocket.ABNF.OPCODE_TEXT, fin=1):
@@ -205,6 +217,7 @@ class MockServer:
                     pass
                 finally:
                     connection.connected = False
+                    outer.ws_connected.clear()
 
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self.secure = tls_context is not None

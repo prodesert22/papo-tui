@@ -48,6 +48,8 @@ Abra **Gerenciar** no modal ou execute `./build/papo-tui --profiles` para inicia
 
 Os textos principais, nomes, campos e botões são brancos; o texto dos botões e itens de lista selecionados usa laranja `#ffb347`, e dicas e comandos permanecem cinza. O controle em foco tem um fundo laranja escuro mais evidente, distinto do fundo laranja discreto do perfil quando você está nas ações. As dicas do rodapé mudam conforme a área focada. Setas horizontais nos botões dos modais também param nas extremidades. No modal de seleção aberto pelo login, ↑/↓ percorrem os perfis, → leva aos botões e ↑ nos botões volta à lista.
 
+Sem suporte a cores, o foco usa inversão e o perfil destacado fora do foco usa negrito. Em janelas estreitas, os atalhos do rodapé aparecem abreviados para caber na tela.
+
 **+ Adicionar** aparece somente no topo: clique nela ou destaque-a e pressione Enter para cadastrar um perfil. Enquanto essa opção estiver selecionada, as ações do rodapé ficam indisponíveis e Tab/Shift+Tab e ↓ mantêm o foco no topo. Cancelar o cadastro com Esc mantém esse comportamento; volte a **Listar** para habilitar as ações de um perfil salvo. Salvar o cadastro volta à lista com o novo perfil destacado.
 
 - **+ Adicionar no topo / Ctrl+N:** informar nome e URL.
@@ -195,7 +197,7 @@ Na instância **Comunidade**, **ajuda** começa vazia, **ideias** demonstra carr
 
 Em **Ctrl+K**, digite parte do nome, use ↑/↓ para selecionar e Enter para abrir; clicar no resultado também abre a conversa. Tab alterna entre filtro e resultados, e Esc volta sem trocar a conversa. A busca aceita até 128 caracteres e diferencia acentos.
 
-Ctrl+Q abre uma confirmação quando existe qualquer rascunho. **Voltar** é a opção inicial; Tab ou ←/→ escolhem outra opção, e Enter confirma. Os botões também aceitam clique. Pressionar Ctrl+Q novamente confirma a saída. Ctrl+C e sinais de encerramento fecham diretamente. Todos os rascunhos e mensagens locais são descartados ao sair. **+ Adicionar** abre um aviso de que o cadastro de URLs ainda não está disponível.
+Ctrl+Q abre uma confirmação quando existe qualquer rascunho. **Voltar** é a opção inicial; Tab ou ←/→ escolhem outra opção, e Enter confirma. Os botões também aceitam clique. Pressionar Ctrl+Q novamente confirma a saída. Ctrl+C e sinais de encerramento fecham diretamente. Todos os rascunhos e mensagens locais são descartados ao sair. **+ Adicionar** na demonstração apenas abre um aviso; para cadastrar perfis reais, use **Selecionar perfil → Gerenciar → Adicionar** no login.
 
 ## Problemas ao conectar
 

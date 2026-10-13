@@ -42,7 +42,7 @@ O editor aceita várias linhas e mantém rascunhos por servidor e conversa, com 
 
 F1 abre a ajuda e Ctrl+K filtra servidores, canais e DMs por nome. PageUp/PageDown ou a roda do mouse rolam o histórico; Home/End com foco no histórico vão ao início/fim. F2 simula a chegada de uma mensagem sem deslocar a leitura quando você estiver vendo mensagens anteriores; o indicador de novas mensagens permite voltar ao fim. Cada conversa aceita até 32 mensagens locais, somando envio e chegada simulada.
 
-Há exemplos de canal vazio, carregamento e erro recuperável: na primeira instância, **ajuda**, **ideias** e **eventos**, respectivamente. No erro, Ctrl+R, Enter com foco no histórico ou clique em **Tentar novamente** repetem o carregamento simulado. Ctrl+Q abre uma confirmação quando há rascunhos; Ctrl+C fecha diretamente. Os dados são descartados ao sair. Cadastro de servidores e integração de mensagens com o backend permanecem nas próximas entregas.
+Há exemplos de canal vazio, carregamento e erro recuperável: na primeira instância, **ajuda**, **ideias** e **eventos**, respectivamente. No erro, Ctrl+R, Enter com foco no histórico ou clique em **Tentar novamente** repetem o carregamento simulado. Ctrl+Q abre uma confirmação quando há rascunhos; Ctrl+C fecha diretamente. Os dados são descartados ao sair. O cadastro de perfis reais fica no login; a integração de mensagens com o backend permanece nas próximas entregas.
 
 Use um terminal UTF-8, com pelo menos 44 colunas e 22 linhas disponíveis ao aplicativo. No tmux, reserve também as linhas da barra de status. Para compilar somente o aplicativo, use `-DBUILD_TESTING=OFF` na configuração do CMake. `--help` e `--version` funcionam fora de um terminal interativo.
 
@@ -61,6 +61,8 @@ Para iniciar diretamente no gerenciador completo:
 O gerenciador tem duas opções no topo: **Listar** e **+ Adicionar**. Em **Listar**, os perfis aparecem numa lista vertical com rolagem automática: ↑/↓ mudam o destaque, PageUp/PageDown avançam uma página e Home/End vão ao início/fim. Enter ou → na lista levam ao primeiro botão do rodapé, **Selecionar**, seguido de **Editar**, **Remover**, **Limites** e **Identificar**. Confirme **Selecionar** para preencher o login. Nas ações, ←/→ movem entre os botões e param nas extremidades; ↑ volta à lista. ↑ no primeiro perfil volta ao topo; ali, ← vai para **Listar**, → para **Adicionar**, e ↓ ou Enter em **Listar** entram na lista. ← na lista mantém o foco. Tab/Shift+Tab também percorrem as áreas e botões. Clicar num perfil destaca-o; clicar num botão executa sua ação.
 
 No gerenciador e nos modais de perfil, os textos principais e botões são brancos; o texto dos botões e itens de lista selecionados usa laranja `#ffb347`, e dicas e comandos permanecem cinza. A área em foco usa um fundo laranja escuro mais evidente, enquanto o perfil destacado fora do foco mantém um fundo laranja discreto. As dicas de navegação do rodapé acompanham a área focada.
+
+Em terminais sem cores, o foco usa inversão e o perfil destacado fora do foco usa negrito. Em telas estreitas, o rodapé encurta os atalhos para manter os controles visíveis.
 
 **+ Adicionar** abre o cadastro de nome e URL por clique ou Enter. Enquanto essa opção estiver selecionada, as ações do rodapé ficam indisponíveis, inclusive depois de cancelar o cadastro. Salvar um perfil volta à lista com ele destacado. **Editar** renomeia ou corrige a URL mantendo o ID local; **Remover** exige confirmação e começa em **Cancelar**. **Ctrl+N**, **Ctrl+E** e **Ctrl+D** abrem essas três ações. Esc cancela o diálogo ou volta ao login, e Ctrl+Q/Ctrl+C fecha o aplicativo. Colagem delimitada não confirma ações automaticamente.
 
@@ -154,6 +156,7 @@ As ferramentas em `tools/` auxiliam a validação do contrato durante o desenvol
 - [x] Transporte WS/WSS em C, com cookies por contexto, filas limitadas e revalidação REST.
 - [x] Base de terminal exercitada em Kitty, Konsole e tmux.
 - [x] R2: interface navegável com dados simulados em `--demo`, editor multilinha, mouse e ajuda.
+- [x] R3: perfis XDG, descoberta por URL, isolamento de contextos e preferências de taxa/burst, com validação automatizada e demonstração no backend real.
 - [ ] Interface de conversas integrada ao backend.
 
 ## Testes
@@ -169,6 +172,16 @@ ctest --test-dir build --output-on-failure
 Os testes usam credenciais sintéticas e servidores HTTP/WS locais. Cobrem acesso público/privado, cookies, logout, erros, limites de entrada/resposta/fila, cancelamento, URLs com prefixo, senhas ocultas, espaços em senhas, redimensionamento, Backspace repetido, cliques e restauração do terminal. pyte reconstrói a tela para verificar a posição do cursor. A suíte WS inclui fragmentação dentro de UTF-8, chunks, ping/pong intercalado, encerramento, timeouts, sessão revogada com ACK e WSS com CA/hostname verificados. Essas dependências Python são usadas somente nos testes; os mocks não comprovam integração com a instância real.
 
 As suítes `unicode-editor` e `chat-terminal` exercitam a demonstração local: grafemas, largura em células, cursor nas linhas quebradas, colagem multilinha e fragmentada, limites, mouse, atalhos, modais, estados vazio/carregando/erro, isolamento de rascunhos, preservação da leitura, resize e saída. Também conferem os indicadores de foco e erro em terminal sem cores.
+
+As suítes `instance-profiles` e `profiles-terminal` verificam cadastro, IDs estáveis, remoção confirmada, reinício, migração da configuração, permissões, arquivos inválidos, links, concorrência, URLs, descoberta pública/privada, DNS, timeout, TLS, redirecionamento, cookies por contexto e descarte de respostas atrasadas. Cobrem seleção pelo login, navegação, cores, terminal sem cores, senha do servidor com foco/erro, limites configuráveis e resposta da interface durante a espera. `request-rate-limit` verifica também taxa fracionária, mudança de burst e preservação de cooldown.
+
+Para demonstrar o R3 contra uma instância já em execução, sem autenticar nem cadastrar contas:
+
+```sh
+build/test-env/bin/python -m tools.check_r3 --url http://127.0.0.1:8080
+```
+
+O probe usa configuração temporária, cadastra dois perfis locais, corrige uma URL inválida, renomeia e reinicia o cliente. Registra resultados e telas em `build/r3/`. `--backend-binary /caminho/papo-server` permite usar um executável real com uma cópia temporária de esquema e metadados do servidor no container PostgreSQL `papo_postgres`; nenhum dado do banco de origem é alterado, e o banco/processo temporários são removidos ao terminar. `--postgres-container` escolhe outro container. `--tls-proxy build/integration/tls-proxy` inclui descoberta HTTPS e rejeição de CA/hostname inválidos usando o proxy Go de desenvolvimento.
 
 A suíte `api-contract` valida 51 fixtures REST e 17 exemplos WS, cursor composto com timestamps iguais, limites de lote, YAML 1.2, isolamento de cookies e relatórios sem segredos. Regerar o inventário local e os exemplos após uma mudança no contrato:
 

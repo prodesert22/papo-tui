@@ -223,8 +223,11 @@ bool profiles_reload(profile_config *config)
     valid = root && decode(config, root);
     json_decref(root);
     if (!valid) {
+        memset(config->profiles, 0, sizeof(config->profiles));
         config->count = 0;
         config->selected[0] = '\0';
+        config->requests_per_second = PAPO_REQUESTS_PER_SECOND;
+        config->request_burst = PAPO_REQUEST_BURST;
         return error(config, "Configuração inválida ou incompatível; arquivo preservado. Corrija-o e use Ctrl+R.");
     }
     config->writable = config->existed = true;
