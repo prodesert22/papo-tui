@@ -2,6 +2,7 @@
 #include "net/auth.h"
 #include "net/rate_limit.h"
 #include "net/clock.h"
+#include "net/session_time.h"
 
 #include <curl/curl.h>
 #include <jansson.h>
@@ -12,6 +13,8 @@
 #include <strings.h>
 #include <time.h>
 #include <errno.h>
+#include <wchar.h>
+#include <wctype.h>
 
 #define RESPONSE_LIMIT (1024U * 1024U)
 
@@ -28,6 +31,15 @@ struct auth_client {
     auth_state operation;
     bool ws_requested;
     uint64_t recheck_at;
+    uint64_t refresh_at, generation;
+    bool registering, authenticated, recovering, after_refresh, logout_requested;
+    bool api_retried, response_ready;
+    auth_input_error input_error;
+    char *api_path;
+    char *refresh_cookie;
+    json_t *api_response;
+    long api_status;
+    uint64_t response_generation;
     char *base;
     char *username;
     char *password;
@@ -40,7 +52,7 @@ struct auth_client {
     bool server_password_error;
     char message[192];
     char name[128];
-    char user[128];
+    char user[1025];
     char user_id[64];
 };
 
@@ -82,17 +94,136 @@ static void clear_cookies(auth_client *client)
     curl_easy_setopt(client->easy, CURLOPT_COOKIELIST, "ALL");
 }
 
-static void fail(auth_client *client, const char *message)
+static void clear_api(auth_client *client)
 {
-    client->server_password_error = false;
+    free(client->api_path);
+    client->api_path = NULL;
+    json_decref(client->api_response);
+    client->api_response = NULL;
+    client->response_ready = client->api_retried = false;
+}
+
+static void clear_identity(auth_client *client)
+{
+    client->authenticated = client->recovering = client->after_refresh = false;
+    client->refresh_at = client->recheck_at = 0;
+    client->user[0] = client->user_id[0] = '\0';
+    erase_free(&client->refresh_cookie);
+    ++client->generation;
+}
+
+static void logout_done(auth_client *client, bool revoked)
+{
     ws_abort(client->websocket);
     detach(client);
     forget_inputs(client);
     clear_cookies(client);
+    clear_api(client);
+    clear_identity(client);
+    client->logout_requested = client->ws_requested = false;
+    client->server_password_error = false;
+    client->input_error = AUTH_INPUT_NONE;
+    client->name[0] = '\0';
+    client->state = AUTH_IDLE;
+    snprintf(client->message, sizeof(client->message), "%s", revoked ? "Você saiu da conta." :
+             "Sessão local encerrada; revogação remota não confirmada.");
+}
+
+static void fail(auth_client *client, const char *message)
+{
+    if (client->logout_requested) { logout_done(client, false); return; }
+    client->server_password_error = false;
+    client->input_error = AUTH_INPUT_NONE;
+    ws_abort(client->websocket);
+    detach(client);
+    forget_inputs(client);
+    clear_cookies(client);
+    clear_api(client);
+    clear_identity(client);
     client->state = AUTH_ERROR;
     client->name[0] = client->user[0] = '\0';
     client->user_id[0] = '\0';
     snprintf(client->message, sizeof(client->message), "%s", message);
+}
+
+static bool input_fail(auth_client *client, auth_input_error field, const char *message)
+{
+    fail(client, message);
+    client->input_error = field;
+    client->server_password_error = field == AUTH_INPUT_SERVER_PASSWORD;
+    return false;
+}
+
+static const char *json_text(json_t *object, const char *key, size_t capacity)
+{
+    json_t *value = json_object_get(object, key);
+    const char *text = json_string_value(value);
+    return text && *text && json_string_length(value) == strlen(text) && strlen(text) < capacity ? text : NULL;
+}
+
+static bool problem_is(auth_client *client, const char *kind)
+{
+    json_error_t error;
+    json_t *body = json_loadb(client->response ? client->response : "", client->response_length, JSON_REJECT_DUPLICATES, &error);
+    const char *type = json_text(body, "type", 2049);
+    const char *last = type ? strrchr(type, '/') : NULL;
+    bool matches = last && strcmp(last + 1, kind) == 0;
+    json_decref(body);
+    return matches;
+}
+
+static bool registration_error(auth_input_error *field, char *message, size_t capacity,
+                               auth_input_error error, const char *reason)
+{
+    if (field) *field = error;
+    if (message && capacity) snprintf(message, capacity, "%s", reason);
+    return false;
+}
+
+bool auth_validate_registration(const char *username, const char *password,
+                                auth_input_error *field, char *message, size_t capacity)
+{
+    if (field) *field = AUTH_INPUT_NONE;
+    if (message && capacity) *message = '\0';
+    if (!username || !*username)
+        return registration_error(field, message, capacity, AUTH_INPUT_USERNAME, "Preencha o usuário.");
+    if (!password || !*password)
+        return registration_error(field, message, capacity, AUTH_INPUT_PASSWORD, "Preencha a senha.");
+
+    size_t characters = 0;
+    mbstate_t state = {0};
+    while (*username) {
+        wchar_t character;
+        size_t bytes = mbrtowc(&character, username, MB_CUR_MAX, &state);
+        if (!bytes || bytes == (size_t)-1 || bytes == (size_t)-2 || !iswprint(character))
+            return registration_error(field, message, capacity, AUTH_INPUT_USERNAME, "Informe um usuário válido, sem controles de terminal.");
+        ++characters; username += bytes;
+    }
+    if (characters < 3) return registration_error(field, message, capacity, AUTH_INPUT_USERNAME, "O usuário precisa ter pelo menos 3 caracteres.");
+    characters = 0;
+    bool upper = false, special = false;
+    memset(&state, 0, sizeof(state));
+    while (*password) {
+        wchar_t character;
+        size_t bytes = mbrtowc(&character, password, MB_CUR_MAX, &state);
+        if (!bytes || bytes == (size_t)-1 || bytes == (size_t)-2 || !iswprint(character))
+            return registration_error(field, message, capacity, AUTH_INPUT_PASSWORD, "Informe uma senha válida, sem controles de terminal.");
+        upper |= iswupper(character) != 0;
+        special |= iswalnum(character) == 0;
+        ++characters; password += bytes;
+    }
+    if (characters < 8) return registration_error(field, message, capacity, AUTH_INPUT_PASSWORD, "A senha precisa ter pelo menos 8 caracteres.");
+    if (!upper) return registration_error(field, message, capacity, AUTH_INPUT_PASSWORD, "A senha precisa de uma letra maiúscula.");
+    if (!special) return registration_error(field, message, capacity, AUTH_INPUT_PASSWORD, "A senha precisa de um caractere especial.");
+    return true;
+}
+
+static bool registration_valid(auth_client *client, const char *username, const char *password)
+{
+    char message[192];
+    auth_input_error field;
+    if (auth_validate_registration(username, password, &field, message, sizeof(message))) return true;
+    return input_fail(client, field, message);
 }
 
 char *auth_normalize_url(const char *url, char *error, size_t error_size)
@@ -216,7 +347,8 @@ static bool user_login(auth_client *client)
         fail(client, "Não foi possível preparar o login.");
         return false;
     }
-    bool result = request(client, AUTH_LOGIN, "/auth/login", body, true);
+    bool result = request(client, client->registering ? AUTH_REGISTER : AUTH_LOGIN,
+                          client->registering ? "/auth/register" : "/auth/login", body, true);
     json_decref(body);
     forget_inputs(client);
     return result;
@@ -260,38 +392,40 @@ auth_client *auth_create(void)
     return client;
 }
 
-bool auth_start_with_policy(auth_client *client, const char *url, const char *username,
-                            const char *password, const char *server_password, bool allow_local_http)
+static bool start_account(auth_client *client, const char *url, const char *username,
+                          const char *password, const char *server_password, bool allow_local_http, bool registering)
 {
-    if (auth_busy(client) || client->state == AUTH_READY) return false;
+    if (auth_busy(client) || auth_has_session(client)) return false;
     detach(client);
     ws_abort(client->websocket);
     client->ws_requested = false;
     client->server_password_error = false;
+    client->input_error = AUTH_INPUT_NONE;
+    client->registering = registering;
+    client->logout_requested = false;
     forget_inputs(client);
     clear_cookies(client);
+    clear_api(client);
+    clear_identity(client);
     curl_free(client->base);
     client->base = NULL;
     client->name[0] = client->user[0] = '\0';
     client->user_id[0] = '\0';
-    if (!username || !*username || !password || !*password) {
-        fail(client, "Preencha usuário e senha.");
-        return false;
-    }
+    if (!username || !*username) return input_fail(client, AUTH_INPUT_USERNAME, "Preencha usuário e senha.");
+    if (!password || !*password) return input_fail(client, AUTH_INPUT_PASSWORD, "Preencha usuário e senha.");
     if (strlen(username) > 1024 || strlen(password) > 4096 ||
         (server_password && strlen(server_password) > 4096)) {
         fail(client, "O usuário ou a senha excedeu o limite do cliente.");
         return false;
     }
+    if (registering && !registration_valid(client, username, password)) return false;
     char error[192];
     client->base = auth_normalize_url(url, error, sizeof(error));
     if (!client->base) {
-        fail(client, error);
-        return false;
+        return input_fail(client, AUTH_INPUT_URL, error);
     }
     if (!allow_local_http && strncmp(client->base, "http://", 7) == 0) {
-        fail(client, "HTTP local exige --allow-local-http. Use HTTPS para acesso remoto.");
-        return false;
+        return input_fail(client, AUTH_INPUT_URL, "HTTP local exige --allow-local-http. Use HTTPS para acesso remoto.");
     }
     client->username = strdup(username);
     client->password = strdup(password);
@@ -301,6 +435,18 @@ bool auth_start_with_policy(auth_client *client, const char *url, const char *us
         return false;
     }
     return request(client, AUTH_SERVER, "/server", NULL, false);
+}
+
+bool auth_start_with_policy(auth_client *client, const char *url, const char *username,
+                            const char *password, const char *server_password, bool allow_local_http)
+{
+    return start_account(client, url, username, password, server_password, allow_local_http, false);
+}
+
+bool auth_register_with_policy(auth_client *client, const char *url, const char *username,
+                               const char *password, const char *server_password, bool allow_local_http)
+{
+    return start_account(client, url, username, password, server_password, allow_local_http, true);
 }
 
 bool auth_start(auth_client *client, const char *url, const char *username,
@@ -335,10 +481,132 @@ static void copy_server_name(auth_client *client, const char *name)
     client->name[length] = '\0';
 }
 
+/* Inspect libcurl's owned cookie engine through its Netscape-list API. The
+ * opaque Auth value is used only to verify rotation and is never exposed. */
+static char *cookie_snapshot(auth_client *client)
+{
+    struct curl_slist *cookies = NULL;
+    char *snapshot = NULL;
+    if (curl_easy_getinfo(client->easy, CURLINFO_COOKIELIST, &cookies) != CURLE_OK) return NULL;
+    bool ambiguous = false;
+    for (struct curl_slist *item = cookies; item; item = item->next) {
+        const char *name = item->data;
+        for (int i = 0; name && i < 5; ++i) {
+            const char *tab = strchr(name, '\t');
+            name = tab ? tab + 1 : NULL;
+        }
+        if (name && strncmp(name, "Auth\t", 5) == 0 && name[5]) {
+            if (snapshot) ambiguous = true;
+            else snapshot = strdup(name + 5);
+        }
+    }
+    for (struct curl_slist *item = cookies; item; item = item->next) {
+        volatile char *p = item->data;
+        size_t length = strlen(item->data);
+        while (length--) *p++ = 0;
+    }
+    curl_slist_free_all(cookies);
+    if (ambiguous) erase_free(&snapshot);
+    return snapshot;
+}
+
+static bool begin_refresh(auth_client *client)
+{
+    erase_free(&client->refresh_cookie);
+    client->refresh_cookie = cookie_snapshot(client);
+    if (!client->refresh_cookie) {
+        fail(client, "A sessão não possui um cookie válido. Entre novamente.");
+        return false;
+    }
+    client->after_refresh = true;
+    return request(client, AUTH_REFRESH, "/auth/refresh", NULL, true);
+}
+
+bool auth_refresh(auth_client *client)
+{
+    if (!auth_has_session(client) || client->queued || client->attached || client->state != AUTH_READY ||
+        client->api_path || client->logout_requested) return false;
+    ws_state state = ws_get_state(client->websocket);
+    if (state == WS_QUEUED || state == WS_CONNECTING) ws_abort(client->websocket);
+    return begin_refresh(client);
+}
+
+static bool recover_session(auth_client *client)
+{
+    client->authenticated = false;
+    client->recovering = client->after_refresh = true;
+    ws_abort(client->websocket);
+    return begin_refresh(client);
+}
+
+bool auth_get_json(auth_client *client, const char *path)
+{
+    if (!auth_has_session(client) || client->state != AUTH_READY || client->queued || client->attached ||
+        client->api_path || client->response_ready || !path || path[0] != '/' || path[1] == '/' || strlen(path) > 4096)
+        return false;
+    for (const unsigned char *p = (const unsigned char *)path; *p; ++p)
+        if (*p < 32 || *p == 127 || *p == '#') return false;
+    client->api_path = strdup(path);
+    if (!client->api_path) return false;
+    client->api_retried = false;
+    return request(client, AUTH_API_GET, client->api_path, NULL, false);
+}
+
+bool auth_response_ready(const auth_client *client) { return client->response_ready; }
+
+json_t *auth_take_response(auth_client *client, long *status, uint64_t *generation)
+{
+    if (!client->response_ready) return NULL;
+    json_t *body = client->api_response;
+    client->api_response = NULL;
+    client->response_ready = false;
+    if (status) *status = client->api_status;
+    if (generation) *generation = client->response_generation;
+    return body;
+}
+
+static void complete_api(auth_client *client, CURLcode result, long status)
+{
+    if (result == CURLE_OK && status == 401) {
+        if (!client->api_retried) { client->api_retried = true; recover_session(client); }
+        else fail(client, "Não foi possível confirmar a sessão após renovar. Entre novamente.");
+        return;
+    }
+    if (result == CURLE_OK && status == 403 && problem_is(client, "banned")) {
+        fail(client, "O servidor bloqueou esta conta. Entre novamente após resolver o acesso.");
+        return;
+    }
+    if (result == CURLE_OK && status == 429) net_rate_defer(client->retry_after);
+    json_error_t error;
+    json_t *body = result == CURLE_OK ? json_loadb(client->response ? client->response : "",
+                              client->response_length, JSON_REJECT_DUPLICATES | JSON_DECODE_ANY, &error) : NULL;
+    if (status == 200 && (json_is_true(json_object_get(body, "connection_violation")) ||
+        (strcmp(client->api_path, "/auth/whoami") == 0 &&
+         (!json_text(body, "id", sizeof(client->user_id)) ||
+          strcmp(json_text(body, "id", sizeof(client->user_id)), client->user_id) != 0)))) {
+        json_decref(body);
+        fail(client, "A identidade da sessão não pôde ser confirmada. Entre novamente.");
+        return;
+    }
+    if (result != CURLE_OK || (!body && status == 200)) status = 0;
+    free(client->api_path);
+    client->api_path = NULL;
+    client->api_retried = false;
+    client->api_response = body;
+    client->api_status = status;
+    client->response_generation = client->generation;
+    client->response_ready = true;
+    client->state = AUTH_READY;
+    snprintf(client->message, sizeof(client->message), "%s", status == 200 ? "Consulta concluída." :
+             status == 429 ? "Limite de requisições atingido. Aguarde antes de tentar novamente." :
+             "Não foi possível concluir a consulta autenticada.");
+}
+
 static void complete(auth_client *client, CURLcode result, long status)
 {
     auth_state previous = client->operation;
     detach(client);
+    if (previous == AUTH_API_GET) { complete_api(client, result, status); return; }
     if (result != CURLE_OK) {
         const char *message = "Não foi possível conectar. Confira a URL e tente novamente.";
         if (client->overflow) message = "O servidor enviou uma resposta grande demais.";
@@ -354,18 +622,32 @@ static void complete(auth_client *client, CURLcode result, long status)
         else if (result == CURLE_PEER_FAILED_VERIFICATION || result == CURLE_SSL_CONNECT_ERROR ||
                  result == CURLE_SSL_CACERT_BADFILE || result == CURLE_SSL_CERTPROBLEM)
             message = "Falha ao verificar a conexão segura com o servidor.";
+        if (previous == AUTH_REGISTER) message = "Cadastro não confirmado. Tente entrar antes de enviar novamente.";
         fail(client, message);
         return;
     }
-    long expected = (previous == AUTH_SERVER_PASSWORD || previous == AUTH_LOGOUT) ? 204 : 200;
+    long expected = previous == AUTH_REGISTER ? 201 : (previous == AUTH_SERVER_PASSWORD || previous == AUTH_LOGOUT) ? 204 : 200;
     if (status != expected) {
+        if (status == 401 && previous == AUTH_WHOAMI && !client->after_refresh) {
+            recover_session(client);
+            return;
+        }
+        if (status == 401 && !client->server_public &&
+            (previous == AUTH_REGISTER || (previous == AUTH_LOGIN && problem_is(client, "unauthorized")))) {
+            input_fail(client, AUTH_INPUT_SERVER_PASSWORD, "Autorização privada expirou. Informe a senha do servidor e confirme novamente.");
+            return;
+        }
         const char *message = "O servidor não aceitou a solicitação. Tente novamente.";
         if (status == 401) {
             message = previous == AUTH_SERVER_PASSWORD ? "Senha do servidor incorreta." : "Usuário ou senha inválidos, ou sessão não autorizada.";
+            if (previous == AUTH_REFRESH || previous == AUTH_WHOAMI)
+                message = "Sua sessão expirou ou foi revogada. Entre novamente.";
         } else if (status == 429) {
             net_rate_defer(client->retry_after);
             message = "Limite de requisições atingido. Aguarde antes de tentar novamente.";
         } else if (status == 403) message = "O servidor recusou o acesso a esta conta.";
+        else if (status == 409 && previous == AUTH_REGISTER) message = "Nome de usuário já está em uso. Escolha outro.";
+        else if (status == 400 && previous == AUTH_REGISTER) message = "Cadastro recusado. Confira usuário e a política de senha desta instância.";
         else if (status == 404 && (previous == AUTH_SERVER || previous == AUTH_DISCOVERY_SERVER)) message = "Instância não inicializada ou URL incompatível com o Papo.";
         else if (status == 404 && previous == AUTH_HEALTH) message = "Backend incompatível: /health não está disponível nessa URL.";
         else if (status == 502 || status == 503 || status == 504) message = "Serviço indisponível. Tente novamente ou corrija a URL.";
@@ -373,7 +655,22 @@ static void complete(auth_client *client, CURLcode result, long status)
             message = "Serviço indisponível. Tente novamente ou corrija a URL.";
         else if (status >= 300 && status < 400) message = "O servidor redirecionou a conexão. Informe a URL final.";
         fail(client, message);
-        if (status == 401 && previous == AUTH_SERVER_PASSWORD) client->server_password_error = true;
+        if (status == 401 && previous == AUTH_SERVER_PASSWORD) {
+            client->server_password_error = true;
+            client->input_error = AUTH_INPUT_SERVER_PASSWORD;
+        } else if (status == 409 && previous == AUTH_REGISTER) client->input_error = AUTH_INPUT_USERNAME;
+        else if (status == 401 && previous == AUTH_LOGIN) client->input_error = AUTH_INPUT_PASSWORD;
+        return;
+    }
+    if (previous == AUTH_REFRESH) {
+        char *current = cookie_snapshot(client);
+        bool changed = current && client->refresh_cookie && strcmp(current, client->refresh_cookie) != 0;
+        erase_free(&current);
+        erase_free(&client->refresh_cookie);
+        if (!changed) { fail(client, "O servidor não confirmou a rotação do cookie. Entre novamente."); return; }
+    }
+    if (client->logout_requested && previous == AUTH_REFRESH) {
+        request(client, AUTH_LOGOUT, "/auth/logout", NULL, true);
         return;
     }
     if (previous == AUTH_HEALTH) {
@@ -381,12 +678,7 @@ static void complete(auth_client *client, CURLcode result, long status)
         return;
     }
     if (previous == AUTH_LOGOUT) {
-        ws_abort(client->websocket);
-        clear_cookies(client);
-        client->state = AUTH_IDLE;
-        client->user[0] = client->name[0] = '\0';
-        client->user_id[0] = '\0';
-        snprintf(client->message, sizeof(client->message), "Você saiu da conta.");
+        logout_done(client, true);
         return;
     }
     if (previous == AUTH_SERVER_PASSWORD) {
@@ -419,6 +711,7 @@ static void complete(auth_client *client, CURLcode result, long status)
             else if (!*client->server_password) {
                 fail(client, "Esta instância é privada. Preencha a senha do servidor.");
                 client->server_password_error = true;
+                client->input_error = AUTH_INPUT_SERVER_PASSWORD;
             }
             else {
                 json_t *payload = json_pack("{s:s}", "server_password", client->server_password);
@@ -433,11 +726,31 @@ static void complete(auth_client *client, CURLcode result, long status)
     } else if (previous == AUTH_LOGIN) {
         if (json_is_true(json_object_get(body, "connection_violation")))
             fail(client, "A sessão foi revogada pelo servidor. Entre novamente.");
+        else {
+            const char *expected_id = json_text(json_object_get(body, "user"), "id", sizeof(client->user_id));
+            if (expected_id) snprintf(client->user_id, sizeof(client->user_id), "%s", expected_id);
+            request(client, AUTH_WHOAMI, "/auth/whoami", NULL, false);
+        }
+    } else if (previous == AUTH_REGISTER) {
+        if (!json_text(body, "id", sizeof(client->user_id)) || !json_text(body, "username", sizeof(client->user)))
+            fail(client, "Cadastro não confirmado pelo servidor. Tente entrar antes de enviar novamente.");
+        else {
+            clear_cookies(client); /* Registration never authenticates a user. */
+            clear_identity(client);
+            client->state = AUTH_REGISTERED;
+            snprintf(client->message, sizeof(client->message), "Conta criada. Faça login com sua nova conta.");
+        }
+    } else if (previous == AUTH_REFRESH) {
+        json_t *connection = json_object_get(body, "connection");
+        const char *id = json_text(connection, "id", sizeof(client->user_id));
+        const char *expires = json_text(connection, "expires_at", 65);
+        if (!id || !expires || !session_time_schedule(expires, &client->refresh_at))
+            fail(client, "Não foi possível confirmar a renovação da sessão. Entre novamente.");
         else request(client, AUTH_WHOAMI, "/auth/whoami", NULL, false);
     } else if (previous == AUTH_WHOAMI) {
-        const char *username = json_string_value(json_object_get(body, "username"));
-        const char *id = json_string_value(json_object_get(body, "id"));
-        if (!username || !*username || !id || !*id || strlen(id) >= sizeof(client->user_id) ||
+        const char *username = json_text(body, "username", sizeof(client->user));
+        const char *id = json_text(body, "id", sizeof(client->user_id));
+        if (!username || !id ||
             (*client->user_id && strcmp(id, client->user_id) != 0) ||
             json_is_true(json_object_get(body, "connection_violation"))) {
             fail(client, "Não foi possível confirmar a sessão. Entre novamente.");
@@ -448,8 +761,14 @@ static void complete(auth_client *client, CURLcode result, long status)
             if (!net_now_ms(&now)) fail(client, "Não foi possível acompanhar a sessão.");
             else {
                 client->recheck_at = now + 30000;
+                if (!client->refresh_at) client->refresh_at = now + 30000;
+                client->authenticated = true;
+                client->recovering = client->after_refresh = false;
                 client->state = AUTH_READY;
                 snprintf(client->message, sizeof(client->message), "Login realizado. Você está conectado.");
+                if (client->api_path) request(client, AUTH_API_GET, client->api_path, NULL, false);
+                if (client->ws_requested && ws_get_state(client->websocket) == WS_IDLE)
+                    auth_connect_ws(client);
             }
         }
     }
@@ -458,13 +777,19 @@ static void complete(auth_client *client, CURLcode result, long status)
 
 void auth_poll(auth_client *client)
 {
-    ws_poll(client->websocket);
-    if (client->state == AUTH_READY && client->ws_requested && !client->queued && !client->attached) {
+    if (client->state == AUTH_READY && client->authenticated && !client->queued && !client->attached) {
         uint64_t now;
         if (!net_now_ms(&now)) { fail(client, "Não foi possível acompanhar a sessão."); return; }
-        if (now >= client->recheck_at && request(client, AUTH_WHOAMI, "/auth/whoami", NULL, false))
+        if (now >= client->refresh_at) auth_refresh(client);
+        else if (now >= client->recheck_at && request(client, AUTH_WHOAMI, "/auth/whoami", NULL, false))
             client->state = AUTH_READY; /* Background REST validation keeps logout available. */
     }
+    ws_state ws_before = ws_get_state(client->websocket);
+    if (client->operation != AUTH_REFRESH || (!client->queued && !client->attached) ||
+        (ws_before != WS_QUEUED && ws_before != WS_CONNECTING)) ws_poll(client->websocket);
+    ws_state ws_after = ws_get_state(client->websocket);
+    if (client->authenticated && ws_before != ws_after && (ws_after == WS_ERROR || ws_after == WS_CLOSED))
+        client->recheck_at = 0;
     if (client->queued) {
         int admitted = net_rate_try_acquire();
         if (admitted == 0) return;
@@ -496,22 +821,39 @@ void auth_poll(auth_client *client)
 
 bool auth_logout(auth_client *client)
 {
-    if (client->state != AUTH_READY) return false;
+    if ((!auth_has_session(client) && !*client->user_id) || client->logout_requested) return false;
+    client->logout_requested = true;
+    client->authenticated = false;
+    ++client->generation;
+    clear_api(client);
+    forget_inputs(client);
     ws_close(client->websocket);
+    if (client->operation == AUTH_REFRESH && (client->queued || client->attached)) {
+        /* Wait for a rotation already in progress so logout uses its cookie. */
+        client->state = AUTH_LOGOUT;
+        return true;
+    }
     return request(client, AUTH_LOGOUT, "/auth/logout", NULL, true);
 }
 
 void auth_cancel(auth_client *client)
 {
+    if (client->logout_requested) { logout_done(client, false); return; }
+    bool unknown_registration = client->operation == AUTH_REGISTER && client->attached;
     client->server_password_error = false;
     ws_abort(client->websocket);
     detach(client);
     forget_inputs(client);
     clear_cookies(client);
+    clear_api(client);
+    clear_identity(client);
     client->state = AUTH_IDLE;
     client->user[0] = client->name[0] = '\0';
     client->user_id[0] = '\0';
-    snprintf(client->message, sizeof(client->message), "Conexão cancelada.");
+    client->ws_requested = false;
+    client->input_error = AUTH_INPUT_NONE;
+    snprintf(client->message, sizeof(client->message), "%s", unknown_registration ?
+             "Envio cancelado. Tente entrar antes de repetir o cadastro." : "Conexão cancelada.");
 }
 
 void auth_destroy(auth_client *client)
@@ -520,6 +862,8 @@ void auth_destroy(auth_client *client)
     detach(client);
     ws_destroy(client->websocket);
     forget_inputs(client);
+    clear_api(client);
+    erase_free(&client->refresh_cookie);
     curl_easy_cleanup(client->easy);
     curl_multi_cleanup(client->multi);
     curl_share_cleanup(client->cookies);
@@ -533,7 +877,8 @@ bool auth_busy(const auth_client *client)
 {
     return client->state == AUTH_SERVER || client->state == AUTH_SERVER_PASSWORD ||
            client->state == AUTH_LOGIN || client->state == AUTH_WHOAMI || client->state == AUTH_LOGOUT ||
-           client->state == AUTH_HEALTH || client->state == AUTH_DISCOVERY_SERVER;
+           client->state == AUTH_HEALTH || client->state == AUTH_DISCOVERY_SERVER ||
+           client->state == AUTH_REGISTER || client->state == AUTH_REFRESH || client->state == AUTH_API_GET;
 }
 const char *auth_message(const auth_client *client)
 {
@@ -543,6 +888,9 @@ const char *auth_message(const auth_client *client)
         case AUTH_DISCOVERY_SERVER: return "Identificando a instância…";
         case AUTH_SERVER_PASSWORD: return "Autorizando acesso ao servidor…";
         case AUTH_LOGIN: return "Entrando na sua conta…";
+        case AUTH_REGISTER: return "Criando sua conta…";
+        case AUTH_REFRESH: return "Renovando sua sessão…";
+        case AUTH_API_GET: return "Consultando com a sessão autenticada…";
         case AUTH_WHOAMI: return "Confirmando sua sessão…";
         case AUTH_LOGOUT: return "Saindo da conta…";
         case AUTH_READY:
@@ -560,10 +908,17 @@ const char *auth_username(const auth_client *client) { return client->user; }
 const char *auth_server_name(const auth_client *client) { return client->name; }
 bool auth_server_public(const auth_client *client) { return client->server_public; }
 bool auth_server_password_error(const auth_client *client) { return client->server_password_error; }
+auth_input_error auth_error_input(const auth_client *client) { return client->input_error; }
+bool auth_has_session(const auth_client *client) { return client->authenticated && !client->recovering && !client->logout_requested; }
+const char *auth_user_id(const auth_client *client) { return auth_has_session(client) ? client->user_id : ""; }
+const char *auth_instance_url(const auth_client *client) { return client->base ? client->base : ""; }
+uint64_t auth_context_generation(const auth_client *client) { return client->generation; }
 bool auth_connect_ws(auth_client *client)
 {
-    if (client->state != AUTH_READY) return false;
+    if (!auth_has_session(client) || client->state == AUTH_REFRESH || client->after_refresh) return false;
     client->ws_requested = true;
+    ws_state state = ws_get_state(client->websocket);
+    if (state == WS_OPEN || state == WS_QUEUED || state == WS_CONNECTING) return true;
     return ws_connect(client->websocket, client->base);
 }
 ws_state auth_ws_state(const auth_client *client) { return ws_get_state(client->websocket); }
@@ -571,9 +926,9 @@ const char *auth_ws_message(const auth_client *client) { return ws_message(clien
 long auth_ws_http_status(const auth_client *client) { return ws_http_status(client->websocket); }
 json_t *auth_next_event(auth_client *client)
 {
-    return client->state == AUTH_READY ? ws_pop(client->websocket) : NULL;
+    return auth_has_session(client) ? ws_pop(client->websocket) : NULL;
 }
 bool auth_send_event(auth_client *client, const json_t *event)
 {
-    return client->state == AUTH_READY && ws_send(client->websocket, event);
+    return auth_has_session(client) && ws_send(client->websocket, event);
 }

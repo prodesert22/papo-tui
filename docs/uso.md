@@ -84,7 +84,7 @@ No gerenciador, destaque um perfil salvo e abra **Limites** ou pressione Ctrl+L.
 
 **Padrão** preenche taxa 10 e burst 25; confirme com **Salvar** para aplicar. Valores inválidos mantêm o diálogo aberto e a configuração anterior. Esc ou **Cancelar** descarta a edição. As preferências são salvas com os perfis e carregadas ao iniciar, mesmo quando você abre diretamente o login manual. Configurações anteriores continuam compatíveis e usam 10/25 até você salvar outra preferência.
 
-O limite é compartilhado por descoberta, login, logout, revalidação e novas conexões de tempo real. Salvar, recarregar ou trocar de perfil mantém o crédito já disponível e a espera indicada por `Retry-After`; aumentar burst não cria crédito adicional naquele instante. Diminuir burst restringe o crédito restante à nova capacidade. A interface continua aceitando teclas enquanto as requisições aguardam capacidade.
+O limite é compartilhado por descoberta, login, cadastro, renovação, logout, revalidação e novas conexões de tempo real. Salvar, recarregar ou trocar de perfil mantém o crédito já disponível e a espera indicada por `Retry-After`; aumentar burst não cria crédito adicional naquele instante. Diminuir burst restringe o crédito restante à nova capacidade. A interface continua aceitando teclas enquanto as requisições aguardam capacidade.
 
 ### Login
 
@@ -103,9 +103,31 @@ Selecione **Entrar** ou pressione Enter. O aplicativo consulta o servidor, solic
 
 Quando a instância é privada e a senha do servidor foi esquecida, o campo **Senha do servidor** ganha uma borda vermelha, um marcador de obrigatório e recebe o foco automaticamente. Digite a senha e pressione Enter para repetir a tentativa. Se essa senha for rejeitada, o campo é limpo e focado para correção. A borda desaparece ao começar a editar; usuário e senha da conta permanecem no formulário durante essa correção.
 
-Depois de autenticar, a tela mostra a conta, o servidor e o estado da conexão de tempo real. **Sair da conta** encerra essa conexão e a sessão. A versão atual implementa login, logout e recebimento de eventos em memória; a tela de conversas ainda não está disponível.
+### Criar uma conta
 
-A sessão é confirmada novamente a cada 30 segundos. Se a confirmação falhar, o aplicativo limpa a sessão e solicita novo login. Para refazer uma conexão de tempo real interrompida, saia da conta e entre novamente.
+Clique em **Cadastro**, foque o botão com Tab e Enter, ou pressione **Ctrl+N**. O formulário acrescenta **Confirmar senha** logo após a senha; URL e usuário são preservados ao alternar entre login e cadastro, e as senhas são limpas.
+
+Informe um usuário com pelo menos 3 caracteres e uma senha com pelo menos 8 caracteres, incluindo uma letra maiúscula e um caractere especial. A instância pode impor outros limites. As senhas permanecem mascaradas. Instâncias privadas também exigem a senha do servidor antes de criar a conta.
+
+**Confirmar senha** é mascarado e serve somente à validação local. A senha precisa coincidir exatamente com a confirmação. Campo vazio ou senhas diferentes bloqueiam o envio e focam a confirmação; senha curta, sem maiúscula ou sem caractere especial mostra uma mensagem específica e foca a senha. O erro aparece em vermelho, em até duas linhas para permanecer legível em janelas estreitas.
+
+Confirme **Criar conta** ou pressione Enter em um campo. Erros locais focam o campo para correção; usuário já existente também recebe foco. Rejeições adicionais mostram uma mensagem da aplicação. Nenhum detalhe remoto contendo credenciais aparece na tela.
+
+Ao receber a confirmação, a tela volta ao login, mantém URL e usuário e foca a senha vazia. Digite a senha novamente e confirme **Entrar**. Criar uma conta exige esse login explícito. **Login / Ctrl+N** volta ao formulário de entrada sem enviar cadastro.
+
+Se a autorização privada expirar, o campo **Senha do servidor** é limpo, recebe borda vermelha e foco. Informe a senha e confirme novamente. A aplicação não repete o cadastro automaticamente. Se um envio for interrompido sem confirmação, tente entrar antes de reenviar: a conta pode ter sido criada.
+
+### Sessão, renovação e saída
+
+Depois de autenticar, a tela mostra a conta, o servidor e o estado da conexão de tempo real. A tela de conversas usa dados locais em **--demo**; canais e mensagens reais serão integrados no próximo marco.
+
+A sessão é revalidada por REST a cada 30 segundos. A primeira renovação ocorre até 30 segundos após o login; as seguintes são agendadas antes da expiração informada pelo servidor, com margem de 60 segundos para sessões longas. Validades curtas usam um intervalo menor. **Renovar / Ctrl+R** permite renovar imediatamente. Os campos ficam bloqueados enquanto uma operação aguarda resposta; Esc cancela a operação e encerra a sessão local.
+
+A aplicação realiza uma renovação por vez e confirma a identidade depois de receber o novo cookie. Consultas que receberem 401 podem tentar uma única renovação. Se ela falhar, ou se a sessão for revogada, a conta for bloqueada ou a identidade não puder ser confirmada, os cookies e eventos locais são descartados e a senha recebe foco para novo login. Cadastro, login e outras mutações não são repetidos automaticamente.
+
+Heartbeat/ACK de tempo real não comprova autenticação. Quando a conexão de tempo real é interrompida, **Reconectar / Ctrl+R** aparece para refazê-la enquanto a sessão REST continua válida. Falhas de rede e de autenticação aparecem na área de estado.
+
+**Sair da conta** fecha a conexão de tempo real, solicita a revogação e limpa a sessão local. Durante uma renovação já enviada, aguarda sua resposta para revogar com o cookie atualizado. Se não conseguir confirmar a revogação remota, informa isso e conclui a limpeza local. Reabrir o programa sempre exige login; senhas e cookies não são persistidos.
 
 O aplicativo compartilha um limite configurável entre todas as tentativas de conexão, com padrões de 10 requisições por segundo e burst 25. Ajuste esses valores em **Selecionar perfil → Gerenciar → Limites**. Ao atingir o limite, os envios aguardam e a interface continua respondendo.
 
@@ -115,16 +137,22 @@ O tema usa fundo quase preto, painéis em cinza escuro e laranja `#ffb347` em t�
 
 | Controle | Ação |
 | --- | --- |
-| Tab / Shift+Tab, ↑ / ↓ | Alternar campo ou botão |
-| Enter | Entrar ou sair da conta |
-| ← / →, Home / End | Mover o cursor no campo |
+| Tab / Shift+Tab | Percorrer campos e botões na ordem visual |
+| ↑ / ↓ | Percorrer campos e linhas de botões, parando nas extremidades |
+| Enter | Confirmar login/cadastro ou executar o botão focado |
+| Ctrl+N | Alternar login/cadastro antes de autenticar |
+| Ctrl+R | Renovar a sessão ou reconectar o tempo real interrompido |
+| ← / → | Mover o cursor no campo; alternar entre os botões da mesma linha |
+| Home / End | Mover o cursor para o início/fim do campo |
 | Backspace / Delete | Apagar texto |
 | Ctrl+U | Limpar o campo atual |
 | Ctrl+P | Abrir a seleção de perfil, encerrando a conexão e limpando credenciais locais |
 | Clique esquerdo no campo | Focar e posicionar o cursor |
-| Clique esquerdo no botão | Entrar, sair da conta ou selecionar perfil |
+| Clique esquerdo no botão | Executar login, cadastro, renovação, reconexão, logout ou seleção de perfil |
 | Esc | Cancelar uma conexão em andamento |
 | Ctrl+Q / Ctrl+C | Fechar o aplicativo |
+
+No login e no cadastro, os botões de ação ficam na mesma linha: **Entrar / Cadastro** ou **Criar conta / Login**. **Selecionar perfil** fica no canto superior direito do formulário. ↓ na senha do servidor foca a ação principal; ←/→ alternam os dois botões, ↓ foca Selecionar perfil e ↑ volta à senha do servidor. ↑ em Selecionar perfil volta à ação principal, e ↓ mantém o foco nesse botão. As setas não dão a volta na tela. Tab segue campos, ação principal, ação secundária e Selecionar perfil; controles indisponíveis são pulados.
 
 Backspace no início do campo mantém o foco. Cliques fora dos controles são ignorados. Durante a conexão, os campos ficam bloqueados. O suporte a mouse depende do terminal.
 

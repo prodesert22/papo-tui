@@ -1,5 +1,6 @@
 """Controlled OpenAPI login fixtures. All accounts/cookies are synthetic."""
 import json
+from datetime import datetime, timedelta, timezone
 import base64
 import hashlib
 import threading
@@ -12,6 +13,9 @@ class MockServer:
     def __init__(self, scenario="public", tls_context=None, secure_cookie=False, username="josé"):
         self.scenario = scenario
         self.username = username
+        self.session_cookie = "user-fixture"
+        self.refresh_count = 0
+        self.api_count = 0
         self.name = "Comunidade"
         self.redirect_url = "/different"
         self.requests = []
@@ -84,13 +88,21 @@ class MockServer:
                     elif outer.scenario == "uninitialized": self.respond(404)
                     elif outer.scenario == "missing-public": self.respond(200, {"name": outer.name})
                     else:
-                        self.respond(200, {"id": "00000000-0000-4000-8000-000000000002", "name": outer.name, "public": outer.scenario != "private"})
+                        self.respond(200, {"id": "00000000-0000-4000-8000-000000000002", "name": outer.name, "public": not outer.scenario.startswith("private")})
                 elif self.path.endswith("/auth/whoami"):
                     whoami_count = sum(r[1].endswith('/auth/whoami') for r in outer.requests)
-                    if self.headers.get("Cookie") != "Auth=user-fixture" or (outer.scenario == "ws-revoked" and whoami_count > 1):
+                    if self.headers.get("Cookie") != "Auth=" + outer.session_cookie or (outer.scenario == "ws-revoked" and whoami_count > 1) or (outer.scenario == "refresh-unconfirmed" and outer.refresh_count):
                         self.respond(401, {"title": "Unauthorized"})
                     else:
-                        self.respond(200, {"id": "00000000-0000-4000-8000-000000000001", "username": outer.username})
+                        self.respond(200, {"id": "wrong-id" if outer.scenario == "refresh-identity" and outer.refresh_count else "00000000-0000-4000-8000-000000000001", "username": outer.username, "connection_violation": outer.scenario == "refresh-violation" and outer.refresh_count > 0})
+                elif self.path.endswith("/fixture/read"):
+                    outer.api_count += 1
+                    if outer.scenario == "api-twice" or (outer.scenario == "api-recover" and outer.api_count == 1): self.respond(401)
+                    elif outer.scenario == "api-permission": self.respond(403)
+                    elif outer.scenario == "api-ban": self.respond(403, {"type": "https://papo.invalid/errors/banned"})
+                    elif outer.scenario == "api-limited": self.respond(429, retry_after="1")
+                    elif outer.scenario == "api-violation": self.respond(200, {"connection_violation": True})
+                    else: self.respond(200, {"fixture": True})
                 else:
                     self.respond(404, {"title": "Not found"})
 
@@ -105,25 +117,47 @@ class MockServer:
                         self.respond(204, cookie="temporary-fixture")
                     else:
                         self.respond(401, {"title": "Bad server password"})
+                elif self.path.endswith("/auth/register"):
+                    if outer.scenario.startswith("private") and (cookie != "Auth=temporary-fixture" or outer.scenario == "private-expired"):
+                        self.respond(401, {"type": "https://papo.invalid/errors/unauthorized"})
+                    elif outer.scenario == "register-conflict": self.respond(409)
+                    elif outer.scenario == "register-policy": self.respond(400, {"detail": "Synthetic!123 must not appear"})
+                    elif outer.scenario == "register-limited": self.respond(429, retry_after="1")
+                    else: self.respond(201, {"id": "00000000-0000-4000-8000-000000000001", "username": body["username"]}, cookie="untrusted-registration")
+                elif self.path.endswith("/auth/refresh"):
+                    outer.refresh_count += 1
+                    if outer.scenario == "refresh-slow": time.sleep(0.4)
+                    if cookie != "Auth=" + outer.session_cookie or outer.scenario in ("refresh-revoked", "ws-revoked"): self.respond(401)
+                    elif outer.scenario == "refresh-ban": self.respond(403, {"type": "https://papo.invalid/errors/banned"})
+                    elif outer.scenario == "refresh-limited": self.respond(429, retry_after="1")
+                    else:
+                        expires = (datetime.now(timezone.utc) + timedelta(seconds=3 if outer.scenario == "refresh-short" else 3600)).isoformat()
+                        if outer.scenario == "refresh-expiry": expires = "2026-02-30T12:00:00Z"
+                        new_cookie = None
+                        if outer.scenario != "refresh-no-cookie":
+                            outer.session_cookie = "rotated-fixture-" + str(outer.refresh_count)
+                            new_cookie = outer.session_cookie
+                        self.respond(200, {"connection": {"id": "connection-fixture", "expires_at": expires}}, cookie=new_cookie)
                 elif self.path.endswith("/auth/login"):
-                    if outer.scenario == "private" and cookie != "Auth=temporary-fixture":
-                        self.respond(401)
+                    if outer.scenario.startswith("private") and (cookie != "Auth=temporary-fixture" or outer.scenario == "private-expired"):
+                        self.respond(401, {"type": "https://papo.invalid/errors/unauthorized"})
                     elif outer.scenario == "rejected":
                         self.respond(401, {"detail": "Synthetic!123 must not appear in UI"})
                     elif body != {"username": outer.username, "password": "Synthetic!123"}:
                         self.respond(401, {"title": "Bad credentials"})
                     else:
+                        outer.session_cookie = "user-fixture"
                         self.respond(200, {"user": {"id": "00000000-0000-4000-8000-000000000001", "username": outer.username}, "connection_violation": outer.scenario == "violation"},
                                      cookie=None if outer.scenario == "no-cookie" else "user-fixture")
                 elif self.path.endswith("/auth/logout"):
-                    self.respond(204, cookie="")
+                    self.respond(503 if outer.scenario == "logout-fail" else 204, cookie="")
                 else:
                     self.respond(404)
 
             def serve_websocket(self):
                 if outer.scenario == "ws-slow":
                     time.sleep(0.6)
-                if outer.scenario == "ws-unauthorized" or self.headers.get("Cookie") != "Auth=user-fixture":
+                if outer.scenario == "ws-unauthorized" or self.headers.get("Cookie") != "Auth=" + outer.session_cookie:
                     self.respond(401)
                     return
                 if outer.scenario == "ws-limited":

@@ -2,7 +2,7 @@
 
 Cliente de conversas para terminal, em C, para conectar-se a instâncias independentes do Papo por URL.
 
-O aplicativo oferece login com URL do servidor, usuário, senha e senha do servidor, além de perfis locais com nome e URL. A tela organiza cabeçalho, formulário e estado/controles em três áreas. O aplicativo consulta a instância, autoriza o acesso privado quando necessário, autentica a conta e confirma a sessão. As senhas são ocultas e os cookies ficam somente em memória.
+O aplicativo oferece login, cadastro de conta, renovação de sessão e perfis locais com nome e URL. Login e cadastro usam URL do servidor, usuário, senha e senha do servidor. A tela organiza cabeçalho, formulário e estado/controles em três áreas. O aplicativo consulta a instância, autoriza o acesso privado quando necessário, autentica a conta e confirma a sessão. As senhas são ocultas e os cookies ficam somente em memória.
 
 ## Compilar e executar
 
@@ -94,15 +94,23 @@ Se faltar a senha do servidor numa instância privada, o campo **Senha do servid
 
 Depois de autenticar, a tela apresenta a conta, a instância e o estado da conexão de tempo real, e permite **Sair da conta**. O aplicativo abre um WebSocket autenticado com os cookies dessa sessão e recebe eventos em memória. A interface de conversas será construída nos próximos marcos. Login e senha não são persistidos pelo aplicativo.
 
-A sessão é revalidada por REST a cada 30 segundos; heartbeat/ACK do WebSocket não comprova autenticação. Falhas de tempo real aparecem na área de estado. Para refazer uma conexão interrompida, saia da conta e entre novamente.
+**Cadastro / Ctrl+N** alterna entre login e criação de conta, preservando URL e usuário e limpando as senhas. O cadastro exige usuário com pelo menos 3 caracteres e senha com pelo menos 8 caracteres, uma letra maiúscula e um caractere especial; a instância pode impor limites adicionais. Repita a senha em **Confirmar senha**. Senhas diferentes ou confirmação vazia bloqueiam o envio e focam a confirmação. Senha curta, sem maiúscula ou sem caractere especial recebe uma mensagem específica e foco para correção. Em uma instância privada, informe também a senha do servidor. Depois de criar a conta, digite novamente a senha e confirme **Entrar**: cadastro não faz login automático. Usuário já existente recebe foco para correção; falhas de política exibem uma mensagem sem revelar detalhes remotos.
+
+A sessão é revalidada por REST a cada 30 segundos; heartbeat/ACK do WebSocket não comprova autenticação. A primeira renovação ocorre até 30 segundos após o login e as seguintes são agendadas antes da expiração informada pelo servidor. **Renovar / Ctrl+R** antecipa a renovação. Falhas de autenticação, revogação, banimento ou identidade incompatível limpam a sessão e devolvem o foco à senha para novo login.
+
+Falhas de tempo real aparecem na área de estado. Nessa situação, **Reconectar / Ctrl+R** refaz a conexão sem repetir o login, quando a sessão REST continua válida. **Sair da conta** encerra a sessão local mesmo se a revogação remota falhar; a tela informa quando ela não foi confirmada. Logout durante uma renovação aguarda sua resposta para usar o cookie atualizado.
 
 As requisições compartilham um limite global configurável, com padrão de 10 por segundo e burst de 25. O envio aguarda capacidade sem bloquear a interface. HTTP 429 informa o limite atingido e adia novas tentativas conforme `Retry-After`, sem reenviar a solicitação automaticamente.
 
 | Tecla | Ação |
 | --- | --- |
-| Tab / Shift+Tab, ↑ / ↓ | Alternar campo ou botão |
-| Enter | Entrar; sair da conta quando autenticado |
-| ← / →, Home / End | Mover cursor no campo |
+| Tab / Shift+Tab | Percorrer campos e botões na ordem visual |
+| ↑ / ↓ | Percorrer campos e linhas de botões, parando nas extremidades |
+| Enter | Confirmar login/cadastro ou o botão focado; sair da conta quando autenticado |
+| Ctrl+N | Alternar login/cadastro antes de autenticar |
+| Ctrl+R | Renovar a sessão; reconectar quando a conexão de tempo real foi interrompida |
+| ← / → | Mover o cursor no campo; alternar entre os botões da mesma linha |
+| Home / End | Mover o cursor para o início/fim do campo |
 | Backspace / Delete | Apagar texto |
 | Clique esquerdo no campo | Focar e posicionar o cursor |
 | Clique esquerdo no botão | Entrar, sair da conta ou selecionar perfil |
@@ -110,6 +118,8 @@ As requisições compartilham um limite global configurável, com padrão de 10 
 | Ctrl+P | Selecionar perfil; encerrar a conexão e limpar credenciais locais |
 | Esc | Cancelar uma conexão em andamento |
 | Ctrl+Q / Ctrl+C | Sair do aplicativo |
+
+No login e no cadastro, os botões de ação ficam na mesma linha: **Entrar / Cadastro** ou **Criar conta / Login**. **Selecionar perfil** fica no canto superior direito do formulário. ↓ na senha do servidor foca a ação principal; ←/→ alternam os dois botões, ↓ foca Selecionar perfil e ↑ volta à senha do servidor. ↑ em Selecionar perfil volta à ação principal, e ↓ mantém o foco nesse botão. As setas não dão a volta na tela. Tab segue campos, ação principal, ação secundária e Selecionar perfil; controles indisponíveis são pulados.
 
 Backspace no início do campo mantém o foco; segurar a tecla não navega entre inputs. Em terminais com suporte a mouse, clique no campo para editar naquele ponto ou no rótulo para editar ao final. Cliques fora dos controles são ignorados; durante a conexão, os controles ficam bloqueados.
 
@@ -157,6 +167,7 @@ As ferramentas em `tools/` auxiliam a validação do contrato durante o desenvol
 - [x] Base de terminal exercitada em Kitty, Konsole e tmux.
 - [x] R2: interface navegável com dados simulados em `--demo`, editor multilinha, mouse e ajuda.
 - [x] R3: perfis XDG, descoberta por URL, isolamento de contextos e preferências de taxa/burst, com validação automatizada e demonstração no backend real.
+- [x] R4: cadastro, login público/privado, renovação serializada, revogação e logout, com identidade REST/WS e cookies somente em memória.
 - [ ] Interface de conversas integrada ao backend.
 
 ## Testes
@@ -182,6 +193,18 @@ build/test-env/bin/python -m tools.check_r3 --url http://127.0.0.1:8080
 ```
 
 O probe usa configuração temporária, cadastra dois perfis locais, corrige uma URL inválida, renomeia e reinicia o cliente. Registra resultados e telas em `build/r3/`. `--backend-binary /caminho/papo-server` permite usar um executável real com uma cópia temporária de esquema e metadados do servidor no container PostgreSQL `papo_postgres`; nenhum dado do banco de origem é alterado, e o banco/processo temporários são removidos ao terminar. `--postgres-container` escolhe outro container. `--tls-proxy build/integration/tls-proxy` inclui descoberta HTTPS e rejeição de CA/hostname inválidos usando o proxy Go de desenvolvimento.
+
+As suítes `session-expiry`, `session-integration` e `session-terminal` verificam cadastro sem login automático, política/foco de campos, autorização privada expirada, renovação serializada, cookie atualizado, recuperação única de 401, banimento, logout durante refresh, falha remota de logout, prazos curtos, orçamento global e controles de teclado/mouse com senhas mascaradas.
+
+Para demonstrar R4 com o backend real em um banco temporário, use o executável Go do serviço e o container PostgreSQL de desenvolvimento. O proxy de desenvolvimento requer Go:
+
+```sh
+mkdir -p build/integration
+go build -o build/integration/tls-proxy tools/tls_proxy.go
+build/test-env/bin/python -m tools.check_r4 --backend-binary /caminho/papo-server --tls-proxy build/integration/tls-proxy
+```
+
+Essa ferramenta cria contas sintéticas somente na cópia temporária, exercita cadastro/login público e privado, REST/WSS, renovação, logout, revogação, banimento, confirmação de senha no cadastro e reinício da TUI. O banco de origem é apenas lido; contas, banco, processos, configuração e chaves TLS temporários são removidos ao terminar. `--postgres-container` escolhe outro container. O relatório contém verificações sem credenciais em `build/r4/validation/summary.json`.
 
 A suíte `api-contract` valida 51 fixtures REST e 17 exemplos WS, cursor composto com timestamps iguais, limites de lote, YAML 1.2, isolamento de cookies e relatórios sem segredos. Regerar o inventário local e os exemplos após uma mudança no contrato:
 

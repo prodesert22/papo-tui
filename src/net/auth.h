@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 #include "net/ws.h"
 
 typedef enum {
@@ -16,8 +17,15 @@ typedef enum {
     AUTH_ERROR,
     AUTH_HEALTH,
     AUTH_DISCOVERY_SERVER,
-    AUTH_IDENTIFIED
+    AUTH_IDENTIFIED,
+    AUTH_REGISTER,
+    AUTH_REGISTERED,
+    AUTH_REFRESH,
+    AUTH_API_GET
 } auth_state;
+
+typedef enum { AUTH_INPUT_NONE, AUTH_INPUT_URL, AUTH_INPUT_USERNAME,
+               AUTH_INPUT_PASSWORD, AUTH_INPUT_SERVER_PASSWORD } auth_input_error;
 
 typedef struct auth_client auth_client;
 
@@ -29,6 +37,30 @@ bool auth_start(auth_client *client, const char *url, const char *username,
                 const char *password, const char *server_password);
 bool auth_start_with_policy(auth_client *client, const char *url, const char *username,
                             const char *password, const char *server_password, bool allow_local_http);
+/* Pure local validation: no transfer, cookie or session changes. */
+bool auth_validate_registration(const char *username, const char *password,
+                                auth_input_error *field, char *message, size_t capacity);
+bool auth_register_with_policy(auth_client *client, const char *url, const char *username,
+                               const char *password, const char *server_password, bool allow_local_http);
+auth_input_error auth_error_input(const auth_client *client);
+/* A verified identity remains visible during proactive renewal, but is hidden
+ * immediately during logout or 401 recovery. Cookies are never exposed. */
+bool auth_has_session(const auth_client *client);
+const char *auth_user_id(const auth_client *client);
+const char *auth_instance_url(const auth_client *client);
+uint64_t auth_context_generation(const auth_client *client);
+/* One renewal at a time, sharing the existing REST queue and request budget. */
+bool auth_refresh(auth_client *client);
+/* Copies a relative endpoint when READY and the REST queue is available.
+ * Rejects concurrent submissions; a pending GET may recover one 401. Completed responses are bounded to one owned JSON value.
+ * No mutation API or automatic mutation replay is provided. */
+bool auth_get_json(auth_client *client, const char *path);
+/* Readiness is also set for a response without JSON (status 0 on transport
+ * failure). Taking clears readiness and transfers a possibly NULL reference;
+ * the caller must json_decref(). Generation identifies the verified context.
+ * Logout, cancellation and authentication failure discard pending responses. */
+bool auth_response_ready(const auth_client *client);
+json_t *auth_take_response(auth_client *client, long *status, uint64_t *generation);
 /* Public metadata only; owns/cancels the prior context before GET /health and
  * GET /server. Poll in the event loop, like login. No credentials are needed. */
 bool auth_discover(auth_client *client, const char *url, bool allow_local_http);

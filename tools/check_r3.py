@@ -43,11 +43,12 @@ def stop(process):
 
 
 @contextmanager
-def isolated_backend(binary, container, work):
+def isolated_backend(binary, container, work, *, on_ready=None, label="r3"):
     details = json.loads(checked_run(["docker", "inspect", container], timeout=10))[0]
     settings = dict(item.split("=", 1) for item in details["Config"]["Env"] if "=" in item)
     source = settings.get("POSTGRES_DB", settings["POSTGRES_USER"])
-    database = "papo_r3_" + secrets.token_hex(8)
+    if label not in ("r3", "r4"): raise ValueError("Invalid validation label")
+    database = "papo_" + label + "_" + secrets.token_hex(8)
     ports = details["NetworkSettings"]["Ports"].get("5432/tcp")
     if not ports: raise RuntimeError("PostgreSQL needs a published local development port")
 
@@ -108,6 +109,7 @@ def isolated_backend(binary, container, work):
                 sql("UPDATE servers SET public_server=" + ("true, password_hash=NULL" if public else
                     "false, password_hash=(SELECT password_hash FROM users LIMIT 1)") + ";")
 
+            if on_ready: on_ready(sql)
             yield base, seed, visibility
             stop(process)
             process = None

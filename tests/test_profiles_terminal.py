@@ -85,6 +85,8 @@ class ProfileTerminalTests(unittest.TestCase):
         self.assertIn("http://127.0.0.1:10/other", self.screen(terminal))
         self.assertEqual(terminal.screen.cursor.y, 9)
         self.assertEqual(self.config()["selected_profile"], f"{2:032x}")
+        terminal.send(UP * 3)
+        self.assertEqual(terminal.screen.cursor.y, 9)  # The locked URL is skipped.
 
     def test_add_rename_remove_confirmation_and_restart(self):
         terminal = self.terminal()
