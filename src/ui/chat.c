@@ -52,7 +52,7 @@ static const char *messages[] = {
     "10:35 Ana: Uma mensagem longa deve se ajustar à largura disponível sem atravessar a borda ou cobrir a lista de canais. Redimensione o terminal para observar a organização dos painéis.",
     "10:36 Você: Texto UTF-8: ação, café, reunião e caracteres largos 界語.",
     "10:37 Bruno: PageUp e PageDown percorrem o histórico. O rascunho pertence a esta conversa.",
-    "10:38 Ana: Em um terminal estreito, Tab alterna entre canais, histórico e editor.",
+    "10:38 Ana: Em um terminal estreito, Tab alterna canais e conversa em uma tecla.",
     "10:39 Você: Você pode mudar de servidor e voltar para continuar seu rascunho.",
     "10:40 Bruno: Ctrl+N insere uma quebra de linha; Enter envia somente na demonstração.",
     "10:41 Autor desconhecido: A mensagem permanece legível sem o perfil do autor.",
@@ -971,7 +971,7 @@ int chat_demo_run(void)
     text_clear(&ui->query);
     init_graphemebreak();
     if (!initscr()) { free(ui); return 1; }
-    raw(); noecho(); keypad(stdscr, true);
+    raw(); nonl(); noecho(); keypad(stdscr, true);
     mouseinterval(0);
     mousemask(BUTTON1_PRESSED | BUTTON1_CLICKED | BUTTON4_PRESSED | BUTTON5_PRESSED, NULL);
     timeout(30); set_escdelay(25);
@@ -987,6 +987,7 @@ int chat_demo_run(void)
     fputs("\033[?2004h", stdout); fflush(stdout);
     int result = layout(ui) ? 0 : 1;
     bool redraw = true, quit = false;
+    unsigned paste_steps = 0;
     while (!result && !quit && !interrupted) {
         conversation *state = current(ui);
         if (state->state == LOADING && state->loading_until) {
@@ -998,18 +999,27 @@ int chat_demo_run(void)
                 redraw = true;
             }
         }
-        if (redraw) { draw(ui); redraw = false; }
+        if (redraw && (!ui->paste || paste_steps >= 32)) {
+            draw(ui); redraw = false; paste_steps = 0;
+        }
         wint_t key;
         int type = get_wch(&key);
-        if (type == ERR) continue;
+        if (type == ERR) {
+            if (redraw) { draw(ui); redraw = false; paste_steps = 0; }
+            continue;
+        }
         redraw = true;
-        if (type == KEY_CODE_YES && key == KEY_RESIZE) { if (!layout(ui)) result = 1; continue; }
+        if (type == KEY_CODE_YES && key == KEY_RESIZE) {
+            if (!layout(ui)) result = 1;
+            paste_steps = 32;
+            continue;
+        }
         if (type == KEY_CODE_YES && key == KEY_PASTE_START) {
             if (ui->frame && ui->modal_type == NO_MODAL && ui->focus == HISTORY && !set_focus(ui, EDITOR)) {
                 result = 1;
                 continue;
             }
-            ui->paste = true; ui->paste_cr = ui->paste_full = false; continue;
+            ui->paste = true; ui->paste_cr = ui->paste_full = false; paste_steps = 32; continue;
         }
         if (type == KEY_CODE_YES && key == KEY_PASTE_END) {
             ui->paste = false;
@@ -1017,7 +1027,11 @@ int chat_demo_run(void)
             continue;
         }
         if (type == KEY_CODE_YES && key == KEY_MOUSE) { if (!click(ui, &quit)) result = 1; continue; }
-        if (ui->paste) { if (type == OK) paste_character(ui, key); continue; }
+        if (ui->paste) {
+            if (type == OK) paste_character(ui, key);
+            ++paste_steps;
+            continue;
+        }
         if (type == OK && (key == 17 || key == 3)) {
             if (key == 3 || ui->modal_type == EXIT_MODAL || !has_drafts(ui)) quit = true;
             else if (!open_modal(ui, EXIT_MODAL)) result = 1;

@@ -36,6 +36,7 @@ static void normalize_cursor(text_buffer *buffer)
         breaks[buffer->cursor - 1] != GRAPHEMEBREAK_BREAK)
         buffer->cursor = next(buffer, buffer->cursor, breaks);
     buffer->goal_column = -1;
+    buffer->trailing = false;
 }
 
 static bool allowed(wint_t value)
@@ -74,10 +75,16 @@ void text_delete(text_buffer *buffer, bool backward)
 
 void text_horizontal(text_buffer *buffer, bool right)
 {
+    if (right && buffer->trailing) {
+        buffer->trailing = false;
+        buffer->goal_column = -1;
+        return;
+    }
     char breaks[TEXT_LIMIT];
     boundaries(buffer, breaks);
     buffer->cursor = right ? next(buffer, buffer->cursor, breaks) : previous(buffer->cursor, breaks);
     buffer->goal_column = -1;
+    buffer->trailing = false;
 }
 
 static text_cell cell(const text_buffer *buffer, size_t start, size_t end)
@@ -137,6 +144,17 @@ void text_measure(const text_buffer *buffer, int width, text_layout *layout)
                                                .row = row, .column = column};
     if (buffer->cursor == buffer->length) { layout->cursor_row = row; layout->cursor_column = column; }
     layout->rows = row + 1;
+    if (buffer->trailing) {
+        for (size_t i = 0; i + 1 < layout->count; ++i) {
+            const text_cell *point = &layout->cells[i];
+            if (!point->newline && point->end == buffer->cursor &&
+                point->row < layout->cursor_row) {
+                layout->cursor_row = point->row;
+                layout->cursor_column = point->column + point->width;
+                break;
+            }
+        }
+    }
 }
 
 static size_t offset_at(const text_layout *layout, int row, int column)
@@ -150,6 +168,17 @@ static size_t offset_at(const text_layout *layout, int row, int column)
     return result;
 }
 
+static void position_at(text_buffer *buffer, const text_layout *layout, int row, int column)
+{
+    buffer->cursor = offset_at(layout, row, column);
+    buffer->trailing = false;
+    for (size_t i = 0; i + 1 < layout->count; ++i) {
+        const text_cell *point = &layout->cells[i];
+        if (!point->newline && point->end == buffer->cursor && point->row == row &&
+            layout->cells[i + 1].row > row) buffer->trailing = true;
+    }
+}
+
 void text_vertical(text_buffer *buffer, int width, int direction)
 {
     text_layout layout;
@@ -157,20 +186,14 @@ void text_vertical(text_buffer *buffer, int width, int direction)
     if (buffer->goal_column < 0) buffer->goal_column = layout.cursor_column;
     int row = layout.cursor_row + direction;
     if (row < 0 || row >= layout.rows) return;
-    buffer->cursor = offset_at(&layout, row, buffer->goal_column);
+    position_at(buffer, &layout, row, buffer->goal_column);
 }
 
 void text_line_edge(text_buffer *buffer, int width, bool end)
 {
     text_layout layout;
     text_measure(buffer, width, &layout);
-    if (!end) buffer->cursor = offset_at(&layout, layout.cursor_row, 0);
-    else {
-        for (size_t i = 0; i < layout.count; ++i) {
-            const text_cell *point = &layout.cells[i];
-            if (point->row == layout.cursor_row) buffer->cursor = point->newline ? point->start : point->end;
-        }
-    }
+    position_at(buffer, &layout, layout.cursor_row, end ? INT_MAX : 0);
     buffer->goal_column = -1;
 }
 
@@ -178,7 +201,7 @@ void text_click(text_buffer *buffer, int width, int row, int column)
 {
     text_layout layout;
     text_measure(buffer, width, &layout);
-    buffer->cursor = offset_at(&layout, row, column);
+    position_at(buffer, &layout, row, column);
     buffer->goal_column = -1;
 }
 

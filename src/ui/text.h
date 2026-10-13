@@ -14,6 +14,7 @@ typedef struct {
     utf32_t data[TEXT_LIMIT + 1];
     size_t length, cursor;
     int first_row, goal_column;
+    bool trailing; /* Prefer the preceding visual line at a soft wrap. */
 } text_buffer;
 
 typedef struct {

@@ -1,6 +1,7 @@
 #include "ui/theme.h"
 
 #include <ncurses.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define FIRST_CUSTOM_COLOR 240
@@ -42,7 +43,10 @@ void theme_init(ui_theme *theme)
             COLOR_YELLOW, COLOR_RED, COLOR_GREEN, COLOR_WHITE, COLOR_BLACK, COLOR_BLACK
         };
         memcpy(colors, basic, sizeof(colors));
-    } else if (can_change_color()) {
+    } else if (can_change_color() && !getenv("KONSOLE_VERSION")) {
+        /* Konsole may advertise ccc while ignoring terminfo's rgb: syntax.
+         * Keep its indexed palette intact; direct-color entries above still
+         * provide exact RGB when explicitly advertised by terminfo. */
         for (int i = 0; i < THEME_COLOR_COUNT; ++i) {
             short index = FIRST_CUSTOM_COLOR + i;
             if (color_content(index, &theme->colors[i].red, &theme->colors[i].green,

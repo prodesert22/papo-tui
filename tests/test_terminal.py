@@ -29,12 +29,13 @@ class ObservedScreen(pyte.Screen):
 
 
 class Terminal:
-    def __init__(self):
+    def __init__(self, arguments=(), *, terminal_type="xterm-256color", environment=None):
         self.master, self.slave = pty.openpty()
         self.original = termios.tcgetattr(self.slave)
         fcntl.ioctl(self.slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
-        env = dict(os.environ, TERM="xterm-256color", LANG="C.UTF-8", LC_ALL="C.UTF-8")
-        self.process = subprocess.Popen([BINARY], stdin=self.slave, stdout=self.slave, stderr=self.slave,
+        env = dict(os.environ, TERM=terminal_type, LANG="C.UTF-8", LC_ALL="C.UTF-8")
+        env.update(environment or {})
+        self.process = subprocess.Popen([BINARY, *arguments], stdin=self.slave, stdout=self.slave, stderr=self.slave,
                                         env=env, start_new_session=True)
         self.output = bytearray()
         self.screen = ObservedScreen(80, 24)

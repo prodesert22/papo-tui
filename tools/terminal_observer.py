@@ -20,6 +20,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--report', type=Path, required=True)
     parser.add_argument('binary', type=Path)
+    parser.add_argument('application_args', nargs=argparse.REMAINDER)
     arguments = parser.parse_args()
     arguments.report.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     original = termios.tcgetattr(0)
@@ -30,7 +31,7 @@ def main():
         stopping = True
 
     signal.signal(signal.SIGTERM, stop)
-    child = subprocess.Popen([str(arguments.binary.resolve())])
+    child = subprocess.Popen([str(arguments.binary.resolve()), *arguments.application_args])
     result = {'pid': child.pid, 'term': os.environ.get('TERM'), 'running': True}
     try:
         while child.poll() is None and not stopping:
@@ -49,7 +50,7 @@ def main():
         result.update(running=False, returncode=child.returncode,
                       restored=termios.tcgetattr(0) == original)
         write(arguments.report, result)
-    print('R1 terminal restoration: ' + ('passed' if result['restored'] else 'failed'))
+    print('Terminal restoration: ' + ('passed' if result['restored'] else 'failed'))
     return 0 if result['restored'] and child.returncode == 0 else 2
 
 

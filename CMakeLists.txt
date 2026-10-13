@@ -65,6 +65,18 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_auth.py $<TARGET_FILE:auth-probe>)
     add_test(NAME login-terminal COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_terminal.py $<TARGET_FILE:papo-tui>)
+    add_executable(text-test tests/test_text.c src/ui/text.c)
+    target_include_directories(text-test PRIVATE src)
+    target_link_libraries(text-test PRIVATE PkgConfig::NCURSES PkgConfig::UNIBREAK)
+    target_compile_options(text-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    if(PAPO_SANITIZERS)
+        target_compile_options(text-test PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+        target_link_options(text-test PRIVATE -fsanitize=address,undefined)
+    endif()
+    add_test(NAME unicode-editor COMMAND text-test)
+    add_test(NAME chat-terminal COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_chat.py $<TARGET_FILE:papo-tui>)
+    set_tests_properties(chat-terminal PROPERTIES TIMEOUT 120)
     add_test(NAME websocket-integration COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_ws.py $<TARGET_FILE:ws-probe>)
     set_tests_properties(websocket-integration PROPERTIES TIMEOUT 120)

@@ -125,6 +125,8 @@ Depois de abrir um canal por clique, Enter ou navegação rápida, você pode co
 
 O mouse depende do suporte do terminal. Apenas o botão esquerdo ativa os controles; soltar o botão não repete a ação. Cliques fora dos controles ou durante colagem delimitada são ignorados. A roda também rola a ajuda e percorre resultados na navegação rápida.
 
+Na colagem delimitada, CRLF e CR tornam-se uma única quebra de linha, e tabulações tornam-se espaços. Controles e atalhos dentro da colagem não enviam mensagens nem trocam de conversa. O conteúdo permanece no rascunho até pressionar Enter depois da colagem.
+
 O editor aceita várias linhas e até 2048 caracteres Unicode (8192 bytes UTF-8). Ctrl+N insere uma quebra de linha. Colagem delimitada preserva quebras de linha, converte tabulações em espaços e nunca dispara envio; caracteres de controle são ignorados. Ao atingir o limite, a colagem é interrompida no limite do campo e a tela informa isso. Setas, Backspace e Delete preservam grafemas completos, incluindo acentos combinados. Sequências que a tela não consegue representar, como alguns emojis compostos, aparecem como `?`; o rascunho e a mensagem simulada mantêm o texto original.
 
 Enter adiciona a mensagem ao histórico local e limpa o rascunho somente quando consegue concluir a operação. Cada conversa aceita até 32 mensagens locais, incluindo as chegadas simuladas por F2. Rolar para cima mantém seu ponto de leitura ao chegar uma mensagem; o indicador no cabeçalho informa quantas mensagens foram adicionadas e permite voltar ao fim. Redimensionar mantém a leitura ancorada na mensagem em exibição.

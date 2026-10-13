@@ -34,7 +34,7 @@ Depois de abrir um canal, basta digitar para focar o editor e começar a mensage
 
 Esc sai do editor para o histórico; no histórico, Esc volta à lista de canais. Na lista, Esc retorna à conversa atual sem confirmar outra seleção. Com o editor focado, as setas editam o texto; os demais painéis usam as setas para sua própria navegação. Enter no histórico abre o editor, ou refaz o carregamento quando há um erro simulado. Modais mantêm seus próprios controles de navegação.
 
-O login e a demonstração usam um tema escuro: fundo quase preto, painéis em cinza escuro e destaque laranja `#ffb347`. O tom exato depende do suporte a RGB ou à redefinição de cores do terminal; paletas fixas usam a aproximação disponível.
+O login e a demonstração usam um tema escuro: fundo quase preto, painéis em cinza escuro e destaque laranja `#ffb347`. O tom exato depende do suporte a RGB ou à redefinição de cores do terminal; paletas fixas usam a aproximação disponível. No Konsole com terminfo de 256 cores, a paleta fixa preserva o tema escuro e usa o laranja aproximado `#ffaf5f`.
 
 Na demonstração, o foco é indicado por um fundo discretamente mais claro, mantendo os tons escuros da paleta. O rodapé informa qual área recebe as teclas; os marcadores da seleção continuam presentes. Ao abrir um modal, o realce dos painéis ao fundo é desativado.
 
@@ -113,8 +113,8 @@ As ferramentas em `tools/` auxiliam a validação do contrato durante o desenvol
 - [x] R0: contrato e ambiente de integração validados com a conta fornecida, paginação e cenário privado HTTPS/WSS.
 - [x] Transporte WS/WSS em C, com cookies por contexto, filas limitadas e revalidação REST.
 - [x] Base de terminal exercitada em Kitty, Konsole e tmux.
-- [x] Layout inicial de conversas com dados simulados em `--demo`.
-- [ ] Interface de conversas.
+- [x] R2: interface navegável com dados simulados em `--demo`, editor multilinha, mouse e ajuda.
+- [ ] Interface de conversas integrada ao backend.
 
 ## Testes
 
@@ -127,6 +127,8 @@ ctest --test-dir build --output-on-failure
 ```
 
 Os testes usam credenciais sintéticas e servidores HTTP/WS locais. Cobrem acesso público/privado, cookies, logout, erros, limites de entrada/resposta/fila, cancelamento, URLs com prefixo, senhas ocultas, espaços em senhas, redimensionamento, Backspace repetido, cliques e restauração do terminal. pyte reconstrói a tela para verificar a posição do cursor. A suíte WS inclui fragmentação dentro de UTF-8, chunks, ping/pong intercalado, encerramento, timeouts, sessão revogada com ACK e WSS com CA/hostname verificados. Essas dependências Python são usadas somente nos testes; os mocks não comprovam integração com a instância real.
+
+As suítes `unicode-editor` e `chat-terminal` exercitam a demonstração local: grafemas, largura em células, cursor nas linhas quebradas, colagem multilinha e fragmentada, limites, mouse, atalhos, modais, estados vazio/carregando/erro, isolamento de rascunhos, preservação da leitura, resize e saída. Também conferem os indicadores de foco e erro em terminal sem cores.
 
 A suíte `api-contract` valida 51 fixtures REST e 17 exemplos WS, cursor composto com timestamps iguais, limites de lote, YAML 1.2, isolamento de cookies e relatórios sem segredos. Regerar o inventário local e os exemplos após uma mudança no contrato:
 
@@ -159,9 +161,10 @@ Com Kitty, Konsole, tmux, qdbus6 e xdotool disponíveis numa sessão gráfica X1
 
 ```sh
 build/test-env/bin/python -m tools.check_terminals --tmux /usr/bin/tmux
+build/test-env/bin/python -m tools.check_terminals --demo --tmux /usr/bin/tmux
 ```
 
-Os resultados e as telas ficam em `build/r1/terminals/`. A ferramenta usa uma configuração temporária de Konsole e um servidor tmux isolado; fecha suas janelas ao terminar.
+Os resultados e as telas ficam em `build/r1/terminals/` para o login e `build/r2/terminals/` para a demonstração. A ferramenta usa uma configuração temporária de Konsole e um servidor tmux isolado; fecha suas janelas ao terminar. Eventos de mouse são enviados à PTY no protocolo declarado pelo terminfo; `infocmp` também deve estar disponível. A opção `--demo` usa somente dados locais, sem credenciais ou conexão ao backend.
 
 ```sh
 cmake -S . -B build/sanitized -DPAPO_SANITIZERS=ON -DPython3_EXECUTABLE="$PWD/build/test-env/bin/python"
