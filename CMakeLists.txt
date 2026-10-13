@@ -31,11 +31,11 @@ if(NOT PAPO_CURL_WS_SUPPORTED)
     message(FATAL_ERROR "libcurl must provide WS/WSS, TLS and asynchronous DNS")
 endif()
 
-add_library(papo_auth src/net/auth.c src/net/rate_limit.c src/net/ws.c)
+add_library(papo_auth src/net/auth.c src/net/rate_limit.c src/net/ws.c src/config/profiles.c)
 target_include_directories(papo_auth PUBLIC src)
 target_link_libraries(papo_auth PUBLIC PkgConfig::CURL PkgConfig::JANSSON)
 
-add_executable(papo-tui src/main.c src/ui/login.c src/ui/chat.c src/ui/theme.c src/ui/text.c)
+add_executable(papo-tui src/main.c src/ui/login.c src/ui/chat.c src/ui/profiles.c src/ui/theme.c src/ui/text.c)
 target_link_libraries(papo-tui PRIVATE papo_auth PkgConfig::FORM PkgConfig::NCURSES PkgConfig::UNIBREAK)
 target_compile_definitions(papo-tui PRIVATE PAPO_VERSION="${PROJECT_VERSION}-dev")
 

@@ -4,30 +4,61 @@
 #include <time.h>
 #include <curl/curl.h>
 #include <string.h>
-
-#define CAPACITY (PAPO_RATE_INTERVAL_NS * PAPO_REQUEST_BURST)
+#include <math.h>
 
 static request_budget global_budget;
 
+bool net_rate_parameters_valid(double requests_per_second, unsigned burst)
+{
+    return isfinite(requests_per_second) && requests_per_second > 0 && burst > 0;
+}
+
+static void defaults(request_budget *budget)
+{
+    if (!net_rate_parameters_valid(budget->requests_per_second, budget->burst)) {
+        budget->requests_per_second = PAPO_REQUESTS_PER_SECOND;
+        budget->burst = PAPO_REQUEST_BURST;
+    }
+}
+
+static void refill(request_budget *budget, uint64_t now)
+{
+    if (now < budget->updated || now < budget->blocked_until) return;
+    long double added = (long double)(now - budget->updated) * budget->requests_per_second / 1000000000.0L;
+    long double room = budget->burst - budget->credit;
+    budget->credit += added < room ? added : room;
+    budget->updated = now;
+}
+
+bool request_budget_configure(request_budget *budget, uint64_t now, double requests_per_second, unsigned burst)
+{
+    if (!net_rate_parameters_valid(requests_per_second, burst)) return false;
+    defaults(budget);
+    if (budget->initialized) refill(budget, now);
+    budget->requests_per_second = requests_per_second;
+    budget->burst = burst;
+    if (budget->credit > burst) budget->credit = burst;
+    return true;
+}
+
 bool request_budget_take(request_budget *budget, uint64_t now)
 {
+    defaults(budget);
     if (!budget->initialized) {
         budget->initialized = true;
         budget->updated = now;
-        budget->credit = CAPACITY;
+        budget->credit = budget->burst;
     }
     if (now < budget->blocked_until || now < budget->updated) return false;
-    uint64_t elapsed = now - budget->updated;
-    uint64_t remaining = CAPACITY - budget->credit;
-    budget->credit += elapsed < remaining ? elapsed : remaining;
-    budget->updated = now;
-    if (budget->credit < PAPO_RATE_INTERVAL_NS) return false;
-    budget->credit -= PAPO_RATE_INTERVAL_NS;
+    refill(budget, now);
+    if (budget->credit < 1) return false;
+    budget->credit -= 1;
     return true;
 }
 
 void request_budget_defer(request_budget *budget, uint64_t now, unsigned seconds)
 {
+    defaults(budget);
     uint64_t delay = (uint64_t)seconds * UINT64_C(1000000000);
     uint64_t until = delay > UINT64_MAX - now ? UINT64_MAX : now + delay;
     if (until < budget->blocked_until) until = budget->blocked_until;
@@ -41,9 +72,19 @@ void request_budget_defer(request_budget *budget, uint64_t now, unsigned seconds
 static bool monotonic_now(uint64_t *now)
 {
     struct timespec value;
-    if (clock_gettime(CLOCK_MONOTONIC, &value) != 0 || value.tv_sec < 0) return false;
-    *now = (uint64_t)value.tv_sec * UINT64_C(1000000000) + (uint64_t)value.tv_nsec;
+    if (clock_gettime(CLOCK_MONOTONIC, &value) != 0 || value.tv_sec < 0 ||
+        (uint64_t)value.tv_sec > UINT64_MAX / UINT64_C(1000000000)) return false;
+    uint64_t base = (uint64_t)value.tv_sec * UINT64_C(1000000000);
+    if (value.tv_nsec < 0 || value.tv_nsec >= 1000000000L || (uint64_t)value.tv_nsec > UINT64_MAX - base) return false;
+    *now = base + (uint64_t)value.tv_nsec;
     return true;
+}
+
+bool net_rate_configure(double requests_per_second, unsigned burst)
+{
+    uint64_t now;
+    return net_rate_parameters_valid(requests_per_second, burst) && monotonic_now(&now) &&
+           request_budget_configure(&global_budget, now, requests_per_second, burst);
 }
 
 int net_rate_try_acquire(void)

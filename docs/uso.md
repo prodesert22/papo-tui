@@ -29,6 +29,63 @@ O executável fica em `build/papo-tui`. Para consultar as opções ou a versão:
 
 ## Conectar ao servidor
 
+### Servidores salvos
+
+A abertura normal sempre apresenta a tela de login. Clique em **Selecionar perfil**, ou foque esse botão com Tab e pressione Enter, para abrir o modal de seleção. **Ctrl+P** no login também abre esse modal. ↑/↓ percorrem a lista; Enter ou um clique no perfil selecionam-no e voltam ao login com a URL preenchida. No modal, **Gerenciar / Ctrl+P** abre o gerenciador completo; **Cancelar / Esc** volta ao login e Ctrl+Q/Ctrl+C fecha o aplicativo.
+
+Abra **Gerenciar** no modal ou execute `./build/papo-tui --profiles` para iniciar diretamente no gerenciador. O topo contém duas opções: **Listar** e **+ Adicionar**. Em **Listar**, todos os perfis ficam numa lista vertical; a rolagem acompanha o destaque.
+
+| Área | Controles |
+| --- | --- |
+| Topo | ← vai para Listar e → para Adicionar, parando nas extremidades; ↓ ou Enter em Listar entram na lista |
+| Lista | ↑/↓ mudam o perfil destacado; PageUp/PageDown avançam uma página; Home/End vão ao início/fim |
+| Lista → ações | Enter ou → focam Selecionar, o primeiro botão do rodapé |
+| Ações | ←/→ movem entre Selecionar, Editar, Remover, Limites e Identificar, parando nas extremidades; Enter executa a ação |
+| Ações → lista | ↑ volta à lista com o mesmo perfil destacado |
+| Lista → topo | ↑ no primeiro perfil volta ao topo; ← mantém o foco na lista |
+| Tab / Shift+Tab | Percorrem topo, lista e botões disponíveis |
+| Mouse | Clique num perfil para destacá-lo ou num botão para executar a ação |
+
+Os textos principais, nomes, campos e botões são brancos; o texto dos botões e itens de lista selecionados usa laranja `#ffb347`, e dicas e comandos permanecem cinza. O controle em foco tem um fundo laranja escuro mais evidente, distinto do fundo laranja discreto do perfil quando você está nas ações. As dicas do rodapé mudam conforme a área focada. Setas horizontais nos botões dos modais também param nas extremidades. No modal de seleção aberto pelo login, ↑/↓ percorrem os perfis, → leva aos botões e ↑ nos botões volta à lista.
+
+**+ Adicionar** aparece somente no topo: clique nela ou destaque-a e pressione Enter para cadastrar um perfil. Enquanto essa opção estiver selecionada, as ações do rodapé ficam indisponíveis e Tab/Shift+Tab e ↓ mantêm o foco no topo. Cancelar o cadastro com Esc mantém esse comportamento; volte a **Listar** para habilitar as ações de um perfil salvo. Salvar o cadastro volta à lista com o novo perfil destacado.
+
+- **+ Adicionar no topo / Ctrl+N:** informar nome e URL.
+- **Selecionar:** voltar ao login com a URL do perfil destacado.
+- **Editar / Ctrl+E:** renomear ou corrigir a URL, preservando o ID do perfil.
+- **Remover / Ctrl+D:** abrir a confirmação; **Cancelar** é a opção inicial.
+- **Limites / Ctrl+L:** editar a taxa global de requisições e o burst.
+- **Identificar / F5:** repetir a identificação da instância.
+- **Ctrl+R:** recarregar o arquivo de configuração.
+- **Esc:** cancelar a edição/remoção ou voltar ao login.
+- **Ctrl+Q / Ctrl+C:** fechar o aplicativo.
+
+Nos diálogos, Tab percorre campos e botões, ←/→ escolhem o botão, e Enter avança ou confirma. Colagem delimitada nunca salva, seleciona ou remove por conta própria. Ctrl+U limpa o campo; setas, Home/End e Backspace/Delete permitem editar. O gerenciador exige 44 colunas e 14 linhas; o login exige 44×22.
+
+Os perfis aceitam URLs HTTPS, com porta e prefixo opcionais, sem credenciais embutidas, query ou fragmento. Para HTTP de desenvolvimento em `localhost`, `127.0.0.1` ou `[::1]`, inicie com `--allow-local-http`:
+
+```sh
+./build/papo-tui --profiles --allow-local-http
+```
+
+Perfis HTTP já salvos permanecem visíveis sem essa opção, mas não podem ser selecionados. Ao abrir a seleção de perfil pelo login, a conexão atual é fechada e usuário, senhas e cookies locais são descartados. O perfil selecionado preenche a URL e deixa esse campo bloqueado; para corrigir a URL, volte a **Selecionar perfil → Gerenciar → Editar**. Cada entrada exige novo login.
+
+Os dados públicos são salvos em `$XDG_CONFIG_HOME/papo-tui/config.json`, ou em `~/.config/papo-tui/config.json` quando XDG não estiver definido com caminho absoluto. O diretório é restrito (`700`) e o arquivo usa `600`. Até 64 perfis podem ser salvos; o nome aceita 128 bytes UTF-8, e a URL, 2048. Senhas, cookies, mensagens e rascunhos não entram nesse arquivo.
+
+Um arquivo inválido ou de versão desconhecida fica preservado e bloqueia gravações. Corrija-o e use Ctrl+R para recarregar. Alterações externas também exigem recarregar antes de salvar. Falhas de gravação mantêm a configuração e os perfis anteriores.
+
+Ao destacar um perfil, o aplicativo consulta a disponibilidade e os dados públicos da instância, mostrando seu nome e a condição pública/privada. Essas consultas continuam em segundo plano enquanto você navega ou edita. Se houver falha, use F5 para tentar novamente ou **Editar** para corrigir a URL. A identificação informa disponibilidade; entrar na conta continua exigindo autenticação.
+
+### Taxa e burst
+
+No gerenciador, destaque um perfil salvo e abra **Limites** ou pressione Ctrl+L. Informe a quantidade de requisições por segundo e a capacidade de burst. A taxa deve ser positiva e finita; use ponto decimal, por exemplo `2.5`. O burst aceita inteiros de 1 a 4294967295. Enter avança pelos campos; Tab alterna o foco, e ←/→ escolhem os botões.
+
+**Padrão** preenche taxa 10 e burst 25; confirme com **Salvar** para aplicar. Valores inválidos mantêm o diálogo aberto e a configuração anterior. Esc ou **Cancelar** descarta a edição. As preferências são salvas com os perfis e carregadas ao iniciar, mesmo quando você abre diretamente o login manual. Configurações anteriores continuam compatíveis e usam 10/25 até você salvar outra preferência.
+
+O limite é compartilhado por descoberta, login, logout, revalidação e novas conexões de tempo real. Salvar, recarregar ou trocar de perfil mantém o crédito já disponível e a espera indicada por `Retry-After`; aumentar burst não cria crédito adicional naquele instante. Diminuir burst restringe o crédito restante à nova capacidade. A interface continua aceitando teclas enquanto as requisições aguardam capacidade.
+
+### Login
+
 A tela apresenta um cabeçalho, o formulário e uma área de estado e controles. Preencha os quatro campos:
 
 | Campo | O que informar |
@@ -38,15 +95,17 @@ A tela apresenta um cabeçalho, o formulário e uma área de estado e controles.
 | Senha | A senha da sua conta |
 | Senha do servidor | Obrigatória em instâncias privadas; deixe vazia em instâncias públicas |
 
-Para um servidor local, use `http://127.0.0.1:8080`. HTTP também é aceito em `localhost` e `[::1]`; servidores remotos exigem HTTPS. Prefixos de caminho são preservados, como em `https://exemplo.com/papo`.
+Para um servidor local, inicie com `./build/papo-tui --allow-local-http` e use `http://127.0.0.1:8080`. HTTP também é aceito em `localhost` e `[::1]` com essa opção; servidores remotos exigem HTTPS. Prefixos de caminho são preservados, como em `https://exemplo.com/papo`.
 
 Selecione **Entrar** ou pressione Enter. O aplicativo consulta o servidor, solicita acesso à instância privada quando necessário e autentica sua conta. As senhas são ocultas; credenciais e cookies não são salvos entre execuções.
+
+Quando a instância é privada e a senha do servidor foi esquecida, o campo **Senha do servidor** ganha uma borda vermelha, um marcador de obrigatório e recebe o foco automaticamente. Digite a senha e pressione Enter para repetir a tentativa. Se essa senha for rejeitada, o campo é limpo e focado para correção. A borda desaparece ao começar a editar; usuário e senha da conta permanecem no formulário durante essa correção.
 
 Depois de autenticar, a tela mostra a conta, o servidor e o estado da conexão de tempo real. **Sair da conta** encerra essa conexão e a sessão. A versão atual implementa login, logout e recebimento de eventos em memória; a tela de conversas ainda não está disponível.
 
 A sessão é confirmada novamente a cada 30 segundos. Se a confirmação falhar, o aplicativo limpa a sessão e solicita novo login. Para refazer uma conexão de tempo real interrompida, saia da conta e entre novamente.
 
-O aplicativo compartilha um limite de 10 requisições por segundo, com capacidade de burst de 25, entre todas as tentativas de conexão. Ao atingir esse limite, os envios aguardam e a interface continua respondendo. Esses valores são fixos nesta versão.
+O aplicativo compartilha um limite configurável entre todas as tentativas de conexão, com padrões de 10 requisições por segundo e burst 25. Ajuste esses valores em **Selecionar perfil → Gerenciar → Limites**. Ao atingir o limite, os envios aguardam e a interface continua respondendo.
 
 ## Teclado e mouse
 
@@ -59,8 +118,9 @@ O tema usa fundo quase preto, painéis em cinza escuro e laranja `#ffb347` em t�
 | ← / →, Home / End | Mover o cursor no campo |
 | Backspace / Delete | Apagar texto |
 | Ctrl+U | Limpar o campo atual |
+| Ctrl+P | Abrir a seleção de perfil, encerrando a conexão e limpando credenciais locais |
 | Clique esquerdo no campo | Focar e posicionar o cursor |
-| Clique esquerdo no botão | Entrar ou sair da conta |
+| Clique esquerdo no botão | Entrar, sair da conta ou selecionar perfil |
 | Esc | Cancelar uma conexão em andamento |
 | Ctrl+Q / Ctrl+C | Fechar o aplicativo |
 

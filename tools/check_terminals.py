@@ -49,6 +49,7 @@ class Emulator:
         self.socket = None
         self.process = None
         self.configuration = None
+        self.application_configuration = tempfile.TemporaryDirectory(prefix='papo-config-', dir=directory)
         self.stage = 'startup'
         label = 'R2' if demo else 'R1'
         self.tmux_server = 'papo-probe-' + str(os.getpid())
@@ -56,7 +57,10 @@ class Emulator:
                     '--report', str(self.state_path), str(binary)]
         if demo:
             observer.append('--demo')
+        else:
+            observer.append('--allow-local-http')
         env = dict(os.environ, LANG='C.UTF-8', LC_ALL='C.UTF-8')
+        env['XDG_CONFIG_HOME'] = self.application_configuration.name
         if name == 'Konsole':
             env['QT_QPA_PLATFORM'] = 'xcb'
             # A separate configuration enables native input only in this
@@ -158,6 +162,7 @@ class Emulator:
                 path.unlink(missing_ok=True)
         if self.configuration:
             self.configuration.cleanup()
+        self.application_configuration.cleanup()
 
 
 def exercise(emulator, server):

@@ -8,6 +8,7 @@ import subprocess
 import sys
 import termios
 import time
+import tempfile
 import unittest
 
 import pyte
@@ -29,13 +30,18 @@ class ObservedScreen(pyte.Screen):
 
 
 class Terminal:
-    def __init__(self, arguments=(), *, terminal_type="xterm-256color", environment=None):
+    def __init__(self, arguments=(), *, terminal_type="xterm-256color", environment=None, allow_local_http=True):
         self.master, self.slave = pty.openpty()
         self.original = termios.tcgetattr(self.slave)
         fcntl.ioctl(self.slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
         env = dict(os.environ, TERM=terminal_type, LANG="C.UTF-8", LC_ALL="C.UTF-8")
+        self.configuration = tempfile.TemporaryDirectory(prefix="papo-terminal-config-")
+        env["XDG_CONFIG_HOME"] = self.configuration.name
         env.update(environment or {})
-        self.process = subprocess.Popen([BINARY, *arguments], stdin=self.slave, stdout=self.slave, stderr=self.slave,
+        command = [BINARY, *arguments]
+        if allow_local_http and "--demo" not in arguments and "--allow-local-http" not in arguments:
+            command.append("--allow-local-http")
+        self.process = subprocess.Popen(command, stdin=self.slave, stdout=self.slave, stderr=self.slave,
                                         env=env, start_new_session=True)
         self.output = bytearray()
         self.screen = ObservedScreen(80, 24)
@@ -88,6 +94,7 @@ class Terminal:
         restored = termios.tcgetattr(self.slave) == self.original
         os.close(self.master)
         os.close(self.slave)
+        self.configuration.cleanup()
         return restored
 
 

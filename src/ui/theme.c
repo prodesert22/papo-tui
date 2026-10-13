@@ -6,7 +6,8 @@
 
 #define FIRST_CUSTOM_COLOR 240
 
-enum { BACKGROUND, SURFACE, RAISED, TEXT, SECONDARY, ORANGE, RED, GREEN, RULE, WARM, HISTORY_BACKGROUND };
+enum { BACKGROUND, SURFACE, RAISED, TEXT, SECONDARY, ORANGE, RED, GREEN, RULE, WARM, HISTORY_BACKGROUND,
+       PROFILE_WHITE, PROFILE_HIGHLIGHT };
 
 static short component(unsigned char value)
 {
@@ -30,9 +31,11 @@ void theme_init(ui_theme *theme)
         {0x38, 0x3e, 0x49}, /* #383e49 separators */
         {0x30, 0x24, 0x19}, /* #302419 selected conversation */
         {0x15, 0x17, 0x1b}, /* #15171b subtle history focus */
+        {0xff, 0xff, 0xff}, /* #ffffff profile labels and controls */
+        {0x50, 0x38, 0x1f}, /* #50381f dark orange profile focus */
     };
     /* Fixed xterm palette approximations. Never redefine the first 16 colors. */
-    int colors[THEME_COLOR_COUNT] = {232, 233, 234, 254, 247, 215, 210, 150, 238, 235, 233};
+    int colors[THEME_COLOR_COUNT] = {232, 233, 234, 254, 247, 215, 210, 150, 238, 235, 233, 231, 94};
     if (COLORS >= 0x1000000) {
         /* Direct-color terminfo: color numbers are packed RGB values. */
         for (int i = 0; i < THEME_COLOR_COUNT; ++i)
@@ -40,7 +43,8 @@ void theme_init(ui_theme *theme)
     } else if (COLORS < 256) {
         const int basic[THEME_COLOR_COUNT] = {
             COLOR_BLACK, COLOR_BLACK, COLOR_BLACK, COLOR_WHITE, COLOR_WHITE,
-            COLOR_YELLOW, COLOR_RED, COLOR_GREEN, COLOR_WHITE, COLOR_BLACK, COLOR_BLACK
+            COLOR_YELLOW, COLOR_RED, COLOR_GREEN, COLOR_WHITE, COLOR_BLACK, COLOR_BLACK,
+            COLOR_WHITE, COLOR_YELLOW
         };
         memcpy(colors, basic, sizeof(colors));
     } else if (can_change_color() && !getenv("KONSOLE_VERSION")) {
@@ -77,6 +81,12 @@ void theme_init(ui_theme *theme)
     init_extended_pair(HISTORY_ACCENT, colors[ORANGE], colors[HISTORY_BACKGROUND]);
     init_extended_pair(HISTORY_ERROR, colors[RED], colors[HISTORY_BACKGROUND]);
     init_extended_pair(HISTORY_BORDER, colors[RULE], colors[HISTORY_BACKGROUND]);
+    init_extended_pair(PROFILE_TEXT, colors[PROFILE_WHITE], colors[BACKGROUND]);
+    init_extended_pair(PROFILE_PANEL, colors[PROFILE_WHITE], colors[SURFACE]);
+    init_extended_pair(PROFILE_SELECTED, colors[PROFILE_WHITE], colors[WARM]);
+    init_extended_pair(PROFILE_FOCUS, colors[PROFILE_WHITE], colors[PROFILE_HIGHLIGHT]);
+    init_extended_pair(PROFILE_BUTTON_SELECTED, colors[ORANGE], colors[WARM]);
+    init_extended_pair(PROFILE_BUTTON_FOCUS, colors[ORANGE], colors[PROFILE_HIGHLIGHT]);
     wbkgd(stdscr, COLOR_PAIR(NORMAL));
 }
 

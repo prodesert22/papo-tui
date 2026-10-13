@@ -11,6 +11,7 @@
 #include <string.h>
 #include <strings.h>
 #include <time.h>
+#include <errno.h>
 
 #define RESPONSE_LIMIT (1024U * 1024U)
 
@@ -35,6 +36,8 @@ struct auth_client {
     char *response;
     size_t response_length;
     bool overflow;
+    bool server_public;
+    bool server_password_error;
     char message[192];
     char name[128];
     char user[128];
@@ -81,6 +84,7 @@ static void clear_cookies(auth_client *client)
 
 static void fail(auth_client *client, const char *message)
 {
+    client->server_password_error = false;
     ws_abort(client->websocket);
     detach(client);
     forget_inputs(client);
@@ -108,7 +112,7 @@ char *auth_normalize_url(const char *url, char *error, size_t error_size)
     const CURLUPart forbidden[] = {CURLUPART_USER, CURLUPART_PASSWORD,
                                   CURLUPART_QUERY, CURLUPART_FRAGMENT};
     for (size_t i = 0; i < sizeof(forbidden) / sizeof(forbidden[0]); ++i) {
-        if (curl_url_get(parsed, forbidden[i], &part, 0) == CURLUE_OK) {
+        if (curl_url_get(parsed, forbidden[i], &part, CURLU_GET_EMPTY) == CURLUE_OK) {
             curl_free(part);
             part = NULL;
             goto done;
@@ -256,13 +260,14 @@ auth_client *auth_create(void)
     return client;
 }
 
-bool auth_start(auth_client *client, const char *url, const char *username,
-                const char *password, const char *server_password)
+bool auth_start_with_policy(auth_client *client, const char *url, const char *username,
+                            const char *password, const char *server_password, bool allow_local_http)
 {
     if (auth_busy(client) || client->state == AUTH_READY) return false;
     detach(client);
     ws_abort(client->websocket);
     client->ws_requested = false;
+    client->server_password_error = false;
     forget_inputs(client);
     clear_cookies(client);
     curl_free(client->base);
@@ -284,6 +289,10 @@ bool auth_start(auth_client *client, const char *url, const char *username,
         fail(client, error);
         return false;
     }
+    if (!allow_local_http && strncmp(client->base, "http://", 7) == 0) {
+        fail(client, "HTTP local exige --allow-local-http. Use HTTPS para acesso remoto.");
+        return false;
+    }
     client->username = strdup(username);
     client->password = strdup(password);
     client->server_password = strdup(server_password ? server_password : "");
@@ -294,6 +303,38 @@ bool auth_start(auth_client *client, const char *url, const char *username,
     return request(client, AUTH_SERVER, "/server", NULL, false);
 }
 
+bool auth_start(auth_client *client, const char *url, const char *username,
+                const char *password, const char *server_password)
+{
+    /* Developer probes explicitly exercise local HTTP through this API.
+     * Interactive entry points always use auth_start_with_policy(). */
+    return auth_start_with_policy(client, url, username, password, server_password, true);
+}
+
+bool auth_discover(auth_client *client, const char *url, bool allow_local_http)
+{
+    auth_cancel(client);
+    curl_free(client->base);
+    char reason[192];
+    client->base = auth_normalize_url(url, reason, sizeof(reason));
+    if (!client->base) { fail(client, reason); return false; }
+    if (!allow_local_http && strncmp(client->base, "http://", 7) == 0) {
+        fail(client, "HTTP local exige --allow-local-http. Use HTTPS para acesso remoto.");
+        return false;
+    }
+    return request(client, AUTH_HEALTH, "/health", NULL, false);
+}
+
+static void copy_server_name(auth_client *client, const char *name)
+{
+    if (!name || !*name) name = "Nome não informado";
+    size_t length = strlen(name);
+    if (length >= sizeof(client->name)) length = sizeof(client->name) - 1;
+    while (length && ((unsigned char)name[length] & 0xc0) == 0x80) --length;
+    memcpy(client->name, name, length);
+    client->name[length] = '\0';
+}
+
 static void complete(auth_client *client, CURLcode result, long status)
 {
     auth_state previous = client->operation;
@@ -301,8 +342,17 @@ static void complete(auth_client *client, CURLcode result, long status)
     if (result != CURLE_OK) {
         const char *message = "Não foi possível conectar. Confira a URL e tente novamente.";
         if (client->overflow) message = "O servidor enviou uma resposta grande demais.";
+        else if (result == CURLE_COULDNT_RESOLVE_HOST) message = "Nome do servidor não encontrado (DNS). Confira o host.";
+        else if (result == CURLE_COULDNT_RESOLVE_PROXY) message = "Não foi possível resolver o proxy (DNS). Confira sua configuração.";
+        else if (result == CURLE_COULDNT_CONNECT) {
+            long system_error = 0;
+            curl_easy_getinfo(client->easy, CURLINFO_OS_ERRNO, &system_error);
+            message = system_error == ECONNREFUSED ? "Conexão recusada. Confira o host e a porta." :
+                      "Serviço indisponível ou rede inacessível. Confira host e porta.";
+        }
         else if (result == CURLE_OPERATION_TIMEDOUT) message = "O servidor demorou para responder. Tente novamente.";
-        else if (result == CURLE_PEER_FAILED_VERIFICATION || result == CURLE_SSL_CONNECT_ERROR)
+        else if (result == CURLE_PEER_FAILED_VERIFICATION || result == CURLE_SSL_CONNECT_ERROR ||
+                 result == CURLE_SSL_CACERT_BADFILE || result == CURLE_SSL_CERTPROBLEM)
             message = "Falha ao verificar a conexão segura com o servidor.";
         fail(client, message);
         return;
@@ -316,9 +366,18 @@ static void complete(auth_client *client, CURLcode result, long status)
             net_rate_defer(client->retry_after);
             message = "Limite de requisições atingido. Aguarde antes de tentar novamente.";
         } else if (status == 403) message = "O servidor recusou o acesso a esta conta.";
-        else if (status == 404 && previous == AUTH_SERVER) message = "Instância não inicializada ou URL incompatível com o Papo.";
+        else if (status == 404 && (previous == AUTH_SERVER || previous == AUTH_DISCOVERY_SERVER)) message = "Instância não inicializada ou URL incompatível com o Papo.";
+        else if (status == 404 && previous == AUTH_HEALTH) message = "Backend incompatível: /health não está disponível nessa URL.";
+        else if (status == 502 || status == 503 || status == 504) message = "Serviço indisponível. Tente novamente ou corrija a URL.";
+        else if (status >= 500 && (previous == AUTH_HEALTH || previous == AUTH_DISCOVERY_SERVER))
+            message = "Serviço indisponível. Tente novamente ou corrija a URL.";
         else if (status >= 300 && status < 400) message = "O servidor redirecionou a conexão. Informe a URL final.";
         fail(client, message);
+        if (status == 401 && previous == AUTH_SERVER_PASSWORD) client->server_password_error = true;
+        return;
+    }
+    if (previous == AUTH_HEALTH) {
+        request(client, AUTH_DISCOVERY_SERVER, "/server", NULL, false);
         return;
     }
     if (previous == AUTH_LOGOUT) {
@@ -342,15 +401,25 @@ static void complete(auth_client *client, CURLcode result, long status)
         fail(client, "O servidor retornou uma resposta incompatível com o Papo.");
         return;
     }
-    if (previous == AUTH_SERVER) {
+    if (previous == AUTH_SERVER || previous == AUTH_DISCOVERY_SERVER) {
         json_t *public_value = json_object_get(body, "public");
-        const char *name = json_string_value(json_object_get(body, "name"));
-        if (!json_is_boolean(public_value)) {
-            fail(client, "Não foi possível identificar a configuração da instância.");
+        json_t *name_value = json_object_get(body, "name");
+        const char *name = json_string_value(name_value);
+        if (!json_is_boolean(public_value) || (name_value && (!json_is_string(name_value) || json_string_length(name_value) != strlen(name)))) {
+            fail(client, "Backend incompatível: não foi possível identificar a configuração da instância.");
         } else {
-            snprintf(client->name, sizeof(client->name), "%s", name ? name : "Papo");
-            if (json_is_true(public_value)) user_login(client);
-            else if (!*client->server_password) fail(client, "Esta instância é privada. Preencha a senha do servidor.");
+            copy_server_name(client, name);
+            client->server_public = json_is_true(public_value);
+            if (previous == AUTH_DISCOVERY_SERVER) {
+                clear_cookies(client); /* Discovery cookies never become authentication. */
+                client->state = AUTH_IDENTIFIED;
+                snprintf(client->message, sizeof(client->message), "%s", client->server_public ?
+                         "Instância pública identificada." : "Instância privada identificada; login exige senha do servidor.");
+            } else if (json_is_true(public_value)) user_login(client);
+            else if (!*client->server_password) {
+                fail(client, "Esta instância é privada. Preencha a senha do servidor.");
+                client->server_password_error = true;
+            }
             else {
                 json_t *payload = json_pack("{s:s}", "server_password", client->server_password);
                 if (!payload) fail(client, "Não foi possível preparar a autorização.");
@@ -434,6 +503,7 @@ bool auth_logout(auth_client *client)
 
 void auth_cancel(auth_client *client)
 {
+    client->server_password_error = false;
     ws_abort(client->websocket);
     detach(client);
     forget_inputs(client);
@@ -462,12 +532,15 @@ auth_state auth_get_state(const auth_client *client) { return client->state; }
 bool auth_busy(const auth_client *client)
 {
     return client->state == AUTH_SERVER || client->state == AUTH_SERVER_PASSWORD ||
-           client->state == AUTH_LOGIN || client->state == AUTH_WHOAMI || client->state == AUTH_LOGOUT;
+           client->state == AUTH_LOGIN || client->state == AUTH_WHOAMI || client->state == AUTH_LOGOUT ||
+           client->state == AUTH_HEALTH || client->state == AUTH_DISCOVERY_SERVER;
 }
 const char *auth_message(const auth_client *client)
 {
     switch (client->state) {
         case AUTH_SERVER: return "Consultando a instância…";
+        case AUTH_HEALTH: return "Consultando a disponibilidade da instância…";
+        case AUTH_DISCOVERY_SERVER: return "Identificando a instância…";
         case AUTH_SERVER_PASSWORD: return "Autorizando acesso ao servidor…";
         case AUTH_LOGIN: return "Entrando na sua conta…";
         case AUTH_WHOAMI: return "Confirmando sua sessão…";
@@ -485,6 +558,8 @@ const char *auth_message(const auth_client *client)
 }
 const char *auth_username(const auth_client *client) { return client->user; }
 const char *auth_server_name(const auth_client *client) { return client->name; }
+bool auth_server_public(const auth_client *client) { return client->server_public; }
+bool auth_server_password_error(const auth_client *client) { return client->server_password_error; }
 bool auth_connect_ws(auth_client *client)
 {
     if (client->state != AUTH_READY) return false;

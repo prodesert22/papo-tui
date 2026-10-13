@@ -2,7 +2,7 @@
 
 Cliente de conversas para terminal, em C, para conectar-se a instâncias independentes do Papo por URL.
 
-A primeira entrega é uma tela de login com quatro campos: URL do servidor, usuário, senha e senha do servidor. A tela organiza cabeçalho, formulário e estado/controles em três áreas. O aplicativo consulta a instância, autoriza o acesso privado quando necessário, autentica a conta e confirma a sessão. As senhas são ocultas e os cookies ficam somente em memória.
+O aplicativo oferece login com URL do servidor, usuário, senha e senha do servidor, além de perfis locais com nome e URL. A tela organiza cabeçalho, formulário e estado/controles em três áreas. O aplicativo consulta a instância, autoriza o acesso privado quando necessário, autentica a conta e confirma a sessão. As senhas são ocultas e os cookies ficam somente em memória.
 
 ## Compilar e executar
 
@@ -48,15 +48,53 @@ Use um terminal UTF-8, com pelo menos 44 colunas e 22 linhas disponíveis ao apl
 
 ## Login
 
-Informe uma URL HTTPS completa, como `https://chat.exemplo.com`. Para desenvolvimento local, HTTP é aceito em `localhost`, `127.0.0.1` e `[::1]`, com porta opcional. Prefixos de caminho são preservados, como em `https://exemplo.com/papo`.
+### Perfis de instância
+
+Ao iniciar normalmente, o aplicativo sempre abre a tela de login. O botão **Selecionar perfil**, disponível por clique ou Tab e Enter, abre um modal com os perfis salvos; **Ctrl+P** é o atalho para esse modal. Use ↑/↓ e Enter, ou clique no perfil, para preencher o login. No modal, **Gerenciar / Ctrl+P** abre o cadastro e **Cancelar / Esc** volta ao login.
+
+Para iniciar diretamente no gerenciador completo:
+
+```sh
+./build/papo-tui --profiles
+```
+
+O gerenciador tem duas opções no topo: **Listar** e **+ Adicionar**. Em **Listar**, os perfis aparecem numa lista vertical com rolagem automática: ↑/↓ mudam o destaque, PageUp/PageDown avançam uma página e Home/End vão ao início/fim. Enter ou → na lista levam ao primeiro botão do rodapé, **Selecionar**, seguido de **Editar**, **Remover**, **Limites** e **Identificar**. Confirme **Selecionar** para preencher o login. Nas ações, ←/→ movem entre os botões e param nas extremidades; ↑ volta à lista. ↑ no primeiro perfil volta ao topo; ali, ← vai para **Listar**, → para **Adicionar**, e ↓ ou Enter em **Listar** entram na lista. ← na lista mantém o foco. Tab/Shift+Tab também percorrem as áreas e botões. Clicar num perfil destaca-o; clicar num botão executa sua ação.
+
+No gerenciador e nos modais de perfil, os textos principais e botões são brancos; o texto dos botões e itens de lista selecionados usa laranja `#ffb347`, e dicas e comandos permanecem cinza. A área em foco usa um fundo laranja escuro mais evidente, enquanto o perfil destacado fora do foco mantém um fundo laranja discreto. As dicas de navegação do rodapé acompanham a área focada.
+
+**+ Adicionar** abre o cadastro de nome e URL por clique ou Enter. Enquanto essa opção estiver selecionada, as ações do rodapé ficam indisponíveis, inclusive depois de cancelar o cadastro. Salvar um perfil volta à lista com ele destacado. **Editar** renomeia ou corrige a URL mantendo o ID local; **Remover** exige confirmação e começa em **Cancelar**. **Ctrl+N**, **Ctrl+E** e **Ctrl+D** abrem essas três ações. Esc cancela o diálogo ou volta ao login, e Ctrl+Q/Ctrl+C fecha o aplicativo. Colagem delimitada não confirma ações automaticamente.
+
+Ao abrir a seleção de perfil pelo login, a conexão de tempo real é encerrada e cookies, usuário e senhas locais são descartados. Selecionar outro perfil exige novo login. A URL do perfil fica bloqueada no formulário; altere-a em **Selecionar perfil → Gerenciar → Editar**. Os perfis não contêm mensagens nem rascunhos da demonstração.
+
+Nome, URL e ID do perfil selecionado ficam em `$XDG_CONFIG_HOME/papo-tui/config.json`, ou `~/.config/papo-tui/config.json`. O diretório usa permissão `700` e o arquivo `600`. A gravação usa arquivo temporário e substituição atômica. Uma configuração inválida/incompatível é preservada e bloqueia alterações; corrija o arquivo e use **Ctrl+R** no gerenciador para recarregar. Se outro processo alterar a configuração, recarregue antes de salvar. Há limite de 64 perfis, nomes de 128 bytes UTF-8 e URLs de 2048 bytes.
+
+Perfis exigem HTTPS. Para cadastrar ou selecionar uma URL HTTP de desenvolvimento em `localhost`, `127.0.0.1` ou `[::1]`, habilite explicitamente:
+
+```sh
+./build/papo-tui --profiles --allow-local-http
+```
+
+A URL base não aceita credenciais embutidas, query ou fragmento. Portas e prefixos de caminho são preservados. Ao destacar um perfil, o gerenciador consulta `/health` e `/server` e mostra o nome informado pela instância e se ela é pública ou privada. **Identificar / F5** repete a consulta. A interface continua respondendo durante a conexão ou espera pelo limite. Erros de DNS, timeout, conexão recusada, TLS, backend incompatível e instância não inicializada aparecem nessa tela; use **Editar** para corrigir a URL ou **F5** para tentar novamente. Essa identificação não autentica a conta.
+
+### Limites de requisições
+
+No gerenciador, destaque um perfil salvo para usar **Limites / Ctrl+L** e definir `requests_per_second` e `request_burst`. A taxa aceita um número positivo e finito, com ponto decimal; burst deve ser um inteiro entre 1 e 4294967295. **Padrão** preenche 10/25; **Salvar** persiste e aplica os valores ao cliente inteiro. Valores inválidos mantêm a configuração anterior.
+
+As preferências são carregadas ao iniciar, inclusive no login manual. Salvar, recarregar ou trocar de perfil preserva o crédito existente e a espera de `Retry-After`; reduzir o burst limita o crédito restante à nova capacidade. Configurações da primeira etapa de R3 continuam sendo lidas com os padrões 10/25 e recebem o novo formato na próxima gravação.
+
+### Acesso à conta
+
+Informe uma URL HTTPS completa, como `https://chat.exemplo.com`. Para desenvolvimento local, inicie com `--allow-local-http`: HTTP é aceito em `localhost`, `127.0.0.1` e `[::1]`, com porta opcional. Essa opção também é necessária no login manual. Prefixos de caminho são preservados, como em `https://exemplo.com/papo`.
 
 A senha do servidor é obrigatória quando a instância se identifica como privada. Em instâncias públicas, deixe o campo vazio. **Entrar** consulta `/server`, faz `/auth/login_server` quando necessário, autentica por `/auth/login` e confirma a conta por `/auth/whoami`.
+
+Se faltar a senha do servidor numa instância privada, o campo **Senha do servidor** recebe uma borda vermelha e o foco para você digitar. A senha rejeitada pelo servidor também direciona o foco a esse campo e é apagada para uma nova tentativa. O destaque sai quando você começa a corrigir o campo; confirme com Enter para tentar novamente.
 
 Depois de autenticar, a tela apresenta a conta, a instância e o estado da conexão de tempo real, e permite **Sair da conta**. O aplicativo abre um WebSocket autenticado com os cookies dessa sessão e recebe eventos em memória. A interface de conversas será construída nos próximos marcos. Login e senha não são persistidos pelo aplicativo.
 
 A sessão é revalidada por REST a cada 30 segundos; heartbeat/ACK do WebSocket não comprova autenticação. Falhas de tempo real aparecem na área de estado. Para refazer uma conexão interrompida, saia da conta e entre novamente.
 
-As requisições compartilham um limite global de 10 por segundo, com burst de 25. O envio aguarda capacidade sem bloquear a interface. HTTP 429 informa o limite atingido e adia novas tentativas conforme `Retry-After`, sem reenviar a solicitação automaticamente.
+As requisições compartilham um limite global configurável, com padrão de 10 por segundo e burst de 25. O envio aguarda capacidade sem bloquear a interface. HTTP 429 informa o limite atingido e adia novas tentativas conforme `Retry-After`, sem reenviar a solicitação automaticamente.
 
 | Tecla | Ação |
 | --- | --- |
@@ -65,8 +103,9 @@ As requisições compartilham um limite global de 10 por segundo, com burst de 2
 | ← / →, Home / End | Mover cursor no campo |
 | Backspace / Delete | Apagar texto |
 | Clique esquerdo no campo | Focar e posicionar o cursor |
-| Clique esquerdo no botão | Entrar ou sair da conta |
+| Clique esquerdo no botão | Entrar, sair da conta ou selecionar perfil |
 | Ctrl+U | Limpar o campo atual |
+| Ctrl+P | Selecionar perfil; encerrar a conexão e limpar credenciais locais |
 | Esc | Cancelar uma conexão em andamento |
 | Ctrl+Q / Ctrl+C | Sair do aplicativo |
 
@@ -90,7 +129,8 @@ Consulte [instalação e uso](docs/uso.md) para os requisitos, execução, conex
 
 ```text
 src/main.c       Entrada e ciclo de vida
-src/ui/          Login, conversas simuladas, tema e edição Unicode
+src/ui/          Login, perfis, conversas simuladas, tema e edição Unicode
+src/config/      Perfis públicos e persistência XDG
 src/net/         Estado de autenticação e transporte HTTP
 tests/           Backend simulado e testes em pseudoterminal
 docs/            Instalação e uso do programa
