@@ -1,0 +1,268 @@
+#define _POSIX_C_SOURCE 200809L
+#include "ui/text.h"
+
+#include <limits.h>
+#include <stdlib.h>
+#include <string.h>
+#include <wctype.h>
+
+static void boundaries(const text_buffer *buffer, char breaks[TEXT_LIMIT])
+{
+    if (buffer->length)
+        set_graphemebreaks_utf32(buffer->data, buffer->length, NULL, breaks);
+}
+
+static size_t next(const text_buffer *buffer, size_t from, const char *breaks)
+{
+    while (from < buffer->length) {
+        if (breaks[from++] == GRAPHEMEBREAK_BREAK) break;
+    }
+    return from;
+}
+
+static size_t previous(size_t from, const char *breaks)
+{
+    if (!from) return 0;
+    --from;
+    while (from && breaks[from - 1] != GRAPHEMEBREAK_BREAK) --from;
+    return from;
+}
+
+static void normalize_cursor(text_buffer *buffer)
+{
+    char breaks[TEXT_LIMIT];
+    boundaries(buffer, breaks);
+    if (buffer->cursor && buffer->cursor < buffer->length &&
+        breaks[buffer->cursor - 1] != GRAPHEMEBREAK_BREAK)
+        buffer->cursor = next(buffer, buffer->cursor, breaks);
+    buffer->goal_column = -1;
+}
+
+static bool allowed(wint_t value)
+{
+    if (value > 0x10ffff || (value >= 0xd800 && value <= 0xdfff) ||
+        value < 32 || (value >= 0x7f && value <= 0x9f)) return false;
+    return iswprint(value) || value == 0x200c || value == 0x200d;
+}
+
+bool text_insert(text_buffer *buffer, wint_t character, bool multiline)
+{
+    if (buffer->length >= TEXT_LIMIT) return false;
+    if (character == '\r') character = '\n';
+    if (character == '\t') character = ' ';
+    if (character == '\n' ? !multiline : !allowed(character)) return false;
+    memmove(buffer->data + buffer->cursor + 1, buffer->data + buffer->cursor,
+            (buffer->length - buffer->cursor + 1) * sizeof(buffer->data[0]));
+    buffer->data[buffer->cursor++] = (utf32_t)character;
+    ++buffer->length;
+    normalize_cursor(buffer);
+    return true;
+}
+
+void text_delete(text_buffer *buffer, bool backward)
+{
+    char breaks[TEXT_LIMIT];
+    boundaries(buffer, breaks);
+    size_t from = backward ? previous(buffer->cursor, breaks) : buffer->cursor;
+    size_t to = backward ? buffer->cursor : next(buffer, buffer->cursor, breaks);
+    memmove(buffer->data + from, buffer->data + to,
+            (buffer->length - to + 1) * sizeof(buffer->data[0]));
+    buffer->length -= to - from;
+    buffer->cursor = from;
+    normalize_cursor(buffer);
+}
+
+void text_horizontal(text_buffer *buffer, bool right)
+{
+    char breaks[TEXT_LIMIT];
+    boundaries(buffer, breaks);
+    buffer->cursor = right ? next(buffer, buffer->cursor, breaks) : previous(buffer->cursor, breaks);
+    buffer->goal_column = -1;
+}
+
+static text_cell cell(const text_buffer *buffer, size_t start, size_t end)
+{
+    text_cell result = {.start = start, .end = end};
+    if (end == start + 1 && buffer->data[start] == '\n') {
+        result.newline = true;
+        return result;
+    }
+    /* ncurses stores one spacing character and bounded combining marks per
+     * cell. Unsupported clusters use one ASCII placeholder, without changing
+     * the underlying draft; this keeps cursor positions and wrapping exact. */
+    bool supported = end - start < CCHARW_MAX;
+    for (size_t i = start; i < end && supported; ++i) {
+        wchar_t character = (wchar_t)buffer->data[i];
+        int width = wcwidth(character);
+        if (!iswprint(character) || character == 0x200c || character == 0x200d ||
+            (character >= 0xfe00 && character <= 0xfe0f) ||
+            (character >= 0xe0100 && character <= 0xe01ef) ||
+            (i == start ? width <= 0 : width != 0)) supported = false;
+        else {
+            result.glyph[i - start] = character;
+            if (i == start) result.width = width;
+        }
+    }
+    if (!supported) {
+        memset(result.glyph, 0, sizeof(result.glyph));
+        result.glyph[0] = '?';
+        result.width = 1;
+    }
+    return result;
+}
+
+void text_measure(const text_buffer *buffer, int width, text_layout *layout)
+{
+    memset(layout, 0, sizeof(*layout));
+    /* Reserve a cell for an end-of-line cursor, without a phantom blank line
+     * when an explicit newline follows text filling the available width. */
+    if (width < 3) width = 3;
+    --width;
+    char breaks[TEXT_LIMIT];
+    boundaries(buffer, breaks);
+    int row = 0, column = 0;
+    for (size_t start = 0; start < buffer->length;) {
+        size_t end = next(buffer, start, breaks);
+        text_cell value = cell(buffer, start, end);
+        if (column + value.width > width) { ++row; column = 0; }
+        value.row = row;
+        value.column = column;
+        layout->cells[layout->count++] = value;
+        if (buffer->cursor == start) { layout->cursor_row = row; layout->cursor_column = column; }
+        column += value.width;
+        if (value.newline) { ++row; column = 0; }
+        start = end;
+    }
+    layout->cells[layout->count++] = (text_cell){.start = buffer->length, .end = buffer->length,
+                                               .row = row, .column = column};
+    if (buffer->cursor == buffer->length) { layout->cursor_row = row; layout->cursor_column = column; }
+    layout->rows = row + 1;
+}
+
+static size_t offset_at(const text_layout *layout, int row, int column)
+{
+    size_t result = 0;
+    for (size_t i = 0; i < layout->count; ++i) {
+        const text_cell *point = &layout->cells[i];
+        if (point->row > row || (point->row == row && point->column > column)) break;
+        result = !point->newline && column >= point->column + point->width ? point->end : point->start;
+    }
+    return result;
+}
+
+void text_vertical(text_buffer *buffer, int width, int direction)
+{
+    text_layout layout;
+    text_measure(buffer, width, &layout);
+    if (buffer->goal_column < 0) buffer->goal_column = layout.cursor_column;
+    int row = layout.cursor_row + direction;
+    if (row < 0 || row >= layout.rows) return;
+    buffer->cursor = offset_at(&layout, row, buffer->goal_column);
+}
+
+void text_line_edge(text_buffer *buffer, int width, bool end)
+{
+    text_layout layout;
+    text_measure(buffer, width, &layout);
+    if (!end) buffer->cursor = offset_at(&layout, layout.cursor_row, 0);
+    else {
+        for (size_t i = 0; i < layout.count; ++i) {
+            const text_cell *point = &layout.cells[i];
+            if (point->row == layout.cursor_row) buffer->cursor = point->newline ? point->start : point->end;
+        }
+    }
+    buffer->goal_column = -1;
+}
+
+void text_click(text_buffer *buffer, int width, int row, int column)
+{
+    text_layout layout;
+    text_measure(buffer, width, &layout);
+    buffer->cursor = offset_at(&layout, row, column);
+    buffer->goal_column = -1;
+}
+
+void text_keep_cursor(text_buffer *buffer, const text_layout *layout, int height)
+{
+    if (layout->cursor_row < buffer->first_row) buffer->first_row = layout->cursor_row;
+    if (layout->cursor_row >= buffer->first_row + height) buffer->first_row = layout->cursor_row - height + 1;
+    int last = layout->rows - height;
+    if (last < 0) last = 0;
+    if (buffer->first_row > last) buffer->first_row = last;
+}
+
+void text_draw(WINDOW *window, const text_buffer *buffer, const text_layout *layout,
+               int first, int height, int y, int x)
+{
+    (void)buffer;
+    attr_t attributes = getattrs(window);
+    for (size_t i = 0; i + 1 < layout->count; ++i) {
+        const text_cell *point = &layout->cells[i];
+        if (point->newline || point->row < first || point->row >= first + height) continue;
+        cchar_t glyph;
+        if (setcchar(&glyph, point->glyph, attributes & ~A_COLOR, PAIR_NUMBER(attributes), NULL) == OK)
+            mvwadd_wch(window, y + point->row - first, x + point->column, &glyph);
+    }
+}
+
+void text_clear(text_buffer *buffer)
+{
+    memset(buffer, 0, sizeof(*buffer));
+    buffer->goal_column = -1;
+}
+
+bool text_decode(text_buffer *buffer, const char *utf8)
+{
+    text_clear(buffer);
+    mbstate_t state = {0};
+    while (*utf8) {
+        wchar_t character;
+        size_t length = mbrtowc(&character, utf8, MB_CUR_MAX, &state);
+        if (!length || length == (size_t)-1 || length == (size_t)-2) return false;
+        utf8 += length;
+        if (character == '\t') character = ' ';
+        if (character == '\r') continue;
+        if (character != '\n' && !allowed((wint_t)character)) continue;
+        if (buffer->length == TEXT_LIMIT) return false;
+        buffer->data[buffer->length++] = (utf32_t)character;
+    }
+    buffer->cursor = buffer->length;
+    return true;
+}
+
+bool text_encode(const text_buffer *buffer, char output[TEXT_UTF8_BYTES])
+{
+    mbstate_t state = {0};
+    size_t length = 0;
+    for (size_t i = 0; i < buffer->length; ++i) {
+        char bytes[MB_LEN_MAX];
+        size_t count = wcrtomb(bytes, (wchar_t)buffer->data[i], &state);
+        if (count == (size_t)-1 || length + count >= TEXT_UTF8_BYTES) return false;
+        memcpy(output + length, bytes, count);
+        length += count;
+    }
+    output[length] = '\0';
+    return true;
+}
+
+int text_label(WINDOW *window, int y, int x, int width, const char *utf8)
+{
+    if (width <= 0) return 0;
+    text_buffer buffer;
+    text_layout layout;
+    if (!text_decode(&buffer, utf8)) return 0;
+    text_measure(&buffer, width + 1, &layout);
+    int used = 0;
+    for (size_t i = 0; i + 1 < layout.count; ++i) {
+        text_cell *point = &layout.cells[i];
+        if (point->row || point->newline || used + point->width > width) break;
+        if (window) {
+            cchar_t glyph;
+            attr_t attributes = getattrs(window);
+            if (setcchar(&glyph, point->glyph, attributes & ~A_COLOR, PAIR_NUMBER(attributes), NULL) == OK)
+                mvwadd_wch(window, y, x + used, &glyph);
+        }
+        used += point->width;
+    }
+    return used;
+}

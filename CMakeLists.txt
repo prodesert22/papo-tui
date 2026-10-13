@@ -11,6 +11,7 @@ pkg_check_modules(CURL REQUIRED IMPORTED_TARGET libcurl>=7.86)
 pkg_check_modules(JANSSON REQUIRED IMPORTED_TARGET jansson>=2.14)
 pkg_check_modules(NCURSES REQUIRED IMPORTED_TARGET ncursesw>=6.1)
 pkg_check_modules(FORM REQUIRED IMPORTED_TARGET formw>=6.1)
+pkg_check_modules(UNIBREAK REQUIRED IMPORTED_TARGET libunibreak>=6.1)
 
 include(CheckCSourceRuns)
 set(CMAKE_REQUIRED_LIBRARIES PkgConfig::CURL)
@@ -34,8 +35,8 @@ add_library(papo_auth src/net/auth.c src/net/rate_limit.c src/net/ws.c)
 target_include_directories(papo_auth PUBLIC src)
 target_link_libraries(papo_auth PUBLIC PkgConfig::CURL PkgConfig::JANSSON)
 
-add_executable(papo-tui src/main.c src/ui/login.c)
-target_link_libraries(papo-tui PRIVATE papo_auth PkgConfig::FORM PkgConfig::NCURSES)
+add_executable(papo-tui src/main.c src/ui/login.c src/ui/chat.c src/ui/theme.c src/ui/text.c)
+target_link_libraries(papo-tui PRIVATE papo_auth PkgConfig::FORM PkgConfig::NCURSES PkgConfig::UNIBREAK)
 target_compile_definitions(papo-tui PRIVATE PAPO_VERSION="${PROJECT_VERSION}-dev")
 
 foreach(target papo_auth papo-tui)

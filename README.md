@@ -6,12 +6,12 @@ A primeira entrega é uma tela de login com quatro campos: URL do servidor, usu�
 
 ## Compilar e executar
 
-Pré-requisitos: compilador C17, CMake 3.21+, pkg-config, ncursesw/formw 6.1+, libcurl 7.86+ e Jansson 2.14+. A libcurl precisa oferecer WS/WSS, TLS e DNS assíncrono; o CMake verifica essas capacidades. Para os testes, Python 3.10+, OpenSSL CLI e as dependências de `requirements-dev.txt`.
+Pré-requisitos: compilador C17, CMake 3.21+, pkg-config, ncursesw/formw 6.1+, libcurl 7.86+, Jansson 2.14+ e libunibreak 6.1+. A libcurl precisa oferecer WS/WSS, TLS e DNS assíncrono; o CMake verifica essas capacidades. Para os testes, Python 3.10+, OpenSSL CLI e as dependências de `requirements-dev.txt`.
 
 No Arch Linux:
 
 ```sh
-sudo pacman -S --needed base-devel cmake pkgconf ncurses curl jansson python
+sudo pacman -S --needed base-devel cmake pkgconf ncurses curl jansson libunibreak python
 ```
 
 ```sh
@@ -19,6 +19,30 @@ cmake -S . -B build
 cmake --build build
 ./build/papo-tui
 ```
+
+Para abrir o layout de conversas com dados simulados:
+
+```sh
+./build/papo-tui --demo
+```
+
+A demonstração mostra servidores em abas no topo, canais/DMs à esquerda e histórico com editor no painel central. Não abre conexão nem usa credenciais. As setas atuam no painel em foco: nas abas, ←/→ trocam de servidor e ↓ entra nos canais; nos canais, ↑/↓ escolhem a conversa, →/Enter a abrem e ← volta às abas. No primeiro canal, ↑ também volta às abas. No histórico, ↑/↓ rolam uma linha e ← retorna aos canais. Tab/Shift+Tab alternam o foco em tela ampla. Em menos de 80 colunas, uma única pressão de Tab ou Shift+Tab alterna entre canais e conversa; na lista, essa ação abre o canal destacado. PageUp/PageDown rolam o histórico. Esse modo exige pelo menos 44 colunas e 14 linhas.
+
+Em terminais com suporte a mouse, clique numa aba ou canal para abri-lo, no histórico para focá-lo e no editor para posicionar o cursor. As setas `‹`/`›` mostram abas fora da faixa visível. Em janelas estreitas, os controles **Canais** e **Conversa** alternam os painéis. Cliques fora dos controles e eventos de soltura são ignorados.
+
+Depois de abrir um canal, basta digitar para focar o editor e começar a mensagem, incluindo o primeiro caractere. Colagem delimitada e Ctrl+N também focam o editor a partir do histórico, preservando o rascunho e sua posição do cursor.
+
+Esc sai do editor para o histórico; no histórico, Esc volta à lista de canais. Na lista, Esc retorna à conversa atual sem confirmar outra seleção. Com o editor focado, as setas editam o texto; os demais painéis usam as setas para sua própria navegação. Enter no histórico abre o editor, ou refaz o carregamento quando há um erro simulado. Modais mantêm seus próprios controles de navegação.
+
+O login e a demonstração usam um tema escuro: fundo quase preto, painéis em cinza escuro e destaque laranja `#ffb347`. O tom exato depende do suporte a RGB ou à redefinição de cores do terminal; paletas fixas usam a aproximação disponível.
+
+Na demonstração, o foco é indicado por um fundo discretamente mais claro, mantendo os tons escuros da paleta. O rodapé informa qual área recebe as teclas; os marcadores da seleção continuam presentes. Ao abrir um modal, o realce dos painéis ao fundo é desativado.
+
+O editor aceita várias linhas e mantém rascunhos por servidor e conversa, com limite de 2048 caracteres Unicode (até 8192 bytes UTF-8). Ctrl+N insere uma quebra de linha; colagem delimitada preserva linhas e nunca envia automaticamente. Enter adiciona a mensagem somente à demonstração. Setas, Backspace e Delete operam sobre grafemas inteiros. Sequências compostas que o ncurses não representa são exibidas como `?`, preservando o texto original.
+
+F1 abre a ajuda e Ctrl+K filtra servidores, canais e DMs por nome. PageUp/PageDown ou a roda do mouse rolam o histórico; Home/End com foco no histórico vão ao início/fim. F2 simula a chegada de uma mensagem sem deslocar a leitura quando você estiver vendo mensagens anteriores; o indicador de novas mensagens permite voltar ao fim. Cada conversa aceita até 32 mensagens locais, somando envio e chegada simulada.
+
+Há exemplos de canal vazio, carregamento e erro recuperável: na primeira instância, **ajuda**, **ideias** e **eventos**, respectivamente. No erro, Ctrl+R, Enter com foco no histórico ou clique em **Tentar novamente** repetem o carregamento simulado. Ctrl+Q abre uma confirmação quando há rascunhos; Ctrl+C fecha diretamente. Os dados são descartados ao sair. Cadastro de servidores e integração de mensagens com o backend permanecem nas próximas entregas.
 
 Use um terminal UTF-8, com pelo menos 44 colunas e 22 linhas disponíveis ao aplicativo. No tmux, reserve também as linhas da barra de status. Para compilar somente o aplicativo, use `-DBUILD_TESTING=OFF` na configuração do CMake. `--help` e `--version` funcionam fora de um terminal interativo.
 
@@ -59,13 +83,14 @@ Consulte [instalação e uso](docs/uso.md) para os requisitos, execução, conex
 ## Stack e estrutura
 
 - C17 e CMake.
-- ncursesw e formw para renderização, navegação e edição dos campos.
+- ncursesw para renderização, navegação e painéis; formw para os campos de login.
+- libunibreak para delimitar grafemas no editor de mensagens e na apresentação de texto.
 - libcurl multi para HTTP e handshake WS assíncronos, TLS, URLs e cookies; APIs WS para leitura/escrita sem bloquear a interface.
 - Jansson para JSON.
 
 ```text
 src/main.c       Entrada e ciclo de vida
-src/ui/          Tela de login e formulário
+src/ui/          Login, conversas simuladas, tema e edição Unicode
 src/net/         Estado de autenticação e transporte HTTP
 tests/           Backend simulado e testes em pseudoterminal
 docs/            Instalação e uso do programa
@@ -88,6 +113,7 @@ As ferramentas em `tools/` auxiliam a validação do contrato durante o desenvol
 - [x] R0: contrato e ambiente de integração validados com a conta fornecida, paginação e cenário privado HTTPS/WSS.
 - [x] Transporte WS/WSS em C, com cookies por contexto, filas limitadas e revalidação REST.
 - [x] Base de terminal exercitada em Kitty, Konsole e tmux.
+- [x] Layout inicial de conversas com dados simulados em `--demo`.
 - [ ] Interface de conversas.
 
 ## Testes

@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include "ui/login.h"
+#include "ui/theme.h"
 #include "net/auth.h"
 
 #include <form.h>
@@ -18,8 +19,6 @@
 #define MIN_COLS 44
 #define KEY_PASTE_START (KEY_MAX + 1)
 #define KEY_PASTE_END (KEY_MAX + 2)
-
-enum { NORMAL = 1, MUTED, ACCENT, INPUT, FOCUSED, ERROR, SUCCESS };
 
 typedef struct {
     WINDOW *card;
@@ -180,13 +179,13 @@ static void draw(login_ui *ui, auth_client *client)
     const bool busy = auth_busy(client);
     const bool ready = auth_get_state(client) == AUTH_READY;
     const char *labels[FIELD_COUNT] = {"URL do servidor", "Usuário (username)", "Senha (password)", "Senha do servidor"};
-    wattrset(ui->card, COLOR_PAIR(MUTED));
+    wattrset(ui->card, COLOR_PAIR(BORDER));
     box(ui->card, 0, 0);
     wattrset(ui->header, COLOR_PAIR(ACCENT) | A_BOLD);
     mvwaddstr(ui->header, 0, 2, "papo");
     wattrset(ui->header, COLOR_PAIR(NORMAL));
     text(ui->header, 1, 2, ui->width - 8, "Entre na sua comunidade");
-    wattrset(ui->header, COLOR_PAIR(MUTED));
+    wattrset(ui->header, COLOR_PAIR(BORDER));
     mvwhline(ui->header, 2, 0, ACS_HLINE, ui->width - 4);
 
     for (int i = 0; i < FIELD_COUNT; ++i) {
@@ -212,7 +211,7 @@ static void draw(login_ui *ui, auth_client *client)
     wattrset(ui->body, COLOR_PAIR(MUTED));
     text(ui->body, 11, 2, ui->width - 8, "Preencha a senha do servidor se a instância for privada.");
 
-    wattrset(ui->footer, COLOR_PAIR(MUTED));
+    wattrset(ui->footer, COLOR_PAIR(BORDER));
     mvwhline(ui->footer, 0, 0, ACS_HLINE, ui->width - 4);
     wattrset(ui->footer, COLOR_PAIR(ui->focus == FIELD_COUNT ? ACCENT : NORMAL) | A_BOLD);
     mvwhline(ui->footer, 1, 2, ' ', ui->width - 8);
@@ -369,26 +368,8 @@ int login_run(void)
     mousemask(BUTTON1_PRESSED | BUTTON1_CLICKED, NULL);
     timeout(30);
     set_escdelay(25);
-    if (has_colors()) {
-        start_color();
-        if (COLORS >= 256) {
-            init_pair(NORMAL, 252, 235);
-            init_pair(MUTED, 245, 235);
-            init_pair(ACCENT, 81, 235);
-            init_pair(INPUT, 252, 237);
-            init_pair(FOCUSED, 16, 81);
-            init_pair(ERROR, 203, 235);
-            init_pair(SUCCESS, 114, 235);
-        } else {
-            init_pair(NORMAL, COLOR_WHITE, COLOR_BLACK);
-            init_pair(MUTED, COLOR_WHITE, COLOR_BLACK);
-            init_pair(ACCENT, COLOR_CYAN, COLOR_BLACK);
-            init_pair(INPUT, COLOR_WHITE, COLOR_BLACK);
-            init_pair(FOCUSED, COLOR_BLACK, COLOR_CYAN);
-            init_pair(ERROR, COLOR_RED, COLOR_BLACK);
-            init_pair(SUCCESS, COLOR_GREEN, COLOR_BLACK);
-        }
-    }
+    ui_theme theme;
+    theme_init(&theme);
     struct sigaction action = {0}, previous_int, previous_term;
     action.sa_handler = on_signal;
     sigemptyset(&action.sa_mask);
@@ -472,6 +453,7 @@ int login_run(void)
     fputs("\033[?2004l", stdout);
     fflush(stdout);
     mousemask(0, NULL);
+    theme_restore(&theme);
     endwin();
     sigaction(SIGINT, &previous_int, NULL);
     sigaction(SIGTERM, &previous_term, NULL);
