@@ -1,5 +1,7 @@
 """Controlled OpenAPI login fixtures. All accounts/cookies are synthetic."""
 import json
+from email.parser import BytesParser
+from email.policy import default as email_policy
 from datetime import datetime, timedelta, timezone
 import base64
 import hashlib
@@ -16,6 +18,10 @@ class MockServer:
         self.session_cookie = "user-fixture"
         self.refresh_count = 0
         self.api_count = 0
+        self.message_count = 0
+        self.sent_messages = []
+        self.multipart_types = []
+        self.message_received = threading.Event()
         self.name = "Comunidade"
         self.redirect_url = "/different"
         self.requests = []
@@ -115,6 +121,9 @@ class MockServer:
             def do_POST(self):
                 outer.request_times.append(time.monotonic())
                 data = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+                if self.path.endswith("/messages"):
+                    self.send_message_fixture(data)
+                    return
                 body = json.loads(data) if data else None
                 cookie = self.headers.get("Cookie")
                 outer.requests.append(("POST", self.path, cookie, body))
@@ -164,6 +173,48 @@ class MockServer:
                     self.respond(503 if outer.scenario == "logout-fail" else 204, cookie="")
                 else:
                     self.respond(404)
+
+            def send_message_fixture(self, data):
+                cookie = self.headers.get("Cookie")
+                content_type = self.headers.get("Content-Type", "")
+                outer.multipart_types.append(content_type)
+                try:
+                    parsed = BytesParser(policy=email_policy).parsebytes(
+                        ("Content-Type: " + content_type + "\r\nMIME-Version: 1.0\r\n\r\n").encode() + data)
+                    body = {part.get_param("name", header="content-disposition"): part.get_payload(decode=True).decode("utf-8")
+                            for part in parsed.iter_parts()}
+                except (ValueError, UnicodeError, TypeError):
+                    self.respond(400)
+                    return
+                outer.requests.append(("POST", self.path, cookie, body))
+                outer.message_count += 1
+                outer.message_received.set()
+                if not content_type.startswith('multipart/form-data;') or set(body) != {'channel_id', 'content'}:
+                    self.respond(400)
+                    return
+                if cookie != 'Auth=' + outer.session_cookie:
+                    self.respond(401)
+                    return
+                scenario = outer.scenario
+                if scenario in ('send-delayed', 'send-cancel'): outer.stopping.wait(0.3)
+                codes = {'send-validation': 400, 'send-auth': 401, 'send-forbidden': 403,
+                         'send-missing': 404, 'send-limited': 429, 'send-server': 500}
+                if scenario in codes:
+                    self.respond(codes[scenario], retry_after='1' if scenario == 'send-limited' else None)
+                    return
+                message = {'id': f'00000000-0000-4000-8000-{outer.message_count:012x}',
+                           'channel_id': body['channel_id'], 'author_id': '00000000-0000-4000-8000-000000000001',
+                           'content': body['content'], 'created_at': datetime.now(timezone.utc).isoformat(),
+                           'edited_at': None, 'reply_to': None, 'attachments': [], 'embeds': []}
+                outer.sent_messages.append(message)
+                if scenario == 'send-timeout': outer.stopping.wait(16)
+                if scenario == 'send-drop' or (scenario == 'send-drop-once' and outer.message_count == 1):
+                    self.close_connection = True
+                    return  # Created, but intentionally no HTTP response.
+                if scenario == 'send-invalid': self.respond(201, {'id': message['id']})
+                elif scenario == 'send-wrong-channel': self.respond(201, {**message, 'channel_id': 'wrong-channel'})
+                elif scenario == 'send-wrong-author': self.respond(201, {**message, 'author_id': 'wrong-account'})
+                else: self.respond(201, message)
 
             def serve_websocket(self):
                 if outer.scenario == "ws-slow":

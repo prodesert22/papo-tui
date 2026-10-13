@@ -31,12 +31,20 @@ if(NOT PAPO_CURL_WS_SUPPORTED)
     message(FATAL_ERROR "libcurl must provide WS/WSS, TLS and asynchronous DNS")
 endif()
 
-add_library(papo_auth src/net/auth.c src/net/session_time.c src/net/rate_limit.c src/net/ws.c src/config/profiles.c src/model/history.c src/app/instances.c)
+add_library(papo_auth src/net/auth.c src/net/session_time.c src/net/rate_limit.c src/net/ws.c src/config/profiles.c src/model/history.c)
 target_include_directories(papo_auth PUBLIC src)
 target_link_libraries(papo_auth PUBLIC PkgConfig::CURL PkgConfig::JANSSON)
 
-add_executable(papo-tui src/main.c src/ui/login.c src/ui/chat.c src/ui/history.c src/ui/profiles.c src/ui/theme.c src/ui/text.c src/ui/button.c)
-target_link_libraries(papo-tui PRIVATE papo_auth PkgConfig::FORM PkgConfig::NCURSES PkgConfig::UNIBREAK)
+add_library(papo_outbox src/app/outbox.c)
+target_link_libraries(papo_outbox PUBLIC papo_auth PkgConfig::UNIBREAK)
+target_compile_options(papo_outbox PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
+add_library(papo_send_editor src/ui/send_editor.c src/ui/text.c src/app/instances.c)
+target_link_libraries(papo_send_editor PUBLIC papo_outbox PkgConfig::NCURSES PkgConfig::UNIBREAK)
+target_compile_options(papo_send_editor PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
+add_executable(papo-tui src/main.c src/ui/login.c src/ui/chat.c src/ui/history.c src/ui/profiles.c src/ui/theme.c src/ui/button.c)
+target_link_libraries(papo-tui PRIVATE papo_send_editor PkgConfig::FORM PkgConfig::NCURSES PkgConfig::UNIBREAK)
 target_compile_definitions(papo-tui PRIVATE PAPO_VERSION="${PROJECT_VERSION}-dev")
 
 foreach(target papo_auth papo-tui)
@@ -59,6 +67,21 @@ if(BUILD_TESTING)
     add_test(NAME history-terminal COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_history_terminal.py $<TARGET_FILE:papo-tui>)
     set_tests_properties(history-integration history-terminal PROPERTIES TIMEOUT 120)
+    add_test(NAME message-send-product COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_send_product.py $<TARGET_FILE:papo-tui>)
+    set_tests_properties(message-send-product PROPERTIES TIMEOUT 120)
+    add_executable(send-terminal-probe tests/send_terminal_probe.c src/ui/theme.c)
+    target_link_libraries(send-terminal-probe PRIVATE papo_send_editor)
+    target_compile_options(send-terminal-probe PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_test(NAME message-send-terminal COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_send_terminal.py $<TARGET_FILE:send-terminal-probe>)
+    set_tests_properties(message-send-terminal PROPERTIES TIMEOUT 120)
+    add_executable(send-probe tests/send_probe.c)
+    target_link_libraries(send-probe PRIVATE papo_outbox)
+    target_compile_options(send-probe PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_test(NAME message-send-integration COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_send.py $<TARGET_FILE:send-probe>)
+    set_tests_properties(message-send-integration PROPERTIES TIMEOUT 120)
     add_executable(session-probe tests/session_probe.c)
     target_link_libraries(session-probe PRIVATE papo_auth)
     target_compile_options(session-probe PRIVATE -Wall -Wextra -Wpedantic -Werror)

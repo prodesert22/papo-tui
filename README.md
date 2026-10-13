@@ -2,7 +2,7 @@
 
 Cliente de conversas para terminal, em C, para conectar-se a instâncias independentes do Papo por URL.
 
-O aplicativo oferece login, cadastro de conta, renovação de sessão, perfis locais com nome e URL e leitura de canais com histórico paginado. Login e cadastro usam URL do servidor, usuário, senha e senha do servidor. A tela organiza cabeçalho, formulário e estado/controles em três áreas. O aplicativo consulta a instância, autoriza o acesso privado quando necessário, autentica a conta e confirma a sessão. As senhas são ocultas e os cookies ficam somente em memória.
+O aplicativo oferece login, cadastro de conta, renovação de sessão, perfis locais com nome e URL e conversas em canais com histórico paginado e envio de texto. Login e cadastro usam URL do servidor, usuário, senha e senha do servidor. A tela organiza cabeçalho, formulário e estado/controles em três áreas. O aplicativo consulta a instância, autoriza o acesso privado quando necessário, autentica a conta e confirma a sessão. As senhas são ocultas e os cookies ficam somente em memória.
 
 ## Compilar e executar
 
@@ -42,7 +42,7 @@ O editor aceita várias linhas e mantém rascunhos por servidor e conversa, com 
 
 F1 abre a ajuda e Ctrl+K filtra servidores, canais e DMs por nome. PageUp/PageDown ou a roda do mouse rolam o histórico; Home/End com foco no histórico vão ao início/fim. F2 simula a chegada de uma mensagem sem deslocar a leitura quando você estiver vendo mensagens anteriores; o indicador de novas mensagens permite voltar ao fim. Cada conversa aceita até 32 mensagens locais, somando envio e chegada simulada.
 
-Há exemplos de canal vazio, carregamento e erro recuperável: na primeira instância, **ajuda**, **ideias** e **eventos**, respectivamente. No erro, Ctrl+R, Enter com foco no histórico ou clique em **Tentar novamente** repetem o carregamento simulado. Ctrl+Q abre uma confirmação quando há rascunhos; Ctrl+C fecha diretamente. Os dados são descartados ao sair. O cadastro de perfis reais fica no login; a leitura de canais reais fica disponível após o login; o envio e a atualização automática de mensagens permanecem nas próximas entregas.
+Há exemplos de canal vazio, carregamento e erro recuperável: na primeira instância, **ajuda**, **ideias** e **eventos**, respectivamente. No erro, Ctrl+R, Enter com foco no histórico ou clique em **Tentar novamente** repetem o carregamento simulado. Ctrl+Q abre uma confirmação quando há rascunhos; Ctrl+C fecha diretamente. Os dados são descartados ao sair. O cadastro de perfis reais fica no login; a leitura de canais reais fica disponível após o login; o envio de texto está integrado à tela real, e a atualização automática de mensagens fica para R7.
 
 Use um terminal UTF-8, com pelo menos 44 colunas e 22 linhas disponíveis ao aplicativo. No tmux, reserve também as linhas da barra de status. Para compilar somente o aplicativo, use `-DBUILD_TESTING=OFF` na configuração do CMake. `--help` e `--version` funcionam fora de um terminal interativo.
 
@@ -171,9 +171,10 @@ As ferramentas em `tools/` auxiliam a validação do contrato durante o desenvol
 - [x] R3: perfis XDG, descoberta por URL, isolamento de contextos e preferências de taxa/burst, com validação automatizada e demonstração no backend real.
 - [x] R4: cadastro, login público/privado, renovação serializada, revogação e logout, com identidade REST/WS e cookies somente em memória.
 - [x] R5: canais ordenados, tópicos, histórico paginado, autores e metadados em modo de leitura.
-- [ ] Envio e atualização automática de conversas pelo backend.
+- [x] R6: envio multipart, rascunhos por sessão/canal, confirmação no histórico e retry manual com resultado incerto.
+- [ ] Atualização automática de conversas pelo backend (R7).
 
-## Ler canais e histórico
+## Conversar em canais
 
 Após entrar, a lista de canais abre automaticamente. F6 volta à tela da conta; o botão **Canais / F6** e a tecla F6 permitem reabrir a leitura. Escolha um canal com ↑/↓ e abra com Enter, → ou clique. Categorias são separadores; canais de voz mostram que chamadas ainda não estão disponíveis. A leitura usa apenas o canal aberto, e consultar seu histórico também marca leitura no servidor. `*` indica uma última mensagem ainda não lida nos dados consultados.
 
@@ -183,11 +184,15 @@ No histórico, ↑/↓ e PageUp/PageDown rolam o texto. Home vai ao início da j
 
 Ao abrir a leitura, o foco começa nas abas. Use ←/→ para escolher o servidor ou destacar **+ Adicionar**, e Enter para abrir o formulário. O botão fica branco sem foco e laranja ao selecionar, quando aparece como **>+ Adicionar<**. ↓ entra na lista de canais.
 
-Em tela ampla, Tab/Shift+Tab alternam entre abas, canais e histórico. ← nos canais, ou ↑ no primeiro canal, volta às abas; ←/→ nas abas trocam de servidor e Enter em **+ Adicionar** abre o formulário. ↓ nas abas foca os canais. Esc alterna canais/histórico. Abaixo de 80 colunas, Tab/Shift+Tab e os controles **Canais / Conversa** alternam o painel visível. F6 volta à conta, Ctrl+L sai da conta e remove sua aba, Ctrl+P abre a seleção de perfil encerrando a sessão local atual, e Ctrl+Q/Ctrl+C fecha o programa. O mínimo dessa tela é 44×14; para abrir o formulário, amplie para 44×22.
+Em tela ampla, Tab/Shift+Tab alternam entre abas, canais, histórico e editor quando há um canal de texto aberto. ← nos canais, ou ↑ no primeiro canal, volta às abas; ←/→ nas abas trocam de servidor e Enter em **+ Adicionar** abre o formulário. ↓ nas abas foca os canais. Esc sai do editor para o histórico; nos demais painéis, alterna canais/histórico. Abaixo de 80 colunas, Tab/Shift+Tab e os controles **Canais / Conversa** alternam o painel visível. F6 volta à conta, Ctrl+L sai da conta e remove sua aba, Ctrl+P abre a seleção de perfil encerrando a sessão local atual, e Ctrl+Q/Ctrl+C fecha o programa. O mínimo dessa tela é 44×14; para abrir o formulário, amplie para 44×22.
 
-Mensagens aparecem em ordem cronológica, com data, autor, indicação de edição e referências de resposta. Anexos e embeds mostram metadados em texto, sem abrir URLs ou baixar mídia. Autores ausentes têm um rótulo de indisponibilidade. A área de edição exibe **Somente leitura**; o envio permanece indisponível. Novas mensagens aparecem quando você atualiza a página recente.
+Mensagens aparecem em ordem cronológica, com data, autor, indicação de edição e referências de resposta. Anexos e embeds mostram metadados em texto, sem abrir URLs ou baixar mídia. Autores ausentes têm um rótulo de indisponibilidade. Ao abrir um canal de texto, digite para focar o editor, incluindo o primeiro caractere. Enter no histórico também foca o editor. Enter no editor envia, Ctrl+N insere uma nova linha e colagem delimitada preserva linhas sem enviar. Setas, Home/End, Backspace e Delete editam grafemas; clique no editor para posicionar o cursor. Esc volta ao histórico. A área em foco recebe um fundo discretamente mais claro. Mensagens enviadas aparecem após confirmação; para receber mensagens de outras contas, atualize a página recente com Ctrl+R ou End.
 
 A janela em memória contém até 1.000 mensagens ou 4 MiB de JSON serializado. Ao carregar páginas antigas além desse limite, libera mensagens recentes; End volta a consultá-las. Trocar de canal ou servidor descarta seu histórico local. As abas, sessões e mensagens não são salvas no disco, e abrir a lista de canais não consulta seus históricos em segundo plano.
+
+Rascunhos e cursor ficam em memória por sessão e canal, inclusive ao trocar de servidor ou voltar à conta com F6. Você pode continuar digitando durante o envio; a confirmação remove somente o texto enviado que permaneceu intacto. Texto reescrito e continuação são preservados. Sair da conta, substituir a conexão da mesma URL ou fechar o programa descarta esses dados. O editor aceita até 2048 caracteres Unicode/8192 bytes UTF-8; cada sessão guarda até 64 rascunhos e 32 operações.
+
+O editor informa quando o envio está aguardando, enviando, confirmado, rejeitado ou sem confirmação. Falhas preservam o texto. **Ctrl+T** tenta novamente o texto do último envio com falha no canal atual. Timeout ou resposta perdida podem ocorrer após a criação da mensagem; nesse caso, Enter ou Ctrl+T abre uma confirmação, inicialmente em **Cancelar**. Se desejar reenviar mesmo com possibilidade de duplicação, escolha **Reenviar** com → ou clique e confirme. Não há reenvio automático.
 
 ## Testes
 
@@ -235,6 +240,18 @@ build/test-env/bin/python -m tools.check_r5 --backend-binary /caminho/papo-serve
 ```
 
 A ferramenta cria contas e 250 mensagens somente no banco temporário, testa três páginas com timestamps iguais, retorno ao recente, nomes de autores, permissões, leitura remota e a TUI via HTTPS. O proxy aplica um atraso controlado de 600 ms às respostas de histórico para exercitar troca de canal durante uma consulta. O banco de origem é apenas lido; contas, mensagens, banco, processos e chaves temporários são removidos ao terminar. Evidências sem credenciais ficam em `build/r5/validation/backend.json`.
+
+R6 integra transporte multipart e editor à tela real de conversas. As suítes `message-send-integration`, `message-send-terminal` e `message-send-product` verificam o transporte, o componente e o aplicativo completo: confirmação no histórico, edição durante envio, rascunhos/cursor entre canais e servidores, retorno à conta, Unicode, cancelamento, 401 sem replay e confirmação manual após resposta perdida.
+
+Para validar R6 com duas contas sintéticas em uma cópia temporária do backend:
+
+```sh
+mkdir -p build/integration
+go build -o build/integration/tls-proxy tools/tls_proxy.go
+build/test-env/bin/python -m tools.check_r6 --backend-binary /caminho/papo-server --tls-proxy build/integration/tls-proxy
+```
+
+A ferramenta cria somente usuários/canais/mensagens temporários, confirma uma conversa A→B/B→A pela tela real, edição na PTY, perda de confirmação e timeout após criação. O POST incerto exige tentativa manual com indicação de possível duplicação. O banco de origem é apenas lido; recursos temporários são removidos ao terminar. Os resultados sem credenciais ficam em `build/r6/validation/summary.json`. O observador `send-terminal-probe` pertence às ferramentas de desenvolvimento e não substitui a tela de conversas do programa.
 
 A suíte `api-contract` valida 51 fixtures REST e 17 exemplos WS, cursor composto com timestamps iguais, limites de lote, YAML 1.2, isolamento de cookies e relatórios sem segredos. Regerar o inventário local e os exemplos após uma mudança no contrato:
 

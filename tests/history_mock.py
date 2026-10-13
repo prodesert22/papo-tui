@@ -40,7 +40,10 @@ class HistoryMock(MockServer):
         if url.path.endswith('/messages') and '/channels/' in url.path:
             self.history_started.set()
             channel = url.path.split('/')[-2]
-            if channel == OTHER: return 200, {'channel_id': OTHER, 'messages': [dict(self.message(1), channel_id=OTHER, content='Conteúdo do outro canal')], 'has_more': False}
+            if channel == OTHER:
+                messages = [dict(self.message(1), channel_id=OTHER, content='Conteúdo do outro canal')]
+                messages += [m for m in self.sent_messages if m['channel_id'] == OTHER]
+                return 200, {'channel_id': OTHER, 'messages': list(reversed(messages)), 'has_more': False}
             if self.case == 'slow': time.sleep(0.4)
             if self.case in ('forbidden', 'removed', 'limited', 'failure'):
                 return {'forbidden': 403, 'removed': 404, 'limited': 429, 'failure': 500}[self.case], None
@@ -56,6 +59,9 @@ class HistoryMock(MockServer):
                 if self.case == 'older-error' and self.older_calls == 1: return 503, None
             page = list(reversed(self.messages[max(0, upper - 100):upper]))
             more = upper > 100
+            if not cursor and self.sent_messages:
+                messages = self.messages + [m for m in self.sent_messages if m['channel_id'] == CHANNEL]
+                page = list(reversed(messages[-100:])); more = len(messages) > 100
             if self.case == 'empty-page' and cursor: page, more = [], True
             if self.case == 'empty': page, more = [], False
             if self.case == 'wrong-channel': page = [dict(page[0], channel_id=OTHER)]
@@ -71,6 +77,6 @@ class HistoryMock(MockServer):
             if self.case == 'authors-error': return 503, None
             if self.case == 'authors-401' and self.summary_calls == 1: return 401, None
             if self.case == 'authors-twice': return 401, None
-            return 200, [{'id': id, 'username': 'Autor ' + id[-1], 'nickname': 'Apelido' if id == uuid(21) else None}
+            return 200, [{'id': id, 'username': self.username if id == uuid(1) else 'Autor ' + id[-1], 'nickname': 'Apelido' if id == uuid(21) else None}
                          for id in body['ids'] if id != uuid(22)]
         return None

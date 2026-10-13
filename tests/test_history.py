@@ -36,6 +36,21 @@ class HistoryTests(unittest.TestCase):
             result = self.run_probe(server)
             self.assertEqual(result['pages'][-1]['ids'], [uuid(100 + n) for n in range(1, 251)])
 
+    def test_confirmations_merge_exact_fractional_order_and_reject_other_contexts(self):
+        with HistoryMock(count=3) as server:
+            result = self.run_probe(server, 'confirm')
+            self.assertTrue(all(result['confirmation_checks'].values()))
+            self.assertEqual(result['confirmed']['ids'], [uuid(0xfff1), uuid(2), uuid(101), uuid(102), uuid(103), uuid(0xfff2), uuid(0xfff3)])
+            self.assertEqual(sum('/messages' in r[1] for r in server.requests), 1)
+
+    def test_confirmation_keeps_latest_within_message_limit(self):
+        with HistoryMock(count=1000) as server:
+            result = self.run_probe(server, 'confirm-full')
+            self.assertTrue(all(result['confirmation_checks'].values()))
+            self.assertEqual(result['confirmed']['count'], 1000)
+            self.assertTrue(result['confirmed']['evicted'])
+            self.assertEqual(result['confirmed']['ids'][-2:], [uuid(0xfff2), uuid(0xfff3)])
+
     def test_empty_pages_stop_even_if_has_more(self):
         for case, counts in [('empty', [0]), ('empty-page', [100, 100])]:
             with self.subTest(case=case), HistoryMock(case) as server:

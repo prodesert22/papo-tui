@@ -76,7 +76,9 @@ bool history_loading(const history *h)
 const char *history_author(const history *h, const char *id)
 {
     const char *name = id ? json_string_value(json_object_get(h->authors, id)) : NULL;
-    return name ? name : "Autor indisponível";
+    if (name) return name;
+    if (id && auth_has_session(h->auth) && !strcmp(id, auth_user_id(h->auth))) return auth_username(h->auth);
+    return "Autor indisponível";
 }
 void history_reload_channels(history *h)
 {
@@ -176,6 +178,72 @@ static bool contains(json_t *array, const char *id)
     size_t i; json_t *m;
     json_array_foreach(array, i, m) if (!strcmp(str(m, "id"), id)) return true;
     return false;
+}
+/* Compare absolute seconds through the existing RFC3339 parser, retaining
+ * every fractional digit for ordering. Padding with zeros handles mixed
+ * precision; offsets are already accounted for by session_time_parse(). */
+static int message_compare(json_t *a, json_t *b)
+{
+    const char *at = str(a, "created_at"), *bt = str(b, "created_at");
+    uint64_t ams, bms;
+    if (!session_time_parse(at, &ams) || !session_time_parse(bt, &bms)) return 0;
+    if (ams / 1000 != bms / 1000) return ams / 1000 < bms / 1000 ? -1 : 1;
+    const char *af = at + 19, *bf = bt + 19;
+    if (*af == '.') ++af;
+    if (*bf == '.') ++bf;
+    while ((*af >= '0' && *af <= '9') || (*bf >= '0' && *bf <= '9')) {
+        bool ad = *af >= '0' && *af <= '9', bd = *bf >= '0' && *bf <= '9';
+        char av = ad ? *af++ : '0', bv = bd ? *bf++ : '0';
+        if (av != bv) return av < bv ? -1 : 1;
+    }
+    return strcmp(str(a, "id"), str(b, "id"));
+}
+bool history_confirm(history *h, json_t *message, uint64_t generation)
+{
+    if (!h || !auth_has_session(h->auth) || generation != h->context ||
+        generation != auth_context_generation(h->auth)) return false;
+    const char *channel = str(history_channel(h, h->selected), "id");
+    if (!channel || !message_valid(message, channel)) return false;
+    if (contains(h->messages, str(message, "id"))) return true;
+    json_t *confirmed = json_deep_copy(message), *next = json_array();
+    if (!confirmed || !next) { json_decref(confirmed); json_decref(next); return false; }
+    size_t count = history_message_count(h), bytes = 0;
+    bool inserted = false;
+    for (size_t i = 0; i < count; ++i) {
+        json_t *m = history_message(h, i);
+        if (!inserted && message_compare(confirmed, m) < 0) {
+            if (json_array_append(next, confirmed)) goto fail;
+            inserted = true;
+        }
+        if (json_array_append(next, m)) goto fail;
+    }
+    if (!inserted && json_array_append(next, confirmed)) goto fail;
+    size_t i; json_t *m;
+    json_array_foreach(next, i, m) {
+        size_t size = encoded_size(m);
+        if (size == SIZE_MAX || SIZE_MAX - bytes < size) goto fail;
+        bytes += size;
+    }
+    bool evicted = false;
+    while (json_array_size(next) > HISTORY_MESSAGE_LIMIT || bytes > HISTORY_BYTE_LIMIT) {
+        size_t size = encoded_size(json_array_get(next, 0));
+        if (size == SIZE_MAX || json_array_remove(next, 0)) goto fail;
+        bytes -= size; evicted = true;
+    }
+    json_decref(h->messages); h->messages = next; h->bytes = bytes;
+    h->evicted |= evicted;
+    if (evicted && json_array_size(next)) {
+        h->more = true;
+        json_t *oldest = json_array_get(next, 0);
+        snprintf(h->cursor_time, sizeof(h->cursor_time), "%s", str(oldest, "created_at"));
+        snprintf(h->cursor_id, sizeof(h->cursor_id), "%s", str(oldest, "id"));
+    }
+    h->want_authors = true;
+    status(h, "Mensagem confirmada. Ctrl+R: consultar novas mensagens.");
+    json_decref(confirmed);
+    return true;
+fail:
+    json_decref(confirmed); json_decref(next); return false;
 }
 static bool messages_response(history *h, json_t *body)
 {

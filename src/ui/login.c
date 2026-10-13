@@ -16,6 +16,7 @@
 #include <wchar.h>
 #include <wctype.h>
 #include "ui/history.h"
+#include "ui/send_editor.h"
 
 #define FIELD_COUNT 5
 #define CONFIRM_FIELD 4
@@ -765,6 +766,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         bool before_session = auth_has_session(client);
         ws_state ws_before = auth_ws_state(client);
         auth_poll(client);
+        send_editor_poll(instances_editor(connections, client));
         if (before != auth_get_state(client) || before_busy != auth_busy(client)) redraw = true;
         if (before != AUTH_ERROR && auth_get_state(client) == AUTH_ERROR) apply_input_error(&ui, client);
         if (ws_before != auth_ws_state(client)) redraw = true;

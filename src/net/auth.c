@@ -24,6 +24,11 @@ struct auth_client {
     CURL *easy;
     CURLM *multi;
     struct curl_slist *headers;
+    curl_mime *mime;
+    bool send_ready;
+    auth_send_receipt send_receipt;
+    json_t *sent_message;
+    char send_channel[64];
     bool attached;
     bool queued;
     unsigned retry_after;
@@ -83,6 +88,9 @@ static void detach(auth_client *client)
         client->attached = false;
     }
     /* libcurl retains POSTFIELDS: sever its pointer before freeing the buffer. */
+    curl_easy_setopt(client->easy, CURLOPT_MIMEPOST, NULL);
+    curl_mime_free(client->mime);
+    client->mime = NULL;
     curl_easy_setopt(client->easy, CURLOPT_POSTFIELDS, NULL);
     erase_free(&client->payload);
     curl_slist_free_all(client->headers);
@@ -106,8 +114,17 @@ static void clear_api(auth_client *client)
     client->response_ready = client->api_retried = false;
 }
 
+static void clear_send(auth_client *client)
+{
+    json_decref(client->sent_message);
+    client->sent_message = NULL;
+    client->send_ready = false;
+    client->send_channel[0] = '\0';
+}
+
 static void clear_identity(auth_client *client)
 {
+    clear_send(client);
     client->authenticated = client->recovering = client->after_refresh = false;
     client->refresh_at = client->recheck_at = 0;
     client->user[0] = client->user_id[0] = '\0';
@@ -309,6 +326,13 @@ static bool request(auth_client *client, auth_state state, const char *path,
     client->response_length = 0;
     client->overflow = false;
     client->retry_after = PAPO_RATE_DEFAULT_COOLDOWN_SECONDS;
+    /* A fresh HTTP/1.1 connection avoids libcurl's stale-connection/stream
+     * retries for this non-idempotent mutation. Other REST calls keep defaults. */
+    bool mutation = state == AUTH_MESSAGE_SEND;
+    if (curl_easy_setopt(client->easy, CURLOPT_FRESH_CONNECT, mutation ? 1L : 0L) != CURLE_OK ||
+        curl_easy_setopt(client->easy, CURLOPT_FORBID_REUSE, mutation ? 1L : 0L) != CURLE_OK ||
+        curl_easy_setopt(client->easy, CURLOPT_HTTP_VERSION,
+                         (long)(mutation ? CURL_HTTP_VERSION_1_1 : CURL_HTTP_VERSION_NONE)) != CURLE_OK) goto error;
     size_t length = strlen(client->base) + strlen(path) + 1;
     char *url = malloc(length);
     if (!url) goto error;
@@ -338,6 +362,13 @@ static bool request(auth_client *client, auth_state state, const char *path,
     client->operation = state;
     return true;
 error:
+    if (state == AUTH_MESSAGE_SEND) {
+        detach(client);
+        client->send_receipt.outcome = AUTH_SEND_REJECTED;
+        client->send_ready = true;
+        client->state = AUTH_READY;
+        return false;
+    }
     fail(client, "Não foi possível preparar a conexão.");
     return false;
 }
@@ -606,6 +637,99 @@ json_t *auth_take_response(auth_client *client, long *status, uint64_t *generati
     return body;
 }
 
+static bool send_transmitted(auth_client *client)
+{
+    if (!client->attached) return false;
+    long headers = 0;
+    curl_off_t uploaded = 0;
+    if (curl_easy_getinfo(client->easy, CURLINFO_REQUEST_SIZE, &headers) != CURLE_OK ||
+        curl_easy_getinfo(client->easy, CURLINFO_SIZE_UPLOAD_T, &uploaded) != CURLE_OK) return true;
+    return headers > 0 || uploaded > 0;
+}
+
+bool auth_send_text(auth_client *client, uint64_t operation_id, const char *channel_id, const char *content)
+{
+    if (!auth_has_session(client) || client->state != AUTH_READY || client->queued || client->attached ||
+        client->api_path || client->response_ready || client->send_ready || !operation_id || !channel_id ||
+        !*channel_id || strlen(channel_id) >= sizeof(client->send_channel) || !content || !*content || strlen(content) > 8192)
+        return false;
+    json_t *valid_utf8 = json_string(content);
+    if (!valid_utf8) return false;
+    json_decref(valid_utf8);
+    clear_send(client);
+    client->send_receipt = (auth_send_receipt){.outcome = AUTH_SEND_REJECTED,
+        .operation_id = operation_id, .generation = client->generation};
+    snprintf(client->send_channel, sizeof(client->send_channel), "%s", channel_id);
+    if (!request(client, AUTH_MESSAGE_SEND, "/messages", NULL, true)) return client->send_ready;
+    client->mime = curl_mime_init(client->easy);
+    if (!client->mime) goto error;
+    curl_mimepart *channel = curl_mime_addpart(client->mime);
+    curl_mimepart *text = curl_mime_addpart(client->mime);
+    if (!channel || !text || curl_mime_name(channel, "channel_id") != CURLE_OK ||
+        curl_mime_data(channel, channel_id, CURL_ZERO_TERMINATED) != CURLE_OK ||
+        curl_mime_name(text, "content") != CURLE_OK ||
+        curl_mime_data(text, content, CURL_ZERO_TERMINATED) != CURLE_OK ||
+        curl_easy_setopt(client->easy, CURLOPT_MIMEPOST, client->mime) != CURLE_OK) goto error;
+    return true;
+error:
+    detach(client);
+    client->send_ready = true;
+    client->state = AUTH_READY;
+    return true; /* Accepted with a local failure; no request was transmitted. */
+}
+
+bool auth_send_result_ready(const auth_client *client) { return client->send_ready; }
+
+json_t *auth_take_send_result(auth_client *client, auth_send_receipt *receipt)
+{
+    if (!client->send_ready) return NULL;
+    if (receipt) *receipt = client->send_receipt;
+    json_t *message = client->sent_message;
+    client->sent_message = NULL;
+    client->send_ready = false;
+    return message;
+}
+
+bool auth_cancel_send(auth_client *client)
+{
+    if (client->operation != AUTH_MESSAGE_SEND || (!client->queued && !client->attached)) return false;
+    bool transmitted = send_transmitted(client);
+    detach(client);
+    client->send_receipt.transmitted = transmitted;
+    client->send_receipt.cancelled = true;
+    client->send_receipt.outcome = transmitted ? AUTH_SEND_UNCERTAIN : AUTH_SEND_REJECTED;
+    client->send_ready = true;
+    client->state = AUTH_READY;
+    return true;
+}
+
+static void complete_send(auth_client *client, CURLcode result, long status, bool transmitted)
+{
+    client->send_receipt.status = status;
+    client->send_receipt.transmitted = transmitted;
+    client->send_receipt.outcome = AUTH_SEND_REJECTED;
+    json_error_t error;
+    json_t *body = result == CURLE_OK && status == 201 ? json_loadb(client->response ? client->response : "",
+                       client->response_length, JSON_REJECT_DUPLICATES, &error) : NULL;
+    const char *id = json_text(body, "id", 64);
+    const char *channel = json_text(body, "channel_id", 64);
+    const char *author = json_text(body, "author_id", 64);
+    if (result == CURLE_OK && status == 201 && id && channel && author &&
+        strcmp(channel, client->send_channel) == 0 && strcmp(author, client->user_id) == 0) {
+        client->send_receipt.outcome = AUTH_SEND_CONFIRMED;
+        client->sent_message = body;
+        body = NULL;
+    } else if ((result != CURLE_OK && transmitted) || status >= 500 ||
+               (status >= 200 && status < 400)) client->send_receipt.outcome = AUTH_SEND_UNCERTAIN;
+    json_decref(body);
+    client->send_ready = true;
+    client->state = AUTH_READY;
+    if (status == 429) net_rate_defer(client->retry_after);
+    if (result == CURLE_OK && status == 401) recover_session(client); /* Never resubmit the POST. */
+    else if (result == CURLE_OK && status == 403 && problem_is(client, "banned"))
+        fail(client, "O servidor bloqueou esta conta. Entre novamente após resolver o acesso.");
+}
+
 static void complete_api(auth_client *client, CURLcode result, long status)
 {
     if (result == CURLE_OK && status == 401) {
@@ -648,7 +772,9 @@ static void complete_api(auth_client *client, CURLcode result, long status)
 static void complete(auth_client *client, CURLcode result, long status)
 {
     auth_state previous = client->operation;
+    bool transmitted = previous == AUTH_MESSAGE_SEND && send_transmitted(client);
     detach(client);
+    if (previous == AUTH_MESSAGE_SEND) { complete_send(client, result, status, transmitted); return; }
     if (previous == AUTH_API_GET) { complete_api(client, result, status); return; }
     if (result != CURLE_OK) {
         const char *message = "Não foi possível conectar. Confira a URL e tente novamente.";
@@ -837,7 +963,8 @@ void auth_poll(auth_client *client)
         int admitted = net_rate_try_acquire();
         if (admitted == 0) return;
         if (admitted < 0 || curl_multi_add_handle(client->multi, client->easy) != CURLM_OK) {
-            fail(client, "Não foi possível iniciar a conexão.");
+            if (client->operation == AUTH_MESSAGE_SEND) complete(client, CURLE_FAILED_INIT, 0);
+            else fail(client, "Não foi possível iniciar a conexão.");
             return;
         }
         client->queued = false;
@@ -846,7 +973,8 @@ void auth_poll(auth_client *client)
     if (!client->attached) return;
     int running;
     if (curl_multi_perform(client->multi, &running) != CURLM_OK) {
-        fail(client, "A conexão foi interrompida. Tente novamente.");
+        if (client->operation == AUTH_MESSAGE_SEND) complete(client, CURLE_RECV_ERROR, 0);
+        else fail(client, "A conexão foi interrompida. Tente novamente.");
         return;
     }
     int remaining;
@@ -906,6 +1034,7 @@ void auth_destroy(auth_client *client)
     ws_destroy(client->websocket);
     forget_inputs(client);
     clear_api(client);
+    clear_send(client);
     erase_free(&client->refresh_cookie);
     curl_easy_cleanup(client->easy);
     curl_multi_cleanup(client->multi);
@@ -922,7 +1051,8 @@ bool auth_busy(const auth_client *client)
            client->state == AUTH_SERVER || client->state == AUTH_SERVER_PASSWORD ||
            client->state == AUTH_LOGIN || client->state == AUTH_WHOAMI || client->state == AUTH_LOGOUT ||
            client->state == AUTH_HEALTH || client->state == AUTH_DISCOVERY_SERVER ||
-           client->state == AUTH_REGISTER || client->state == AUTH_REFRESH || client->state == AUTH_API_GET;
+           client->state == AUTH_REGISTER || client->state == AUTH_REFRESH || client->state == AUTH_API_GET ||
+           client->state == AUTH_MESSAGE_SEND;
 }
 const char *auth_message(const auth_client *client)
 {
@@ -934,6 +1064,7 @@ const char *auth_message(const auth_client *client)
         case AUTH_LOGIN: return "Entrando na sua conta…";
         case AUTH_REGISTER: return "Criando sua conta…";
         case AUTH_REFRESH: return "Renovando sua sessão…";
+        case AUTH_MESSAGE_SEND: return "Enviando sua mensagem…";
         case AUTH_API_GET: return "Consultando com a sessão autenticada…";
         case AUTH_WHOAMI: return "Confirmando sua sessão…";
         case AUTH_LOGOUT: return "Saindo da conta…";

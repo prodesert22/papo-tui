@@ -119,7 +119,7 @@ Se a autorização privada expirar, o campo **Senha do servidor** é limpo, rece
 
 ### Sessão, renovação e saída
 
-Depois de autenticar, a lista de canais abre automaticamente em modo de leitura. F6 volta à tela da conta, onde você pode renovar ou sair da sessão e reabrir os canais. **--demo** continua usando dados locais simulados.
+Depois de autenticar, a lista de canais abre automaticamente para ler e enviar mensagens de texto. F6 volta à tela da conta, onde você pode renovar ou sair da sessão e reabrir os canais. **--demo** continua usando dados locais simulados.
 
 A sessão é revalidada por REST a cada 30 segundos. A primeira renovação ocorre até 30 segundos após o login; as seguintes são agendadas antes da expiração informada pelo servidor, com margem de 60 segundos para sessões longas. Validades curtas usam um intervalo menor. **Renovar / Ctrl+R** permite renovar imediatamente. Os campos ficam bloqueados enquanto uma operação aguarda resposta; Esc cancela a operação e encerra a sessão local.
 
@@ -174,8 +174,10 @@ Abrir a lista não lê mensagens. Apenas o canal que você abre tem seu históri
 
 | Controle | Ação na leitura |
 | --- | --- |
-| Tab / Shift+Tab em tela ampla | Alternar abas, canais e histórico |
-| Tab / Shift+Tab em tela estreita; Esc | Alternar canais e histórico |
+| Tab / Shift+Tab em tela ampla | Alternar abas, canais, histórico e editor disponível |
+| Tab / Shift+Tab em tela estreita | Alternar canais e conversa em uma pressão |
+| Esc no editor | Voltar ao histórico |
+| Esc nos demais painéis | Alternar canais e histórico |
 | ← nos canais; ↑ no primeiro canal | Focar as abas |
 | ← / → nas abas | Trocar de servidor; → na última aba destaca **+ Adicionar** |
 | Enter em **+ Adicionar**; clique no botão | Abrir login/cadastro de outro servidor |
@@ -187,7 +189,13 @@ Abrir a lista não lê mensagens. Apenas o canal que você abre tem seu históri
 | Home no histórico | Ir ao início da janela carregada |
 | End no histórico | Consultar novamente a página recente e ir ao fim |
 | Ctrl+R | Atualizar o canal aberto ou tentar novamente após uma falha |
-| Enter no histórico | Atualizar ou tentar novamente |
+| Digitar; Enter no histórico | Focar o editor do canal de texto |
+| Enter no editor | Enviar o texto |
+| Ctrl+N na conversa | Focar o editor e inserir uma quebra de linha |
+| Setas, Home/End, Backspace/Delete no editor | Editar o texto por grafemas |
+| Ctrl+U no editor | Limpar o rascunho do canal |
+| Ctrl+T | Tentar novamente o último envio com falha no canal |
+| Clique no editor | Focar e posicionar o cursor |
 | Clique em Canais / Conversa | Alternar o painel |
 | Roda do mouse sobre o histórico | Rolar o texto |
 | F6 | Voltar à tela da conta |
@@ -197,13 +205,21 @@ Abrir a lista não lê mensagens. Apenas o canal que você abre tem seu históri
 
 As páginas chegam em grupos de até 100 mensagens e aparecem em ordem cronológica. Ao alcançar o começo da janela, pressione PageUp para carregar uma página anterior. A mensagem e o trecho que estavam no topo continuam no mesmo lugar, inclusive após redimensionar o terminal. Use Home depois do carregamento para ver o novo início. End volta à página recente.
 
-A tela mostra tópico, timestamps, autor ou **Autor indisponível**, indicação e data de edição, texto ausente e resposta cuja mensagem não está na janela atual. Anexos mostram nome, tipo, tamanho e moderação; embeds mostram seus textos e referências de mídia. URLs são apenas texto e não são abertas. A área de edição exibe **Somente leitura** e ainda não aceita envio. Atualize para consultar novas mensagens.
+A tela mostra tópico, timestamps, autor ou **Autor indisponível**, indicação e data de edição, texto ausente e resposta cuja mensagem não está na janela atual. Anexos mostram nome, tipo, tamanho e moderação; embeds mostram seus textos e referências de mídia. URLs são apenas texto e não são abertas. O editor aceita texto em canais de texto. Digitar a partir da conversa foca o editor e inclui o primeiro caractere. Enter envia; Ctrl+N insere uma quebra de linha. Você pode continuar editando, mudar de canal ou redimensionar durante o envio. A confirmação inclui a mensagem no histórico e remove somente o texto enviado que permaneceu intacto, preservando continuação e texto reescrito. Atualize o histórico para consultar mensagens de outras contas; recebimento automático será integrado em R7.
 
 A janela guarda até 1.000 mensagens ou 4 MiB de JSON serializado. Carregar páginas antigas além desse limite libera mensagens recentes; End consulta-as novamente. Não há histórico salvo no disco. Trocar de canal ou servidor libera a janela anterior; voltar exige abrir um canal para uma nova consulta. F6 descarta a janela ao voltar à conta.
 
 Uma falha de página antiga preserva as mensagens já carregadas e o ponto de leitura. Ctrl+R tenta novamente a consulta que falhou. HTTP 429 aguarda o cooldown global e exige nova tentativa manual; nenhuma leitura fica repetindo automaticamente após erro. Canais sem mensagens, sem permissão ou removidos têm uma mensagem própria.
 
-Use ao menos 44 colunas e 14 linhas. Na altura mínima, o tópico fica oculto para preservar espaço de leitura. A partir de 80 colunas, lista e histórico aparecem juntos; em telas estreitas, os controles de foco alternam o painel visível. Ao voltar ao formulário da conta, amplie para 44×22. Colagem delimitada é ignorada na tela de leitura e não aciona controles.
+Use ao menos 44 colunas e 14 linhas. Na altura mínima, o tópico fica oculto para preservar espaço de leitura. A partir de 80 colunas, lista e histórico aparecem juntos; em telas estreitas, os controles de foco alternam o painel visível. Ao voltar ao formulário da conta, amplie para 44×22. Colagem delimitada no editor ou conversa preserva as linhas e nunca envia automaticamente. Nas abas, sem canal de texto aberto ou em modais, a colagem não aciona controles.
+
+### Rascunhos e falhas de envio
+
+Rascunhos, cursor e posição de edição ficam separados por sessão e canal. Trocar de servidor ou voltar à conta com F6 preserva esses dados em memória. Eles são descartados ao sair da conta, substituir a conexão da mesma URL ou fechar o programa. Texto vazio ou somente espaços não é enviado. Há limite de 2048 caracteres Unicode/8192 bytes UTF-8 por rascunho, 64 rascunhos e 32 operações por sessão.
+
+O status do editor informa **Aguardando para enviar**, **Enviando**, **Mensagem confirmada**, falha ou **Envio sem confirmação**. Uma rejeição preserva o rascunho. **Ctrl+T** tenta novamente o texto capturado do último envio com falha, preservando o rascunho atual. Enter envia o texto atual do editor.
+
+Se a resposta se perder ou houver timeout depois da transmissão, a mensagem pode já existir no servidor. O aplicativo mantém o texto e não repete o envio automaticamente. Enter ou Ctrl+T abre **Reenviar mensagem?**, com **Cancelar** selecionado. Esc ou Enter em Cancelar fecha o diálogo; → e Enter, ou clique em **Reenviar**, autorizam uma nova tentativa que pode criar duplicação. O diálogo continua respondendo durante a conexão.
 
 ## Demonstração do layout de conversas
 

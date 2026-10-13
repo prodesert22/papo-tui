@@ -4,6 +4,8 @@
 #include "ui/text.h"
 #include "ui/theme.h"
 #include "ui/button.h"
+#include "ui/send_editor.h"
+#include <wctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,18 +14,22 @@
 #define PASTE_END (KEY_MAX + 2)
 #define CONTENT_Y 5
 
-enum { SERVER_TABS, CHANNEL_LIST, HISTORY_PANEL };
+enum { SERVER_TABS, CHANNEL_LIST, HISTORY_PANEL, MESSAGE_INPUT };
 typedef struct { int x, width; } click_range;
 typedef struct {
     history *model;
+    send_editor *editor; /* Borrowed from the instance connection. */
     instance_connections *connections;
-    WINDOW *frame, *tabs, *footer, *list, *body;
+    WINDOW *frame, *tabs, *footer, *list, *body, *confirm;
     int width, height, side, visible, first_channel, focus, first, editor_border, history_top;
     size_t highlighted, active_tab, tab_cursor, first_tab;
     click_range tab_hits[INSTANCE_LIMIT], add_hit, back_hit, next_hit, channels_hit, conversation_hit;
     char anchor[37];
+    char editor_channel[64];
+    const char *feedback;
+    uint64_t retry_id;
     size_t section, offset;
-    bool at_end, paste, show_channels, layout_failed;
+    bool at_end, paste, paste_cr, show_channels, layout_failed, duplicate_modal, reenviar;
 } view;
 static const char *str(json_t *obj, const char *key)
 {
@@ -98,12 +104,13 @@ fail:
 }
 static void destroy_layout(view *ui)
 {
+    if (ui->confirm) delwin(ui->confirm);
     if (ui->list) delwin(ui->list);
     if (ui->body) delwin(ui->body);
     if (ui->footer) delwin(ui->footer);
     if (ui->tabs) delwin(ui->tabs);
     if (ui->frame) delwin(ui->frame);
-    ui->list = ui->body = ui->footer = ui->tabs = ui->frame = NULL;
+    ui->confirm = ui->list = ui->body = ui->footer = ui->tabs = ui->frame = NULL;
 }
 static bool layout(view *ui)
 {
@@ -175,7 +182,7 @@ static void draw_tabs(view *ui, auth_client *auth)
     bool adding = focused && ui->tab_cursor == ui->connections->count;
     button_draw(ui->tabs, 0, ui->add_hit.x, ui->add_hit.width, adding ? ">+ Adicionar<" : "[+ Adicionar]",
                 adding ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
-    const char *areas[] = {"Abas", "Canais", "Histórico"};
+    const char *areas[] = {"Abas", "Canais", "Histórico", "Editor"};
     char summary[1200];
     snprintf(summary, sizeof(summary), "%s · Foco: %s · F6: conta", auth_username(auth), areas[ui->focus]);
     wattrset(ui->tabs, COLOR_PAIR(focused ? FOCUS_MUTED : PANEL_MUTED));
@@ -250,6 +257,38 @@ static void scroll_history(view *ui, int delta)
     ui->at_end = first == last;
     walk(ui, first, false, true, &anchor);
 }
+static text_buffer *input(view *ui)
+{
+    json_t *channel = history_channel(ui->model, history_selected(ui->model));
+    return channel && !strcmp(str(channel, "type"), "text") &&
+        !strcmp(str(channel, "id"), ui->editor_channel) ? send_editor_input(ui->editor) : NULL;
+}
+static int input_height(view *ui)
+{
+    return getmaxy(ui->body) - ui->editor_border - 1 - (getmaxy(ui->body) >= 10 ? 1 : 0);
+}
+static void draw_confirmation(view *ui)
+{
+    if (!ui->duplicate_modal) return;
+    if (!ui->confirm) {
+        int width = COLS > 60 ? 56 : COLS - 4;
+        ui->confirm = newwin(9, width, (LINES - 9) / 2, (COLS - width) / 2);
+        if (!ui->confirm) { ui->duplicate_modal = false; ui->feedback = "Não foi possível abrir a confirmação."; return; }
+    }
+    WINDOW *modal = ui->confirm;
+    int width = getmaxx(modal);
+    wbkgd(modal, COLOR_PAIR(PANEL)); werase(modal);
+    wattrset(modal, COLOR_PAIR(BORDER)); box(modal, 0, 0);
+    wattrset(modal, COLOR_PAIR(PANEL_ACCENT) | A_BOLD);
+    text_label(modal, 1, 2, width - 4, "Reenviar mensagem?");
+    wattrset(modal, COLOR_PAIR(PANEL));
+    text_label(modal, 3, 2, width - 4, "O servidor pode já ter criado");
+    text_label(modal, 4, 2, width - 4, "esta mensagem. Reenviar pode");
+    text_label(modal, 5, 2, width - 4, "criar uma duplicata.");
+    button_draw(modal, 7, 2, 12, "[Cancelar]", ui->reenviar ? BUTTON_NORMAL : BUTTON_FOCUSED, BUTTON_PANEL);
+    button_draw(modal, 7, width - 14, 12, "[Reenviar]", ui->reenviar ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
+    wnoutrefresh(modal);
+}
 static void draw(view *ui, auth_client *auth)
 {
     curs_set(0);
@@ -268,7 +307,8 @@ static void draw(view *ui, auth_client *auth)
     text_label(ui->footer, 0, 1, COLS - 4, history_status(ui->model));
     text_label(ui->footer, 1, 1, COLS - 4, ui->focus == SERVER_TABS ? "←→ servidores · Enter: adicionar · ↓ canais · Ctrl+Q: sair" :
                ui->focus == CHANNEL_LIST ? "↑↓ canais · ← abas · → conversa · Ctrl+L: sair da conta" :
-               "↑↓ rolar · PageUp: anteriores · End: recente · ← canais · Ctrl+R");
+               ui->focus == MESSAGE_INPUT ? "Enter enviar · Ctrl+N nova linha · Esc histórico · Ctrl+T tentar" :
+               "↑↓ rolar · ← canais · Digite: editor · Ctrl+R atualizar");
     if (ui->list) {
         wbkgd(ui->list, COLOR_PAIR(ui->focus == CHANNEL_LIST ? FOCUS_AREA : PANEL)); werase(ui->list);
         wattrset(ui->list, COLOR_PAIR(ui->focus == CHANNEL_LIST ? FOCUS_MUTED : PANEL_MUTED) | A_BOLD);
@@ -315,30 +355,69 @@ static void draw(view *ui, auth_client *auth)
         } else {
             text_label(ui->body, ui->history_top, 2, getmaxx(ui->body) - 4, history_status(ui->model));
         }
-        wattrset(ui->body, COLOR_PAIR(BORDER));
+        text_buffer *editor = input(ui);
+        bool editing = ui->focus == MESSAGE_INPUT && !ui->duplicate_modal;
+        wattrset(ui->body, COLOR_PAIR(editing ? FOCUS_BORDER : BORDER));
         mvwhline(ui->body, ui->editor_border, 0, ACS_HLINE, getmaxx(ui->body));
-        wattrset(ui->body, COLOR_PAIR(PANEL_MUTED)); text_label(ui->body, ui->editor_border, 2, getmaxx(ui->body) - 4, " Editor ");
-        text_label(ui->body, ui->editor_border + 1, 1, 1, ">");
-        text_label(ui->body, ui->editor_border + 1, 3, getmaxx(ui->body) - 6, "Somente leitura");
-        if (getmaxy(ui->body) >= 10)
+        wattrset(ui->body, COLOR_PAIR(editing ? FOCUS_MUTED : PANEL_MUTED));
+        text_label(ui->body, ui->editor_border, 2, getmaxx(ui->body) - 4, " Editor ");
+        if (editor) {
+            int height = input_height(ui), width = getmaxx(ui->body) - 6;
+            if (editing) for (int row = 0; row < height; ++row) {
+                wattrset(ui->body, COLOR_PAIR(FOCUS_AREA));
+                mvwhline(ui->body, ui->editor_border + 1 + row, 0, ' ', getmaxx(ui->body));
+            }
+            wattrset(ui->body, COLOR_PAIR(editing ? FOCUS_AREA : PANEL));
+            text_label(ui->body, ui->editor_border + 1, 1, 1, ">");
+            text_layout measured; text_measure(editor, width, &measured);
+            text_keep_cursor(editor, &measured, height);
+            text_draw(ui->body, editor, &measured, editor->first_row, height, ui->editor_border + 1, 3);
+            if (editing) {
+                wmove(ui->body, ui->editor_border + 1 + measured.cursor_row - editor->first_row, 3 + measured.cursor_column);
+                curs_set(1);
+            }
+        } else {
+            wattrset(ui->body, COLOR_PAIR(PANEL_MUTED));
+            text_label(ui->body, ui->editor_border + 1, 3, getmaxx(ui->body) - 6,
+                       auth_has_session(auth) ? "Abra um canal de texto" : "Confirme a sessão");
+        }
+        if (getmaxy(ui->body) >= 10) {
+            wattrset(ui->body, COLOR_PAIR(PANEL_MUTED));
             text_label(ui->body, getmaxy(ui->body) - 1, 2, getmaxx(ui->body) - 4,
-                       history_evicted(ui->model) ? "Janela limitada · End consulta o recente" : "Envio indisponível");
+                       ui->feedback ? ui->feedback : editor ? send_editor_notice(ui->editor) : "Selecione uma conversa para escrever.");
+        } else if (editor || ui->feedback) {
+            wattrset(ui->footer, COLOR_PAIR(PANEL_MUTED));
+            text_label(ui->footer, 0, 1, COLS - 4, ui->feedback ? ui->feedback : send_editor_notice(ui->editor));
+        }
+        if (editing && editor) {
+            text_layout measured; text_measure(editor, getmaxx(ui->body) - 6, &measured);
+            wmove(ui->body, ui->editor_border + 1 + measured.cursor_row - editor->first_row, 3 + measured.cursor_column);
+        }
     }
     touchwin(ui->frame); wnoutrefresh(ui->frame); wnoutrefresh(ui->tabs);
     if (ui->list) wnoutrefresh(ui->list);
     if (ui->body) wnoutrefresh(ui->body);
-    wnoutrefresh(ui->footer); doupdate();
+    wnoutrefresh(ui->footer);
+    if (ui->focus == MESSAGE_INPUT && input(ui) && ui->body && !ui->duplicate_modal) wnoutrefresh(ui->body);
+    draw_confirmation(ui); doupdate();
 }
 static void set_focus(view *ui, int focus)
 {
     ui->focus = focus;
     if (focus == CHANNEL_LIST) ui->show_channels = true;
-    if (focus == HISTORY_PANEL) ui->show_channels = false;
+    if (focus == HISTORY_PANEL || focus == MESSAGE_INPUT) ui->show_channels = false;
     layout(ui);
 }
 static void open_channel(view *ui)
 {
+    json_t *channel = history_channel(ui->model, ui->highlighted);
+    bool text = !strcmp(str(channel, "type"), "text");
+    if (text && !send_editor_select(ui->editor, str(channel, "id"))) {
+        ui->feedback = "Não foi possível trocar o editor; rascunho preservado."; return;
+    }
     if (history_select(ui->model, ui->highlighted)) {
+        snprintf(ui->editor_channel, sizeof(ui->editor_channel), "%s", text ? str(channel, "id") : "");
+        ui->feedback = NULL;
         ui->at_end = true; ui->anchor[0] = 0; set_focus(ui, HISTORY_PANEL);
     }
 }
@@ -349,6 +428,64 @@ static int activate_tab(view *ui, size_t index, size_t *selected)
     if (index != ui->active_tab) { *selected = index; return HISTORY_SWITCH; }
     return -1;
 }
+static void submit(view *ui, uint64_t retry_id, bool duplicate)
+{
+    if (!input(ui)) return;
+    ui->feedback = NULL;
+    outbox_submit_result result = retry_id ? send_editor_retry(ui->editor, retry_id, duplicate) :
+                                          send_editor_submit(ui->editor, duplicate);
+    if (result == OUTBOX_CONFIRM_DUPLICATION) {
+        ui->duplicate_modal = true; ui->reenviar = false; ui->retry_id = retry_id;
+    }
+}
+static void close_confirmation(view *ui)
+{
+    ui->duplicate_modal = false;
+    if (ui->confirm) { delwin(ui->confirm); ui->confirm = NULL; }
+}
+static bool poll_editor(view *ui, auth_client *auth)
+{
+    const char *notice = send_editor_notice(ui->editor);
+    text_buffer *before = input(ui);
+    size_t length = before ? before->length : 0;
+    send_editor_poll(ui->editor);
+    bool changed = notice != send_editor_notice(ui->editor);
+    text_buffer *after = input(ui);
+    changed |= length != (after ? after->length : 0) || !!before != !!after;
+    outbox_operation operation;
+    json_t *message;
+    while ((message = outbox_take_confirmed(send_editor_outbox(ui->editor), &operation))) {
+        if (operation.generation == auth_context_generation(auth) &&
+            !strcmp(operation.channel_id, ui->editor_channel)) {
+            if (!history_confirm(ui->model, message, operation.generation))
+                ui->feedback = "Envio confirmado; Ctrl+R para consultar o histórico.";
+        }
+        json_decref(message); changed = true;
+    }
+    if (!auth_has_session(auth) && ui->duplicate_modal) { close_confirmation(ui); changed = true; }
+    return changed;
+}
+static bool edit(view *ui, int type, wint_t key)
+{
+    text_buffer *editor = input(ui);
+    if (!editor || !ui->body) return false;
+    int width = getmaxx(ui->body) - 6;
+    bool handled = true;
+    if (type == OK && (key == 8 || key == 127)) text_delete(editor, true);
+    else if (type == KEY_CODE_YES && key == KEY_BACKSPACE) text_delete(editor, true);
+    else if (type == KEY_CODE_YES && key == KEY_DC) text_delete(editor, false);
+    else if (type == KEY_CODE_YES && (key == KEY_LEFT || key == KEY_RIGHT)) text_horizontal(editor, key == KEY_RIGHT);
+    else if (type == KEY_CODE_YES && (key == KEY_UP || key == KEY_DOWN)) text_vertical(editor, width, key == KEY_UP ? -1 : 1);
+    else if (type == KEY_CODE_YES && (key == KEY_HOME || key == KEY_END)) text_line_edge(editor, width, key == KEY_END);
+    else if (type == OK && key == 21) text_clear(editor);
+    else if (type == OK && key == 14) text_insert(editor, '\n', true);
+    else if (type == OK && iswprint(key)) text_insert(editor, key, true);
+    else handled = false;
+    if (handled) {
+        ui->feedback = send_editor_changed(ui->editor) ? NULL : "Não foi possível salvar o rascunho.";
+    }
+    return handled;
+}
 int history_run(auth_client *auth, instance_connections *connections, size_t *selected,
                 bool focus_tabs, volatile sig_atomic_t *interrupted)
 {
@@ -356,8 +493,9 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
     view *ui = calloc(1, sizeof(*ui));
     if (!ui) return HISTORY_ACCOUNT;
     ui->connections = connections; ui->active_tab = ui->tab_cursor = instances_index(connections, auth);
+    ui->editor = instances_editor(connections, auth);
     ui->model = history_create(auth); ui->at_end = ui->show_channels = true; ui->focus = focus_tabs ? SERVER_TABS : CHANNEL_LIST;
-    if (!ui->model || ui->active_tab == SIZE_MAX || !layout(ui)) { history_destroy(ui->model); destroy_layout(ui); free(ui); return HISTORY_ACCOUNT; }
+    if (!ui->model || !ui->editor || ui->active_tab == SIZE_MAX || !layout(ui)) { history_destroy(ui->model); destroy_layout(ui); free(ui); return HISTORY_ACCOUNT; }
     mmask_t previous_mouse;
     mousemask(BUTTON1_PRESSED | BUTTON1_CLICKED | BUTTON4_PRESSED | BUTTON5_PRESSED, &previous_mouse);
     bool redraw = true; int result = HISTORY_ACCOUNT;
@@ -366,21 +504,70 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         auth_state before = auth_get_state(auth);
         if (instances_poll(connections, auth)) redraw = true;
         auth_poll(auth);
+        if (poll_editor(ui, auth)) redraw = true;
         json_t *event; while ((event = auth_next_event(auth))) json_decref(event);
         if (history_poll(ui->model) || before != auth_get_state(auth)) redraw = true;
         if (!auth_has_session(auth) && !auth_busy(auth)) break;
         if (redraw) { draw(ui, auth); redraw = false; }
         wint_t key; int type = get_wch(&key);
         if (type == ERR) continue;
-        if (type == KEY_CODE_YES && key == PASTE_START) { ui->paste = true; continue; }
+        if (type == KEY_CODE_YES && key == PASTE_START) {
+            ui->paste = true; ui->paste_cr = false;
+            if (!ui->duplicate_modal && input(ui) && ui->focus != SERVER_TABS) { set_focus(ui, MESSAGE_INPUT); redraw = true; }
+            continue;
+        }
         if (type == KEY_CODE_YES && key == PASTE_END) { ui->paste = false; continue; }
         if (type == KEY_CODE_YES && key == KEY_RESIZE) { layout(ui); redraw = true; continue; }
-        if (ui->paste) continue;
+        if (ui->paste) {
+            if (!ui->duplicate_modal && ui->focus == MESSAGE_INPUT && type == OK && input(ui)) {
+                text_buffer *editor = input(ui);
+                if (key == '\n' && ui->paste_cr) { ui->paste_cr = false; continue; }
+                ui->paste_cr = key == '\r';
+                if (ui->paste_cr) key = '\n';
+                if (key == '\t') key = ' ';
+                if (key == '\n' || iswprint(key)) {
+                    text_insert(editor, key, true);
+                    ui->feedback = send_editor_changed(ui->editor) ? NULL : "Não foi possível salvar o rascunho.";
+                    redraw = true;
+                }
+            }
+            continue;
+        }
         redraw = true;
         if (type == OK && (key == 17 || key == 3)) { result = HISTORY_EXIT; break; }
+        bool enter = (type == OK && (key == '\r' || key == '\n')) || (type == KEY_CODE_YES && key == KEY_ENTER);
+        if (ui->duplicate_modal) {
+            if (type == OK && key == 27) { close_confirmation(ui); continue; }
+            if ((type == OK && key == '\t') || (type == KEY_CODE_YES && key == KEY_BTAB)) ui->reenviar = !ui->reenviar;
+            else if (type == KEY_CODE_YES && key == KEY_LEFT) ui->reenviar = false;
+            else if (type == KEY_CODE_YES && key == KEY_RIGHT) ui->reenviar = true;
+            else if (enter) {
+                bool retry = ui->reenviar; uint64_t id = ui->retry_id;
+                close_confirmation(ui); if (retry) submit(ui, id, true);
+            } else if (type == KEY_CODE_YES && key == KEY_MOUSE && ui->confirm) {
+                MEVENT e;
+                if (getmouse(&e) == OK && (e.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED))) {
+                    int y = e.y, x = e.x;
+                    if (wmouse_trafo(ui->confirm, &y, &x, false) && y == 7) {
+                        bool cancel = x >= 2 && x < 14;
+                        bool retry = x >= getmaxx(ui->confirm) - 14 && x < getmaxx(ui->confirm) - 2;
+                        uint64_t id = ui->retry_id;
+                        if (cancel || retry) { close_confirmation(ui); if (retry) submit(ui, id, true); }
+                    }
+                }
+            }
+            continue;
+        }
         if (type == KEY_CODE_YES && key == KEY_F(6)) break;
         if (type == OK && key == 16) { result = HISTORY_PROFILES; break; }
         if (type == OK && key == 12) { auth_logout(auth); break; }
+        if (type == OK && key == 20 && input(ui)) {
+            outbox_operation latest;
+            if (outbox_latest(send_editor_outbox(ui->editor), ui->editor_channel, &latest) &&
+                (latest.state == OUTBOX_FAILED || latest.state == OUTBOX_UNCERTAIN)) submit(ui, latest.id, false);
+            else ui->feedback = "Nenhum envio falhou nesta conversa.";
+            continue;
+        }
         if (type == OK && key == 18) {
             if (history_message_count(ui->model)) {
                 if (!history_retry(ui->model)) { ui->at_end = true; ui->anchor[0] = 0; }
@@ -391,13 +578,19 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         if ((type == OK && key == '\t') || (type == KEY_CODE_YES && key == KEY_BTAB)) {
             if (COLS < 80) {
                 if (ui->focus == SERVER_TABS) set_focus(ui, CHANNEL_LIST);
-                else if (ui->focus == HISTORY_PANEL) set_focus(ui, CHANNEL_LIST);
+                else if (ui->focus == HISTORY_PANEL || ui->focus == MESSAGE_INPUT) set_focus(ui, CHANNEL_LIST);
                 else if (history_selected(ui->model) != ui->highlighted) open_channel(ui);
                 else set_focus(ui, HISTORY_PANEL);
-            } else set_focus(ui, type == KEY_CODE_YES ? (ui->focus + 2) % 3 : (ui->focus + 1) % 3);
+            } else {
+                int count = input(ui) ? 4 : 3;
+                set_focus(ui, type == KEY_CODE_YES ? (ui->focus + count - 1) % count : (ui->focus + 1) % count);
+            }
             continue;
         }
-        if (type == OK && key == 27) { set_focus(ui, ui->focus == HISTORY_PANEL ? CHANNEL_LIST : HISTORY_PANEL); continue; }
+        if (type == OK && key == 27) { set_focus(ui, ui->focus == MESSAGE_INPUT ? HISTORY_PANEL : ui->focus == HISTORY_PANEL ? CHANNEL_LIST : HISTORY_PANEL); continue; }
+        if (type == OK && key == 14 && ui->focus != SERVER_TABS && input(ui)) {
+            set_focus(ui, MESSAGE_INPUT); edit(ui, type, key); continue;
+        }
         if (type == KEY_CODE_YES && key == KEY_MOUSE) {
             MEVENT e;
             if (getmouse(&e) != OK || !ui->frame) continue;
@@ -426,10 +619,25 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 continue;
             }
             y = e.y; x = e.x;
-            if (ui->body && wmouse_trafo(ui->body, &y, &x, false) && y < ui->editor_border) set_focus(ui, HISTORY_PANEL);
+            if (ui->body && wmouse_trafo(ui->body, &y, &x, false)) {
+                if (y < ui->editor_border) set_focus(ui, HISTORY_PANEL);
+                else if (input(ui) && y > ui->editor_border && y <= ui->editor_border + input_height(ui)) {
+                    text_buffer *editor = input(ui);
+                    text_click(editor, getmaxx(ui->body) - 6, y - ui->editor_border - 1 + editor->first_row, x - 3);
+                    send_editor_changed(ui->editor); set_focus(ui, MESSAGE_INPUT);
+                }
+            }
             continue;
         }
-        bool enter = (type == OK && (key == '\r' || key == '\n')) || (type == KEY_CODE_YES && key == KEY_ENTER);
+        if (ui->focus != SERVER_TABS && input(ui) && type == OK && iswprint(key)) {
+            if (ui->focus != MESSAGE_INPUT) set_focus(ui, MESSAGE_INPUT);
+            edit(ui, type, key); continue;
+        }
+        if (ui->focus == MESSAGE_INPUT) {
+            if (enter) submit(ui, 0, false);
+            else edit(ui, type, key);
+            continue;
+        }
         if (ui->focus == SERVER_TABS) {
             if (type == KEY_CODE_YES && key == KEY_DOWN) set_focus(ui, CHANNEL_LIST);
             else if (type == KEY_CODE_YES && (key == KEY_LEFT || key == KEY_RIGHT)) {
@@ -459,6 +667,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 if (first == 0 && key != KEY_HOME && history_has_more(ui->model)) { ui->at_end = false; history_older(ui->model); }
             } else if (type == KEY_CODE_YES && (key == KEY_DOWN || key == KEY_NPAGE)) scroll_history(ui, key == KEY_DOWN ? 1 : ui->visible);
             else if (type == KEY_CODE_YES && key == KEY_END) { history_recent(ui->model); ui->at_end = true; ui->anchor[0] = 0; }
+            else if (enter && input(ui)) set_focus(ui, MESSAGE_INPUT);
             else if (enter && !history_retry(ui->model)) { ui->at_end = true; ui->anchor[0] = 0; }
         }
     }

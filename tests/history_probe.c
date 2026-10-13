@@ -64,13 +64,37 @@ int main(int argc, char **argv)
         history_select(h, selected + 1);
     }
     settle(auth, h); json_array_append_new(pages, snapshot(h));
-    if (!strcmp(argv[2], "pages") || !strcmp(argv[2], "retry") || !strcmp(argv[2], "recent")) {
+    if (!strcmp(argv[2], "pages") || !strcmp(argv[2], "retry") || !strcmp(argv[2], "recent") || !strcmp(argv[2], "confirm-full")) {
         for (int i = 0; i < 24 && history_has_more(h); ++i) {
             history_older(h); settle(auth, h); json_array_append_new(pages, snapshot(h));
             if (!strcmp(argv[2], "retry") && i == 0) { history_retry(h); settle(auth, h); json_array_append_new(pages, snapshot(h)); }
         }
     }
     json_object_set_new(out, "pages", pages);
+    if ((!strcmp(argv[2], "confirm") || !strcmp(argv[2], "confirm-full")) && history_message_count(h)) {
+        json_t *message = json_deep_copy(history_message(h, 0));
+        if (!message) return 1;
+        uint64_t generation = auth_context_generation(auth);
+        const char *ids[] = {"00000000-0000-4000-8000-00000000fff1", "00000000-0000-4000-8000-000000000002",
+                             "00000000-0000-4000-8000-00000000fff2", "00000000-0000-4000-8000-00000000fff3"};
+        const char *times[] = {"2026-10-12T14:00:00.123455999+02:00", "2026-10-12T12:00:00.123456000Z",
+                               "2026-10-12T12:00:00.1234560001Z", "2027-01-01T00:00:00Z"};
+        bool merged = true;
+        for (size_t i = 0; i < 4; ++i) {
+            json_object_set_new(message, "id", json_string(ids[i]));
+            json_object_set_new(message, "created_at", json_string(times[i]));
+            merged &= history_confirm(h, message, generation);
+        }
+        size_t count = history_message_count(h);
+        bool duplicate = history_confirm(h, message, generation) && count == history_message_count(h);
+        bool stale = !history_confirm(h, message, generation + 1);
+        json_object_set_new(message, "channel_id", json_string("00000000-0000-4000-8000-00000000000b"));
+        bool inactive = !history_confirm(h, message, generation) && count == history_message_count(h);
+        json_object_set_new(out, "confirmation_checks", json_pack("{s:b,s:b,s:b,s:b}",
+                            "merged", merged, "duplicate", duplicate, "stale", stale, "inactive", inactive));
+        json_object_set_new(out, "confirmed", snapshot(h));
+        json_decref(message);
+    }
     if (!strcmp(argv[2], "recent")) { history_recent(h); settle(auth, h); json_object_set_new(out, "recent", snapshot(h)); }
     if (!strcmp(argv[2], "voice")) { history_select(h, history_channel_count(h) - 1); settle(auth, h); json_object_set_new(out, "voice", snapshot(h)); }
     if (!strcmp(argv[2], "context")) {

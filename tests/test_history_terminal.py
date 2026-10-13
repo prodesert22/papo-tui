@@ -19,7 +19,7 @@ class HistoryTerminal(unittest.TestCase):
         self.assertNotIn('URL do servidor', '\n'.join(t.screen.display))
         self.assertFalse(any('/messages' in r[1] for r in server.requests))
         t.send('\x1bOB\x1bOB\n')  # tabs -> category -> first text channel -> open
-        self.wait(t, 'Somente leitura')
+        self.wait(t, 'Editor')
         return t
 
     def test_login_opens_channels_once_and_renewal_keeps_account_view(self):
@@ -160,7 +160,7 @@ class HistoryTerminal(unittest.TestCase):
                 self.assertIn('[+ Adicionar]', t.screen.display[1])
                 self.assertIn('Editor', '\n'.join(t.screen.display))
                 self.assertNotEqual(t.screen.display[0].strip(), '')  # outer frame
-                t.send('tentativa de envio\n')
+                t.send('rascunho sem enviar')
                 self.assertFalse(any(r[1].endswith('/messages') and r[0] == 'POST' for r in first.requests))
                 self.click_text(t, '[+ Adicionar]')
                 self.wait(t, 'URL do servidor')

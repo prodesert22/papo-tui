@@ -13,6 +13,9 @@ typedef struct history history;
 history *history_create(auth_client *auth);
 void history_destroy(history *h);
 bool history_poll(history *h);
+/* Copies a confirmed Message. Merges only the active channel/current
+ * generation, with definitive ID deduplication and bounded memory. No HTTP. */
+bool history_confirm(history *h, json_t *message, uint64_t generation);
 void history_reload_channels(history *h);
 bool history_select(history *h, size_t channel);
 void history_recent(history *h);

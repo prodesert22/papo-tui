@@ -21,7 +21,8 @@ typedef enum {
     AUTH_REGISTER,
     AUTH_REGISTERED,
     AUTH_REFRESH,
-    AUTH_API_GET
+    AUTH_API_GET,
+    AUTH_MESSAGE_SEND
 } auth_state;
 
 typedef enum { AUTH_INPUT_NONE, AUTH_INPUT_URL, AUTH_INPUT_USERNAME,
@@ -53,7 +54,7 @@ uint64_t auth_context_generation(const auth_client *client);
 bool auth_refresh(auth_client *client);
 /* Copies a relative endpoint when READY and the REST queue is available.
  * Rejects concurrent submissions; a pending GET may recover one 401. Completed responses are bounded to one owned JSON value.
- * No mutation API or automatic mutation replay is provided. */
+ * Message mutations use a separate response slot and never replay. */
 bool auth_get_json(auth_client *client, const char *path);
 /* Read-only POST /users/user_summary_batch. Copies 1..1000 UUID strings;
  * participates in the same queue/budget and may recover one 401, like GET.
@@ -69,6 +70,26 @@ void auth_cancel_read(auth_client *client);
  * Logout, cancellation and authentication failure discard pending responses. */
 bool auth_response_ready(const auth_client *client);
 json_t *auth_take_response(auth_client *client, long *status, uint64_t *generation);
+typedef enum { AUTH_SEND_CONFIRMED, AUTH_SEND_REJECTED, AUTH_SEND_UNCERTAIN } auth_send_outcome;
+typedef struct {
+    auth_send_outcome outcome;
+    long status;
+    uint64_t operation_id, generation;
+    bool transmitted, cancelled;
+} auth_send_receipt;
+
+/* Text-only POST /messages through libcurl MIME and the existing REST queue.
+ * Copies inputs; rejects concurrent submissions. Never replays the mutation.
+ * A 401 may renew identity once to permit a subsequent manual attempt. */
+bool auth_send_text(auth_client *client, uint64_t operation_id, const char *channel_id, const char *content);
+bool auth_send_result_ready(const auth_client *client);
+/* Transfers one owned Message JSON reference only for confirmed sends.
+ * Even NULL results must be consumed to release the response slot. */
+json_t *auth_take_send_result(auth_client *client, auth_send_receipt *receipt);
+/* Cancels only this mutation, preserving the verified session. Transmission
+ * already started means the server outcome can be uncertain. */
+bool auth_cancel_send(auth_client *client);
+
 /* Public metadata only; owns/cancels the prior context before GET /health and
  * GET /server. Poll in the event loop, like login. No credentials are needed. */
 bool auth_discover(auth_client *client, const char *url, bool allow_local_http);
