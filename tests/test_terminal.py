@@ -48,6 +48,14 @@ class TerminalStream(pyte.ByteStream):
     events = pyte.Stream.events | {'scroll_up', 'scroll_down'}
 
 
+def editor_region(terminal):
+    """Locate the input prompt; exclude the typing row and footer."""
+    column = 27 if terminal.screen.columns >= 80 else 2
+    first = next(row for row in range(5, terminal.screen.lines - 4)
+                 if terminal.screen.buffer[row][column].data == '>')
+    return first, terminal.screen.lines - 4
+
+
 class Terminal:
     def __init__(self, arguments=(), *, terminal_type="xterm-256color", environment=None, allow_local_http=True):
         self.master, self.slave = pty.openpty()
@@ -60,6 +68,9 @@ class Terminal:
         env["XDG_CONFIG_HOME"] = self.configuration.name
         env["XDG_STATE_HOME"] = os.path.join(self.configuration.name, "state")
         env.update(environment or {})
+        # Never change the personal desktop clipboard from synthetic PTY tests.
+        if not environment or "WAYLAND_DISPLAY" not in environment: env["WAYLAND_DISPLAY"] = ""
+        if not environment or "DISPLAY" not in environment: env["DISPLAY"] = ""
         command = [BINARY, *arguments]
         if allow_local_http and "--allow-local-http" not in arguments:
             command.append("--allow-local-http")
@@ -171,7 +182,7 @@ class TerminalTests(unittest.TestCase):
     def test_exit_keys_and_signals_restore_terminal(self):
         for name, exit_key, signal_number in (
             ("Ctrl+Q", "\x11", None),
-            ("Ctrl+C", "\x03", None),
+            ("Ctrl+C outside input", "\t\t\t\t\x03", None),
             ("SIGINT", None, signal.SIGINT),
             ("SIGTERM", None, signal.SIGTERM),
         ):

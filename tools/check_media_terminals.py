@@ -49,7 +49,7 @@ def main():
                     checks[name.lower() + '_media_modal'] = 'Esc: voltar' in emulator.screen()
                     subprocess.run(['import', '-window', window, str(work / (name.lower() + '-modal.png'))], capture_output=True, check=True, timeout=10)
                     emulator.send('\x1b'); emulator.resize_narrow(); time.sleep(.3); emulator.resize(False)
-                    wait_for(lambda: 'Editor' in emulator.screen())
+                    wait_for(lambda: 'Conversar em #' in emulator.screen())
                     emulator.send('Rascunho preservado'); wait_for(lambda: 'Rascunho preservado' in emulator.screen())
                     checks[name.lower() + '_resize_and_draft'] = True
                 finally:
@@ -67,7 +67,7 @@ def main():
                 emulator.resize_narrow(); time.sleep(.4); emulator.resize(False)
                 wait_for(lambda: 'Pausado' in emulator.screen())
                 checks['konsole_native_video_resize_preserves_pause'] = True
-                emulator.send('\x1b'); wait_for(lambda: 'Editor' in emulator.screen())
+                emulator.send('\x1b'); wait_for(lambda: 'Conversar em #' in emulator.screen())
             finally:
                 emulator.close(); checks['konsole_native_video_restores_terminal'] = emulator.state().get('restored', False)
         report = {'passed': all(checks.values()), 'kind': 'native-terminal-with-synthetic-http-fixtures',

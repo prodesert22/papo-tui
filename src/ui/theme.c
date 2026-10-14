@@ -87,6 +87,7 @@ void theme_init(ui_theme *theme)
     init_extended_pair(PROFILE_FOCUS, colors[PROFILE_WHITE], colors[PROFILE_HIGHLIGHT]);
     init_extended_pair(PROFILE_BUTTON_SELECTED, colors[ORANGE], colors[WARM]);
     init_extended_pair(PROFILE_BUTTON_FOCUS, colors[ORANGE], colors[PROFILE_HIGHLIGHT]);
+    init_extended_pair(TEXT_SELECTION, colors[BACKGROUND], colors[ORANGE]);
     wbkgd(stdscr, COLOR_PAIR(NORMAL));
 }
 

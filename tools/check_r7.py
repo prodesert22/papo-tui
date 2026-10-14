@@ -109,8 +109,8 @@ def main():
 
             def editor(t):
                 rows = t.screen.display
-                border = next(i for i, row in enumerate(rows) if i >= 5 and ' Editor ' in row)
-                return '\n'.join(rows[border + 1:len(rows) - (4 if len(rows) >= 18 else 3)])
+                first, end = test_terminal.editor_region(t)
+                return '\n'.join(rows[first:end])
 
             for user in users:
                 terminal = test_terminal.Terminal(environment=dict(environment(user, password, ca=cert), TERM='xterm-256color'),

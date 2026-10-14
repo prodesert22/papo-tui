@@ -40,7 +40,7 @@ No gerenciador e nos modais de perfil, os textos principais e botões são branc
 
 Em terminais sem cores, o foco usa inversão e o perfil destacado fora do foco usa negrito. Em telas estreitas, o rodapé encurta os atalhos para manter os controles visíveis.
 
-**+ Adicionar** abre o cadastro de nome e URL por clique ou Enter. Enquanto essa opção estiver selecionada, as ações do rodapé ficam indisponíveis, inclusive depois de cancelar o cadastro. Salvar um perfil volta à lista com ele destacado. **Editar** renomeia ou corrige a URL mantendo o ID local; **Remover** exige confirmação e começa em **Cancelar**. **Ctrl+N**, **Ctrl+E** e **Ctrl+D** abrem essas três ações. Esc cancela o diálogo ou volta ao login, e Ctrl+Q/Ctrl+C fecha o aplicativo. Colagem delimitada não confirma ações automaticamente.
+**+ Adicionar** abre o cadastro de nome e URL por clique ou Enter. Enquanto essa opção estiver selecionada, as ações do rodapé ficam indisponíveis, inclusive depois de cancelar o cadastro. Salvar um perfil volta à lista com ele destacado. **Editar** renomeia ou corrige a URL mantendo o ID local; **Remover** exige confirmação e começa em **Cancelar**. **Ctrl+N**, **Ctrl+E** e **Ctrl+D** abrem essas três ações. Esc cancela o diálogo ou volta ao login, e Ctrl+Q fecha o aplicativo; Ctrl+C limpa o campo de texto focado e fecha quando o foco está fora dos campos. Colagem delimitada não confirma ações automaticamente.
 
 Ao abrir a seleção de perfil pelo login, a conexão de tempo real é encerrada e cookies, usuário e senhas locais são descartados. Selecionar outro perfil exige novo login. A URL do perfil fica bloqueada no formulário; altere-a em **Selecionar perfil → Gerenciar → Editar**. Os perfis contêm somente os dados públicos da instância.
 
@@ -93,7 +93,8 @@ As requisições compartilham um limite global configurável, com padrão de 10 
 | Ctrl+U | Limpar o campo atual |
 | Ctrl+P | Selecionar perfil; encerrar a conexão e limpar credenciais locais |
 | Esc | Cancelar uma conexão em andamento |
-| Ctrl+Q / Ctrl+C | Sair do aplicativo |
+| Ctrl+Q | Sair do aplicativo |
+| Ctrl+C | Limpar o campo focado; sair quando o foco está fora dos campos |
 
 No login e no cadastro, os botões de ação ficam na mesma linha: **Entrar / Cadastro** ou **Criar conta / Login**. **Selecionar perfil** fica no canto superior direito do formulário. ↓ na senha do servidor foca a ação principal; ←/→ alternam os dois botões, ↓ foca Selecionar perfil e ↑ volta à senha do servidor. ↑ em Selecionar perfil volta à ação principal, e ↓ mantém o foco nesse botão. As setas não dão a volta na tela. Tab segue campos, ação principal, ação secundária e Selecionar perfil; controles indisponíveis são pulados.
 
@@ -168,7 +169,7 @@ No histórico, ↑/↓ e PageUp/PageDown rolam o texto. A lista de canais perman
 
 Ao abrir a leitura, o foco começa nas abas. Use ←/→ para escolher o servidor ou destacar **+ Adicionar**, e Enter para abrir o formulário. O botão fica branco sem foco e laranja ao selecionar, quando aparece como **>+ Adicionar<**. ↓ entra na lista de canais.
 
-Em tela ampla, Tab/Shift+Tab alternam entre abas, canais, histórico e editor quando há um canal de texto aberto. ← nos canais, ou ↑ no primeiro canal, volta às abas; ←/→ nas abas trocam de servidor e Enter em **+ Adicionar** abre o formulário. ↓ nas abas foca os canais. Esc sai do editor para o histórico; nos demais painéis, alterna canais/histórico. Abaixo de 80 colunas, Tab/Shift+Tab e os controles **Canais / Conversa** alternam o painel visível. F6 volta à conta, Ctrl+L sai da conta e remove sua aba, Ctrl+P abre a seleção de perfil encerrando a sessão local atual, e Ctrl+Q/Ctrl+C fecha o programa. O mínimo dessa tela é 44×14; para abrir o formulário, amplie para 44×22.
+Em tela ampla, Tab/Shift+Tab alternam entre abas, canais, histórico e editor quando há um canal de texto aberto. ← nos canais, ou ↑ no primeiro canal, volta às abas; ←/→ nas abas trocam de servidor e Enter em **+ Adicionar** abre o formulário. ↓ nas abas foca os canais. Esc sai do editor para o histórico; nos demais painéis, alterna canais/histórico. Abaixo de 80 colunas, Tab/Shift+Tab e os controles **Canais / Conversa** alternam o painel visível. F6 volta à conta, Ctrl+L sai da conta e remove sua aba, Ctrl+P abre a seleção de perfil encerrando a sessão local atual, e Ctrl+Q fecha o programa; Ctrl+C limpa o campo focado ou fecha fora dos campos. O mínimo dessa tela é 44×14; para abrir o formulário, amplie para 44×22.
 
 Mensagens aparecem em ordem cronológica, com data, autor, indicação de edição e referências de resposta. Anexos mostram seus metadados e, em terminais com Sixel confirmado, imagens visíveis são baixadas e renderizadas no histórico. Embeds aparecem em cards com autor, título, descrição, fields e rodapé. F7 ou clique abre a mídia em um modal; vídeos são baixados antes de reproduzir com áudio. Os embeds recebidos ou atualizados em tempo real aparecem na mensagem sem precisar reabrir o canal, incluindo mensagens sem texto. Autores ausentes têm um rótulo de indisponibilidade. Ao abrir um canal de texto, digite para focar o editor, incluindo o primeiro caractere. Enter no histórico também foca o editor. Enter no editor envia, Ctrl+N insere uma nova linha e colagem delimitada preserva linhas sem enviar. Setas, Home/End, Backspace e Delete editam grafemas; clique no editor para posicionar o cursor. Esc volta ao histórico. A área em foco recebe um fundo discretamente mais claro. Mensagens de outras contas chegam automaticamente. Eventos repetidos e confirmações REST/WS da mesma mensagem são reconciliados pelo ID. A tela acompanha novas mensagens quando você está no fim; ao ler mensagens anteriores, indica novidades sem mover a leitura. End ou clique no indicador volta ao fim.
 
@@ -188,6 +189,52 @@ confirmação de envio não apaga o estado da conexão. Um novo aviso substitui
 apenas o anterior do mesmo contexto. Em janelas estreitas, os textos ficam
 mais curtos; `+N` indica avisos antigos que reaparecem ao ampliar a janela.
 Trocar de canal limpa os avisos da conversa anterior e preserva a conexão.
+
+O campo da conversa mostra **Conversar em #nome_canal** quando está vazio e
+cresce de uma até cinco linhas conforme o texto quebra ou ocupa mais espaço.
+Depois disso, as setas acompanham o cursor e a roda do mouse sobre o campo
+rola o texto; as marcas ↑/↓ indicam conteúdo fora da área visível. Em telas
+baixas, o campo usa as linhas disponíveis preservando a leitura e o rodapé.
+
+Em todos os campos editáveis, **Shift+setas** estende a seleção; clique esquerdo
+e arraste também selecionam, com realce durante o movimento, inclusive entre
+linhas e em linhas quebradas pela largura do campo. A seleção tem fundo e texto contrastantes; digitar,
+apagar ou colar substitui o trecho selecionado. **Ctrl+←** vai ao começo da
+palavra; **Ctrl+→** vai ao final, antes dos espaços. A partir de um espaço,
+Ctrl+→ avança até o fim da próxima palavra.
+**Home/End** vai ao início/fim da linha, e **Ctrl+C** ou **Ctrl+U** limpa o campo.
+**Ctrl+Q** sempre fecha o aplicativo. **Ctrl+Shift+C** ou clique direito sobre
+um campo com seleção copia o texto; **Texto copiado** aparece por três segundos, preservando os
+outros avisos. A cópia usa `wl-copy` no Wayland ou `xclip` no X11 quando
+estão disponíveis; caso contrário, usa o terminal via
+[OSC 52](https://sw.kovidgoyal.net/kitty/clipboard/), que precisa permitir a cópia.
+As senhas permanecem mascaradas, inclusive durante seleção.
+
+Ctrl+Shift+C precisa chegar ao aplicativo. Terminais que reservam esse atalho
+para sua própria seleção precisam configurá-lo para enviar `ESC[99;6u`;
+clique direito também copia a seleção do campo. O cliente aceita os atalhos
+encaminhados por CSI-u e modifyOtherKeys, incluindo Num Lock/Caps Lock, e mantém
+o modo de teclado do terminal. Ctrl+C continua limpando o campo; em terminais
+que enviam o mesmo código para os dois atalhos, use o clique direito para copiar.
+
+No Kitty, adicione esta [regra condicional](https://sw.kovidgoyal.net/kitty/mapping/#conditional-mappings)
+ao `~/.config/kitty/kitty.conf` para copiar a seleção do Papo TUI com Ctrl+Shift+C:
+
+```conf
+map --when-focus-on=var:papo_tui=1 ctrl+shift+c send_text all \x1b[99;6u
+map --when-focus-on=var:papo_tui=1 ctrl+v paste_from_clipboard
+```
+
+Recarregue a configuração do Kitty com **Ctrl+Shift+F5** e reinicie o Papo TUI.
+O aplicativo define o marcador ao abrir e o remove ao sair. Nos outros
+programas, o atalho continua usando a cópia do terminal.
+A segunda regra permite **Ctrl+V** para colar em bloco dentro do Papo TUI.
+
+A colagem delimitada pelo terminal entra em bloco ao terminar, inclusive ao
+substituir uma seleção, e não aciona comandos nem envia quebras de linha.
+No login e nos campos de perfil, quebras de linha são descartadas. Uma colagem
+que excede o limite mantém o campo original e mostra o aviso correspondente.
+O atalho de colar continua sendo o configurado no terminal.
 
 Na linha abaixo do campo de texto, uma pessoa aparece como “Nome está digitando…” ou
 com sua frase personalizada de digitação cadastrada no servidor. De duas a

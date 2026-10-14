@@ -6,7 +6,8 @@
 
 typedef struct {
     char channel[64];
-    size_t cursor, length;
+    size_t cursor, length, anchor;
+    bool selecting;
     int first_row, goal_column;
     bool trailing;
 } cursor_state;
@@ -45,6 +46,7 @@ static void save_cursor(send_editor *editor)
     cursor_state *item = find_cursor(editor, editor->channel);
     if (item) {
         item->cursor = editor->text.cursor; item->length = editor->text.length;
+        item->anchor = editor->text.anchor; item->selecting = editor->text.selecting;
         item->first_row = editor->text.first_row; item->goal_column = editor->text.goal_column;
         item->trailing = editor->text.trailing;
     }
@@ -109,6 +111,10 @@ bool send_editor_select(send_editor *editor, const char *channel)
     if (cursor->length >= next.length && cursor->length - next.length <= cursor->cursor)
         next.cursor = cursor->cursor - (cursor->length - next.length);
     else next.cursor = cursor->cursor < next.length ? cursor->cursor : next.length;
+    size_t removed = cursor->length > next.length ? cursor->length - next.length : 0;
+    next.anchor = cursor->anchor >= removed ? cursor->anchor - removed : 0;
+    if (next.anchor > next.length) next.anchor = next.length;
+    next.selecting = cursor->selecting;
     next.first_row = cursor->first_row; next.goal_column = cursor->goal_column; next.trailing = cursor->trailing;
     editor->text = next;
     memcpy(editor->channel, channel, strlen(channel) + 1);
@@ -196,6 +202,9 @@ void send_editor_poll(send_editor *editor)
             size_t removed = editor->text.length >= next.length ? editor->text.length - next.length : 0;
             next.cursor = editor->text.cursor >= removed ? editor->text.cursor - removed : 0;
             if (next.cursor > next.length) next.cursor = next.length;
+            next.anchor = editor->text.anchor >= removed ? editor->text.anchor - removed : 0;
+            if (next.anchor > next.length) next.anchor = next.length;
+            next.selecting = editor->text.selecting;
             next.first_row = editor->text.first_row;
             next.goal_column = editor->text.goal_column;
             next.trailing = editor->text.trailing;

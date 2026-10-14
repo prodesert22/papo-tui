@@ -122,7 +122,7 @@ bool mention_popup_update(mention_popup *p, text_buffer *b, bool enabled)
         p->start = SIZE_MAX;
         snprintf(p->channel_id, sizeof(p->channel_id), "%s", channel);
     }
-    if (!b || !enabled) {
+    if (!b || !enabled || text_selection(b, NULL, NULL)) {
         hide(p);
         return was;
     }
@@ -221,6 +221,7 @@ static bool choose(mention_popup *p, text_buffer *b)
     memcpy(b->data + p->start, insertion.data, insertion.length * sizeof(b->data[0]));
     b->length = b->length - (p->end - p->start) + insertion.length;
     b->cursor = p->start + insertion.length;
+    text_unselect(b);
     b->goal_column = -1;
     b->trailing = false;
     mention_popup_close(p);

@@ -2,7 +2,7 @@
 import time
 import unittest
 from history_mock import HistoryMock, CHANNEL, OTHER
-from test_terminal import Terminal
+from test_terminal import Terminal, editor_region
 from wcwidth import wcswidth
 
 
@@ -28,15 +28,14 @@ class SendProduct(unittest.TestCase):
         self.wait(terminal, 'geral')
         terminal.send('\x1bOB\x1bOB\n')
         self.wait(terminal, '# geral · Histórico')
-        self.wait(terminal, 'Editor')
+        self.wait(terminal, 'Conversar em #geral')
         return terminal
 
     def editor_text(self, terminal):
         # Editor input is separated from message history and status lines.
         rows = terminal.screen.display
-        border = next(i for i, line in enumerate(rows) if i >= 5 and ' Editor ' in line)
-        end = len(rows) - (4 if len(rows) >= 18 else 3)
-        return '\n'.join(rows[border + 1:end])
+        first, end = editor_region(terminal)
+        return '\n'.join(rows[first:end])
 
     def test_confirmed_message_merges_without_get_and_keeps_later_edits(self):
         with HistoryMock(count=0) as server:
@@ -81,8 +80,8 @@ class SendProduct(unittest.TestCase):
                 terminal.send('\x1bOB\x1bOB\n')
                 self.wait(terminal, '# geral · Histórico')
                 self.assertIn('PrimeiXro', self.editor_text(terminal))
-                terminal.click(17, 32)
-                self.wait(terminal, 'Foco: Editor')
+                terminal.click(editor_region(terminal)[0], 32)
+                self.wait(terminal, 'Foco: Mensagem')
                 terminal.send('Y')
                 self.assertIn('Y', self.editor_text(terminal))
                 self.assertEqual(server.message_count, 0)

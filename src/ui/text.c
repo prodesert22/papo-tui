@@ -6,6 +6,102 @@
 #include <stdlib.h>
 #include <string.h>
 #include <wctype.h>
+#include <wordbreak.h>
+
+void text_input_init(void)
+{
+    init_graphemebreak(); init_wordbreak();
+    define_key("\033[200~", TEXT_PASTE_START); define_key("\033[201~", TEXT_PASTE_END);
+    /* ncurses owns sequence decoding. CSI-u disambiguates Ctrl+Shift+C from
+     * Ctrl+C; accept xterm's modifyOtherKeys encoding as well. CapsLock and
+     * NumLock add 64/128 to the modifier; neither changes the intended key. */
+    for (int locks = 0; locks <= 192; locks += 64)
+    for (int ascii = 32; ascii <= 126; ++ascii) for (int modifier = 5; modifier <= 6; ++modifier) {
+        int key = TEXT_IGNORED;
+        if ((ascii >= 'a' && ascii <= 'z') || (ascii >= 'A' && ascii <= 'Z') ||
+            (ascii >= '[' && ascii <= '_') || ascii == '@' || ascii == ' ')
+            key = TEXT_CONTROL_BASE + (ascii & 31);
+        if (modifier == 6 && (ascii == 'c' || ascii == 'C')) key = TEXT_COPY;
+        char sequence[32];
+        snprintf(sequence, sizeof(sequence), "\033[%d;%du", ascii, modifier + locks);
+        define_key(sequence, key);
+        snprintf(sequence, sizeof(sequence), "\033[27;%d;%d~", modifier + locks, ascii);
+        define_key(sequence, key);
+    }
+    const int codes[] = {27, 13, 9, 127};
+    for (size_t i = 0; i < sizeof(codes) / sizeof(codes[0]); ++i) {
+        char sequence[32];
+        int key = codes[i] == 127 ? KEY_BACKSPACE : TEXT_CONTROL_BASE + codes[i];
+        snprintf(sequence, sizeof(sequence), "\033[%du", codes[i]);
+        define_key(sequence, key);
+        for (int locks = 0; locks <= 192; locks += 64) {
+            snprintf(sequence, sizeof(sequence), "\033[%d;%du", codes[i], 1 + locks);
+            define_key(sequence, key);
+            if (codes[i] == 9) {
+                snprintf(sequence, sizeof(sequence), "\033[9;%du", 2 + locks);
+                define_key(sequence, KEY_BTAB);
+            }
+        }
+    }
+    define_key("\033[27;2;9~", KEY_BTAB);
+    const char suffix[] = "DCABHF";
+    const int modifiers[] = {1, 2, 5, 6};
+    const int plain_keys[] = {KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN, KEY_HOME, KEY_END};
+    for (int locks = 0; locks <= 192; locks += 64)
+    for (int group = 0; group < 4; ++group) for (int direction = 0; direction < 6; ++direction) {
+        int key = group ? TEXT_SHIFT_LEFT + (group - 1) * 6 + direction : plain_keys[direction];
+        char sequence[24];
+        snprintf(sequence, sizeof(sequence), "\033[1;%d%c", modifiers[group] + locks, suffix[direction]);
+        define_key(sequence, key);
+        if (direction >= 4) {
+            snprintf(sequence, sizeof(sequence), "\033[%d;%d~", direction == 4 ? 1 : 4, modifiers[group] + locks);
+            define_key(sequence, key);
+            snprintf(sequence, sizeof(sequence), "\033[%d;%d~", direction == 4 ? 7 : 8, modifiers[group] + locks);
+            define_key(sequence, key);
+        }
+    }
+    const int numbers[] = {2, 3, 5, 6, 11, 12, 13, 14, 15, 17, 18, 19, 20, 21, 23, 24};
+    const int keys[] = {KEY_IC, KEY_DC, KEY_PPAGE, KEY_NPAGE, KEY_F(1), KEY_F(2), KEY_F(3), KEY_F(4),
+                        KEY_F(5), KEY_F(6), KEY_F(7), KEY_F(8), KEY_F(9), KEY_F(10), KEY_F(11), KEY_F(12)};
+    for (size_t i = 0; i < sizeof(numbers) / sizeof(numbers[0]); ++i)
+    for (int locks = 0; locks <= 192; locks += 64) {
+        char sequence[32];
+        snprintf(sequence, sizeof(sequence), "\033[%d;%d~", numbers[i], 1 + locks);
+        define_key(sequence, keys[i]);
+    }
+    for (int i = 0; i < 4; ++i) for (int locks = 0; locks <= 192; locks += 64) {
+        char sequence[32];
+        snprintf(sequence, sizeof(sequence), "\033[1;%d%c", 1 + locks, "PQRS"[i]);
+        define_key(sequence, KEY_F(i + 1));
+    }
+}
+int text_input_read(wint_t *key)
+{
+    int type = get_wch(key);
+    if (type == KEY_CODE_YES && *key >= TEXT_CONTROL_BASE && *key < TEXT_CONTROL_BASE + 32) {
+        *key -= TEXT_CONTROL_BASE;
+        return OK;
+    }
+    return type;
+}
+void text_input_terminal_active(bool active)
+{
+    const char *id = getenv("KITTY_WINDOW_ID"), *term = getenv("TERM");
+    if ((id && *id) || (term && !strcmp(term, "xterm-kitty"))) {
+        fputs(active ? "\033]1337;SetUserVar=papo_tui=MQ==\a" : "\033]1337;SetUserVar=papo_tui\a", stdout);
+        fflush(stdout);
+    }
+}
+bool text_selection(const text_buffer *buffer, size_t *start, size_t *end)
+{
+    size_t a = buffer->anchor < buffer->length ? buffer->anchor : buffer->length;
+    size_t b = buffer->cursor < buffer->length ? buffer->cursor : buffer->length;
+    if (!buffer->selecting || a == b) return false;
+    if (start) *start = a < b ? a : b;
+    if (end) *end = a > b ? a : b;
+    return true;
+}
+void text_unselect(text_buffer *buffer) { buffer->selecting = false; buffer->anchor = buffer->cursor; }
 
 /* Build a bounded projection and source-offset map. Labels cannot be longer
  * than their canonical token; this preserves the existing layout capacity. */
@@ -136,10 +232,17 @@ static bool allowed(wint_t value)
 
 bool text_insert(text_buffer *buffer, wint_t character, bool multiline)
 {
-    if (buffer->length >= TEXT_LIMIT) return false;
     if (character == '\r') character = '\n';
     if (character == '\t') character = ' ';
     if (character == '\n' ? !multiline : !allowed(character)) return false;
+    size_t from, to;
+    if (text_selection(buffer, &from, &to)) {
+        memmove(buffer->data + from, buffer->data + to,
+                (buffer->length - to + 1) * sizeof(buffer->data[0]));
+        buffer->length -= to - from; buffer->cursor = from;
+    }
+    if (buffer->length >= TEXT_LIMIT) return false;
+    text_unselect(buffer);
     memmove(buffer->data + buffer->cursor + 1, buffer->data + buffer->cursor,
             (buffer->length - buffer->cursor + 1) * sizeof(buffer->data[0]));
     buffer->data[buffer->cursor++] = (utf32_t)character;
@@ -154,11 +257,13 @@ void text_delete(text_buffer *buffer, bool backward)
     boundaries(buffer, breaks);
     size_t from = backward ? previous(buffer->cursor, breaks) : buffer->cursor;
     size_t to = backward ? buffer->cursor : next(buffer, buffer->cursor, breaks);
+    text_selection(buffer, &from, &to);
     memmove(buffer->data + from, buffer->data + to,
             (buffer->length - to + 1) * sizeof(buffer->data[0]));
     buffer->length -= to - from;
     buffer->cursor = from;
     normalize_cursor(buffer);
+    text_unselect(buffer);
 }
 
 void text_horizontal(text_buffer *buffer, bool right)
@@ -313,6 +418,71 @@ void text_click(text_buffer *buffer, int width, int row, int column)
     text_measure(buffer, width, &layout);
     position_at(buffer, &layout, row, column);
     buffer->goal_column = -1;
+    text_unselect(buffer);
+}
+void text_drag(text_buffer *buffer, int width, int row, int column)
+{
+    size_t anchor = buffer->selecting ? buffer->anchor : buffer->cursor;
+    text_click(buffer, width, row, column);
+    buffer->anchor = anchor; buffer->selecting = true;
+}
+
+static void text_word(text_buffer *buffer, bool right)
+{
+    char words[TEXT_LIMIT], graphemes[TEXT_LIMIT];
+    if (!buffer->length) return;
+    set_wordbreaks_utf32(buffer->data, buffer->length, NULL, words);
+    boundaries(buffer, graphemes);
+    for (size_t i = 0; i < buffer->length; ++i)
+        if (graphemes[i] != GRAPHEMEBREAK_BREAK) words[i] = WORDBREAK_NOBREAK;
+    size_t at = buffer->cursor;
+    if (right) {
+        while (at < buffer->length && iswspace(buffer->data[at])) at = next(buffer, at, graphemes);
+        while (at < buffer->length) if (words[at++] == WORDBREAK_BREAK) break;
+    } else {
+        while (at && iswspace(buffer->data[previous(at, graphemes)])) at = previous(at, graphemes);
+        if (at) { --at; while (at && words[at - 1] != WORDBREAK_BREAK) --at; }
+    }
+    buffer->cursor = at; buffer->goal_column = -1; buffer->trailing = false;
+}
+bool text_edit(text_buffer *buffer, int type, wint_t key, int width, bool multiline)
+{
+    if (type == OK) {
+        if (key == 3 || key == 21) { text_clear(buffer); return true; }
+        if (key == 8 || key == 127) { text_delete(buffer, true); return true; }
+        if (multiline && key == 14) { text_insert(buffer, '\n', true); return true; }
+        if (allowed(key)) { text_insert(buffer, key, multiline); return true; }
+        return false;
+    }
+    if (type != KEY_CODE_YES) return false;
+    if (key == KEY_BACKSPACE || key == KEY_DC) { text_delete(buffer, key == KEY_BACKSPACE); return true; }
+    int direction = -1;
+    bool shift = false, control = false;
+    if (key >= TEXT_SHIFT_LEFT && key <= TEXT_CTRL_SHIFT_END) {
+        int group = (int)(key - TEXT_SHIFT_LEFT) / 6;
+        direction = (int)(key - TEXT_SHIFT_LEFT) % 6;
+        shift = group != 1; control = group != 0;
+    } else {
+        if (key == KEY_LEFT || key == KEY_SLEFT) direction = 0;
+        if (key == KEY_RIGHT || key == KEY_SRIGHT) direction = 1;
+        if (key == KEY_UP || key == KEY_SR) direction = 2;
+        if (key == KEY_DOWN || key == KEY_SF) direction = 3;
+        if (key == KEY_HOME || key == KEY_SHOME) direction = 4;
+        if (key == KEY_END || key == KEY_SEND) direction = 5;
+        shift = key == KEY_SLEFT || key == KEY_SRIGHT || key == KEY_SR || key == KEY_SF || key == KEY_SHOME || key == KEY_SEND;
+    }
+    if (direction < 0) return false;
+    size_t anchor = buffer->selecting ? buffer->anchor : buffer->cursor, lo, hi;
+    bool collapse = !shift && !control && direction < 2 && text_selection(buffer, &lo, &hi);
+    if (collapse) { buffer->cursor = direction ? hi : lo; buffer->goal_column = -1; buffer->trailing = false; }
+    else if (control && direction < 2) text_word(buffer, direction == 1);
+    else if (control) { buffer->cursor = direction == 3 || direction == 5 ? buffer->length : 0; buffer->trailing = false; buffer->goal_column = -1; }
+    else if (direction < 2) text_horizontal(buffer, direction == 1);
+    else if (direction < 4) text_vertical(buffer, width, direction == 2 ? -1 : 1);
+    else text_line_edge(buffer, width, direction == 5);
+    if (shift) { buffer->anchor = anchor; buffer->selecting = true; }
+    else text_unselect(buffer);
+    return true;
 }
 
 void text_keep_cursor(text_buffer *buffer, const text_layout *layout, int height)
@@ -324,16 +494,103 @@ void text_keep_cursor(text_buffer *buffer, const text_layout *layout, int height
     if (buffer->first_row > last) buffer->first_row = last;
 }
 
+bool text_insert_buffer(text_buffer *buffer, const text_buffer *insertion)
+{
+    if (!insertion->length) return true;
+    size_t from = buffer->cursor, to = buffer->cursor;
+    text_selection(buffer, &from, &to);
+    if (insertion->length > TEXT_LIMIT - (buffer->length - (to - from))) return false;
+    memmove(buffer->data + from + insertion->length, buffer->data + to,
+            (buffer->length - to + 1) * sizeof(buffer->data[0]));
+    memcpy(buffer->data + from, insertion->data, insertion->length * sizeof(buffer->data[0]));
+    buffer->length = buffer->length - (to - from) + insertion->length;
+    buffer->cursor = from + insertion->length;
+    normalize_cursor(buffer); text_unselect(buffer);
+    return true;
+}
+void text_paste_cancel(text_paste *paste)
+{
+    volatile unsigned char *p = (volatile unsigned char *)paste;
+    for (size_t i = 0; i < sizeof(*paste); ++i) p[i] = 0;
+}
+void text_paste_begin(text_paste *paste)
+{ text_paste_cancel(paste); paste->active = true; }
+int text_paste_read(text_paste *paste, wint_t *key, bool multiline,
+                    int (*read_key)(wint_t *), int timeout_ms)
+{
+    timeout(0);
+    int type = ERR;
+    for (int count = 0; count < 256; ++count) {
+        if (!count) timeout(timeout_ms);
+        type = read_key(key);
+        timeout(0);
+        if (type == ERR) break;
+        if (type == KEY_CODE_YES) {
+            if (*key == TEXT_PASTE_END || *key == KEY_RESIZE) break;
+            if (*key == KEY_MOUSE) { MEVENT ignored; while (getmouse(&ignored) == OK) {} }
+            type = ERR; continue;
+        }
+        wint_t value = *key;
+        if (value == '\n' && paste->cr) { paste->cr = false; type = ERR; continue; }
+        paste->cr = value == '\r';
+        if (value == '\r') value = '\n';
+        if (value == '\t') value = ' ';
+        if ((value == '\n' && multiline) || allowed(value)) {
+            if (paste->text.length < TEXT_LIMIT) paste->text.data[paste->text.length++] = value;
+            else paste->truncated = true;
+        }
+        type = ERR;
+    }
+    timeout(timeout_ms);
+    paste->text.data[paste->text.length] = 0;
+    return type;
+}
+bool text_paste_commit(text_paste *paste, text_buffer *buffer)
+{
+    bool ok = !paste->truncated && buffer && text_insert_buffer(buffer, &paste->text);
+    text_paste_cancel(paste);
+    return ok;
+}
+
+void text_draw_field(WINDOW *window, const text_buffer *buffer, int *first,
+                     int y, int x, int width, bool masked)
+{
+    text_layout layout; text_measure(buffer, TEXT_LIMIT * 2 + 1, &layout);
+    if (layout.cursor_column < *first) *first = layout.cursor_column;
+    if (layout.cursor_column >= *first + width) *first = layout.cursor_column - width + 1;
+    for (size_t i = 0; i + 1 < layout.count; ++i) {
+        const text_cell *c = &layout.cells[i];
+        if (c->column < *first && c->column + c->width > *first) *first = c->column + c->width;
+    }
+    attr_t attributes = getattrs(window);
+    size_t lo = 0, hi = 0; bool selection = text_selection(buffer, &lo, &hi);
+    for (size_t i = 0; i + 1 < layout.count; ++i) {
+        const text_cell *c = &layout.cells[i];
+        if (c->newline || c->column < *first || c->column + c->width > *first + width) continue;
+        bool selected = selection && c->start < hi && c->end > lo;
+        attr_t style = selected ? A_BOLD | (has_colors() ? 0 : A_REVERSE) : attributes & ~A_COLOR;
+        short pair = selected ? (has_colors() ? TEXT_SELECTION : 0) : PAIR_NUMBER(attributes);
+        cchar_t glyph;
+        if (setcchar(&glyph, masked ? L"*" : c->glyph, style, pair, NULL) == OK)
+            for (int n = 0; n < (masked ? c->width : 1); ++n)
+                mvwadd_wch(window, y, x + c->column - *first + n, &glyph);
+    }
+    wmove(window, y, x + layout.cursor_column - *first);
+}
+
 void text_draw(WINDOW *window, const text_buffer *buffer, const text_layout *layout,
                int first, int height, int y, int x)
 {
-    (void)buffer;
     attr_t attributes = getattrs(window);
+    size_t lo = 0, hi = 0; bool selection = text_selection(buffer, &lo, &hi);
     for (size_t i = 0; i + 1 < layout->count; ++i) {
         const text_cell *point = &layout->cells[i];
-        if (point->newline || point->row < first || point->row >= first + height) continue;
+        bool selected = selection && point->start < hi && point->end > lo;
+        if ((point->newline && !selected) || point->row < first || point->row >= first + height) continue;
         cchar_t glyph;
-        if (setcchar(&glyph, point->glyph, (attributes & ~A_COLOR) | (point->mention ? A_BOLD : 0), point->mention ? PANEL_ACCENT : PAIR_NUMBER(attributes), NULL) == OK)
+        short pair = selected ? (has_colors() ? TEXT_SELECTION : 0) : point->mention ? PANEL_ACCENT : PAIR_NUMBER(attributes);
+        attr_t style = selected ? A_BOLD | (has_colors() ? 0 : A_REVERSE) : (attributes & ~A_COLOR) | (point->mention ? A_BOLD : 0);
+        if (setcchar(&glyph, point->newline ? L" " : point->glyph, style, pair, NULL) == OK)
             mvwadd_wch(window, y + point->row - first, x + point->column, &glyph);
     }
 }

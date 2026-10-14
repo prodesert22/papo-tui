@@ -57,11 +57,12 @@ class MediaTerminal(unittest.TestCase):
         t = Terminal(environment=environment)
         if not hasattr(self, "terminals"): self.terminals = []
         self.terminals.append(t)
+        self.addCleanup(lambda: t.close() if t.process.poll() is None else None)
         stream = GraphicsStream(t.screen); stream.feed(bytes(t.output)); t.stream = stream
         if sixel:
             t.send('\x1b[?62;4;22c\x1b[6;16;8t')
         t.send(server.url + '\tjosé\tSynthetic!123\n')
-        self.wait(t, 'geral'); t.send('\x1bOB\x1bOB\n'); self.wait(t, 'Editor')
+        self.wait(t, 'geral'); t.send('\x1bOB\x1bOB\n'); self.wait(t, 'Conversar em #geral')
         return t
     def tearDown(self):
         for terminal in getattr(self, 'terminals', []):
@@ -106,7 +107,7 @@ class MediaTerminal(unittest.TestCase):
                 self.wait(t, 'Fixture'); t.read(.2)
                 self.assertFalse(any('/attachments/' in r[1] for r in server.requests))
                 t.send('\x1b[18~'); self.wait(t, 'suporte a Sixel')
-                t.send('\x1b'); self.wait(t, 'Editor')
+                t.send('\x1b'); self.wait(t, 'Conversar em #geral')
             finally: self.assertTrue(t.close())
     def test_channel_navigation_preserves_image_and_reopening_uses_cache(self):
         with self.serve(self.images['png'], 'image/png') as server:
@@ -148,7 +149,7 @@ class MediaTerminal(unittest.TestCase):
             t = self.open(server, environment={'TMPDIR': directory})
             try:
                 self.wait(t, 'Vídeo'); t.send('\x1b[18~'); self.wait(t, 'Carregando mídia')
-                t.send('\x1b'); self.wait(t, 'Editor'); t.send('Preservado'); self.wait(t, 'Preservado')
+                t.send('\x1b'); self.wait(t, 'Conversar em #geral'); t.send('Preservado'); self.wait(t, 'Preservado')
             finally: self.assertTrue(t.close())
             self.assertEqual(list(Path(directory).iterdir()), [])
     def test_channel_switch_cancels_late_media(self):

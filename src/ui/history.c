@@ -11,6 +11,7 @@
 #include "ui/send_editor.h"
 #include "ui/mention_popup.h"
 #include "ui/status_bar.h"
+#include "ui/clipboard.h"
 #include <wctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,7 +32,7 @@ typedef struct {
     send_editor *editor; /* Borrowed from the instance connection. */
     instance_connections *connections;
     WINDOW *frame, *tabs, *footer, *list, *body, *confirm;
-    int width, height, side, visible, first_channel, focus, first, editor_border, history_top;
+    int width, height, side, visible, first_channel, focus, first, editor_border, history_top, editor_rows;
     size_t highlighted, active_tab, tab_cursor, first_tab;
     click_range tab_hits[INSTANCE_LIMIT], add_hit, back_hit, next_hit, channels_hit, conversation_hit;
     char anchor[37];
@@ -39,10 +40,13 @@ typedef struct {
     const char *feedback;
     status_bar status;
     uint64_t notice_revisions[HISTORY_NOTICE_COUNT];
+    uint64_t copy_revision;
     uint64_t retry_id;
     uint64_t unseen;
     size_t section, offset;
-    bool at_end, paste, paste_cr, show_channels, layout_failed, duplicate_modal, reenviar;
+    bool at_end, paste, show_channels, layout_failed, duplicate_modal, reenviar;
+    bool dragging, editor_scrolling;
+    text_paste paste_data;
 } view;
 static const char *str(json_t *obj, const char *key)
 {
@@ -70,7 +74,7 @@ static bool layout(view *ui)
     bool wide = COLS >= 80;
     int rows = LINES - CONTENT_Y - 3;
     ui->side = wide ? 24 : COLS - 2;
-    ui->editor_border = rows >= 10 ? rows - 5 : rows - 3;
+    ui->editor_rows = 1; ui->editor_border = rows - 3;
     ui->history_top = rows >= 8 ? 3 : 2;
     ui->visible = ui->editor_border - ui->history_top;
     ui->frame = newwin(LINES, COLS, 0, 0);
@@ -131,7 +135,7 @@ static void draw_tabs(view *ui, auth_client *auth)
     bool adding = focused && ui->tab_cursor == ui->connections->count;
     button_draw(ui->tabs, 0, ui->add_hit.x, ui->add_hit.width, adding ? ">+ Adicionar<" : "[+ Adicionar]",
                 adding ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
-    const char *areas[] = {"Abas", "Canais", "Histórico", "Editor"};
+    const char *areas[] = {"Abas", "Canais", "Histórico", "Mensagem"};
     char summary[1200];
     snprintf(summary, sizeof(summary), "%s · Foco: %s · F6: conta", auth_username(auth), areas[ui->focus]);
     wattrset(ui->tabs, COLOR_PAIR(focused ? FOCUS_MUTED : PANEL_MUTED));
@@ -162,7 +166,13 @@ static int walk(view *ui, int first, bool paint, bool save, int *anchor)
         bool anchored = !strcmp(ui->anchor, str(m, "id"));
         if (anchored) *anchor = total;
         int offered = -1;
-        for (size_t row = 0; row < blocks.count; ++row) {
+        size_t rows = blocks.count;
+        /* At minimum height, the final message's spacing row would occupy
+         * the only history row. Keep the content visible instead. */
+        if (ui->visible == 1 && i + 1 == history_message_count(ui->model) && rows &&
+            !blocks.rows[rows - 1].count && blocks.rows[rows - 1].media_index < 0 &&
+            !blocks.rows[rows - 1].card) --rows;
+        for (size_t row = 0; row < rows; ++row) {
             const message_row *r = &blocks.rows[row];
             char key[128]; size_t offset = 0;
             if (r->count) { snprintf(key, sizeof(key), "%s", r->segments[0].key); offset = r->segments[0].offset; }
@@ -200,7 +210,7 @@ static int walk(view *ui, int first, bool paint, bool save, int *anchor)
                 }
             }
         }
-        total += (int)blocks.count; message_blocks_free(&blocks);
+        total += (int)rows; message_blocks_free(&blocks);
     }
     return total;
 }
@@ -231,7 +241,22 @@ static text_buffer *input(view *ui)
 }
 static int input_height(view *ui)
 {
-    return getmaxy(ui->body) - ui->editor_border - 2;
+    return ui->editor_rows;
+}
+static bool editor_geometry(view *ui)
+{
+    if (!ui->body) return false;
+    int rows = 1;
+    text_buffer *buffer = input(ui);
+    if (buffer) { text_layout measured; text_measure(buffer, getmaxx(ui->body) - 6, &measured); rows = measured.rows; }
+    int maximum = getmaxy(ui->body) - ui->history_top - 3;
+    if (maximum > 5) maximum = 5;
+    if (maximum < 1) maximum = 1;
+    if (rows > maximum) rows = maximum;
+    bool changed = rows != ui->editor_rows;
+    ui->editor_rows = rows; ui->editor_border = getmaxy(ui->body) - rows - 2;
+    ui->visible = ui->editor_border - ui->history_top;
+    return changed;
 }
 static bool collect_notices(view *ui, auth_client *auth)
 {
@@ -288,6 +313,12 @@ static bool collect_notices(view *ui, auth_client *auth)
         ui->notice_revisions[next] = earliest;
     }
     changed |= status_bar_set(&ui->status, STATUS_EDITOR, ui->feedback);
+    bool replaced_copy = status_bar_set(&ui->status, STATUS_CLIPBOARD, clipboard_notice());
+    changed |= replaced_copy;
+    if (ui->copy_revision != clipboard_revision()) {
+        if (!replaced_copy) changed |= status_bar_touch(&ui->status, STATUS_CLIPBOARD);
+        ui->copy_revision = clipboard_revision();
+    }
     char unread[128] = "";
     if (ui->unseen)
         snprintf(unread, sizeof(unread), "%llu novas mensagens · End: ir ao fim",
@@ -320,12 +351,12 @@ static void draw_footer(view *ui)
         shorter = "↑↓ canais · Enter abrir · ← abas";
         minimal = "↑↓ · Enter";
     } else if (ui->focus == MESSAGE_INPUT) {
-        full = "Enter enviar · Ctrl+N nova linha · @ mencionar · Esc histórico · Ctrl+T tentar";
-        shorter = "Enter enviar · Ctrl+N linha · Esc histórico";
+        full = "Enter enviar · Ctrl+N linha · Shift+setas selecionar · Ctrl+Shift+C copiar · Ctrl+C limpar · @ mencionar · Esc histórico";
+        shorter = "Enter enviar · Ctrl+Shift+C copiar · Esc histórico";
         minimal = "Enter";
     } else {
         full = input(ui)
-                   ? "↑↓ rolar · PgUp/PgDn páginas · F7 mídia · Digite: editor · ← canais · Ctrl+R atualizar"
+                   ? "↑↓ rolar · PgUp/PgDn páginas · F7 mídia · Digite: conversar · ← canais · Ctrl+R atualizar"
                    : "↑↓ rolar · ← canais · Ctrl+R atualizar";
         shorter = "↑↓ rolar · F7 mídia · Ctrl+R atualizar";
         minimal = "↑↓ · F7";
@@ -428,7 +459,7 @@ static void draw(view *ui, auth_client *auth, draw_scope scope)
         wattrset(ui->body, COLOR_PAIR(editing ? FOCUS_BORDER : BORDER));
         mvwhline(ui->body, ui->editor_border, 0, ACS_HLINE, getmaxx(ui->body));
         wattrset(ui->body, COLOR_PAIR(editing ? FOCUS_MUTED : PANEL_MUTED));
-        text_label(ui->body, ui->editor_border, 2, getmaxx(ui->body) - 4, " Editor ");
+
         if (editor) {
             int height = input_height(ui), width = getmaxx(ui->body) - 6;
             if (editing) for (int row = 0; row < height; ++row) {
@@ -438,11 +469,17 @@ static void draw(view *ui, auth_client *auth, draw_scope scope)
             wattrset(ui->body, COLOR_PAIR(editing ? FOCUS_AREA : PANEL));
             text_label(ui->body, ui->editor_border + 1, 1, 1, ">");
             text_layout measured; text_measure(editor, width, &measured);
-            text_keep_cursor(editor, &measured, height);
-            text_draw(ui->body, editor, &measured, editor->first_row, height, ui->editor_border + 1, 3);
-            if (editing) {
+            if (!ui->editor_scrolling) text_keep_cursor(editor, &measured, height);
+            if (!editor->length) {
+                char placeholder[2200]; snprintf(placeholder, sizeof(placeholder), "Conversar em #%s", str(c, "name"));
+                wattrset(ui->body, COLOR_PAIR(editing ? FOCUS_MUTED : PANEL_MUTED));
+                text_label(ui->body, ui->editor_border + 1, 3, width, placeholder);
+            } else text_draw(ui->body, editor, &measured, editor->first_row, height, ui->editor_border + 1, 3);
+            wattrset(ui->body, COLOR_PAIR(editing ? FOCUS_MUTED : PANEL_MUTED));
+            if (editor->first_row) text_label(ui->body, ui->editor_border + 1, getmaxx(ui->body) - 2, 1, "↑");
+            if (editor->first_row + height < measured.rows) text_label(ui->body, ui->editor_border + height, getmaxx(ui->body) - 2, 1, "↓");
+            if (editing && measured.cursor_row >= editor->first_row && measured.cursor_row < editor->first_row + height) {
                 wmove(ui->body, ui->editor_border + 1 + measured.cursor_row - editor->first_row, 3 + measured.cursor_column);
-                curs_set(1);
             }
         } else {
             wattrset(ui->body, COLOR_PAIR(PANEL_MUTED));
@@ -457,7 +494,8 @@ static void draw(view *ui, auth_client *auth, draw_scope scope)
         }
         if (editing && editor) {
             text_layout measured; text_measure(editor, getmaxx(ui->body) - 6, &measured);
-            wmove(ui->body, ui->editor_border + 1 + measured.cursor_row - editor->first_row, 3 + measured.cursor_column);
+            if (measured.cursor_row >= editor->first_row && measured.cursor_row < editor->first_row + input_height(ui))
+                wmove(ui->body, ui->editor_border + 1 + measured.cursor_row - editor->first_row, 3 + measured.cursor_column);
         }
     }
     if (scope == DRAW_ALL) { touchwin(ui->frame); wnoutrefresh(ui->frame); }
@@ -480,9 +518,20 @@ static void draw(view *ui, auth_client *auth, draw_scope scope)
         mention_popup_draw(ui->mentions, getbegy(ui->body) + ui->editor_border + 1 + measured.cursor_row - input(ui)->first_row,
                            getbegx(ui->body) + 3 + measured.cursor_column, getbegx(ui->body) + 1, getmaxx(ui->body) - 2);
     }
-    if (media_view_modal(ui->media)) curs_set(0);
+    bool caret = false;
+    if (ui->focus == MESSAGE_INPUT && input(ui) && ui->body && !ui->duplicate_modal && !media_view_modal(ui->media)) {
+        text_buffer *editor = input(ui); text_layout measured;
+        text_measure(editor, getmaxx(ui->body) - 6, &measured);
+        caret = measured.cursor_row >= editor->first_row && measured.cursor_row < editor->first_row + input_height(ui);
+        if (caret) setsyx(getbegy(ui->body) + ui->editor_border + 1 + measured.cursor_row - editor->first_row,
+                          getbegx(ui->body) + 3 + measured.cursor_column);
+    }
+    if (!caret) setsyx(-1, -1);
     doupdate();
     if (!ui->duplicate_modal && !mention_popup_open(ui->mentions) && scope != DRAW_NAVIGATION) media_view_flush(ui->media);
+    /* doupdate may visit every message while painting. Expose only the final
+     * caret, after curses and direct Sixel output have completed. */
+    curs_set(caret ? 1 : 0);
 }
 static void set_focus(view *ui, int focus)
 {
@@ -598,29 +647,20 @@ static bool edit(view *ui, int type, wint_t key)
 {
     text_buffer *editor = input(ui);
     if (!editor || !ui->body) return false;
-    int width = getmaxx(ui->body) - 6;
-    size_t before = editor->length;
-    bool handled = true;
-    if (type == OK && (key == 8 || key == 127)) text_delete(editor, true);
-    else if (type == KEY_CODE_YES && key == KEY_BACKSPACE) text_delete(editor, true);
-    else if (type == KEY_CODE_YES && key == KEY_DC) text_delete(editor, false);
-    else if (type == KEY_CODE_YES && (key == KEY_LEFT || key == KEY_RIGHT)) text_horizontal(editor, key == KEY_RIGHT);
-    else if (type == KEY_CODE_YES && (key == KEY_UP || key == KEY_DOWN)) text_vertical(editor, width, key == KEY_UP ? -1 : 1);
-    else if (type == KEY_CODE_YES && (key == KEY_HOME || key == KEY_END)) text_line_edge(editor, width, key == KEY_END);
-    else if (type == OK && key == 21) text_clear(editor);
-    else if (type == OK && key == 14) text_insert(editor, '\n', true);
-    else if (type == OK && iswprint(key)) text_insert(editor, key, true);
-    else handled = false;
+    text_buffer before = *editor;
+    bool handled = text_edit(editor, type, key, getmaxx(ui->body) - 6, true);
     if (handled) {
+        ui->editor_scrolling = ui->dragging = false;
         ui->feedback = send_editor_changed(ui->editor) ? NULL : "Não foi possível salvar o rascunho.";
-        if (editor->length != before) history_typing_activity(ui->model);
+        if (before.length != editor->length || memcmp(before.data, editor->data, editor->length * sizeof(editor->data[0])))
+            history_typing_activity(ui->model);
     }
     return handled;
 }
 int history_run(auth_client *auth, instance_connections *connections, size_t *selected,
                 bool focus_tabs, volatile sig_atomic_t *interrupted)
 {
-    init_graphemebreak();
+    text_input_init();
     view *ui = calloc(1, sizeof(*ui));
     if (!ui) return HISTORY_ACCOUNT;
     ui->connections = connections; ui->active_tab = ui->tab_cursor = instances_index(connections, auth);
@@ -634,7 +674,8 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
     /* A separately delivered release must reach getmouse(). If it is filtered
      * out, ncurses can wait for another gesture inside get_wch(), stalling HTTP
      * and media updates even with timeout(30) and mouseinterval(0). */
-    mousemask(BUTTON1_PRESSED | BUTTON1_RELEASED | BUTTON1_CLICKED | BUTTON4_PRESSED | BUTTON5_PRESSED, &previous_mouse);
+    mousemask(BUTTON1_PRESSED | BUTTON1_RELEASED | BUTTON1_CLICKED | BUTTON3_PRESSED | BUTTON3_CLICKED | REPORT_MOUSE_POSITION | BUTTON4_PRESSED | BUTTON5_PRESSED, &previous_mouse);
+    ui_mouse_drag_tracking(true);
     bool redraw = true; draw_scope scope = DRAW_ALL; int result = HISTORY_ACCOUNT;
     while (!*interrupted) {
         if (ui->layout_failed) break;
@@ -647,7 +688,9 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             else if (scope == DRAW_NAVIGATION) scope = DRAW_ALL;
             redraw = true;
         }
+        if (clipboard_poll()) redraw = true;
         if (input(ui)) text_mentions(input(ui), history_mention_name, ui->model);
+        if (editor_geometry(ui)) { redraw = true; scope = DRAW_ALL; }
         if (mention_popup_update(ui->mentions, input(ui), ui->focus == MESSAGE_INPUT && !ui->paste &&
                                  !ui->duplicate_modal && !media_view_modal(ui->media))) {
             redraw = true; scope = DRAW_ALL;
@@ -655,36 +698,32 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         if (collect_notices(ui, auth)) redraw = true;
         if (!auth_has_session(auth) && !auth_busy(auth)) break;
         if (redraw) { draw(ui, auth, scope); redraw = false; scope = DRAW_ALL; }
-        wint_t key; int type = sixel_terminal_input(&key);
+        wint_t key; int type = ui->paste ? text_paste_read(&ui->paste_data, &key, true, sixel_terminal_input, 30) : sixel_terminal_input(&key);
         if (type == ERR) continue;
         if (type == KEY_CODE_YES && key == PASTE_START) {
-            ui->paste = true; ui->paste_cr = false;
+            ui->paste = true; text_paste_begin(&ui->paste_data); ui->dragging = false;
             if (!ui->duplicate_modal && !media_view_modal(ui->media) && input(ui) && ui->focus != SERVER_TABS) { set_focus(ui, MESSAGE_INPUT); redraw = true; }
             continue;
         }
         if (type == KEY_CODE_YES && key == PASTE_END) {
             ui->paste = false;
+            if (!ui->duplicate_modal && !media_view_modal(ui->media) && ui->focus == MESSAGE_INPUT && input(ui)) {
+                if (!text_paste_commit(&ui->paste_data, input(ui))) ui->feedback = "Colagem excede o limite; rascunho preservado.";
+                else { ui->feedback = send_editor_changed(ui->editor) ? NULL : "Não foi possível salvar o rascunho."; history_typing_activity(ui->model); }
+                ui->editor_scrolling = false; redraw = true; scope = DRAW_ALL;
+            } else text_paste_cancel(&ui->paste_data);
             mention_popup_update(ui->mentions, input(ui), ui->focus == MESSAGE_INPUT);
             mention_popup_close(ui->mentions); continue;
         }
         if (type == KEY_CODE_YES && key == KEY_RESIZE) { layout(ui); redraw = true; continue; }
-        if (ui->paste) {
-            if (!ui->duplicate_modal && !media_view_modal(ui->media) && ui->focus == MESSAGE_INPUT && type == OK && input(ui)) {
-                text_buffer *editor = input(ui);
-                if (key == '\n' && ui->paste_cr) { ui->paste_cr = false; continue; }
-                ui->paste_cr = key == '\r';
-                if (ui->paste_cr) key = '\n';
-                if (key == '\t') key = ' ';
-                if (key == '\n' || iswprint(key)) {
-                    if (text_insert(editor, key, true)) history_typing_activity(ui->model);
-                    ui->feedback = send_editor_changed(ui->editor) ? NULL : "Não foi possível salvar o rascunho.";
-                    redraw = true;
-                }
-            }
+        if (ui->paste) continue;
+        redraw = true;
+        if (type == KEY_CODE_YES && key == TEXT_COPY) {
+            if (ui->focus == MESSAGE_INPUT && input(ui) && !ui->duplicate_modal && !media_view_modal(ui->media))
+                clipboard_copy(input(ui));
             continue;
         }
-        redraw = true;
-        if (type == OK && (key == 17 || key == 3)) { result = HISTORY_EXIT; break; }
+        if (type == OK && (key == 17 || (key == 3 && (ui->focus != MESSAGE_INPUT || ui->duplicate_modal || media_view_modal(ui->media))))) { result = HISTORY_EXIT; break; }
         bool accepted = false;
         if (mention_popup_key(ui->mentions, input(ui), type, key, &accepted)) {
             if (accepted) { send_editor_changed(ui->editor); history_typing_activity(ui->model); }
@@ -754,54 +793,92 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             set_focus(ui, MESSAGE_INPUT); edit(ui, type, key); continue;
         }
         if (type == KEY_CODE_YES && key == KEY_MOUSE) {
-            MEVENT e;
-            if (ui_mouse_get(&e) != OK || !ui->frame) continue;
-            if (mention_popup_mouse(ui->mentions, input(ui), &e, &accepted)) {
-                if (accepted) { send_editor_changed(ui->editor); history_typing_activity(ui->model); }
-                scope = DRAW_ALL; continue;
-            }
-            if (e.bstate & (BUTTON4_PRESSED | BUTTON5_PRESSED)) {
-                scope = DRAW_CONVERSATION;
-                if (ui->body && e.x >= getbegx(ui->body) && e.x < getbegx(ui->body) + getmaxx(ui->body) && e.y >= getbegy(ui->body) + ui->history_top && e.y < getbegy(ui->body) + ui->editor_border)
-                    scroll_history(ui, e.bstate & BUTTON4_PRESSED ? -3 : 3);
-                continue;
-            }
-            if (!(e.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED))) continue;
-            if (media_view_click(ui->media, e.y, e.x)) continue;
-            if (ui->unseen && e.y == getbegy(ui->footer) + 1 &&
-                status_bar_hit(&ui->status, STATUS_UNREAD, e.x - getbegx(ui->footer))) {
-                ui->at_end = true; ui->unseen = 0; ui->anchor[0] = 0; continue;
-            }
-            int y = e.y, x = e.x;
-            if (wmouse_trafo(ui->tabs, &y, &x, false)) {
-                if (y == 0 && hit(ui->add_hit, x)) { result = HISTORY_ADD; break; }
-                if (y == 0 && hit(ui->back_hit, x)) { if (ui->first_tab) --ui->first_tab; ui->tab_cursor = ui->first_tab; ui->focus = SERVER_TABS; continue; }
-                if (y == 0 && hit(ui->next_hit, x)) { if (ui->first_tab + 1 < connections->count) ++ui->first_tab; ui->tab_cursor = ui->first_tab; ui->focus = SERVER_TABS; continue; }
-                if (y == 0) for (size_t i = 0; i < connections->count; ++i) if (hit(ui->tab_hits[i], x)) {
-                    int action = activate_tab(ui, i, selected); if (action >= 0) { result = action; goto finished; } break;
+            MEVENT events[64]; size_t count = ui_mouse_events(events, 64);
+            for (size_t event_index = 0; event_index < count; ++event_index) {
+                MEVENT e = events[event_index];
+                if (!ui->frame) continue;
+                if (ui->dragging && input(ui) && ui->body &&
+                    (e.bstate & (BUTTON1_PRESSED | BUTTON1_RELEASED | REPORT_MOUSE_POSITION))) {
+                    text_buffer *buffer = input(ui);
+                    int row = e.y - getbegy(ui->body) - ui->editor_border - 1;
+                    int column = e.x - getbegx(ui->body) - 3;
+                    text_layout measured; text_measure(buffer, getmaxx(ui->body) - 6, &measured);
+                    if (row < 0 && buffer->first_row > 0) --buffer->first_row;
+                    if (row >= input_height(ui) && buffer->first_row + input_height(ui) < measured.rows) ++buffer->first_row;
+                    if (row < 0) row = 0;
+                    if (row >= input_height(ui)) row = input_height(ui) - 1;
+                    if (column < 0) column = 0;
+                    if (column > getmaxx(ui->body) - 7) column = getmaxx(ui->body) - 7;
+                    text_drag(buffer, getmaxx(ui->body) - 6, buffer->first_row + row, column);
+                    send_editor_changed(ui->editor); ui->editor_scrolling = false;
+                    if (e.bstate & BUTTON1_RELEASED) ui->dragging = false;
+                    continue;
                 }
-                if (y == 1 && hit(ui->channels_hit, x)) set_focus(ui, CHANNEL_LIST);
-                if (y == 1 && hit(ui->conversation_hit, x)) set_focus(ui, HISTORY_PANEL);
-                continue;
-            }
-            y = e.y; x = e.x;
-            if (ui->list && wmouse_trafo(ui->list, &y, &x, false)) {
-                size_t index = y >= 1 ? (size_t)(ui->first_channel + y - 1) : SIZE_MAX;
-                if (y < getmaxy(ui->list) - 1 && index < history_channel_count(ui->model)) {
-                    ui->highlighted = index; open_channel(ui);
-                } else {
-                    if (ui->focus == CHANNEL_LIST || ui->focus == SERVER_TABS) scope = DRAW_NAVIGATION;
-                    set_focus(ui, CHANNEL_LIST);
+                if (e.bstate & (BUTTON3_PRESSED | BUTTON3_CLICKED)) {
+                    if (ui->body && input(ui) && e.x >= getbegx(ui->body) && e.x < getbegx(ui->body) + getmaxx(ui->body) &&
+                        e.y > getbegy(ui->body) + ui->editor_border && e.y <= getbegy(ui->body) + ui->editor_border + input_height(ui))
+                        clipboard_copy(input(ui));
+                    continue;
                 }
-                continue;
-            }
-            y = e.y; x = e.x;
-            if (ui->body && wmouse_trafo(ui->body, &y, &x, false)) {
-                if (y < ui->editor_border) set_focus(ui, HISTORY_PANEL);
-                else if (input(ui) && y > ui->editor_border && y <= ui->editor_border + input_height(ui)) {
-                    text_buffer *editor = input(ui);
-                    text_click(editor, getmaxx(ui->body) - 6, y - ui->editor_border - 1 + editor->first_row, x - 3);
-                    send_editor_changed(ui->editor); set_focus(ui, MESSAGE_INPUT);
+                if (e.bstate & REPORT_MOUSE_POSITION) continue;
+                if (mention_popup_mouse(ui->mentions, input(ui), &e, &accepted)) {
+                    if (accepted) { send_editor_changed(ui->editor); history_typing_activity(ui->model); }
+                    scope = DRAW_ALL; continue;
+                }
+                if (e.bstate & (BUTTON4_PRESSED | BUTTON5_PRESSED)) {
+                    scope = DRAW_CONVERSATION;
+                    if (ui->body && e.x >= getbegx(ui->body) && e.x < getbegx(ui->body) + getmaxx(ui->body) && e.y >= getbegy(ui->body) + ui->history_top && e.y < getbegy(ui->body) + ui->editor_border)
+                        scroll_history(ui, e.bstate & BUTTON4_PRESSED ? -3 : 3);
+                    else if (ui->body && input(ui) && e.x >= getbegx(ui->body) && e.x < getbegx(ui->body) + getmaxx(ui->body) &&
+                             e.y > getbegy(ui->body) + ui->editor_border && e.y <= getbegy(ui->body) + ui->editor_border + input_height(ui)) {
+                        text_buffer *buffer = input(ui); text_layout measured;
+                        text_measure(buffer, getmaxx(ui->body) - 6, &measured);
+                        int last = measured.rows - input_height(ui); if (last < 0) last = 0;
+                        buffer->first_row += e.bstate & BUTTON4_PRESSED ? -3 : 3;
+                        if (buffer->first_row < 0) buffer->first_row = 0;
+                        if (buffer->first_row > last) buffer->first_row = last;
+                        ui->editor_scrolling = true;
+                    }
+                    continue;
+                }
+                if (!(e.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED))) continue;
+                if (media_view_click(ui->media, e.y, e.x)) continue;
+                if (ui->unseen && e.y == getbegy(ui->footer) + 1 &&
+                    status_bar_hit(&ui->status, STATUS_UNREAD, e.x - getbegx(ui->footer))) {
+                    ui->at_end = true; ui->unseen = 0; ui->anchor[0] = 0; continue;
+                }
+                int y = e.y, x = e.x;
+                if (wmouse_trafo(ui->tabs, &y, &x, false)) {
+                    if (y == 0 && hit(ui->add_hit, x)) { result = HISTORY_ADD; goto finished; }
+                    if (y == 0 && hit(ui->back_hit, x)) { if (ui->first_tab) --ui->first_tab; ui->tab_cursor = ui->first_tab; ui->focus = SERVER_TABS; continue; }
+                    if (y == 0 && hit(ui->next_hit, x)) { if (ui->first_tab + 1 < connections->count) ++ui->first_tab; ui->tab_cursor = ui->first_tab; ui->focus = SERVER_TABS; continue; }
+                    if (y == 0) for (size_t i = 0; i < connections->count; ++i) if (hit(ui->tab_hits[i], x)) {
+                        int action = activate_tab(ui, i, selected); if (action >= 0) { result = action; goto finished; } break;
+                    }
+                    if (y == 1 && hit(ui->channels_hit, x)) set_focus(ui, CHANNEL_LIST);
+                    if (y == 1 && hit(ui->conversation_hit, x)) set_focus(ui, HISTORY_PANEL);
+                    continue;
+                }
+                y = e.y; x = e.x;
+                if (ui->list && wmouse_trafo(ui->list, &y, &x, false)) {
+                    size_t index = y >= 1 ? (size_t)(ui->first_channel + y - 1) : SIZE_MAX;
+                    if (y < getmaxy(ui->list) - 1 && index < history_channel_count(ui->model)) {
+                        ui->highlighted = index; open_channel(ui);
+                    } else {
+                        if (ui->focus == CHANNEL_LIST || ui->focus == SERVER_TABS) scope = DRAW_NAVIGATION;
+                        set_focus(ui, CHANNEL_LIST);
+                    }
+                    continue;
+                }
+                y = e.y; x = e.x;
+                if (ui->body && wmouse_trafo(ui->body, &y, &x, false)) {
+                    if (y < ui->editor_border) set_focus(ui, HISTORY_PANEL);
+                    else if (input(ui) && y > ui->editor_border && y <= ui->editor_border + input_height(ui)) {
+                        text_buffer *editor = input(ui);
+                        text_click(editor, getmaxx(ui->body) - 6, y - ui->editor_border - 1 + editor->first_row, x - 3);
+                        send_editor_changed(ui->editor); set_focus(ui, MESSAGE_INPUT);
+                        ui->editor_scrolling = false; ui->dragging = (e.bstate & BUTTON1_PRESSED) != 0;
+                    }
                 }
             }
             continue;
@@ -857,7 +934,9 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         }
     }
 finished:
+    text_paste_cancel(&ui->paste_data);
     mousemask(previous_mouse, NULL);
+    ui_mouse_drag_tracking((previous_mouse & REPORT_MOUSE_POSITION) != 0);
     mention_popup_destroy(ui->mentions);
     text_buffer *draft = send_editor_input(ui->editor);
     if (draft) text_mentions(draft, NULL, NULL);

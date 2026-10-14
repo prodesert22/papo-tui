@@ -63,8 +63,8 @@ if(PAPO_DESKTOP_SESSIONS AND GIO_FOUND)
     endif()
 endif()
 
-add_library(papo_send_editor src/ui/send_editor.c src/ui/mention_popup.c src/ui/status_bar.c src/ui/text.c src/app/instances.c)
-target_link_libraries(papo_send_editor PUBLIC papo_outbox papo_sessions PkgConfig::NCURSES PkgConfig::UNIBREAK)
+add_library(papo_send_editor src/ui/send_editor.c src/ui/mention_popup.c src/ui/status_bar.c src/ui/text.c src/ui/clipboard.c src/app/instances.c)
+target_link_libraries(papo_send_editor PUBLIC papo_outbox papo_sessions PkgConfig::NCURSES PkgConfig::UNIBREAK PkgConfig::AVUTIL)
 target_compile_options(papo_send_editor PRIVATE -Wall -Wextra -Wpedantic -Werror)
 
 add_library(papo_media src/ui/media.c src/ui/sixel.c src/ui/message_blocks.c)
@@ -97,6 +97,9 @@ if(BUILD_TESTING)
     add_test(NAME typing-terminal COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_typing_terminal.py $<TARGET_FILE:papo-tui>)
     set_tests_properties(typing-terminal PROPERTIES TIMEOUT 120)
+    add_test(NAME input-controls-terminal COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_input_controls.py $<TARGET_FILE:papo-tui>)
+    set_tests_properties(input-controls-terminal PROPERTIES TIMEOUT 120)
     add_executable(media-probe tests/media_probe.c)
     target_link_libraries(media-probe PRIVATE papo_auth)
     target_compile_options(media-probe PRIVATE -Wall -Wextra -Wpedantic -Werror)

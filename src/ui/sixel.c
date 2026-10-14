@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include "ui/sixel.h"
+#include "ui/text.h"
 #include <ncurses.h>
 #include <sixel.h>
 #include <poll.h>
@@ -59,8 +60,8 @@ void sixel_terminal_probe(void)
 int sixel_terminal_input(wint_t *key)
 {
     for (;;) {
-        int type = get_wch(key);
-        if (type != OK || *key != 27 || !probed) return type;
+        int type = text_input_read(key);
+        if (type != OK || *key != 27) return type;
         wint_t next;
         int next_type = get_wch(&next);
         if (next_type != OK || next != '[') {
@@ -73,9 +74,17 @@ int sixel_terminal_input(wint_t *key)
             next_type = get_wch(&next);
             if (next_type != OK || next > 127) break;
             reply[used++] = (char)next; reply[used] = 0;
-            if (next == 'c' || next == 't' || !((next >= '0' && next <= '9') || next == '?' || next == ';')) break;
+            if (next >= 0x40 && next <= 0x7e) break;
+            if (!((next >= '0' && next <= '9') || next == '?' || next == ';' || next == ':')) break;
         }
-        if (sixel_terminal_reply(&terminal, reply)) continue;
+        if (probed && sixel_terminal_reply(&terminal, reply)) continue;
+        /* Unknown numeric CSI-u reports belong to the keyboard protocol, not
+         * to the draft. Consume them as one ignored key without ESC focus
+         * navigation or literal modifier numbers (e.g. NumLock's 133). */
+        if (used > 3 && reply[used - 1] == 'u' &&
+            ((reply[2] >= '0' && reply[2] <= '9') || reply[2] == '?')) {
+            *key = TEXT_IGNORED; return KEY_CODE_YES;
+        }
         /* Unknown sequences preserve ordinary curses behavior: ESC followed
          * by literal input. Recognized keyboard/mouse codes never enter here. */
         if (next_type == KEY_CODE_YES) ungetch((int)next);

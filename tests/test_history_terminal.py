@@ -53,7 +53,7 @@ class HistoryTerminal(unittest.TestCase):
         self.assertNotIn('URL do servidor', '\n'.join(t.screen.display))
         self.assertFalse(any('/messages' in r[1] for r in server.requests))
         t.send('\x1bOB\x1bOB\n')  # tabs -> category -> first text channel -> open
-        self.wait(t, 'Editor')
+        self.wait(t, 'Conversar em #geral')
         return t
 
     def test_channel_navigation_keeps_chat_and_reopening_current_does_not_reload(self):
@@ -239,6 +239,9 @@ class HistoryTerminal(unittest.TestCase):
                 self.wait(t, 'Mensagem 0250')
                 t.send('\x1bOH')
                 self.wait(t, 'Mensagem 0151')
+                # Name summaries can arrive after the message page. Compare
+                # stable content once the visible author has been resolved.
+                self.wait(t, 'Apelido')
                 # Capture the top visible message and line before prepend.
                 before = t.screen.display[8]
                 t.send('\x1b[5~')
@@ -346,7 +349,7 @@ class HistoryTerminal(unittest.TestCase):
                 self.wait(t, 'Mensagem 0250')
                 self.assertIn('[Comunidade]', t.screen.display[1])
                 self.assertIn('[+ Adicionar]', t.screen.display[1])
-                self.assertIn('Editor', '\n'.join(t.screen.display))
+                self.assertIn('Conversar em #', '\n'.join(t.screen.display))
                 self.assertNotEqual(t.screen.display[0].strip(), '')  # outer frame
                 t.send('rascunho sem enviar')
                 self.assertFalse(any(r[1].endswith('/messages') and r[0] == 'POST' for r in first.requests))

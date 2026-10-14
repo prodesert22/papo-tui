@@ -12,6 +12,7 @@ typedef enum {
     STATUS_EDITOR,
     STATUS_EVENT,
     STATUS_UNREAD,
+    STATUS_CLIPBOARD,
     STATUS_CONTEXT_COUNT
 } status_context;
 

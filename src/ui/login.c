@@ -20,6 +20,8 @@
 #include <wctype.h>
 #include "ui/history.h"
 #include "ui/send_editor.h"
+#include "ui/text.h"
+#include "ui/clipboard.h"
 
 #define FIELD_COUNT 5
 #define CONFIRM_FIELD 4
@@ -44,10 +46,12 @@ typedef struct {
     FIELD *fields[FIELD_COUNT + 1];
     FIELD *form_fields[FIELD_COUNT + 1];
     char saved[FIELD_COUNT][8193];
-    int used_columns[FIELD_COUNT];
     int focus;
     int width;
-    bool paste;
+    bool paste, values_ready, dragging;
+    text_paste paste_data;
+    text_buffer values[FIELD_COUNT]; /* Owned UTF-32; saved is the auth snapshot. */
+    int scroll[FIELD_COUNT];
     bool open_chat;
     size_t previous_instance;
     bool profile_active;
@@ -82,29 +86,13 @@ static void erase_text(char *value, size_t length)
 
 static void snapshot(login_ui *ui)
 {
-    if (!ui->form) return;
-    form_driver(ui->form, REQ_VALIDATION);
+    if (!ui->values_ready) {
+        for (int i = 0; i < FIELD_COUNT; ++i) text_decode(&ui->values[i], ui->saved[i]);
+        ui->values_ready = true;
+    }
     for (int i = 0; i < FIELD_COUNT; ++i) {
-        if (!ui->fields[i]) continue;
-        const char *buffer = field_buffer(ui->fields[i], 0);
-        /* formw pads buffers with spaces. Keep typed trailing spaces distinct
-         * from padding, particularly for passwords. Editing remains in formw. */
-        mbstate_t state = {0};
-        size_t length = 0;
-        int columns = 0;
-        while (buffer[length]) {
-            wchar_t character;
-            size_t bytes = mbrtowc(&character, buffer + length, MB_CUR_MAX, &state);
-            if (!bytes || bytes == (size_t)-1 || bytes == (size_t)-2) break;
-            int width = wcwidth(character);
-            if (width < 0 || columns + width > ui->used_columns[i] ||
-                (width && columns == ui->used_columns[i])) break;
-            length += bytes;
-            columns += width;
-        }
-        if (length >= sizeof(ui->saved[i])) length = sizeof(ui->saved[i]) - 1;
         erase_text(ui->saved[i], sizeof(ui->saved[i]));
-        memcpy(ui->saved[i], buffer, length);
+        text_encode(&ui->values[i], ui->saved[i]);
     }
 }
 
@@ -180,9 +168,7 @@ static bool layout(login_ui *ui)
     if (post_form(ui->form) != E_OK) return false;
     form_driver(ui->form, REQ_INS_MODE);
     set_current_field(ui->form, ui->fields[ui->focus < FIELD_COUNT ? ui->focus : 0]);
-    form_driver(ui->form, REQ_BEG_FIELD);
-    while (ui->form->curcol < ui->used_columns[ui->focus < FIELD_COUNT ? ui->focus : 0])
-        if (form_driver(ui->form, REQ_RIGHT_CHAR) != E_OK) break;
+
     return true;
 }
 
@@ -259,18 +245,7 @@ static void draw(login_ui *ui, auth_client *client)
         if (field_fore(ui->fields[i]) != attributes) set_field_fore(ui->fields[i], attributes);
         wattrset(ui->body, COLOR_PAIR((i == 3 && ui->server_password_error) || (*ui->validation_message && i == ui->validation_field) ? ERROR : selected ? ACCENT : MUTED));
         text(ui->body, field_row(ui, i), 2, ui->width - 8, labels[i]);
-        if (i >= 2) {
-            wattrset(ui->body, COLOR_PAIR(selected ? FOCUSED : INPUT));
-            mvwhline(ui->body, 1 + field_row(ui, i), 2, ' ', ui->width - 8);
-            if (*ui->saved[i]) {
-                /* Private fields are never made public: overlay only a mask. */
-                size_t count = 0;
-                for (const unsigned char *p = (const unsigned char *)ui->saved[i]; *p; ++p)
-                    if ((*p & 0xc0) != 0x80) ++count;
-                int shown = count < (size_t)(ui->width - 9) ? (int)count : ui->width - 9;
-                mvwhline(ui->body, 1 + field_row(ui, i), 2, '*', shown);
-            }
-        }
+
     }
     wattrset(ui->body, COLOR_PAIR(MUTED));
     mvwhline(ui->body, 11, 1, ' ', ui->width - 6);
@@ -327,6 +302,11 @@ static void draw(login_ui *ui, auth_client *client)
     const char *message = *ui->validation_message ? ui->validation_message :
         ui->mode_changed && auth_get_state(client) == AUTH_IDLE ?
         ui->registering ? "Preencha os dados para criar sua conta." : "Preencha os dados para entrar." : auth_message(client);
+    char status_message[384];
+    if (clipboard_notice()) {
+        snprintf(status_message, sizeof(status_message), "%s | %s", message, clipboard_notice());
+        message = status_message;
+    }
     const char *remaining = text(ui->footer, 2, 2, ui->width - 8, message);
     if (*remaining) {
         const char *space = NULL;
@@ -356,15 +336,21 @@ static void draw(login_ui *ui, auth_client *client)
         text(ui->footer, 4, 13, ui->width - 17, "  Ctrl+R: sessão · Ctrl+P");
     } else text(ui->footer, 4, 0, ui->width - 4, ui->width >= 64 ?
          "Ctrl+N: cadastro · Ctrl+R: sessão · Ctrl+P: perfis · Ctrl+Q" : "Ctrl+N · Ctrl+R · Ctrl+P · Ctrl+Q");
+    for (int i = 0; i < FIELD_COUNT; ++i) if (ui->fields[i]) {
+        wattrset(ui->input, COLOR_PAIR(ui->focus == i && !busy && !ready ? FOCUSED : INPUT));
+        mvwhline(ui->input, field_row(ui, i), 0, ' ', ui->width - 8);
+        text_draw_field(ui->input, &ui->values[i], &ui->scroll[i], field_row(ui, i), 0, ui->width - 8, i >= 2);
+    }
     if (ui->focus < FIELD_COUNT && !busy && !ready) {
-        pos_form_cursor(ui->form);
+        text_layout measured; text_measure(&ui->values[ui->focus], TEXT_LIMIT * 2 + 1, &measured);
+        wmove(ui->input, field_row(ui, ui->focus), measured.cursor_column - ui->scroll[ui->focus]);
     }
     touchwin(ui->card);
     wnoutrefresh(ui->card);
     wnoutrefresh(ui->header);
     wnoutrefresh(ui->body);
     wnoutrefresh(ui->footer);
-    if (ui->focus < FIELD_COUNT && !busy && !ready) wnoutrefresh(ui->input);
+    wnoutrefresh(ui->input);
     doupdate();
     curs_set(ui->focus < FIELD_COUNT && !busy && !ready ? 1 : 0);
 }
@@ -373,12 +359,8 @@ static void select_focus(login_ui *ui, int selected)
 {
     if (ui->profile_active && selected == 0) selected = 1;
     if (selected < FIELD_COUNT && set_current_field(ui->form, ui->fields[selected]) != E_OK) return;
-    ui->focus = selected;
-    if (ui->focus < FIELD_COUNT) {
-        form_driver(ui->form, REQ_BEG_FIELD);
-        while (ui->form->curcol < ui->used_columns[ui->focus])
-            if (form_driver(ui->form, REQ_RIGHT_CHAR) != E_OK) break;
-    }
+    if (selected != ui->focus && ui->focus < FIELD_COUNT) text_unselect(&ui->values[ui->focus]);
+    ui->dragging = false; ui->focus = selected;
 }
 
 static bool focus_available(const login_ui *ui, auth_client *client, int selected)
@@ -440,7 +422,7 @@ static void apply_input_error(login_ui *ui, auth_client *client)
     if (error == AUTH_INPUT_SERVER_PASSWORD) {
         ui->server_password_error = true;
         erase_text(ui->saved[3], sizeof(ui->saved[3]));
-        ui->used_columns[3] = 0;
+        erase_text((char *)&ui->values[3], sizeof(ui->values[3])); text_clear(&ui->values[3]);
         if (ui->fields[3]) set_field_buffer(ui->fields[3], 0, "");
     }
     ui->focus = field;
@@ -481,13 +463,31 @@ static void submit(login_ui *ui, auth_client *client)
 static void extra_action(login_ui *ui, auth_client *client);
 
 /* Return true when the profile selector was requested. */
-static bool click(login_ui *ui, auth_client *client)
+static bool click_event(login_ui *ui, auth_client *client, MEVENT event)
 {
-    MEVENT event;
-    if (ui_mouse_get(&event) != OK || ui->paste || !ui->card || !ui->form ||
-        !(event.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED))) return false;
+    if (ui->paste || !ui->card || !ui->form) return false;
+    if (ui->dragging && ui->focus < FIELD_COUNT && !auth_busy(client) && !auth_has_session(client)) {
+        if (event.bstate & (BUTTON1_PRESSED | BUTTON1_RELEASED | REPORT_MOUSE_POSITION)) {
+            int column = event.x - getbegx(ui->input);
+            if (column < 0 && ui->scroll[ui->focus]) --ui->scroll[ui->focus];
+            if (column >= getmaxx(ui->input)) ++ui->scroll[ui->focus];
+            if (column < 0) column = 0;
+            if (column >= getmaxx(ui->input)) column = getmaxx(ui->input) - 1;
+            text_drag(&ui->values[ui->focus], TEXT_LIMIT * 2 + 1, 0, ui->scroll[ui->focus] + column);
+            if (event.bstate & BUTTON1_RELEASED) ui->dragging = false;
+            return false;
+        }
+    }
+    if (!(event.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED | BUTTON3_PRESSED | BUTTON3_CLICKED)) ||
+        (event.bstate & REPORT_MOUSE_POSITION)) return false;
     int y = event.y, x = event.x;
     if (!wmouse_trafo(ui->card, &y, &x, false)) return false;
+    if (event.bstate & (BUTTON3_PRESSED | BUTTON3_CLICKED)) {
+        if (!auth_busy(client) && !auth_has_session(client) && x >= 4 && x < ui->width - 4)
+            for (int i = 0; i < FIELD_COUNT; ++i)
+                if (ui->fields[i] && y == 5 + field_row(ui, i)) { clipboard_copy(&ui->values[i]); break; }
+        return false;
+    }
     int profile_width = (int)strlen(PROFILE_BUTTON);
     int profile_x = ui->width - 4 - profile_width;
     if (y == 1 && x >= profile_x && x < profile_x + profile_width) {
@@ -517,70 +517,40 @@ static bool click(login_ui *ui, auth_client *client)
         if (!ui->fields[i] || (i == 0 && ui->profile_active)) continue;
         int row = field_row(ui, i);
         if (y != 4 + row && y != 5 + row) continue;
-        if (set_current_field(ui->form, ui->fields[i]) != E_OK) return false;
-        ui->focus = i;
-        /* Preserve the viewport's offset when clicking a scrolled input. */
-        int target = y == 4 + row ? ui->used_columns[i] : ui->form->begincol + x - 4;
-        if (target > ui->used_columns[i]) target = ui->used_columns[i];
-        form_driver(ui->form, REQ_BEG_FIELD);
-        while (ui->form->curcol < target)
-            if (form_driver(ui->form, REQ_RIGHT_CHAR) != E_OK) break;
+        select_focus(ui, i);
+        if (y == 4 + row) text_edit(&ui->values[i], KEY_CODE_YES, TEXT_CTRL_END, TEXT_LIMIT * 2 + 1, false);
+        else text_click(&ui->values[i], TEXT_LIMIT * 2 + 1, 0, ui->scroll[i] + x - 4);
+        ui->dragging = (event.bstate & BUTTON1_PRESSED) != 0 && y == 5 + row;
         return false;
     }
     return false;
 }
 
-static void edit_request(login_ui *ui, int request)
+static bool click(login_ui *ui, auth_client *client)
 {
-    int before = ui->form->curcol;
-    if (request == REQ_DEL_PREV && before == 0) return;
-    int removed = 1;
-    if (request == REQ_DEL_CHAR) {
-        snapshot(ui);
-        mbstate_t state = {0};
-        const char *p = ui->saved[ui->focus];
-        int columns = 0;
-        while (*p) {
-            wchar_t character;
-            size_t bytes = mbrtowc(&character, p, MB_CUR_MAX, &state);
-            if (!bytes || bytes == (size_t)-1 || bytes == (size_t)-2) break;
-            int width = wcwidth(character);
-            if (columns >= before) { removed = width > 0 ? width : 1; break; }
-            columns += width;
-            p += bytes;
-        }
-    }
-    if (form_driver(ui->form, request) != E_OK) return;
-    int *end = &ui->used_columns[ui->focus];
-    if (request == REQ_CLR_FIELD) *end = 0;
-    else if (request == REQ_DEL_PREV && ui->form->curcol < *end) {
-        int actual = before < *end ? before : *end;
-        *end -= actual - ui->form->curcol;
-    } else if (request == REQ_DEL_CHAR && before < *end) {
-        *end -= removed < *end - before ? removed : *end - before;
-    }
-    ui->validation_message[0] = '\0';
-    if (ui->focus == 3 && *end > 0) ui->server_password_error = false;
+    MEVENT events[64]; size_t count = ui_mouse_events(events, 64);
+    for (size_t i = 0; i < count; ++i) if (click_event(ui, client, events[i])) return true;
+    return false;
 }
 
-static void edit_character(login_ui *ui, wchar_t character)
+static void edit_field(login_ui *ui, int type, wint_t key)
 {
-    /* curcol is the absolute cursor column in ncurses' public FORM structure,
-     * independent of horizontal scrolling. Only read it; formw owns editing. */
-    int before = ui->form->curcol;
-    int width = wcwidth(character);
-    if (width < 0 || form_driver_w(ui->form, OK, character) != E_OK) return;
-    int *end = &ui->used_columns[ui->focus];
-    *end = before < *end ? *end + width : before + width;
-    ui->validation_message[0] = '\0';
-    if (ui->focus == 3) ui->server_password_error = false;
+    static const size_t limits[FIELD_COUNT] = {2048, 256, 1024, 1024, 1024};
+    text_buffer *buffer = &ui->values[ui->focus], prior = *buffer;
+    if (text_edit(buffer, type, key, TEXT_LIMIT * 2 + 1, false)) {
+        if (buffer->length > limits[ui->focus]) *buffer = prior;
+        else { ui->validation_message[0] = 0; if (ui->focus == 3) ui->server_password_error = false; }
+    }
+    erase_text((char *)&prior, sizeof(prior));
 }
 
 static void clear_passwords(login_ui *ui)
 {
+    ui->dragging = false;
     for (int i = 2; i < FIELD_COUNT; ++i) {
         erase_text(ui->saved[i], sizeof(ui->saved[i]));
-        ui->used_columns[i] = 0;
+        erase_text((char *)&ui->values[i], sizeof(ui->values[i])); text_clear(&ui->values[i]);
+        ui->scroll[i] = 0;
         if (ui->fields[i]) set_field_buffer(ui->fields[i], 0, "");
     }
 }
@@ -618,10 +588,11 @@ static int manage_profiles(login_ui *ui, auth_client **client, profile_config **
     *client = NULL;
     destroy_layout(ui);
     erase_text((char *)ui->saved, sizeof(ui->saved));
+    erase_text((char *)ui->values, sizeof(ui->values)); ui->values_ready = false;
+    memset(ui->scroll, 0, sizeof(ui->scroll)); text_paste_cancel(&ui->paste_data); ui->paste = ui->dragging = false;
     ui->server_password_error = false;
     ui->registering = ui->mode_changed = ui->session_present = false;
     ui->validation_message[0] = '\0';
-    memset(ui->used_columns, 0, sizeof(ui->used_columns));
     server_profile profile;
     int result = chooser ? profiles_choose(*config, allow_http, &interrupted, &profile) :
                            profiles_manage(*config, allow_http, &interrupted, &profile);
@@ -635,16 +606,6 @@ static int manage_profiles(login_ui *ui, auth_client **client, profile_config **
         snprintf(ui->profile_id, sizeof(ui->profile_id), "%s", active->id);
         snprintf(ui->profile_name, sizeof(ui->profile_name), "%s", active->name);
         snprintf(ui->saved[0], sizeof(ui->saved[0]), "%s", active->url);
-        mbstate_t conversion = {0};
-        const char *p = active->url;
-        while (*p) {
-            wchar_t value;
-            size_t count = mbrtowc(&value, p, MB_CUR_MAX, &conversion);
-            if (!count || count == (size_t)-1 || count == (size_t)-2) break;
-            int width = wcwidth(value);
-            if (width > 0) ui->used_columns[0] += width;
-            p += count;
-        }
     }
     ui->focus = active ? 1 : 0;
     *client = auth_create();
@@ -656,23 +617,14 @@ static bool instance_form(login_ui *ui, auth_client *client, const char *url)
 {
     destroy_layout(ui);
     erase_text((char *)ui->saved, sizeof(ui->saved));
-    memset(ui->used_columns, 0, sizeof(ui->used_columns));
+    erase_text((char *)ui->values, sizeof(ui->values)); ui->values_ready = false;
+    memset(ui->scroll, 0, sizeof(ui->scroll)); text_paste_cancel(&ui->paste_data); ui->paste = ui->dragging = false;
     ui->profile_active = ui->registering = ui->mode_changed = ui->server_password_error = false;
     ui->profile_id[0] = ui->profile_name[0] = ui->validation_message[0] = '\0';
     ui->session_present = auth_has_session(client);
     ui->focus = url && *url ? 1 : 0;
     if (url) {
         snprintf(ui->saved[0], sizeof(ui->saved[0]), "%s", url);
-        mbstate_t conversion = {0};
-        const char *p = ui->saved[0];
-        while (*p) {
-            wchar_t character;
-            size_t bytes = mbrtowc(&character, p, MB_CUR_MAX, &conversion);
-            if (!bytes || bytes == (size_t)-1 || bytes == (size_t)-2) break;
-            int width = wcwidth(character);
-            if (width > 0) ui->used_columns[0] += width;
-            p += bytes;
-        }
     }
     return layout(ui);
 }
@@ -739,7 +691,9 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
     noecho();
     keypad(stdscr, true);
     mouseinterval(0); /* Act on presses, without a delayed second click event. */
-    mousemask(BUTTON1_PRESSED | BUTTON1_RELEASED | BUTTON1_CLICKED, NULL);
+    mousemask(BUTTON1_PRESSED | BUTTON1_RELEASED | BUTTON1_CLICKED | BUTTON3_PRESSED | BUTTON3_CLICKED | REPORT_MOUSE_POSITION, NULL);
+    ui_mouse_drag_tracking(true);
+    text_input_init();
     timeout(30);
     set_escdelay(25);
     ui_theme theme;
@@ -757,8 +711,11 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
     define_key("\033[B", KEY_DOWN);
     define_key("\033[C", KEY_RIGHT);
     define_key("\033[D", KEY_LEFT);
+    /* Keep the terminal's keyboard protocol unchanged. Enabling CSI-u would
+     * require complete support for all keys, modifiers and event forms. */
     fputs("\033[?2004h", stdout);
     fflush(stdout);
+    text_input_terminal_active(true);
     int result = layout(&ui) ? 0 : 1;
     bool startup_restore = !open_profiles;
     if (!result && !open_profiles && *session_store_last_url(connections->sessions) &&
@@ -820,6 +777,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
             ui.focus = 2;
             if (ui.form) select_focus(&ui, 2);
         }
+        if (clipboard_poll()) redraw = true;
         if (redraw) {
             draw(&ui, client);
             sixel_terminal_probe();
@@ -833,7 +791,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
             continue;
         }
         wint_t key;
-        int type = sixel_terminal_input(&key);
+        int type = ui.paste ? text_paste_read(&ui.paste_data, &key, false, sixel_terminal_input, 30) : sixel_terminal_input(&key);
         if (type == ERR) continue;
         if (startup_restore && !(type == KEY_CODE_YES && key == KEY_RESIZE)) {
             session_store_cancel_resume(connections->sessions); startup_restore = false;
@@ -843,8 +801,24 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
             if (!layout(&ui)) result = 1;
             continue;
         }
-        if (type == KEY_CODE_YES && key == KEY_PASTE_START) { ui.paste = true; continue; }
-        if (type == KEY_CODE_YES && key == KEY_PASTE_END) { ui.paste = false; continue; }
+        if (type == KEY_CODE_YES && key == KEY_PASTE_START) { ui.paste = true; text_paste_begin(&ui.paste_data); ui.dragging = false; continue; }
+        if (type == KEY_CODE_YES && key == KEY_PASTE_END) {
+            static const size_t limits[FIELD_COUNT] = {2048, 256, 1024, 1024, 1024};
+            ui.paste = false;
+            if (ui.focus < FIELD_COUNT && !auth_busy(client) && !auth_has_session(client) && !(ui.profile_active && ui.focus == 0)) {
+                text_buffer *buffer = &ui.values[ui.focus]; size_t lo = buffer->cursor, hi = lo;
+                text_selection(buffer, &lo, &hi);
+                if (buffer->length - (hi - lo) + ui.paste_data.text.length > limits[ui.focus]) ui.paste_data.truncated = true;
+                if (!text_paste_commit(&ui.paste_data, buffer)) snprintf(ui.validation_message, sizeof(ui.validation_message), "Colagem excede o limite do campo; texto preservado.");
+                else ui.validation_message[0] = 0;
+            } else text_paste_cancel(&ui.paste_data);
+            continue;
+        }
+        if (!ui.paste && type == KEY_CODE_YES && key == TEXT_COPY) {
+            if (ui.focus < FIELD_COUNT && !auth_busy(client) && !auth_has_session(client))
+                clipboard_copy(&ui.values[ui.focus]);
+            continue;
+        }
         bool choose_profile = type == KEY_CODE_YES && key == KEY_MOUSE;
         if (choose_profile && !click(&ui, client)) continue;
         bool chat_enter = (type == OK && (key == '\n' || key == '\r')) || (type == KEY_CODE_YES && key == KEY_ENTER);
@@ -855,7 +829,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
             else if (action == 1) quit = true;
             continue;
         }
-        if (type == OK && !ui.paste && (key == 17 || key == 3)) break;
+        if (type == OK && !ui.paste && (key == 17 || (key == 3 && (ui.focus >= FIELD_COUNT || auth_has_session(client) || auth_busy(client))))) break;
         if (type == OK && !ui.paste && ((key == 14 && !auth_has_session(client)) ||
             (key == 18 && auth_has_session(client)))) {
             extra_action(&ui, client);
@@ -907,27 +881,17 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         }
         if (auth_busy(client) || auth_has_session(client) || ui.focus >= FIELD_COUNT ||
             (ui.profile_active && ui.focus == 0)) continue;
-        if (type == KEY_CODE_YES) {
-            int request = 0;
-            switch (key) {
-                case KEY_LEFT: request = REQ_LEFT_CHAR; break;
-                case KEY_RIGHT: request = REQ_RIGHT_CHAR; break;
-                case KEY_HOME: request = REQ_BEG_FIELD; break;
-                case KEY_END: request = REQ_END_FIELD; break;
-                case KEY_BACKSPACE: request = REQ_DEL_PREV; break;
-                case KEY_DC: request = REQ_DEL_CHAR; break;
-                default: break;
-            }
-            if (request && !ui.paste) edit_request(&ui, request);
-        } else if (!ui.paste && (key == 127 || key == 8)) edit_request(&ui, REQ_DEL_PREV);
-        else if (!ui.paste && key == 21) edit_request(&ui, REQ_CLR_FIELD);
-        else if (iswprint(key)) edit_character(&ui, (wchar_t)key);
+        edit_field(&ui, type, key);
     }
     destroy_layout(&ui);
     erase_text((char *)ui.saved, sizeof(ui.saved));
+    erase_text((char *)ui.values, sizeof(ui.values)); text_paste_cancel(&ui.paste_data);
+    clipboard_shutdown();
+    text_input_terminal_active(false);
     fputs("\033[?2004l", stdout);
     fflush(stdout);
     mousemask(0, NULL);
+    ui_mouse_drag_tracking(false);
     theme_restore(&theme);
     endwin();
     sigaction(SIGINT, &previous_int, NULL);

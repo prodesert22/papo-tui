@@ -3,6 +3,7 @@
 #include "ui/text.h"
 #include <assert.h>
 #include <locale.h>
+#include <stdio.h>
 #include <string.h>
 static const char *name(void *ctx, const char *id)
 {
@@ -45,6 +46,17 @@ int main(void)
     text_mentions(&b, name, NULL);
     text_click(&b, 20, 0, 4);
     assert(b.cursor == 0 || b.cursor == 49);
+    b.cursor = b.length;
+    assert(text_edit(&b, KEY_CODE_YES, TEXT_SHIFT_LEFT, 20, true));
+    size_t lo, hi;
+    assert(text_selection(&b, &lo, &hi) && lo == 0 && hi == 49);
+    assert(text_insert(&b, 'X', true) && b.length == 1 && b.data[0] == 'X');
+    char draft[100]; snprintf(draft, sizeof(draft), "%s próxima", token);
+    assert(text_decode(&b, draft)); text_mentions(&b, name, NULL); b.cursor = 0;
+    assert(text_edit(&b, KEY_CODE_YES, TEXT_CTRL_RIGHT, 20, true) && b.cursor == 49);
+    assert(text_edit(&b, KEY_CODE_YES, TEXT_CTRL_RIGHT, 20, true) && b.cursor == 57);
+    assert(text_edit(&b, KEY_CODE_YES, TEXT_CTRL_LEFT, 20, true) && b.cursor == 50);
+    assert(text_edit(&b, KEY_CODE_YES, TEXT_CTRL_LEFT, 20, true) && b.cursor == 0);
     json_t *m = json_pack("{s:s,s:s,s:s}", "id", id, "content", token, "created_at", "2026-10-12T12:00:00Z");
     message_blocks blocks;
     assert(message_blocks_build_mentions(&blocks, m, "Autor", "", 20, false, name, NULL, id));

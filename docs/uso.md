@@ -31,7 +31,7 @@ O executável fica em `build/papo-tui`. Para consultar as opções ou a versão:
 
 ### Servidores salvos
 
-A abertura normal tenta recuperar a última sessão salva; quando isso não for possível, apresenta a tela de login com a última URL preenchida. Clique em **Selecionar perfil**, ou foque esse botão com Tab e pressione Enter, para abrir o modal de seleção. **Ctrl+P** no login também abre esse modal. ↑/↓ percorrem a lista; Enter ou um clique no perfil selecionam-no e voltam ao login com a URL preenchida. No modal, **Gerenciar / Ctrl+P** abre o gerenciador completo; **Cancelar / Esc** volta ao login e Ctrl+Q/Ctrl+C fecha o aplicativo.
+A abertura normal tenta recuperar a última sessão salva; quando isso não for possível, apresenta a tela de login com a última URL preenchida. Clique em **Selecionar perfil**, ou foque esse botão com Tab e pressione Enter, para abrir o modal de seleção. **Ctrl+P** no login também abre esse modal. ↑/↓ percorrem a lista; Enter ou um clique no perfil selecionam-no e voltam ao login com a URL preenchida. No modal, **Gerenciar / Ctrl+P** abre o gerenciador completo; **Cancelar / Esc** volta ao login e Ctrl+Q fecha o aplicativo; Ctrl+C limpa o campo de texto focado e fecha quando o foco está fora dos campos.
 
 Abra **Gerenciar** no modal ou execute `./build/papo-tui --profiles` para iniciar diretamente no gerenciador. O topo contém duas opções: **Listar** e **+ Adicionar**. Em **Listar**, todos os perfis ficam numa lista vertical; a rolagem acompanha o destaque.
 
@@ -60,7 +60,7 @@ Sem suporte a cores, o foco usa inversão e o perfil destacado fora do foco usa 
 - **Identificar / F5:** repetir a identificação da instância.
 - **Ctrl+R:** recarregar o arquivo de configuração.
 - **Esc:** cancelar a edição/remoção ou voltar ao login.
-- **Ctrl+Q / Ctrl+C:** fechar o aplicativo.
+- **Ctrl+Q:** fechar o aplicativo; **Ctrl+C** limpa um campo focado e fecha fora dos campos.
 
 Nos diálogos, Tab percorre campos e botões, ←/→ escolhem o botão, e Enter avança ou confirma. Colagem delimitada nunca salva, seleciona ou remove por conta própria. Ctrl+U limpa o campo; setas, Home/End e Backspace/Delete permitem editar. O gerenciador exige 44 colunas e 14 linhas; o login exige 44×22.
 
@@ -162,7 +162,8 @@ O tema usa fundo quase preto, painéis em cinza escuro e laranja `#ffb347` em t�
 | Clique esquerdo no campo | Focar e posicionar o cursor |
 | Clique esquerdo no botão | Executar login, cadastro, renovação, reconexão, logout ou seleção de perfil |
 | Esc | Cancelar uma conexão em andamento |
-| Ctrl+Q / Ctrl+C | Fechar o aplicativo |
+| Ctrl+Q | Fechar o aplicativo |
+| Ctrl+C | Limpar o campo focado; fechar fora dos campos |
 
 No login e no cadastro, os botões de ação ficam na mesma linha: **Entrar / Cadastro** ou **Criar conta / Login**. **Selecionar perfil** fica no canto superior direito do formulário. ↓ na senha do servidor foca a ação principal; ←/→ alternam os dois botões, ↓ foca Selecionar perfil e ↑ volta à senha do servidor. ↑ em Selecionar perfil volta à ação principal, e ↓ mantém o foco nesse botão. As setas não dão a volta na tela. Tab segue campos, ação principal, ação secundária e Selecionar perfil; controles indisponíveis são pulados.
 
@@ -214,7 +215,8 @@ Abrir a lista não lê mensagens. Apenas o canal que você abre tem seu históri
 | F6 | Voltar à tela da conta |
 | Ctrl+L | Sair da conta e remover sua aba |
 | Ctrl+P | Abrir seleção de perfil e encerrar a sessão local |
-| Ctrl+Q / Ctrl+C | Fechar o programa |
+| Ctrl+Q | Fechar o programa |
+| Ctrl+C | Limpar o campo focado; fechar fora dos campos |
 
 As páginas chegam em grupos de até 100 mensagens e aparecem em ordem cronológica. Ao alcançar o começo da janela, pressione PageUp para carregar uma página anterior. A mensagem e o trecho que estavam no topo continuam no mesmo lugar, inclusive após redimensionar o terminal. A lista de canais permanece estável durante a rolagem. Use Home depois do carregamento para ver o novo início. End volta à página recente.
 
@@ -238,6 +240,52 @@ confirmação de envio não apaga o estado da conexão. Um novo aviso substitui
 apenas o anterior do mesmo contexto. Em janelas estreitas, os textos ficam
 mais curtos; `+N` indica avisos antigos que reaparecem ao ampliar a janela.
 Trocar de canal limpa os avisos da conversa anterior e preserva a conexão.
+
+O campo da conversa mostra **Conversar em #nome_canal** quando está vazio e
+cresce de uma até cinco linhas conforme o texto quebra ou ocupa mais espaço.
+Depois disso, as setas acompanham o cursor e a roda do mouse sobre o campo
+rola o texto; as marcas ↑/↓ indicam conteúdo fora da área visível. Em telas
+baixas, o campo usa as linhas disponíveis preservando a leitura e o rodapé.
+
+Em todos os campos editáveis, **Shift+setas** estende a seleção; clique esquerdo
+e arraste também selecionam, com realce durante o movimento, inclusive entre
+linhas e em linhas quebradas pela largura do campo. A seleção tem fundo e texto contrastantes; digitar,
+apagar ou colar substitui o trecho selecionado. **Ctrl+←** vai ao começo da
+palavra; **Ctrl+→** vai ao final, antes dos espaços. A partir de um espaço,
+Ctrl+→ avança até o fim da próxima palavra.
+**Home/End** vai ao início/fim da linha, e **Ctrl+C** ou **Ctrl+U** limpa o campo.
+**Ctrl+Q** sempre fecha o aplicativo. **Ctrl+Shift+C** ou clique direito sobre
+um campo com seleção copia o texto; **Texto copiado** aparece por três segundos, preservando os
+outros avisos. A cópia usa `wl-copy` no Wayland ou `xclip` no X11 quando
+estão disponíveis; caso contrário, usa o terminal via
+[OSC 52](https://sw.kovidgoyal.net/kitty/clipboard/), que precisa permitir a cópia.
+As senhas permanecem mascaradas, inclusive durante seleção.
+
+Ctrl+Shift+C precisa chegar ao aplicativo. Terminais que reservam esse atalho
+para sua própria seleção precisam configurá-lo para enviar `ESC[99;6u`;
+clique direito também copia a seleção do campo. O cliente aceita os atalhos
+encaminhados por CSI-u e modifyOtherKeys, incluindo Num Lock/Caps Lock, e mantém
+o modo de teclado do terminal. Ctrl+C continua limpando o campo; em terminais
+que enviam o mesmo código para os dois atalhos, use o clique direito para copiar.
+
+No Kitty, adicione esta [regra condicional](https://sw.kovidgoyal.net/kitty/mapping/#conditional-mappings)
+ao `~/.config/kitty/kitty.conf` para copiar a seleção do Papo TUI com Ctrl+Shift+C:
+
+```conf
+map --when-focus-on=var:papo_tui=1 ctrl+shift+c send_text all \x1b[99;6u
+map --when-focus-on=var:papo_tui=1 ctrl+v paste_from_clipboard
+```
+
+Recarregue a configuração do Kitty com **Ctrl+Shift+F5** e reinicie o Papo TUI.
+O aplicativo define o marcador ao abrir e o remove ao sair. Nos outros
+programas, o atalho continua usando a cópia do terminal.
+A segunda regra permite **Ctrl+V** para colar em bloco dentro do Papo TUI.
+
+A colagem delimitada pelo terminal entra em bloco ao terminar, inclusive ao
+substituir uma seleção, e não aciona comandos nem envia quebras de linha.
+No login e nos campos de perfil, quebras de linha são descartadas. Uma colagem
+que excede o limite mantém o campo original e mostra o aviso correspondente.
+O atalho de colar continua sendo o configurado no terminal.
 
 Na linha abaixo do campo de texto, uma pessoa aparece como “Nome está digitando…” ou
 com sua frase personalizada de digitação cadastrada no servidor. De duas a
