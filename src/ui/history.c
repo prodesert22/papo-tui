@@ -152,8 +152,8 @@ static int walk(view *ui, int first, bool paint, bool save, int *anchor)
         if (*str(m, "reply_to")) for (size_t j = 0; j < history_message_count(ui->model); ++j)
             if (!strcmp(str(m, "reply_to"), str(history_message(ui->model, j), "id"))) { reply = str(m, "reply_to"); break; }
         message_blocks blocks;
-        if (!message_blocks_build(&blocks, m, history_author(ui->model, str(m, "author_id")), reply, width,
-                                  graphics_terminal_get().supported)) continue;
+        if (!message_blocks_build_sized(&blocks, m, history_author(ui->model, str(m, "author_id")), reply, width,
+                                  graphics_terminal_get().supported && ui->media, media_view_measure, ui->media)) continue;
         bool anchored = !strcmp(ui->anchor, str(m, "id"));
         if (anchored) *anchor = total;
         int offered = -1;

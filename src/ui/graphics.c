@@ -172,6 +172,9 @@ bool graphics_image_encode_id(const unsigned char *pixels, int width, int height
     ChafaTermInfo *info = chafa_term_db_get_fallback_info(chafa_term_db_get_default());
     ChafaCanvas *canvas = NULL;
     GString *printed = NULL;
+    ChafaFrame *frame = NULL;
+    ChafaImage *source = NULL;
+    ChafaPlacement *placement = NULL;
     bool ok = false;
     if (!config || !info) goto done;
     chafa_canvas_config_set_pixel_mode(config, t.protocol == GRAPHICS_KITTY ? CHAFA_PIXEL_MODE_KITTY : CHAFA_PIXEL_MODE_ITERM2);
@@ -184,7 +187,16 @@ bool graphics_image_encode_id(const unsigned char *pixels, int width, int height
     }
     canvas = chafa_canvas_new(config);
     if (!canvas) goto done;
-    chafa_canvas_draw_all_pixels(canvas, CHAFA_PIXEL_RGB8, pixels, width, height, width * 3);
+    frame = chafa_frame_new_borrow(pixels, CHAFA_PIXEL_RGB8, width, height, width * 3);
+    source = chafa_image_new();
+    if (!frame || !source) goto done;
+    chafa_image_set_frame(source, frame);
+    placement = chafa_placement_new(source, 1);
+    if (!placement) goto done;
+    chafa_placement_set_tuck(placement, CHAFA_TUCK_SHRINK_TO_FIT);
+    chafa_placement_set_halign(placement, CHAFA_ALIGN_START);
+    chafa_placement_set_valign(placement, CHAFA_ALIGN_START);
+    chafa_canvas_set_placement(canvas, placement);
     printed = chafa_canvas_print(canvas, info);
     if (!printed || !printed->len || printed->len > 4U * 1024U * 1024U) goto done;
     out->data = malloc(printed->len);
@@ -193,6 +205,9 @@ bool graphics_image_encode_id(const unsigned char *pixels, int width, int height
 done:
     if (printed) g_string_free(printed, true);
     if (canvas) chafa_canvas_unref(canvas);
+    if (placement) chafa_placement_unref(placement);
+    if (source) chafa_image_unref(source);
+    if (frame) chafa_frame_unref(frame);
     if (config) chafa_canvas_config_unref(config);
     if (info) chafa_term_info_unref(info);
     if (!ok) graphics_image_free(out);
@@ -205,7 +220,7 @@ bool graphics_image_encode_preview(const unsigned char *pixels, int width, int h
     if (!graphics_image_encode_id(pixels, width, height, t, id, out)) return false;
     if (t.protocol == GRAPHICS_KITTY) return true;
     int rows = (height + t.cell_height - 1) / t.cell_height;
-    if (rows > 6) { graphics_image_free(out); return false; }
+    if (rows > 6) return true;
     size_t count = (size_t)rows * (size_t)(rows + 1) / 2 - 1;
     if (!count) return true;
     out->crops = calloc(count, sizeof(*out->crops));
@@ -215,8 +230,7 @@ bool graphics_image_encode_preview(const unsigned char *pixels, int width, int h
     for (int top = 0; top < rows; ++top) for (int bottom = 0; bottom < rows - top; ++bottom) {
         if (!top && !bottom) continue;
         int h = height - (top + bottom) * t.cell_height;
-        if (t.protocol == GRAPHICS_SIXEL) h -= h % 6;
-        if (h < 6) continue;
+        if (h < 1) continue;
         graphics_image *crop = &out->crops[at++];
         if (!graphics_image_encode_id(pixels + (size_t)top * (size_t)t.cell_height * (size_t)width * 3,
                                       width, h, t, id, crop)) { graphics_image_free(out); return false; }
@@ -226,7 +240,7 @@ bool graphics_image_encode_preview(const unsigned char *pixels, int width, int h
 }
 const graphics_image *graphics_image_crop(const graphics_image *image, int top, int bottom)
 {
-    if (!top && !bottom) return image;
+    if (top == image->crop_top && bottom == image->crop_bottom) return image;
     for (size_t i = 0; i < image->crop_count; ++i)
         if (image->crops[i].crop_top == top && image->crops[i].crop_bottom == bottom) return &image->crops[i];
     return NULL;
@@ -319,9 +333,9 @@ void graphics_frame_flush(void)
         if (next->protocol == GRAPHICS_KITTY) {
             if (pixels_changed) fwrite(next->image->data, 1, next->image->length, stdout);
             /* Reusing the placement ID moves/crops the existing image atomically. */
-            fprintf(stdout, "\033_Ga=p,i=%u,p=1,q=2,C=1,x=0,y=%d,w=%d,h=%d,c=%d,r=%d\033\\",
+            fprintf(stdout, "\033_Ga=p,i=%u,p=1,q=2,C=1,x=0,y=%d,w=%d,h=%d,c=0,r=0\033\\",
                 next->id, next->top, next->image->width,
-                next->image->height - next->top - next->bottom, next->columns, next->rows);
+                next->image->height - next->top - next->bottom);
         } else fwrite(next->image->data, 1, next->image->length, stdout);
     }
     memcpy(displayed, desired, desired_count * sizeof(*desired)); displayed_count = desired_count;

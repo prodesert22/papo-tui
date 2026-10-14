@@ -243,7 +243,15 @@ Kitty, a rolagem move e recorta a imagem sem reenviar seus pixels. As atualizaç
 da conversa e do vídeo são agrupadas quando o terminal oferece atualização sincronizada.
 
 Em terminal compatível, baixa e mostra as imagens JPEG, PNG, WebP e GIF visíveis
-na conversa ativa; GIF aparece com seu primeiro frame. Sem protocolo compatível
+na conversa ativa. Anexos de imagem mostram a mídia diretamente, sem linhas de
+nome, tipo, tamanho ou moderação. F7 ou clique continuam abrindo o arquivo.
+O cliente usa o anexo original, preserva suas dimensões sem ampliar e reduz
+proporcionalmente quando necessário para caber na largura disponível ou no
+limite de 640×360 pixels. GIFs animados se repetem enquanto estiverem visíveis,
+respeitando os intervalos dos frames; ao rolar para fora ou trocar de canal,
+deixam de atualizar a tela. A animação aceita até 256 frames e 32 MiB de pixels
+decodificados por arquivo; arquivos que excedem esses limites mostram erro.
+Sem protocolo compatível
 ou tamanho das células disponível, mostra cards e metadados em texto, sem baixar
 imagens automaticamente. Multiplexadores precisam encaminhar as consultas e o
 protocolo gráfico; a identificação iTerm2 é desativada dentro de tmux/screen.

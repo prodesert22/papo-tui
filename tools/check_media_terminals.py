@@ -58,7 +58,7 @@ def main():
                     wait_for(lambda: 'geral' in emulator.screen()); emulator.send('\x1bOB\x1bOB\n')
                     phase = name + ' image card and viewport'
                     wait_for(lambda: 'Rodapé do Papo' in emulator.screen()); emulator.send('\x1bOH')
-                    wait_for(lambda: 'Fixture' in emulator.screen()); time.sleep(1)
+                    wait_for(lambda: 'Mensagem 0001' in emulator.screen()); time.sleep(1)
                     calls = sum('/attachments/' in r[1] for r in server.requests)
                     checks[name.lower() + '_cards'] = True
                     checks[name.lower() + '_authenticated_image_download'] = calls == 1

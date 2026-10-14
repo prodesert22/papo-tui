@@ -68,9 +68,9 @@ add_library(papo_send_editor src/ui/send_editor.c src/ui/text.c src/app/instance
 target_link_libraries(papo_send_editor PUBLIC papo_outbox papo_sessions PkgConfig::NCURSES PkgConfig::UNIBREAK)
 target_compile_options(papo_send_editor PRIVATE -Wall -Wextra -Wpedantic -Werror)
 
-add_library(papo_media src/ui/media.c src/ui/graphics.c src/ui/sixel.c src/ui/message_blocks.c)
+add_library(papo_media src/ui/media.c src/ui/image_decode.c src/ui/graphics.c src/ui/sixel.c src/ui/message_blocks.c)
 target_link_libraries(papo_media PUBLIC papo_send_editor PkgConfig::SIXEL PkgConfig::CHAFA PkgConfig::MPV
-    PkgConfig::AVFORMAT PkgConfig::AVCODEC PkgConfig::AVUTIL PkgConfig::SWSCALE Threads::Threads)
+    PkgConfig::AVFORMAT PkgConfig::AVCODEC PkgConfig::AVUTIL PkgConfig::SWSCALE Threads::Threads m)
 target_compile_options(papo_media PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_executable(papo-tui src/main.c src/ui/login.c src/ui/chat.c src/ui/history.c src/ui/profiles.c src/ui/theme.c src/ui/button.c)
 target_link_libraries(papo-tui PRIVATE papo_media PkgConfig::FORM PkgConfig::NCURSES PkgConfig::UNIBREAK)
@@ -95,6 +95,11 @@ if(BUILD_TESTING)
     target_link_libraries(media-test PRIVATE papo_media)
     target_compile_options(media-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
     add_test(NAME media-layout-sixel COMMAND media-test)
+    add_executable(image-decode-test tests/test_image_decode.c)
+    target_link_libraries(image-decode-test PRIVATE papo_media)
+    target_compile_options(image-decode-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_test(NAME image-decode COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_image_decode.py $<TARGET_FILE:image-decode-test> ${FFMPEG_CLI})
     add_test(NAME media-integration COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_media.py $<TARGET_FILE:media-probe>)
     add_test(NAME media-terminal COMMAND ${Python3_EXECUTABLE}

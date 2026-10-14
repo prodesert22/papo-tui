@@ -113,9 +113,44 @@ static void preview_crops(void)
         t.protocol = GRAPHICS_ITERM2;
     }
 }
+static void measured_media(void *context, const message_media *item, int available_width, int *width, int *height)
+{
+    (void)context;
+    assert(item->kind == AUTH_MEDIA_ATTACHMENT && available_width > 8);
+    *width = 8; *height = 10;
+}
+static void attachment_layout(void)
+{
+    json_error_t error;
+    json_t *m = json_loads("{\"id\":\"00000000-0000-4000-8000-000000000001\",\"attachments\":[{\"id\":\"00000000-0000-4000-8000-000000000002\",\"thumbnail_id\":\"00000000-0000-4000-8000-000000000003\",\"mime_type\":\"image/gif\",\"original_file_name\":\"example.gif\",\"size_bytes\":43562,\"moderation_status\":\"clean\"}]}", 0, &error);
+    assert(m);
+    message_blocks b;
+    assert(message_blocks_build_sized(&b, m, "Sender", "", 80, true, measured_media, NULL));
+    assert(b.media_count == 1 && b.media[0].kind == AUTH_MEDIA_ATTACHMENT);
+    int media_rows = 0;
+    for (size_t r = 0; r < b.count; ++r) {
+        for (int c = 0; c < b.rows[r].count; ++c) {
+            const char *text = b.rows[r].segments[c].text;
+            assert(!strstr(text, "Anexo:") && !strstr(text, "Tipo:") && !strstr(text, "Moderação:") && !strstr(text, "[Imagem / F7]"));
+        }
+        if (b.rows[r].media_index >= 0) {
+            assert(b.rows[r].media_width == 8 && b.rows[r].media_height == 10);
+            ++media_rows;
+        }
+    }
+    assert(media_rows == 10);
+    message_blocks_free(&b);
+    assert(message_blocks_build(&b, m, "Sender", "", 80, false));
+    bool metadata = false;
+    for (size_t r = 0; r < b.count; ++r)
+        for (int c = 0; c < b.rows[r].count; ++c)
+            metadata |= strstr(b.rows[r].segments[c].text, "Anexo: example.gif") != NULL;
+    assert(metadata);
+    message_blocks_free(&b); json_decref(m);
+}
 int main(void)
 {
     assert(setlocale(LC_ALL, "C.UTF-8")); init_graphemebreak(); cards(); protocol(); graphics_protocols();
-    preview_crops();
+    preview_crops(); attachment_layout();
     puts("cards, terminal negotiation and Sixel/Kitty/iTerm2 pixels verified"); return 0;
 }

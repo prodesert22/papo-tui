@@ -19,6 +19,7 @@ typedef struct graphics_image {
     uint32_t id;
     uint64_t revision;
     int width, height, cell_width, cell_height;
+    int source_width, source_height;
     int columns, rows;
     struct graphics_image *crops;
     size_t crop_count;

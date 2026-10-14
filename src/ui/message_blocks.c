@@ -121,20 +121,29 @@ static bool media(message_blocks *b, json_t *message, json_t *entry, const char 
     int n = add_media(b, message, entry, role, label, kind, video);
     if (n < 0) return strlen(str(entry, "id")) != 36;
     size_t start = b->count;
-    if (!labeled(b, key, video ? "[▶ Vídeo / F7] " : "[Imagem / F7] ", label, width, false, card, color)) return false;
+    if ((!graphics || video) && !labeled(b, key, video ? "[▶ Vídeo / F7] " : "[Imagem / F7] ", label, width, false, card, color)) return false;
     int height = graphics && !video ? (!strcmp(role, "author") ? 2 : 6) : 0;
+    int media_width = width - (card ? 4 : 0);
+    if (height && b->measure) b->measure(b->measure_context, &b->media[n], media_width, &media_width, &height);
     for (int i = 0; i < height; ++i) if (!blank(b, card, false, false, color)) return false;
     for (size_t i = start; i < b->count; ++i) {
         b->rows[i].media_index = (int)n;
         b->rows[i].media_row = (int)(i - start) - (int)(b->count - start - (size_t)height);
         b->rows[i].media_height = height;
+        b->rows[i].media_width = media_width; b->rows[i].media_x = card ? 2 : 0;
     }
     return true;
 }
 bool message_blocks_build(message_blocks *b, json_t *m, const char *author,
                           const char *reply, int width, bool graphics)
 {
-    memset(b, 0, sizeof(*b));
+    return message_blocks_build_sized(b, m, author, reply, width, graphics, NULL, NULL);
+}
+bool message_blocks_build_sized(message_blocks *b, json_t *m, const char *author,
+                                const char *reply, int width, bool graphics,
+                                message_media_measure measure, void *context)
+{
+    memset(b, 0, sizeof(*b)); b->measure = measure; b->measure_context = context;
     if (width < 8) width = 8;
     char label[1600];
     snprintf(label, sizeof(label), "%s · %s%s", str(m, "created_at"), author, *str(m, "edited_at") ? " · editada" : "");
@@ -146,14 +155,16 @@ bool message_blocks_build(message_blocks *b, json_t *m, const char *author,
     json_array_foreach(json_object_get(m, "attachments"), index, item) {
         char key[128]; snprintf(key, sizeof(key), "attachment:%s:%zu", str(item, "id"), index);
         const char *name = *str(item, "original_file_name") ? str(item, "original_file_name") : "arquivo sem nome";
-        if (!labeled(b, key, "Anexo: ", name, width, true, false, 0)) goto error;
-        snprintf(label, sizeof(label), "Tipo: %s · %lld bytes · Moderação: %s", str(item, "mime_type"),
-                 (long long)json_integer_value(json_object_get(item, "size_bytes")), str(item, "moderation_status"));
-        if (!text(b, key, label, width, false, false, 0)) goto error;
         bool video = !strncmp(str(item, "mime_type"), "video/", 6);
         bool image = !strncmp(str(item, "mime_type"), "image/", 6);
+        if (!graphics || !image) {
+            if (!labeled(b, key, "Anexo: ", name, width, true, false, 0)) goto error;
+            snprintf(label, sizeof(label), "Tipo: %s · %lld bytes · Moderação: %s", str(item, "mime_type"),
+                     (long long)json_integer_value(json_object_get(item, "size_bytes")), str(item, "moderation_status"));
+            if (!text(b, key, label, width, false, false, 0)) goto error;
+        }
         if ((image || video) && !media(b, m, item, key, "attachment", name,
-             image && json_is_string(json_object_get(item, "thumbnail_id")) ? AUTH_MEDIA_THUMBNAIL : AUTH_MEDIA_ATTACHMENT,
+             AUTH_MEDIA_ATTACHMENT,
              video, width, graphics, false, 0)) goto error;
     }
     json_array_foreach(json_object_get(m, "embeds"), index, item) {

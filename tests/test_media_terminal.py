@@ -82,6 +82,16 @@ class MediaTerminal(unittest.TestCase):
             subprocess.run([FFMPEG, '-v', 'error', '-f', 'lavfi', '-i', 'color=c=red:s=16x12',
                             '-frames:v', '1', '-threads', '1', '-y', str(path)], check=True, capture_output=True)
             cls.images[ext] = path.read_bytes()
+        path = Path(cls.assets.name) / 'tall.png'
+        subprocess.run([FFMPEG, '-v', 'error', '-f', 'lavfi', '-i', 'color=c=red:s=16x96',
+                        '-frames:v', '1', '-threads', '1', '-y', str(path)], check=True, capture_output=True)
+        cls.tall_image = path.read_bytes()
+        path = Path(cls.assets.name) / 'animated.gif'
+        subprocess.run([FFMPEG, '-v', 'error', '-f', 'lavfi', '-i', 'color=red:s=16x12:d=0.2:r=5',
+                        '-f', 'lavfi', '-i', 'color=blue:s=16x12:d=0.2:r=5',
+                        '-filter_complex', '[0:v][1:v]concat=n=2:v=1:a=0', '-frames:v', '2',
+                        '-loop', '0', '-threads', '1', '-y', str(path)], check=True, capture_output=True)
+        cls.animated_gif = path.read_bytes()
         path = Path(cls.assets.name) / 'video.mp4'
         subprocess.run([FFMPEG, '-v', 'error', '-f', 'lavfi', '-i', 'color=c=blue:s=32x24:r=10',
                         '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=44100', '-t', '3',
@@ -133,6 +143,31 @@ class MediaTerminal(unittest.TestCase):
         deadline = time.monotonic() + 10
         while len(terminal.stream.frames) < count and time.monotonic() < deadline: terminal.read(.03)
         self.assertGreaterEqual(len(terminal.stream.frames), count)
+    def test_gif_plays_inline_at_native_size_without_attachment_metadata(self):
+        for protocol in ('sixel', 'kitty', 'iterm2'):
+            with self.subTest(protocol=protocol), tempfile.TemporaryDirectory() as directory, self.serve(self.animated_gif, 'image/gif') as server:
+                server.messages[0]['attachments'][0]['thumbnail_id'] = uuid(999)
+                t = self.open(server, protocol=protocol, environment={'TMPDIR': directory})
+                try:
+                    self.wait_frames(t, 4); t.read(.1)
+                    display = '\n'.join(t.screen.display)
+                    for metadata in ('Anexo:', 'Tipo: image/gif', 'Moderação:', '[Imagem / F7]', 'Fixture'):
+                        self.assertNotIn(metadata, display)
+                    self.assertEqual(sum('/attachments/' in r[1] for r in server.requests), 1)
+                    self.assertTrue(any(r[1].endswith('/attachments/' + uuid(901)) for r in server.requests))
+                    if protocol == 'kitty':
+                        self.assertEqual(len({header[b'i'] for header, _ in t.stream.kitty_frames}), 1)
+                        self.assertTrue(all(int(header[b's']) == 16 and int(header[b'v']) == 16 for header, _ in t.stream.kitty_frames))
+                        self.assertTrue(any(pixels[0] > 230 and pixels[2] < 25 for _, pixels in t.stream.kitty_frames))
+                        self.assertTrue(any(pixels[2] > 230 and pixels[0] < 25 for _, pixels in t.stream.kitty_frames))
+                        self.assertTrue(all(p[b'c'] == b'0' and p[b'r'] == b'0' and p[b'h'] == b'12' for p in t.stream.placements))
+                    t.click(8, 4); self.wait(t, 'Conteúdo do outro canal'); t.read(.15)
+                    frames = len(t.stream.frames); t.read(.4)
+                    self.assertEqual(len(t.stream.frames), frames)
+                    self.assertFalse(t.stream.live_ids)
+                finally: self.assertTrue(t.close())
+                self.assertEqual(list(Path(directory).iterdir()), [])
+
     def test_supported_image_formats_emit_sixel_and_cleanup(self):
         for ext, mime in [('png', 'image/png'), ('jpg', 'image/jpeg'), ('webp', 'image/webp'), ('gif', 'image/gif')]:
             with self.subTest(ext=ext), tempfile.TemporaryDirectory() as directory, self.serve(self.images[ext], mime) as server:
@@ -218,7 +253,7 @@ class MediaTerminal(unittest.TestCase):
                 finally: self.assertTrue(t.close())
 
     def test_kitty_scrolling_repositions_and_crops_without_retransmission(self):
-        with self.serve(self.images['png'], 'image/png') as server:
+        with self.serve(self.tall_image, 'image/png') as server:
             server.messages[0]['content'] = '\n'.join('Line %d' % n for n in range(30))
             t = self.open(server, protocol='kitty')
             try:
@@ -256,7 +291,7 @@ class MediaTerminal(unittest.TestCase):
 
     def test_cached_crops_scroll_without_a_loading_placeholder(self):
         for protocol in ('sixel', 'iterm2'):
-            with self.subTest(protocol=protocol), self.serve(self.images['png'], 'image/png') as server:
+            with self.subTest(protocol=protocol), self.serve(self.tall_image, 'image/png') as server:
                 server.messages[0]['content'] = '\n'.join('Line %d' % n for n in range(30))
                 t = self.open(server, protocol=protocol)
                 try:

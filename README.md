@@ -213,8 +213,12 @@ alteram o volume e `m` silencia. Redimensionar preserva a reprodução; rascunho
 e leitura permanecem ao voltar. O áudio usa o dispositivo disponível; sem um
 dispositivo, o vídeo continua e o modal informa a indisponibilidade do áudio.
 
-Imagens JPEG, PNG, WebP e GIF são exibidas por Sixel ou pelos protocolos gráficos Kitty/iTerm2; o histórico mostra o
-primeiro frame do GIF. A negociação consulta capacidades e tamanho das células
+Imagens JPEG, PNG, WebP e GIF são exibidas por Sixel ou pelos protocolos gráficos Kitty/iTerm2.
+Anexos de imagem mostram apenas a mídia, usando o arquivo original sem ampliar
+suas dimensões; imagens maiores são reduzidas proporcionalmente para a largura
+disponível e o limite de 640×360 pixels. GIFs animados se repetem no histórico
+e no modal, com até 256 frames/32 MiB de pixels decodificados por arquivo.
+A negociação consulta capacidades e tamanho das células
 sem bloquear a interface ou inserir respostas no editor. Sem suporte gráfico
 confirmado, os cards e metadados continuam em texto e nenhuma imagem é baixada
 automaticamente. URLs externas permanecem texto.

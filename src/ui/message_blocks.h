@@ -26,15 +26,21 @@ typedef struct {
     unsigned color;
     int media_index, media_row, media_height, media_x, media_width;
 } message_row;
+typedef void (*message_media_measure)(void *context, const message_media *item, int available_width, int *width, int *height);
 typedef struct {
     message_row *rows;
     size_t count, capacity;
     message_media *media;
     size_t media_count;
+    message_media_measure measure;
+    void *measure_context;
 } message_blocks;
 uint64_t message_media_version(const json_t *entry);
 bool message_blocks_build(message_blocks *out, json_t *message, const char *author,
                           const char *reply, int width, bool graphics);
+bool message_blocks_build_sized(message_blocks *out, json_t *message, const char *author,
+                                const char *reply, int width, bool graphics,
+                                message_media_measure measure, void *context);
 void message_blocks_free(message_blocks *out);
 void message_colors_begin(void);
 void message_row_draw(WINDOW *window, const message_row *row, int y, int x,
