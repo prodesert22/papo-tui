@@ -53,6 +53,10 @@ const char *history_status(const history *h);
 /* Independent latest read/event notices. Empty text clears that context. */
 const char *history_notice(const history *h, history_notice_kind kind, uint64_t *revision);
 const char *history_event_compact(const history *h);
+/* Copies remote labels into a bounded buffer; render with text_label(). */
+void history_typing_text(const history *h, char *text, size_t capacity);
+/* Actual editor mutation only. Nonblocking WS, throttled per active channel. */
+void history_typing_activity(history *h);
 bool history_loading(const history *h);
 bool history_has_more(const history *h);
 bool history_evicted(const history *h);

@@ -189,6 +189,14 @@ apenas o anterior do mesmo contexto. Em janelas estreitas, os textos ficam
 mais curtos; `+N` indica avisos antigos que reaparecem ao ampliar a janela.
 Trocar de canal limpa os avisos da conversa anterior e preserva a conexão.
 
+Na linha abaixo do campo de texto, uma pessoa aparece como “Nome está digitando…” ou
+com sua frase personalizada de digitação cadastrada no servidor. De duas a
+quatro pessoas, aparecem os nomes separados por vírgula e “estão digitando…”;
+acima de quatro, “Várias pessoas estão digitando…”. O indicador acompanha
+somente o canal aberto, não inclui você e desaparece após seis segundos sem
+atividade, quando a pessoa envia uma mensagem ou fica offline. Ao editar,
+o aplicativo avisa pelo WebSocket no máximo uma vez a cada dois segundos.
+
 ## Menções
 
 Digite `@` no editor para abrir o cartão de usuários e continue digitando para

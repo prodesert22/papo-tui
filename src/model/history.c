@@ -10,6 +10,9 @@
 #include <string.h>
 
 enum request_kind { NONE, CHANNELS, MESSAGES, AUTHORS, USERS };
+#define TYPING_LIMIT 128U
+#define TYPING_TIMEOUT_MS 6000U
+#define TYPING_SEND_MS 2000U
 struct history {
     auth_client *auth;
     json_t *users, *directory, *queried, *summary_ids;
@@ -33,6 +36,10 @@ struct history {
     char notices[HISTORY_NOTICE_COUNT][192];
     uint64_t notice_sequence, notice_revisions[HISTORY_NOTICE_COUNT];
     const char *event_compact; /* Static diagnostic label, never remote text. */
+    struct { char id[37]; uint64_t expires; } typing[TYPING_LIMIT];
+    size_t typing_count;
+    uint64_t typing_sent;
+    bool typing_connected;
 };
 
 bool history_uuid(const char *value)
@@ -72,6 +79,7 @@ static void event_status(history *h, const char *value, const char *compact)
 }
 static void clear_messages(history *h)
 {
+    h->typing_count = 0; h->typing_sent = 0;
     ++h->messages_revision;
     json_decref(h->journal); h->journal = NULL; h->journal_bytes = 0;
     json_decref(h->patches); h->patches = NULL;
@@ -158,30 +166,123 @@ const char *history_mention_name(void *context, const char *id)
     if (name && *name) return name;
     return !strcmp(id, auth_user_id(h->auth)) ? auth_username(h->auth) : NULL;
 }
-static bool cache_user(history *h, json_t *u)
+static bool user_resolved(const history *h, const char *id)
+{
+    const char *name = str(json_object_get(h->users, id), "username");
+    return name && *name;
+}
+static bool cache_user(history *h, json_t *u, bool presence)
 {
     const char *id = str(u, "id"), *name = str(u, "username");
     if (!history_uuid(id) || !name || !string_field(u, "username", 1024, false) ||
-        !string_field(u, "nickname", 1024, true))
+        !string_field(u, "nickname", 1024, true) || !string_field(u, "typing", 256, true))
         return false;
     json_t *prior = json_object_get(h->users, id);
+    bool live = presence || json_is_true(json_object_get(prior, "_presence"));
+    json_t *metadata = presence ? u : live ? prior : u;
+    const char *nickname = str(metadata, "nickname"), *phrase = str(metadata, "typing");
     size_t old = prior ? strlen(str(prior, "username")) +
-                             (str(prior, "nickname") ? strlen(str(prior, "nickname")) : 0) + 512
+                             (str(prior, "nickname") ? strlen(str(prior, "nickname")) : 0) +
+                             (str(prior, "typing") ? strlen(str(prior, "typing")) : 0) + 512
                        : 0;
-    size_t cost = strlen(name) + (str(u, "nickname") ? strlen(str(u, "nickname")) : 0) + 512;
+    size_t cost = strlen(name) + (nickname ? strlen(nickname) : 0) + (phrase ? strlen(phrase) : 0) + 512;
     if ((!prior && json_object_size(h->users) >= 10000) ||
         cost > 16U * 1024U * 1024U - (h->user_bytes - old)) {
         h->users_partial = h->users_complete = true;
         return true;
     }
-    json_t *copy = json_pack("{s:s,s:s,s:O}", "id", id, "username", name, "nickname",
-                             json_object_get(u, "nickname") ? json_object_get(u, "nickname") : json_null());
+    json_t *copy = json_pack("{s:s,s:s,s:O,s:O,s:b}", "id", id, "username", name, "nickname",
+                             json_object_get(metadata, "nickname") ? json_object_get(metadata, "nickname") : json_null(),
+                             "typing", json_object_get(metadata, "typing") ? json_object_get(metadata, "typing") : json_null(),
+                             "_presence", live);
     if (!copy) return false;
     bool ok = json_object_set_new(h->users, id, copy) == 0;
     if (ok) {
         h->user_bytes = h->user_bytes - old + cost;
         ++h->users_revision;
     }
+    return ok;
+}
+static void typing_remove(history *h, const char *id)
+{
+    for (size_t i = 0; i < h->typing_count; ++i) if (!strcmp(h->typing[i].id, id)) {
+        --h->typing_count;
+        memmove(&h->typing[i], &h->typing[i + 1], (h->typing_count - i) * sizeof(h->typing[0]));
+        break;
+    }
+}
+void history_typing_text(const history *h, char *text, size_t capacity)
+{
+    if (!text || !capacity) return;
+    *text = '\0';
+    if (!h || !h->typing_count) return;
+    if (h->typing_count > 4) { snprintf(text, capacity, "Várias pessoas estão digitando…"); return; }
+    size_t used = 0;
+    for (size_t i = 0; i < h->typing_count; ++i) {
+        const char *name = history_mention_name((void *)h, h->typing[i].id);
+        int wrote = snprintf(text + used, capacity - used, "%s%s", i ? ", " : "",
+                             name ? name : "Usuário indisponível");
+        if (wrote < 0 || (size_t)wrote >= capacity - used) return;
+        used += (size_t)wrote;
+    }
+    const char *phrase = h->typing_count == 1 ? str(json_object_get(h->users, h->typing[0].id), "typing") : NULL;
+    snprintf(text + used, capacity - used, " %s", phrase && *phrase ? phrase :
+             h->typing_count == 1 ? "está digitando…" : "estão digitando…");
+}
+void history_typing_activity(history *h)
+{
+    uint64_t now;
+    json_t *channel = h ? history_channel(h, h->selected) : NULL;
+    if (!h || !auth_has_session(h->auth) || auth_ws_state(h->auth) != WS_OPEN ||
+        h->context != auth_context_generation(h->auth) ||
+        !str(channel, "type") || strcmp(str(channel, "type"), "text") ||
+        !net_now_ms(&now) || (h->typing_sent && now - h->typing_sent < TYPING_SEND_MS)) return;
+    json_t *event = json_pack("{s:s,s:s}", "type", "typing", "channel_id", str(channel, "id"));
+    if (event && auth_send_event(h->auth, event)) h->typing_sent = now;
+    json_decref(event);
+}
+static bool typing_event(history *h, const json_t *event)
+{
+    const char *channel = str((json_t *)event, "channel_id"), *id = str((json_t *)event, "user_id");
+    if (!string_field((json_t *)event, "channel_id", 36, false) || !history_uuid(channel) ||
+        !string_field((json_t *)event, "user_id", 36, false) || !history_uuid(id) ||
+        !json_is_boolean(json_object_get(event, "is_typing"))) return false;
+    json_t *active = history_channel(h, h->selected);
+    if (auth_ws_state(h->auth) != WS_OPEN || !str(active, "id") || strcmp(channel, str(active, "id")) ||
+        strcmp(str(active, "type"), "text") || !strcmp(id, auth_user_id(h->auth))) return true;
+    if (json_is_false(json_object_get(event, "is_typing"))) { typing_remove(h, id); return true; }
+    uint64_t now;
+    if (!net_now_ms(&now)) return true;
+    size_t i;
+    for (i = 0; i < h->typing_count; ++i) if (!strcmp(h->typing[i].id, id)) break;
+    if (i == TYPING_LIMIT) return true;
+    if (i == h->typing_count) {
+        snprintf(h->typing[i].id, sizeof(h->typing[i].id), "%s", id);
+        ++h->typing_count;
+    }
+    h->typing[i].expires = now + TYPING_TIMEOUT_MS;
+    json_t *user = json_object_get(h->users, id);
+    if ((!user_resolved(h, id) || !json_object_get(user, "typing")) && !json_object_get(h->queried, id))
+        h->want_authors = true;
+    return true;
+}
+static bool presence_event(history *h, const json_t *event)
+{
+    const char *id = str((json_t *)event, "user_id"), *state = str((json_t *)event, "status");
+    if (!string_field((json_t *)event, "user_id", 36, false) || !history_uuid(id) ||
+        !string_field((json_t *)event, "status", 16, false) ||
+        (strcmp(state, "online") && strcmp(state, "offline") && strcmp(state, "away") && strcmp(state, "busy")) ||
+        !string_field((json_t *)event, "nickname", 1024, true) ||
+        !string_field((json_t *)event, "typing", 256, true)) return false;
+    if (!strcmp(state, "offline")) { typing_remove(h, id); return true; }
+    json_t *prior = json_object_get(h->users, id);
+    json_t *user = json_pack("{s:s,s:s,s:O,s:O,s:b}", "id", id, "username",
+                            prior ? str(prior, "username") : "", "nickname",
+                            json_object_get(event, "nickname") ? json_object_get(event, "nickname") : json_null(),
+                            "typing", json_object_get(event, "typing") ? json_object_get(event, "typing") : json_null(),
+                            "_presence", true);
+    bool ok = user && cache_user(h, user, true);
+    json_decref(user);
     return ok;
 }
 static bool users_response(history *h, json_t *body)
@@ -193,7 +294,7 @@ static bool users_response(history *h, json_t *body)
         json_t *u = json_array_get(users, i);
         uint64_t stamp;
         if (!str(u, "created_at") || strlen(str(u, "created_at")) >= sizeof(h->users_time) ||
-            !session_time_parse(str(u, "created_at"), &stamp) || !cache_user(h, u))
+            !session_time_parse(str(u, "created_at"), &stamp) || !cache_user(h, u, false))
             return false;
         const char *id = str(u, "id");
         bool found = false;
@@ -581,6 +682,17 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
     const char *type = str((json_t *)event, "type");
     if (!type || !string_field((json_t *)event, "type", 128, false)) goto invalid;
     if (!strcmp(type, "heartbeat_ack")) return true;
+    if (!strcmp(type, "typing")) {
+        if (!typing_event(h, event)) goto invalid;
+        return true;
+    }
+    if (!strcmp(type, "presence_update")) {
+        if (!presence_event(h, event)) goto invalid;
+        return true;
+    }
+    /* This snapshot has no nickname/typing metadata. Resolve active typers
+     * through summaries rather than fetching all online users. */
+    if (!strcmp(type, "presence_sync")) return true;
     if (!strcmp(type, "error")) { event_status(h, "O servidor informou um erro de tempo real.", "Erro remoto"); return true; }
     bool message = !strcmp(type, "message"), edit = !strcmp(type, "message_edit"),
          del = !strcmp(type, "message_delete");
@@ -659,6 +771,7 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
         }
     }
     if (!active) return true;
+    if (message && !h->replaying) typing_remove(h, str((json_t *)event, "author_id"));
     if (edit || del || embeds) {
         json_t *previous = json_object_get(h->patches, id);
         json_t *existing = json_array_get(h->messages, find(h->messages, id));
@@ -769,7 +882,7 @@ static bool authors_response(history *h, json_t *body)
     if (!json_is_array(body) || json_array_size(body) > 1000) return false;
     size_t i;
     json_t *u;
-    json_array_foreach(body, i, u) if (!cache_user(h, u)) return false;
+    json_array_foreach(body, i, u) if (!cache_user(h, u, false)) return false;
     return true;
 }
 
@@ -803,10 +916,18 @@ static bool request_authors(history *h)
     size_t i;
     json_t *m;
     bool ok = true;
+    for (size_t j = 0; j < h->typing_count; ++j) {
+        const char *id = h->typing[j].id;
+        json_t *user = json_object_get(h->users, id);
+        if ((!user_resolved(h, id) || !json_object_get(user, "typing")) &&
+            !json_object_get(h->queried, id) && json_object_size(h->queried) + json_array_size(ids) < 10000) {
+            ok &= !json_array_append_new(ids, json_string(id)) && !json_object_set_new(seen, id, json_true());
+        }
+    }
     json_array_foreach(h->messages, i, m)
     {
         const char *id = str(m, "author_id");
-        if (!json_object_get(h->users, id) && !json_object_get(h->queried, id) &&
+        if (!user_resolved(h, id) && !json_object_get(h->queried, id) &&
             !json_object_get(seen, id) && json_array_size(ids) < 1000 &&
             json_object_size(h->queried) + json_array_size(ids) < 10000) {
             ok &= !json_array_append_new(ids, json_string(id)) && !json_object_set_new(seen, id, json_true());
@@ -815,7 +936,7 @@ static bool request_authors(history *h)
         size_t at = 0;
         while (mention_next(str(m, "content"), at, &r)) {
             at = r.end;
-            if (json_object_get(h->users, r.id) || json_object_get(h->queried, r.id) ||
+            if (user_resolved(h, r.id) || json_object_get(h->queried, r.id) ||
                 json_object_get(seen, r.id) || json_array_size(ids) >= 1000 ||
                 json_object_size(h->queried) + json_array_size(ids) >= 10000)
                 continue;
@@ -846,6 +967,19 @@ bool history_poll(history *h)
         h->epoch = auth_ws_epoch(h->auth);
     }
     uint64_t epoch = auth_ws_epoch(h->auth);
+    bool connected = auth_has_session(h->auth) && auth_ws_state(h->auth) == WS_OPEN;
+    if ((h->typing_connected && !connected) || epoch != h->epoch) {
+        h->typing_count = 0; h->typing_sent = 0;
+        json_object_clear(h->queried);
+        const char *id; json_t *user;
+        json_object_foreach(h->users, id, user) {
+            const char *phrase = str(user, "typing");
+            if (phrase) h->user_bytes -= strlen(phrase);
+            json_object_del(user, "typing"); json_object_del(user, "_presence");
+        }
+        changed = true;
+    }
+    h->typing_connected = connected;
     if (epoch != h->epoch) {
         /* Initial snapshots are deferred until the first upgrade. A later
          * upgrade requires authoritative recovery of the displayed window. */
@@ -915,6 +1049,10 @@ bool history_poll(history *h)
     }
     uint64_t now;
     if (!net_now_ms(&now)) return changed;
+    for (size_t i = 0; i < h->typing_count;) {
+        if (now >= h->typing[i].expires) { typing_remove(h, h->typing[i].id); changed = true; }
+        else ++i;
+    }
     ws_state ws = auth_ws_state(h->auth);
     if (ws == WS_QUEUED || ws == WS_CONNECTING) return changed;
     if (h->recovering && ws != WS_OPEN) return changed;

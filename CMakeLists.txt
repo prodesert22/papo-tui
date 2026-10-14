@@ -94,6 +94,9 @@ if(BUILD_TESTING)
     add_test(NAME footer-terminal COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_footer_terminal.py $<TARGET_FILE:papo-tui>)
     set_tests_properties(footer-terminal PROPERTIES TIMEOUT 120)
+    add_test(NAME typing-terminal COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_typing_terminal.py $<TARGET_FILE:papo-tui>)
+    set_tests_properties(typing-terminal PROPERTIES TIMEOUT 120)
     add_executable(media-probe tests/media_probe.c)
     target_link_libraries(media-probe PRIVATE papo_auth)
     target_compile_options(media-probe PRIVATE -Wall -Wextra -Wpedantic -Werror)

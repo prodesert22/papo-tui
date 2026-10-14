@@ -70,7 +70,7 @@ static bool layout(view *ui)
     bool wide = COLS >= 80;
     int rows = LINES - CONTENT_Y - 3;
     ui->side = wide ? 24 : COLS - 2;
-    ui->editor_border = rows >= 10 ? rows - 5 : rows - 2;
+    ui->editor_border = rows >= 10 ? rows - 5 : rows - 3;
     ui->history_top = rows >= 8 ? 3 : 2;
     ui->visible = ui->editor_border - ui->history_top;
     ui->frame = newwin(LINES, COLS, 0, 0);
@@ -231,7 +231,7 @@ static text_buffer *input(view *ui)
 }
 static int input_height(view *ui)
 {
-    return getmaxy(ui->body) - ui->editor_border - 1 - (getmaxy(ui->body) >= 10 ? 1 : 0);
+    return getmaxy(ui->body) - ui->editor_border - 2;
 }
 static bool collect_notices(view *ui, auth_client *auth)
 {
@@ -449,6 +449,12 @@ static void draw(view *ui, auth_client *auth, draw_scope scope)
             text_label(ui->body, ui->editor_border + 1, 3, getmaxx(ui->body) - 6,
                        auth_has_session(auth) ? "Abra um canal de texto" : "Confirme a sessão");
         }
+        char typing[4608];
+        history_typing_text(ui->model, typing, sizeof(typing));
+        if (*typing) {
+            wattrset(ui->body, COLOR_PAIR(PANEL_ACCENT));
+            text_label(ui->body, getmaxy(ui->body) - 1, 3, getmaxx(ui->body) - 6, typing);
+        }
         if (editing && editor) {
             text_layout measured; text_measure(editor, getmaxx(ui->body) - 6, &measured);
             wmove(ui->body, ui->editor_border + 1 + measured.cursor_row - editor->first_row, 3 + measured.cursor_column);
@@ -593,6 +599,7 @@ static bool edit(view *ui, int type, wint_t key)
     text_buffer *editor = input(ui);
     if (!editor || !ui->body) return false;
     int width = getmaxx(ui->body) - 6;
+    size_t before = editor->length;
     bool handled = true;
     if (type == OK && (key == 8 || key == 127)) text_delete(editor, true);
     else if (type == KEY_CODE_YES && key == KEY_BACKSPACE) text_delete(editor, true);
@@ -606,6 +613,7 @@ static bool edit(view *ui, int type, wint_t key)
     else handled = false;
     if (handled) {
         ui->feedback = send_editor_changed(ui->editor) ? NULL : "Não foi possível salvar o rascunho.";
+        if (editor->length != before) history_typing_activity(ui->model);
     }
     return handled;
 }
@@ -668,7 +676,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 if (ui->paste_cr) key = '\n';
                 if (key == '\t') key = ' ';
                 if (key == '\n' || iswprint(key)) {
-                    text_insert(editor, key, true);
+                    if (text_insert(editor, key, true)) history_typing_activity(ui->model);
                     ui->feedback = send_editor_changed(ui->editor) ? NULL : "Não foi possível salvar o rascunho.";
                     redraw = true;
                 }
@@ -679,7 +687,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         if (type == OK && (key == 17 || key == 3)) { result = HISTORY_EXIT; break; }
         bool accepted = false;
         if (mention_popup_key(ui->mentions, input(ui), type, key, &accepted)) {
-            if (accepted) send_editor_changed(ui->editor);
+            if (accepted) { send_editor_changed(ui->editor); history_typing_activity(ui->model); }
             scope = DRAW_ALL; continue;
         }
         bool enter = (type == OK && (key == '\r' || key == '\n')) || (type == KEY_CODE_YES && key == KEY_ENTER);
@@ -749,7 +757,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             MEVENT e;
             if (ui_mouse_get(&e) != OK || !ui->frame) continue;
             if (mention_popup_mouse(ui->mentions, input(ui), &e, &accepted)) {
-                if (accepted) send_editor_changed(ui->editor);
+                if (accepted) { send_editor_changed(ui->editor); history_typing_activity(ui->model); }
                 scope = DRAW_ALL; continue;
             }
             if (e.bstate & (BUTTON4_PRESSED | BUTTON5_PRESSED)) {
