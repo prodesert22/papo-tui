@@ -28,6 +28,7 @@ typedef struct {
     char editor_channel[64];
     const char *feedback;
     uint64_t retry_id;
+    uint64_t unseen;
     size_t section, offset;
     bool at_end, paste, paste_cr, show_channels, layout_failed, duplicate_modal, reenviar;
 } view;
@@ -204,6 +205,9 @@ static int walk(view *ui, int first, bool paint, bool save, int *anchor)
     for (size_t i = 0; i < history_message_count(ui->model); ++i) {
         json_t *m = history_message(ui->model, i), *sections = presentation(ui, m);
         if (!sections) continue;
+        if (!strcmp(ui->anchor, str(m, "id")) && ui->section >= json_array_size(sections)) {
+            ui->section = 0; ui->offset = 0;
+        }
         size_t section; json_t *field;
         json_array_foreach(sections, section, field) {
             const char *p = json_string_value(field);
@@ -216,7 +220,8 @@ static int walk(view *ui, int first, bool paint, bool save, int *anchor)
                 }
                 text_measure(&buffer, width, &measured);
                 if (!strcmp(ui->anchor, str(m, "id")) && ui->section == section &&
-                    ui->offset >= offset && ui->offset < offset + buffer.length + 1) {
+                    ui->offset >= offset && (ui->offset < offset + buffer.length + 1 || !*p)) {
+                    if (ui->offset > offset + buffer.length) ui->offset = offset + buffer.length;
                     int row = 0;
                     for (size_t k = 0; k < measured.count; ++k)
                         if (measured.cells[k].start <= ui->offset - offset) row = measured.cells[k].row;
@@ -255,6 +260,7 @@ static void scroll_history(view *ui, int delta)
     if (first < 0) first = 0;
     if (first > last) first = last;
     ui->at_end = first == last;
+    if (ui->at_end) ui->unseen = 0;
     walk(ui, first, false, true, &anchor);
 }
 static text_buffer *input(view *ui)
@@ -304,7 +310,14 @@ static void draw(view *ui, auth_client *auth)
     draw_tabs(ui, auth);
     wbkgd(ui->footer, COLOR_PAIR(PANEL)); werase(ui->footer);
     wattrset(ui->footer, COLOR_PAIR(PANEL_MUTED));
-    text_label(ui->footer, 0, 1, COLS - 4, history_status(ui->model));
+    char progress[192];
+    const char *connection = auth_ws_reconnecting(auth) ? auth_message(auth) :
+                             history_recovering(ui->model) ? "Recuperando histórico…" : NULL;
+    if (ui->unseen) {
+        snprintf(progress, sizeof(progress), "%llu novas mensagens · End: ir ao fim%s",
+                 (unsigned long long)ui->unseen, connection ? " · Reconectando" : "");
+        text_label(ui->footer, 0, 1, COLS - 4, progress);
+    } else text_label(ui->footer, 0, 1, COLS - 4, connection ? connection : history_status(ui->model));
     text_label(ui->footer, 1, 1, COLS - 4, ui->focus == SERVER_TABS ? "←→ servidores · Enter: adicionar · ↓ canais · Ctrl+Q: sair" :
                ui->focus == CHANNEL_LIST ? "↑↓ canais · ← abas · → conversa · Ctrl+L: sair da conta" :
                ui->focus == MESSAGE_INPUT ? "Enter enviar · Ctrl+N nova linha · Esc histórico · Ctrl+T tentar" :
@@ -418,6 +431,7 @@ static void open_channel(view *ui)
     if (history_select(ui->model, ui->highlighted)) {
         snprintf(ui->editor_channel, sizeof(ui->editor_channel), "%s", text ? str(channel, "id") : "");
         ui->feedback = NULL;
+        ui->unseen = 0;
         ui->at_end = true; ui->anchor[0] = 0; set_focus(ui, HISTORY_PANEL);
     }
 }
@@ -465,6 +479,43 @@ static bool poll_editor(view *ui, auth_client *auth)
     if (!auth_has_session(auth) && ui->duplicate_modal) { close_confirmation(ui); changed = true; }
     return changed;
 }
+static bool poll_model(view *ui, auth_client *auth)
+{
+    char highlighted[37];
+    snprintf(highlighted, sizeof(highlighted), "%s", str(history_channel(ui->model, ui->highlighted), "id"));
+    /* Retain IDs around the reading anchor, never borrowed model pointers. */
+    char neighbors[HISTORY_MESSAGE_LIMIT][37]; size_t count = 0, anchored = 0;
+    if (!ui->at_end) for (size_t i = 0; i < history_message_count(ui->model); ++i) {
+        snprintf(neighbors[count], sizeof(neighbors[count]), "%s", str(history_message(ui->model, i), "id"));
+        if (!strcmp(neighbors[count], ui->anchor)) anchored = count;
+        ++count;
+    }
+    uint64_t inserted = history_insertions(ui->model);
+    ws_state before = auth_ws_state(auth);
+    auth_poll(auth);
+    bool changed = poll_editor(ui, auth);
+    changed |= history_poll(ui->model) || before != auth_ws_state(auth);
+    uint64_t delta = history_insertions(ui->model) - inserted;
+    if (!ui->at_end) ui->unseen += delta;
+    for (size_t i = 0; i < history_channel_count(ui->model); ++i)
+        if (!strcmp(highlighted, str(history_channel(ui->model, i), "id"))) ui->highlighted = i;
+    if (!ui->at_end && count) {
+        bool found = false;
+        for (size_t i = 0; i < history_message_count(ui->model); ++i)
+            found |= !strcmp(ui->anchor, str(history_message(ui->model, i), "id"));
+        if (!found) {
+            for (size_t step = 0; step < count && !found; ++step) {
+                size_t index = anchored + step < count ? anchored + step : count - 1 - (anchored + step - count);
+                for (size_t i = 0; i < history_message_count(ui->model); ++i)
+                    if (!strcmp(neighbors[index], str(history_message(ui->model, i), "id"))) {
+                        snprintf(ui->anchor, sizeof(ui->anchor), "%s", neighbors[index]);
+                        ui->section = ui->offset = 0; found = true; break;
+                    }
+            }
+        }
+    }
+    return changed;
+}
 static bool edit(view *ui, int type, wint_t key)
 {
     text_buffer *editor = input(ui);
@@ -503,10 +554,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         if (ui->layout_failed) break;
         auth_state before = auth_get_state(auth);
         if (instances_poll(connections, auth)) redraw = true;
-        auth_poll(auth);
-        if (poll_editor(ui, auth)) redraw = true;
-        json_t *event; while ((event = auth_next_event(auth))) json_decref(event);
-        if (history_poll(ui->model) || before != auth_get_state(auth)) redraw = true;
+        if (poll_model(ui, auth) || before != auth_get_state(auth)) redraw = true;
         if (!auth_has_session(auth) && !auth_busy(auth)) break;
         if (redraw) { draw(ui, auth); redraw = false; }
         wint_t key; int type = get_wch(&key);
@@ -569,6 +617,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             continue;
         }
         if (type == OK && key == 18) {
+            if (auth_ws_reconnecting(auth)) { auth_connect_ws(auth); continue; }
             if (history_message_count(ui->model)) {
                 if (!history_retry(ui->model)) { ui->at_end = true; ui->anchor[0] = 0; }
             } else if (history_selected(ui->model) != SIZE_MAX) history_recent(ui->model);
@@ -600,6 +649,9 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 continue;
             }
             if (!(e.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED))) continue;
+            if (ui->unseen && e.y == getbegy(ui->footer)) {
+                ui->at_end = true; ui->unseen = 0; ui->anchor[0] = 0; continue;
+            }
             int y = e.y, x = e.x;
             if (wmouse_trafo(ui->tabs, &y, &x, false)) {
                 if (y == 0 && hit(ui->add_hit, x)) { result = HISTORY_ADD; break; }
@@ -666,7 +718,10 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 scroll_history(ui, key == KEY_HOME ? -2147483647 : key == KEY_UP ? -1 : -ui->visible);
                 if (first == 0 && key != KEY_HOME && history_has_more(ui->model)) { ui->at_end = false; history_older(ui->model); }
             } else if (type == KEY_CODE_YES && (key == KEY_DOWN || key == KEY_NPAGE)) scroll_history(ui, key == KEY_DOWN ? 1 : ui->visible);
-            else if (type == KEY_CODE_YES && key == KEY_END) { history_recent(ui->model); ui->at_end = true; ui->anchor[0] = 0; }
+            else if (type == KEY_CODE_YES && key == KEY_END) {
+                if (!ui->unseen || history_evicted(ui->model)) history_recent(ui->model);
+                ui->at_end = true; ui->unseen = 0; ui->anchor[0] = 0;
+            }
             else if (enter && input(ui)) set_focus(ui, MESSAGE_INPUT);
             else if (enter && !history_retry(ui->model)) { ui->at_end = true; ui->anchor[0] = 0; }
         }

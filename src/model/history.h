@@ -9,13 +9,20 @@
 typedef struct history history;
 /* Owns all JSON models; borrows the auth client. One active conversation, no
  * inactive history cache. Returned objects/strings are borrowed until poll,
- * selection, reload or destroy. Callers retain anchors by UUID, not pointer. */
+ * event, confirmation, selection, reload or destroy. Callers retain anchors
+ * by UUID, not pointer. */
 history *history_create(auth_client *auth);
 void history_destroy(history *h);
 bool history_poll(history *h);
 /* Copies a confirmed Message. Merges only the active channel/current
  * generation, with definitive ID deduplication and bounded memory. No HTTP. */
 bool history_confirm(history *h, json_t *message, uint64_t generation);
+/* Borrows event; stores owned copies only where needed for concurrent reads.
+ * Never reads an inactive channel's history. */
+bool history_event(history *h, const json_t *event, uint64_t generation);
+void history_recover(history *h);
+bool history_recovering(const history *h);
+uint64_t history_insertions(const history *h);
 void history_reload_channels(history *h);
 bool history_select(history *h, size_t channel);
 void history_recent(history *h);

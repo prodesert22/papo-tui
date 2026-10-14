@@ -3,6 +3,7 @@
 #include "net/rate_limit.h"
 #include "net/clock.h"
 #include "net/session_time.h"
+#include "net/retry.h"
 
 #include <curl/curl.h>
 #include <jansson.h>
@@ -15,6 +16,7 @@
 #include <errno.h>
 #include <wchar.h>
 #include <wctype.h>
+#include <unistd.h>
 
 #define RESPONSE_LIMIT (1024U * 1024U)
 
@@ -35,7 +37,11 @@ struct auth_client {
     auth_state state;
     auth_state operation;
     bool ws_requested;
+    bool ws_managed, ws_active, ws_validate, ws_validated, validation_wait;
+    uint64_t ws_retry_at, ws_stable_at, ws_epoch, expires_at;
+    unsigned ws_failures;
     uint64_t recheck_at;
+    uint64_t validation_deadline;
     uint64_t refresh_at, generation;
     bool registering, authenticated, recovering, after_refresh, logout_requested;
     bool api_retried, response_ready;
@@ -127,6 +133,11 @@ static void clear_identity(auth_client *client)
     clear_send(client);
     client->authenticated = client->recovering = client->after_refresh = false;
     client->refresh_at = client->recheck_at = 0;
+    client->validation_deadline = 0;
+    client->expires_at = client->ws_retry_at = client->ws_stable_at = 0;
+    client->ws_failures = 0;
+    client->ws_validate = client->ws_validated = client->validation_wait = false;
+    client->ws_epoch = 0; client->ws_requested = false;
     client->user[0] = client->user_id[0] = '\0';
     erase_free(&client->refresh_cookie);
     ++client->generation;
@@ -390,6 +401,14 @@ static bool user_login(auth_client *client)
 
 auth_client *auth_create(void)
 {
+    /* Jitter needs variation across processes; it is not secret material. */
+    static bool seeded;
+    if (!seeded) {
+        struct timespec now = {0};
+        clock_gettime(CLOCK_REALTIME, &now);
+        srand((unsigned)now.tv_sec ^ (unsigned)now.tv_nsec ^ (unsigned)getpid());
+        seeded = true;
+    }
     auth_client *client = calloc(1, sizeof(*client));
     if (!client) return NULL;
     client->easy = curl_easy_init();
@@ -769,6 +788,15 @@ static void complete_api(auth_client *client, CURLcode result, long status)
              "Não foi possível concluir a consulta autenticada.");
 }
 
+static void reconnect_later(auth_client *client, uint64_t now)
+{
+    client->ws_retry_at = now + net_retry_ms(client->ws_failures, (unsigned)rand());
+    if (client->ws_failures < 5) ++client->ws_failures;
+    client->ws_validate = true;
+    client->ws_validated = false;
+    client->ws_stable_at = 0;
+}
+
 static void complete(auth_client *client, CURLcode result, long status)
 {
     auth_state previous = client->operation;
@@ -776,6 +804,26 @@ static void complete(auth_client *client, CURLcode result, long status)
     detach(client);
     if (previous == AUTH_MESSAGE_SEND) { complete_send(client, result, status, transmitted); return; }
     if (previous == AUTH_API_GET) { complete_api(client, result, status); return; }
+    /* A failed read proves unavailability, not revocation. Preserve an already
+     * verified context; refresh is deliberately excluded because its POST may
+     * have rotated a cookie even when its response was lost. */
+    if (client->ws_managed && *client->user_id &&
+        (client->authenticated || client->recovering || client->after_refresh) && previous == AUTH_WHOAMI &&
+        !client->logout_requested &&
+        (result == CURLE_COULDNT_CONNECT || result == CURLE_COULDNT_RESOLVE_HOST ||
+         result == CURLE_OPERATION_TIMEDOUT || result == CURLE_RECV_ERROR || result == CURLE_GOT_NOTHING ||
+         result == CURLE_SEND_ERROR || result == CURLE_PARTIAL_FILE || result == CURLE_COULDNT_RESOLVE_PROXY ||
+         (result == CURLE_OK && (status == 429 || status >= 500)))) {
+        uint64_t now;
+        if (!net_now_ms(&now)) { fail(client, "Não foi possível acompanhar a sessão."); return; }
+        if (status == 429) net_rate_defer(client->retry_after);
+        ws_abort(client->websocket);
+        reconnect_later(client, now);
+        client->validation_wait = true;
+        client->state = AUTH_READY;
+        snprintf(client->message, sizeof(client->message), "Rede indisponível. Reconectando…");
+        return;
+    }
     if (result != CURLE_OK) {
         const char *message = "Não foi possível conectar. Confira a URL e tente novamente.";
         if (client->overflow) message = "O servidor enviou uma resposta grande demais.";
@@ -913,7 +961,8 @@ static void complete(auth_client *client, CURLcode result, long status)
         json_t *connection = json_object_get(body, "connection");
         const char *id = json_text(connection, "id", sizeof(client->user_id));
         const char *expires = json_text(connection, "expires_at", 65);
-        if (!id || !expires || !session_time_schedule(expires, &client->refresh_at))
+        if (!id || !expires || !session_time_schedule(expires, &client->refresh_at) ||
+            !session_time_expiration(expires, &client->expires_at))
             fail(client, "Não foi possível confirmar a renovação da sessão. Entre novamente.");
         else request(client, AUTH_WHOAMI, "/auth/whoami", NULL, false);
     } else if (previous == AUTH_WHOAMI) {
@@ -929,14 +978,22 @@ static void complete(auth_client *client, CURLcode result, long status)
             uint64_t now;
             if (!net_now_ms(&now)) fail(client, "Não foi possível acompanhar a sessão.");
             else {
-                client->recheck_at = now + 30000;
+                /* Start early enough for the existing 15s REST timeout. A
+                 * rate-limited or busy queue must not keep WS trusted forever. */
+                client->recheck_at = now + (client->ws_managed ? 15000 : 30000);
+                client->validation_deadline = now + 30000;
                 if (!client->refresh_at) client->refresh_at = now + 30000;
                 client->authenticated = true;
+                client->validation_wait = false;
+                if (client->ws_validate) {
+                    client->ws_validated = true;
+                    client->ws_validate = false;
+                }
                 client->recovering = client->after_refresh = false;
                 client->state = AUTH_READY;
                 snprintf(client->message, sizeof(client->message), "Login realizado. Você está conectado.");
                 if (client->api_path) request(client, AUTH_API_GET, client->api_path, client->api_body, client->api_body != NULL);
-                if (client->ws_requested && ws_get_state(client->websocket) == WS_IDLE)
+                if (client->ws_requested && ws_get_state(client->websocket) == WS_IDLE && !client->ws_managed)
                     auth_connect_ws(client);
             }
         }
@@ -946,10 +1003,39 @@ static void complete(auth_client *client, CURLcode result, long status)
 
 void auth_poll(auth_client *client)
 {
+    uint64_t tick;
+    if (!net_now_ms(&tick)) { fail(client, "Não foi possível acompanhar a sessão."); return; }
+    if (client->ws_managed && *client->user_id && client->expires_at && tick >= client->expires_at &&
+        !client->logout_requested) {
+        fail(client, "Sua sessão expirou sem renovação. Entre novamente."); return;
+    }
+    if (client->ws_managed && client->validation_deadline && tick >= client->validation_deadline &&
+        ws_get_state(client->websocket) == WS_OPEN && !client->logout_requested) {
+        ws_abort(client->websocket);
+        reconnect_later(client, tick);
+        client->validation_wait = true;
+    }
+    if (client->ws_managed && client->ws_active && client->ws_requested && *client->user_id &&
+        !client->logout_requested && !client->queued && !client->attached &&
+        client->state == AUTH_READY && tick >= client->ws_retry_at) {
+        ws_state state = ws_get_state(client->websocket);
+        if (state == WS_ERROR || state == WS_CLOSED || (state == WS_IDLE && (client->ws_epoch || client->ws_validate))) {
+            if (client->ws_validated && auth_has_session(client)) {
+                client->ws_validated = false;
+                ws_connect(client->websocket, client->base);
+            } else {
+                client->ws_validate = true;
+                if (request(client, AUTH_WHOAMI, "/auth/whoami", NULL, false))
+                    client->state = AUTH_READY;
+            }
+        }
+    }
     if (client->state == AUTH_READY && client->authenticated && !client->queued && !client->attached) {
         uint64_t now;
         if (!net_now_ms(&now)) { fail(client, "Não foi possível acompanhar a sessão."); return; }
-        if (now >= client->refresh_at) auth_refresh(client);
+        if (client->validation_wait || (client->ws_managed && client->ws_requested &&
+            ws_get_state(client->websocket) != WS_OPEN)) { /* Recovery validates before refresh. */ }
+        else if (now >= client->refresh_at) auth_refresh(client);
         else if (now >= client->recheck_at && request(client, AUTH_WHOAMI, "/auth/whoami", NULL, false))
             client->state = AUTH_READY; /* Background REST validation keeps logout available. */
     }
@@ -957,6 +1043,16 @@ void auth_poll(auth_client *client)
     if (client->operation != AUTH_REFRESH || (!client->queued && !client->attached) ||
         (ws_before != WS_QUEUED && ws_before != WS_CONNECTING)) ws_poll(client->websocket);
     ws_state ws_after = ws_get_state(client->websocket);
+    if (ws_before != ws_after && ws_after == WS_OPEN) {
+        ++client->ws_epoch;
+        client->ws_stable_at = tick + 30000;
+        client->ws_retry_at = 0;
+    }
+    if (ws_after == WS_OPEN && client->ws_stable_at && tick >= client->ws_stable_at) {
+        client->ws_failures = 0; client->ws_stable_at = 0;
+    }
+    if (client->ws_managed && *client->user_id && ws_before != ws_after &&
+        (ws_after == WS_ERROR || ws_after == WS_CLOSED)) reconnect_later(client, tick);
     if (client->authenticated && ws_before != ws_after && (ws_after == WS_ERROR || ws_after == WS_CLOSED))
         client->recheck_at = 0;
     if (client->queued) {
@@ -1047,7 +1143,7 @@ void auth_destroy(auth_client *client)
 auth_state auth_get_state(const auth_client *client) { return client->state; }
 bool auth_busy(const auth_client *client)
 {
-    return client->queued || client->attached ||
+    return (client->validation_wait && client->recovering) || client->queued || client->attached ||
            client->state == AUTH_SERVER || client->state == AUTH_SERVER_PASSWORD ||
            client->state == AUTH_LOGIN || client->state == AUTH_WHOAMI || client->state == AUTH_LOGOUT ||
            client->state == AUTH_HEALTH || client->state == AUTH_DISCOVERY_SERVER ||
@@ -1069,6 +1165,9 @@ const char *auth_message(const auth_client *client)
         case AUTH_WHOAMI: return "Confirmando sua sessão…";
         case AUTH_LOGOUT: return "Saindo da conta…";
         case AUTH_READY:
+            if (client->ws_managed && client->ws_requested &&
+                (client->ws_validate || client->ws_validated || client->validation_wait))
+                return client->ws_active ? "Login realizado. Reconectando tempo real…" : "Tempo real aguardando esta aba ficar ativa.";
             switch (ws_get_state(client->websocket)) {
                 case WS_QUEUED: case WS_CONNECTING: return "Login realizado. Conectando tempo real…";
                 case WS_OPEN: return "Login realizado. Tempo real conectado.";
@@ -1094,7 +1193,30 @@ bool auth_connect_ws(auth_client *client)
     client->ws_requested = true;
     ws_state state = ws_get_state(client->websocket);
     if (state == WS_OPEN || state == WS_QUEUED || state == WS_CONNECTING) return true;
+    if (client->ws_managed && (client->ws_epoch || client->ws_validate || state == WS_ERROR || state == WS_CLOSED)) {
+        client->ws_retry_at = 0; client->ws_validate = true; client->ws_validated = false;
+        return true;
+    }
     return ws_connect(client->websocket, client->base);
+}
+void auth_realtime_active(auth_client *client, bool active)
+{
+    if (!client) return;
+    if (!client->ws_managed && client->validation_deadline >= 15000)
+        client->recheck_at = client->validation_deadline - 15000;
+    client->ws_managed = true;
+    client->ws_active = active;
+    ws_state state = ws_get_state(client->websocket);
+    if (!active && (state == WS_QUEUED || state == WS_CONNECTING)) {
+        ws_abort(client->websocket); client->ws_validate = true;
+    }
+}
+uint64_t auth_ws_epoch(const auth_client *client) { return client->ws_epoch; }
+bool auth_ws_reconnecting(const auth_client *client)
+{
+    return client->ws_managed && client->ws_requested &&
+           (client->ws_validate || client->ws_validated || client->validation_wait ||
+            ws_get_state(client->websocket) != WS_OPEN);
 }
 ws_state auth_ws_state(const auth_client *client) { return ws_get_state(client->websocket); }
 const char *auth_ws_message(const auth_client *client) { return ws_message(client->websocket); }

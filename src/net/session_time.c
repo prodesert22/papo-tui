@@ -73,3 +73,16 @@ bool session_time_schedule(const char *expires_at, uint64_t *deadline_ms)
     uint64_t wall_ms = (uint64_t)wall.tv_sec * 1000 + (uint64_t)wall.tv_nsec / 1000000;
     return session_time_deadline(expires, wall_ms, now, deadline_ms);
 }
+
+bool session_time_expiration(const char *expires_at, uint64_t *deadline_ms)
+{
+    uint64_t expires, now;
+    struct timespec wall;
+    if (!session_time_parse(expires_at, &expires) || !net_now_ms(&now) ||
+        clock_gettime(CLOCK_REALTIME, &wall) != 0 || wall.tv_sec < 0 ||
+        (uint64_t)wall.tv_sec > (UINT64_MAX - 999) / 1000) return false;
+    uint64_t wall_ms = (uint64_t)wall.tv_sec * 1000 + (uint64_t)wall.tv_nsec / 1000000;
+    if (expires <= wall_ms || expires - wall_ms > UINT64_MAX - now) return false;
+    *deadline_ms = now + expires - wall_ms;
+    return true;
+}

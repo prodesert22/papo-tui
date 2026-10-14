@@ -30,6 +30,8 @@ class MockServer:
         self.ws_controls = []
         self.ws_messages = []
         self.ws_connected = threading.Event()
+        self.websocket_hook = None  # Optional controlled realtime fixture.
+        self.message_hook = None
         self.stopping = threading.Event()
         outer = self
 
@@ -207,6 +209,7 @@ class MockServer:
                            'content': body['content'], 'created_at': datetime.now(timezone.utc).isoformat(),
                            'edited_at': None, 'reply_to': None, 'attachments': [], 'embeds': []}
                 outer.sent_messages.append(message)
+                if outer.message_hook: outer.message_hook(message)
                 if scenario == 'send-timeout': outer.stopping.wait(16)
                 if scenario == 'send-drop' or (scenario == 'send-drop-once' and outer.message_count == 1):
                     self.close_connection = True
@@ -260,6 +263,8 @@ class MockServer:
                     connection.send_frame(frame)
 
                 try:
+                    if outer.websocket_hook:
+                        outer.websocket_hook(connection, send)
                     if outer.scenario == "ws-invalid":
                         send('{"type":"heartbeat_ack","type":"presence_sync"}')
                     elif outer.scenario == "ws-invalid-utf8":

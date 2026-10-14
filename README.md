@@ -42,7 +42,7 @@ O editor aceita várias linhas e mantém rascunhos por servidor e conversa, com 
 
 F1 abre a ajuda e Ctrl+K filtra servidores, canais e DMs por nome. PageUp/PageDown ou a roda do mouse rolam o histórico; Home/End com foco no histórico vão ao início/fim. F2 simula a chegada de uma mensagem sem deslocar a leitura quando você estiver vendo mensagens anteriores; o indicador de novas mensagens permite voltar ao fim. Cada conversa aceita até 32 mensagens locais, somando envio e chegada simulada.
 
-Há exemplos de canal vazio, carregamento e erro recuperável: na primeira instância, **ajuda**, **ideias** e **eventos**, respectivamente. No erro, Ctrl+R, Enter com foco no histórico ou clique em **Tentar novamente** repetem o carregamento simulado. Ctrl+Q abre uma confirmação quando há rascunhos; Ctrl+C fecha diretamente. Os dados são descartados ao sair. O cadastro de perfis reais fica no login; a leitura de canais reais fica disponível após o login; o envio de texto está integrado à tela real, e a atualização automática de mensagens fica para R7.
+Há exemplos de canal vazio, carregamento e erro recuperável: na primeira instância, **ajuda**, **ideias** e **eventos**, respectivamente. No erro, Ctrl+R, Enter com foco no histórico ou clique em **Tentar novamente** repetem o carregamento simulado. Ctrl+Q abre uma confirmação quando há rascunhos; Ctrl+C fecha diretamente. Os dados são descartados ao sair. O cadastro de perfis reais fica no login; a leitura de canais reais fica disponível após o login; o envio e o recebimento automático de texto estão integrados à tela real.
 
 Use um terminal UTF-8, com pelo menos 44 colunas e 22 linhas disponíveis ao aplicativo. No tmux, reserve também as linhas da barra de status. Para compilar somente o aplicativo, use `-DBUILD_TESTING=OFF` na configuração do CMake. `--help` e `--version` funcionam fora de um terminal interativo.
 
@@ -92,13 +92,13 @@ A senha do servidor é obrigatória quando a instância se identifica como priva
 
 Se faltar a senha do servidor numa instância privada, o campo **Senha do servidor** recebe uma borda vermelha e o foco para você digitar. A senha rejeitada pelo servidor também direciona o foco a esse campo e é apagada para uma nova tentativa. O destaque sai quando você começa a corrigir o campo; confirme com Enter para tentar novamente.
 
-Depois de autenticar, a lista de canais abre automaticamente. Escolha um canal para ler suas mensagens. O aplicativo abre um WebSocket autenticado com os cookies dessa sessão e recebe eventos em memória. F6 volta à tela da conta, onde você pode renovar ou sair da sessão; **Canais / F6** reabre a leitura. Login e senha não são persistidos pelo aplicativo.
+Depois de autenticar, a lista de canais abre automaticamente. Escolha um canal para ler suas mensagens. O aplicativo abre um WebSocket autenticado com os cookies dessa sessão e aplica mensagens, edições, exclusões e mudanças de canais em memória. F6 volta à tela da conta, onde você pode renovar ou sair da sessão; **Canais / F6** reabre a leitura. Login e senha não são persistidos pelo aplicativo.
 
 **Cadastro / Ctrl+N** alterna entre login e criação de conta, preservando URL e usuário e limpando as senhas. O cadastro exige usuário com pelo menos 3 caracteres e senha com pelo menos 8 caracteres, uma letra maiúscula e um caractere especial; a instância pode impor limites adicionais. Repita a senha em **Confirmar senha**. Senhas diferentes ou confirmação vazia bloqueiam o envio e focam a confirmação. Senha curta, sem maiúscula ou sem caractere especial recebe uma mensagem específica e foco para correção. Em uma instância privada, informe também a senha do servidor. Depois de criar a conta, digite novamente a senha e confirme **Entrar**: cadastro não faz login automático. Usuário já existente recebe foco para correção; falhas de política exibem uma mensagem sem revelar detalhes remotos.
 
-A sessão é revalidada por REST a cada 30 segundos; heartbeat/ACK do WebSocket não comprova autenticação. A primeira renovação ocorre até 30 segundos após o login e as seguintes são agendadas antes da expiração informada pelo servidor. **Renovar / Ctrl+R** antecipa a renovação. Falhas de autenticação, revogação, banimento ou identidade incompatível limpam a sessão e devolvem o foco à senha para novo login.
+A sessão é revalidada por REST em intervalos de até 30 segundos; heartbeat/ACK do WebSocket não comprova autenticação. A primeira renovação ocorre até 30 segundos após o login e as seguintes são agendadas antes da expiração informada pelo servidor. **Renovar / Ctrl+R** antecipa a renovação. Falhas de autenticação, revogação, banimento ou identidade incompatível limpam a sessão e devolvem o foco à senha para novo login.
 
-Falhas de tempo real aparecem na área de estado. Nessa situação, **Reconectar / Ctrl+R** refaz a conexão sem repetir o login, quando a sessão REST continua válida. **Sair da conta** encerra a sessão local mesmo se a revogação remota falhar; a tela informa quando ela não foi confirmada. Logout durante uma renovação aguarda sua resposta para usar o cookie atualizado.
+Falhas de tempo real aparecem na área de estado. A aba ativa tenta reconectar automaticamente, com esperas de 1, 2, 4, 8, 16 e até 30 segundos, com variação de até 20% e teto de 30 segundos. **Reconectar / Ctrl+R** antecipa a tentativa; a sessão é revalidada por REST antes de reabrir a conexão. Abas inativas mantêm conexões já abertas, mas aguardam voltar ao foco para iniciar novas tentativas. **Sair da conta** encerra a sessão local mesmo se a revogação remota falhar; a tela informa quando ela não foi confirmada. Logout durante uma renovação aguarda sua resposta para usar o cookie atualizado.
 
 As requisições compartilham um limite global configurável, com padrão de 10 por segundo e burst de 25. O envio aguarda capacidade sem bloquear a interface. HTTP 429 informa o limite atingido e adia novas tentativas conforme `Retry-After`, sem reenviar a solicitação automaticamente.
 
@@ -172,7 +172,7 @@ As ferramentas em `tools/` auxiliam a validação do contrato durante o desenvol
 - [x] R4: cadastro, login público/privado, renovação serializada, revogação e logout, com identidade REST/WS e cookies somente em memória.
 - [x] R5: canais ordenados, tópicos, histórico paginado, autores e metadados em modo de leitura.
 - [x] R6: envio multipart, rascunhos por sessão/canal, confirmação no histórico e retry manual com resultado incerto.
-- [ ] Atualização automática de conversas pelo backend (R7).
+- [x] R7: eventos em tempo real, reconciliação REST/WS, reconexão automática e recuperação da janela carregada.
 
 ## Conversar em canais
 
@@ -180,19 +180,21 @@ Após entrar, a lista de canais abre automaticamente. F6 volta à tela da conta;
 
 A tela segue o layout da demonstração: abas de servidores no topo, com linha separadora e uma linha de margem abaixo, canais à esquerda, histórico e área de edição no painel central. **+ Adicionar**, à direita das abas, abre o formulário de login/cadastro de outro servidor. Depois do login, a nova conexão aparece em uma aba; clique nas abas para trocar de servidor. As sessões ficam separadas e abertas somente nesta execução, até o limite de 64 conexões. Entrar novamente na mesma URL substitui sua conexão anterior. Esc no formulário de adição volta ao servidor anterior; se houver uma conexão em andamento, Esc primeiro a cancela.
 
-No histórico, ↑/↓ e PageUp/PageDown rolam o texto. Home vai ao início da janela carregada; pressione PageUp nesse ponto para buscar a página anterior sem deslocar a mensagem que está lendo. End consulta novamente a página recente. Ctrl+R atualiza o canal aberto ou repete a consulta que falhou; uma falha ao buscar mensagens antigas mantém a janela atual para nova tentativa.
+No histórico, ↑/↓ e PageUp/PageDown rolam o texto. Home vai ao início da janela carregada; pressione PageUp nesse ponto para buscar a página anterior sem deslocar a mensagem que está lendo. End consulta novamente a página recente. Ctrl+R antecipa a reconexão quando desconectado; conectado, atualiza o canal aberto ou repete a consulta que falhou; uma falha ao buscar mensagens antigas mantém a janela atual para nova tentativa.
 
 Ao abrir a leitura, o foco começa nas abas. Use ←/→ para escolher o servidor ou destacar **+ Adicionar**, e Enter para abrir o formulário. O botão fica branco sem foco e laranja ao selecionar, quando aparece como **>+ Adicionar<**. ↓ entra na lista de canais.
 
 Em tela ampla, Tab/Shift+Tab alternam entre abas, canais, histórico e editor quando há um canal de texto aberto. ← nos canais, ou ↑ no primeiro canal, volta às abas; ←/→ nas abas trocam de servidor e Enter em **+ Adicionar** abre o formulário. ↓ nas abas foca os canais. Esc sai do editor para o histórico; nos demais painéis, alterna canais/histórico. Abaixo de 80 colunas, Tab/Shift+Tab e os controles **Canais / Conversa** alternam o painel visível. F6 volta à conta, Ctrl+L sai da conta e remove sua aba, Ctrl+P abre a seleção de perfil encerrando a sessão local atual, e Ctrl+Q/Ctrl+C fecha o programa. O mínimo dessa tela é 44×14; para abrir o formulário, amplie para 44×22.
 
-Mensagens aparecem em ordem cronológica, com data, autor, indicação de edição e referências de resposta. Anexos e embeds mostram metadados em texto, sem abrir URLs ou baixar mídia. Autores ausentes têm um rótulo de indisponibilidade. Ao abrir um canal de texto, digite para focar o editor, incluindo o primeiro caractere. Enter no histórico também foca o editor. Enter no editor envia, Ctrl+N insere uma nova linha e colagem delimitada preserva linhas sem enviar. Setas, Home/End, Backspace e Delete editam grafemas; clique no editor para posicionar o cursor. Esc volta ao histórico. A área em foco recebe um fundo discretamente mais claro. Mensagens enviadas aparecem após confirmação; para receber mensagens de outras contas, atualize a página recente com Ctrl+R ou End.
+Mensagens aparecem em ordem cronológica, com data, autor, indicação de edição e referências de resposta. Anexos e embeds mostram metadados em texto, sem abrir URLs ou baixar mídia. Autores ausentes têm um rótulo de indisponibilidade. Ao abrir um canal de texto, digite para focar o editor, incluindo o primeiro caractere. Enter no histórico também foca o editor. Enter no editor envia, Ctrl+N insere uma nova linha e colagem delimitada preserva linhas sem enviar. Setas, Home/End, Backspace e Delete editam grafemas; clique no editor para posicionar o cursor. Esc volta ao histórico. A área em foco recebe um fundo discretamente mais claro. Mensagens de outras contas chegam automaticamente. Eventos repetidos e confirmações REST/WS da mesma mensagem são reconciliados pelo ID. A tela acompanha novas mensagens quando você está no fim; ao ler mensagens anteriores, indica novidades sem mover a leitura. End ou clique no indicador volta ao fim.
 
 A janela em memória contém até 1.000 mensagens ou 4 MiB de JSON serializado. Ao carregar páginas antigas além desse limite, libera mensagens recentes; End volta a consultá-las. Trocar de canal ou servidor descarta seu histórico local. As abas, sessões e mensagens não são salvas no disco, e abrir a lista de canais não consulta seus históricos em segundo plano.
 
 Rascunhos e cursor ficam em memória por sessão e canal, inclusive ao trocar de servidor ou voltar à conta com F6. Você pode continuar digitando durante o envio; a confirmação remove somente o texto enviado que permaneceu intacto. Texto reescrito e continuação são preservados. Sair da conta, substituir a conexão da mesma URL ou fechar o programa descarta esses dados. O editor aceita até 2048 caracteres Unicode/8192 bytes UTF-8; cada sessão guarda até 64 rascunhos e 32 operações.
 
 O editor informa quando o envio está aguardando, enviando, confirmado, rejeitado ou sem confirmação. Falhas preservam o texto. **Ctrl+T** tenta novamente o texto do último envio com falha no canal atual. Timeout ou resposta perdida podem ocorrer após a criação da mensagem; nesse caso, Enter ou Ctrl+T abre uma confirmação, inicialmente em **Cancelar**. Se desejar reenviar mesmo com possibilidade de duplicação, escolha **Reenviar** com → ou clique e confirme. Não há reenvio automático.
+
+Após uma queda, a aba ativa revalida a sessão, atualiza canais e recupera mensagens novas e a janela de histórico carregada, incluindo edições e exclusões ocorridas offline. Rascunhos e posição de leitura são preservados enquanto suas mensagens ainda estiverem disponíveis. Os limites de memória continuam valendo; se a mensagem usada como referência desaparecer, a leitura usa a próxima sobrevivente, ou a anterior. A recuperação não oferece replay completo: alterações fora da janela são consultadas ao abrir novamente esse trecho. Nenhum envio pendente é repetido automaticamente.
 
 ## Testes
 
@@ -252,6 +254,15 @@ build/test-env/bin/python -m tools.check_r6 --backend-binary /caminho/papo-serve
 ```
 
 A ferramenta cria somente usuários/canais/mensagens temporários, confirma uma conversa A→B/B→A pela tela real, edição na PTY, perda de confirmação e timeout após criação. O POST incerto exige tentativa manual com indicação de possível duplicação. O banco de origem é apenas lido; recursos temporários são removidos ao terminar. Os resultados sem credenciais ficam em `build/r6/validation/summary.json`. O observador `send-terminal-probe` pertence às ferramentas de desenvolvimento e não substitui a tela de conversas do programa.
+
+R7 acrescenta as suítes `realtime-integration`, `realtime-terminal` e `websocket-partial-output`, cobrindo concorrência REST/WS, eventos parciais, exclusões, reconexão, leitura preservada e escritas parciais. Para validar duas contas na tela real com HTTPS/WSS e banco temporário:
+
+```sh
+go build -o build/integration/tls-proxy tools/tls_proxy.go
+build/test-env/bin/python -m tools.check_r7 --backend-binary /caminho/papo-server --tls-proxy build/integration/tls-proxy
+```
+
+O roteiro simula indisponibilidade no proxy de desenvolvimento e produz mensagens, edições e exclusões enquanto os clientes estão desconectados. Recursos temporários são removidos ao terminar; evidências sem credenciais ficam em `build/r7/validation/summary.json`.
 
 A suíte `api-contract` valida 51 fixtures REST e 17 exemplos WS, cursor composto com timestamps iguais, limites de lote, YAML 1.2, isolamento de cookies e relatórios sem segredos. Regerar o inventário local e os exemplos após uma mudança no contrato:
 

@@ -1,0 +1,112 @@
+"""R7 through the actual conversation screen in a pseudoterminal."""
+import time
+import unittest
+from realtime_mock import RealtimeMock
+from history_mock import CHANNEL, uuid, STAMP
+import test_send_product as product
+
+
+class RealtimeTerminal(unittest.TestCase):
+    screen = product.SendProduct.screen
+    wait = product.SendProduct.wait
+    open = product.SendProduct.open
+    editor_text = product.SendProduct.editor_text
+
+    def test_receive_and_duplicate_without_manual_read(self):
+        with RealtimeMock() as server:
+            terminal = self.open(server)
+            try:
+                m = server.message(4); m['content'] = 'Recebida automaticamente á'
+                server.emit(dict(m, type='message'), fragmented=True)
+                self.wait(terminal, m['content'])
+                server.emit(dict(m, type='message')); terminal.read(.2)
+                self.assertEqual(self.screen(terminal).count(m['content']), 1)
+                self.assertEqual(sum('/messages' in r[1] for r in server.requests), 1)
+            finally: self.assertTrue(terminal.close())
+
+    def test_scrolled_history_indicates_new_messages_and_deleted_anchor(self):
+        with RealtimeMock(count=50) as server:
+            terminal = self.open(server)
+            try:
+                terminal.send('\x1bOH')
+                self.wait(terminal, 'Mensagem 0001')
+                before = terminal.screen.display[8:12]
+                m = server.message(51); m['content'] = 'Novidade fora da leitura'
+                server.emit(dict(m, type='message'))
+                self.wait(terminal, '1 novas mensagens')
+                self.assertEqual(before, terminal.screen.display[8:12])
+                server.emit({'type': 'message_delete', 'channel_id': CHANNEL, 'id': uuid(101)})
+                terminal.read(.3)
+                self.assertIn('Mensagem 0002', self.screen(terminal))
+                terminal.send('\x1bOF')
+                self.wait(terminal, m['content'])
+                self.assertNotIn('novas mensagens', self.screen(terminal))
+            finally: self.assertTrue(terminal.close())
+
+    def test_reconnect_keeps_draft_resize_and_offline_changes(self):
+        with RealtimeMock() as server:
+            terminal = self.open(server)
+            try:
+                terminal.send('Rascunho preservado')
+                server.offline = True; server.disconnect()
+                self.wait(terminal, 'Reconectando')
+                terminal.send(' durante a queda')
+                terminal.resize(22, 60)
+                self.assertIn('Rascunho preservado', self.editor_text(terminal))
+                with server.lock:
+                    server.messages[-1]['content'] = 'Edição offline recuperada'
+                    server.messages[-1]['edited_at'] = STAMP
+                    server.messages.pop(0)
+                server.offline = False
+                self.wait(terminal, 'Edição offline recuperada')
+                self.assertIn('durante a queda', self.editor_text(terminal))
+                self.assertFalse(any(r[0] == 'POST' and r[1].endswith('/messages') for r in server.requests))
+            finally: self.assertTrue(terminal.close())
+
+    def test_concurrent_ws_and_post_confirmation_preserve_edit(self):
+        with RealtimeMock(count=0) as server:
+            def created(message):
+                server.emit(dict(message, type='message'))
+                server.emit({'type': 'message_edit', 'id': message['id'], 'channel_id': CHANNEL,
+                             'content': 'Editada antes da confirmação', 'edited_at': STAMP})
+                time.sleep(.4)
+            server.message_hook = created
+            terminal = self.open(server)
+            try:
+                terminal.send('Texto enviado\ncontinuação')
+                self.wait(terminal, 'Mensagem confirmada')
+                self.wait(terminal, 'Editada antes da confirmação')
+                self.assertIn('continuação', self.editor_text(terminal))
+                self.assertNotIn('Texto enviado', self.editor_text(terminal))
+                self.assertNotIn('Texto enviado', self.screen(terminal))
+                self.assertEqual(server.message_count, 1)
+            finally: self.assertTrue(terminal.close())
+
+    def test_remote_controls_and_channel_deletion_do_not_submit_draft(self):
+        with RealtimeMock() as server:
+            terminal = self.open(server)
+            try:
+                terminal.send('Rascunho do canal removido')
+                m = server.message(4); m['content'] = 'Texto\u001b]52;c;REMOTE\u0007fim'
+                server.emit(dict(m, type='message')); terminal.read(.3)
+                self.assertNotIn(b'\x1b]52;c;REMOTE', terminal.output)
+                server.emit({'type': 'channel_delete', 'channel_id': CHANNEL})
+                self.wait(terminal, 'Canal removido')
+                terminal.send('\n'); terminal.read(.2)
+                self.assertEqual(server.message_count, 0)
+            finally: self.assertTrue(terminal.close())
+
+    def test_initial_identity_failure_does_not_create_recovery_session(self):
+        with RealtimeMock() as server:
+            route = server.route
+            server.api_handler = lambda method, path, body: (503, None) if path.endswith('/auth/whoami') else route(method, path, body)
+            terminal = product.Terminal()
+            try:
+                terminal.send(server.url + '\tjosé\tSynthetic!123\n')
+                self.wait(terminal, 'Serviço indisponível')
+                self.assertIn('[ Entrar ]', self.screen(terminal))
+                self.assertFalse(any(r[1].endswith('/ws') for r in server.requests))
+            finally: self.assertTrue(terminal.close())
+
+
+if __name__ == '__main__': unittest.main()

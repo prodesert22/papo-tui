@@ -107,6 +107,12 @@ const char *auth_username(const auth_client *client);
 const char *auth_server_name(const auth_client *client);
 /* WS is explicitly started after REST confirms the session. */
 bool auth_connect_ws(auth_client *client);
+/* Enables automatic recovery only for the foreground context. Existing open
+ * sockets still receive maintenance when inactive. No REST or WS I/O here. */
+void auth_realtime_active(auth_client *client, bool active);
+/* Monotonic connection incarnation; changes only after a successful upgrade. */
+uint64_t auth_ws_epoch(const auth_client *client);
+bool auth_ws_reconnecting(const auth_client *client);
 ws_state auth_ws_state(const auth_client *client);
 const char *auth_ws_message(const auth_client *client);
 long auth_ws_http_status(const auth_client *client);

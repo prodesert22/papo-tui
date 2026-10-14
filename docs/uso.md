@@ -121,11 +121,11 @@ Se a autorização privada expirar, o campo **Senha do servidor** é limpo, rece
 
 Depois de autenticar, a lista de canais abre automaticamente para ler e enviar mensagens de texto. F6 volta à tela da conta, onde você pode renovar ou sair da sessão e reabrir os canais. **--demo** continua usando dados locais simulados.
 
-A sessão é revalidada por REST a cada 30 segundos. A primeira renovação ocorre até 30 segundos após o login; as seguintes são agendadas antes da expiração informada pelo servidor, com margem de 60 segundos para sessões longas. Validades curtas usam um intervalo menor. **Renovar / Ctrl+R** permite renovar imediatamente. Os campos ficam bloqueados enquanto uma operação aguarda resposta; Esc cancela a operação e encerra a sessão local.
+A sessão é revalidada por REST em intervalos de até 30 segundos. A primeira renovação ocorre até 30 segundos após o login; as seguintes são agendadas antes da expiração informada pelo servidor, com margem de 60 segundos para sessões longas. Validades curtas usam um intervalo menor. **Renovar / Ctrl+R** permite renovar imediatamente. Os campos ficam bloqueados enquanto uma operação aguarda resposta; Esc cancela a operação e encerra a sessão local.
 
 A aplicação realiza uma renovação por vez e confirma a identidade depois de receber o novo cookie. Consultas que receberem 401 podem tentar uma única renovação. Se ela falhar, ou se a sessão for revogada, a conta for bloqueada ou a identidade não puder ser confirmada, os cookies e eventos locais são descartados e a senha recebe foco para novo login. Cadastro, login e outras mutações não são repetidos automaticamente.
 
-Heartbeat/ACK de tempo real não comprova autenticação. Quando a conexão de tempo real é interrompida, **Reconectar / Ctrl+R** aparece para refazê-la enquanto a sessão REST continua válida. Falhas de rede e de autenticação aparecem na área de estado.
+Heartbeat/ACK de tempo real não comprova autenticação. Quando o tempo real é interrompido, a aba ativa tenta reconectar automaticamente após revalidar a sessão por REST. As esperas crescem de 1 até 30 segundos, com variação de até 20% e teto de 30 segundos. **Reconectar / Ctrl+R** antecipa uma tentativa. Abas inativas mantêm conexões já abertas, mas suspendem novas tentativas até você voltar a elas. Falhas de rede e de autenticação aparecem na área de estado.
 
 **Sair da conta** fecha a conexão de tempo real, solicita a revogação e limpa a sessão local. Durante uma renovação já enviada, aguarda sua resposta para revogar com o cookie atualizado. Se não conseguir confirmar a revogação remota, informa isso e conclui a limpeza local. Reabrir o programa sempre exige login; senhas e cookies não são persistidos.
 
@@ -187,8 +187,8 @@ Abrir a lista não lê mensagens. Apenas o canal que você abre tem seu históri
 | ↑ / ↓ no histórico | Rolar uma linha |
 | PageUp / PageDown | Rolar uma página; PageUp no início carrega mensagens anteriores |
 | Home no histórico | Ir ao início da janela carregada |
-| End no histórico | Consultar novamente a página recente e ir ao fim |
-| Ctrl+R | Atualizar o canal aberto ou tentar novamente após uma falha |
+| End no histórico | Voltar ao fim das novidades; sem indicador, consultar a página recente |
+| Ctrl+R | Antecipar reconexão quando desconectado; conectado, atualizar o canal aberto ou tentar novamente |
 | Digitar; Enter no histórico | Focar o editor do canal de texto |
 | Enter no editor | Enviar o texto |
 | Ctrl+N na conversa | Focar o editor e inserir uma quebra de linha |
@@ -205,9 +205,13 @@ Abrir a lista não lê mensagens. Apenas o canal que você abre tem seu históri
 
 As páginas chegam em grupos de até 100 mensagens e aparecem em ordem cronológica. Ao alcançar o começo da janela, pressione PageUp para carregar uma página anterior. A mensagem e o trecho que estavam no topo continuam no mesmo lugar, inclusive após redimensionar o terminal. Use Home depois do carregamento para ver o novo início. End volta à página recente.
 
-A tela mostra tópico, timestamps, autor ou **Autor indisponível**, indicação e data de edição, texto ausente e resposta cuja mensagem não está na janela atual. Anexos mostram nome, tipo, tamanho e moderação; embeds mostram seus textos e referências de mídia. URLs são apenas texto e não são abertas. O editor aceita texto em canais de texto. Digitar a partir da conversa foca o editor e inclui o primeiro caractere. Enter envia; Ctrl+N insere uma quebra de linha. Você pode continuar editando, mudar de canal ou redimensionar durante o envio. A confirmação inclui a mensagem no histórico e remove somente o texto enviado que permaneceu intacto, preservando continuação e texto reescrito. Atualize o histórico para consultar mensagens de outras contas; recebimento automático será integrado em R7.
+A tela mostra tópico, timestamps, autor ou **Autor indisponível**, indicação e data de edição, texto ausente e resposta cuja mensagem não está na janela atual. Anexos mostram nome, tipo, tamanho e moderação; embeds mostram seus textos e referências de mídia. URLs são apenas texto e não são abertas. O editor aceita texto em canais de texto. Digitar a partir da conversa foca o editor e inclui o primeiro caractere. Enter envia; Ctrl+N insere uma quebra de linha. Você pode continuar editando, mudar de canal ou redimensionar durante o envio. A confirmação inclui a mensagem no histórico e remove somente o texto enviado que permaneceu intacto, preservando continuação e texto reescrito. Mensagens de outras contas chegam automaticamente; edições, exclusões e mudanças de canais também atualizam a tela. Eventos repetidos e confirmações REST/WS são reconciliados pelo ID da mensagem. Quando você está no fim, a tela acompanha novas mensagens; ao ler mensagens anteriores, mostra um indicador sem deslocar a leitura. End ou clique nesse indicador volta ao fim.
 
 A janela guarda até 1.000 mensagens ou 4 MiB de JSON serializado. Carregar páginas antigas além desse limite libera mensagens recentes; End consulta-as novamente. Não há histórico salvo no disco. Trocar de canal ou servidor libera a janela anterior; voltar exige abrir um canal para uma nova consulta. F6 descarta a janela ao voltar à conta.
+
+Após uma queda, a conexão ativa recupera mensagens posteriores ao cursor conhecido e recarrega a janela de histórico que estava aberta, incluindo edições e exclusões ocorridas offline. Canais e nomes de autores também são atualizados. A tela informa reconexão e recuperação, e continua aceitando edição, resize e saída. Falhas transitórias durante essa recuperação são repetidas com espera crescente, respeitando o orçamento global e `Retry-After`.
+
+Rascunhos e posição de leitura são preservados dentro dos limites de memória. Se a mensagem usada como referência for excluída, a leitura passa à próxima sobrevivente, ou à anterior. O backend não oferece replay completo: alterações fora da janela recarregada aparecem quando você consultar aquele trecho novamente. Nenhuma mutação ou envio incerto é repetido automaticamente. Excluir remotamente o canal aberto desabilita seu editor e preserva o rascunho em memória até encerrar a sessão.
 
 Uma falha de página antiga preserva as mensagens já carregadas e o ponto de leitura. Ctrl+R tenta novamente a consulta que falhou. HTTP 429 aguarda o cooldown global e exige nova tentativa manual; nenhuma leitura fica repetindo automaticamente após erro. Canais sem mensagens, sem permissão ou removidos têm uma mensagem própria.
 

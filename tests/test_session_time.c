@@ -1,4 +1,5 @@
 #include "net/session_time.h"
+#include "net/retry.h"
 #include <stdio.h>
 #include <stdint.h>
 #include <stddef.h>
@@ -25,5 +26,13 @@ int main(void)
     CHECK(!session_time_deadline(1000, 1000, 500, &deadline));
     CHECK(!session_time_deadline(1999, 1000, 500, &deadline));
     CHECK(!session_time_deadline(61000, 1000, UINT64_MAX - 10, &deadline));
+    const unsigned lower[] = {800, 1600, 3200, 6400, 12800, 24000};
+    const unsigned upper[] = {1200, 2400, 4800, 9600, 19200, 30000};
+    for (unsigned n = 0; n < 12; ++n)
+        for (unsigned seed = 0; seed < 100000; seed += 997) {
+            uint64_t delay = net_retry_ms(n, seed);
+            CHECK(delay >= lower[n < 5 ? n : 5] && delay <= upper[n < 5 ? n : 5]);
+        }
+    CHECK(!session_time_expiration("2000-01-01T00:00:00Z", &deadline));
     return 0;
 }

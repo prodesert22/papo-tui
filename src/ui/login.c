@@ -765,6 +765,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         bool before_busy = auth_busy(client);
         bool before_session = auth_has_session(client);
         ws_state ws_before = auth_ws_state(client);
+        auth_realtime_active(client, true);
         auth_poll(client);
         send_editor_poll(instances_editor(connections, client));
         if (before != auth_get_state(client) || before_busy != auth_busy(client)) redraw = true;

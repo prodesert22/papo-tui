@@ -68,6 +68,7 @@ bool instances_poll(instance_connections *connections, auth_client *active)
     bool changed = false;
     for (size_t i = 0; i < connections->count; ++i) {
         auth_client *auth = connections->items[i].auth;
+        auth_realtime_active(auth, auth == active);
         if (auth == active) continue;
         auth_state before = auth_get_state(auth);
         bool session = auth_has_session(auth);

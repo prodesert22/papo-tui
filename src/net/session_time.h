@@ -10,5 +10,6 @@ bool session_time_parse(const char *value, uint64_t *epoch_ms);
 bool session_time_deadline(uint64_t expires_ms, uint64_t wall_ms, uint64_t monotonic_ms,
                            uint64_t *deadline_ms);
 bool session_time_schedule(const char *expires_at, uint64_t *deadline_ms);
+bool session_time_expiration(const char *expires_at, uint64_t *deadline_ms);
 
 #endif
