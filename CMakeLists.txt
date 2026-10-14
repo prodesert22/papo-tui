@@ -68,7 +68,7 @@ add_library(papo_send_editor src/ui/send_editor.c src/ui/text.c src/app/instance
 target_link_libraries(papo_send_editor PUBLIC papo_outbox papo_sessions PkgConfig::NCURSES PkgConfig::UNIBREAK)
 target_compile_options(papo_send_editor PRIVATE -Wall -Wextra -Wpedantic -Werror)
 
-add_library(papo_media src/ui/media.c src/ui/image_decode.c src/ui/graphics.c src/ui/sixel.c src/ui/message_blocks.c)
+add_library(papo_media src/ui/media.c src/ui/media_layout.c src/ui/image_decode.c src/ui/graphics.c src/ui/sixel.c src/ui/message_blocks.c)
 target_link_libraries(papo_media PUBLIC papo_send_editor PkgConfig::SIXEL PkgConfig::CHAFA PkgConfig::MPV
     PkgConfig::AVFORMAT PkgConfig::AVCODEC PkgConfig::AVUTIL PkgConfig::SWSCALE Threads::Threads m)
 target_compile_options(papo_media PRIVATE -Wall -Wextra -Wpedantic -Werror)
@@ -95,6 +95,12 @@ if(BUILD_TESTING)
     target_link_libraries(media-test PRIVATE papo_media)
     target_compile_options(media-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
     add_test(NAME media-layout-sixel COMMAND media-test)
+    add_executable(media-modal-probe tests/media_modal_probe.c src/ui/theme.c src/ui/button.c)
+    target_link_libraries(media-modal-probe PRIVATE papo_media)
+    target_compile_options(media-modal-probe PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_test(NAME media-modal-terminal COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_media_modal.py $<TARGET_FILE:media-modal-probe>)
+    set_tests_properties(media-modal-terminal PROPERTIES TIMEOUT 30)
     add_executable(image-decode-test tests/test_image_decode.c)
     target_link_libraries(image-decode-test PRIVATE papo_media)
     target_compile_options(image-decode-test PRIVATE -Wall -Wextra -Wpedantic -Werror)

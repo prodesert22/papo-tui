@@ -2,6 +2,8 @@
 #include "ui/media.h"
 #include "ui/graphics.h"
 #include "ui/image_decode.h"
+#include "ui/media_layout.h"
+#include "ui/button.h"
 #include "ui/text.h"
 #include "ui/theme.h"
 #include "net/media.h"
@@ -12,6 +14,7 @@
 #include <mpv/render.h>
 #include <pthread.h>
 #include <math.h>
+#include <inttypes.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -75,6 +78,9 @@ struct media_view {
     double position, duration, volume;
     enum { MODAL_NONE, MODAL_LIST, MODAL_LOADING, MODAL_PLAYING, MODAL_ERROR } modal;
     WINDOW *window;
+    media_modal_layout layout;
+    bool info_open, info_focused;
+    int info_scroll, info_rows;
     int selected, modal_entry, modal_width, modal_height;
     message_media selected_item;
     uint64_t modal_token;
@@ -297,6 +303,8 @@ static void close_modal(media_view *v)
     animation_free(v->modal_animation); v->modal_animation = NULL; v->modal_encoding = false;
     graphics_image_free(&v->modal_image); v->modal = MODAL_NONE; v->modal_entry = -1;
     v->modal_token = 0; v->modal_error = NULL;
+    v->info_open = v->info_focused = false; v->info_scroll = v->info_rows = 0;
+    v->modal_width = v->modal_height = 0;
 }
 void media_view_reset(media_view *v)
 {
@@ -438,6 +446,38 @@ static void geometry(int columns, int rows, int *w, int *h)
     if (*h > 360) *h = 360;
 
 }
+static bool modal_layout_update(media_view *v)
+{
+    media_modal_layout layout;
+    if (!media_modal_geometry(COLS, LINES, v->info_open && v->modal != MODAL_LIST,
+                              v->modal_image.columns, v->modal_image.rows, &layout)) return false;
+    int width, height; geometry(layout.area_width, layout.area_height, &width, &height);
+    if (v->modal_token && (width != v->modal_width || height != v->modal_height)) {
+        bool reload = v->selected_item.video || !v->modal_image.data;
+        if (v->modal_image.data && !v->selected_item.video) {
+            int source_w = v->modal_image.source_width, source_h = v->modal_image.source_height;
+            if (source_w > 0 && source_h > 0) {
+                double scale = fmin(1, fmin((double)width / source_w, (double)height / source_h));
+                int w = (int)(source_w * scale), h = (int)(source_h * scale);
+                if (w < 1) w = 1;
+                if (h < 1) h = 1;
+                reload = v->modal_image.width != w || v->modal_image.height != h;
+            } else reload = v->modal_image.width > width || v->modal_image.height > height;
+        }
+        if (reload) {
+            v->modal_token = 0; v->modal_encoding = false;
+            animation_free(v->modal_animation); v->modal_animation = NULL;
+            graphics_image_free(&v->modal_image);
+            if (v->modal == MODAL_PLAYING) v->modal = MODAL_LOADING;
+        }
+    }
+    if (v->window && (getmaxx(v->window) != layout.width || getmaxy(v->window) != layout.height ||
+                      getbegx(v->window) != layout.x || getbegy(v->window) != layout.y)) {
+        delwin(v->window); v->window = NULL;
+    }
+    v->modal_width = width; v->modal_height = height; v->layout = layout;
+    return true;
+}
 bool media_view_poll(media_view *v, history *h)
 {
     if (!v) return false;
@@ -512,16 +552,17 @@ bool media_view_poll(media_view *v, history *h)
         changed = true;
     }
     if (v->modal != MODAL_NONE && v->modal != MODAL_LIST && v->modal != MODAL_ERROR && v->modal_entry >= 0) {
+        if (!modal_layout_update(v)) return changed;
         cache_entry *e = &v->cache[v->modal_entry];
         if (e->state == ENTRY_ERROR) { v->modal_error = e->error; v->modal = MODAL_ERROR; changed = true; }
         else if (!e->path && v->fetching < 0) changed |= request_entry(v, v->modal_entry);
         else if (e->path && (!v->modal_token || (v->modal_animation && !v->modal_encoding && now - v->modal_presented >= 67 && animation_frame_at(v->modal_animation, v->modal_epoch, now) != v->modal_frame))) {
-            int w, height; geometry(COLS - 10, LINES - 11, &w, &height);
+            int w = v->modal_width, height = v->modal_height;
             if (w > 0 && height > 0) {
                 v->modal_token = ++v->serial;
                 v->modal_requested_frame = v->modal_animation ? animation_frame_at(v->modal_animation, v->modal_epoch, now) : 0;
                 job task = {.path = e->path, .token = v->modal_token, .width = w, .height = height,
-                    .video = e->item.video, .native = native_media(&e->item), .animation = v->modal_animation,
+                    .video = e->item.video, .native = !e->item.video, .animation = v->modal_animation,
                     .frame = v->modal_requested_frame, .image_id = v->modal_image.id};
                 v->modal_encoding = true;
                 if (!submit_job(v, &task)) { v->modal_error = "Não foi possível preparar o player."; v->modal = MODAL_ERROR; }
@@ -605,7 +646,26 @@ bool media_view_key(media_view *v, int type, wint_t key)
         if ((type == OK && (key == '\n' || key == '\r')) || (type == KEY_CODE_YES && key == KEY_ENTER)) select_item(v, v->selected);
         return true;
     }
-    if (v->modal == MODAL_ERROR && type == OK && (key == '\r' || key == '\n') && v->modal_entry >= 0 && graphics_terminal_get().supported) {
+    if (v->modal != MODAL_LIST) {
+        bool toggle = (type == OK && key == 'i') || (type == KEY_CODE_YES && key == KEY_F(8));
+        if ((type == OK && key == '\t') || (type == KEY_CODE_YES && key == KEY_BTAB)) {
+            v->info_focused = !v->info_focused; return true;
+        }
+        if (v->info_focused && ((type == OK && (key == '\n' || key == '\r')) ||
+                               (type == KEY_CODE_YES && key == KEY_ENTER))) toggle = true;
+        if (toggle) {
+            v->info_open = !v->info_open; v->info_scroll = 0;
+            if (key == 'i' || key == KEY_F(8)) v->info_focused = false;
+            return true;
+        }
+        if (v->info_open && type == KEY_CODE_YES && (key == KEY_PPAGE || key == KEY_NPAGE)) {
+            media_view_scroll(v, v->layout.y + 2, v->layout.info_x, key == KEY_PPAGE ? -5 : 5);
+            return true;
+        }
+    }
+    if (v->modal == MODAL_ERROR && ((type == OK && (key == '\r' || key == '\n')) ||
+                                  (type == KEY_CODE_YES && key == KEY_ENTER)) &&
+        v->modal_entry >= 0 && graphics_terminal_get().supported) {
         delete_entry(&v->cache[v->modal_entry]); v->cache[v->modal_entry].item = v->selected_item;
         v->modal = MODAL_LOADING; v->modal_token = 0; return true;
     }
@@ -619,16 +679,33 @@ bool media_view_key(media_view *v, int type, wint_t key)
     pthread_cond_signal(&v->wake); pthread_mutex_unlock(&v->lock);
     return true;
 }
+bool media_view_scroll(media_view *v, int y, int x, int delta)
+{
+    if (!v || !media_view_modal(v) || !v->info_open || !modal_layout_update(v) ||
+        x < v->layout.info_x || x >= v->layout.info_x + v->layout.info_width ||
+        y <= v->layout.y || y >= v->layout.y + v->layout.height - 1) return false;
+    int maximum = v->info_rows - (v->layout.height - 4);
+    if (maximum < 0) maximum = 0;
+    if (delta < 0) v->info_scroll = v->info_scroll < -delta ? 0 : v->info_scroll + delta;
+    else v->info_scroll = delta > maximum - v->info_scroll ? maximum : v->info_scroll + delta;
+    return true;
+}
 bool media_view_click(media_view *v, int y, int x)
 {
     if (!v) return false;
-    if (v->modal == MODAL_LIST && v->window) {
-        int row = y - getbegy(v->window) - 2;
-        int first = v->selected >= getmaxy(v->window) - 5 ? v->selected - (getmaxy(v->window) - 6) : 0;
-        if (row >= 0 && row < getmaxy(v->window) - 4 && first + row < v->visible_count) select_item(v, first + row);
+    if (media_view_modal(v)) {
+        if (!modal_layout_update(v) || !media_modal_contains(&v->layout, y, x)) { close_modal(v); return true; }
+        if (v->modal == MODAL_LIST) {
+            int row = y - v->layout.y - 2;
+            int first = v->selected >= v->layout.height - 5 ? v->selected - (v->layout.height - 6) : 0;
+            if (x > v->layout.x && x < v->layout.x + v->layout.width - 1 &&
+                row >= 0 && row < v->layout.height - 4 && first + row < v->visible_count) select_item(v, first + row);
+        } else if (y == v->layout.button_y && x >= v->layout.button_x &&
+                   x < v->layout.button_x + v->layout.button_width) {
+            v->info_open = !v->info_open; v->info_scroll = 0; v->info_focused = true;
+        }
         return true;
     }
-    if (media_view_modal(v)) return true;
     for (int i = 0; i < v->visible_count; ++i) {
         placement *p = &v->visible[i];
         int height = p->height - p->top - p->bottom;
@@ -637,6 +714,55 @@ bool media_view_click(media_view *v, int y, int x)
     }
     return false;
 }
+static void draw_properties(media_view *v, WINDOW *w)
+{
+    if (!v->info_open) return;
+    media_modal_layout *g = &v->layout;
+    int left = g->info_x - g->x, width = g->info_width - 2, available = g->height - 4;
+    if (width < 1 || available < 1) return;
+    wattrset(w, COLOR_PAIR(PANEL_MUTED)); mvwvline(w, 1, left - 1, ACS_VLINE, g->height - 2);
+    wattrset(w, COLOR_PAIR(PANEL_ACCENT) | A_BOLD); text_label(w, 1, left, g->info_width, "Propriedades");
+    message_media *item = &v->selected_item;
+    char bytes[64] = "Não informado", dimensions[64] = "Não informadas";
+    if (item->size_known) snprintf(bytes, sizeof(bytes), "%" PRId64 " bytes", item->size_bytes);
+    int source_w = v->modal_image.source_width ? v->modal_image.source_width : item->source_width;
+    int source_h = v->modal_image.source_height ? v->modal_image.source_height : item->source_height;
+    if (source_w > 0 && source_h > 0) snprintf(dimensions, sizeof(dimensions), "%d × %d px", source_w, source_h);
+    struct { const char *name, *value; } properties[] = {
+        {"Nome", item->original_file_name}, {"MIME", item->mime}, {"Tamanho", bytes}, {"Moderação", item->moderation},
+        {"Dimensões originais", dimensions}, {"ID", item->id}, {"Mensagem", item->message},
+        {"Miniatura", item->thumbnail_id}, {"Criado em", item->created_at}
+    };
+    /* First measure to clamp scrolling, then paint only the visible rows.
+     * The shared Unicode renderer sanitizes every remote property value. */
+    for (int pass = 0; pass < 2; ++pass) {
+        int row = 0;
+        for (size_t i = 0; i < sizeof(properties) / sizeof(*properties); ++i) {
+            text_buffer buffer; text_layout layout;
+            const char *value = *properties[i].value ? properties[i].value : "Não informado";
+            if (!text_decode(&buffer, value)) text_decode(&buffer, "Não informado");
+            text_measure(&buffer, width, &layout);
+            int title = row - v->info_scroll;
+            if (pass && title >= 0 && title < available) {
+                wattrset(w, COLOR_PAIR(PANEL_MUTED) | A_BOLD);
+                text_label(w, title + 2, left, width, properties[i].name);
+            }
+            ++row;
+            int first = v->info_scroll > row ? v->info_scroll - row : 0;
+            int y = row > v->info_scroll ? row - v->info_scroll : 0;
+            if (pass && y < available && first < layout.rows) {
+                wattrset(w, COLOR_PAIR(PANEL)); text_draw(w, &buffer, &layout, first, available - y, y + 2, left);
+            }
+            row += layout.rows + 1;
+        }
+        v->info_rows = row;
+        int maximum = row > available ? row - available : 0;
+        if (v->info_scroll > maximum) v->info_scroll = maximum;
+    }
+    wattrset(w, COLOR_PAIR(PANEL_MUTED));
+    text_label(w, g->height - 2, left, g->info_width, "PgUp/PgDn: rolar");
+}
+
 void media_view_draw(media_view *v)
 {
     if (!v) return;
@@ -653,15 +779,9 @@ void media_view_draw(media_view *v)
         }
         return;
     }
-    if (COLS < 20 || LINES < 10) return;
-    int width = COLS - 6, height = LINES - 4;
-    if (v->window && (getmaxx(v->window) != width || getmaxy(v->window) != height)) {
-        delwin(v->window); v->window = NULL;
-        if (v->modal_token && v->modal_entry >= 0) {
-            v->modal_token = 0; animation_free(v->modal_animation); v->modal_animation = NULL; v->modal_encoding = false; graphics_image_free(&v->modal_image); v->modal = MODAL_LOADING;
-        }
-    }
-    if (!v->window) v->window = newwin(height, width, 2, 3);
+    if (!modal_layout_update(v)) return;
+    int width = v->layout.width, height = v->layout.height;
+    if (!v->window) v->window = newwin(height, width, v->layout.y, v->layout.x);
     if (!v->window) return;
     WINDOW *w = v->window;
     wbkgd(w, COLOR_PAIR(PANEL)); werase(w); wattrset(w, COLOR_PAIR(PANEL_MUTED)); box(w, 0, 0);
@@ -675,21 +795,30 @@ void media_view_draw(media_view *v)
             text_label(w, 2 + i - first, 2, width - 4, v->cache[v->visible[i].entry].item.label);
         }
     } else {
-        text_label(w, 1, 2, width - 4, v->selected_item.label);
+        int image_width = v->layout.area_width;
+        int label_x = v->layout.button_x + v->layout.button_width + 2;
+        int label_end = v->info_open ? v->layout.info_x - 1 : v->layout.x + width - 2;
+        if (label_end > label_x)
+            text_label(w, 1, label_x - v->layout.x, label_end - label_x, v->selected_item.label);
+        button_draw(w, v->layout.button_y - v->layout.y, v->layout.button_x - v->layout.x,
+                    v->layout.button_width, "[Info]",
+                    v->info_focused ? BUTTON_FOCUSED : v->info_open ? BUTTON_SELECTED : BUTTON_NORMAL, BUTTON_PANEL);
         if (v->modal == MODAL_LOADING) {
             char notice[128]; snprintf(notice, sizeof(notice), "Carregando mídia… %zu KiB", media_download_bytes(v->download) / 1024);
-            text_label(w, 3, 2, width - 4, notice);
+            text_label(w, 3, 3, image_width, notice);
         } else if (v->modal == MODAL_ERROR) {
-            text_label(w, 3, 2, width - 4, v->modal_error ? v->modal_error : "Mídia indisponível.");
-            text_label(w, height - 3, 2, width - 4, "Enter: tentar novamente · Esc: voltar");
+            text_label(w, 3, 3, image_width, v->modal_error ? v->modal_error : "Mídia indisponível.");
+            text_label(w, height - 3, 3, image_width, "Enter: tentar novamente");
         } else {
             char status[160];
             pthread_mutex_lock(&v->lock);
             snprintf(status, sizeof(status), "%s · %.0f / %.0f s · Volume %.0f%%%s", v->paused ? "Pausado" : "Reproduzindo", v->position, v->duration, v->volume, v->audio_missing ? " · Sem dispositivo de áudio" : v->muted ? " · Mudo" : "");
             pthread_mutex_unlock(&v->lock);
-            text_label(w, height - 3, 2, width - 4, v->selected_item.video ? status : "Imagem");
+            text_label(w, height - 3, 3, image_width, v->selected_item.video ? status : v->modal_animation ? "GIF animado" : "Imagem");
         }
-        text_label(w, height - 2, 2, width - 4, "Espaço pausa · ←→ 5s · ↑↓ volume · m silencia · Esc volta");
+        text_label(w, height - 2, 3, image_width, v->selected_item.video ?
+                   "Espaço pausa · ←→ 5s · ↑↓ volume · m" : "i: informações · Esc: voltar");
+        draw_properties(v, w);
     }
     touchwin(w); wnoutrefresh(w);
 }
@@ -697,7 +826,10 @@ void media_view_prepare(media_view *v)
 {
     if (!v || !graphics_terminal_get().supported) return;
     if (media_view_modal(v)) {
-        if (v->window && v->modal == MODAL_PLAYING) graphics_image_place(&v->modal_image, getbegy(v->window) + 2, getbegx(v->window) + 2, 0, 0);
+        if (v->window && v->modal == MODAL_PLAYING && modal_layout_update(v)) {
+            /* Recalculate after a decode result changes the raster dimensions. */
+            graphics_image_place(&v->modal_image, v->layout.image_y, v->layout.image_x, 0, 0);
+        }
         return;
     }
     for (int i = 0; i < v->visible_count; ++i) {

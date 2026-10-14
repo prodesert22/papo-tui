@@ -9,7 +9,11 @@
 typedef struct {
     char id[37], message[37], label[MESSAGE_MEDIA_LABEL], mime[32], role[12];
     auth_media_kind kind;
-    bool video;
+    bool video, size_known;
+    int64_t size_bytes;
+    int source_width, source_height;
+    char original_file_name[MESSAGE_MEDIA_LABEL];
+    char moderation[32], created_at[64], thumbnail_id[37];
     uint64_t version;
 } message_media;
 typedef struct {
@@ -17,14 +21,19 @@ typedef struct {
     char *text;
     size_t offset;
     int x, width;
-    bool bold;
+    bool bold, muted, link;
 } message_segment;
+typedef struct {
+    int index, row, height, x, width;
+} message_media_region;
 typedef struct {
     message_segment segments[MESSAGE_COLUMNS];
     int count;
     bool card, top, bottom;
+    int card_width;
     unsigned color;
-    int media_index, media_row, media_height, media_x, media_width;
+    message_media_region media[2];
+    int media_count;
 } message_row;
 typedef void (*message_media_measure)(void *context, const message_media *item, int available_width, int *width, int *height);
 typedef struct {

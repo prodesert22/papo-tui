@@ -20,5 +20,6 @@ void media_view_draw(media_view *v);
 void media_view_prepare(media_view *v);
 bool media_view_modal(const media_view *v);
 bool media_view_key(media_view *v, int type, wint_t key);
+bool media_view_scroll(media_view *v, int y, int x, int delta);
 bool media_view_click(media_view *v, int y, int x);
 #endif

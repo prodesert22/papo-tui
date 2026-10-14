@@ -28,6 +28,8 @@ class GraphicsStream:
         self.live_ids = set()
         self.deleted_ids = []
         self.placements = []
+        self.placement_positions = []
+        self.screen = screen
         self.synchronizations = 0
         self.kitty_header = None
         self.kitty_parts = []
@@ -58,6 +60,7 @@ class GraphicsStream:
                     image_id = int(values[b'i']); self.live_ids.discard(image_id); self.deleted_ids.append(image_id)
                 elif values.get(b'a') == b'p':
                     self.placements.append(values)
+                    self.placement_positions.append((self.screen.cursor.y, self.screen.cursor.x))
                     self.live_ids.add(int(values[b'i']))
                 elif values.get(b'a') in (b'T', b't'):
                     self.kitty_header = values; self.kitty_parts = []
@@ -303,6 +306,37 @@ class MediaTerminal(unittest.TestCase):
                     self.assertEqual(sum('/attachments/' in r[1] for r in server.requests), 1)
                 finally: self.assertTrue(t.close())
 
+    def test_modal_centers_pixels_and_properties_reuses_image(self):
+        with self.serve(self.images['png'], 'image/png') as server:
+            item = server.messages[0]['attachments'][0]
+            item['created_at'] = '2026-10-14T15:51:18Z'
+            t = self.open(server, protocol='kitty')
+            try:
+                self.wait_frames(t); t.send('\x1b[18~'); self.wait(t, '[Info]')
+                self.wait_frames(t, 2); t.read(.15)
+                # 80x24: viewer keeps channels at x<26, with outer margins
+                # at (30,3). The image area spans x=33..72 and y=6..16.
+                self.assertEqual(t.stream.placement_positions[-1], (11, 52))
+                self.assertIn('Canais', '\n'.join(t.screen.display))
+                frames = len(t.stream.frames)
+                image_id = t.stream.placements[-1][b'i']
+                t.click(4, 33); self.wait(t, 'Propriedades'); t.read(.15)
+                self.assertEqual(len(t.stream.frames), frames)
+                self.assertEqual(t.stream.placements[-1][b'i'], image_id)
+                self.assertEqual(t.stream.placement_positions[-1], (11, 42))
+                self.assertIn('image/png', '\n'.join(t.screen.display))
+                self.assertIn(str(len(self.images['png'])) + ' bytes', '\n'.join(t.screen.display))
+                t.click(4, 33); t.read(.1)
+                self.assertNotIn('Propriedades', '\n'.join(t.screen.display))
+                self.assertEqual(t.stream.placement_positions[-1], (11, 52))
+                self.assertEqual(len(t.stream.frames), frames)
+                t.click(8, 4); t.read(.2)
+                self.assertNotIn('Esc: voltar', '\n'.join(t.screen.display))
+                self.assertIn('# geral', '\n'.join(t.screen.display))
+                self.assertEqual(sum('/attachments/' in r[1] for r in server.requests), 1)
+                self.assertFalse(any('/channels/' + uuid(11) + '/messages' in r[1] for r in server.requests))
+            finally: self.assertTrue(t.close())
+
     def test_kitty_rejected_probe_keeps_text_without_downloads(self):
         with self.serve(self.images['png'], 'image/png') as server:
             t = self.open(server, sixel=False)
@@ -319,7 +353,7 @@ class MediaTerminal(unittest.TestCase):
         with self.serve(self.images['png'], 'image/png') as server:
             t = self.open(server, sixel=False)
             try:
-                self.wait(t, 'Fixture')
+                self.wait(t, 'Editor')
                 query = re.search(rb'\x1b_Gi=(\d+),s=1,v=1,a=q', t.output)
                 self.assertIsNotNone(query)
                 t.send('\x1b_Gi=' + query[1].decode())
@@ -378,6 +412,38 @@ class MediaTerminal(unittest.TestCase):
                 self.assertEqual([r for r in server.requests if '/messages' in r[1] or '/attachments/' in r[1]], requests)
                 t.send('\x1b'); self.wait(t, 'Rascunho com imagem')
             finally: self.assertTrue(t.close())
+    def test_embed_author_and_thumbnail_share_header(self):
+        with self.serve(self.images['png'], 'image/png', embed=True) as server:
+            parent = server.api_handler
+            def route(method, path, body):
+                if '/embeds/' in path:
+                    encoded = base64.b64encode(self.images['png']).decode()
+                    return 200, {'id': uuid(902), 'image_data': encoded, 'author_image_data': encoded}
+                return parent(method, path, body)
+            server.api_handler = route
+            server.messages[0]['content'] = None
+            server.messages[0]['embeds'] = [{'id': uuid(902), 'source_type': 'custom',
+                'author': {'name': 'Info', 'media': {'mime_type': 'image/png'}},
+                'site_name': 'Info',
+                'title': 'Example Title', 'url': 'https://example.com',
+                'thumbnail': {'mime_type': 'image/png'}, 'footer': {'text': 'Example Footer'}}]
+            t = self.open(server, protocol='kitty')
+            try:
+                t.resize(35, 120); t.send('\x1bOH')
+                self.wait(t, 'Info'); self.wait_frames(t, 2); t.read(.15)
+                sizes = {(int(header[b'c']), int(header[b'r'])) for header, _ in t.stream.kitty_frames}
+                self.assertIn((4, 2), sizes)
+                self.assertIn((12, 4), sizes)
+                self.assertEqual(sum('/embeds/' in r[1] for r in server.requests), 1)
+                display = '\n'.join(t.screen.display)
+                self.assertEqual(display.count('Info'), 1)
+                self.assertNotIn('Avatar do autor', display)
+                self.assertNotIn('[Imagem / F7]', display)
+                self.assertNotIn('https://example.com', display)
+                self.assertNotIn('Sem conteúdo textual', display)
+                self.assertNotIn('Rodapé:', display)
+            finally: self.assertTrue(t.close())
+
     def test_embed_thumbnail_base64_and_unavailable_extra_image(self):
         with self.serve(self.images['png'], 'image/png', embed=True) as server:
             server.messages[0]['embeds'] = [{'id': uuid(902), 'title': 'Embed fixture',
@@ -437,14 +503,32 @@ class MediaTerminal(unittest.TestCase):
             finally: self.assertTrue(t.close())
     def test_cards_inline_fields_and_resize(self):
         with HistoryMock(count=1) as server:
-            server.messages[0]['embeds'] = [{'title': 'Card', 'author': {'name': 'Author'},
+            server.messages[0]['content'] = None
+            server.messages[0]['embeds'] = [{'title': 'Card', 'color': '#00b0f4', 'author': {'name': 'Author'},
                 'fields': [{'name': str(i), 'value': 'Value' + str(i), 'inline': True} for i in range(3)], 'footer': {'text': 'Footer'}}]
             t = self.open(server, sixel=False)
             try:
                 t.resize(35, 120); t.send('\x1bOH'); self.wait(t, 'Value0')
                 self.assertTrue(any('Value0' in line and 'Value1' in line and 'Value2' in line for line in t.screen.display))
+                display = '\n'.join(t.screen.display)
+                self.assertNotIn('Sem conteúdo textual', display)
+                self.assertNotIn('Rodapé:', display)
+                bar_y, bar_x = next((y, line.index('▎')) for y, line in enumerate(t.screen.display) if 'Card' in line)
+                bar = t.screen.buffer[bar_y][bar_x]
+                body = t.screen.buffer[bar_y][bar_x + 2]
+                outside = t.screen.buffer[bar_y][bar_x - 1]
+                self.assertEqual(bar.bg, body.bg)
+                self.assertNotEqual(body.bg, outside.bg)
+                self.assertNotEqual(bar.fg, body.fg)
+                self.assertTrue(all(t.screen.buffer[y][bar_x].data == '▎'
+                                    for y, line in enumerate(t.screen.display) if 'Author' in line or 'Footer' in line))
+                for word in ('Author', 'Footer'):
+                    y, x = next((y, line.index(word)) for y, line in enumerate(t.screen.display) if word in line)
+                    self.assertFalse(t.screen.buffer[y][x].bold)
+                    self.assertNotEqual(t.screen.buffer[y][x].fg, body.fg)
                 t.resize(35, 44); self.wait(t, 'Value0')
                 self.assertFalse(any('Value0' in line and 'Value1' in line for line in t.screen.display))
-                self.wait(t, 'Rodapé: Footer')
+                self.wait(t, 'Footer')
+                self.assertNotIn('Rodapé:', '\n'.join(t.screen.display))
             finally: self.assertTrue(t.close())
 if __name__ == '__main__': unittest.main()

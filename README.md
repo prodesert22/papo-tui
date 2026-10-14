@@ -213,6 +213,14 @@ alteram o volume e `m` silencia. Redimensionar preserva a reprodução; rascunho
 e leitura permanecem ao voltar. O áudio usa o dispositivo disponível; sem um
 dispositivo, o vídeo continua e o modal informa a indisponibilidade do áudio.
 
+O modal centraliza a mídia e usa margens que preservam a coluna de canais em
+telas largas. Esc ou clique fora fecha a visualização. Clique no botão
+**[Info]**, fixo no cabeçalho do modal, para abrir ou fechar as propriedades
+à direita: nome, MIME, bytes, moderação,
+dimensões e identificadores disponíveis. PageUp/PageDown ou a roda do mouse
+sobre esse painel rola os dados; `i` e F8 também alternam o painel. Nenhum novo
+download é necessário para abri-lo.
+
 Imagens JPEG, PNG, WebP e GIF são exibidas por Sixel ou pelos protocolos gráficos Kitty/iTerm2.
 Anexos de imagem mostram apenas a mídia, usando o arquivo original sem ampliar
 suas dimensões; imagens maiores são reduzidas proporcionalmente para a largura
@@ -237,12 +245,16 @@ Requisições usam os cookies da própria instância, a verificação TLS e o me
 limite global de requisições do restante do cliente. HTTP 429 exige nova
 tentativa manual após a espera.
 
-Cards respeitam cor, autor, site/provedor, título, descrição, fields inline e
-rodapé recebidos. Fields ficam em até três colunas, ou empilhados em tela
-estreita. A thumbnail e o avatar usam os bytes expostos pelo backend. A imagem
-adicional do embed e o ícone do rodapé mostram indisponibilidade: seus bytes
-não são expostos pela API atual. Vídeos de iframe, como YouTube, mostram URL e
-metadados. O editor continua enviando texto; não há interpretação de Markdown
+Cards usam uma barra à esquerda na cor do embed e fundo discretamente mais
+claro, sem borda ao redor nem rótulos de embed/rodapé. Autor e rodapé têm
+menos destaque; o tamanho da fonte é definido pelo terminal. Mensagens sem
+texto não recebem um texto substituto. Fields ficam em até três colunas,
+ou empilhados em tela estreita. O avatar fica junto ao autor. A miniatura
+de embeds customizados fica à direita quando há espaço; prévias de links e
+miniaturas em telas estreitas ficam abaixo dos fields. Ambos usam os bytes
+expostos pelo backend. A imagem adicional indica indisponibilidade; seus
+bytes e os do ícone do rodapé não são expostos pela API atual. Vídeos de
+iframe, como YouTube, mostram URL e metadados. O editor continua enviando texto; não há interpretação de Markdown
 do Discord nem execução de HTML remoto.
 
 ## Recuperar a última sessão

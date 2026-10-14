@@ -1,7 +1,9 @@
 #define _POSIX_C_SOURCE 200809L
 #include "ui/message_blocks.h"
 #include "ui/text.h"
+#include "ui/theme.h"
 #include <limits.h>
+#include <linebreak.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,7 +28,6 @@ static bool reserve(message_blocks *b, size_t count)
     message_row *rows = realloc(b->rows, capacity * sizeof(*rows));
     if (!rows) return false;
     memset(rows + b->capacity, 0, (capacity - b->capacity) * sizeof(*rows));
-    for (size_t i = b->capacity; i < capacity; ++i) rows[i].media_index = -1;
     b->rows = rows; b->capacity = capacity;
     return true;
 }
@@ -36,6 +37,40 @@ static bool blank(message_blocks *b, bool card, bool top, bool bottom, unsigned 
     message_row *r = &b->rows[b->count++];
     r->card = card; r->top = top; r->bottom = bottom; r->color = color;
     return true;
+}
+/* libunibreak chooses word/Unicode line boundaries; the existing text
+ * decoder supplies sanitized graphemes and their actual terminal widths. */
+static void card_measure(const text_buffer *buffer, int width, text_layout *layout)
+{
+    char breaks[TEXT_LIMIT];
+    init_linebreak();
+    set_linebreaks_utf32(buffer->data, buffer->length, NULL, breaks);
+    text_measure(buffer, TEXT_LIMIT * 2 + 1, layout);
+    size_t count = layout->count - 1;
+    int row = 0, column = 0;
+    for (size_t start = 0; start < count;) {
+        size_t end = start, boundary = start;
+        column = 0;
+        while (end < count && !layout->cells[end].newline && column + layout->cells[end].width <= width) {
+            const text_cell *cell = &layout->cells[end++];
+            column += cell->width;
+            if (breaks[cell->end - 1] == LINEBREAK_ALLOWBREAK) boundary = end;
+        }
+        if (end < count && !layout->cells[end].newline && boundary > start) end = boundary;
+        if (end == start && !layout->cells[end].newline) ++end;
+        column = 0;
+        for (size_t k = start; k < end; ++k) {
+            layout->cells[k].row = row; layout->cells[k].column = column;
+            column += layout->cells[k].width;
+        }
+        if (end < count && layout->cells[end].newline) {
+            layout->cells[end].row = row; layout->cells[end].column = column;
+            ++end; ++row; column = 0;
+        } else if (end < count) { ++row; column = 0; }
+        start = end;
+    }
+    layout->cells[count].row = row; layout->cells[count].column = column;
+    layout->rows = row + 1;
 }
 /* Appends one wrapped column at a specified row. Other columns can occupy the
  * same rows. All terminal controls pass through the shared Unicode decoder. */
@@ -49,7 +84,8 @@ static bool column(message_blocks *b, size_t start, const char *key, const char 
         text_buffer buffer;
         text_layout layout;
         if (!text_decode_chunk(&buffer, &p)) return false;
-        text_measure(&buffer, width, &layout);
+        if (card) card_measure(&buffer, width, &layout);
+        else text_measure(&buffer, width, &layout);
         for (int line = 0; line < layout.rows; ++line) {
             if (!reserve(b, row + 1)) return false;
             message_row *r = &b->rows[row];
@@ -94,6 +130,24 @@ static bool labeled(message_blocks *b, const char *key, const char *prefix, cons
     bool ok = text(b, key, joined, width, bold, card, color);
     free(joined); return ok;
 }
+static void style(message_blocks *b, size_t first, bool muted, bool link)
+{
+    for (size_t i = first; i < b->count; ++i)
+        for (int j = 0; j < b->rows[i].count; ++j) {
+            b->rows[i].segments[j].muted = muted;
+            b->rows[i].segments[j].link = link;
+        }
+}
+static bool region(message_blocks *b, int index, size_t start, size_t end,
+                   size_t image_start, int x, int width, int height)
+{
+    for (size_t i = start; i < end; ++i) {
+        message_row *r = &b->rows[i];
+        if (r->media_count == 2) return false;
+        r->media[r->media_count++] = (message_media_region){index, (int)i - (int)image_start, height, x, width};
+    }
+    return true;
+}
 static int add_media(message_blocks *b, json_t *message, json_t *entry, const char *role, const char *label, auth_media_kind kind, bool video)
 {
     const char *id = str(entry, "id");
@@ -107,9 +161,23 @@ static int add_media(message_blocks *b, json_t *message, json_t *entry, const ch
     snprintf(m->message, sizeof(m->message), "%s", str(message, "id"));
     snprintf(m->role, sizeof(m->role), "%s", role);
     snprintf(m->label, sizeof(m->label), "%s", label);
-    const char *mime = str(entry, "mime_type");
-    if (kind == AUTH_MEDIA_EMBED) mime = str(json_object_get(entry, role), "mime_type");
-    snprintf(m->mime, sizeof(m->mime), "%s", mime);
+    json_t *properties = entry;
+    if (kind == AUTH_MEDIA_EMBED) {
+        properties = json_object_get(entry, role);
+        if (!strcmp(role, "author")) properties = json_object_get(properties, "media");
+    }
+    snprintf(m->mime, sizeof(m->mime), "%s", str(properties, "mime_type"));
+    snprintf(m->original_file_name, sizeof(m->original_file_name), "%s", str(properties, "original_file_name"));
+    json_t *size = json_object_get(properties, "size_bytes");
+    m->size_known = json_is_integer(size) && json_integer_value(size) >= 0;
+    if (m->size_known) m->size_bytes = json_integer_value(size);
+    json_int_t w = json_integer_value(json_object_get(properties, "width"));
+    json_int_t h = json_integer_value(json_object_get(properties, "height"));
+    m->source_width = w > 0 && w <= INT_MAX ? (int)w : 0;
+    m->source_height = h > 0 && h <= INT_MAX ? (int)h : 0;
+    snprintf(m->moderation, sizeof(m->moderation), "%s", str(entry, "moderation_status"));
+    snprintf(m->created_at, sizeof(m->created_at), "%s", str(entry, "created_at"));
+    snprintf(m->thumbnail_id, sizeof(m->thumbnail_id), "%s", str(entry, "thumbnail_id"));
     m->version = message_media_version(entry);
     m->kind = kind; m->video = video; ++b->media_count;
     return (int)n;
@@ -121,18 +189,14 @@ static bool media(message_blocks *b, json_t *message, json_t *entry, const char 
     int n = add_media(b, message, entry, role, label, kind, video);
     if (n < 0) return strlen(str(entry, "id")) != 36;
     size_t start = b->count;
+    /* A graphical preview is the image itself; F7 is documented in the UI. */
     if ((!graphics || video) && !labeled(b, key, video ? "[▶ Vídeo / F7] " : "[Imagem / F7] ", label, width, false, card, color)) return false;
-    int height = graphics && !video ? (!strcmp(role, "author") ? 2 : 6) : 0;
+    size_t image_start = b->count;
+    int height = graphics && !video ? 6 : 0;
     int media_width = width - (card ? 4 : 0);
     if (height && b->measure) b->measure(b->measure_context, &b->media[n], media_width, &media_width, &height);
     for (int i = 0; i < height; ++i) if (!blank(b, card, false, false, color)) return false;
-    for (size_t i = start; i < b->count; ++i) {
-        b->rows[i].media_index = (int)n;
-        b->rows[i].media_row = (int)(i - start) - (int)(b->count - start - (size_t)height);
-        b->rows[i].media_height = height;
-        b->rows[i].media_width = media_width; b->rows[i].media_x = card ? 2 : 0;
-    }
-    return true;
+    return region(b, n, start, b->count, image_start, card ? 2 : 0, media_width, height);
 }
 bool message_blocks_build(message_blocks *b, json_t *m, const char *author,
                           const char *reply, int width, bool graphics)
@@ -150,7 +214,7 @@ bool message_blocks_build_sized(message_blocks *b, json_t *m, const char *author
     if (!text(b, "header", label, width, false, false, 0)) goto error;
     if (*str(m, "edited_at") && !labeled(b, "edited", "Editada em: ", str(m, "edited_at"), width, false, false, 0)) goto error;
     if (*str(m, "reply_to") && !labeled(b, "reply", "Resposta: ", reply, width, false, false, 0)) goto error;
-    if (!text(b, "content", json_is_string(json_object_get(m, "content")) ? str(m, "content") : "[Sem conteúdo textual]", width, false, false, 0)) goto error;
+    if (*str(m, "content") && !text(b, "content", str(m, "content"), width, false, false, 0)) goto error;
     size_t index; json_t *item;
     json_array_foreach(json_object_get(m, "attachments"), index, item) {
         char key[128]; snprintf(key, sizeof(key), "attachment:%s:%zu", str(item, "id"), index);
@@ -169,6 +233,8 @@ bool message_blocks_build_sized(message_blocks *b, json_t *m, const char *author
     }
     json_array_foreach(json_object_get(m, "embeds"), index, item) {
         if (index >= 10) break;
+        int card_width = width > 76 ? 76 : width;
+        size_t card_start = b->count;
         char root[96], key[128];
         if (*str(item, "id")) snprintf(root, sizeof(root), "embed:%s", str(item, "id"));
         else snprintf(root, sizeof(root), "embed:index:%zu", index);
@@ -180,43 +246,60 @@ bool message_blocks_build_sized(message_blocks *b, json_t *m, const char *author
         }
         if (!blank(b, true, true, false, color)) goto error;
         json_t *a = json_object_get(item, "author");
-        bool right_thumbnail = graphics && width >= 44 &&
+        bool right_thumbnail = graphics && card_width >= 44 &&
             json_is_object(json_object_get(item, "thumbnail")) && strlen(str(item, "id")) == 36 &&
-            !json_is_object(json_object_get(a, "media"));
+            (!strcmp(str(item, "source_type"), "custom") || json_is_object(json_object_get(item, "image")));
         size_t thumbnail_start = b->count;
-        int text_width = right_thumbnail ? width - 14 : width;
+        int text_width = right_thumbnail ? card_width - 14 : card_width;
         snprintf(key, sizeof(key), "%s:author", root);
-        if (*str(a, "name") && !text(b, key, str(a, "name"), text_width, true, true, color)) goto error;
-        if (json_is_object(json_object_get(a, "media")) && !media(b, m, item, key, "author", "Avatar do autor", AUTH_MEDIA_EMBED, false, text_width, graphics, true, color)) goto error;
+        size_t author_start = b->count, author_end;
+        bool avatar = graphics && json_is_object(json_object_get(a, "media")) && strlen(str(item, "id")) == 36;
+        if (*str(a, "name") && !column(b, author_start, key, str(a, "name"), avatar ? 7 : 2,
+                                     text_width - (avatar ? 9 : 4), false, true, color, &author_end)) goto error;
+        style(b, author_start, true, false);
+        if (avatar) {
+            while (b->count < author_start + 2) if (!blank(b, true, false, false, color)) goto error;
+            int n = add_media(b, m, item, "author", "Avatar do autor", AUTH_MEDIA_EMBED, false);
+            if (n < 0) goto error;
+            if (!region(b, n, author_start, author_start + 2, author_start, 2, 4, 2)) goto error;
+        }
         snprintf(key, sizeof(key), "%s:site", root);
         const char *site = *str(item, "site_name") ? str(item, "site_name") : str(item, "provider");
-        if (*site && !text(b, key, site, text_width, false, true, color)) goto error;
+        size_t site_start = b->count;
+        if (*site && strcmp(site, str(a, "name")) &&
+            !text(b, key, site, text_width, false, true, color)) goto error;
+        style(b, site_start, true, false);
         snprintf(key, sizeof(key), "%s:title", root);
-        if (!text(b, key, *str(item, "title") ? str(item, "title") : "Embed", text_width, true, true, color)) goto error;
+        size_t title_start = b->count;
+        if (*str(item, "title") && !text(b, key, str(item, "title"), text_width, true, true, color)) goto error;
+        style(b, title_start, false, *str(item, "url") != '\0');
         snprintf(key, sizeof(key), "%s:description", root);
-        if (*str(item, "description") && !text(b, key, str(item, "description"), text_width, false, true, color)) goto error;
-        if (*str(item, "url") && !text(b, root, str(item, "url"), text_width, false, true, color)) goto error;
-        if (*str(a, "url") && !text(b, key, str(a, "url"), text_width, false, true, color)) goto error;
+        if (*str(item, "description")) {
+            if (!blank(b, true, false, false, color) || !text(b, key, str(item, "description"), text_width, false, true, color)) goto error;
+        }
+        if (!*str(item, "title") && *str(item, "url")) {
+            size_t url_start = b->count;
+            if (!text(b, root, str(item, "url"), text_width, false, true, color)) goto error;
+            style(b, url_start, false, true);
+        }
         if (right_thumbnail) {
             while (b->count < thumbnail_start + 4) if (!blank(b, true, false, false, color)) goto error;
             int thumb = add_media(b, m, item, "thumbnail", "Miniatura", AUTH_MEDIA_EMBED, false);
             if (thumb < 0) goto error;
-            for (size_t r = thumbnail_start; r < thumbnail_start + 4; ++r) {
-                b->rows[r].media_index = thumb; b->rows[r].media_row = (int)(r - thumbnail_start);
-                b->rows[r].media_height = 4; b->rows[r].media_x = width - 14; b->rows[r].media_width = 12;
-            }
+            if (!region(b, thumb, thumbnail_start, thumbnail_start + 4, thumbnail_start, card_width - 14, 12, 4)) goto error;
         }
         json_t *fields = json_object_get(item, "fields");
         size_t count = json_array_size(fields); if (count > 25) count = 25;
         for (size_t f = 0; f < count;) {
             size_t group = 1;
-            int columns = (width - 4) / 20;
+            int columns = (card_width - 4) / 20;
             if (columns > 3) columns = 3;
             if (columns < 1) columns = 1;
             if (json_is_true(json_object_get(json_array_get(fields, f), "inline")))
                 while (group < (size_t)columns && f + group < count && json_is_true(json_object_get(json_array_get(fields, f + group), "inline"))) ++group;
+            if (!blank(b, true, false, false, color)) goto error;
             size_t start = b->count, end = start;
-            int colwidth = (width - 4 - (int)group + 1) / (int)group;
+            int colwidth = (card_width - 4 - (int)group + 1) / (int)group;
             for (size_t c = 0; c < group; ++c) {
                 json_t *field = json_array_get(fields, f + c);
                 size_t row;
@@ -229,21 +312,33 @@ bool message_blocks_build_sized(message_blocks *b, json_t *m, const char *author
             b->count = end; f += group;
         }
         snprintf(key, sizeof(key), "%s:thumbnail", root);
-        if (!right_thumbnail && json_is_object(json_object_get(item, "thumbnail")) && !media(b, m, item, key, "thumbnail", "Miniatura", AUTH_MEDIA_EMBED, false, width, graphics, true, color)) goto error;
-        if (json_is_object(json_object_get(item, "image")) && !text(b, root, "Imagem adicional indisponível no backend.", width, false, true, color)) goto error;
+        if (!right_thumbnail && json_is_object(json_object_get(item, "thumbnail"))) {
+            if (!blank(b, true, false, false, color) || !media(b, m, item, key, "thumbnail", "Miniatura", AUTH_MEDIA_EMBED, false, card_width, graphics, true, color)) goto error;
+        }
+        if (json_is_object(json_object_get(item, "image"))) {
+            if (!blank(b, true, false, false, color)) goto error;
+            size_t unavailable_start = b->count;
+            if (!text(b, root, "Imagem adicional indisponível no backend.", card_width, false, true, color)) goto error;
+            style(b, unavailable_start, true, false);
+        }
         json_t *v = json_object_get(item, "video");
         if (json_is_object(v)) {
             snprintf(key, sizeof(key), "%s:video", root);
             bool direct = !strcmp(str(v, "mime_type"), "video/mp4") || !strcmp(str(v, "mime_type"), "video/webm") || !strcmp(str(v, "mime_type"), "video/ogg");
             if (direct) {
-                if (!media(b, m, item, key, "video", "Abrir player", AUTH_MEDIA_VIDEO, true, width, graphics, true, color)) goto error;
-            } else if (!labeled(b, key, "Vídeo externo: ", str(v, "url"), width, false, true, color)) goto error;
+                if (!media(b, m, item, key, "video", "Abrir player", AUTH_MEDIA_VIDEO, true, card_width, graphics, true, color)) goto error;
+            } else if (!labeled(b, key, "Vídeo externo: ", str(v, "url"), card_width, false, true, color)) goto error;
         }
         json_t *footer = json_object_get(item, "footer");
         snprintf(key, sizeof(key), "%s:footer", root);
-        if (*str(footer, "text") && !labeled(b, key, "Rodapé: ", str(footer, "text"), width, false, true, color)) goto error;
-        if (json_is_object(json_object_get(footer, "icon")) && !text(b, key, "Ícone do rodapé indisponível no backend.", width, false, true, color)) goto error;
+        if (*str(footer, "text")) {
+            if (!blank(b, true, false, false, color)) goto error;
+            size_t footer_start = b->count;
+            if (!text(b, key, str(footer, "text"), card_width, false, true, color)) goto error;
+            style(b, footer_start, true, false);
+        }
         if (!blank(b, true, false, true, color)) goto error;
+        for (size_t r = card_start; r < b->count; ++r) b->rows[r].card_width = card_width;
     }
     if (!blank(b, false, false, false, 0)) goto error;
     return true;
@@ -289,18 +384,18 @@ void message_row_draw(WINDOW *w, const message_row *row, int y, int x, int width
 {
     wattrset(w, COLOR_PAIR(pair));
     if (row->card) {
-        wattrset(w, COLOR_PAIR(color_pair(row->color, accent)));
-        if (row->top || row->bottom) {
-            mvwhline(w, y, x, ACS_HLINE, width);
-            mvwaddch(w, y, x, row->top ? ACS_ULCORNER : ACS_LLCORNER);
-            mvwaddch(w, y, x + width - 1, row->top ? ACS_URCORNER : ACS_LRCORNER);
-        } else {
-            mvwaddch(w, y, x, ACS_VLINE); mvwaddch(w, y, x + width - 1, ACS_VLINE);
-        }
+        if (row->card_width > 0 && row->card_width < width) width = row->card_width;
+        pair = EMBED_AREA; accent = color_pair(row->color, EMBED_ACCENT);
+        wattrset(w, COLOR_PAIR(pair));
+        mvwhline(w, y, x, ' ', width);
+        wattrset(w, COLOR_PAIR(accent));
+        mvwaddstr(w, y, x, "▎");
     }
     for (int i = 0; i < row->count; ++i) {
         const message_segment *s = &row->segments[i];
-        wattrset(w, COLOR_PAIR(pair) | (s->bold ? A_BOLD : 0));
+        int text_pair = pair;
+        if (row->card) text_pair = s->muted ? EMBED_MUTED : s->link ? accent : pair;
+        wattrset(w, COLOR_PAIR(text_pair) | (s->bold ? A_BOLD : 0));
         text_label(w, y, x + s->x, s->width, s->text);
     }
 }

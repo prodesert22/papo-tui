@@ -156,15 +156,16 @@ static int walk(view *ui, int first, bool paint, bool save, int *anchor)
                                   graphics_terminal_get().supported && ui->media, media_view_measure, ui->media)) continue;
         bool anchored = !strcmp(ui->anchor, str(m, "id"));
         if (anchored) *anchor = total;
-        int offered = -1;
+        bool *offered = paint && ui->media ? calloc(blocks.media_count + 1, sizeof(*offered)) : NULL;
         for (size_t row = 0; row < blocks.count; ++row) {
             const message_row *r = &blocks.rows[row];
             char key[128]; size_t offset = 0;
             if (r->count) { snprintf(key, sizeof(key), "%s", r->segments[0].key); offset = r->segments[0].offset; }
-            else if (r->media_index >= 0) {
-                const message_media *item = &blocks.media[r->media_index];
+            else if (r->media_count) {
+                const message_media_region *region = &r->media[0];
+                const message_media *item = &blocks.media[region->index];
                 snprintf(key, sizeof(key), "media:%s:%s", item->id, item->role);
-                offset = (size_t)(r->media_row < 0 ? 0 : r->media_row);
+                offset = (size_t)(region->row < 0 ? 0 : region->row);
             } else snprintf(key, sizeof(key), "gap:%zu", row);
             if (anchored && !strcmp(key, ui->block) && offset <= ui->offset) *anchor = total + (int)row;
             if (save && first == total + (int)row) {
@@ -177,21 +178,23 @@ static int walk(view *ui, int first, bool paint, bool save, int *anchor)
                 int accent = ui->focus == HISTORY_PANEL ? HISTORY_ACCENT : PANEL_ACCENT;
                 if (r->count && !strcmp(r->segments[0].key, "header")) pair = accent;
                 message_row_draw(ui->body, r, y, 2, width, pair, accent);
-                if (r->media_index >= 0 && r->media_index != offered && ui->media) {
-                    offered = r->media_index;
-                    int start = total + (int)row - r->media_row;
+                for (int k = 0; k < r->media_count && offered && ui->media; ++k) {
+                    const message_media_region *region = &r->media[k];
+                    if (offered[region->index]) continue;
+                    offered[region->index] = true;
+                    int start = total + (int)row - region->row;
                     int top = first > start ? first - start : 0;
-                    int bottom = start + r->media_height > first + ui->visible ? start + r->media_height - first - ui->visible : 0;
-                    if (bottom > r->media_height) bottom = r->media_height;
+                    int bottom = start + region->height > first + ui->visible ? start + region->height - first - ui->visible : 0;
+                    if (bottom > region->height) bottom = region->height;
                     int graphics_y = getbegy(ui->body) + ui->history_top + (start > first ? start - first : 0);
-                    if (!r->media_height) graphics_y = getbegy(ui->body) + y;
-                    media_view_offer(ui->media, &blocks.media[r->media_index], graphics_y,
-                                     getbegx(ui->body) + 2 + (r->media_width ? r->media_x : r->card ? 2 : 0),
-                                     r->media_width ? r->media_width : width - (r->card ? 4 : 0), r->media_height, top, bottom);
+                    if (!region->height) graphics_y = getbegy(ui->body) + y;
+                    media_view_offer(ui->media, &blocks.media[region->index], graphics_y,
+                                     getbegx(ui->body) + 2 + region->x,
+                                     region->width, region->height, top, bottom);
                 }
             }
         }
-        total += (int)blocks.count; message_blocks_free(&blocks);
+        total += (int)blocks.count; free(offered); message_blocks_free(&blocks);
     }
     return total;
 }
@@ -602,7 +605,11 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         if (type == OK && key == 12) { auth_logout(auth); break; }
         if (media_view_modal(ui->media) && type == KEY_CODE_YES && key == KEY_MOUSE) {
             MEVENT e;
-            if (ui_mouse_get(&e) == OK && (e.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED))) media_view_click(ui->media, e.y, e.x);
+            if (ui_mouse_get(&e) == OK) {
+                if (e.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED)) media_view_click(ui->media, e.y, e.x);
+                else if (e.bstate & (BUTTON4_PRESSED | BUTTON5_PRESSED))
+                    media_view_scroll(ui->media, e.y, e.x, e.bstate & BUTTON4_PRESSED ? -3 : 3);
+            }
             continue;
         }
         if ((media_view_modal(ui->media) || ui->focus == HISTORY_PANEL) && media_view_key(ui->media, type, key)) continue;

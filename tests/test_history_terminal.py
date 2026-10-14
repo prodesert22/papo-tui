@@ -288,7 +288,7 @@ class HistoryTerminal(unittest.TestCase):
             try:
                 t.send('\x1bOH')
                 self.wait(t, 'mensagem não disponível')
-                self.wait(t, '[Sem conteúdo textual]')
+                self.assertNotIn('Sem conteúdo textual', '\n'.join(t.screen.display))
                 self.wait(t, 'relatório.txt')
                 self.wait(t, 'editada')
                 self.assertNotIn(b'\x1b[31m', t.output)
