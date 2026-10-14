@@ -12,6 +12,34 @@ class RealtimeTerminal(unittest.TestCase):
     open = product.SendProduct.open
     editor_text = product.SendProduct.editor_text
 
+    def test_channel_navigation_keeps_receiving_current_channel_without_reloading(self):
+        with RealtimeMock() as server:
+            terminal = self.open(server)
+            try:
+                terminal.send('Rascunho ao navegar\x1b')
+                terminal.click(5, 4)
+                terminal.send('\x1bOB')  # highlight another channel, keep geral open
+                self.assertIn('Foco: Canais', terminal.screen.display[2])
+                self.assertIn('# geral · Histórico', self.screen(terminal))
+                message = server.message(4); message['content'] = 'Recebida enquanto navego nos canais'
+                server.emit(dict(message, type='message'))
+                self.wait(terminal, message['content'])
+                self.assertIn('Rascunho ao navegar', self.editor_text(terminal))
+                terminal.send('\x1bOA\n')  # refocus the already open channel
+                self.wait(terminal, message['content'])
+                self.assertEqual(sum('/messages' in r[1] for r in server.requests), 1)
+                terminal.send('\x1bOH\x1bOD\x1bOB')
+                before = [row[26:] for row in terminal.screen.display[8:12]]
+                message = server.message(5); message['content'] = 'Recebida sem deslocar a leitura'
+                server.emit(dict(message, type='message'))
+                self.wait(terminal, '1 novas mensagens')
+                self.assertEqual(before, [row[26:] for row in terminal.screen.display[8:12]])
+                terminal.send('\x1bOA\x1bOC\x1bOF')
+                self.wait(terminal, message['content'])
+                self.assertIn('Rascunho ao navegar', self.editor_text(terminal))
+                self.assertEqual(sum('/messages' in r[1] for r in server.requests), 1)
+            finally: self.assertTrue(terminal.close())
+
     def test_embed_only_message_renders_live_without_reopening_channel(self):
         with RealtimeMock(count=0) as server:
             terminal = self.open(server)

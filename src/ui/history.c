@@ -16,6 +16,7 @@
 #define CONTENT_Y 5
 
 enum { SERVER_TABS, CHANNEL_LIST, HISTORY_PANEL, MESSAGE_INPUT };
+typedef enum { DRAW_ALL, DRAW_CONVERSATION, DRAW_NAVIGATION } draw_scope;
 typedef struct { int x, width; } click_range;
 typedef struct {
     history *model;
@@ -298,21 +299,21 @@ static void draw_confirmation(view *ui)
     button_draw(modal, 7, width - 14, 12, "[Reenviar]", ui->reenviar ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     wnoutrefresh(modal);
 }
-static void draw(view *ui, auth_client *auth, bool conversation_only)
+static void draw(view *ui, auth_client *auth, draw_scope scope)
 {
     curs_set(0);
     if (!ui->frame) {
         erase(); text_label(stdscr, 0, 0, COLS, "Amplie o terminal para 44×14. F6: conta."); refresh(); return;
     }
-    if (!conversation_only) {
+    if (scope == DRAW_ALL) {
         werase(ui->frame); wattrset(ui->frame, COLOR_PAIR(BORDER)); box(ui->frame, 0, 0);
         mvwhline(ui->frame, CONTENT_Y - 2, 1, ACS_HLINE, COLS - 2);
         mvwaddch(ui->frame, CONTENT_Y - 2, 0, ACS_LTEE);
         mvwaddch(ui->frame, CONTENT_Y - 2, COLS - 1, ACS_RTEE);
         mvwhline(ui->frame, LINES - 4, 1, ACS_HLINE, COLS - 2);
         if (COLS >= 80) mvwvline(ui->frame, CONTENT_Y, ui->side + 1, ACS_VLINE, LINES - CONTENT_Y - 3);
-        draw_tabs(ui, auth);
     }
+    if (scope != DRAW_CONVERSATION) draw_tabs(ui, auth);
     wbkgd(ui->footer, COLOR_PAIR(PANEL)); werase(ui->footer);
     wattrset(ui->footer, COLOR_PAIR(PANEL_MUTED));
     char progress[192];
@@ -327,7 +328,7 @@ static void draw(view *ui, auth_client *auth, bool conversation_only)
                ui->focus == CHANNEL_LIST ? "↑↓ canais · ← abas · → conversa · Ctrl+L: sair da conta" :
                ui->focus == MESSAGE_INPUT ? "Enter enviar · Ctrl+N nova linha · Esc histórico · Ctrl+T tentar" :
                "↑↓ rolar · ← canais · Digite: editor · Ctrl+R atualizar");
-    if (ui->list && !conversation_only) {
+    if (ui->list && scope != DRAW_CONVERSATION) {
         wbkgd(ui->list, COLOR_PAIR(ui->focus == CHANNEL_LIST ? FOCUS_AREA : PANEL)); werase(ui->list);
         wattrset(ui->list, COLOR_PAIR(ui->focus == CHANNEL_LIST ? FOCUS_MUTED : PANEL_MUTED) | A_BOLD);
         text_label(ui->list, 0, 1, ui->side - 2, "Canais");
@@ -352,7 +353,7 @@ static void draw(view *ui, auth_client *auth, bool conversation_only)
         wattrset(ui->list, COLOR_PAIR(ui->focus == CHANNEL_LIST ? FOCUS_MUTED : PANEL_MUTED));
         text_label(ui->list, getmaxy(ui->list) - 1, 1, ui->side - 2, "↑↓ escolher · Enter abrir");
     }
-    if (ui->body) {
+    if (ui->body && scope != DRAW_NAVIGATION) {
         wbkgd(ui->body, COLOR_PAIR(PANEL)); werase(ui->body);
         if (ui->focus == HISTORY_PANEL) {
             wattrset(ui->body, COLOR_PAIR(HISTORY_AREA));
@@ -412,11 +413,12 @@ static void draw(view *ui, auth_client *auth, bool conversation_only)
             wmove(ui->body, ui->editor_border + 1 + measured.cursor_row - editor->first_row, 3 + measured.cursor_column);
         }
     }
-    if (!conversation_only) {
-        touchwin(ui->frame); wnoutrefresh(ui->frame); wnoutrefresh(ui->tabs);
+    if (scope == DRAW_ALL) { touchwin(ui->frame); wnoutrefresh(ui->frame); }
+    if (scope != DRAW_CONVERSATION) {
+        wnoutrefresh(ui->tabs);
         if (ui->list) wnoutrefresh(ui->list);
     }
-    if (ui->body) {
+    if (ui->body && scope != DRAW_NAVIGATION) {
         /* Force cell updates in the history viewport rather than allowing the
          * terminal's full-width scrolling region to move adjacent channels. */
         wredrawln(ui->body, ui->history_top, ui->visible);
@@ -437,6 +439,9 @@ static void set_focus(view *ui, int focus)
 }
 static void open_channel(view *ui)
 {
+    /* Selecting the displayed channel only changes focus. Preserve pending
+     * reads, the reading anchor, the draft and the current message window. */
+    if (history_selected(ui->model) == ui->highlighted) { set_focus(ui, HISTORY_PANEL); return; }
     json_t *channel = history_channel(ui->model, ui->highlighted);
     bool text = !strcmp(str(channel, "type"), "text");
     if (text && !send_editor_select(ui->editor, str(channel, "id"))) {
@@ -563,15 +568,15 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
     if (!ui->model || !ui->editor || ui->active_tab == SIZE_MAX || !layout(ui)) { history_destroy(ui->model); destroy_layout(ui); free(ui); return HISTORY_ACCOUNT; }
     mmask_t previous_mouse;
     mousemask(BUTTON1_PRESSED | BUTTON1_CLICKED | BUTTON4_PRESSED | BUTTON5_PRESSED, &previous_mouse);
-    bool redraw = true, conversation_only = false; int result = HISTORY_ACCOUNT;
+    bool redraw = true; draw_scope scope = DRAW_ALL; int result = HISTORY_ACCOUNT;
     while (!*interrupted) {
         if (ui->layout_failed) break;
         auth_state before = auth_get_state(auth);
-        if (session_store_poll(connections->sessions, auth)) { redraw = true; conversation_only = false; }
-        if (instances_poll(connections, auth)) { redraw = true; conversation_only = false; }
-        if (poll_model(ui, auth) || before != auth_get_state(auth)) { redraw = true; conversation_only = false; }
+        if (session_store_poll(connections->sessions, auth)) { redraw = true; scope = DRAW_ALL; }
+        if (instances_poll(connections, auth)) { redraw = true; scope = DRAW_ALL; }
+        if (poll_model(ui, auth) || before != auth_get_state(auth)) { redraw = true; scope = DRAW_ALL; }
         if (!auth_has_session(auth) && !auth_busy(auth)) break;
-        if (redraw) { draw(ui, auth, conversation_only); redraw = false; conversation_only = false; }
+        if (redraw) { draw(ui, auth, scope); redraw = false; scope = DRAW_ALL; }
         wint_t key; int type = get_wch(&key);
         if (type == ERR) continue;
         if (type == KEY_CODE_YES && key == PASTE_START) {
@@ -659,7 +664,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             MEVENT e;
             if (getmouse(&e) != OK || !ui->frame) continue;
             if (e.bstate & (BUTTON4_PRESSED | BUTTON5_PRESSED)) {
-                conversation_only = true;
+                scope = DRAW_CONVERSATION;
                 if (ui->body && e.x >= getbegx(ui->body) && e.x < getbegx(ui->body) + getmaxx(ui->body) && e.y >= getbegy(ui->body) + ui->history_top && e.y < getbegy(ui->body) + ui->editor_border)
                     scroll_history(ui, e.bstate & BUTTON4_PRESSED ? -3 : 3);
                 continue;
@@ -681,9 +686,14 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 continue;
             }
             y = e.y; x = e.x;
-            if (ui->list && wmouse_trafo(ui->list, &y, &x, false) && y >= 1 && y < getmaxy(ui->list) - 1) {
-                size_t index = (size_t)(ui->first_channel + y - 1);
-                if (index < history_channel_count(ui->model)) { ui->highlighted = index; open_channel(ui); }
+            if (ui->list && wmouse_trafo(ui->list, &y, &x, false)) {
+                size_t index = y >= 1 ? (size_t)(ui->first_channel + y - 1) : SIZE_MAX;
+                if (y < getmaxy(ui->list) - 1 && index < history_channel_count(ui->model)) {
+                    ui->highlighted = index; open_channel(ui);
+                } else {
+                    if (ui->focus == CHANNEL_LIST || ui->focus == SERVER_TABS) scope = DRAW_NAVIGATION;
+                    set_focus(ui, CHANNEL_LIST);
+                }
                 continue;
             }
             y = e.y; x = e.x;
@@ -716,6 +726,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 if (index < connections->count) { int action = activate_tab(ui, index, selected); if (action >= 0) { result = action; break; } }
             } else if (enter) { int action = activate_tab(ui, ui->tab_cursor, selected); if (action >= 0) { result = action; break; } }
         } else if (ui->focus == CHANNEL_LIST) {
+            scope = DRAW_NAVIGATION;
             size_t count = history_channel_count(ui->model);
             if (type == KEY_CODE_YES && (key == KEY_LEFT || (key == KEY_UP && !ui->highlighted))) set_focus(ui, SERVER_TABS);
             else if (type == KEY_CODE_YES && key == KEY_UP && ui->highlighted) --ui->highlighted;
@@ -726,19 +737,19 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 ui->highlighted = ui->highlighted > (size_t)(LINES - CONTENT_Y - 5) ? ui->highlighted - (size_t)(LINES - CONTENT_Y - 5) : 0;
             else if (type == KEY_CODE_YES && key == KEY_NPAGE && count) {
                 ui->highlighted += (size_t)(LINES - CONTENT_Y - 5); if (ui->highlighted >= count) ui->highlighted = count - 1;
-            } else if (enter || (type == KEY_CODE_YES && key == KEY_RIGHT)) open_channel(ui);
+            } else if (enter || (type == KEY_CODE_YES && key == KEY_RIGHT)) { scope = DRAW_ALL; open_channel(ui); }
         } else {
             if (type == KEY_CODE_YES && key == KEY_LEFT) set_focus(ui, CHANNEL_LIST);
             else if (type == KEY_CODE_YES && (key == KEY_PPAGE || key == KEY_UP || key == KEY_HOME)) {
-                conversation_only = true;
+                scope = DRAW_CONVERSATION;
                 int first = position(ui);
                 scroll_history(ui, key == KEY_HOME ? -2147483647 : key == KEY_UP ? -1 : -ui->visible);
                 if (first == 0 && key != KEY_HOME && history_has_more(ui->model)) { ui->at_end = false; history_older(ui->model); }
             } else if (type == KEY_CODE_YES && (key == KEY_DOWN || key == KEY_NPAGE)) {
-                conversation_only = true; scroll_history(ui, key == KEY_DOWN ? 1 : ui->visible);
+                scope = DRAW_CONVERSATION; scroll_history(ui, key == KEY_DOWN ? 1 : ui->visible);
             }
             else if (type == KEY_CODE_YES && key == KEY_END) {
-                conversation_only = true;
+                scope = DRAW_CONVERSATION;
                 if (!ui->unseen || history_evicted(ui->model)) history_recent(ui->model);
                 ui->at_end = true; ui->unseen = 0; ui->anchor[0] = 0;
             }

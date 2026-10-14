@@ -42,6 +42,7 @@ def main():
                                                                           work, on_ready=access.append, label='r7'))
             seed(); sql = access[0]
             channel = str(UUID(sql("INSERT INTO channels(name,type,position,topic) VALUES('r7-geral','text',1,'R7 isolado') RETURNING id;").strip()))
+            sql("INSERT INTO channels(name,type,position) VALUES('r7-outro','text',2);")
             directory = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix='tls-', dir=work)))
             cert, key = directory / 'cert.pem', directory / 'key.pem'
             checked_run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
@@ -110,7 +111,8 @@ def main():
                 return '\n'.join(rows[border + 1:len(rows) - (4 if len(rows) >= 18 else 3)])
 
             for user in users:
-                terminal = test_terminal.Terminal(environment=environment(user, password, ca=cert), allow_local_http=False)
+                terminal = test_terminal.Terminal(environment=dict(environment(user, password, ca=cert), TERM='xterm-256color'),
+                                                 allow_local_http=False)
                 terminals.append(terminal); stack.callback(close_terminal, terminal)
                 terminal.send(secure + '\t' + user + '\t' + password + '\n')
                 wait(terminal, 'r7-geral'); terminal.send('\x1bOB\n'); wait(terminal, '# r7-geral · Histórico')
@@ -122,6 +124,16 @@ def main():
             checks['two_accounts_receive_without_manual_get'] = True
             pump(.6)
             checks['ws_and_delayed_rest_do_not_duplicate'] = screen(a).count('R7 conversa A para B') == 1 and screen(b).count('R7 resposta B para A') == 1
+            phase = 'channel navigation with active websocket'
+            a.send('\x1b\x1bOD\x1bOB')  # browse the other channel without opening it
+            b.send('R7 WS durante navegação\n')
+            wait(a, 'R7 WS durante navegação')
+            checks['channel_navigation_preserves_active_history_and_ws'] = (
+                'Foco: Canais' in screen(a) and '# r7-geral · Histórico' in screen(a))
+            output = len(a.output)
+            a.send('\x1bOA\x1bOC'); a.click(6, 4); pump(.5)
+            checks['reselecting_current_channel_preserves_live_message'] = (
+                'R7 WS durante navegação' in screen(a) and b'Carregando hist' not in a.output[output:])
             phase = 'live embed updates'
             observer = websocket.create_connection(secure.replace('https://', 'wss://', 1) + '/ws',
                 cookie='Auth=' + sessions[0].cookies.get('Auth'), sslopt={'ca_certs': str(cert)}, timeout=2,
