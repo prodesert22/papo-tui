@@ -230,6 +230,10 @@ O aplicativo define o marcador ao abrir e o remove ao sair. Nos outros
 programas, o atalho continua usando a cópia do terminal.
 A segunda regra permite **Ctrl+V** para colar em bloco dentro do Papo TUI.
 
+No Kitty e no Konsole em modo de 256 cores, o tema usa tons aproximados que
+permanecem estáveis ao recarregar a configuração do terminal. Terminais com
+entrada de cores RGB diretas usam os tons exatos.
+
 A colagem delimitada pelo terminal entra em bloco ao terminar, inclusive ao
 substituir uma seleção, e não aciona comandos nem envia quebras de linha.
 No login e nos campos de perfil, quebras de linha são descartadas. Uma colagem

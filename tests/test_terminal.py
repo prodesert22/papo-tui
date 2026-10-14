@@ -148,6 +148,24 @@ class Terminal:
 
 
 class TerminalTests(unittest.TestCase):
+    def test_kitty_colors_do_not_redefine_the_reloadable_indexed_palette(self):
+        for terminal_type in ('xterm-kitty', 'xterm-256color'):
+            with self.subTest(terminal_type=terminal_type):
+                terminal = Terminal(terminal_type=terminal_type,
+                                    environment={'KITTY_WINDOW_ID': 'papo-synthetic-window'})
+                try:
+                    self.assertIn('URL do servidor', '\n'.join(terminal.screen.display))
+                    self.assertNotIn(b'\x1b]4;', terminal.output)
+                    ordinary = terminal.screen.buffer[2][12]
+                    terminal.send('\tcor estável\x1bOH\x1b[1;2F')
+                    terminal.resize(30, 100); terminal.resize(24, 80)
+                    self.assertIn('cor estável', '\n'.join(terminal.screen.display))
+                    self.assertNotIn(b'\x1b]4;', terminal.output)
+                    after = terminal.screen.buffer[2][12]
+                    self.assertEqual((ordinary.fg, ordinary.bg), (after.fg, after.bg))
+                finally:
+                    self.assertTrue(terminal.close())
+
     def test_three_areas_and_wide_text_survive_resize(self):
         terminal = Terminal()
         try:

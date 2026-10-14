@@ -146,6 +146,9 @@ O aplicativo compartilha um limite configurável entre todas as tentativas de co
 ## Teclado e mouse
 
 O tema usa fundo quase preto, painéis em cinza escuro e laranja `#ffb347` em títulos, seleções e foco, no login e nas conversas. Os botões usam texto branco em repouso e laranja quando selecionados ou focados. Terminais com paleta fixa usam uma aproximação do tom; em terminais sem cores, o foco dos botões é indicado por vídeo reverso.
+No Kitty e no Konsole em modo de 256 cores, o tema usa tons aproximados que
+permanecem estáveis ao recarregar a configuração do terminal. Terminais com
+entrada de cores RGB diretas usam os tons exatos.
 
 | Controle | Ação |
 | --- | --- |

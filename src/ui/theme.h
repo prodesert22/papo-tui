@@ -21,8 +21,8 @@ typedef struct {
     } colors[THEME_COLOR_COUNT];
 } ui_theme;
 
-/* Called after initscr. Owns temporary palette changes; restore the values
- * saved from ncurses before endwin. */
+/* Called after initscr. Keeps Kitty/Konsole indexed palettes intact; on other
+ * mutable palettes, restore saved ncurses values before endwin. */
 void theme_init(ui_theme *theme);
 void theme_restore(ui_theme *theme);
 
