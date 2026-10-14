@@ -2,6 +2,7 @@
 #define PAPO_TEXT_H
 
 #include <graphemebreak.h>
+#include "model/mentions.h"
 #include <ncurses.h>
 #include <stdbool.h>
 
@@ -14,11 +15,15 @@ typedef struct {
     utf32_t data[TEXT_LIMIT + 1];
     size_t length, cursor;
     int first_row, goal_column;
+    bool mentions;
+    mention_resolver resolver; /* Borrowed for the current view. */
+    void *resolver_context;
     bool trailing; /* Prefer the preceding visual line at a soft wrap. */
 } text_buffer;
 
 typedef struct {
-    size_t start, end;
+    size_t start, end, display_start, display_end;
+    bool mention;
     int row, column, width;
     wchar_t glyph[CCHARW_MAX];
     bool newline;
@@ -30,6 +35,12 @@ typedef struct {
     int rows, cursor_row, cursor_column;
 } text_layout;
 
+/* Canonical tokens stay in data; only layout projects their labels. */
+void text_mentions(text_buffer *buffer, mention_resolver resolver, void *context);
+void text_project(const text_buffer *buffer, text_buffer *display);
+void text_draw_styled(WINDOW *window, const text_buffer *buffer, const text_layout *layout,
+                      const unsigned char *highlight, size_t length, int first, int height,
+                      int y, int x, int normal, int accent);
 bool text_insert(text_buffer *buffer, wint_t character, bool multiline);
 void text_delete(text_buffer *buffer, bool backward);
 void text_horizontal(text_buffer *buffer, bool right);

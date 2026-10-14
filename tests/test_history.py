@@ -28,7 +28,7 @@ class HistoryTests(unittest.TestCase):
             self.assertIn('Autor indisponível', final['authors'])
             self.assertIn('Apelido', final['authors'])
             self.assertTrue(all(CHANNEL in r[1] for r in server.requests if '/messages' in r[1]))
-            self.assertEqual(server.summary_calls, 3)
+            self.assertEqual(server.summary_calls, 1)
             self.assertTrue(all(r[2] == 'Auth=user-fixture' for r in server.requests if '/messages' in r[1] or 'summary_batch' in r[1]))
 
     def test_overlap_merges_by_id(self):
@@ -137,7 +137,10 @@ class HistoryTests(unittest.TestCase):
             for n, m in enumerate(server.messages): m['author_id'] = uuid(10000 + n)
             self.run_probe(server)
             batches = [r[3]['ids'] for r in server.requests if 'summary_batch' in r[1]]
-            self.assertEqual(len(batches[-1]), 1000)
+            self.assertTrue(all(1 <= len(batch) <= 1000 for batch in batches))
+            ids = [id for batch in batches for id in batch]
+            self.assertEqual(len(ids), 1000)
+            self.assertEqual(len(set(ids)), 1000)
         with HistoryMock('authors-twice') as server:
             result = self.run_probe(server, 'single')
             self.assertEqual(server.refresh_count, 1)
@@ -145,6 +148,19 @@ class HistoryTests(unittest.TestCase):
             self.assertEqual(result['pages'][0]['count'], 0)
             self.assertEqual(result['final_channels'], 0)
             self.assertFalse(result['session'])
+
+    def test_mentions_share_summary_batches_and_resolve_all_batches(self):
+        with HistoryMock(count=100) as server:
+            targets = {uuid(20000 + n) for n in range(1100)}
+            for n, message in enumerate(server.messages):
+                message['content'] = ' '.join(f'@mention(<@{uuid(20000 + n*11 + k)}>)' for k in range(11))
+            result = self.run_probe(server, 'single')
+            self.assertEqual(result['pages'][0]['count'], 100)
+            batches = [r[3]['ids'] for r in server.requests if 'summary_batch' in r[1]]
+            self.assertEqual([len(batch) for batch in batches], [1000, 103])
+            ids = [id for batch in batches for id in batch]
+            self.assertEqual(len(ids), len(set(ids)))
+            self.assertTrue(targets.issubset(ids))
 
     def test_cancel_external_post_during_refresh_finishes_rotation_without_replay(self):
         with HistoryMock('authors-401') as server:

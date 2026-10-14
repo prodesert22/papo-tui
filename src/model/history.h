@@ -1,6 +1,7 @@
 #ifndef PAPO_HISTORY_H
 #define PAPO_HISTORY_H
 #include "net/auth.h"
+#include "model/mentions.h"
 
 #define HISTORY_CHANNEL_LIMIT 500
 #define HISTORY_MESSAGE_LIMIT 1000
@@ -35,6 +36,17 @@ json_t *history_channel(const history *h, size_t index);
 size_t history_selected(const history *h);
 size_t history_message_count(const history *h);
 json_t *history_message(const history *h, size_t index);
+/* Changes when the loaded active conversation is cleared or updated. */
+uint64_t history_messages_revision(const history *h);
+/* Borrowed instance-scoped summaries. Directory reads are dispatched by the
+ * history owner through the same REST queue, never by the popup. */
+void history_users_active(history *h, bool active);
+void history_users_retry(history *h);
+size_t history_user_count(const history *h);
+uint64_t history_users_revision(const history *h);
+json_t *history_user(const history *h, size_t index);
+const char *history_users_notice(const history *h);
+const char *history_mention_name(void *context, const char *id);
 const char *history_author(const history *h, const char *id);
 const char *history_status(const history *h);
 bool history_loading(const history *h);

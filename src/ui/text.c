@@ -1,15 +1,103 @@
 #define _POSIX_C_SOURCE 200809L
 #include "ui/text.h"
+#include "ui/theme.h"
 
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 #include <wctype.h>
 
+/* Build a bounded projection and source-offset map. Labels cannot be longer
+ * than their canonical token; this preserves the existing layout capacity. */
+static void project(const text_buffer *source, text_buffer *display, size_t *starts, size_t *ends,
+                    unsigned char *styles)
+{
+    if (!source->mentions) {
+        *display = *source;
+        return;
+    }
+    text_clear(display);
+    display->first_row = source->first_row;
+    display->goal_column = source->goal_column;
+    display->trailing = source->trailing;
+    for (size_t i = 0; i < source->length;) {
+        char token[50] = {0};
+        mention_range range;
+        if (source->mentions && source->data[i] == '@' && i + 49 <= source->length) {
+            for (size_t k = 0; k < 49; ++k)
+                token[k] = source->data[i + k] < 128 ? (char)source->data[i + k] : '?';
+        }
+        bool atom = *token && mention_next(token, 0, &range) && range.start == 0 && range.end == 49;
+        size_t end = atom ? i + 49 : i + 1;
+        if (!atom) {
+            size_t at = display->length++;
+            display->data[at] = source->data[i];
+            if (starts) starts[at] = i;
+            if (ends) ends[at] = i + 1;
+            if (styles) styles[at] = 0;
+            if (source->cursor == i) display->cursor = at;
+            ++i;
+            continue;
+        }
+        text_buffer label = {0};
+        {
+            const char *name = source->resolver ? source->resolver(source->resolver_context, range.id) : NULL;
+            if (!text_decode(&label, name && *name ? name : "usuário indisponível"))
+                text_decode(&label, "usuário indisponível");
+            if (label.length > 47) {
+                char breaks[TEXT_LIMIT];
+                set_graphemebreaks_utf32(label.data, label.length, NULL, breaks);
+                size_t cut = 46;
+                while (cut && breaks[cut - 1] != GRAPHEMEBREAK_BREAK)
+                    --cut;
+                label.length = cut;
+                label.data[label.length++] = 0x2026;
+            }
+            memmove(label.data + 1, label.data, label.length * sizeof(label.data[0]));
+            label.data[0] = '@';
+            ++label.length;
+        }
+        size_t begin = display->length;
+        for (size_t k = 0; k < label.length; ++k) {
+            size_t at = display->length++;
+            display->data[at] = label.data[k];
+            if (starts) starts[at] = i;
+            if (ends) ends[at] = end;
+            if (styles) styles[at] = (unsigned char)atom;
+        }
+        if (source->cursor == i)
+            display->cursor = begin;
+        else if (source->cursor > i && source->cursor <= end)
+            display->cursor = display->length;
+        i = end;
+    }
+    display->data[display->length] = 0;
+    if (source->cursor == source->length) display->cursor = display->length;
+}
+void text_mentions(text_buffer *buffer, mention_resolver resolver, void *context)
+{
+    buffer->mentions = true;
+    buffer->resolver = resolver;
+    buffer->resolver_context = context;
+}
+void text_project(const text_buffer *buffer, text_buffer *display)
+{
+    project(buffer, display, NULL, NULL, NULL);
+}
+
 static void boundaries(const text_buffer *buffer, char breaks[TEXT_LIMIT])
 {
     if (buffer->length)
         set_graphemebreaks_utf32(buffer->data, buffer->length, NULL, breaks);
+    if (buffer->mentions) for (size_t i = 0; i + 49 <= buffer->length; ++i) {
+        if (buffer->data[i] != '@') continue;
+        char token[50] = {0}; mention_range r;
+        for (size_t k = 0; k < 49; ++k) token[k] = buffer->data[i+k] < 128 ? (char)buffer->data[i+k] : '?';
+        if (mention_next(token, 0, &r) && r.start == 0 && r.end == 49) {
+            for (size_t k = i; k < i + 48; ++k) breaks[k] = GRAPHEMEBREAK_NOBREAK;
+            breaks[i+48] = GRAPHEMEBREAK_BREAK; i += 48;
+        }
+    }
 }
 
 static size_t next(const text_buffer *buffer, size_t from, const char *breaks)
@@ -118,7 +206,7 @@ static text_cell cell(const text_buffer *buffer, size_t start, size_t end)
     return result;
 }
 
-void text_measure(const text_buffer *buffer, int width, text_layout *layout)
+static void measure_plain(const text_buffer *buffer, int width, text_layout *layout)
 {
     memset(layout, 0, sizeof(*layout));
     /* Reserve a cell for an end-of-line cursor, without a phantom blank line
@@ -154,6 +242,28 @@ void text_measure(const text_buffer *buffer, int width, text_layout *layout)
                 break;
             }
         }
+    }
+}
+
+void text_measure(const text_buffer *buffer, int width, text_layout *layout)
+{
+    if (!buffer->mentions) {
+        measure_plain(buffer, width, layout);
+        for (size_t i = 0; i < layout->count; ++i) {
+            layout->cells[i].display_start = layout->cells[i].start;
+            layout->cells[i].display_end = layout->cells[i].end;
+        }
+        return;
+    }
+    text_buffer display; size_t starts[TEXT_LIMIT+1], ends[TEXT_LIMIT+1];
+    unsigned char styles[TEXT_LIMIT+1] = {0};
+    project(buffer, &display, starts, ends, styles);
+    starts[display.length] = ends[display.length] = buffer->length;
+    measure_plain(&display, width, layout);
+    for (size_t i = 0; i < layout->count; ++i) {
+        text_cell *c = &layout->cells[i]; size_t a = c->start, b = c->end;
+        c->display_start = a; c->display_end = b; c->mention = styles[a];
+        c->start = starts[a]; c->end = b > a ? ends[b-1] : starts[a];
     }
 }
 
@@ -223,8 +333,22 @@ void text_draw(WINDOW *window, const text_buffer *buffer, const text_layout *lay
         const text_cell *point = &layout->cells[i];
         if (point->newline || point->row < first || point->row >= first + height) continue;
         cchar_t glyph;
-        if (setcchar(&glyph, point->glyph, attributes & ~A_COLOR, PAIR_NUMBER(attributes), NULL) == OK)
+        if (setcchar(&glyph, point->glyph, (attributes & ~A_COLOR) | (point->mention ? A_BOLD : 0), point->mention ? PANEL_ACCENT : PAIR_NUMBER(attributes), NULL) == OK)
             mvwadd_wch(window, y + point->row - first, x + point->column, &glyph);
+    }
+}
+
+void text_draw_styled(WINDOW *w, const text_buffer *b, const text_layout *l, const unsigned char *mask,
+                      size_t length, int first, int height, int y, int x, int normal, int accent)
+{
+    (void)b;
+    for (size_t i = 0; i + 1 < l->count; ++i) {
+        const text_cell *c = &l->cells[i];
+        if (c->newline || c->row < first || c->row >= first + height) continue;
+        bool marked = mask && c->start < length && mask[c->start];
+        cchar_t glyph;
+        if (setcchar(&glyph, c->glyph, marked ? A_BOLD : A_NORMAL, marked ? accent : normal, NULL) == OK)
+            mvwadd_wch(w, y + c->row - first, x + c->column, &glyph);
     }
 }
 

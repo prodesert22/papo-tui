@@ -61,7 +61,7 @@ class Terminal:
         env["XDG_STATE_HOME"] = os.path.join(self.configuration.name, "state")
         env.update(environment or {})
         command = [BINARY, *arguments]
-        if allow_local_http and "--demo" not in arguments and "--allow-local-http" not in arguments:
+        if allow_local_http and "--allow-local-http" not in arguments:
             command.append("--allow-local-http")
         self.process = subprocess.Popen(command, stdin=self.slave, stdout=self.slave, stderr=self.slave,
                                         env=env, start_new_session=True)

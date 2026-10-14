@@ -48,27 +48,52 @@ static bool column(message_blocks *b, size_t start, const char *key, const char 
     do {
         text_buffer buffer;
         text_layout layout;
+        const char *begin=p;
+        bool styled = b->resolver && !strcmp(key, "content");
         if (!text_decode_chunk(&buffer, &p)) return false;
+        if(styled && *p) {
+            mention_range range;size_t from=0,cut=(size_t)(p-begin);
+            while(mention_next(begin,from,&range)) {
+                if(range.start>=cut)break;
+                if(range.end>cut) {
+                    char *prefix=strndup(begin,range.start);
+                    if(!prefix)return false;
+                    bool ok=text_decode(&buffer,prefix);free(prefix);
+                    if(!ok)return false;
+                    p=begin+range.start;break;
+                }
+                from=range.end;
+            }
+        }
+        if (styled) text_mentions(&buffer, b->resolver, b->resolver_context);
+        text_buffer visible; text_project(&buffer, &visible);
         text_measure(&buffer, width, &layout);
         for (int line = 0; line < layout.rows; ++line) {
             if (!reserve(b, row + 1)) return false;
             message_row *r = &b->rows[row];
             if (r->count == MESSAGE_COLUMNS) return false;
             message_segment *s = &r->segments[r->count++];
-            size_t first = buffer.length, last = first;
+            size_t first = visible.length, last = first, source_first=buffer.length;
             for (size_t k = 0; k < layout.count; ++k) if (layout.cells[k].row == line) {
-                if (first == buffer.length) first = layout.cells[k].start;
-                last = layout.cells[k].end;
+                if (first == visible.length) { first = layout.cells[k].display_start;source_first=layout.cells[k].start; }
+                last = layout.cells[k].display_end;
             }
             text_buffer part = {0};
             part.length = last - first;
-            memcpy(part.data, buffer.data + first, part.length * sizeof(part.data[0]));
+            memcpy(part.data, visible.data + first, part.length * sizeof(part.data[0]));
             /* Row strings never contain newlines; wrapping is already measured. */
             while (part.length && part.data[part.length - 1] == '\n') --part.length;
             char encoded[TEXT_UTF8_BYTES];
             if (!text_encode(&part, encoded) || !(s->text = strdup(encoded))) return false;
             snprintf(s->key, sizeof(s->key), "%s", key);
-            s->offset = base + first; s->x = x; s->width = width; s->bold = bold;
+            s->offset = base + source_first; s->x = x; s->width = width; s->bold = bold;
+            if (styled) {
+                s->highlight = calloc(part.length+1,1); s->highlight_length = part.length;
+                if (!s->highlight) return false;
+                for (size_t k=0;k<layout.count;++k) if(layout.cells[k].row==line && layout.cells[k].mention)
+                    for(size_t q=layout.cells[k].display_start;q<layout.cells[k].display_end && q<first+part.length;++q)
+                        if(q>=first)s->highlight[q-first]=1;
+            }
             r->card = card; r->color = color;
             ++row;
             if (row > b->count) b->count = row;
@@ -131,10 +156,12 @@ static bool media(message_blocks *b, json_t *message, json_t *entry, const char 
     }
     return true;
 }
-bool message_blocks_build(message_blocks *b, json_t *m, const char *author,
-                          const char *reply, int width, bool graphics)
+bool message_blocks_build_mentions(message_blocks *b, json_t *m, const char *author,
+                          const char *reply, int width, bool graphics,
+                          mention_resolver resolver, void *context, const char *self)
 {
-    memset(b, 0, sizeof(*b));
+    memset(b, 0, sizeof(*b)); b->resolver=resolver;b->resolver_context=context;
+    b->self_mention=mention_contains(str(m,"content"),self);
     if (width < 8) width = 8;
     char label[1600];
     snprintf(label, sizeof(label), "%s · %s%s", str(m, "created_at"), author, *str(m, "edited_at") ? " · editada" : "");
@@ -239,11 +266,13 @@ bool message_blocks_build(message_blocks *b, json_t *m, const char *author,
 error:
     message_blocks_free(b); return false;
 }
+bool message_blocks_build(message_blocks *b,json_t *m,const char *a,const char *r,int w,bool g)
+{ return message_blocks_build_mentions(b,m,a,r,w,g,NULL,NULL,NULL); }
 void message_blocks_free(message_blocks *b)
 {
     /* capacity includes partially constructed rows on an allocation failure. */
     for (size_t i = 0; i < b->capacity; ++i)
-        for (int k = 0; k < b->rows[i].count; ++k) free(b->rows[i].segments[k].text);
+        for (int k = 0; k < b->rows[i].count; ++k) { free(b->rows[i].segments[k].text); free(b->rows[i].segments[k].highlight); }
     free(b->rows); free(b->media); memset(b, 0, sizeof(*b));
 }
 static struct { int fg, bg; } frame_colors[32];
@@ -290,6 +319,12 @@ void message_row_draw(WINDOW *w, const message_row *row, int y, int x, int width
     for (int i = 0; i < row->count; ++i) {
         const message_segment *s = &row->segments[i];
         wattrset(w, COLOR_PAIR(pair) | (s->bold ? A_BOLD : 0));
-        text_label(w, y, x + s->x, s->width, s->text);
+        if(s->highlight) {
+            text_buffer buffer; text_layout layout;
+            if(text_decode(&buffer,s->text)) {
+                text_measure(&buffer,s->width,&layout);
+                text_draw_styled(w,&buffer,&layout,s->highlight,s->highlight_length,0,1,y,x+s->x,pair,accent);
+            }
+        } else text_label(w, y, x + s->x, s->width, s->text);
     }
 }

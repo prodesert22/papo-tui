@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include "model/history.h"
+#include "model/mentions.h"
 #include "net/session_time.h"
 #include "net/clock.h"
 #include "net/retry.h"
@@ -8,10 +9,15 @@
 #include <stdlib.h>
 #include <string.h>
 
-enum request_kind { NONE, CHANNELS, MESSAGES, AUTHORS };
+enum request_kind { NONE, CHANNELS, MESSAGES, AUTHORS, USERS };
 struct history {
     auth_client *auth;
-    json_t *channels, *messages, *authors;
+    json_t *users, *directory, *queried, *summary_ids;
+    size_t user_bytes;
+    uint64_t users_revision, messages_revision;
+    bool users_active, users_complete, users_failed, users_partial;
+    char users_time[65], users_id[37], users_notice[192];
+    json_t *channels, *messages;
     json_t *journal, *patches, *fresh, *boundary;
     size_t journal_bytes;
     bool replaying, recovering, ascending;
@@ -47,13 +53,13 @@ static bool remember(history *h, const json_t *event);
 static void status(history *h, const char *value) { snprintf(h->status, sizeof(h->status), "%s", value); }
 static void clear_messages(history *h)
 {
+    ++h->messages_revision;
     json_decref(h->journal); h->journal = NULL; h->journal_bytes = 0;
     json_decref(h->patches); h->patches = NULL;
     json_decref(h->fresh); h->fresh = NULL;
     json_decref(h->boundary); h->boundary = NULL;
     h->recovering = h->ascending = false; h->retry_at = 0; h->failures = 0;
     json_decref(h->messages); h->messages = NULL;
-    json_decref(h->authors); h->authors = NULL;
     h->bytes = 0; h->more = h->evicted = false;
     h->failed = NONE;
     h->cursor_id[0] = h->cursor_time[0] = '\0';
@@ -65,6 +71,8 @@ history *history_create(auth_client *auth)
     if (!h) return NULL;
     h->auth = auth; h->selected = SIZE_MAX;
     h->context = auth_context_generation(auth); h->want_channels = true;
+    h->users = json_object(); h->directory = json_array(); h->queried = json_object();
+    if (!h->users || !h->directory || !h->queried) { history_destroy(h); return NULL; }
     h->epoch = auth_ws_epoch(auth);
     status(h, "Carregando canais…");
     return h;
@@ -73,13 +81,14 @@ void history_destroy(history *h)
 {
     if (!h) return;
     if (h->pending != NONE) auth_cancel_read(h->auth);
-    clear_messages(h); json_decref(h->channels); free(h);
+    clear_messages(h); json_decref(h->channels); json_decref(h->users); json_decref(h->directory); json_decref(h->queried); json_decref(h->summary_ids); free(h);
 }
 size_t history_channel_count(const history *h) { return json_array_size(h->channels); }
 json_t *history_channel(const history *h, size_t i) { return json_array_get(h->channels, i); }
 size_t history_selected(const history *h) { return h->selected; }
 size_t history_message_count(const history *h) { return json_array_size(h->messages); }
 json_t *history_message(const history *h, size_t i) { return json_array_get(h->messages, i); }
+uint64_t history_messages_revision(const history *h) { return h->messages_revision; }
 const char *history_status(const history *h) { return h->status; }
 bool history_has_more(const history *h) { return h->more; }
 bool history_evicted(const history *h) { return h->evicted; }
@@ -92,11 +101,101 @@ bool history_loading(const history *h)
 }
 const char *history_author(const history *h, const char *id)
 {
-    const char *name = id ? json_string_value(json_object_get(h->authors, id)) : NULL;
-    if (name) return name;
-    if (id && auth_has_session(h->auth) && !strcmp(id, auth_user_id(h->auth))) return auth_username(h->auth);
-    return "Autor indisponível";
+    const char *name = history_mention_name((void *)h, id);
+    return name ? name : "Autor indisponível";
 }
+void history_users_active(history *h, bool active) { h->users_active = active; }
+void history_users_retry(history *h) { h->users_failed = false; }
+size_t history_user_count(const history *h) { return json_array_size(h->directory); }
+uint64_t history_users_revision(const history *h) { return h->users_revision; }
+json_t *history_user(const history *h, size_t i)
+{
+    return json_object_get(h->users, json_string_value(json_array_get(h->directory, i)));
+}
+const char *history_users_notice(const history *h)
+{
+    if (h->users_failed) return "Falha ao listar usuários. Ctrl+R: tentar novamente.";
+    if (h->users_partial) return "Lista parcial: limite local atingido.";
+    return h->users_complete ? "Tab / Enter / clique: mencionar" : "Carregando usuários…";
+}
+const char *history_mention_name(void *context, const char *id)
+{
+    history *h = context;
+    if (!h || !id) return NULL;
+    json_t *user = json_object_get(h->users, id);
+    const char *name = str(user, "nickname");
+    if (name && *name) return name;
+    name = str(user, "username");
+    if (name && *name) return name;
+    return !strcmp(id, auth_user_id(h->auth)) ? auth_username(h->auth) : NULL;
+}
+static bool cache_user(history *h, json_t *u)
+{
+    const char *id = str(u, "id"), *name = str(u, "username");
+    if (!history_uuid(id) || !name || !string_field(u, "username", 1024, false) ||
+        !string_field(u, "nickname", 1024, true))
+        return false;
+    json_t *prior = json_object_get(h->users, id);
+    size_t old = prior ? strlen(str(prior, "username")) +
+                             (str(prior, "nickname") ? strlen(str(prior, "nickname")) : 0) + 512
+                       : 0;
+    size_t cost = strlen(name) + (str(u, "nickname") ? strlen(str(u, "nickname")) : 0) + 512;
+    if ((!prior && json_object_size(h->users) >= 10000) ||
+        cost > 16U * 1024U * 1024U - (h->user_bytes - old)) {
+        h->users_partial = h->users_complete = true;
+        return true;
+    }
+    json_t *copy = json_pack("{s:s,s:s,s:O}", "id", id, "username", name, "nickname",
+                             json_object_get(u, "nickname") ? json_object_get(u, "nickname") : json_null());
+    if (!copy) return false;
+    bool ok = json_object_set_new(h->users, id, copy) == 0;
+    if (ok) {
+        h->user_bytes = h->user_bytes - old + cost;
+        ++h->users_revision;
+    }
+    return ok;
+}
+static bool users_response(history *h, json_t *body)
+{
+    json_t *users = json_object_get(body, "users"), *more = json_object_get(body, "has_more");
+    size_t count = json_array_size(users);
+    if (!json_is_array(users) || count > 100 || !json_is_boolean(more)) return false;
+    for (size_t i = 0; i < count; ++i) {
+        json_t *u = json_array_get(users, i);
+        uint64_t stamp;
+        if (!str(u, "created_at") || strlen(str(u, "created_at")) >= sizeof(h->users_time) ||
+            !session_time_parse(str(u, "created_at"), &stamp) || !cache_user(h, u))
+            return false;
+        const char *id = str(u, "id");
+        bool found = false;
+        for (size_t j = 0; j < json_array_size(h->directory); ++j)
+            if (!strcmp(id, json_string_value(json_array_get(h->directory, j)))) {
+                found = true;
+                break;
+            }
+        if (!found && !h->users_partial && json_array_append_new(h->directory, json_string(id))) return false;
+    }
+    if (count) {
+        json_t *last = json_array_get(users, count - 1);
+        if (!strcmp(h->users_id, str(last, "id"))) return false;
+        snprintf(h->users_time, sizeof(h->users_time), "%s", str(last, "created_at"));
+        snprintf(h->users_id, sizeof(h->users_id), "%s", str(last, "id"));
+    }
+    h->users_complete |= !count || json_is_false(more);
+    return true;
+}
+static bool request_users(history *h)
+{
+    char path[512] = "/users?order=asc";
+    if (*h->users_id) {
+        char *time = curl_easy_escape(NULL, h->users_time, 0);
+        if (!time) return false;
+        snprintf(path, sizeof(path), "/users?order=asc&since=%s&last_id=%s", time, h->users_id);
+        curl_free(time);
+    }
+    return auth_get_json(h->auth, path);
+}
+
 void history_reload_channels(history *h)
 {
     if (h->pending != NONE) { auth_cancel_read(h->auth); h->pending = NONE; }
@@ -239,6 +338,7 @@ static size_t find(json_t *array, const char *id)
 }
 static bool trim(history *h, json_t *array, bool oldest)
 {
+    if (array == h->messages) ++h->messages_revision;
     size_t bytes = 0, i; json_t *m;
     json_array_foreach(array, i, m) {
         size_t n = encoded_size(m);
@@ -573,6 +673,7 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
         if (added && contains(h->messages, id) && !h->replaying) ++h->insertions;
         h->want_authors = true;
     }
+    if (active && edit) h->want_authors = true;
     return true;
 invalid:
     status(h, "Evento de tempo real inválido ignorado."); return false;
@@ -634,18 +735,12 @@ static bool recovery_response(history *h, json_t *body)
 static bool authors_response(history *h, json_t *body)
 {
     if (!json_is_array(body) || json_array_size(body) > 1000) return false;
-    json_t *names = json_object();
-    if (!names) return false;
-    size_t i; json_t *u;
-    json_array_foreach(body, i, u) {
-        if (!history_uuid(str(u, "id")) || !string_field(u, "username", 1024, false) ||
-            !string_field(u, "nickname", 1024, true)) { json_decref(names); return false; }
-        const char *name = str(u, "nickname");
-        if (!name || !*name) name = str(u, "username");
-        if (json_object_set_new(names, str(u, "id"), json_string(name))) { json_decref(names); return false; }
-    }
-    json_decref(h->authors); h->authors = names; return true;
+    size_t i;
+    json_t *u;
+    json_array_foreach(body, i, u) if (!cache_user(h, u)) return false;
+    return true;
 }
+
 static bool request_messages(history *h)
 {
     const char *id = str(history_channel(h, h->selected), "id");
@@ -668,21 +763,54 @@ static bool request_messages(history *h)
 static bool request_authors(history *h)
 {
     json_t *ids = json_array(), *seen = json_object();
-    if (!ids || !seen) { json_decref(ids); json_decref(seen); return false; }
-    size_t i; json_t *m; bool ok = true;
-    json_array_foreach(h->messages, i, m) {
-        const char *id = str(m, "author_id");
-        if (!json_object_get(seen, id) && (json_array_append_new(ids, json_string(id)) ||
-            json_object_set_new(seen, id, json_true()))) { ok = false; break; }
+    if (!ids || !seen) {
+        json_decref(ids);
+        json_decref(seen);
+        return false;
     }
-    if (ok) ok = auth_user_summaries(h->auth, ids);
-    json_decref(ids); json_decref(seen); return ok;
+    size_t i;
+    json_t *m;
+    bool ok = true;
+    json_array_foreach(h->messages, i, m)
+    {
+        const char *id = str(m, "author_id");
+        if (!json_object_get(h->users, id) && !json_object_get(h->queried, id) &&
+            !json_object_get(seen, id) && json_array_size(ids) < 1000 &&
+            json_object_size(h->queried) + json_array_size(ids) < 10000) {
+            ok &= !json_array_append_new(ids, json_string(id)) && !json_object_set_new(seen, id, json_true());
+        }
+        mention_range r;
+        size_t at = 0;
+        while (mention_next(str(m, "content"), at, &r)) {
+            at = r.end;
+            if (json_object_get(h->users, r.id) || json_object_get(h->queried, r.id) ||
+                json_object_get(seen, r.id) || json_array_size(ids) >= 1000 ||
+                json_object_size(h->queried) + json_array_size(ids) >= 10000)
+                continue;
+            ok &= !json_array_append_new(ids, json_string(r.id)) &&
+                  !json_object_set_new(seen, r.id, json_true());
+        }
+    }
+    if (ok && json_array_size(ids)) ok = auth_user_summaries(h->auth, ids);
+    if (ok) {
+        json_decref(h->summary_ids);
+        h->summary_ids = json_incref(ids);
+    }
+    json_decref(ids);
+    json_decref(seen);
+    return ok;
 }
+
 bool history_poll(history *h)
 {
     bool changed = false;
     if (h->context != auth_context_generation(h->auth)) {
-        h->context = auth_context_generation(h->auth); history_reload_channels(h); h->pending = NONE; changed = true;
+        h->context = auth_context_generation(h->auth);
+        json_object_clear(h->users); json_array_clear(h->directory); json_object_clear(h->queried);
+        ++h->users_revision;
+        h->users_complete = h->users_failed = h->users_partial = false; h->user_bytes = 0;
+        h->users_id[0] = h->users_time[0] = 0;
+        history_reload_channels(h); h->pending = NONE; changed = true;
         h->epoch = auth_ws_epoch(h->auth);
     }
     uint64_t epoch = auth_ws_epoch(h->auth);
@@ -700,9 +828,13 @@ bool history_poll(history *h)
         long code; uint64_t generation;
         json_t *body = auth_take_response(h->auth, &code, &generation);
         if (h->pending != NONE && generation == h->context && h->request_context == h->context &&
-            h->request_selection == h->selection) {
+            (h->pending == USERS || h->request_selection == h->selection)) {
             enum request_kind kind = h->pending;
             bool was_recovering = h->recovering;
+            if (kind == USERS) {
+                h->users_failed = code != 200 || !users_response(h, body);
+                json_decref(body); h->pending = NONE; return true;
+            }
             bool ok = code == 200 && (kind == CHANNELS ? channels_response(h, body) :
                          kind == MESSAGES ? h->recovering ? recovery_response(h, body) : messages_response(h, body) : authors_response(h, body));
             if (ok && kind != AUTHORS && !(was_recovering && kind == MESSAGES)) {
@@ -713,6 +845,18 @@ bool history_poll(history *h)
                 json_t *channel = history_channel(h, h->selected);
                 if (channel && !strcmp(str(channel, "type"), "text")) h->want_messages = true;
                 else { h->recovering = false; clear_journal(h); }
+            }
+            if (kind == AUTHORS) {
+                if (ok) {
+                    size_t i; json_t *id;
+                    json_array_foreach(h->summary_ids, i, id)
+                        if (json_object_set_new(h->queried, json_string_value(id), json_true())) ok = false;
+                    /* Resolve another batch when a message contains more than
+                     * 1000 distinct names. Omitted IDs are cached only after a
+                     * successful response; cancellation and failures can retry. */
+                    h->want_authors = ok;
+                }
+                json_decref(h->summary_ids); h->summary_ids = NULL;
             }
             if (!ok) {
                 h->failed = kind;
@@ -743,17 +887,23 @@ bool history_poll(history *h)
     if (h->recovering && ws != WS_OPEN) return changed;
     if (now < h->retry_at) return changed;
     if (h->pending == NONE && auth_has_session(h->auth) && !auth_busy(h->auth)) {
-        enum request_kind kind = h->want_channels ? CHANNELS : h->want_messages ? MESSAGES : h->want_authors ? AUTHORS : NONE;
+        enum request_kind kind = h->want_channels ? CHANNELS : h->want_messages ? MESSAGES : h->want_authors ? AUTHORS : h->users_active && !h->users_complete && !h->users_failed ? USERS : NONE;
         bool started = kind == CHANNELS ? auth_get_json(h->auth, "/channels") :
-                       kind == MESSAGES ? request_messages(h) : kind == AUTHORS ? request_authors(h) : false;
+                       kind == MESSAGES ? request_messages(h) : kind == AUTHORS ? request_authors(h) : kind == USERS ? request_users(h) : false;
+        if (started && kind == AUTHORS && !auth_busy(h->auth)) {
+            h->want_authors = false;
+            json_decref(h->summary_ids); h->summary_ids = NULL;
+            return changed;
+        }
         if (started) {
             h->pending = kind; h->request_context = h->context; h->request_selection = h->selection;
             if (!h->recovering) clear_journal(h);
             if (kind == CHANNELS) h->want_channels = false;
             else if (kind == MESSAGES) h->want_messages = false;
-            else h->want_authors = false;
+            else if (kind == AUTHORS) h->want_authors = false;
             changed = true;
         } else if (kind != NONE && auth_get_state(h->auth) == AUTH_READY && !auth_response_ready(h->auth)) {
+            if (kind == USERS) { h->users_failed = true; return true; }
             h->failed = kind;
             h->want_channels = h->want_messages = h->want_authors = false;
             status(h, "Não foi possível preparar a consulta. Ctrl+R: tentar novamente.");

@@ -9,6 +9,7 @@
 #include "ui/mouse.h"
 #include "app/session_store.h"
 #include "ui/send_editor.h"
+#include "ui/mention_popup.h"
 #include <wctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,6 +24,7 @@ typedef enum { DRAW_ALL, DRAW_CONVERSATION, DRAW_NAVIGATION } draw_scope;
 typedef struct { int x, width; } click_range;
 typedef struct {
     history *model;
+    mention_popup *mentions;
     media_view *media;
     char block[128];
     send_editor *editor; /* Borrowed from the instance connection. */
@@ -151,8 +153,9 @@ static int walk(view *ui, int first, bool paint, bool save, int *anchor)
         if (*str(m, "reply_to")) for (size_t j = 0; j < history_message_count(ui->model); ++j)
             if (!strcmp(str(m, "reply_to"), str(history_message(ui->model, j), "id"))) { reply = str(m, "reply_to"); break; }
         message_blocks blocks;
-        if (!message_blocks_build(&blocks, m, history_author(ui->model, str(m, "author_id")), reply, width,
-                                  sixel_terminal_get().supported)) continue;
+        if (!message_blocks_build_mentions(&blocks, m, history_author(ui->model, str(m, "author_id")), reply, width,
+                                  sixel_terminal_get().supported, history_mention_name, ui->model,
+                                  auth_user_id(ui->connections->items[ui->active_tab].auth))) continue;
         bool anchored = !strcmp(ui->anchor, str(m, "id"));
         if (anchored) *anchor = total;
         int offered = -1;
@@ -176,6 +179,10 @@ static int walk(view *ui, int first, bool paint, bool save, int *anchor)
                 int accent = ui->focus == HISTORY_PANEL ? HISTORY_ACCENT : PANEL_ACCENT;
                 if (r->count && !strcmp(r->segments[0].key, "header")) pair = accent;
                 message_row_draw(ui->body, r, y, 2, width, pair, accent);
+                if (blocks.self_mention && row + 1 < blocks.count) {
+                    wattrset(ui->body, COLOR_PAIR(accent) | A_BOLD);
+                    mvwaddch(ui->body, y, 0, ACS_VLINE);
+                }
                 if (r->media_index >= 0 && r->media_index != offered && ui->media) {
                     offered = r->media_index;
                     int start = total + (int)row - r->media_row;
@@ -378,9 +385,14 @@ static void draw(view *ui, auth_client *auth, draw_scope scope)
     if (ui->focus == MESSAGE_INPUT && input(ui) && ui->body && !ui->duplicate_modal) wnoutrefresh(ui->body);
     draw_confirmation(ui);
     if (scope != DRAW_NAVIGATION) media_view_draw(ui->media);
+    if (mention_popup_open(ui->mentions) && ui->body && input(ui)) {
+        text_layout measured; text_measure(input(ui), getmaxx(ui->body) - 6, &measured);
+        mention_popup_draw(ui->mentions, getbegy(ui->body) + ui->editor_border + 1 + measured.cursor_row - input(ui)->first_row,
+                           getbegx(ui->body) + 3 + measured.cursor_column, getbegx(ui->body) + 1, getmaxx(ui->body) - 2);
+    }
     if (media_view_modal(ui->media)) curs_set(0);
     doupdate();
-    if (!ui->duplicate_modal && scope != DRAW_NAVIGATION) media_view_flush(ui->media);
+    if (!ui->duplicate_modal && !mention_popup_open(ui->mentions) && scope != DRAW_NAVIGATION) media_view_flush(ui->media);
 }
 static void set_focus(view *ui, int focus)
 {
@@ -520,8 +532,10 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
     ui->connections = connections; ui->active_tab = ui->tab_cursor = instances_index(connections, auth);
     ui->editor = instances_editor(connections, auth);
     ui->media = media_view_create(auth);
-    ui->model = history_create(auth); ui->at_end = ui->show_channels = true; ui->focus = focus_tabs ? SERVER_TABS : CHANNEL_LIST;
-    if (!ui->model || !ui->editor || ui->active_tab == SIZE_MAX || !layout(ui)) { media_view_destroy(ui->media); history_destroy(ui->model); destroy_layout(ui); free(ui); return HISTORY_ACCOUNT; }
+    ui->model = history_create(auth);
+    ui->mentions = ui->model ? mention_popup_create(ui->model) : NULL;
+    ui->at_end = ui->show_channels = true; ui->focus = focus_tabs ? SERVER_TABS : CHANNEL_LIST;
+    if (!ui->model || !ui->mentions || !ui->editor || ui->active_tab == SIZE_MAX || !layout(ui)) { mention_popup_destroy(ui->mentions); media_view_destroy(ui->media); history_destroy(ui->model); destroy_layout(ui); free(ui); return HISTORY_ACCOUNT; }
     mmask_t previous_mouse;
     /* A separately delivered release must reach getmouse(). If it is filtered
      * out, ncurses can wait for another gesture inside get_wch(), stalling HTTP
@@ -539,6 +553,11 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             else if (scope == DRAW_NAVIGATION) scope = DRAW_ALL;
             redraw = true;
         }
+        if (input(ui)) text_mentions(input(ui), history_mention_name, ui->model);
+        if (mention_popup_update(ui->mentions, input(ui), ui->focus == MESSAGE_INPUT && !ui->paste &&
+                                 !ui->duplicate_modal && !media_view_modal(ui->media))) {
+            redraw = true; scope = DRAW_ALL;
+        }
         if (!auth_has_session(auth) && !auth_busy(auth)) break;
         if (redraw) { draw(ui, auth, scope); redraw = false; scope = DRAW_ALL; }
         wint_t key; int type = sixel_terminal_input(&key);
@@ -548,7 +567,11 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             if (!ui->duplicate_modal && !media_view_modal(ui->media) && input(ui) && ui->focus != SERVER_TABS) { set_focus(ui, MESSAGE_INPUT); redraw = true; }
             continue;
         }
-        if (type == KEY_CODE_YES && key == PASTE_END) { ui->paste = false; continue; }
+        if (type == KEY_CODE_YES && key == PASTE_END) {
+            ui->paste = false;
+            mention_popup_update(ui->mentions, input(ui), ui->focus == MESSAGE_INPUT);
+            mention_popup_close(ui->mentions); continue;
+        }
         if (type == KEY_CODE_YES && key == KEY_RESIZE) { layout(ui); redraw = true; continue; }
         if (ui->paste) {
             if (!ui->duplicate_modal && !media_view_modal(ui->media) && ui->focus == MESSAGE_INPUT && type == OK && input(ui)) {
@@ -567,6 +590,11 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         }
         redraw = true;
         if (type == OK && (key == 17 || key == 3)) { result = HISTORY_EXIT; break; }
+        bool accepted = false;
+        if (mention_popup_key(ui->mentions, input(ui), type, key, &accepted)) {
+            if (accepted) send_editor_changed(ui->editor);
+            scope = DRAW_ALL; continue;
+        }
         bool enter = (type == OK && (key == '\r' || key == '\n')) || (type == KEY_CODE_YES && key == KEY_ENTER);
         if (ui->duplicate_modal) {
             if (type == OK && key == 27) { close_confirmation(ui); continue; }
@@ -633,6 +661,10 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         if (type == KEY_CODE_YES && key == KEY_MOUSE) {
             MEVENT e;
             if (ui_mouse_get(&e) != OK || !ui->frame) continue;
+            if (mention_popup_mouse(ui->mentions, input(ui), &e, &accepted)) {
+                if (accepted) send_editor_changed(ui->editor);
+                scope = DRAW_ALL; continue;
+            }
             if (e.bstate & (BUTTON4_PRESSED | BUTTON5_PRESSED)) {
                 scope = DRAW_CONVERSATION;
                 if (ui->body && e.x >= getbegx(ui->body) && e.x < getbegx(ui->body) + getmaxx(ui->body) && e.y >= getbegy(ui->body) + ui->history_top && e.y < getbegy(ui->body) + ui->editor_border)
@@ -730,5 +762,8 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
     }
 finished:
     mousemask(previous_mouse, NULL);
+    mention_popup_destroy(ui->mentions);
+    text_buffer *draft = send_editor_input(ui->editor);
+    if (draft) text_mentions(draft, NULL, NULL);
     media_view_destroy(ui->media); destroy_layout(ui); history_destroy(ui->model); free(ui); touchwin(stdscr); return result;
 }
