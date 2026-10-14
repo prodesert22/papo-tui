@@ -32,7 +32,7 @@ typedef struct {
     send_editor *editor; /* Borrowed from the instance connection. */
     instance_connections *connections;
     WINDOW *frame, *tabs, *footer, *list, *body, *confirm;
-    int width, height, side, visible, first_channel, focus, first, editor_border, history_top, editor_rows;
+    int width, height, side, visible, first_channel, focus, first, editor_border, history_top, editor_rows, editor_padding;
     size_t highlighted, active_tab, tab_cursor, first_tab;
     click_range tab_hits[INSTANCE_LIMIT], add_hit, back_hit, next_hit, channels_hit, conversation_hit;
     char anchor[37];
@@ -74,8 +74,10 @@ static bool layout(view *ui)
     bool wide = COLS >= 80;
     int rows = LINES - CONTENT_Y - 3;
     ui->side = wide ? 24 : COLS - 2;
-    ui->editor_rows = 1; ui->editor_border = rows - 3;
-    ui->history_top = rows >= 8 ? 3 : 2;
+    ui->history_top = rows >= 8 ? 3 : rows >= 7 ? 2 : 1;
+    /* Reserve a visible history row, both input borders and the typing row. */
+    ui->editor_padding = rows - ui->history_top >= 7 ? 1 : 0;
+    ui->editor_rows = 1; ui->editor_border = rows - 4 - 2 * ui->editor_padding;
     ui->visible = ui->editor_border - ui->history_top;
     ui->frame = newwin(LINES, COLS, 0, 0);
     if (!ui->frame) return false;
@@ -243,18 +245,26 @@ static int input_height(view *ui)
 {
     return ui->editor_rows;
 }
+static int input_top(view *ui)
+{
+    return ui->editor_border + 1 + ui->editor_padding;
+}
+static bool input_row(view *ui, int row)
+{
+    return row >= input_top(ui) && row < input_top(ui) + input_height(ui);
+}
 static bool editor_geometry(view *ui)
 {
     if (!ui->body) return false;
     int rows = 1;
     text_buffer *buffer = input(ui);
     if (buffer) { text_layout measured; text_measure(buffer, getmaxx(ui->body) - 6, &measured); rows = measured.rows; }
-    int maximum = getmaxy(ui->body) - ui->history_top - 3;
+    int maximum = getmaxy(ui->body) - ui->history_top - 2 * ui->editor_padding - 4;
     if (maximum > 5) maximum = 5;
     if (maximum < 1) maximum = 1;
     if (rows > maximum) rows = maximum;
     bool changed = rows != ui->editor_rows;
-    ui->editor_rows = rows; ui->editor_border = getmaxy(ui->body) - rows - 2;
+    ui->editor_rows = rows; ui->editor_border = getmaxy(ui->body) - rows - 2 * ui->editor_padding - 3;
     ui->visible = ui->editor_border - ui->history_top;
     return changed;
 }
@@ -446,7 +456,10 @@ static void draw(view *ui, auth_client *auth, draw_scope scope)
         text_label(ui->body, 0, 2, getmaxx(ui->body) - 4, title);
         wattrset(ui->body, COLOR_PAIR(ui->focus == HISTORY_PANEL ? HISTORY_MUTED : PANEL_MUTED));
         if (ui->history_top == 3) text_label(ui->body, 1, 2, getmaxx(ui->body) - 4, str(c, "topic"));
-        wattrset(ui->body, COLOR_PAIR(ui->focus == HISTORY_PANEL ? HISTORY_BORDER : BORDER)); mvwhline(ui->body, ui->history_top - 1, 0, ACS_HLINE, getmaxx(ui->body));
+        if (ui->history_top > 1) {
+            wattrset(ui->body, COLOR_PAIR(ui->focus == HISTORY_PANEL ? HISTORY_BORDER : BORDER));
+            mvwhline(ui->body, ui->history_top - 1, 0, ACS_HLINE, getmaxx(ui->body));
+        }
         wattrset(ui->body, COLOR_PAIR(ui->focus == HISTORY_PANEL ? HISTORY_MUTED : PANEL_MUTED));
         if (!auth_has_session(auth)) text_label(ui->body, ui->history_top, 2, getmaxx(ui->body) - 4, "Revalidando sessão…");
         else if (history_message_count(ui->model)) {
@@ -462,30 +475,33 @@ static void draw(view *ui, auth_client *auth, draw_scope scope)
 
         if (editor) {
             int height = input_height(ui), width = getmaxx(ui->body) - 6;
-            if (editing) for (int row = 0; row < height; ++row) {
+            if (editing) for (int row = 0; row < height + 2 * ui->editor_padding; ++row) {
                 wattrset(ui->body, COLOR_PAIR(FOCUS_AREA));
                 mvwhline(ui->body, ui->editor_border + 1 + row, 0, ' ', getmaxx(ui->body));
             }
             wattrset(ui->body, COLOR_PAIR(editing ? FOCUS_AREA : PANEL));
-            text_label(ui->body, ui->editor_border + 1, 1, 1, ">");
+            text_label(ui->body, input_top(ui), 1, 1, ">");
             text_layout measured; text_measure(editor, width, &measured);
             if (!ui->editor_scrolling) text_keep_cursor(editor, &measured, height);
             if (!editor->length) {
                 char placeholder[2200]; snprintf(placeholder, sizeof(placeholder), "Conversar em #%s", str(c, "name"));
                 wattrset(ui->body, COLOR_PAIR(editing ? FOCUS_MUTED : PANEL_MUTED));
-                text_label(ui->body, ui->editor_border + 1, 3, width, placeholder);
-            } else text_draw(ui->body, editor, &measured, editor->first_row, height, ui->editor_border + 1, 3);
+                text_label(ui->body, input_top(ui), 3, width, placeholder);
+            } else text_draw(ui->body, editor, &measured, editor->first_row, height, input_top(ui), 3);
             wattrset(ui->body, COLOR_PAIR(editing ? FOCUS_MUTED : PANEL_MUTED));
-            if (editor->first_row) text_label(ui->body, ui->editor_border + 1, getmaxx(ui->body) - 2, 1, "↑");
-            if (editor->first_row + height < measured.rows) text_label(ui->body, ui->editor_border + height, getmaxx(ui->body) - 2, 1, "↓");
+            if (editor->first_row) text_label(ui->body, input_top(ui), getmaxx(ui->body) - 2, 1, "↑");
+            if (editor->first_row + height < measured.rows) text_label(ui->body, input_top(ui) + height - 1, getmaxx(ui->body) - 2, 1, "↓");
             if (editing && measured.cursor_row >= editor->first_row && measured.cursor_row < editor->first_row + height) {
-                wmove(ui->body, ui->editor_border + 1 + measured.cursor_row - editor->first_row, 3 + measured.cursor_column);
+                wmove(ui->body, input_top(ui) + measured.cursor_row - editor->first_row, 3 + measured.cursor_column);
             }
         } else {
             wattrset(ui->body, COLOR_PAIR(PANEL_MUTED));
-            text_label(ui->body, ui->editor_border + 1, 3, getmaxx(ui->body) - 6,
+            text_label(ui->body, input_top(ui), 3, getmaxx(ui->body) - 6,
                        auth_has_session(auth) ? "Abra um canal de texto" : "Confirme a sessão");
         }
+        wattrset(ui->body, COLOR_PAIR(editing ? FOCUS_BORDER : BORDER));
+        mvwhline(ui->body, input_top(ui) + ui->editor_rows + ui->editor_padding,
+                 0, ACS_HLINE, getmaxx(ui->body));
         char typing[4608];
         history_typing_text(ui->model, typing, sizeof(typing));
         if (*typing) {
@@ -495,7 +511,7 @@ static void draw(view *ui, auth_client *auth, draw_scope scope)
         if (editing && editor) {
             text_layout measured; text_measure(editor, getmaxx(ui->body) - 6, &measured);
             if (measured.cursor_row >= editor->first_row && measured.cursor_row < editor->first_row + input_height(ui))
-                wmove(ui->body, ui->editor_border + 1 + measured.cursor_row - editor->first_row, 3 + measured.cursor_column);
+                wmove(ui->body, input_top(ui) + measured.cursor_row - editor->first_row, 3 + measured.cursor_column);
         }
     }
     if (scope == DRAW_ALL) { touchwin(ui->frame); wnoutrefresh(ui->frame); }
@@ -515,7 +531,7 @@ static void draw(view *ui, auth_client *auth, draw_scope scope)
     if (scope != DRAW_NAVIGATION) media_view_draw(ui->media);
     if (mention_popup_open(ui->mentions) && ui->body && input(ui)) {
         text_layout measured; text_measure(input(ui), getmaxx(ui->body) - 6, &measured);
-        mention_popup_draw(ui->mentions, getbegy(ui->body) + ui->editor_border + 1 + measured.cursor_row - input(ui)->first_row,
+        mention_popup_draw(ui->mentions, getbegy(ui->body) + input_top(ui) + measured.cursor_row - input(ui)->first_row,
                            getbegx(ui->body) + 3 + measured.cursor_column, getbegx(ui->body) + 1, getmaxx(ui->body) - 2);
     }
     bool caret = false;
@@ -523,7 +539,7 @@ static void draw(view *ui, auth_client *auth, draw_scope scope)
         text_buffer *editor = input(ui); text_layout measured;
         text_measure(editor, getmaxx(ui->body) - 6, &measured);
         caret = measured.cursor_row >= editor->first_row && measured.cursor_row < editor->first_row + input_height(ui);
-        if (caret) setsyx(getbegy(ui->body) + ui->editor_border + 1 + measured.cursor_row - editor->first_row,
+        if (caret) setsyx(getbegy(ui->body) + input_top(ui) + measured.cursor_row - editor->first_row,
                           getbegx(ui->body) + 3 + measured.cursor_column);
     }
     if (!caret) setsyx(-1, -1);
@@ -800,7 +816,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 if (ui->dragging && input(ui) && ui->body &&
                     (e.bstate & (BUTTON1_PRESSED | BUTTON1_RELEASED | REPORT_MOUSE_POSITION))) {
                     text_buffer *buffer = input(ui);
-                    int row = e.y - getbegy(ui->body) - ui->editor_border - 1;
+                    int row = e.y - getbegy(ui->body) - input_top(ui);
                     int column = e.x - getbegx(ui->body) - 3;
                     text_layout measured; text_measure(buffer, getmaxx(ui->body) - 6, &measured);
                     if (row < 0 && buffer->first_row > 0) --buffer->first_row;
@@ -816,7 +832,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 }
                 if (e.bstate & (BUTTON3_PRESSED | BUTTON3_CLICKED)) {
                     if (ui->body && input(ui) && e.x >= getbegx(ui->body) && e.x < getbegx(ui->body) + getmaxx(ui->body) &&
-                        e.y > getbegy(ui->body) + ui->editor_border && e.y <= getbegy(ui->body) + ui->editor_border + input_height(ui))
+                        input_row(ui, e.y - getbegy(ui->body)))
                         clipboard_copy(input(ui));
                     continue;
                 }
@@ -830,7 +846,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                     if (ui->body && e.x >= getbegx(ui->body) && e.x < getbegx(ui->body) + getmaxx(ui->body) && e.y >= getbegy(ui->body) + ui->history_top && e.y < getbegy(ui->body) + ui->editor_border)
                         scroll_history(ui, e.bstate & BUTTON4_PRESSED ? -3 : 3);
                     else if (ui->body && input(ui) && e.x >= getbegx(ui->body) && e.x < getbegx(ui->body) + getmaxx(ui->body) &&
-                             e.y > getbegy(ui->body) + ui->editor_border && e.y <= getbegy(ui->body) + ui->editor_border + input_height(ui)) {
+                             input_row(ui, e.y - getbegy(ui->body))) {
                         text_buffer *buffer = input(ui); text_layout measured;
                         text_measure(buffer, getmaxx(ui->body) - 6, &measured);
                         int last = measured.rows - input_height(ui); if (last < 0) last = 0;
@@ -873,9 +889,9 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 y = e.y; x = e.x;
                 if (ui->body && wmouse_trafo(ui->body, &y, &x, false)) {
                     if (y < ui->editor_border) set_focus(ui, HISTORY_PANEL);
-                    else if (input(ui) && y > ui->editor_border && y <= ui->editor_border + input_height(ui)) {
+                    else if (input(ui) && input_row(ui, y)) {
                         text_buffer *editor = input(ui);
-                        text_click(editor, getmaxx(ui->body) - 6, y - ui->editor_border - 1 + editor->first_row, x - 3);
+                        text_click(editor, getmaxx(ui->body) - 6, y - input_top(ui) + editor->first_row, x - 3);
                         send_editor_changed(ui->editor); set_focus(ui, MESSAGE_INPUT);
                         ui->editor_scrolling = false; ui->dragging = (e.bstate & BUTTON1_PRESSED) != 0;
                     }

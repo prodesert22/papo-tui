@@ -49,11 +49,11 @@ class TerminalStream(pyte.ByteStream):
 
 
 def editor_region(terminal):
-    """Locate the input prompt; exclude the typing row and footer."""
+    """Locate editable rows; exclude input padding/borders, typing and footer."""
     column = 27 if terminal.screen.columns >= 80 else 2
     first = next(row for row in range(5, terminal.screen.lines - 4)
                  if terminal.screen.buffer[row][column].data == '>')
-    return first, terminal.screen.lines - 4
+    return first, terminal.screen.lines - (6 if terminal.screen.lines >= 18 else 5)
 
 
 class Terminal:

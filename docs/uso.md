@@ -249,6 +249,9 @@ cresce de uma até cinco linhas conforme o texto quebra ou ocupa mais espaço.
 Depois disso, as setas acompanham o cursor e a roda do mouse sobre o campo
 rola o texto; as marcas ↑/↓ indicam conteúdo fora da área visível. Em telas
 baixas, o campo usa as linhas disponíveis preservando a leitura e o rodapé.
+O campo tem divisórias acima e abaixo, com uma linha vazia de espaço entre o
+texto e cada divisória. Em telas muito baixas, esse espaço é reduzido. O
+indicador de digitação fica abaixo da divisória inferior.
 
 Em todos os campos editáveis, **Shift+setas** estende a seleção; clique esquerdo
 e arraste também selecionam, com realce durante o movimento, inclusive entre
