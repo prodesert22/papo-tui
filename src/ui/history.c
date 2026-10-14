@@ -6,6 +6,7 @@
 #include "ui/button.h"
 #include "ui/media.h"
 #include "ui/sixel.h"
+#include "ui/mouse.h"
 #include "app/session_store.h"
 #include "ui/send_editor.h"
 #include <wctype.h>
@@ -522,7 +523,10 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
     ui->model = history_create(auth); ui->at_end = ui->show_channels = true; ui->focus = focus_tabs ? SERVER_TABS : CHANNEL_LIST;
     if (!ui->model || !ui->editor || ui->active_tab == SIZE_MAX || !layout(ui)) { media_view_destroy(ui->media); history_destroy(ui->model); destroy_layout(ui); free(ui); return HISTORY_ACCOUNT; }
     mmask_t previous_mouse;
-    mousemask(BUTTON1_PRESSED | BUTTON1_CLICKED | BUTTON4_PRESSED | BUTTON5_PRESSED, &previous_mouse);
+    /* A separately delivered release must reach getmouse(). If it is filtered
+     * out, ncurses can wait for another gesture inside get_wch(), stalling HTTP
+     * and media updates even with timeout(30) and mouseinterval(0). */
+    mousemask(BUTTON1_PRESSED | BUTTON1_RELEASED | BUTTON1_CLICKED | BUTTON4_PRESSED | BUTTON5_PRESSED, &previous_mouse);
     bool redraw = true; draw_scope scope = DRAW_ALL; int result = HISTORY_ACCOUNT;
     while (!*interrupted) {
         if (ui->layout_failed) break;
@@ -574,7 +578,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 close_confirmation(ui); if (retry) submit(ui, id, true);
             } else if (type == KEY_CODE_YES && key == KEY_MOUSE && ui->confirm) {
                 MEVENT e;
-                if (getmouse(&e) == OK && (e.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED))) {
+                if (ui_mouse_get(&e) == OK && (e.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED))) {
                     int y = e.y, x = e.x;
                     if (wmouse_trafo(ui->confirm, &y, &x, false) && y == 7) {
                         bool cancel = x >= 2 && x < 14;
@@ -591,7 +595,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         if (type == OK && key == 12) { auth_logout(auth); break; }
         if (media_view_modal(ui->media) && type == KEY_CODE_YES && key == KEY_MOUSE) {
             MEVENT e;
-            if (getmouse(&e) == OK && (e.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED))) media_view_click(ui->media, e.y, e.x);
+            if (ui_mouse_get(&e) == OK && (e.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED))) media_view_click(ui->media, e.y, e.x);
             continue;
         }
         if ((media_view_modal(ui->media) || ui->focus == HISTORY_PANEL) && media_view_key(ui->media, type, key)) continue;
@@ -628,7 +632,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         }
         if (type == KEY_CODE_YES && key == KEY_MOUSE) {
             MEVENT e;
-            if (getmouse(&e) != OK || !ui->frame) continue;
+            if (ui_mouse_get(&e) != OK || !ui->frame) continue;
             if (e.bstate & (BUTTON4_PRESSED | BUTTON5_PRESSED)) {
                 scope = DRAW_CONVERSATION;
                 if (ui->body && e.x >= getbegx(ui->body) && e.x < getbegx(ui->body) + getmaxx(ui->body) && e.y >= getbegy(ui->body) + ui->history_top && e.y < getbegy(ui->body) + ui->editor_border)

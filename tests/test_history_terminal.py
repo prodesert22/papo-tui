@@ -1,4 +1,5 @@
 """R5 through ncurses in a pseudoterminal, using synthetic HTTP data."""
+import threading
 import time
 import unittest
 from history_mock import HistoryMock, CHANNEL, OTHER, uuid
@@ -45,8 +46,8 @@ class HistoryTerminal(unittest.TestCase):
             terminal.read(0.03)
         self.assertIn(text, '\n'.join(terminal.screen.display))
 
-    def open(self, server):
-        t = Terminal()
+    def open(self, server, terminal_type='xterm-256color'):
+        t = Terminal(terminal_type=terminal_type)
         t.send(server.url + '\tjosé\tSynthetic!123\n')
         self.wait(t, 'geral')
         self.assertNotIn('URL do servidor', '\n'.join(t.screen.display))
@@ -107,6 +108,50 @@ class HistoryTerminal(unittest.TestCase):
                 self.assertNotIn(b'Carregando hist', terminal.output[output:])
                 self.assertEqual([r for r in server.requests if '/messages' in r[1]], requests)
             finally: self.assertTrue(terminal.close())
+
+    def test_keyboard_channel_change_then_single_click_opens_history(self):
+        with HistoryMock(count=1) as server:
+            terminal = self.open(server)
+            try:
+                self.wait(terminal, 'Mensagem 0001')
+                for _ in range(4):
+                    terminal.send('\x1bOD\x1bOB\n')
+                    self.wait(terminal, 'Conteúdo do outro canal')
+                    terminal.click(7, 4)
+                    self.wait(terminal, '# geral · Histórico')
+                    self.wait(terminal, 'Mensagem 0001')
+                    self.assertNotIn('Conteúdo do outro canal', '\n'.join(terminal.screen.display))
+                self.assertEqual(sum('/messages' in r[1] for r in server.requests), 9)
+            finally: self.assertTrue(terminal.close())
+
+    def test_single_click_after_keyboard_change_with_pending_response(self):
+        for term, press, release in (
+            ('xterm-256color', '\x1b[<0;5;8M', '\x1b[<0;5;8m'),
+            ('xterm-kitty', '\x1b[M %(', '\x1b[M#%('),
+        ):
+            with self.subTest(term=term), HistoryMock('slow', count=1) as server:
+                parent = server.api_handler
+                pending = threading.Event()
+                def route(method, path, body):
+                    if '/channels/' + OTHER + '/messages' in path:
+                        pending.set()
+                        server.stopping.wait(.5)
+                    return parent(method, path, body)
+                server.api_handler = route
+                terminal = self.open(server, terminal_type=term)
+                try:
+                    self.wait(terminal, 'Mensagem 0001')
+                    terminal.send('\x1bOD\x1bOB\n')
+                    self.assertTrue(pending.wait(2))
+                    # Real clicks deliver a press and a later release, with a
+                    # frame/network poll between them. No subsequent input may
+                    # be needed to complete the new channel's HTTP response.
+                    terminal.send(press)
+                    self.wait(terminal, '# geral · Histórico')
+                    terminal.send(release)
+                    self.wait(terminal, 'Mensagem 0001')
+                    self.assertNotIn('Conteúdo do outro canal', '\n'.join(terminal.screen.display))
+                finally: self.assertTrue(terminal.close())
 
     def test_selecting_current_channel_does_not_restart_pending_history(self):
         with HistoryMock('slow') as server:
