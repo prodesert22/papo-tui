@@ -20,6 +20,9 @@ outbox_submit_result send_editor_retry(send_editor *editor, uint64_t operation_i
 /* Call after auth_poll(). Updates drafts after confirmed prefix removal. */
 void send_editor_poll(send_editor *editor);
 const char *send_editor_notice(const send_editor *editor);
+/* NULL for ordinary editing instructions; otherwise a send-context notice. */
+const char *send_editor_feedback(const send_editor *editor);
+const char *send_editor_compact_notice(const send_editor *editor);
 /* Borrowed model for status/cancellation and taking Message confirmations.
  * Taking transfers JSON ownership; merge into R5 history by definitive ID. */
 outbox *send_editor_outbox(send_editor *editor);

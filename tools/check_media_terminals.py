@@ -73,7 +73,7 @@ def main():
                     checks[name.lower() + '_media_modal'] = 'Esc: voltar' in emulator.screen()
                     checks[name.lower() + '_native_modal_image_pixels'] = colored_pixels(emulator, work / (name.lower() + '-modal.png'), 'red') > 100
                     emulator.send('\x1b'); emulator.resize_narrow(); time.sleep(.3); emulator.resize(False)
-                    wait_for(lambda: 'Editor' in emulator.screen() and 'Canais' in emulator.screen() and
+                    wait_for(lambda: 'Conversar em #' in emulator.screen() and 'Canais' in emulator.screen() and
                              emulator.state().get('rows', 0) >= 25 and emulator.state().get('columns', 0) >= 80)
                     emulator.send('Rascunho preservado'); wait_for(lambda: 'Rascunho preservado' in emulator.screen())
                     checks[name.lower() + '_resize_and_draft'] = True
@@ -103,7 +103,7 @@ def main():
                     wait_for(lambda: 'Pausado' in emulator.screen())
                     wait_for(lambda: colored_pixels(emulator, work / (name.lower() + '-video-resized.png'), 'blue') > 100)
                     checks[name.lower() + '_native_video_resize_preserves_pause'] = True
-                    emulator.send('\x1b'); wait_for(lambda: 'Editor' in emulator.screen())
+                    emulator.send('\x1b'); wait_for(lambda: 'Conversar em #' in emulator.screen())
                     wait_for(lambda: colored_pixels(emulator, work / (name.lower() + '-video-closed.png'), 'blue') == 0)
                     checks[name.lower() + '_video_close_removes_pixels'] = True
                 finally:

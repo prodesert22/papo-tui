@@ -45,6 +45,8 @@ class RealtimeTerminal(unittest.TestCase):
             terminal = self.open(server)
             try:
                 terminal.send('Rascunho durante embed')
+                # Keep the full expanded card visible above the padded editor.
+                terminal.resize(30, 80)
                 message = dict(server.message(1), content='', embeds=None)
                 server.emit({k: v for k, v in dict(message, type='message').items() if k != 'embeds'})
                 terminal.read(.2)

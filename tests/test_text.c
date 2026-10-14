@@ -4,6 +4,7 @@
 #include <locale.h>
 #include <stdio.h>
 #include <string.h>
+#include <wordbreak.h>
 
 #define CHECK(value) do { if (!(value)) { fprintf(stderr, "check failed at line %d\n", __LINE__); return 1; } } while (0)
 
@@ -11,6 +12,7 @@ int main(void)
 {
     CHECK(setlocale(LC_ALL, "C.UTF-8"));
     init_graphemebreak();
+    init_wordbreak();
     text_buffer buffer;
     text_layout layout;
     char output[TEXT_UTF8_BYTES];
@@ -134,6 +136,60 @@ int main(void)
     CHECK(text_encode(&buffer, output));
     CHECK(strcmp(output, "e\u0301fim]52;c;ignored") == 0);
 
-    puts("Unicode roundtrip, graphemes, cells, wrapping, cursor, controls and limits passed");
+    CHECK(text_decode(&buffer, "ação duas palavras"));
+    text_edit(&buffer, KEY_CODE_YES, TEXT_CTRL_HOME, 12, true);
+    text_edit(&buffer, KEY_CODE_YES, TEXT_CTRL_RIGHT, 12, true);
+    CHECK(buffer.cursor == 4);
+    text_edit(&buffer, KEY_CODE_YES, TEXT_CTRL_SHIFT_RIGHT, 12, true);
+    size_t lo, hi;
+    CHECK(text_selection(&buffer, &lo, &hi) && lo == 4 && hi == 9);
+    CHECK(text_insert(&buffer, 'X', true));
+    CHECK(text_encode(&buffer, output) && !strcmp(output, "açãoX palavras"));
+    text_edit(&buffer, KEY_CODE_YES, TEXT_SHIFT_LEFT, 12, true);
+    text_edit(&buffer, KEY_CODE_YES, KEY_LEFT, 12, true);
+    CHECK(buffer.cursor == 4 && !text_selection(&buffer, NULL, NULL));
+    text_edit(&buffer, KEY_CODE_YES, TEXT_CTRL_RIGHT, 12, true);
+    text_edit(&buffer, KEY_CODE_YES, TEXT_CTRL_LEFT, 12, true);
+    CHECK(buffer.cursor == 0);
+
+    CHECK(text_decode(&buffer, "ação  duas\npalavras"));
+    const size_t ends[] = {4, 10, 19, 19};
+    buffer.cursor = 0;
+    for (size_t i = 0; i < sizeof(ends) / sizeof(ends[0]); ++i) {
+        CHECK(text_edit(&buffer, KEY_CODE_YES, TEXT_CTRL_RIGHT, 12, true));
+        CHECK(buffer.cursor == ends[i]);
+    }
+    const size_t starts[] = {11, 6, 0, 0};
+    for (size_t i = 0; i < sizeof(starts) / sizeof(starts[0]); ++i) {
+        CHECK(text_edit(&buffer, KEY_CODE_YES, TEXT_CTRL_LEFT, 12, true));
+        CHECK(buffer.cursor == starts[i]);
+    }
+    buffer.cursor = 2;
+    CHECK(text_edit(&buffer, KEY_CODE_YES, TEXT_CTRL_RIGHT, 12, true) && buffer.cursor == 4);
+    buffer.cursor = 8;
+    CHECK(text_edit(&buffer, KEY_CODE_YES, TEXT_CTRL_LEFT, 12, true) && buffer.cursor == 6);
+    CHECK(text_decode(&buffer, "a\u0301bc  "));
+    buffer.cursor = 0;
+    CHECK(text_edit(&buffer, KEY_CODE_YES, TEXT_CTRL_RIGHT, 12, true) && buffer.cursor == 4);
+    CHECK(text_edit(&buffer, KEY_CODE_YES, TEXT_CTRL_RIGHT, 12, true) && buffer.cursor == 6);
+    CHECK(text_edit(&buffer, KEY_CODE_YES, TEXT_CTRL_LEFT, 12, true) && buffer.cursor == 0);
+
+    CHECK(text_decode(&buffer, "a\u0301界fim"));
+    text_edit(&buffer, KEY_CODE_YES, TEXT_CTRL_HOME, 20, true);
+    text_edit(&buffer, KEY_CODE_YES, TEXT_SHIFT_RIGHT, 20, true);
+    CHECK(text_selection(&buffer, &lo, &hi) && lo == 0 && hi == 2);
+    text_delete(&buffer, false);
+    CHECK(text_encode(&buffer, output) && !strcmp(output, "界fim"));
+    text_click(&buffer, 20, 0, 0); text_drag(&buffer, 20, 0, 2);
+    CHECK(text_selection(&buffer, &lo, &hi) && hi == 1);
+    text_buffer insertion; CHECK(text_decode(&insertion, "texto\ncolado"));
+    CHECK(text_insert_buffer(&buffer, &insertion));
+    CHECK(text_encode(&buffer, output) && !strcmp(output, "texto\ncoladofim"));
+    text_edit(&buffer, OK, 3, 20, true); CHECK(buffer.length == 0);
+    CHECK(text_decode(&buffer, "texto intacto"));
+    memset(&insertion, 0, sizeof(insertion)); insertion.length = TEXT_LIMIT;
+    CHECK(!text_insert_buffer(&buffer, &insertion));
+    CHECK(text_encode(&buffer, output) && !strcmp(output, "texto intacto"));
+    puts("Unicode, selection, words, atomic insertion, wrapping, controls and limits passed");
     return 0;
 }

@@ -74,9 +74,11 @@ def main():
                 if response.status_code != status: raise RuntimeError('Unexpected backend status: ' + str(response.status_code))
                 return response.json() if response.content else None
 
+            identities=[]
             for session, user in zip(sessions, users):
                 session.trust_env = False; session.verify = str(cert)
-                call(session, 'POST', '/auth/register', 201, json={'username': user, 'password': password})
+                registered=call(session, 'POST', '/auth/register', 201, json={'username': user, 'password': password})
+                identities.append(str(UUID(registered['id'])))
                 call(session, 'POST', '/auth/login', json={'username': user, 'password': password})
             checks['two_accounts_in_isolated_database'] = True
             phase = 'product conversation'
@@ -107,8 +109,8 @@ def main():
 
             def editor(t):
                 rows = t.screen.display
-                border = next(i for i, row in enumerate(rows) if i >= 5 and ' Editor ' in row)
-                return '\n'.join(rows[border + 1:len(rows) - (4 if len(rows) >= 18 else 3)])
+                first, end = test_terminal.editor_region(t)
+                return '\n'.join(rows[first:end])
 
             for user in users:
                 terminal = test_terminal.Terminal(environment=dict(environment(user, password, ca=cert), TERM='xterm-256color'),
@@ -142,6 +144,16 @@ def main():
             a.send('\x1b[<0;5;7m')
             wait(a, 'R7 WS durante navegação')
             checks['split_mouse_release_does_not_block_history_response'] = True
+            phase = 'mention selection and delivery'
+            a.send('R7 menção @'+users[1]);wait(a,'Menções');wait(a,'@'+users[1])
+            a.send('\t');pump(.2)
+            checks['mention_tab_selects_without_sending'] = 'Menções' not in screen(a) and '@'+users[1] in editor(a)
+            a.send('\n');wait(a,'Mensagem confirmada');wait(b,'@'+users[1]);pump(.2)
+            expected='R7 menção @mention(<@'+identities[1]+'>) '
+            stored=sql("SELECT content FROM messages WHERE author_id='"+identities[0]+"' ORDER BY created_at DESC,id DESC LIMIT 1;").rstrip('\n')
+            checks['mention_wire_contains_canonical_uuid'] = stored==expected
+            checks['mention_live_display_is_readable'] = 'R7 menção' in screen(b) and '@mention(' not in screen(b)
+            checks['mention_recipient_has_vertical_bar'] = any(b.screen.buffer[y][26].data in ('│','x') for y in range(8,16))
             phase = 'live embed updates'
             observer = websocket.create_connection(secure.replace('https://', 'wss://', 1) + '/ws',
                 cookie='Auth=' + sessions[0].cookies.get('Auth'), sslopt={'ca_certs': str(cert)}, timeout=2,

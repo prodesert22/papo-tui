@@ -1,6 +1,7 @@
 #ifndef PAPO_MESSAGE_BLOCKS_H
 #define PAPO_MESSAGE_BLOCKS_H
 #include "net/auth.h"
+#include "model/mentions.h"
 #include <ncurses.h>
 #define MESSAGE_MEDIA_LABEL 512
 #define MESSAGE_COLUMNS 3
@@ -22,6 +23,8 @@ typedef struct {
     size_t offset;
     int x, width;
     bool bold, muted, link;
+    unsigned char *highlight;
+    size_t highlight_length;
 } message_segment;
 typedef struct {
     int index, row, height, x, width;
@@ -43,6 +46,9 @@ typedef struct {
     size_t media_count;
     message_media_measure measure;
     void *measure_context;
+    mention_resolver resolver;
+    void *resolver_context;
+    bool self_mention;
 } message_blocks;
 uint64_t message_media_version(const json_t *entry);
 bool message_blocks_build(message_blocks *out, json_t *message, const char *author,
@@ -50,6 +56,13 @@ bool message_blocks_build(message_blocks *out, json_t *message, const char *auth
 bool message_blocks_build_sized(message_blocks *out, json_t *message, const char *author,
                                 const char *reply, int width, bool graphics,
                                 message_media_measure measure, void *context);
+bool message_blocks_build_mentions(message_blocks *out, json_t *message, const char *author,
+                          const char *reply, int width, bool graphics,
+                          mention_resolver resolver, void *context, const char *self);
+bool message_blocks_build_sized_mentions(message_blocks *out, json_t *message, const char *author,
+                          const char *reply, int width, bool graphics,
+                          message_media_measure measure, void *measure_context,
+                          mention_resolver resolver, void *resolver_context, const char *self);
 void message_blocks_free(message_blocks *out);
 void message_colors_begin(void);
 void message_row_draw(WINDOW *window, const message_row *row, int y, int x,

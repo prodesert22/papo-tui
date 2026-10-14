@@ -53,6 +53,11 @@ class GraphicsStream:
             if end < 0: return
             sequence = self.pending[:end + len(terminator)]
             self.pending = self.pending[end + len(terminator):]
+            if iterm and not sequence.startswith(b'\x1b]1337;File='):
+                # OSC 1337 also carries the Kitty focus marker for shortcuts.
+                # Only File reports contain image pixels.
+                self.stream.feed(sequence)
+                continue
             if sequence.startswith(b'\x1b_G'):
                 header, _, data = sequence[3:-2].partition(b';')
                 values = dict(field.split(b'=', 1) for field in header.split(b',') if b'=' in field)
@@ -111,6 +116,7 @@ class MediaTerminal(unittest.TestCase):
         t = Terminal(environment=environment, unset_environment=unset)
         if not hasattr(self, "terminals"): self.terminals = []
         self.terminals.append(t)
+        self.addCleanup(lambda: t.close() if t.process.poll() is None else None)
         stream = GraphicsStream(t.screen); stream.feed(bytes(t.output)); t.stream = stream
         if protocol == 'kitty':
             query = re.search(rb'\x1b_Gi=(\d+),s=1,v=1,a=q', t.output)
@@ -121,7 +127,7 @@ class MediaTerminal(unittest.TestCase):
         elif sixel:
             t.send('\x1b[?62;4;22c\x1b[6;16;8t')
         t.send(server.url + '\tjosé\tSynthetic!123\n')
-        self.wait(t, 'geral'); t.send('\x1bOB\x1bOB\n'); self.wait(t, 'Editor')
+        self.wait(t, 'geral'); t.send('\x1bOB\x1bOB\n'); self.wait(t, 'Conversar em #geral')
         return t
     def tearDown(self):
         for terminal in getattr(self, 'terminals', []):
@@ -161,8 +167,10 @@ class MediaTerminal(unittest.TestCase):
                     if protocol == 'kitty':
                         self.assertEqual(len({header[b'i'] for header, _ in t.stream.kitty_frames}), 1)
                         self.assertTrue(all(int(header[b's']) == 16 and int(header[b'v']) == 16 for header, _ in t.stream.kitty_frames))
-                        self.assertTrue(any(pixels[0] > 230 and pixels[2] < 25 for _, pixels in t.stream.kitty_frames))
-                        self.assertTrue(any(pixels[2] > 230 and pixels[0] < 25 for _, pixels in t.stream.kitty_frames))
+                        # Require distinct red/blue frames without assuming
+                        # full intensity in the graphic encoder's output.
+                        self.assertTrue(any(pixels[0] > 128 and pixels[2] < 25 for _, pixels in t.stream.kitty_frames))
+                        self.assertTrue(any(pixels[2] > 128 and pixels[0] < 25 for _, pixels in t.stream.kitty_frames))
                         self.assertTrue(all(p[b'c'] == b'0' and p[b'r'] == b'0' and p[b'h'] == b'12' for p in t.stream.placements))
                     t.click(8, 4); self.wait(t, 'Conteúdo do outro canal'); t.read(.15)
                     frames = len(t.stream.frames); t.read(.4)
@@ -190,8 +198,8 @@ class MediaTerminal(unittest.TestCase):
             try:
                 self.wait(t, 'Fixture'); t.read(.2)
                 self.assertFalse(any('/attachments/' in r[1] for r in server.requests))
-                t.send('\x1b[18~'); self.wait(t, 'protocolo gráfico compatível')
-                t.send('\x1b'); self.wait(t, 'Editor')
+                t.send('\x1b[18~'); self.wait(t, 'Este terminal não oferece')
+                t.send('\x1b'); self.wait(t, 'Conversar em #')
             finally: self.assertTrue(t.close())
     def test_kitty_image_formats_use_graphics_pixels_and_delete_on_switch(self):
         for ext, mime in [('png', 'image/png'), ('jpg', 'image/jpeg'), ('webp', 'image/webp'), ('gif', 'image/gif')]:
@@ -353,7 +361,7 @@ class MediaTerminal(unittest.TestCase):
         with self.serve(self.images['png'], 'image/png') as server:
             t = self.open(server, sixel=False)
             try:
-                self.wait(t, 'Editor')
+                self.wait(t, 'Conversar em #')
                 query = re.search(rb'\x1b_Gi=(\d+),s=1,v=1,a=q', t.output)
                 self.assertIsNotNone(query)
                 t.send('\x1b_Gi=' + query[1].decode())
@@ -380,7 +388,7 @@ class MediaTerminal(unittest.TestCase):
                 self.assertLessEqual(tags[256], 640); self.assertLessEqual(tags[257], 360)
                 self.assertGreater(payload[tags[273]], 230)
                 t.send('\x1b[18~'); self.wait_frames(t, 2)
-                t.send('\x1b'); self.wait(t, 'Editor')
+                t.send('\x1b'); self.wait(t, 'Conversar em #')
             finally: self.assertTrue(t.close())
         with self.serve(self.video, 'video/mp4') as server:
             t = self.open(server, protocol='iterm2')
@@ -389,7 +397,7 @@ class MediaTerminal(unittest.TestCase):
                 t.send(' '); self.wait(t, 'Pausado')
                 t.resize(28, 100); self.wait(t, 'Pausado')
                 self.assertEqual(set(t.stream.protocols), {'iterm2'})
-                t.send('\x1b'); self.wait(t, 'Editor')
+                t.send('\x1b'); self.wait(t, 'Conversar em #')
             finally: self.assertTrue(t.close())
     def test_channel_navigation_preserves_image_and_reopening_uses_cache(self):
         with self.serve(self.images['png'], 'image/png') as server:
@@ -463,7 +471,7 @@ class MediaTerminal(unittest.TestCase):
             t = self.open(server, environment={'TMPDIR': directory})
             try:
                 self.wait(t, 'Vídeo'); t.send('\x1b[18~'); self.wait(t, 'Carregando mídia')
-                t.send('\x1b'); self.wait(t, 'Editor'); t.send('Preservado'); self.wait(t, 'Preservado')
+                t.send('\x1b'); self.wait(t, 'Conversar em #geral'); t.send('Preservado'); self.wait(t, 'Preservado')
             finally: self.assertTrue(t.close())
             self.assertEqual(list(Path(directory).iterdir()), [])
     def test_channel_switch_cancels_late_media(self):

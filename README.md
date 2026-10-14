@@ -20,30 +20,6 @@ cmake --build build
 ./build/papo-tui
 ```
 
-Para abrir o layout de conversas com dados simulados:
-
-```sh
-./build/papo-tui --demo
-```
-
-A demonstração mostra servidores em abas no topo, canais/DMs à esquerda e histórico com editor no painel central. Não abre conexão nem usa credenciais. As setas atuam no painel em foco: nas abas, ←/→ trocam de servidor e ↓ entra nos canais; nos canais, ↑/↓ escolhem a conversa, →/Enter a abrem e ← volta às abas. No primeiro canal, ↑ também volta às abas. No histórico, ↑/↓ rolam uma linha e ← retorna aos canais. Tab/Shift+Tab alternam o foco em tela ampla. Em menos de 80 colunas, uma única pressão de Tab ou Shift+Tab alterna entre canais e conversa; na lista, essa ação abre o canal destacado. PageUp/PageDown rolam o histórico. Esse modo exige pelo menos 44 colunas e 14 linhas.
-
-Em terminais com suporte a mouse, clique numa aba ou canal para abri-lo, no histórico para focá-lo e no editor para posicionar o cursor. As setas `‹`/`›` mostram abas fora da faixa visível. Em janelas estreitas, os controles **Canais** e **Conversa** alternam os painéis. Cliques fora dos controles e eventos de soltura são ignorados.
-
-Depois de abrir um canal, basta digitar para focar o editor e começar a mensagem, incluindo o primeiro caractere. Colagem delimitada e Ctrl+N também focam o editor a partir do histórico, preservando o rascunho e sua posição do cursor.
-
-Esc sai do editor para o histórico; no histórico, Esc volta à lista de canais. Na lista, Esc retorna à conversa atual sem confirmar outra seleção. Com o editor focado, as setas editam o texto; os demais painéis usam as setas para sua própria navegação. Enter no histórico abre o editor, ou refaz o carregamento quando há um erro simulado. Modais mantêm seus próprios controles de navegação.
-
-O login e a demonstração usam um tema escuro: fundo quase preto, painéis em cinza escuro e destaque laranja `#ffb347`. O tom exato depende do suporte a RGB ou à redefinição de cores do terminal; paletas fixas usam a aproximação disponível. No Konsole com terminfo de 256 cores, a paleta fixa preserva o tema escuro e usa o laranja aproximado `#ffaf5f`.
-
-Na demonstração, o foco é indicado por um fundo discretamente mais claro, mantendo os tons escuros da paleta. O rodapé informa qual área recebe as teclas; os marcadores da seleção continuam presentes. Ao abrir um modal, o realce dos painéis ao fundo é desativado.
-
-O editor aceita várias linhas e mantém rascunhos por servidor e conversa, com limite de 2048 caracteres Unicode (até 8192 bytes UTF-8). Ctrl+N insere uma quebra de linha; colagem delimitada preserva linhas e nunca envia automaticamente. Enter adiciona a mensagem somente à demonstração. Setas, Backspace e Delete operam sobre grafemas inteiros. Sequências compostas que o ncurses não representa são exibidas como `?`, preservando o texto original.
-
-F1 abre a ajuda e Ctrl+K filtra servidores, canais e DMs por nome. PageUp/PageDown ou a roda do mouse rolam o histórico; Home/End com foco no histórico vão ao início/fim. F2 simula a chegada de uma mensagem sem deslocar a leitura quando você estiver vendo mensagens anteriores; o indicador de novas mensagens permite voltar ao fim. Cada conversa aceita até 32 mensagens locais, somando envio e chegada simulada.
-
-Há exemplos de canal vazio, carregamento e erro recuperável: na primeira instância, **ajuda**, **ideias** e **eventos**, respectivamente. No erro, Ctrl+R, Enter com foco no histórico ou clique em **Tentar novamente** repetem o carregamento simulado. Ctrl+Q abre uma confirmação quando há rascunhos; Ctrl+C fecha diretamente. Os dados são descartados ao sair. O cadastro de perfis reais fica no login; a leitura de canais reais fica disponível após o login; o envio e o recebimento automático de texto estão integrados à tela real.
-
 Use um terminal UTF-8, com pelo menos 44 colunas e 22 linhas disponíveis ao aplicativo. No tmux, reserve também as linhas da barra de status. Para compilar somente o aplicativo, use `-DBUILD_TESTING=OFF` na configuração do CMake. `--help` e `--version` funcionam fora de um terminal interativo.
 
 ## Login
@@ -64,9 +40,9 @@ No gerenciador e nos modais de perfil, os textos principais e botões são branc
 
 Em terminais sem cores, o foco usa inversão e o perfil destacado fora do foco usa negrito. Em telas estreitas, o rodapé encurta os atalhos para manter os controles visíveis.
 
-**+ Adicionar** abre o cadastro de nome e URL por clique ou Enter. Enquanto essa opção estiver selecionada, as ações do rodapé ficam indisponíveis, inclusive depois de cancelar o cadastro. Salvar um perfil volta à lista com ele destacado. **Editar** renomeia ou corrige a URL mantendo o ID local; **Remover** exige confirmação e começa em **Cancelar**. **Ctrl+N**, **Ctrl+E** e **Ctrl+D** abrem essas três ações. Esc cancela o diálogo ou volta ao login, e Ctrl+Q/Ctrl+C fecha o aplicativo. Colagem delimitada não confirma ações automaticamente.
+**+ Adicionar** abre o cadastro de nome e URL por clique ou Enter. Enquanto essa opção estiver selecionada, as ações do rodapé ficam indisponíveis, inclusive depois de cancelar o cadastro. Salvar um perfil volta à lista com ele destacado. **Editar** renomeia ou corrige a URL mantendo o ID local; **Remover** exige confirmação e começa em **Cancelar**. **Ctrl+N**, **Ctrl+E** e **Ctrl+D** abrem essas três ações. Esc cancela o diálogo ou volta ao login, e Ctrl+Q fecha o aplicativo; Ctrl+C limpa o campo de texto focado e fecha quando o foco está fora dos campos. Colagem delimitada não confirma ações automaticamente.
 
-Ao abrir a seleção de perfil pelo login, a conexão de tempo real é encerrada e cookies, usuário e senhas locais são descartados. Selecionar outro perfil exige novo login. A URL do perfil fica bloqueada no formulário; altere-a em **Selecionar perfil → Gerenciar → Editar**. Os perfis não contêm mensagens nem rascunhos da demonstração.
+Ao abrir a seleção de perfil pelo login, a conexão de tempo real é encerrada e cookies, usuário e senhas locais são descartados. Selecionar outro perfil exige novo login. A URL do perfil fica bloqueada no formulário; altere-a em **Selecionar perfil → Gerenciar → Editar**. Os perfis contêm somente os dados públicos da instância.
 
 Nome, URL e ID do perfil selecionado ficam em `$XDG_CONFIG_HOME/papo-tui/config.json`, ou `~/.config/papo-tui/config.json`. O diretório usa permissão `700` e o arquivo `600`. A gravação usa arquivo temporário e substituição atômica. Uma configuração inválida/incompatível é preservada e bloqueia alterações; corrija o arquivo e use **Ctrl+R** no gerenciador para recarregar. Se outro processo alterar a configuração, recarregue antes de salvar. Há limite de 64 perfis, nomes de 128 bytes UTF-8 e URLs de 2048 bytes.
 
@@ -117,7 +93,8 @@ As requisições compartilham um limite global configurável, com padrão de 10 
 | Ctrl+U | Limpar o campo atual |
 | Ctrl+P | Selecionar perfil; encerrar a conexão e limpar credenciais locais |
 | Esc | Cancelar uma conexão em andamento |
-| Ctrl+Q / Ctrl+C | Sair do aplicativo |
+| Ctrl+Q | Sair do aplicativo |
+| Ctrl+C | Limpar o campo focado; sair quando o foco está fora dos campos |
 
 No login e no cadastro, os botões de ação ficam na mesma linha: **Entrar / Cadastro** ou **Criar conta / Login**. **Selecionar perfil** fica no canto superior direito do formulário. ↓ na senha do servidor foca a ação principal; ←/→ alternam os dois botões, ↓ foca Selecionar perfil e ↑ volta à senha do servidor. ↑ em Selecionar perfil volta à ação principal, e ↓ mantém o foco nesse botão. As setas não dão a volta na tela. Tab segue campos, ação principal, ação secundária e Selecionar perfil; controles indisponíveis são pulados.
 
@@ -143,7 +120,7 @@ Consulte [instalação e uso](docs/uso.md) para os requisitos, execução, conex
 ```text
 src/main.c       Entrada e ciclo de vida
 src/app/         Conexões abertas por instância
-src/ui/          Login, perfis, leitura real, demonstração, tema e edição Unicode
+src/ui/          Login, perfis, leitura, menções, tema e edição Unicode
 src/model/       Canais, histórico paginado e autores
 src/config/      Perfis públicos e persistência XDG
 src/net/         Estado de autenticação e transporte HTTP
@@ -175,7 +152,7 @@ adicional do embed nem do ícone do rodapé.
 - [x] R0: contrato e ambiente de integração validados com a conta fornecida, paginação e cenário privado HTTPS/WSS.
 - [x] Transporte WS/WSS em C, com cookies por contexto, filas limitadas e revalidação REST.
 - [x] Base de terminal exercitada em Kitty, Konsole e tmux.
-- [x] R2: interface navegável com dados simulados em `--demo`, editor multilinha, mouse e ajuda.
+- [x] Interface de conversas: editor multilinha, teclado, mouse e histórico.
 - [x] R3: perfis XDG, descoberta por URL, isolamento de contextos e preferências de taxa/burst, com validação automatizada e demonstração no backend real.
 - [x] R4: cadastro, login público/privado, renovação serializada, revogação e logout, com identidade REST/WS e cookies isolados por instância.
 - [x] R5: canais ordenados, tópicos, histórico paginado, autores e metadados em modo de leitura.
@@ -186,13 +163,13 @@ adicional do embed nem do ícone do rodapé.
 
 Após entrar, a lista de canais abre automaticamente. F6 volta à tela da conta; o botão **Canais / F6** e a tecla F6 permitem reabrir a leitura. Escolha um canal com ↑/↓ e abra com Enter, → ou clique. Navegar pela lista mantém o histórico e o recebimento de mensagens em tempo real do canal aberto; confirmar ou clicar no canal atual preserva mensagens, posição de leitura e rascunho, sem recarregar. Clique no título **Canais** para focar a lista. Categorias são separadores; canais de voz mostram que chamadas ainda não estão disponíveis. A leitura usa apenas o canal aberto, e consultar seu histórico também marca leitura no servidor. `*` indica uma última mensagem ainda não lida nos dados consultados.
 
-A tela segue o layout da demonstração: abas de servidores no topo, com linha separadora e uma linha de margem abaixo, canais à esquerda, histórico e área de edição no painel central. **+ Adicionar**, à direita das abas, abre o formulário de login/cadastro de outro servidor. Depois do login, a nova conexão aparece em uma aba; clique nas abas para trocar de servidor. As sessões ficam separadas, até o limite de 64 conexões nesta execução; somente a última conexão ativa pode ser recuperada na próxima abertura. Entrar novamente na mesma URL substitui sua conexão anterior. Esc no formulário de adição volta ao servidor anterior; se houver uma conexão em andamento, Esc primeiro a cancela.
+A tela organiza abas de servidores no topo, com linha separadora e uma linha de margem abaixo, canais à esquerda, histórico e área de edição no painel central. **+ Adicionar**, à direita das abas, abre o formulário de login/cadastro de outro servidor. Depois do login, a nova conexão aparece em uma aba; clique nas abas para trocar de servidor. As sessões ficam separadas, até o limite de 64 conexões nesta execução; somente a última conexão ativa pode ser recuperada na próxima abertura. Entrar novamente na mesma URL substitui sua conexão anterior. Esc no formulário de adição volta ao servidor anterior; se houver uma conexão em andamento, Esc primeiro a cancela.
 
 No histórico, ↑/↓ e PageUp/PageDown rolam o texto. A lista de canais permanece estável durante a rolagem. Home vai ao início da janela carregada; pressione PageUp nesse ponto para buscar a página anterior sem deslocar a mensagem que está lendo. End consulta novamente a página recente. Ctrl+R antecipa a reconexão quando desconectado; conectado, atualiza o canal aberto ou repete a consulta que falhou; uma falha ao buscar mensagens antigas mantém a janela atual para nova tentativa.
 
 Ao abrir a leitura, o foco começa nas abas. Use ←/→ para escolher o servidor ou destacar **+ Adicionar**, e Enter para abrir o formulário. O botão fica branco sem foco e laranja ao selecionar, quando aparece como **>+ Adicionar<**. ↓ entra na lista de canais.
 
-Em tela ampla, Tab/Shift+Tab alternam entre abas, canais, histórico e editor quando há um canal de texto aberto. ← nos canais, ou ↑ no primeiro canal, volta às abas; ←/→ nas abas trocam de servidor e Enter em **+ Adicionar** abre o formulário. ↓ nas abas foca os canais. Esc sai do editor para o histórico; nos demais painéis, alterna canais/histórico. Abaixo de 80 colunas, Tab/Shift+Tab e os controles **Canais / Conversa** alternam o painel visível. F6 volta à conta, Ctrl+L sai da conta e remove sua aba, Ctrl+P abre a seleção de perfil encerrando a sessão local atual, e Ctrl+Q/Ctrl+C fecha o programa. O mínimo dessa tela é 44×14; para abrir o formulário, amplie para 44×22.
+Em tela ampla, Tab/Shift+Tab alternam entre abas, canais, histórico e editor quando há um canal de texto aberto. ← nos canais, ou ↑ no primeiro canal, volta às abas; ←/→ nas abas trocam de servidor e Enter em **+ Adicionar** abre o formulário. ↓ nas abas foca os canais. Esc sai do editor para o histórico; nos demais painéis, alterna canais/histórico. Abaixo de 80 colunas, Tab/Shift+Tab e os controles **Canais / Conversa** alternam o painel visível. F6 volta à conta, Ctrl+L sai da conta e remove sua aba, Ctrl+P abre a seleção de perfil encerrando a sessão local atual, e Ctrl+Q fecha o programa; Ctrl+C limpa o campo focado ou fecha fora dos campos. O mínimo dessa tela é 44×14; para abrir o formulário, amplie para 44×22.
 
 Mensagens aparecem em ordem cronológica, com data, autor, indicação de edição e referências de resposta. Anexos mostram seus metadados e, em terminais com protocolo gráfico compatível, imagens visíveis são baixadas e renderizadas no histórico. Embeds aparecem em cards com autor, título, descrição, fields e rodapé. F7 ou clique abre a mídia em um modal; vídeos são baixados antes de reproduzir com áudio. Os embeds recebidos ou atualizados em tempo real aparecem na mensagem sem precisar reabrir o canal, incluindo mensagens sem texto. Autores ausentes têm um rótulo de indisponibilidade. Ao abrir um canal de texto, digite para focar o editor, incluindo o primeiro caractere. Enter no histórico também foca o editor. Enter no editor envia, Ctrl+N insere uma nova linha e colagem delimitada preserva linhas sem enviar. Setas, Home/End, Backspace e Delete editam grafemas; clique no editor para posicionar o cursor. Esc volta ao histórico. A área em foco recebe um fundo discretamente mais claro. Mensagens de outras contas chegam automaticamente. Eventos repetidos e confirmações REST/WS da mesma mensagem são reconciliados pelo ID. A tela acompanha novas mensagens quando você está no fim; ao ler mensagens anteriores, indica novidades sem mover a leitura. End ou clique no indicador volta ao fim.
 
@@ -203,6 +180,103 @@ Rascunhos e cursor ficam em memória por sessão e canal, inclusive ao trocar de
 O editor informa quando o envio está aguardando, enviando, confirmado, rejeitado ou sem confirmação. Falhas preservam o texto. **Ctrl+T** tenta novamente o texto do último envio com falha no canal atual. Timeout ou resposta perdida podem ocorrer após a criação da mensagem; nesse caso, Enter ou Ctrl+T abre uma confirmação, inicialmente em **Cancelar**. Se desejar reenviar mesmo com possibilidade de duplicação, escolha **Reenviar** com → ou clique e confirme. Não há reenvio automático.
 
 Após uma queda, a aba ativa revalida a sessão, atualiza canais e recupera mensagens novas e a janela de histórico carregada, incluindo edições e exclusões ocorridas offline. Rascunhos e posição de leitura são preservados enquanto suas mensagens ainda estiverem disponíveis. Os limites de memória continuam valendo; se a mensagem usada como referência desaparecer, a leitura usa a próxima sobrevivente, ou a anterior. A recuperação não oferece replay completo: alterações fora da janela são consultadas ao abrir novamente esse trecho. Nenhum envio pendente é repetido automaticamente.
+
+A última linha acompanha o foco: mostra à esquerda somente as dicas de abas,
+canais, histórico, editor ou do cartão/modal aberto. À direita ficam os avisos,
+separados por `|`, com o mais recente no canto direito. Conexão, histórico,
+envio, edição, eventos e mensagens não lidas têm avisos independentes; uma
+confirmação de envio não apaga o estado da conexão. Um novo aviso substitui
+apenas o anterior do mesmo contexto. Em janelas estreitas, os textos ficam
+mais curtos; `+N` indica avisos antigos que reaparecem ao ampliar a janela.
+Trocar de canal limpa os avisos da conversa anterior e preserva a conexão.
+
+O campo da conversa mostra **Conversar em #nome_canal** quando está vazio e
+cresce de uma até cinco linhas conforme o texto quebra ou ocupa mais espaço.
+Depois disso, as setas acompanham o cursor e a roda do mouse sobre o campo
+rola o texto; as marcas ↑/↓ indicam conteúdo fora da área visível. Em telas
+baixas, o campo usa as linhas disponíveis preservando a leitura e o rodapé.
+O campo tem divisórias acima e abaixo, com uma linha vazia de espaço entre o
+texto e cada divisória. Em telas muito baixas, esse espaço é reduzido. O
+indicador de digitação fica abaixo da divisória inferior.
+
+Em todos os campos editáveis, **Shift+setas** estende a seleção; clique esquerdo
+e arraste também selecionam, com realce durante o movimento, inclusive entre
+linhas e em linhas quebradas pela largura do campo. A seleção tem fundo e texto contrastantes; digitar,
+apagar ou colar substitui o trecho selecionado. **Ctrl+←** vai ao começo da
+palavra; **Ctrl+→** vai ao final, antes dos espaços. A partir de um espaço,
+Ctrl+→ avança até o fim da próxima palavra.
+**Home/End** vai ao início/fim da linha, e **Ctrl+C** ou **Ctrl+U** limpa o campo.
+**Ctrl+Q** sempre fecha o aplicativo. **Ctrl+Shift+C** ou clique direito sobre
+um campo com seleção copia o texto; **Texto copiado** aparece por três segundos, preservando os
+outros avisos. A cópia usa `wl-copy` no Wayland ou `xclip` no X11 quando
+estão disponíveis; caso contrário, usa o terminal via
+[OSC 52](https://sw.kovidgoyal.net/kitty/clipboard/), que precisa permitir a cópia.
+As senhas permanecem mascaradas, inclusive durante seleção.
+
+Ctrl+Shift+C precisa chegar ao aplicativo. Terminais que reservam esse atalho
+para sua própria seleção precisam configurá-lo para enviar `ESC[99;6u`;
+clique direito também copia a seleção do campo. O cliente aceita os atalhos
+encaminhados por CSI-u e modifyOtherKeys, incluindo Num Lock/Caps Lock, e mantém
+o modo de teclado do terminal. Ctrl+C continua limpando o campo; em terminais
+que enviam o mesmo código para os dois atalhos, use o clique direito para copiar.
+
+No Kitty, adicione esta [regra condicional](https://sw.kovidgoyal.net/kitty/mapping/#conditional-mappings)
+ao `~/.config/kitty/kitty.conf` para copiar a seleção do Papo TUI com Ctrl+Shift+C:
+
+```conf
+map --when-focus-on=var:papo_tui=1 ctrl+shift+c send_text all \x1b[99;6u
+map --when-focus-on=var:papo_tui=1 ctrl+v paste_from_clipboard
+```
+
+Recarregue a configuração do Kitty com **Ctrl+Shift+F5** e reinicie o Papo TUI.
+O aplicativo define o marcador ao abrir e o remove ao sair. Nos outros
+programas, o atalho continua usando a cópia do terminal.
+A segunda regra permite **Ctrl+V** para colar em bloco dentro do Papo TUI.
+
+No Kitty e no Konsole em modo de 256 cores, o tema usa tons aproximados que
+permanecem estáveis ao recarregar a configuração do terminal. Terminais com
+entrada de cores RGB diretas usam os tons exatos.
+
+A colagem delimitada pelo terminal entra em bloco ao terminar, inclusive ao
+substituir uma seleção, e não aciona comandos nem envia quebras de linha.
+No login e nos campos de perfil, quebras de linha são descartadas. Uma colagem
+que excede o limite mantém o campo original e mostra o aviso correspondente.
+O atalho de colar continua sendo o configurado no terminal.
+
+Na linha abaixo do campo de texto, uma pessoa aparece como “Nome está digitando…” ou
+com sua frase personalizada de digitação cadastrada no servidor. De duas a
+quatro pessoas, aparecem os nomes separados por vírgula e “estão digitando…”;
+acima de quatro, “Várias pessoas estão digitando…”. O indicador acompanha
+somente o canal aberto, não inclui você e desaparece após seis segundos sem
+atividade, quando a pessoa envia uma mensagem ou fica offline. Ao editar,
+o aplicativo avisa pelo WebSocket no máximo uma vez a cada dois segundos.
+
+## Menções
+
+Digite `@` no editor para abrir o cartão de usuários e continue digitando para
+filtrar por nickname ou username. A busca ignora espaços e símbolos: `@eana`
+encontra, por exemplo, `EA -* NA`, preservando o nome original. ↑/↓ e
+PageUp/PageDown navegam; Tab ou Enter insere o usuário destacado. A roda do
+mouse sobre o cartão rola a lista e o
+clique esquerdo seleciona. Esc fecha sem alterar o texto. Enter com o cartão
+aberto escolhe a menção; depois de fechá-lo, Enter envia a mensagem.
+
+O editor mostra o nome, mantendo a identidade do usuário no envio. Uma menção
+confirmada é uma unidade: setas a atravessam e Backspace/Delete a removem por
+inteiro. Todas as menções aparecem em laranja; mensagens que mencionam sua
+conta recebem uma barra vertical à esquerda. Sem cores, o destaque usa negrito.
+As mensagens continuam chegando pelo WebSocket enquanto o cartão está aberto.
+
+O cartão mostra primeiro quem enviou mensagens mais recentemente no canal
+aberto, considerando o histórico já carregado. Os demais ficam em ordem
+alfabética. A ordem acompanha as novas mensagens, mantendo o usuário destacado
+para que uma atualização não altere sua escolha.
+
+A lista reúne usuários da instância e é carregada em páginas, sem consulta de
+históricos inativos. Durante o carregamento, os resultados são parciais. O
+cache fica somente em memória, limitado a 10.000 usuários ou 16 MiB. Se houver
+falha, Ctrl+R no cartão tenta novamente. Uma única opção também exige
+confirmação; textos colados, e-mails e URLs não abrem o seletor automaticamente.
 
 ## Imagens, vídeos e embeds
 
@@ -261,7 +335,7 @@ do Discord nem execução de HTML remoto.
 
 Ao abrir normalmente, o programa tenta recuperar apenas a última conexão ativa. O cookie fica no GNOME Keyring/Secret Service ou KWallet 5/6, separado das senhas e dos arquivos de configuração. A conta é confirmada por REST antes de abrir seus canais; as outras abas não são restauradas.
 
-O suporte usa bibliotecas opcionais: `libsecret-1` 0.20+ e `gio-2.0` 2.66+. No Arch, instale `libsecret` e `glib2` antes de configurar o CMake. Seus testes usam `dbus-run-session` e `gdbus` com um chaveiro simulado em um barramento privado. Sem gerenciador disponível ou quando o desbloqueio for recusado, a sessão fica somente em memória; a próxima abertura mostra login com a última URL preenchida. `--profiles` abre a seleção explicitamente, e `--demo` não usa sessões reais. Para compilar sem adaptadores de chaveiro, use `-DPAPO_DESKTOP_SESSIONS=OFF`.
+O suporte usa bibliotecas opcionais: `libsecret-1` 0.20+ e `gio-2.0` 2.66+. No Arch, instale `libsecret` e `glib2` antes de configurar o CMake. Seus testes usam `dbus-run-session` e `gdbus` com um chaveiro simulado em um barramento privado. Sem gerenciador disponível ou quando o desbloqueio for recusado, a sessão fica somente em memória; a próxima abertura mostra login com a última URL preenchida. `--profiles` abre a seleção explicitamente. Para compilar sem adaptadores de chaveiro, use `-DPAPO_DESKTOP_SESSIONS=OFF`.
 
 A renovação automática permanece ativa. Um JWT de 24 horas pode ser renovado pelo backend com o cookie ainda válido; cada rotação emite um novo JWT de 24 horas e cookie de 30 dias. A validação REST é a fonte de verdade. Fechar o programa mantém a última sessão salva; **Sair da conta** invalida sua recuperação e solicita revogação. Erros de rede na recuperação mostram o login; credenciais definitivamente rejeitadas são removidas.
 
@@ -279,7 +353,7 @@ ctest --test-dir build --output-on-failure
 
 Os testes usam credenciais sintéticas e servidores HTTP/WS locais. Cobrem acesso público/privado, cookies, logout, erros, limites de entrada/resposta/fila, cancelamento, URLs com prefixo, senhas ocultas, espaços em senhas, redimensionamento, Backspace repetido, cliques e restauração do terminal. pyte reconstrói a tela para verificar a posição do cursor. A suíte WS inclui fragmentação dentro de UTF-8, chunks, ping/pong intercalado, encerramento, timeouts, sessão revogada com ACK e WSS com CA/hostname verificados. Essas dependências Python são usadas somente nos testes; os mocks não comprovam integração com a instância real.
 
-As suítes `unicode-editor` e `chat-terminal` exercitam a demonstração local: grafemas, largura em células, cursor nas linhas quebradas, colagem multilinha e fragmentada, limites, mouse, atalhos, modais, estados vazio/carregando/erro, isolamento de rascunhos, preservação da leitura, resize e saída. Também conferem os indicadores de foco e erro em terminal sem cores. `history-terminal` verifica a leitura real com backend simulado, abertura automática, paginação, abas, login/cadastro pelo botão de adição, cancelamento, erros e isolamento entre sessões.
+A suíte `unicode-editor` valida grafemas, largura e cursor. Os testes de interação usam backends simulados para validar os controles dos canais reais, incluindo menções, histórico, envio e mídia.
 
 As suítes `instance-profiles` e `profiles-terminal` verificam cadastro, IDs estáveis, remoção confirmada, reinício, migração da configuração, permissões, arquivos inválidos, links, concorrência, URLs, descoberta pública/privada, DNS, timeout, TLS, redirecionamento, cookies por contexto e descarte de respostas atrasadas. Cobrem seleção pelo login, navegação, cores, terminal sem cores, senha do servidor com foco/erro, limites configuráveis e resposta da interface durante a espera. `request-rate-limit` verifica também taxa fracionária, mudança de burst e preservação de cooldown.
 
@@ -393,10 +467,9 @@ Com Kitty, Konsole, tmux, qdbus6 e xdotool disponíveis numa sessão gráfica X1
 
 ```sh
 build/test-env/bin/python -m tools.check_terminals --tmux /usr/bin/tmux
-build/test-env/bin/python -m tools.check_terminals --demo --tmux /usr/bin/tmux
 ```
 
-Os resultados e as telas ficam em `build/r1/terminals/` para o login e `build/r2/terminals/` para a demonstração. A ferramenta usa uma configuração temporária de Konsole e um servidor tmux isolado; fecha suas janelas ao terminar. Eventos de mouse são enviados à PTY no protocolo declarado pelo terminfo; `infocmp` também deve estar disponível. A opção `--demo` usa somente dados locais, sem credenciais ou conexão ao backend.
+Os resultados e as telas ficam em `build/r1/terminals/`. A ferramenta usa uma configuração temporária de Konsole e um servidor tmux isolado; fecha suas janelas ao terminar. Eventos de mouse são enviados à PTY no protocolo declarado pelo terminfo; `infocmp` também deve estar disponível.
 
 ```sh
 cmake -S . -B build/sanitized -DPAPO_SANITIZERS=ON -DPython3_EXECUTABLE="$PWD/build/test-env/bin/python"

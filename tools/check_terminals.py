@@ -1,6 +1,6 @@
-"""Exercise login or the chat demo on dedicated Kitty/Konsole/tmux terminals.
+"""Exercise login on dedicated Kitty/Konsole/tmux terminals.
 
-Uses synthetic HTTP/WS fixtures for login or local data for the chat demo,
+Uses synthetic HTTP/WS fixtures for login,
 native emulator screen reads and an observer on each real PTY. It never
 attaches to the user's existing terminal sessions.
 Requires a graphical X11/XWayland session, Kitty, Konsole, qdbus6 and xdotool.
@@ -41,7 +41,7 @@ def wait_for(predicate, seconds=10):
 
 
 class Emulator:
-    def __init__(self, name, binary, directory, tmux, *, demo=False):
+    def __init__(self, name, binary, directory, tmux):
         self.name, self.tmux = name, tmux
         self.directory = directory
         self.state_path = directory / (name.lower().replace('+', '-') + '-state.json')
@@ -51,14 +51,11 @@ class Emulator:
         self.configuration = None
         self.application_configuration = tempfile.TemporaryDirectory(prefix='papo-config-', dir=directory)
         self.stage = 'startup'
-        label = 'R2' if demo else 'R1'
+        label = 'R1'
         self.tmux_server = 'papo-probe-' + str(os.getpid())
         observer = [sys.executable, str(ROOT / 'tools/terminal_observer.py'),
                     '--report', str(self.state_path), '--isolated-session', str(binary)]
-        if demo:
-            observer.append('--demo')
-        else:
-            observer.append('--allow-local-http')
+        observer.append('--allow-local-http')
         env = dict(os.environ, LANG='C.UTF-8', LC_ALL='C.UTF-8')
         env['XDG_CONFIG_HOME'] = self.application_configuration.name
         if name == 'Konsole':
@@ -94,7 +91,7 @@ class Emulator:
             else:
                 self.socket = wait_for(lambda: next(iter(directory.glob(socket_prefix.name + '*')), None))
             wait_for(lambda: self.state().get('running'))
-            wait_for(lambda: ('DEMONSTRAÇÃO' if demo else 'URL do servidor') in self.screen())
+            wait_for(lambda: 'URL do servidor' in self.screen())
         except Exception:
             self.close()
             raise
@@ -220,118 +217,23 @@ def exercise(emulator, server):
             'term': state['term'], 'passed': checks['terminal_restored']}
 
 
-def exercise_demo(emulator):
-    checks = {}
-    sizes = [emulator.state()]
-
-    def contains(text):
-        return wait_for(lambda: emulator.screen() if text in emulator.screen() else None)
-
-    emulator.stage = 'mouse_and_contextual_navigation'
-    emulator.click(6, 8)
-    contains('Foco: Histórico')
-    contains('# projetos')
-    emulator.send('\x1bOD\x1bOD\x1bOC')
-    contains('[Trabalho]')
-    contains('Foco: Abas')
-    emulator.send('\x1bOB\x1bOC')
-    contains('Foco: Histórico')
-    checks['mouse_and_contextual_navigation'] = True
-
-    emulator.stage = 'unicode_multiline_paste'
-    emulator.send('\x1b[200~ação界語\r\nsegunda\rterceira\tlinha\x1b[201~')
-    screen = contains('terceira linha')
-    contains('ação界語')
-    contains('segunda')
-    checks['paste_does_not_submit'] = 'Agora · Você' not in screen
-    emulator.send('\x1bOP')
-    contains('Ajuda')
-    emulator.send('\x1b[6~')
-    contains('HISTÓRICO')
-    emulator.send('\x1b')
-    contains('Foco: Editor')
-    checks['unicode_multiline_and_help'] = True
-
-    emulator.stage = 'narrow_layout'
-    emulator.resize_narrow()
-    wait_for(lambda: 44 <= emulator.state()['columns'] < 80 and emulator.state()['rows'] >= 14)
-    contains('terceira linha')
-    sizes.append(emulator.state())
-    emulator.send('\t')
-    contains('Foco: Canais')
-    emulator.send('\t')
-    contains('Foco: Histórico')
-    contains('terceira linha')
-    checks['narrow_one_key_navigation'] = True
-    emulator.stage = 'small_resize'
-    emulator.resize(True)
-    contains('Amplie o terminal')
-    wait_for(lambda: emulator.state()['columns'] < 44 or emulator.state()['rows'] < 14)
-    sizes.append(emulator.state())
-    emulator.resize(False)
-    wait_for(lambda: emulator.state()['columns'] >= 80 and emulator.state()['rows'] >= 24)
-    contains('ação界語')
-    contains('terceira linha')
-    sizes.append(emulator.state())
-    checks['resize_preserves_draft'] = True
-
-    emulator.stage = 'isolated_drafts_and_demo_states'
-    emulator.send('\x0bComunidade / # ajuda\n')
-    contains('Nenhuma mensagem')
-    emulator.send('\x0bComunidade / # ideias\n')
-    contains('Carregando dados simulados')
-    contains('10:44 Ana')
-    emulator.send('\x0bComunidade / # eventos\n')
-    contains('Erro simulado')
-    emulator.send('\x12')
-    contains('10:44 Ana')
-    emulator.send('\x0bTrabalho / # equipe\n')
-    contains('terceira linha')
-    checks['isolated_drafts_and_demo_states'] = True
-
-    emulator.stage = 'history_anchor'
-    emulator.send('\x1bOH\x1bOQ')
-    contains('1 novas')
-    contains('10:32 Ana')
-    emulator.send('\x1bOF')
-    contains('Esta mensagem acabou de chegar')
-    checks['incoming_preserves_reading_anchor'] = True
-    screen = emulator.screen()
-    (emulator.directory / (emulator.name.lower().replace('+', '-') + '-screen.txt')).write_text(screen)
-
-    emulator.stage = 'exit'
-    emulator.send('\x11')
-    contains('Sair da demonstração')
-    emulator.send('\x11')
-    wait_for(lambda: not emulator.state().get('running'))
-    state = emulator.state()
-    checks['terminal_restored'] = state.get('restored') is True and state.get('returncode') == 0
-    return {'checks': checks, 'pty_sizes': [{'rows': s['rows'], 'columns': s['columns']} for s in sizes],
-            'term': state['term'], 'passed': all(checks.values())}
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--binary', type=Path, default=ROOT / 'build/papo-tui')
     parser.add_argument('--tmux', type=Path, default=ROOT / 'build/r1-tools/usr/bin/tmux')
     parser.add_argument('--directory', type=Path)
-    parser.add_argument('--demo', action='store_true', help='Validate the local R2 chat demonstration')
     arguments = parser.parse_args()
-    directory = (arguments.directory or ROOT / ('build/r2/terminals' if arguments.demo else 'build/r1/terminals')).resolve()
+    directory = (arguments.directory or ROOT / 'build/r1/terminals').resolve()
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     report = {'observed_at': datetime.now(timezone.utc).isoformat(),
-              'source': 'local_demo' if arguments.demo else 'synthetic_fixtures', 'terminals': {}}
+              'source': 'synthetic_fixtures', 'terminals': {}}
     for name in ('Kitty', 'Konsole', 'Kitty+tmux'):
         emulator = None
         try:
-            if arguments.demo:
-                emulator = Emulator(name, arguments.binary.resolve(), directory, arguments.tmux.resolve(), demo=True)
-                report['terminals'][name] = exercise_demo(emulator)
-            else:
-                with MockServer('ws-fragments') as server:
-                    server.name = 'Comunidade 界語'
-                    emulator = Emulator(name, arguments.binary.resolve(), directory, arguments.tmux.resolve())
-                    report['terminals'][name] = exercise(emulator, server)
+            with MockServer('ws-fragments') as server:
+                server.name = 'Comunidade 界語'
+                emulator = Emulator(name, arguments.binary.resolve(), directory, arguments.tmux.resolve())
+                report['terminals'][name] = exercise(emulator, server)
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
             report['terminals'][name] = {'passed': False, 'failure_kind': type(error).__name__}
             if emulator:

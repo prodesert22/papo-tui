@@ -1,0 +1,87 @@
+"""Contextual footer through the real TUI with synthetic HTTP/WebSocket peers."""
+import time
+import unittest
+from history_mock import CHANNEL, uuid
+from realtime_mock import RealtimeMock
+from test_terminal import Terminal
+
+
+class FooterTerminal(unittest.TestCase):
+    def wait(self, terminal, text):
+        deadline = time.monotonic() + 8
+        while text not in '\n'.join(terminal.screen.display) and time.monotonic() < deadline:
+            terminal.read(.03)
+        self.assertIn(text, '\n'.join(terminal.screen.display))
+
+    def footer(self, terminal):
+        return terminal.screen.display[-2]
+
+    def open(self, server):
+        terminal = Terminal()
+        terminal.send(server.url + '\tjosé\tSynthetic!123\n'); self.wait(terminal, 'geral')
+        return terminal
+
+    def test_hints_follow_focus_and_notices_share_only_the_last_line(self):
+        with RealtimeMock(count=0) as server:
+            terminal = self.open(server)
+            try:
+                terminal.resize(24, 220)
+                self.assertIn('←→ servidores', self.footer(terminal))
+                terminal.send('\x1bOB'); self.wait(terminal, 'Foco: Canais')
+                self.assertIn('↑↓ canais', self.footer(terminal))
+                self.assertNotIn('F7', self.footer(terminal)); self.assertNotIn('Enter enviar', self.footer(terminal))
+                terminal.send('\x1bOB\n'); self.wait(terminal, 'Nenhuma mensagem neste canal')
+                self.assertIn('↑↓ rolar', self.footer(terminal)); self.assertIn('F7 mídia', self.footer(terminal))
+                self.assertNotIn('↑↓ canais', self.footer(terminal))
+                terminal.send('Mensagem pelo rodapé\n'); self.wait(terminal, 'Mensagem confirmada')
+                line = self.footer(terminal)
+                self.assertIn('Enter enviar', line); self.assertNotIn('F7', line)
+                self.assertIn('Tempo real conectado', line); self.assertIn('Mensagem confirmada pelo servidor', line)
+                server.emit(dict(type='future_event', channel_id=CHANNEL)); self.wait(terminal, 'não suportado ignorado')
+                line = self.footer(terminal)
+                self.assertIn('Tempo real conectado', line); self.assertIn('Mensagem confirmada pelo servidor', line)
+                self.assertIn('Evento de tempo real não suportado ignorado', line)
+                self.assertEqual(line.count(' | '), 2)
+                self.assertLess(line.index('Tempo real conectado'), line.index('Mensagem confirmada'))
+                self.assertLess(line.index('Mensagem confirmada'), line.index('Evento de tempo real'))
+                self.assertNotIn('Mensagem confirmada', '\n'.join(terminal.screen.display[:-2]))
+                self.assertNotIn('Evento de tempo real', '\n'.join(terminal.screen.display[:-2]))
+                terminal.resize(24, 80)
+                line = self.footer(terminal)
+                self.assertIn('Enter', line)
+                self.assertIn('Tempo real conectado', line)
+                self.assertIn('Mensagem confirmada', line)
+                self.assertIn('Evento ignorado', line)
+                self.assertEqual(line.count(' | '), 2)
+                terminal.resize(24, 220)
+                server.emit(dict(type='error', channel_id=CHANNEL)); self.wait(terminal, 'O servidor informou um erro')
+                line = self.footer(terminal)
+                self.assertNotIn('não suportado', line)
+                self.assertIn('Mensagem confirmada', line); self.assertIn('Tempo real conectado', line)
+                self.assertEqual(line.count(' | '), 2)
+                terminal.resize(14, 44)
+                self.assertIn('Enter', self.footer(terminal)); self.assertEqual(len(self.footer(terminal)), 44)
+                terminal.resize(24, 220)
+                self.assertIn('O servidor informou um erro', self.footer(terminal))
+                self.assertIn('Mensagem confirmada pelo servidor', self.footer(terminal))
+                terminal.send('\x1b\x1bOD\x1bOD'); self.wait(terminal, 'Foco: Abas')
+                self.assertIn('←→ servidores', self.footer(terminal)); self.assertNotIn('F7', self.footer(terminal))
+            finally: self.assertTrue(terminal.close())
+
+    def test_unread_indicator_is_clickable_in_the_notification_area(self):
+        with RealtimeMock(count=30) as server:
+            terminal = self.open(server)
+            try:
+                terminal.resize(24, 160); terminal.send('\x1bOB\x1bOB\n'); self.wait(terminal, 'Mensagem 0030')
+                terminal.send('\x1bOH')
+                message = dict(server.message(31), content='Mensagem nova fora da leitura')
+                server.emit(dict(message, type='message')); self.wait(terminal, '1 novas mensagens')
+                line = self.footer(terminal)
+                self.assertIn('1 novas mensagens', line)
+                terminal.click(terminal.screen.lines - 2, line.index('1 novas mensagens') + 1)
+                self.wait(terminal, message['content'])
+                self.assertNotIn('novas mensagens', self.footer(terminal))
+            finally: self.assertTrue(terminal.close())
+
+
+if __name__ == '__main__': unittest.main()

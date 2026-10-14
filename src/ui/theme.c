@@ -19,6 +19,8 @@ void theme_init(ui_theme *theme)
 {
     memset(theme, 0, sizeof(*theme));
     if (!has_colors() || start_color() == ERR) return;
+    const char *term = getenv("TERM"), *kitty_window = getenv("KITTY_WINDOW_ID");
+    bool kitty = (term && !strcmp(term, "xterm-kitty")) || (kitty_window && *kitty_window);
     static const unsigned char rgb[THEME_COLOR_COUNT][3] = {
         {0x0d, 0x0f, 0x12}, /* #0d0f12 canvas */
         {0x15, 0x18, 0x1e}, /* #15181e panels */
@@ -47,10 +49,11 @@ void theme_init(ui_theme *theme)
             COLOR_WHITE, COLOR_YELLOW
         };
         memcpy(colors, basic, sizeof(colors));
-    } else if (can_change_color() && !getenv("KONSOLE_VERSION")) {
+    } else if (can_change_color() && !kitty && !getenv("KONSOLE_VERSION")) {
         /* Konsole may advertise ccc while ignoring terminfo's rgb: syntax.
-         * Keep its indexed palette intact; direct-color entries above still
-         * provide exact RGB when explicitly advertised by terminfo. */
+         * Kitty resets overridden indices on configuration reload, turning
+         * our custom 240..252 theme into gray. Keep both indexed palettes
+         * intact; the direct-color branch above still provides exact RGB. */
         for (int i = 0; i < THEME_COLOR_COUNT; ++i) {
             short index = FIRST_CUSTOM_COLOR + i;
             if (color_content(index, &theme->colors[i].red, &theme->colors[i].green,
@@ -90,6 +93,7 @@ void theme_init(ui_theme *theme)
     init_extended_pair(EMBED_AREA, colors[TEXT], colors[RAISED]);
     init_extended_pair(EMBED_MUTED, colors[SECONDARY], colors[RAISED]);
     init_extended_pair(EMBED_ACCENT, colors[ORANGE], colors[RAISED]);
+    init_extended_pair(TEXT_SELECTION, colors[BACKGROUND], colors[ORANGE]);
     wbkgd(stdscr, COLOR_PAIR(NORMAL));
 }
 

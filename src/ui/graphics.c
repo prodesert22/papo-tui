@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "ui/graphics.h"
 #include "ui/sixel.h"
+#include "ui/text.h"
 #include "net/clock.h"
 #include <chafa.h>
 #include <stdatomic.h>
@@ -94,9 +95,8 @@ int graphics_terminal_input(wint_t *key)
     for (;;) {
         uint64_t now = 0; net_now_ms(&now);
         if (used && now - started > 250) used = 0;
-        int type = get_wch(key);
+        int type = text_input_read(key);
         if (type == ERR) return ERR;
-        if (!probed) return type;
         if (!used) {
             if (type != OK || *key != 27) return type;
             pending[used++] = 27; started = now;
@@ -119,16 +119,21 @@ int graphics_terminal_input(wint_t *key)
         pending[used++] = (char)*key; pending[used] = 0;
         bool apc = pending[1] == '_';
         if (used == 3 && (apc ? pending[2] != 'G' :
-            pending[2] != '?' && pending[2] != '4' && pending[2] != '6')) {
+            pending[2] != '?' && !(pending[2] >= '0' && pending[2] <= '9'))) {
             while (used > 1) unget_wch((unsigned char)pending[--used]);
             used = 0; *key = 27; return OK;
         }
-        bool complete = apc ? used > 3 && pending[used - 2] == 27 && *key == '\\' : *key == 'c' || *key == 't' || *key == 'y';
+        bool complete = apc ? used > 3 && pending[used - 2] == 27 && *key == '\\' : *key >= 0x40 && *key <= 0x7e;
         if (complete) {
             /* Consume graphics acknowledgements even on rejection; they are
              * terminal responses and must never become editor text. */
-            graphics_terminal_reply(&terminal, pending); used = 0;
-        } else if (!apc && !((*key >= '0' && *key <= '9') || *key == '?' || *key == ';' || *key == '$')) used = 0;
+            if ((probed && graphics_terminal_reply(&terminal, pending)) || apc) { used = 0; continue; }
+            /* Unmapped CSI-u reports must not insert modifier numbers into
+             * the draft or act as Escape. Known keys are decoded by curses. */
+            if (*key == 'u') { used = 0; *key = TEXT_IGNORED; return KEY_CODE_YES; }
+            while (used > 1) unget_wch((unsigned char)pending[--used]);
+            used = 0; *key = 27; return OK;
+        } else if (!apc && !((*key >= '0' && *key <= '9') || *key == '?' || *key == ';' || *key == '$' || *key == ':')) used = 0;
     }
 }
 

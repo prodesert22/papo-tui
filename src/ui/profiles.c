@@ -3,6 +3,7 @@
 #include "ui/mouse.h"
 #include "ui/profiles.h"
 #include "ui/text.h"
+#include "ui/clipboard.h"
 #include "ui/theme.h"
 #include "ui/button.h"
 #include "net/auth.h"
@@ -26,7 +27,8 @@ typedef struct { int row, column, width, index; } hit;
 typedef struct {
     WINDOW *window, *dialog;
     int cursor, first_tab, focus, dialog_type, field, button, top_tab;
-    bool paste;
+    bool paste, dragging;
+    text_paste paste_data;
     char editing[PROFILE_ID_BYTES];
     text_buffer name, url;
     hit top_tabs[2], tabs[PROFILE_LIMIT + 1], actions[ACTION_COUNT], buttons[3];
@@ -166,26 +168,7 @@ static void field_draw(profile_ui *ui, text_buffer *buffer, int index, int row, 
     int color = ui->field == index ? PROFILE_FOCUS : PROFILE_PANEL;
     wattrset(ui->dialog, attributes(color));
     mvwhline(ui->dialog, row, 2, ' ', ui->dialog_width - 4);
-    /* One visual row, scrolling in grapheme/cell coordinates. */
-    text_layout view;
-    text_measure(buffer, TEXT_LIMIT * 2 + 1, &view);
-    int width = ui->dialog_width - 4;
-    int first = ui->scroll[index];
-    if (view.cursor_column < first) first = view.cursor_column;
-    if (view.cursor_column >= first + width) first = view.cursor_column - width + 1;
-    for (size_t i = 0; i + 1 < view.count; ++i) {
-        const text_cell *cell = &view.cells[i];
-        if (cell->column < first && cell->column + cell->width > first) first = cell->column + cell->width;
-    }
-    ui->scroll[index] = first;
-    for (size_t i = 0; i + 1 < view.count; ++i) {
-        const text_cell *cell = &view.cells[i];
-        if (cell->column < first || cell->column + cell->width > first + width) continue;
-        cchar_t glyph;
-        if (setcchar(&glyph, cell->glyph, attributes(color) & ~A_COLOR, color, NULL) == OK)
-            mvwadd_wch(ui->dialog, row, 2 + cell->column - first, &glyph);
-    }
-    if (ui->field == index) wmove(ui->dialog, row, 2 + view.cursor_column - first);
+    text_draw_field(ui->dialog, buffer, &ui->scroll[index], row, 2, ui->dialog_width - 4, false);
 }
 
 static void draw_dialog(profile_ui *ui)
@@ -219,7 +202,7 @@ static void draw_dialog(profile_ui *ui)
         button_draw(ui->dialog, 8, 29, 8, "[Padrão]",
                     ui->field == 2 && ui->button == 2 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     label(ui->dialog, 9, 2, ui->dialog_width - 4, ui->config->writable ? PANEL_MUTED : ERROR, ui->config->message);
-    label(ui->dialog, 10, 2, ui->dialog_width - 4, PANEL_MUTED, "Tab: foco · Enter: confirmar · Esc: cancelar");
+    label(ui->dialog, 10, 2, ui->dialog_width - 4, PANEL_MUTED, clipboard_notice() ? clipboard_notice() : "Tab: foco · Enter: confirmar · Esc: cancelar");
     if ((ui->dialog_type == EDIT_DIALOG || ui->dialog_type == RATE_DIALOG) && ui->field < 2) {
         text_buffer *buffer = ui->field ? &ui->url : &ui->name;
         text_layout view;
@@ -448,15 +431,32 @@ static void restore_rate_fields(profile_ui *ui)
     snprintf(ui->config->message, sizeof(ui->config->message), "Padrão preenchido. Salvar aplica 10 req/s e burst 25.");
 }
 
-static int click(profile_ui *ui, server_profile *output)
+static int click_event(profile_ui *ui, server_profile *output, MEVENT mouse)
 {
-    MEVENT mouse;
-    if (ui_mouse_get(&mouse) != OK || ui->paste || !ui->window || !(mouse.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED))) return 0;
+    if (ui->paste || !ui->window) return 0;
+    if (ui->dragging && ui->dialog && ui->field < 2 && ui->dialog_type != REMOVE_DIALOG) {
+        if (mouse.bstate & (BUTTON1_PRESSED | BUTTON1_RELEASED | REPORT_MOUSE_POSITION)) {
+            int column = mouse.x - getbegx(ui->dialog) - 2, width = ui->dialog_width - 4;
+            if (column < 0 && ui->scroll[ui->field]) --ui->scroll[ui->field];
+            if (column >= width) ++ui->scroll[ui->field];
+            if (column < 0) column = 0;
+            if (column >= width) column = width - 1;
+            text_drag(ui->field ? &ui->url : &ui->name, TEXT_LIMIT * 2 + 1, 0, ui->scroll[ui->field] + column);
+            if (mouse.bstate & BUTTON1_RELEASED) ui->dragging = false;
+            return 0;
+        }
+    }
+    if ((mouse.bstate & REPORT_MOUSE_POSITION) || !(mouse.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED | BUTTON3_PRESSED | BUTTON3_CLICKED))) return 0;
     int row = mouse.y, column = mouse.x;
     if (!wmouse_trafo(ui->window, &row, &column, false)) return 0;
     if (ui->dialog) {
         row = mouse.y; column = mouse.x;
         if (!wmouse_trafo(ui->dialog, &row, &column, false)) return 0;
+        if (mouse.bstate & (BUTTON3_PRESSED | BUTTON3_CLICKED)) {
+            if (ui->dialog_type != REMOVE_DIALOG && (row == 3 || row == 6) && column >= 2 && column < ui->dialog_width - 2)
+                clipboard_copy(row == 6 ? &ui->url : &ui->name);
+            return 0;
+        }
         for (int i = 0; i < (ui->dialog_type == RATE_DIALOG ? 3 : 2); ++i) if (inside(ui->buttons[i], row, column)) {
             ui->field = 2; ui->button = i;
             if (!i) close_dialog(ui);
@@ -468,9 +468,11 @@ static int click(profile_ui *ui, server_profile *output)
             ui->field = row == 6 ? 1 : 0;
             text_buffer *buffer = ui->field ? &ui->url : &ui->name;
             text_click(buffer, TEXT_LIMIT * 2 + 1, 0, ui->scroll[ui->field] + column - 2);
+            ui->dragging = (mouse.bstate & BUTTON1_PRESSED) != 0;
         }
         return 0;
     }
+    if (mouse.bstate & (BUTTON3_PRESSED | BUTTON3_CLICKED)) return 0;
     if (!ui->chooser) {
         for (int i = 0; i < 2; ++i) if (inside(ui->top_tabs[i], row, column)) {
             ui->top_tab = i;
@@ -492,17 +494,14 @@ static int click(profile_ui *ui, server_profile *output)
     return 0;
 }
 
-static void edit(text_buffer *buffer, int type, wint_t key)
+static int click(profile_ui *ui, server_profile *output)
 {
-    if (type == KEY_CODE_YES) {
-        if (key == KEY_LEFT || key == KEY_RIGHT) text_horizontal(buffer, key == KEY_RIGHT);
-        else if (key == KEY_HOME) { buffer->cursor = 0; buffer->trailing = false; }
-        else if (key == KEY_END) { buffer->cursor = buffer->length; buffer->trailing = false; }
-        else if (key == KEY_BACKSPACE || key == KEY_DC) text_delete(buffer, key == KEY_BACKSPACE);
-    } else if (key == 127 || key == 8) text_delete(buffer, true);
-    else if (key == 21) text_clear(buffer);
-    else if (iswprint(key) || key == 0x200c || key == 0x200d) text_insert(buffer, key, false);
+    MEVENT events[64]; size_t count = ui_mouse_events(events, 64);
+    for (size_t i = 0; i < count; ++i) { int result = click_event(ui, output, events[i]); if (result) return result; }
+    return 0;
 }
+static void edit(text_buffer *buffer, int type, wint_t key)
+{ text_edit(buffer, type, key, TEXT_LIMIT * 2 + 1, false); }
 
 static int profiles_run(profile_config *config, bool allow_local_http,
                         const volatile sig_atomic_t *interrupted, server_profile *output, bool chooser)
@@ -516,39 +515,43 @@ static int profiles_run(profile_config *config, bool allow_local_http,
     const server_profile *active = profiles_find(config, config->selected);
     if (active) ui->cursor = (int)(active - config->profiles);
     if (!chooser && config->count) ui->focus = LIST_AREA;
-    init_graphemebreak();
+    text_input_init();
     int result = layout(ui) ? 0 : -1;
     bool done = result < 0;
     bool redraw = true;
-    unsigned paste_steps = 0;
+
     while (!done && !*interrupted) {
         auth_state before = auth_get_state(ui->discovery);
         if (!synchronize_discovery(ui)) { result = -1; break; }
         auth_poll(ui->discovery);
         if (before != auth_get_state(ui->discovery)) redraw = true;
-        if (redraw && (!ui->paste || paste_steps >= 32)) { draw(ui); redraw = false; paste_steps = 0; }
+        if (clipboard_poll()) redraw = true;
+        if (redraw) { draw(ui); redraw = false; }
         wint_t key;
-        int type = graphics_terminal_input(&key);
+        int type = ui->paste ? text_paste_read(&ui->paste_data, &key, false, graphics_terminal_input, 30) : graphics_terminal_input(&key);
         if (type == ERR) {
-            if (redraw) { draw(ui); redraw = false; paste_steps = 0; }
+            if (redraw) { draw(ui); redraw = false; }
             continue;
         }
         redraw = true;
-        if (type == KEY_CODE_YES && key == KEY_RESIZE) { if (!layout(ui)) { result = -1; break; } paste_steps = 32; continue; }
-        if (type == KEY_CODE_YES && key == KEY_PASTE_START) { ui->paste = true; paste_steps = 32; continue; }
-        if (type == KEY_CODE_YES && key == KEY_PASTE_END) { ui->paste = false; continue; }
-        if (type == KEY_CODE_YES && key == KEY_MOUSE) { result = click(ui, output); if (result) break; continue; }
-        if (ui->paste) {
-            if (type == OK && (ui->dialog_type == EDIT_DIALOG || ui->dialog_type == RATE_DIALOG) && ui->field < 2) {
-                text_buffer *buffer = ui->field ? &ui->url : &ui->name;
-                if (key == '\t') key = ' ';
-                if (!text_insert(buffer, key, false) && buffer->length >= TEXT_LIMIT)
-                    snprintf(config->message, sizeof(config->message), "Limite do campo atingido; texto já aceito preservado.");
-            }
-            ++paste_steps;
+        if (type == KEY_CODE_YES && key == KEY_RESIZE) { if (!layout(ui)) { result = -1; break; } continue; }
+        if (type == KEY_CODE_YES && key == KEY_PASTE_START) { ui->paste = true; text_paste_begin(&ui->paste_data); ui->dragging = false; continue; }
+        if (type == KEY_CODE_YES && key == KEY_PASTE_END) {
+            ui->paste = false;
+            if ((ui->dialog_type == EDIT_DIALOG || ui->dialog_type == RATE_DIALOG) && ui->field < 2) {
+                if (!text_paste_commit(&ui->paste_data, ui->field ? &ui->url : &ui->name))
+                    snprintf(config->message, sizeof(config->message), "Colagem excede o limite do campo; texto preservado.");
+            } else text_paste_cancel(&ui->paste_data);
             continue;
         }
-        if (type == OK && (key == 3 || key == 17)) { result = 2; break; }
+        if (type == KEY_CODE_YES && key == KEY_MOUSE) { result = click(ui, output); if (result) break; continue; }
+        if (ui->paste) continue;
+        if (type == KEY_CODE_YES && key == TEXT_COPY) {
+            if (ui->dialog && ui->dialog_type != REMOVE_DIALOG && ui->field < 2)
+                clipboard_copy(ui->field ? &ui->url : &ui->name);
+            continue;
+        }
+        if (type == OK && (key == 17 || (key == 3 && !(ui->dialog && ui->dialog_type != REMOVE_DIALOG && ui->field < 2)))) { result = 2; break; }
         if (type == OK && key == 27) {
             if (ui->dialog_type) close_dialog(ui); else break;
             continue;
@@ -644,6 +647,7 @@ static int profiles_run(profile_config *config, bool allow_local_http,
     close_dialog(ui);
     if (ui->window) delwin(ui->window);
     auth_destroy(ui->discovery);
+    text_paste_cancel(&ui->paste_data);
     free(ui);
     curs_set(0);
     return *interrupted ? 2 : result == 4 ? 0 : result;

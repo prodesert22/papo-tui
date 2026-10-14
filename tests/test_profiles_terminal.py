@@ -37,7 +37,7 @@ class ProfileTerminalTests(unittest.TestCase):
 
     def close(self, terminal):
         if not getattr(terminal, "closed", False):
-            self.assertTrue(terminal.close(exit_key="\x03"))
+            self.assertTrue(terminal.close(exit_key="\x11"))
             terminal.closed = True
             self.assertEqual(terminal.process.returncode, 0)
             self.assertNotIn(b"AddressSanitizer", terminal.output)

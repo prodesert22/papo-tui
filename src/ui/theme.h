@@ -10,7 +10,7 @@ enum {
     HISTORY_AREA, HISTORY_MUTED, HISTORY_ACCENT, HISTORY_ERROR, HISTORY_BORDER,
     PROFILE_TEXT, PROFILE_PANEL, PROFILE_SELECTED, PROFILE_FOCUS,
     PROFILE_BUTTON_SELECTED, PROFILE_BUTTON_FOCUS,
-    EMBED_AREA, EMBED_MUTED, EMBED_ACCENT
+    EMBED_AREA, EMBED_MUTED, EMBED_ACCENT, TEXT_SELECTION
 };
 
 #define THEME_COLOR_COUNT 13
@@ -22,8 +22,8 @@ typedef struct {
     } colors[THEME_COLOR_COUNT];
 } ui_theme;
 
-/* Called after initscr. Owns temporary palette changes; restore the values
- * saved from ncurses before endwin. */
+/* Called after initscr. Keeps Kitty/Konsole indexed palettes intact; on other
+ * mutable palettes, restore saved ncurses values before endwin. */
 void theme_init(ui_theme *theme);
 void theme_restore(ui_theme *theme);
 

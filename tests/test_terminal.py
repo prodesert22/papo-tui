@@ -48,6 +48,14 @@ class TerminalStream(pyte.ByteStream):
     events = pyte.Stream.events | {'scroll_up', 'scroll_down'}
 
 
+def editor_region(terminal):
+    """Locate editable rows; exclude input padding/borders, typing and footer."""
+    column = 27 if terminal.screen.columns >= 80 else 2
+    first = next(row for row in range(5, terminal.screen.lines - 4)
+                 if terminal.screen.buffer[row][column].data == '>')
+    return first, terminal.screen.lines - (6 if terminal.screen.lines >= 18 else 5)
+
+
 class Terminal:
     def __init__(self, arguments=(), *, terminal_type="xterm-256color", environment=None, allow_local_http=True,
                  unset_environment=()):
@@ -62,8 +70,11 @@ class Terminal:
         env["XDG_CONFIG_HOME"] = self.configuration.name
         env["XDG_STATE_HOME"] = os.path.join(self.configuration.name, "state")
         env.update(environment or {})
+        # Never change the personal desktop clipboard from synthetic PTY tests.
+        if not environment or "WAYLAND_DISPLAY" not in environment: env["WAYLAND_DISPLAY"] = ""
+        if not environment or "DISPLAY" not in environment: env["DISPLAY"] = ""
         command = [BINARY, *arguments]
-        if allow_local_http and "--demo" not in arguments and "--allow-local-http" not in arguments:
+        if allow_local_http and "--allow-local-http" not in arguments:
             command.append("--allow-local-http")
         self.process = subprocess.Popen(command, stdin=self.slave, stdout=self.slave, stderr=self.slave,
                                         env=env, start_new_session=True)
@@ -139,6 +150,24 @@ class Terminal:
 
 
 class TerminalTests(unittest.TestCase):
+    def test_kitty_colors_do_not_redefine_the_reloadable_indexed_palette(self):
+        for terminal_type in ('xterm-kitty', 'xterm-256color'):
+            with self.subTest(terminal_type=terminal_type):
+                terminal = Terminal(terminal_type=terminal_type,
+                                    environment={'KITTY_WINDOW_ID': 'papo-synthetic-window'})
+                try:
+                    self.assertIn('URL do servidor', '\n'.join(terminal.screen.display))
+                    self.assertNotIn(b'\x1b]4;', terminal.output)
+                    ordinary = terminal.screen.buffer[2][12]
+                    terminal.send('\tcor estável\x1bOH\x1b[1;2F')
+                    terminal.resize(30, 100); terminal.resize(24, 80)
+                    self.assertIn('cor estável', '\n'.join(terminal.screen.display))
+                    self.assertNotIn(b'\x1b]4;', terminal.output)
+                    after = terminal.screen.buffer[2][12]
+                    self.assertEqual((ordinary.fg, ordinary.bg), (after.fg, after.bg))
+                finally:
+                    self.assertTrue(terminal.close())
+
     def test_three_areas_and_wide_text_survive_resize(self):
         terminal = Terminal()
         try:
@@ -173,7 +202,7 @@ class TerminalTests(unittest.TestCase):
     def test_exit_keys_and_signals_restore_terminal(self):
         for name, exit_key, signal_number in (
             ("Ctrl+Q", "\x11", None),
-            ("Ctrl+C", "\x03", None),
+            ("Ctrl+C outside input", "\t\t\t\t\x03", None),
             ("SIGINT", None, signal.SIGINT),
             ("SIGTERM", None, signal.SIGTERM),
         ):
