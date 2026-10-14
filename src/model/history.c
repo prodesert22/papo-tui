@@ -288,6 +288,19 @@ static bool upsert(history *h, json_t **array, json_t *value, bool oldest, bool 
     json_decref(*array); *array = next;
     return true;
 }
+/* Embed snapshots have no edit timestamp. Apply them independently so an old
+ * text edit cannot suppress a newer embed event (or regress newer REST text). */
+static bool apply_patch(json_t *message, json_t *patch)
+{
+    if (!message || !json_is_object(patch)) return true;
+    if (json_object_get(patch, "edited_at") && (!str(message, "edited_at") ||
+        time_compare(str(patch, "edited_at"), str(message, "edited_at")) >= 0)) {
+        if (json_object_set(message, "content", json_object_get(patch, "content")) ||
+            json_object_set(message, "edited_at", json_object_get(patch, "edited_at"))) return false;
+    }
+    json_t *embeds = json_object_get(patch, "embeds");
+    return !embeds || json_object_set(message, "embeds", embeds) == 0;
+}
 static bool patched(history *h, json_t *message)
 {
     json_t *patch = json_object_get(h->patches, str(message, "id"));
@@ -295,8 +308,7 @@ static bool patched(history *h, json_t *message)
     if (!upsert(h, &h->messages, message, true, true)) return false;
     if (patch) {
         json_t *m = json_array_get(h->messages, find(h->messages, str(message, "id")));
-        if (m && (!str(m, "edited_at") || time_compare(str(patch, "edited_at"), str(m, "edited_at")) >= 0) &&
-            json_object_update(m, patch)) return false;
+        if (!apply_patch(m, patch)) return false;
     }
     if (h->evicted && json_array_size(h->messages)) {
         json_t *first = json_array_get(h->messages, 0);
@@ -391,9 +403,7 @@ static bool messages_response(history *h, json_t *body)
         if (!upsert(h, &next, m, false, true)) goto fail;
         json_t *patch = json_object_get(h->patches, str(m, "id"));
         json_t *merged = json_array_get(next, find(next, str(m, "id")));
-        if (patch && merged && (!str(merged, "edited_at") ||
-            time_compare(str(patch, "edited_at"), str(merged, "edited_at")) >= 0) &&
-            json_object_update(merged, patch)) goto fail;
+        if (!apply_patch(merged, patch)) goto fail;
     }
     json_decref(h->messages); h->messages = next;
     if (!trim(h, h->messages, false)) return false;
@@ -443,14 +453,25 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
     if (!strcmp(type, "error")) { status(h, "O servidor informou um erro de tempo real."); return true; }
     bool message = !strcmp(type, "message"), edit = !strcmp(type, "message_edit"),
          del = !strcmp(type, "message_delete");
+    bool embeds = !strcmp(type, "message_embeds_update");
     bool create = !strcmp(type, "channel_create"), update = !strcmp(type, "channel_update"),
          remove = !strcmp(type, "channel_delete");
-    if (!(message || edit || del || create || update || remove)) {
+    if (!(message || edit || del || embeds || create || update || remove)) {
         status(h, "Evento de tempo real não suportado ignorado."); return true;
     }
-    const char *channel = str((json_t *)event, "channel_id"), *id = str((json_t *)event, "id");
+    const char *channel = str((json_t *)event, "channel_id"),
+               *id = str((json_t *)event, embeds ? "message_id" : "id");
     if (!string_field((json_t *)event, "channel_id", 36, false) || !history_uuid(channel) ||
-        ((message || edit || del) && (!string_field((json_t *)event, "id", 36, false) || !history_uuid(id)))) goto invalid;
+        ((message || edit || del || embeds) &&
+         (!string_field((json_t *)event, embeds ? "message_id" : "id", 36, false) || !history_uuid(id)))) goto invalid;
+    if (embeds) {
+        json_t *list = json_object_get(event, "embeds");
+        /* The development backend emits null when its current list is empty,
+         * as REST also allows. An absent field is still an invalid event. */
+        if ((!json_is_array(list) && !json_is_null(list)) || json_array_size(list) > 10) goto invalid;
+        size_t i; json_t *item;
+        json_array_foreach(list, i, item) if (!json_is_object(item)) goto invalid;
+    }
     if (message && !message_valid((json_t *)event, channel)) goto invalid;
     uint64_t timestamp;
     if (edit && (!json_object_get(event, "content") || !string_field((json_t *)event, "content", 32768, true) ||
@@ -507,20 +528,32 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
         }
     }
     if (!active) return true;
-    if (edit || del) {
+    if (edit || del || embeds) {
         json_t *previous = json_object_get(h->patches, id);
         json_t *existing = json_array_get(h->messages, find(h->messages, id));
         if (edit && str(existing, "edited_at") &&
             time_compare(str(existing, "edited_at"), str((json_t *)event, "edited_at")) > 0) return true;
-        if (edit && (json_is_null(previous) || (str(previous, "edited_at") &&
-            time_compare(str(previous, "edited_at"), str((json_t *)event, "edited_at")) > 0))) return true;
+        if (!del && json_is_null(previous)) return true;
+        if (edit && str(previous, "edited_at") &&
+            time_compare(str(previous, "edited_at"), str((json_t *)event, "edited_at")) > 0) return true;
         if (!h->patches && !(h->patches = json_object())) goto allocation;
         if (!json_object_get(h->patches, id) && json_object_size(h->patches) >= 256) {
             history_recover(h); status(h, "Marcas excederam o limite. Recuperando…"); return false;
         }
-        json_t *patch = del ? json_null() : json_pack("{s:O,s:O}", "content", json_object_get(event, "content"),
-                                                    "edited_at", json_object_get(event, "edited_at"));
-        json_t *copy = json_deep_copy(patch); json_decref(patch);
+        json_t *patch;
+        if (del) patch = json_null();
+        else if (embeds) patch = json_is_null(json_object_get(event, "embeds")) ?
+            json_pack("{s:[]}", "embeds") : json_pack("{s:O}", "embeds", json_object_get(event, "embeds"));
+        else patch = json_pack("{s:O,s:O}", "content", json_object_get(event, "content"),
+                               "edited_at", json_object_get(event, "edited_at"));
+        if (!patch) goto allocation;
+        json_t *copy = json_deep_copy(patch);
+        json_decref(patch);
+        if (copy && !del && json_is_object(previous)) {
+            json_t *combined = json_deep_copy(previous);
+            if (combined && json_object_update(combined, copy)) { json_decref(combined); combined = NULL; }
+            json_decref(copy); copy = combined;
+        }
         if (!copy || json_object_set_new(h->patches, id, copy)) goto allocation;
         size_t patch_bytes = encoded_size(h->patches);
         if (patch_bytes == SIZE_MAX) goto allocation;
@@ -531,7 +564,7 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
         size_t index = find(h->messages, id);
         if (index != SIZE_MAX) {
             if (del) { if (json_array_remove(h->messages, index)) goto allocation; }
-            else if (json_object_update(json_array_get(h->messages, index), json_object_get(h->patches, id))) goto allocation;
+            else if (!apply_patch(json_array_get(h->messages, index), json_object_get(h->patches, id))) goto allocation;
             if (!trim(h, h->messages, true)) goto allocation;
         }
     } else if (message) {

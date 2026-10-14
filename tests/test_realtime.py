@@ -47,6 +47,68 @@ class RealtimeTests(unittest.TestCase):
     def observer(self, server):
         observer = Observer(server); self.addCleanup(observer.close); return observer
 
+    def test_live_embed_replacement_survives_edits_and_rest_confirmation(self):
+        with RealtimeMock() as server:
+            server.messages[-1]['content'] = ''
+            client = self.observer(server); initial = client.ready()
+            event = {'type': 'message_embeds_update', 'channel_id': CHANNEL, 'message_id': uuid(103),
+                     'embeds': [{'id': uuid(901), 'source_type': 'custom', 'fetch_method': 'manual',
+                                 'title': 'Embed recebido ao vivo', 'description': 'Corpo do embed'}]}
+            server.emit(event)
+            result = client.wait(lambda r: r.get('messages', [{}])[-1].get('embeds') == event['embeds'], seconds=3)
+            self.assertEqual(result['insertions'], initial['insertions'])
+            client.command('event ' + json.dumps({'type': 'message_edit', 'channel_id': CHANNEL, 'id': uuid(103),
+                                                'content': 'Texto editado', 'edited_at': STAMP}))
+            result = client.command('confirm ' + json.dumps(server.messages[-1]))
+            self.assertEqual(result['messages'][-1]['embeds'], event['embeds'])
+            self.assertEqual(result['messages'][-1]['content'], 'Texto editado')
+            # Newer REST text must not be regressed by an older text patch,
+            # while the independently received embed snapshot still applies.
+            newer = dict(server.messages[-1], content='Texto REST mais recente', edited_at='2027-01-01T00:00:00Z')
+            result = client.command('confirm ' + json.dumps(newer))
+            self.assertEqual(result['messages'][-1]['content'], newer['content'])
+            self.assertEqual(result['messages'][-1]['embeds'], event['embeds'])
+            for invalid in ({}, [None], [{}] * 11):
+                result = client.command('event ' + json.dumps(dict(event, embeds=invalid)))
+                self.assertEqual(result['messages'][-1]['embeds'], event['embeds'])
+            result = client.command('event ' + json.dumps(dict(event, embeds=[{'title': 'Substituído'}])))
+            self.assertEqual(result['messages'][-1]['embeds'], [{'title': 'Substituído'}])
+            result = client.command('event ' + json.dumps(dict(event, embeds=[])))
+            self.assertEqual(result['messages'][-1]['embeds'], [])
+            client.command('event ' + json.dumps(event))
+            result = client.command('event ' + json.dumps(dict(event, embeds=None)))
+            self.assertEqual(result['messages'][-1]['embeds'], [])
+            self.assertEqual(sum('/messages' in r[1] for r in server.requests), 1)
+
+    def test_embed_update_before_message_snapshot_and_after_deletion(self):
+        with RealtimeMock() as server:
+            server.delay = .6
+            client = self.observer(server)
+            self.assertTrue(server.snapshot_started.wait(3))
+            event = {'type': 'message_embeds_update', 'channel_id': CHANNEL, 'message_id': uuid(103),
+                     'embeds': [{'title': 'Atualização durante snapshot'}]}
+            server.emit(event)
+            result = client.ready()
+            self.assertEqual(result['messages'][-1]['embeds'], event['embeds'])
+            event['message_id'] = uuid(104)
+            client.command('event ' + json.dumps(event))
+            result = client.command('event ' + json.dumps(dict(server.message(4), type='message', content='')))
+            self.assertEqual(result['messages'][-1]['embeds'], event['embeds'])
+            client.command('event ' + json.dumps({'type': 'message_delete', 'channel_id': CHANNEL, 'id': uuid(104)}))
+            client.command('event ' + json.dumps(event))
+            result = client.command('confirm ' + json.dumps(server.message(4)))
+            self.assertEqual(len(result['messages']), 3)
+            result = client.command('event ' + json.dumps(dict(event, channel_id=OTHER, message_id=uuid(103))))
+            self.assertEqual(result['messages'][-1]['embeds'], event['embeds'])
+            self.assertEqual(sum('/messages' in r[1] for r in server.requests), 1)
+            server.snapshot_started.clear()
+            client.command('recover')
+            self.assertTrue(server.snapshot_started.wait(3))
+            event.update(message_id=uuid(103), embeds=[{'title': 'Atualização durante recuperação'}])
+            server.emit(event)
+            result = client.ready()
+            self.assertEqual(result['messages'][-1]['embeds'], event['embeds'])
+
     def test_live_fragmented_message_duplicate_and_rest_fields(self):
         with RealtimeMock() as server:
             client = self.observer(server); initial = client.ready()

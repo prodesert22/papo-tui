@@ -15,6 +15,7 @@ import time
 from uuid import UUID
 
 import requests
+import websocket
 from tools.check_backend import private_write
 from tools.check_r3 import ROOT, checked_run, isolated_backend, stop
 from tools.check_r4 import environment
@@ -30,7 +31,7 @@ def main():
     parser.add_argument('--output', type=Path, default=ROOT / 'build/r7/validation')
     args = parser.parse_args()
     work = args.output.resolve(); work.mkdir(mode=0o700, parents=True, exist_ok=True)
-    checks, access = {}, []
+    checks, access, observations = {}, [], {}
     phase = 'setup'
     last_status = None
     password = 'R7!' + secrets.token_hex(12)
@@ -121,6 +122,32 @@ def main():
             checks['two_accounts_receive_without_manual_get'] = True
             pump(.6)
             checks['ws_and_delayed_rest_do_not_duplicate'] = screen(a).count('R7 conversa A para B') == 1 and screen(b).count('R7 resposta B para A') == 1
+            phase = 'live embed updates'
+            observer = websocket.create_connection(secure.replace('https://', 'wss://', 1) + '/ws',
+                cookie='Auth=' + sessions[0].cookies.get('Auth'), sslopt={'ca_certs': str(cert)}, timeout=2,
+                suppress_origin=True)
+            stack.callback(observer.close)
+            embedded = call(sessions[0], 'POST', '/messages', 201, files={
+                'channel_id': (None, channel), 'content': (None, ''),
+                'embeds': (None, json.dumps([{'title': 'R7 embed ao vivo', 'description': 'Conteúdo recebido via WS'}]))})
+            wait(a, 'R7 embed ao vivo'); wait(b, 'R7 embed ao vivo')
+            checks['embed_only_message_renders_without_reopening_channel'] = all('Conteúdo recebido via WS' in screen(t) for t in terminals)
+            call(sessions[0], 'PUT', '/messages/' + str(UUID(embedded['id'])), json={
+                'content': '', 'embeds': [{'title': 'R7 embed substituído', 'description': 'Atualização ao vivo'}]})
+            wait(a, 'R7 embed substituído'); wait(b, 'R7 embed substituído')
+            checks['embed_replacement_updates_both_accounts_live'] = all('R7 embed ao vivo' not in screen(t) for t in terminals)
+            call(sessions[0], 'PUT', '/messages/' + str(UUID(embedded['id'])), json={'content': 'R7 embed removido', 'embeds': []})
+            snapshots = []
+            deadline = time.monotonic() + 3
+            while len(snapshots) < 3 and time.monotonic() < deadline:
+                event = json.loads(observer.recv())
+                if event.get('type') == 'message_embeds_update' and event.get('message_id') == embedded['id']:
+                    snapshots.append(event.get('embeds'))
+            checks['backend_delivers_embed_update_events'] = len(snapshots) == 3
+            observations['empty_embed_update_shape'] = 'null' if snapshots and snapshots[-1] is None else 'array'
+            observer.close()
+            wait(a, 'R7 embed removido'); wait(b, 'R7 embed removido'); pump(.3)
+            checks['empty_embed_update_removes_previous_metadata'] = all('R7 embed substituído' not in screen(t) for t in terminals)
             a.send('Rascunho R7 preservado')
             original = call(sessions[0], 'POST', '/messages', 201, files={'channel_id': (None, channel), 'content': (None, 'R7 original para editar')})
             deleted = call(sessions[0], 'POST', '/messages', 201, files={'channel_id': (None, channel), 'content': (None, 'R7 excluir enquanto offline')})
@@ -150,13 +177,15 @@ def main():
             checks['terminal_restored_b'] = close_terminal(b)
             terminals.clear()
         report = {'passed': all(checks.values()), 'kind': 'actual-go-backend-isolated-database', 'checks': checks,
+                  'observations': observations,
                   'source_database_mutated': False, 'temporary_resources_removed': True,
                   'tui_sha256': fingerprint(args.tui.resolve()), 'client_source_sha256': source_fingerprint(),
                   'backend_sha256': fingerprint(args.backend_binary.resolve()), 'harness_sha256': fingerprint(Path(__file__))}
         private_write(work / 'summary.json', report)
         print(json.dumps({'passed': report['passed'], 'checks': len(checks), 'report': str(work / 'summary.json')}))
         return 0 if report['passed'] else 1
-    except (RuntimeError, OSError, ValueError, subprocess.TimeoutExpired, requests.RequestException) as failure:
+    except (RuntimeError, OSError, ValueError, subprocess.TimeoutExpired, requests.RequestException,
+            websocket.WebSocketException) as failure:
         private_write(work / 'summary.json', {'passed': False, 'phase': phase, 'checks': checks,
                                             'kind': 'actual-go-backend-isolated-database', 'temporary_resources_removed': True,
                                             'failure_class': type(failure).__name__, 'last_status': last_status})

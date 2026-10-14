@@ -12,6 +12,34 @@ class RealtimeTerminal(unittest.TestCase):
     open = product.SendProduct.open
     editor_text = product.SendProduct.editor_text
 
+    def test_embed_only_message_renders_live_without_reopening_channel(self):
+        with RealtimeMock(count=0) as server:
+            terminal = self.open(server)
+            try:
+                terminal.send('Rascunho durante embed')
+                message = dict(server.message(1), content='', embeds=None)
+                server.emit({k: v for k, v in dict(message, type='message').items() if k != 'embeds'})
+                terminal.read(.2)
+                event = {'type': 'message_embeds_update', 'channel_id': CHANNEL, 'message_id': message['id'],
+                         'embeds': [{'id': uuid(901), 'source_type': 'custom', 'fetch_method': 'manual',
+                                     'title': 'Título recebido via WS', 'description': 'Descrição ao vivo',
+                                     'fields': [{'name': 'Campo remoto', 'value': 'Valor do embed'}]}]}
+                server.emit(event)
+                self.wait(terminal, 'Título recebido via WS')
+                self.assertIn('Descrição ao vivo', self.screen(terminal))
+                self.assertIn('Valor do embed', self.screen(terminal))
+                self.assertIn('Rascunho durante embed', self.editor_text(terminal))
+                self.assertEqual(sum('/messages' in r[1] for r in server.requests), 1)
+                server.emit(dict(event, embeds=[{'title': 'Novo título'}]))
+                self.wait(terminal, 'Novo título')
+                self.assertNotIn('Título recebido via WS', self.screen(terminal))
+                server.emit(dict(event, embeds=[])); terminal.read(.3)
+                self.assertNotIn('Novo título', self.screen(terminal))
+                server.emit(event); self.wait(terminal, 'Título recebido via WS')
+                server.emit(dict(event, embeds=None)); terminal.read(.3)
+                self.assertNotIn('Título recebido via WS', self.screen(terminal))
+            finally: self.assertTrue(terminal.close())
+
     def test_receive_and_duplicate_without_manual_read(self):
         with RealtimeMock() as server:
             terminal = self.open(server)

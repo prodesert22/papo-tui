@@ -117,7 +117,9 @@ static void destroy_layout(view *ui)
 static bool layout(view *ui)
 {
     destroy_layout(ui);
-    erase(); refresh();
+    /* Consume stdscr's resize damage without flushing a blank screen. The
+     * replacement windows are composed before the next single doupdate(). */
+    erase(); wnoutrefresh(stdscr);
     ui->width = COLS; ui->height = LINES;
     if (COLS < 44 || LINES < 14) return true;
     bool wide = COLS >= 80;
@@ -296,19 +298,21 @@ static void draw_confirmation(view *ui)
     button_draw(modal, 7, width - 14, 12, "[Reenviar]", ui->reenviar ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     wnoutrefresh(modal);
 }
-static void draw(view *ui, auth_client *auth)
+static void draw(view *ui, auth_client *auth, bool conversation_only)
 {
     curs_set(0);
     if (!ui->frame) {
         erase(); text_label(stdscr, 0, 0, COLS, "Amplie o terminal para 44×14. F6: conta."); refresh(); return;
     }
-    werase(ui->frame); wattrset(ui->frame, COLOR_PAIR(BORDER)); box(ui->frame, 0, 0);
-    mvwhline(ui->frame, CONTENT_Y - 2, 1, ACS_HLINE, COLS - 2);
-    mvwaddch(ui->frame, CONTENT_Y - 2, 0, ACS_LTEE);
-    mvwaddch(ui->frame, CONTENT_Y - 2, COLS - 1, ACS_RTEE);
-    mvwhline(ui->frame, LINES - 4, 1, ACS_HLINE, COLS - 2);
-    if (COLS >= 80) mvwvline(ui->frame, CONTENT_Y, ui->side + 1, ACS_VLINE, LINES - CONTENT_Y - 3);
-    draw_tabs(ui, auth);
+    if (!conversation_only) {
+        werase(ui->frame); wattrset(ui->frame, COLOR_PAIR(BORDER)); box(ui->frame, 0, 0);
+        mvwhline(ui->frame, CONTENT_Y - 2, 1, ACS_HLINE, COLS - 2);
+        mvwaddch(ui->frame, CONTENT_Y - 2, 0, ACS_LTEE);
+        mvwaddch(ui->frame, CONTENT_Y - 2, COLS - 1, ACS_RTEE);
+        mvwhline(ui->frame, LINES - 4, 1, ACS_HLINE, COLS - 2);
+        if (COLS >= 80) mvwvline(ui->frame, CONTENT_Y, ui->side + 1, ACS_VLINE, LINES - CONTENT_Y - 3);
+        draw_tabs(ui, auth);
+    }
     wbkgd(ui->footer, COLOR_PAIR(PANEL)); werase(ui->footer);
     wattrset(ui->footer, COLOR_PAIR(PANEL_MUTED));
     char progress[192];
@@ -323,7 +327,7 @@ static void draw(view *ui, auth_client *auth)
                ui->focus == CHANNEL_LIST ? "↑↓ canais · ← abas · → conversa · Ctrl+L: sair da conta" :
                ui->focus == MESSAGE_INPUT ? "Enter enviar · Ctrl+N nova linha · Esc histórico · Ctrl+T tentar" :
                "↑↓ rolar · ← canais · Digite: editor · Ctrl+R atualizar");
-    if (ui->list) {
+    if (ui->list && !conversation_only) {
         wbkgd(ui->list, COLOR_PAIR(ui->focus == CHANNEL_LIST ? FOCUS_AREA : PANEL)); werase(ui->list);
         wattrset(ui->list, COLOR_PAIR(ui->focus == CHANNEL_LIST ? FOCUS_MUTED : PANEL_MUTED) | A_BOLD);
         text_label(ui->list, 0, 1, ui->side - 2, "Canais");
@@ -408,19 +412,28 @@ static void draw(view *ui, auth_client *auth)
             wmove(ui->body, ui->editor_border + 1 + measured.cursor_row - editor->first_row, 3 + measured.cursor_column);
         }
     }
-    touchwin(ui->frame); wnoutrefresh(ui->frame); wnoutrefresh(ui->tabs);
-    if (ui->list) wnoutrefresh(ui->list);
-    if (ui->body) wnoutrefresh(ui->body);
+    if (!conversation_only) {
+        touchwin(ui->frame); wnoutrefresh(ui->frame); wnoutrefresh(ui->tabs);
+        if (ui->list) wnoutrefresh(ui->list);
+    }
+    if (ui->body) {
+        /* Force cell updates in the history viewport rather than allowing the
+         * terminal's full-width scrolling region to move adjacent channels. */
+        wredrawln(ui->body, ui->history_top, ui->visible);
+        wnoutrefresh(ui->body);
+    }
     wnoutrefresh(ui->footer);
     if (ui->focus == MESSAGE_INPUT && input(ui) && ui->body && !ui->duplicate_modal) wnoutrefresh(ui->body);
     draw_confirmation(ui); doupdate();
 }
 static void set_focus(view *ui, int focus)
 {
+    if (ui->focus == focus) return;
+    bool was_channels = ui->show_channels;
     ui->focus = focus;
     if (focus == CHANNEL_LIST) ui->show_channels = true;
     if (focus == HISTORY_PANEL || focus == MESSAGE_INPUT) ui->show_channels = false;
-    layout(ui);
+    if (COLS < 80 && was_channels != ui->show_channels) layout(ui);
 }
 static void open_channel(view *ui)
 {
@@ -550,15 +563,15 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
     if (!ui->model || !ui->editor || ui->active_tab == SIZE_MAX || !layout(ui)) { history_destroy(ui->model); destroy_layout(ui); free(ui); return HISTORY_ACCOUNT; }
     mmask_t previous_mouse;
     mousemask(BUTTON1_PRESSED | BUTTON1_CLICKED | BUTTON4_PRESSED | BUTTON5_PRESSED, &previous_mouse);
-    bool redraw = true; int result = HISTORY_ACCOUNT;
+    bool redraw = true, conversation_only = false; int result = HISTORY_ACCOUNT;
     while (!*interrupted) {
         if (ui->layout_failed) break;
         auth_state before = auth_get_state(auth);
-        if (session_store_poll(connections->sessions, auth)) redraw = true;
-        if (instances_poll(connections, auth)) redraw = true;
-        if (poll_model(ui, auth) || before != auth_get_state(auth)) redraw = true;
+        if (session_store_poll(connections->sessions, auth)) { redraw = true; conversation_only = false; }
+        if (instances_poll(connections, auth)) { redraw = true; conversation_only = false; }
+        if (poll_model(ui, auth) || before != auth_get_state(auth)) { redraw = true; conversation_only = false; }
         if (!auth_has_session(auth) && !auth_busy(auth)) break;
-        if (redraw) { draw(ui, auth); redraw = false; }
+        if (redraw) { draw(ui, auth, conversation_only); redraw = false; conversation_only = false; }
         wint_t key; int type = get_wch(&key);
         if (type == ERR) continue;
         if (type == KEY_CODE_YES && key == PASTE_START) {
@@ -646,6 +659,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             MEVENT e;
             if (getmouse(&e) != OK || !ui->frame) continue;
             if (e.bstate & (BUTTON4_PRESSED | BUTTON5_PRESSED)) {
+                conversation_only = true;
                 if (ui->body && e.x >= getbegx(ui->body) && e.x < getbegx(ui->body) + getmaxx(ui->body) && e.y >= getbegy(ui->body) + ui->history_top && e.y < getbegy(ui->body) + ui->editor_border)
                     scroll_history(ui, e.bstate & BUTTON4_PRESSED ? -3 : 3);
                 continue;
@@ -716,11 +730,15 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         } else {
             if (type == KEY_CODE_YES && key == KEY_LEFT) set_focus(ui, CHANNEL_LIST);
             else if (type == KEY_CODE_YES && (key == KEY_PPAGE || key == KEY_UP || key == KEY_HOME)) {
+                conversation_only = true;
                 int first = position(ui);
                 scroll_history(ui, key == KEY_HOME ? -2147483647 : key == KEY_UP ? -1 : -ui->visible);
                 if (first == 0 && key != KEY_HOME && history_has_more(ui->model)) { ui->at_end = false; history_older(ui->model); }
-            } else if (type == KEY_CODE_YES && (key == KEY_DOWN || key == KEY_NPAGE)) scroll_history(ui, key == KEY_DOWN ? 1 : ui->visible);
+            } else if (type == KEY_CODE_YES && (key == KEY_DOWN || key == KEY_NPAGE)) {
+                conversation_only = true; scroll_history(ui, key == KEY_DOWN ? 1 : ui->visible);
+            }
             else if (type == KEY_CODE_YES && key == KEY_END) {
+                conversation_only = true;
                 if (!ui->unseen || history_evicted(ui->model)) history_recent(ui->model);
                 ui->at_end = true; ui->unseen = 0; ui->anchor[0] = 0;
             }

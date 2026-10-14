@@ -2,8 +2,36 @@
 import time
 import unittest
 from history_mock import HistoryMock, CHANNEL, OTHER, uuid
-from test_terminal import Terminal
+from test_terminal import Terminal, ObservedScreen, TerminalStream
 from wcwidth import wcswidth
+
+
+class SidebarObserver(ObservedScreen):
+    """Catch transient sidebar changes, even if a later write restores it."""
+    def __init__(self, columns, lines):
+        super().__init__(columns, lines)
+        self.watch = False
+        self.sidebar_changes = []
+
+    def sidebar(self):
+        return tuple(tuple(self.buffer[y][x] for x in range(1, 25)) for y in range(5, self.lines - 3))
+
+    def observe(self, method, *args, **kwargs):
+        before = self.sidebar() if self.watch else None
+        result = method(*args, **kwargs)
+        if self.watch and self.sidebar() != before:
+            self.sidebar_changes.append(method.__name__)
+        return result
+
+    def draw(self, *args, **kwargs): return self.observe(super().draw, *args, **kwargs)
+    def erase_in_line(self, *args, **kwargs): return self.observe(super().erase_in_line, *args, **kwargs)
+    def erase_in_display(self, *args, **kwargs): return self.observe(super().erase_in_display, *args, **kwargs)
+    def insert_lines(self, *args, **kwargs): return self.observe(super().insert_lines, *args, **kwargs)
+    def delete_lines(self, *args, **kwargs): return self.observe(super().delete_lines, *args, **kwargs)
+    def index(self, *args, **kwargs): return self.observe(super().index, *args, **kwargs)
+    def reverse_index(self, *args, **kwargs): return self.observe(super().reverse_index, *args, **kwargs)
+    def scroll_up(self, *args, **kwargs): return self.observe(super().scroll_up, *args, **kwargs)
+    def scroll_down(self, *args, **kwargs): return self.observe(super().scroll_down, *args, **kwargs)
 
 class HistoryTerminal(unittest.TestCase):
     def wait(self, terminal, text):
@@ -21,6 +49,47 @@ class HistoryTerminal(unittest.TestCase):
         t.send('\x1bOB\x1bOB\n')  # tabs -> category -> first text channel -> open
         self.wait(t, 'Editor')
         return t
+
+    def test_history_scroll_never_clears_or_moves_sidebar_between_frames(self):
+        with HistoryMock(count=250) as server:
+            terminal = self.open(server)
+            try:
+                self.wait(terminal, 'Mensagem 0250')
+                terminal.read(.2)
+                screen = SidebarObserver(80, 24)
+                stream = TerminalStream(screen)
+                stream.feed(bytes(terminal.output))
+                terminal.screen, terminal.stream = screen, stream
+                sidebar = screen.sidebar()
+                screen.watch = True
+                # Arrow keys, page scrolling, wheel, and a click in the already
+                # focused history must leave the channel cells untouched.
+                for key in ('\x1bOA', '\x1bOB', '\x1b[5~', '\x1b[6~', '\x1b[<64;40;12M', '\x1b[<65;40;12M'):
+                    terminal.send(key)
+                    self.assertEqual(screen.sidebar(), sidebar)
+                    self.assertEqual(screen.sidebar_changes, [], f'Sidebar flashed for {key!r}')
+                terminal.click(10, 40)
+                self.assertEqual(screen.sidebar_changes, [], 'Clicking focused history cleared the sidebar')
+                terminal.send('\x1bOH')
+                self.wait(terminal, 'Mensagem 0151')
+                terminal.send('\x1b[5~')
+                deadline = time.monotonic() + 4
+                while not server.older_calls and time.monotonic() < deadline: terminal.read(.03)
+                terminal.read(.2)
+                self.assertEqual(server.older_calls, 1)
+                self.assertEqual(screen.sidebar_changes, [], 'Loading an older page flashed the sidebar')
+                # Wheel scrolling while editing must also preserve the sidebar
+                # and the editor's draft/cursor across subsequent focus changes.
+                screen.watch = False
+                terminal.send('Rascunho sem flash')
+                terminal.send('\x1bOD')
+                screen.sidebar_changes.clear(); screen.watch = True
+                cursor = (screen.cursor.y, screen.cursor.x)
+                terminal.send('\x1b[<64;40;12M')
+                self.assertEqual(screen.sidebar_changes, [])
+                self.assertEqual((screen.cursor.y, screen.cursor.x), cursor)
+                self.assertIn('Rascunho sem flash', '\n'.join(screen.display))
+            finally: self.assertTrue(terminal.close())
 
     def test_login_opens_channels_once_and_renewal_keeps_account_view(self):
         with HistoryMock() as server:
