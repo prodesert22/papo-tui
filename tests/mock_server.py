@@ -23,6 +23,7 @@ class MockServer:
         self.multipart_types = []
         self.message_received = threading.Event()
         self.name = "Comunidade"
+        self.cookie_max_age = None
         self.redirect_url = "/different"
         self.requests = []
         self.api_handler = None  # Optional read-only R5 fixture routes.
@@ -53,7 +54,8 @@ class MockServer:
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(data)))
                 if cookie:
-                    self.send_header("Set-Cookie", f"Auth={cookie}; Path=/; HttpOnly; SameSite=Strict" + ("; Secure" if secure_cookie else ""))
+                    self.send_header("Set-Cookie", f"Auth={cookie}; Path=/; HttpOnly; SameSite=Strict" + ("; Secure" if secure_cookie else "") +
+                                     (f"; Max-Age={outer.cookie_max_age}" if outer.cookie_max_age is not None else ""))
                 if retry_after is not None:
                     self.send_header("Retry-After", retry_after)
                 self.end_headers()

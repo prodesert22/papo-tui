@@ -4,6 +4,7 @@
 #include "ui/text.h"
 #include "ui/theme.h"
 #include "ui/button.h"
+#include "app/session_store.h"
 #include "ui/send_editor.h"
 #include <wctype.h>
 #include <stdio.h>
@@ -553,6 +554,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
     while (!*interrupted) {
         if (ui->layout_failed) break;
         auth_state before = auth_get_state(auth);
+        if (session_store_poll(connections->sessions, auth)) redraw = true;
         if (instances_poll(connections, auth)) redraw = true;
         if (poll_model(ui, auth) || before != auth_get_state(auth)) redraw = true;
         if (!auth_has_session(auth) && !auth_busy(auth)) break;

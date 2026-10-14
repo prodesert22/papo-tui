@@ -14,7 +14,7 @@ int main(int argc, char **argv)
     }
     if (argc == 2 && strcmp(argv[1], "--help") == 0) {
         puts("Uso: papo-tui [--profiles] [--allow-local-http] | --demo | --help | --version\n"
-             "Sem argumentos: tela de login com seleção de perfil.\n"
+             "Sem argumentos: recuperar a última sessão ou abrir login.\n"
              "--profiles: gerenciar servidores salvos antes do login.\n"
              "--allow-local-http: permitir HTTP de desenvolvimento em loopback.\n"
              "--demo: layout de conversas com dados simulados, sem conexão.\n"

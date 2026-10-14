@@ -4,6 +4,7 @@
 #define INSTANCE_LIMIT 64
 
 typedef struct send_editor send_editor;
+typedef struct session_store session_store;
 typedef struct {
     auth_client *auth;
     send_editor *editor;
@@ -12,6 +13,7 @@ typedef struct {
 typedef struct {
     instance_connection items[INSTANCE_LIMIT];
     size_t count;
+    session_store *sessions; /* Owned; initialized by login after profiles. */
 } instance_connections;
 /* Owns attached clients, each with its own cookies/identity. Public labels and
  * sessions live only in memory. A pending login client is owned by its caller. */

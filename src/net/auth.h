@@ -29,6 +29,17 @@ typedef enum { AUTH_INPUT_NONE, AUTH_INPUT_URL, AUTH_INPUT_USERNAME,
                AUTH_INPUT_PASSWORD, AUTH_INPUT_SERVER_PASSWORD } auth_input_error;
 
 typedef struct auth_client auth_client;
+/* Gate called before admitting refresh/logout to HTTP: 1 permits, 0 waits,
+ * -1 fails closed. Borrowed context; detach the gate before destroying it. */
+typedef int (*auth_session_gate)(void *context, auth_client *client);
+void auth_set_session_gate(auth_client *client, auth_session_gate gate, void *context);
+/* Owned secret snapshot; wipe with auth_session_free. Never log or write it
+ * outside a credential manager. Only verified, unexpired Auth cookies export. */
+char *auth_session_export(auth_client *client);
+void auth_session_free(char **snapshot);
+bool auth_session_restore(auth_client *client, const char *snapshot, const char *expected_url,
+                          bool allow_local_http);
+bool auth_session_rejected(const auth_client *client);
 
 /* Owns a per-instance cookie share, REST request buffers and WS transport.
  * All calls run on one thread. Only one REST transfer is active per client. */

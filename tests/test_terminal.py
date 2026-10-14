@@ -54,8 +54,11 @@ class Terminal:
         self.original = termios.tcgetattr(self.slave)
         fcntl.ioctl(self.slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
         env = dict(os.environ, TERM=terminal_type, LANG="C.UTF-8", LC_ALL="C.UTF-8")
+        # Existing PTY suites must never open the user's personal wallet.
+        env["DBUS_SESSION_BUS_ADDRESS"] = "unix:path=/nonexistent/papo-test-bus"
         self.configuration = tempfile.TemporaryDirectory(prefix="papo-terminal-config-")
         env["XDG_CONFIG_HOME"] = self.configuration.name
+        env["XDG_STATE_HOME"] = os.path.join(self.configuration.name, "state")
         env.update(environment or {})
         command = [BINARY, *arguments]
         if allow_local_http and "--demo" not in arguments and "--allow-local-http" not in arguments:

@@ -1,5 +1,6 @@
 #include "app/instances.h"
 #include "ui/send_editor.h"
+#include "app/session_store.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,9 +10,11 @@ void instances_destroy(instance_connections *connections)
 {
     if (!connections) return;
     for (size_t i = 0; i < connections->count; ++i) {
+        session_store_unwatch(connections->sessions, connections->items[i].auth);
         send_editor_destroy(connections->items[i].editor);
         auth_destroy(connections->items[i].auth);
     }
+    session_store_destroy(connections->sessions);
     free(connections);
 }
 size_t instances_index(const instance_connections *connections, const auth_client *auth)
@@ -42,6 +45,7 @@ bool instances_attach(instance_connections *connections, auth_client *auth)
             if (connections->count == INSTANCE_LIMIT) { send_editor_destroy(editor); return false; }
             index = connections->count++;
         } else {
+            session_store_unwatch(connections->sessions, connections->items[index].auth);
             send_editor_destroy(connections->items[index].editor);
             auth_destroy(connections->items[index].auth);
         }
@@ -57,6 +61,7 @@ void instances_detach(instance_connections *connections, auth_client *auth)
 {
     size_t index = instances_index(connections, auth);
     if (index == SIZE_MAX) return;
+    session_store_unwatch(connections->sessions, auth);
     send_editor_destroy(connections->items[index].editor);
     memmove(connections->items + index, connections->items + index + 1,
             (connections->count - index - 1) * sizeof(connections->items[0]));

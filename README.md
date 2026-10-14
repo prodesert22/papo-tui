@@ -2,7 +2,7 @@
 
 Cliente de conversas para terminal, em C, para conectar-se a instâncias independentes do Papo por URL.
 
-O aplicativo oferece login, cadastro de conta, renovação de sessão, perfis locais com nome e URL e conversas em canais com histórico paginado e envio de texto. Login e cadastro usam URL do servidor, usuário, senha e senha do servidor. A tela organiza cabeçalho, formulário e estado/controles em três áreas. O aplicativo consulta a instância, autoriza o acesso privado quando necessário, autentica a conta e confirma a sessão. As senhas são ocultas e os cookies ficam somente em memória.
+O aplicativo oferece login, cadastro de conta, renovação de sessão, perfis locais com nome e URL e conversas em canais com histórico paginado e envio de texto. Login e cadastro usam URL do servidor, usuário, senha e senha do servidor. A tela organiza cabeçalho, formulário e estado/controles em três áreas. O aplicativo consulta a instância, autoriza o acesso privado quando necessário, autentica a conta e confirma a sessão. As senhas são ocultas e nunca são persistidas. A última sessão pode ser recuperada com GNOME Keyring ou KWallet.
 
 ## Compilar e executar
 
@@ -50,7 +50,7 @@ Use um terminal UTF-8, com pelo menos 44 colunas e 22 linhas disponíveis ao apl
 
 ### Perfis de instância
 
-Ao iniciar normalmente, o aplicativo sempre abre a tela de login. O botão **Selecionar perfil**, disponível por clique ou Tab e Enter, abre um modal com os perfis salvos; **Ctrl+P** é o atalho para esse modal. Use ↑/↓ e Enter, ou clique no perfil, para preencher o login. No modal, **Gerenciar / Ctrl+P** abre o cadastro e **Cancelar / Esc** volta ao login.
+Ao iniciar normalmente, o aplicativo tenta recuperar a última sessão; se não puder, abre a tela de login. O botão **Selecionar perfil**, disponível por clique ou Tab e Enter, abre um modal com os perfis salvos; **Ctrl+P** é o atalho para esse modal. Use ↑/↓ e Enter, ou clique no perfil, para preencher o login. No modal, **Gerenciar / Ctrl+P** abre o cadastro e **Cancelar / Esc** volta ao login.
 
 Para iniciar diretamente no gerenciador completo:
 
@@ -127,7 +127,7 @@ Colagem delimitada pelo terminal não envia com quebras de linha. Redimensionar 
 
 ## Objetivo
 
-A primeira versão, v0.1.0, permitirá cadastrar várias instâncias, entrar em uma delas e conversar por canais de texto e mensagens diretas, com histórico, tempo real e reconexão. O login será solicitado a cada abertura. Cada instância mantém suas próprias contas, conversas e sessão. A API atual não especifica federação entre servidores.
+A primeira versão, v0.1.0, permitirá cadastrar várias instâncias, entrar em uma delas e conversar por canais de texto e mensagens diretas, com histórico, tempo real e reconexão. O login é solicitado quando a última sessão salva não puder ser recuperada e validada. Cada instância mantém suas próprias contas, conversas e sessão. A API atual não especifica federação entre servidores.
 
 Consulte [instalação e uso](docs/uso.md) para os requisitos, execução, conexão e solução de problemas.
 
@@ -169,7 +169,7 @@ As ferramentas em `tools/` auxiliam a validação do contrato durante o desenvol
 - [x] Base de terminal exercitada em Kitty, Konsole e tmux.
 - [x] R2: interface navegável com dados simulados em `--demo`, editor multilinha, mouse e ajuda.
 - [x] R3: perfis XDG, descoberta por URL, isolamento de contextos e preferências de taxa/burst, com validação automatizada e demonstração no backend real.
-- [x] R4: cadastro, login público/privado, renovação serializada, revogação e logout, com identidade REST/WS e cookies somente em memória.
+- [x] R4: cadastro, login público/privado, renovação serializada, revogação e logout, com identidade REST/WS e cookies isolados por instância.
 - [x] R5: canais ordenados, tópicos, histórico paginado, autores e metadados em modo de leitura.
 - [x] R6: envio multipart, rascunhos por sessão/canal, confirmação no histórico e retry manual com resultado incerto.
 - [x] R7: eventos em tempo real, reconciliação REST/WS, reconexão automática e recuperação da janela carregada.
@@ -178,7 +178,7 @@ As ferramentas em `tools/` auxiliam a validação do contrato durante o desenvol
 
 Após entrar, a lista de canais abre automaticamente. F6 volta à tela da conta; o botão **Canais / F6** e a tecla F6 permitem reabrir a leitura. Escolha um canal com ↑/↓ e abra com Enter, → ou clique. Categorias são separadores; canais de voz mostram que chamadas ainda não estão disponíveis. A leitura usa apenas o canal aberto, e consultar seu histórico também marca leitura no servidor. `*` indica uma última mensagem ainda não lida nos dados consultados.
 
-A tela segue o layout da demonstração: abas de servidores no topo, com linha separadora e uma linha de margem abaixo, canais à esquerda, histórico e área de edição no painel central. **+ Adicionar**, à direita das abas, abre o formulário de login/cadastro de outro servidor. Depois do login, a nova conexão aparece em uma aba; clique nas abas para trocar de servidor. As sessões ficam separadas e abertas somente nesta execução, até o limite de 64 conexões. Entrar novamente na mesma URL substitui sua conexão anterior. Esc no formulário de adição volta ao servidor anterior; se houver uma conexão em andamento, Esc primeiro a cancela.
+A tela segue o layout da demonstração: abas de servidores no topo, com linha separadora e uma linha de margem abaixo, canais à esquerda, histórico e área de edição no painel central. **+ Adicionar**, à direita das abas, abre o formulário de login/cadastro de outro servidor. Depois do login, a nova conexão aparece em uma aba; clique nas abas para trocar de servidor. As sessões ficam separadas, até o limite de 64 conexões nesta execução; somente a última conexão ativa pode ser recuperada na próxima abertura. Entrar novamente na mesma URL substitui sua conexão anterior. Esc no formulário de adição volta ao servidor anterior; se houver uma conexão em andamento, Esc primeiro a cancela.
 
 No histórico, ↑/↓ e PageUp/PageDown rolam o texto. Home vai ao início da janela carregada; pressione PageUp nesse ponto para buscar a página anterior sem deslocar a mensagem que está lendo. End consulta novamente a página recente. Ctrl+R antecipa a reconexão quando desconectado; conectado, atualiza o canal aberto ou repete a consulta que falhou; uma falha ao buscar mensagens antigas mantém a janela atual para nova tentativa.
 
@@ -188,13 +188,23 @@ Em tela ampla, Tab/Shift+Tab alternam entre abas, canais, histórico e editor qu
 
 Mensagens aparecem em ordem cronológica, com data, autor, indicação de edição e referências de resposta. Anexos e embeds mostram metadados em texto, sem abrir URLs ou baixar mídia. Autores ausentes têm um rótulo de indisponibilidade. Ao abrir um canal de texto, digite para focar o editor, incluindo o primeiro caractere. Enter no histórico também foca o editor. Enter no editor envia, Ctrl+N insere uma nova linha e colagem delimitada preserva linhas sem enviar. Setas, Home/End, Backspace e Delete editam grafemas; clique no editor para posicionar o cursor. Esc volta ao histórico. A área em foco recebe um fundo discretamente mais claro. Mensagens de outras contas chegam automaticamente. Eventos repetidos e confirmações REST/WS da mesma mensagem são reconciliados pelo ID. A tela acompanha novas mensagens quando você está no fim; ao ler mensagens anteriores, indica novidades sem mover a leitura. End ou clique no indicador volta ao fim.
 
-A janela em memória contém até 1.000 mensagens ou 4 MiB de JSON serializado. Ao carregar páginas antigas além desse limite, libera mensagens recentes; End volta a consultá-las. Trocar de canal ou servidor descarta seu histórico local. As abas, sessões e mensagens não são salvas no disco, e abrir a lista de canais não consulta seus históricos em segundo plano.
+A janela em memória contém até 1.000 mensagens ou 4 MiB de JSON serializado. Ao carregar páginas antigas além desse limite, libera mensagens recentes; End volta a consultá-las. Trocar de canal ou servidor descarta seu histórico local. As outras abas e os históricos não são persistidos; somente o cookie da última sessão pode ficar no chaveiro. Abrir a lista de canais não consulta seus históricos em segundo plano.
 
 Rascunhos e cursor ficam em memória por sessão e canal, inclusive ao trocar de servidor ou voltar à conta com F6. Você pode continuar digitando durante o envio; a confirmação remove somente o texto enviado que permaneceu intacto. Texto reescrito e continuação são preservados. Sair da conta, substituir a conexão da mesma URL ou fechar o programa descarta esses dados. O editor aceita até 2048 caracteres Unicode/8192 bytes UTF-8; cada sessão guarda até 64 rascunhos e 32 operações.
 
 O editor informa quando o envio está aguardando, enviando, confirmado, rejeitado ou sem confirmação. Falhas preservam o texto. **Ctrl+T** tenta novamente o texto do último envio com falha no canal atual. Timeout ou resposta perdida podem ocorrer após a criação da mensagem; nesse caso, Enter ou Ctrl+T abre uma confirmação, inicialmente em **Cancelar**. Se desejar reenviar mesmo com possibilidade de duplicação, escolha **Reenviar** com → ou clique e confirme. Não há reenvio automático.
 
 Após uma queda, a aba ativa revalida a sessão, atualiza canais e recupera mensagens novas e a janela de histórico carregada, incluindo edições e exclusões ocorridas offline. Rascunhos e posição de leitura são preservados enquanto suas mensagens ainda estiverem disponíveis. Os limites de memória continuam valendo; se a mensagem usada como referência desaparecer, a leitura usa a próxima sobrevivente, ou a anterior. A recuperação não oferece replay completo: alterações fora da janela são consultadas ao abrir novamente esse trecho. Nenhum envio pendente é repetido automaticamente.
+
+## Recuperar a última sessão
+
+Ao abrir normalmente, o programa tenta recuperar apenas a última conexão ativa. O cookie fica no GNOME Keyring/Secret Service ou KWallet 5/6, separado das senhas e dos arquivos de configuração. A conta é confirmada por REST antes de abrir seus canais; as outras abas não são restauradas.
+
+O suporte usa bibliotecas opcionais: `libsecret-1` 0.20+ e `gio-2.0` 2.66+. No Arch, instale `libsecret` e `glib2` antes de configurar o CMake. Seus testes usam `dbus-run-session` e `gdbus` com um chaveiro simulado em um barramento privado. Sem gerenciador disponível ou quando o desbloqueio for recusado, a sessão fica somente em memória; a próxima abertura mostra login com a última URL preenchida. `--profiles` abre a seleção explicitamente, e `--demo` não usa sessões reais. Para compilar sem adaptadores de chaveiro, use `-DPAPO_DESKTOP_SESSIONS=OFF`.
+
+A renovação automática permanece ativa. Um JWT de 24 horas pode ser renovado pelo backend com o cookie ainda válido; cada rotação emite um novo JWT de 24 horas e cookie de 30 dias. A validação REST é a fonte de verdade. Fechar o programa mantém a última sessão salva; **Sair da conta** invalida sua recuperação e solicita revogação. Erros de rede na recuperação mostram o login; credenciais definitivamente rejeitadas são removidas.
+
+Somente dados públicos e um marcador de recuperação ficam em `$XDG_STATE_HOME/papo-tui`, ou `~/.local/state/papo-tui`, com diretório `700` e arquivos `600`. Builds sem GIO guardam esses dados públicos junto à configuração. A configuração local define um contexto independente, e uma segunda janela nesse contexto exige login próprio, sem compartilhar a sessão persistida. Cookies nunca são gravados em arquivos de texto.
 
 ## Testes
 

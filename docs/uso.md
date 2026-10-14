@@ -31,7 +31,7 @@ O executável fica em `build/papo-tui`. Para consultar as opções ou a versão:
 
 ### Servidores salvos
 
-A abertura normal sempre apresenta a tela de login. Clique em **Selecionar perfil**, ou foque esse botão com Tab e pressione Enter, para abrir o modal de seleção. **Ctrl+P** no login também abre esse modal. ↑/↓ percorrem a lista; Enter ou um clique no perfil selecionam-no e voltam ao login com a URL preenchida. No modal, **Gerenciar / Ctrl+P** abre o gerenciador completo; **Cancelar / Esc** volta ao login e Ctrl+Q/Ctrl+C fecha o aplicativo.
+A abertura normal tenta recuperar a última sessão salva; quando isso não for possível, apresenta a tela de login com a última URL preenchida. Clique em **Selecionar perfil**, ou foque esse botão com Tab e pressione Enter, para abrir o modal de seleção. **Ctrl+P** no login também abre esse modal. ↑/↓ percorrem a lista; Enter ou um clique no perfil selecionam-no e voltam ao login com a URL preenchida. No modal, **Gerenciar / Ctrl+P** abre o gerenciador completo; **Cancelar / Esc** volta ao login e Ctrl+Q/Ctrl+C fecha o aplicativo.
 
 Abra **Gerenciar** no modal ou execute `./build/papo-tui --profiles` para iniciar diretamente no gerenciador. O topo contém duas opções: **Listar** e **+ Adicionar**. Em **Listar**, todos os perfis ficam numa lista vertical; a rolagem acompanha o destaque.
 
@@ -99,7 +99,7 @@ A tela apresenta um cabeçalho, o formulário e uma área de estado e controles.
 
 Para um servidor local, inicie com `./build/papo-tui --allow-local-http` e use `http://127.0.0.1:8080`. HTTP também é aceito em `localhost` e `[::1]` com essa opção; servidores remotos exigem HTTPS. Prefixos de caminho são preservados, como em `https://exemplo.com/papo`.
 
-Selecione **Entrar** ou pressione Enter. O aplicativo consulta o servidor, solicita acesso à instância privada quando necessário e autentica sua conta. As senhas são ocultas; credenciais e cookies não são salvos entre execuções.
+Selecione **Entrar** ou pressione Enter. O aplicativo consulta o servidor, solicita acesso à instância privada quando necessário e autentica sua conta. As senhas são ocultas e não são salvas. O cookie da última conexão ativa pode ser guardado no chaveiro do sistema.
 
 Quando a instância é privada e a senha do servidor foi esquecida, o campo **Senha do servidor** ganha uma borda vermelha, um marcador de obrigatório e recebe o foco automaticamente. Digite a senha e pressione Enter para repetir a tentativa. Se essa senha for rejeitada, o campo é limpo e focado para correção. A borda desaparece ao começar a editar; usuário e senha da conta permanecem no formulário durante essa correção.
 
@@ -117,6 +117,18 @@ Ao receber a confirmação, a tela volta ao login, mantém URL e usuário e foca
 
 Se a autorização privada expirar, o campo **Senha do servidor** é limpo, recebe borda vermelha e foco. Informe a senha e confirme novamente. A aplicação não repete o cadastro automaticamente. Se um envio for interrompido sem confirmação, tente entrar antes de reenviar: a conta pode ter sido criada.
 
+### Recuperação entre execuções
+
+Com GNOME Keyring, Secret Service ou KWallet 5/6 disponível, o programa salva somente o cookie da última conexão ativa no gerenciador de segredos. Ao reabrir, consulta a instância e confirma a conta por REST antes de mostrar os canais. Um cookie com JWT expirado pode passar por uma única renovação e nova validação. Se não puder confirmar a conta, mostra o login. As outras abas não são recuperadas.
+
+O chaveiro pode pedir desbloqueio. Esc permite continuar pelo login. Sem gerenciador compatível, quando o acesso for recusado ou se o build não tiver suporte a chaveiro, os cookies permanecem somente em memória. A URL é lembrada, mas a próxima abertura exige login; não existe fallback com cookie em arquivo ou cofre com senha mestra.
+
+O suporte opcional é compilado quando `gio-2.0` estiver disponível; Secret Service também exige `libsecret-1`. KWallet nativo usa GDBus, sem depender de Qt no cliente. No Arch, instale `glib2` e `libsecret` antes do CMake. `-DPAPO_DESKTOP_SESSIONS=OFF` desativa esses adaptadores. `--profiles` abre o gerenciador em vez de recuperar uma conta, e `--demo` permanece inteiramente local. Sessões HTTP locais continuam exigindo `--allow-local-http` em cada execução; HTTPS continua verificando certificado e hostname.
+
+Arquivos de estado em `$XDG_STATE_HOME/papo-tui` (ou `~/.local/state/papo-tui`) contêm apenas URL, referência do chaveiro e marcador de recuperação. Usam diretório `700` e arquivos `600`; builds sem GIO guardam esses dados públicos no diretório de configuração. Uma segunda janela usando a mesma configuração exige login próprio e não usa nem substitui o cookie persistido pela primeira.
+
+A cada rotação, o snapshot anterior deixa de ser recuperável antes do envio HTTP. A recuperação só é reabilitada depois de confirmar a identidade e salvar o cookie novo. Uma interrupção nesse intervalo exige login em vez de reapresentar um token substituído. Se a gravação falhar, a sessão pode continuar na execução atual, e a tela da conta informa que não foi salva.
+
 ### Sessão, renovação e saída
 
 Depois de autenticar, a lista de canais abre automaticamente para ler e enviar mensagens de texto. F6 volta à tela da conta, onde você pode renovar ou sair da sessão e reabrir os canais. **--demo** continua usando dados locais simulados.
@@ -127,7 +139,7 @@ A aplicação realiza uma renovação por vez e confirma a identidade depois de 
 
 Heartbeat/ACK de tempo real não comprova autenticação. Quando o tempo real é interrompido, a aba ativa tenta reconectar automaticamente após revalidar a sessão por REST. As esperas crescem de 1 até 30 segundos, com variação de até 20% e teto de 30 segundos. **Reconectar / Ctrl+R** antecipa uma tentativa. Abas inativas mantêm conexões já abertas, mas suspendem novas tentativas até você voltar a elas. Falhas de rede e de autenticação aparecem na área de estado.
 
-**Sair da conta** fecha a conexão de tempo real, solicita a revogação e limpa a sessão local. Durante uma renovação já enviada, aguarda sua resposta para revogar com o cookie atualizado. Se não conseguir confirmar a revogação remota, informa isso e conclui a limpeza local. Reabrir o programa sempre exige login; senhas e cookies não são persistidos.
+**Sair da conta** fecha a conexão de tempo real, solicita a revogação e limpa a sessão local. Durante uma renovação já enviada, aguarda sua resposta para revogar com o cookie atualizado. Se não conseguir confirmar a revogação remota, informa isso e conclui a limpeza local. Fechar normalmente mantém a sessão salva; sair da conta invalida a recuperação persistente. Senhas nunca são persistidas.
 
 O aplicativo compartilha um limite configurável entre todas as tentativas de conexão, com padrões de 10 requisições por segundo e burst 25. Ajuste esses valores em **Selecionar perfil → Gerenciar → Limites**. Ao atingir o limite, os envios aguardam e a interface continua respondendo.
 
@@ -164,7 +176,7 @@ O layout acompanha a demonstração: abas de servidores no topo, uma linha separ
 
 Ao abrir a leitura, o foco começa nas abas. Use ←/→ para escolher o servidor ou destacar **+ Adicionar**, e Enter para abrir o formulário. O botão fica branco sem foco e laranja ao selecionar, quando aparece como **>+ Adicionar<**. ↓ entra na lista de canais.
 
-Cada conexão mantém sua própria sessão somente em memória. Há um limite de 64 conexões por execução; entrar novamente na mesma URL substitui a conexão anterior. Ctrl+L sai da conta atual e remove sua aba. Ao fechar o programa, todas as abas e sessões locais são descartadas. Os perfis locais de nome/URL continuam sendo gerenciados por **Selecionar perfil**.
+Cada conexão mantém sua própria sessão isolada; somente a última conexão ativa pode ser persistida no chaveiro. Há um limite de 64 conexões por execução; entrar novamente na mesma URL substitui a conexão anterior. Ctrl+L sai da conta atual e remove sua aba. Ao fechar o programa, as abas e rascunhos locais são descartados; a última sessão salva pode ser recuperada na próxima abertura. Os perfis locais de nome/URL continuam sendo gerenciados por **Selecionar perfil**.
 
 Esc no formulário de adição retorna ao servidor anterior, quando sua sessão ainda está válida. Se houver uma conexão em andamento, a primeira pressão de Esc cancela a tentativa; pressione novamente para voltar. Login, cadastro e renovação usam os mesmos controles do formulário inicial.
 

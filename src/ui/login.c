@@ -2,6 +2,7 @@
 #include "ui/login.h"
 #include "ui/theme.h"
 #include "ui/button.h"
+#include "app/session_store.h"
 #include "ui/profiles.h"
 #include "net/auth.h"
 
@@ -342,6 +343,10 @@ static void draw(login_ui *ui, auth_client *client)
     }
     while (*remaining == ' ') ++remaining;
     text(ui->footer, 3, 2, ui->width - 8, remaining);
+    if (!*ui->validation_message && auth_get_state(client) == AUTH_IDLE && session_store_restoring(connections->sessions))
+        text(ui->footer, 2, 2, ui->width - 8, "Recuperando sessão… Esc: abrir login");
+    else if (ready && !*remaining)
+        text(ui->footer, 3, 2, ui->width - 8, session_store_notice(connections->sessions));
     wattrset(ui->footer, COLOR_PAIR(MUTED));
     if (ready) {
         button_draw(ui->footer, 4, 0, 13, "[Canais / F6]",
@@ -606,6 +611,7 @@ static int manage_profiles(login_ui *ui, auth_client **client, profile_config **
     /* Remove all transfers, events and cookies before entering another
      * profile context. Recreating the client leaves the global budget intact. */
     instances_detach(connections, *client);
+    session_store_unwatch(connections->sessions, *client);
     auth_destroy(*client);
     *client = NULL;
     destroy_layout(ui);
@@ -723,6 +729,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
     ui.allow_local_http = allow_local_http;
     profile_config *config = profiles_create();
     if (!config) { auth_destroy(client); instances_destroy(connections); connections = NULL; fputs("Não foi possível carregar os perfis locais.\n", stderr); return 1; }
+    connections->sessions = session_store_create(config->directory, !open_profiles);
     interrupted = 0;
     if (!initscr()) { auth_destroy(client); instances_destroy(connections); connections = NULL; profiles_destroy(config); return 1; }
     /* raw also disables IXON, so Ctrl+Q reaches the application. */
@@ -751,6 +758,9 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
     fputs("\033[?2004h", stdout);
     fflush(stdout);
     int result = layout(&ui) ? 0 : 1;
+    bool startup_restore = !open_profiles;
+    if (!result && !open_profiles && *session_store_last_url(connections->sessions) &&
+        !instance_form(&ui, client, session_store_last_url(connections->sessions))) result = 1;
     bool quit = false;
     if (!result && open_profiles) {
         int selected = manage_profiles(&ui, &client, &config, allow_local_http, false);
@@ -760,6 +770,14 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
     bool redraw = true;
     while (!result && !quit && !interrupted) {
         if (ui.layout_failed) { result = 1; break; }
+        if (session_store_poll(connections->sessions, client)) redraw = true;
+        if (startup_restore) {
+            char *snapshot = session_store_take_resume(connections->sessions);
+            if (snapshot) {
+                auth_session_restore(client, snapshot, session_store_last_url(connections->sessions), allow_local_http);
+                auth_session_free(&snapshot); startup_restore = false; redraw = true;
+            } else if (!session_store_restoring(connections->sessions)) startup_restore = false;
+        }
         if (instances_poll(connections, client)) redraw = true;
         auth_state before = auth_get_state(client);
         bool before_busy = auth_busy(client);
@@ -814,6 +832,9 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         wint_t key;
         int type = get_wch(&key);
         if (type == ERR) continue;
+        if (startup_restore && !(type == KEY_CODE_YES && key == KEY_RESIZE)) {
+            session_store_cancel_resume(connections->sessions); startup_restore = false;
+        }
         redraw = true;
         if (type == KEY_CODE_YES && key == KEY_RESIZE) {
             if (!layout(&ui)) result = 1;
@@ -852,7 +873,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
             else if (!auth_has_session(client) && !instances_contains(connections, client) &&
                      ui.previous_instance < connections->count &&
                      auth_has_session(connections->items[ui.previous_instance].auth)) {
-                auth_destroy(client);
+                session_store_unwatch(connections->sessions, client); auth_destroy(client);
                 client = connections->items[ui.previous_instance].auth;
                 if (!instance_form(&ui, client, connections->items[ui.previous_instance].url)) { result = 1; break; }
                 ui.open_chat = true;
@@ -908,7 +929,9 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
     endwin();
     sigaction(SIGINT, &previous_int, NULL);
     sigaction(SIGTERM, &previous_term, NULL);
-    if (!instances_contains(connections, client)) auth_destroy(client);
+    if (!instances_contains(connections, client)) {
+        session_store_unwatch(connections->sessions, client); auth_destroy(client);
+    }
     instances_destroy(connections);
     connections = NULL;
     profiles_destroy(config);

@@ -1,5 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "net/auth.h"
+#include <time.h>
+#include <strings.h>
 #include "net/rate_limit.h"
 #include "net/clock.h"
 #include "net/session_time.h"
@@ -40,6 +42,9 @@ struct auth_client {
     bool ws_managed, ws_active, ws_validate, ws_validated, validation_wait;
     uint64_t ws_retry_at, ws_stable_at, ws_epoch, expires_at;
     unsigned ws_failures;
+    bool restoring, session_rejected, gate_passed;
+    auth_session_gate session_gate;
+    void *gate_context;
     uint64_t recheck_at;
     uint64_t validation_deadline;
     uint64_t refresh_at, generation;
@@ -371,6 +376,7 @@ static bool request(auth_client *client, auth_state state, const char *path,
     client->queued = true;
     client->state = state;
     client->operation = state;
+    client->gate_passed = false;
     return true;
 error:
     if (state == AUTH_MESSAGE_SEND) {
@@ -455,6 +461,7 @@ static bool start_account(auth_client *client, const char *url, const char *user
     client->server_password_error = false;
     client->input_error = AUTH_INPUT_NONE;
     client->registering = registering;
+    client->restoring = client->session_rejected = false;
     client->logout_requested = false;
     forget_inputs(client);
     clear_cookies(client);
@@ -586,6 +593,7 @@ bool auth_refresh(auth_client *client)
 
 static bool recover_session(auth_client *client)
 {
+    client->session_rejected = true; /* Cleared only by a verified whoami. */
     client->authenticated = false;
     client->recovering = client->after_refresh = true;
     ws_abort(client->websocket);
@@ -606,6 +614,110 @@ bool auth_get_json(auth_client *client, const char *path)
 }
 
 bool auth_response_ready(const auth_client *client) { return client->response_ready; }
+
+void auth_set_session_gate(auth_client *client, auth_session_gate gate, void *context)
+{
+    client->session_gate = gate; client->gate_context = context;
+}
+void auth_session_free(char **snapshot) { erase_free(snapshot); }
+bool auth_session_rejected(const auth_client *client) { return client->session_rejected; }
+
+/* Accept only one host-only cookie, scoped to this instance's own jar. Ports
+ * and URL prefixes are bound separately by the secret snapshot's exact URL. */
+static bool session_cookie_valid(const char *row, const char *url)
+{
+    if (!row || strlen(row) > 8192 || !url) return false;
+    char *copy = strdup(row);
+    CURLU *parsed = curl_url(); char *host = NULL, *scheme = NULL;
+    bool ok = false;
+    if (!copy || !parsed || curl_url_set(parsed, CURLUPART_URL, url, 0) != CURLUE_OK ||
+        curl_url_get(parsed, CURLUPART_HOST, &host, 0) != CURLUE_OK ||
+        curl_url_get(parsed, CURLUPART_SCHEME, &scheme, 0) != CURLUE_OK) goto done;
+    char *fields[7], *p = copy;
+    for (int i = 0; i < 7; ++i) {
+        fields[i] = p;
+        char *tab = strchr(p, '\t');
+        if (i < 6) { if (!tab) goto done; *tab = 0; p = tab + 1; }
+        else if (tab) goto done;
+    }
+    const char *domain = fields[0];
+    if (!strncmp(domain, "#HttpOnly_", 10)) domain += 10;
+    if (strcasecmp(domain, host) || strcmp(fields[1], "FALSE") ||
+        fields[2][0] != '/' || (strcmp(fields[3], "TRUE") && strcmp(fields[3], "FALSE")) ||
+        (!strcmp(scheme, "https") && strcmp(fields[3], "TRUE")) ||
+        strcmp(fields[5], "Auth") || !*fields[6]) goto done;
+    for (const unsigned char *c = (const unsigned char *)fields[6]; *c; ++c)
+        if (*c < 33 || *c > 126) goto done;
+    for (const unsigned char *c = (const unsigned char *)fields[2]; *c; ++c)
+        if (*c < 33 || *c > 126) goto done;
+    char *end; errno = 0;
+    unsigned long long expires = strtoull(fields[4], &end, 10);
+    if (errno || !*fields[4] || *end || fields[4][0] == '-' || expires <= (unsigned long long)time(NULL)) goto done;
+    ok = true;
+done:
+    erase_free(&copy); curl_free(host); curl_free(scheme); if (parsed) curl_url_cleanup(parsed);
+    return ok;
+}
+char *auth_session_export(auth_client *client)
+{
+    if (!auth_has_session(client) || auth_busy(client)) return NULL;
+    struct curl_slist *cookies = NULL;
+    if (curl_easy_getinfo(client->easy, CURLINFO_COOKIELIST, &cookies) != CURLE_OK) return NULL;
+    const char *row = NULL; bool ambiguous = false;
+    for (struct curl_slist *item = cookies; item; item = item->next)
+        if (session_cookie_valid(item->data, client->base)) { if (row) ambiguous = true; row = item->data; }
+    char *result = NULL;
+    if (row && !ambiguous) {
+        json_t *obj = json_pack("{s:i,s:s,s:s,s:s}", "version", 1, "url", client->base,
+                               "user_id", client->user_id, "cookie", row);
+        if (obj) {
+            result = json_dumps(obj, JSON_COMPACT | JSON_SORT_KEYS);
+            volatile char *secret = (volatile char *)json_string_value(json_object_get(obj, "cookie"));
+            if (secret) for (size_t i = 0; i < strlen(row); ++i) secret[i] = 0;
+            json_decref(obj);
+        }
+    }
+    for (struct curl_slist *item = cookies; item; item = item->next) {
+        volatile char *secret = item->data;
+        for (size_t i = 0, n = strlen(item->data); i < n; ++i) secret[i] = 0;
+    }
+    curl_slist_free_all(cookies); return result;
+}
+bool auth_session_restore(auth_client *client, const char *snapshot, const char *expected_url, bool allow_local_http)
+{
+    if (auth_busy(client) || auth_has_session(client) || !snapshot || strlen(snapshot) > 16384) return false;
+    json_error_t error; json_t *obj = json_loads(snapshot, JSON_REJECT_DUPLICATES, &error);
+    const char *url = json_text(obj, "url", 2049), *id = json_text(obj, "user_id", sizeof(client->user_id));
+    const char *cookie = json_text(obj, "cookie", 8193);
+    char message[192], *base = url ? auth_normalize_url(url, message, sizeof(message)) : NULL;
+    bool safe_fields = base && expected_url && !strcmp(base, expected_url) && !strcmp(base, url) && id &&
+              json_integer_value(json_object_get(obj, "version")) == 1 && session_cookie_valid(cookie, base);
+    bool policy = base && (allow_local_http || strncmp(base, "http://", 7));
+    bool ok = safe_fields && policy;
+    if (ok) {
+        detach(client); ws_abort(client->websocket); forget_inputs(client); clear_api(client); clear_identity(client); clear_cookies(client);
+        curl_free(client->base); client->base = base; base = NULL;
+        client->restoring = true; client->session_rejected = client->logout_requested = client->ws_requested = false;
+        client->name[0] = 0;
+        snprintf(client->user_id, sizeof(client->user_id), "%s", id);
+        ok = curl_easy_setopt(client->easy, CURLOPT_COOKIELIST, cookie) == CURLE_OK &&
+             request(client, AUTH_SERVER, "/server", NULL, false);
+    }
+    if (cookie) {
+        volatile char *secret = (volatile char *)cookie;
+        for (size_t i = 0, n = strlen(cookie); i < n; ++i) secret[i] = 0;
+    }
+    curl_free(base); json_decref(obj);
+    if (!ok) {
+        /* HTTP policy failure is reversible with --allow-local-http; malformed
+         * or expired snapshots must never be retried from persistent storage. */
+        client->session_rejected = !safe_fields;
+        if (safe_fields && !policy)
+            input_fail(client, AUTH_INPUT_URL, "HTTP local exige --allow-local-http. Use HTTPS para acesso remoto.");
+        else fail(client, "Sessão salva indisponível. Entre novamente.");
+    }
+    return ok;
+}
 
 void auth_cancel_read(auth_client *client)
 {
@@ -840,6 +952,7 @@ static void complete(auth_client *client, CURLcode result, long status)
                  result == CURLE_SSL_CACERT_BADFILE || result == CURLE_SSL_CERTPROBLEM)
             message = "Falha ao verificar a conexão segura com o servidor.";
         if (previous == AUTH_REGISTER) message = "Cadastro não confirmado. Tente entrar antes de enviar novamente.";
+        if (status == 401 || status == 403) client->session_rejected = true;
         fail(client, message);
         return;
     }
@@ -871,6 +984,7 @@ static void complete(auth_client *client, CURLcode result, long status)
         else if (status >= 500 && (previous == AUTH_HEALTH || previous == AUTH_DISCOVERY_SERVER))
             message = "Serviço indisponível. Tente novamente ou corrija a URL.";
         else if (status >= 300 && status < 400) message = "O servidor redirecionou a conexão. Informe a URL final.";
+        if (status == 401 || status == 403) client->session_rejected = true;
         fail(client, message);
         if (status == 401 && previous == AUTH_SERVER_PASSWORD) {
             client->server_password_error = true;
@@ -924,7 +1038,8 @@ static void complete(auth_client *client, CURLcode result, long status)
                 client->state = AUTH_IDENTIFIED;
                 snprintf(client->message, sizeof(client->message), "%s", client->server_public ?
                          "Instância pública identificada." : "Instância privada identificada; login exige senha do servidor.");
-            } else if (json_is_true(public_value)) user_login(client);
+            } else if (client->restoring) request(client, AUTH_WHOAMI, "/auth/whoami", NULL, false);
+            else if (json_is_true(public_value)) user_login(client);
             else if (!*client->server_password) {
                 fail(client, "Esta instância é privada. Preencha a senha do servidor.");
                 client->server_password_error = true;
@@ -971,6 +1086,7 @@ static void complete(auth_client *client, CURLcode result, long status)
         if (!username || !id ||
             (*client->user_id && strcmp(id, client->user_id) != 0) ||
             json_is_true(json_object_get(body, "connection_violation"))) {
+            client->session_rejected = true;
             fail(client, "Não foi possível confirmar a sessão. Entre novamente.");
         } else {
             snprintf(client->user, sizeof(client->user), "%s", username);
@@ -989,6 +1105,7 @@ static void complete(auth_client *client, CURLcode result, long status)
                     client->ws_validated = true;
                     client->ws_validate = false;
                 }
+                client->restoring = client->session_rejected = false;
                 client->recovering = client->after_refresh = false;
                 client->state = AUTH_READY;
                 snprintf(client->message, sizeof(client->message), "Login realizado. Você está conectado.");
@@ -1056,6 +1173,13 @@ void auth_poll(auth_client *client)
     if (client->authenticated && ws_before != ws_after && (ws_after == WS_ERROR || ws_after == WS_CLOSED))
         client->recheck_at = 0;
     if (client->queued) {
+        if (!client->gate_passed && client->session_gate &&
+            (client->operation == AUTH_REFRESH || client->operation == AUTH_LOGOUT)) {
+            int permit = client->session_gate(client->gate_context, client);
+            if (!permit) return;
+            if (permit < 0) { fail(client, "Não foi possível proteger a sessão salva. Tente novamente."); return; }
+            client->gate_passed = true;
+        }
         int admitted = net_rate_try_acquire();
         if (admitted == 0) return;
         if (admitted < 0 || curl_multi_add_handle(client->multi, client->easy) != CURLM_OK) {
