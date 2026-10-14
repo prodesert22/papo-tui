@@ -6,12 +6,12 @@ O aplicativo oferece login, cadastro de conta, renovação de sessão, perfis lo
 
 ## Compilar e executar
 
-Pré-requisitos: compilador C17, CMake 3.21+, pkg-config, ncursesw/formw 6.1+, libcurl 7.86+, Jansson 2.14+, libunibreak 6.1+, libsixel 1.8+, libmpv (API 2.0+) e bibliotecas de desenvolvimento do FFmpeg (libavformat/libavcodec 58+, libavutil 56+, libswscale 5+). A libcurl precisa oferecer WS/WSS, TLS e DNS assíncrono; o CMake verifica essas capacidades. Para os testes, Python 3.10+, FFmpeg CLI, OpenSSL CLI e as dependências de `requirements-dev.txt`.
+Pré-requisitos: compilador C17, CMake 3.21+, pkg-config, ncursesw/formw 6.1+, libcurl 7.86+, Jansson 2.14+, libunibreak 6.1+, libsixel 1.8+, libchafa 1.16+, libmpv (API 2.0+) e bibliotecas de desenvolvimento do FFmpeg (libavformat/libavcodec 58+, libavutil 56+, libswscale 5+). A libcurl precisa oferecer WS/WSS, TLS e DNS assíncrono; o CMake verifica essas capacidades. Para os testes, Python 3.10+, FFmpeg CLI, OpenSSL CLI e as dependências de `requirements-dev.txt`.
 
 No Arch Linux:
 
 ```sh
-sudo pacman -S --needed base-devel cmake pkgconf ncurses curl jansson libunibreak libsixel mpv ffmpeg python
+sudo pacman -S --needed base-devel cmake pkgconf ncurses curl jansson libunibreak libsixel chafa mpv ffmpeg python
 ```
 
 ```sh
@@ -138,7 +138,7 @@ Consulte [instalação e uso](docs/uso.md) para os requisitos, execução, conex
 - libunibreak para delimitar grafemas no editor de mensagens e na apresentação de texto.
 - libcurl multi para HTTP e handshake WS assíncronos, TLS, URLs e cookies; APIs WS para leitura/escrita sem bloquear a interface.
 - Jansson para JSON.
-- libsixel para saída gráfica em terminais Sixel, FFmpeg para imagens e libmpv para vídeo/áudio; um worker faz a conversão sem operar o terminal ou a rede.
+- libsixel para saída Sixel e libchafa para os protocolos gráficos Kitty/iTerm2; FFmpeg para imagens e libmpv para vídeo/áudio. Um worker faz a conversão sem operar o terminal ou a rede.
 
 ```text
 src/main.c       Entrada e ciclo de vida
@@ -160,9 +160,9 @@ As ferramentas em `tools/` auxiliam a validação do contrato durante o desenvol
 
 ## Estado atual
 
-Cards de embed, imagens por Sixel e player de vídeo em modal com áudio mantêm
+Cards de embed, imagens por Sixel/Kitty/iTerm2 e player de vídeo em modal com áudio mantêm
 a interface em ncurses. Dependências adicionais:
-libsixel (MIT), FFmpeg (decodificação de imagens) e libmpv (reprodução e áudio).
+libsixel (MIT), [libchafa](https://hpjansson.org/chafa/development/) (LGPLv3+, protocolos Kitty/iTerm2), FFmpeg (decodificação de imagens) e libmpv (reprodução e áudio).
 Os downloads continuam no transporte autenticado do Papo; a mídia não recebe
 cookies nem URLs remotas no player. O backend atual não expõe os bytes da imagem
 adicional do embed nem do ícone do rodapé.
@@ -194,7 +194,7 @@ Ao abrir a leitura, o foco começa nas abas. Use ←/→ para escolher o servido
 
 Em tela ampla, Tab/Shift+Tab alternam entre abas, canais, histórico e editor quando há um canal de texto aberto. ← nos canais, ou ↑ no primeiro canal, volta às abas; ←/→ nas abas trocam de servidor e Enter em **+ Adicionar** abre o formulário. ↓ nas abas foca os canais. Esc sai do editor para o histórico; nos demais painéis, alterna canais/histórico. Abaixo de 80 colunas, Tab/Shift+Tab e os controles **Canais / Conversa** alternam o painel visível. F6 volta à conta, Ctrl+L sai da conta e remove sua aba, Ctrl+P abre a seleção de perfil encerrando a sessão local atual, e Ctrl+Q/Ctrl+C fecha o programa. O mínimo dessa tela é 44×14; para abrir o formulário, amplie para 44×22.
 
-Mensagens aparecem em ordem cronológica, com data, autor, indicação de edição e referências de resposta. Anexos mostram seus metadados e, em terminais com Sixel confirmado, imagens visíveis são baixadas e renderizadas no histórico. Embeds aparecem em cards com autor, título, descrição, fields e rodapé. F7 ou clique abre a mídia em um modal; vídeos são baixados antes de reproduzir com áudio. Os embeds recebidos ou atualizados em tempo real aparecem na mensagem sem precisar reabrir o canal, incluindo mensagens sem texto. Autores ausentes têm um rótulo de indisponibilidade. Ao abrir um canal de texto, digite para focar o editor, incluindo o primeiro caractere. Enter no histórico também foca o editor. Enter no editor envia, Ctrl+N insere uma nova linha e colagem delimitada preserva linhas sem enviar. Setas, Home/End, Backspace e Delete editam grafemas; clique no editor para posicionar o cursor. Esc volta ao histórico. A área em foco recebe um fundo discretamente mais claro. Mensagens de outras contas chegam automaticamente. Eventos repetidos e confirmações REST/WS da mesma mensagem são reconciliados pelo ID. A tela acompanha novas mensagens quando você está no fim; ao ler mensagens anteriores, indica novidades sem mover a leitura. End ou clique no indicador volta ao fim.
+Mensagens aparecem em ordem cronológica, com data, autor, indicação de edição e referências de resposta. Anexos mostram seus metadados e, em terminais com protocolo gráfico compatível, imagens visíveis são baixadas e renderizadas no histórico. Embeds aparecem em cards com autor, título, descrição, fields e rodapé. F7 ou clique abre a mídia em um modal; vídeos são baixados antes de reproduzir com áudio. Os embeds recebidos ou atualizados em tempo real aparecem na mensagem sem precisar reabrir o canal, incluindo mensagens sem texto. Autores ausentes têm um rótulo de indisponibilidade. Ao abrir um canal de texto, digite para focar o editor, incluindo o primeiro caractere. Enter no histórico também foca o editor. Enter no editor envia, Ctrl+N insere uma nova linha e colagem delimitada preserva linhas sem enviar. Setas, Home/End, Backspace e Delete editam grafemas; clique no editor para posicionar o cursor. Esc volta ao histórico. A área em foco recebe um fundo discretamente mais claro. Mensagens de outras contas chegam automaticamente. Eventos repetidos e confirmações REST/WS da mesma mensagem são reconciliados pelo ID. A tela acompanha novas mensagens quando você está no fim; ao ler mensagens anteriores, indica novidades sem mover a leitura. End ou clique no indicador volta ao fim.
 
 A janela em memória contém até 1.000 mensagens ou 4 MiB de JSON serializado. Ao carregar páginas antigas além desse limite, libera mensagens recentes; End volta a consultá-las. Trocar de canal ou servidor descarta seu histórico local. As outras abas e os históricos não são persistidos; somente o cookie da última sessão pode ficar no chaveiro. Abrir a lista de canais não consulta seus históricos em segundo plano.
 
@@ -213,7 +213,7 @@ alteram o volume e `m` silencia. Redimensionar preserva a reprodução; rascunho
 e leitura permanecem ao voltar. O áudio usa o dispositivo disponível; sem um
 dispositivo, o vídeo continua e o modal informa a indisponibilidade do áudio.
 
-Imagens JPEG, PNG, WebP e GIF são exibidas por Sixel; o histórico mostra o
+Imagens JPEG, PNG, WebP e GIF são exibidas por Sixel ou pelos protocolos gráficos Kitty/iTerm2; o histórico mostra o
 primeiro frame do GIF. A negociação consulta capacidades e tamanho das células
 sem bloquear a interface ou inserir respostas no editor. Sem suporte gráfico
 confirmado, os cards e metadados continuam em texto e nenhuma imagem é baixada
@@ -320,9 +320,9 @@ build/test-env/bin/python -m tools.check_r7 --backend-binary /caminho/papo-serve
 O roteiro simula indisponibilidade no proxy de desenvolvimento e produz mensagens, edições e exclusões enquanto os clientes estão desconectados. Recursos temporários são removidos ao terminar; evidências sem credenciais ficam em `build/r7/validation/summary.json`.
 
 As suítes `media-layout-sixel`, `media-integration` e `media-terminal` verificam
-cards, fields inline, sanitização, pixels Sixel, imagens JPEG/PNG/WebP/GIF,
+cards, fields inline, sanitização, pixels Sixel/Kitty/iTerm2, imagens JPEG/PNG/WebP/GIF,
 player com áudio, pausa/seek/resize, arquivos privados, cancelamento e falhas
-HTTP. A PTY responde às consultas Sixel de forma sintética; essa evidência é
+HTTP e remoção de imagens ao trocar de canal ou fechar o modal. A PTY responde às consultas gráficas de forma sintética; essa evidência é
 separada das capturas de emuladores reais.
 
 Para validar os downloads HTTPS e a apresentação contra o backend real em

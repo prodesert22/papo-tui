@@ -5,7 +5,7 @@
 #include "ui/theme.h"
 #include "ui/button.h"
 #include "ui/media.h"
-#include "ui/sixel.h"
+#include "ui/graphics.h"
 #include "ui/mouse.h"
 #include "app/session_store.h"
 #include "ui/send_editor.h"
@@ -56,6 +56,7 @@ static void destroy_layout(view *ui)
 }
 static bool layout(view *ui)
 {
+    graphics_frame_invalidate();
     destroy_layout(ui);
     /* Consume stdscr's resize damage without flushing a blank screen. The
      * replacement windows are composed before the next single doupdate(). */
@@ -152,7 +153,7 @@ static int walk(view *ui, int first, bool paint, bool save, int *anchor)
             if (!strcmp(str(m, "reply_to"), str(history_message(ui->model, j), "id"))) { reply = str(m, "reply_to"); break; }
         message_blocks blocks;
         if (!message_blocks_build(&blocks, m, history_author(ui->model, str(m, "author_id")), reply, width,
-                                  sixel_terminal_get().supported)) continue;
+                                  graphics_terminal_get().supported)) continue;
         bool anchored = !strcmp(ui->anchor, str(m, "id"));
         if (anchored) *anchor = total;
         int offered = -1;
@@ -247,13 +248,14 @@ static void draw_confirmation(view *ui)
 }
 static void draw(view *ui, auth_client *auth, draw_scope scope)
 {
+    graphics_update_begin();
     curs_set(0);
     if (scope != DRAW_NAVIGATION) {
         media_view_begin(ui->media);
         message_colors_begin();
     }
     if (!ui->frame) {
-        erase(); text_label(stdscr, 0, 0, COLS, "Amplie o terminal para 44×14. F6: conta."); refresh(); return;
+        erase(); text_label(stdscr, 0, 0, COLS, "Amplie o terminal para 44×14. F6: conta."); refresh(); graphics_frame_prepare(); graphics_frame_flush(); graphics_update_end(); return;
     }
     if (scope == DRAW_ALL) {
         werase(ui->frame); wattrset(ui->frame, COLOR_PAIR(BORDER)); box(ui->frame, 0, 0);
@@ -379,8 +381,13 @@ static void draw(view *ui, auth_client *auth, draw_scope scope)
     draw_confirmation(ui);
     if (scope != DRAW_NAVIGATION) media_view_draw(ui->media);
     if (media_view_modal(ui->media)) curs_set(0);
+    if (scope != DRAW_NAVIGATION) {
+        if (!ui->duplicate_modal) media_view_prepare(ui->media);
+        graphics_frame_prepare();
+    }
     doupdate();
-    if (!ui->duplicate_modal && scope != DRAW_NAVIGATION) media_view_flush(ui->media);
+    if (scope != DRAW_NAVIGATION) graphics_frame_flush();
+    graphics_update_end();
 }
 static void set_focus(view *ui, int focus)
 {
@@ -541,7 +548,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         }
         if (!auth_has_session(auth) && !auth_busy(auth)) break;
         if (redraw) { draw(ui, auth, scope); redraw = false; scope = DRAW_ALL; }
-        wint_t key; int type = sixel_terminal_input(&key);
+        wint_t key; int type = graphics_terminal_input(&key);
         if (type == ERR) continue;
         if (type == KEY_CODE_YES && key == PASTE_START) {
             ui->paste = true; ui->paste_cr = false;

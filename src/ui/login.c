@@ -1,5 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
-#include "ui/sixel.h"
+#include "ui/graphics.h"
 #include "ui/mouse.h"
 #include "ui/login.h"
 #include "ui/theme.h"
@@ -822,7 +822,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         }
         if (redraw) {
             draw(&ui, client);
-            sixel_terminal_probe();
+            graphics_terminal_probe();
             redraw = false;
         }
         if (ui.open_chat && auth_has_session(client) && !ui.paste) {
@@ -833,7 +833,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
             continue;
         }
         wint_t key;
-        int type = sixel_terminal_input(&key);
+        int type = graphics_terminal_input(&key);
         if (type == ERR) continue;
         if (startup_restore && !(type == KEY_CODE_YES && key == KEY_RESIZE)) {
             session_store_cancel_resume(connections->sessions); startup_restore = false;

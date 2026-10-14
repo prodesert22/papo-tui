@@ -1,10 +1,12 @@
 #define _POSIX_C_SOURCE 200809L
 #include "ui/message_blocks.h"
 #include "ui/sixel.h"
+#include "ui/graphics.h"
 #include "ui/text.h"
 #include <assert.h>
 #include <locale.h>
 #include <sixel.h>
+#include <libavutil/base64.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -53,8 +55,67 @@ static void protocol(void)
     free(decoded); free(palette); sixel_image_free(&image);
     assert(!sixel_image_encode(pixels, 100000, 12, &image));
 }
+static void graphics_protocols(void)
+{
+    graphics_terminal t = {0};
+    char reply[80];
+    snprintf(reply, sizeof(reply), "\033_Gi=%u;OK\033\\", GRAPHICS_PROBE_ID);
+    assert(graphics_terminal_reply(&t, reply) && t.protocol == GRAPHICS_KITTY);
+    assert(graphics_terminal_reply(&t, "\033[?62;4;22c") && t.protocol == GRAPHICS_KITTY);
+    assert(graphics_terminal_reply(&t, "\033[6;6;4t") && t.cell_width == 4 && t.cell_height == 6);
+    assert(!graphics_terminal_reply(&t, "\033_Gi=1;OK\033\\"));
+    assert(!graphics_terminal_reply(&t, "\033[6;129;4t"));
+    assert(graphics_terminal_reply(&t, "\033[?2026;2$y") && t.synchronized);
+    assert(graphics_terminal_reply(&t, "\033[?2026;0$y") && !t.synchronized);
+    unsigned char pixels[12 * 12 * 3];
+    for (size_t i = 0; i < sizeof(pixels); i += 3) { pixels[i] = 255; pixels[i + 1] = pixels[i + 2] = 0; }
+    graphics_image image;
+    assert(graphics_image_encode(pixels, 12, 12, t, &image));
+    assert(image.protocol == GRAPHICS_KITTY && image.id && image.columns == 3 && image.rows == 2);
+    char *encoded = calloc(image.length + 1, 1);
+    assert(encoded); memcpy(encoded, image.data, image.length);
+    assert(strstr(encoded, "a=t,f=32,s=12,v=12,c=3,r=2,i="));
+    assert(strstr(encoded, "q=2,C=1"));
+    char payload[2048] = "";
+    size_t used = 0;
+    for (char *p = encoded; (p = strstr(p, "\033_Gm=1;")); ) {
+        p += 7;
+        char *end = strstr(p, "\033\\"); assert(end);
+        size_t length = (size_t)(end - p); assert(length < sizeof(payload) - used);
+        memcpy(payload + used, p, length); used += length; p = end + 2;
+    }
+    unsigned char rgba[12 * 12 * 4 + 1];
+    assert(av_base64_decode(rgba, payload, sizeof(rgba)) == 12 * 12 * 4);
+    for (size_t i = 0; i < 12 * 12 * 4; i += 4)
+        assert(rgba[i] > 240 && rgba[i + 1] < 16 && rgba[i + 2] < 16 && rgba[i + 3] == 255);
+    free(encoded); graphics_image_free(&image);
+    t.protocol = GRAPHICS_ITERM2;
+    assert(graphics_image_encode(pixels, 12, 12, t, &image));
+    assert(image.protocol == GRAPHICS_ITERM2 && !memcmp(image.data, "\033]1337;File=inline=1;", 21));
+    assert(image.data[image.length - 1] == '\a'); graphics_image_free(&image);
+    assert(!graphics_image_encode(pixels, 641, 12, t, &image));
+}
+static void preview_crops(void)
+{
+    unsigned char pixels[12 * 36 * 3];
+    memset(pixels, 127, sizeof(pixels));
+    graphics_terminal t = {.protocol = GRAPHICS_SIXEL, .cell_width = 4, .cell_height = 6};
+    for (int mode = 0; mode < 2; ++mode) {
+        graphics_image image;
+        assert(graphics_image_encode_preview(pixels, 12, 36, t, 123, &image));
+        assert(image.crop_count == 20 && graphics_image_bytes(&image) > image.length);
+        const graphics_image *crop = graphics_image_crop(&image, 6, 12);
+        assert(crop && crop->height == 18 && crop->rows == 3 && crop->id == image.id);
+        assert(crop->revision != image.revision && crop->data);
+        assert(!graphics_image_crop(&image, 36, 0));
+        graphics_image_free(&image);
+        assert(!image.data && !image.crops);
+        t.protocol = GRAPHICS_ITERM2;
+    }
+}
 int main(void)
 {
-    assert(setlocale(LC_ALL, "C.UTF-8")); init_graphemebreak(); cards(); protocol();
-    puts("cards, terminal negotiation and Sixel pixels verified"); return 0;
+    assert(setlocale(LC_ALL, "C.UTF-8")); init_graphemebreak(); cards(); protocol(); graphics_protocols();
+    preview_crops();
+    puts("cards, terminal negotiation and Sixel/Kitty/iTerm2 pixels verified"); return 0;
 }

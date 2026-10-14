@@ -1,17 +1,11 @@
 #define _POSIX_C_SOURCE 200809L
 #include "ui/sixel.h"
-#include <ncurses.h>
 #include <sixel.h>
-#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
-#include <termios.h>
-#include <time.h>
 #include <unistd.h>
-static sixel_terminal terminal;
-static bool probed;
 bool sixel_terminal_reply(sixel_terminal *t, const char *reply)
 {
     if (!t || !reply || strlen(reply) > 96) return false;
@@ -46,55 +40,6 @@ bool sixel_terminal_reply(sixel_terminal *t, const char *reply)
     }
     return false;
 }
-void sixel_terminal_probe(void)
-{
-    if (probed || !isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO)) return;
-    probed = true;
-    const char *term = getenv("TERM");
-    if (!term || !strcmp(term, "dumb")) return;
-    /* Called after raw/noecho and the first frame. Replies are filtered by
-     * the shared curses input wrapper; negotiation never waits here. */
-    fputs("\033[c\033[16t\033[14t", stdout); fflush(stdout);
-}
-int sixel_terminal_input(wint_t *key)
-{
-    for (;;) {
-        int type = get_wch(key);
-        if (type != OK || *key != 27 || !probed) return type;
-        wint_t next;
-        int next_type = get_wch(&next);
-        if (next_type != OK || next != '[') {
-            if (next_type == OK) unget_wch(next);
-            else if (next_type == KEY_CODE_YES) ungetch((int)next);
-            return OK;
-        }
-        char reply[97] = "\033["; size_t used = 2;
-        while (used < sizeof(reply) - 1) {
-            next_type = get_wch(&next);
-            if (next_type != OK || next > 127) break;
-            reply[used++] = (char)next; reply[used] = 0;
-            if (next == 'c' || next == 't' || !((next >= '0' && next <= '9') || next == '?' || next == ';')) break;
-        }
-        if (sixel_terminal_reply(&terminal, reply)) continue;
-        /* Unknown sequences preserve ordinary curses behavior: ESC followed
-         * by literal input. Recognized keyboard/mouse codes never enter here. */
-        if (next_type == KEY_CODE_YES) ungetch((int)next);
-        else if (next_type == OK && next > 127) unget_wch(next);
-        while (used > 1) unget_wch((unsigned char)reply[--used]);
-        *key = 27; return OK;
-    }
-}
-sixel_terminal sixel_terminal_get(void)
-{
-    struct winsize size;
-    if (ioctl(STDIN_FILENO, TIOCGWINSZ, &size) == 0 && size.ws_row && size.ws_col && size.ws_xpixel && size.ws_ypixel) {
-        terminal.cell_width = size.ws_xpixel / size.ws_col;
-        terminal.cell_height = size.ws_ypixel / size.ws_row;
-    }
-    sixel_terminal result = terminal;
-    result.supported &= result.cell_width > 0 && result.cell_width <= 128 && result.cell_height > 0 && result.cell_height <= 128;
-    return result;
-}
 static int append(char *data, int size, void *context)
 {
     sixel_image *out = context;
@@ -123,11 +68,3 @@ done:
     return ok;
 }
 void sixel_image_free(sixel_image *out) { free(out->data); out->data = NULL; out->length = 0; }
-void sixel_image_draw(const sixel_image *image, int y, int x)
-{
-    if (!image || !image->data) return;
-    /* DEC save/restore leaves ncurses' physical cursor model intact. */
-    fprintf(stdout, "\0337\033[%d;%dH", y + 1, x + 1);
-    fwrite(image->data, 1, image->length, stdout);
-    fputs("\0338", stdout); fflush(stdout);
-}

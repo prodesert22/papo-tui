@@ -2,12 +2,12 @@
 
 ## Requisitos
 
-Compilador C17, CMake 3.21+, pkg-config, ncursesw/formw 6.1+, libcurl 7.86+ com WS/WSS, TLS e DNS assíncrono, Jansson 2.14+, libunibreak 6.1+, libsixel 1.8+, libmpv (API 2.0+) e FFmpeg (libavformat/libavcodec 58+, libavutil 56+, libswscale 5+). Use um terminal UTF-8 com pelo menos 44 colunas e 22 linhas disponíveis ao aplicativo. No tmux, reserve também as linhas da barra de status.
+Compilador C17, CMake 3.21+, pkg-config, ncursesw/formw 6.1+, libcurl 7.86+ com WS/WSS, TLS e DNS assíncrono, Jansson 2.14+, libunibreak 6.1+, libsixel 1.8+, libchafa 1.16+, libmpv (API 2.0+) e FFmpeg (libavformat/libavcodec 58+, libavutil 56+, libswscale 5+). Use um terminal UTF-8 com pelo menos 44 colunas e 22 linhas disponíveis ao aplicativo. No tmux, reserve também as linhas da barra de status.
 
 No Arch Linux:
 
 ```sh
-sudo pacman -S --needed base-devel cmake pkgconf ncurses curl jansson libunibreak libsixel mpv ffmpeg
+sudo pacman -S --needed base-devel cmake pkgconf ncurses curl jansson libunibreak libsixel chafa mpv ffmpeg
 ```
 
 ## Compilar e executar
@@ -218,7 +218,7 @@ Abrir a lista não lê mensagens. Apenas o canal que você abre tem seu históri
 
 As páginas chegam em grupos de até 100 mensagens e aparecem em ordem cronológica. Ao alcançar o começo da janela, pressione PageUp para carregar uma página anterior. A mensagem e o trecho que estavam no topo continuam no mesmo lugar, inclusive após redimensionar o terminal. A lista de canais permanece estável durante a rolagem. Use Home depois do carregamento para ver o novo início. End volta à página recente.
 
-A tela mostra tópico, timestamps, autor ou **Autor indisponível**, indicação e data de edição, texto ausente e resposta cuja mensagem não está na janela atual. Anexos mostram nome, tipo, tamanho e moderação; imagens visíveis são carregadas em terminais Sixel. Embeds aparecem em cards com seus textos, fields e mídia disponível. Os embeds recebidos ou atualizados em tempo real aparecem na mensagem sem precisar reabrir o canal, incluindo mensagens sem texto. URLs são apenas texto e não são abertas. O editor aceita texto em canais de texto. Digitar a partir da conversa foca o editor e inclui o primeiro caractere. Enter envia; Ctrl+N insere uma quebra de linha. Você pode continuar editando, mudar de canal ou redimensionar durante o envio. A confirmação inclui a mensagem no histórico e remove somente o texto enviado que permaneceu intacto, preservando continuação e texto reescrito. Mensagens de outras contas chegam automaticamente; edições, exclusões e mudanças de canais também atualizam a tela. Eventos repetidos e confirmações REST/WS são reconciliados pelo ID da mensagem. Quando você está no fim, a tela acompanha novas mensagens; ao ler mensagens anteriores, mostra um indicador sem deslocar a leitura. End ou clique nesse indicador volta ao fim.
+A tela mostra tópico, timestamps, autor ou **Autor indisponível**, indicação e data de edição, texto ausente e resposta cuja mensagem não está na janela atual. Anexos mostram nome, tipo, tamanho e moderação; imagens visíveis são carregadas em terminais Sixel/Kitty/iTerm2. Embeds aparecem em cards com seus textos, fields e mídia disponível. Os embeds recebidos ou atualizados em tempo real aparecem na mensagem sem precisar reabrir o canal, incluindo mensagens sem texto. URLs são apenas texto e não são abertas. O editor aceita texto em canais de texto. Digitar a partir da conversa foca o editor e inclui o primeiro caractere. Enter envia; Ctrl+N insere uma quebra de linha. Você pode continuar editando, mudar de canal ou redimensionar durante o envio. A confirmação inclui a mensagem no histórico e remove somente o texto enviado que permaneceu intacto, preservando continuação e texto reescrito. Mensagens de outras contas chegam automaticamente; edições, exclusões e mudanças de canais também atualizam a tela. Eventos repetidos e confirmações REST/WS são reconciliados pelo ID da mensagem. Quando você está no fim, a tela acompanha novas mensagens; ao ler mensagens anteriores, mostra um indicador sem deslocar a leitura. End ou clique nesse indicador volta ao fim.
 
 A janela guarda até 1.000 mensagens ou 4 MiB de JSON serializado. Carregar páginas antigas além desse limite libera mensagens recentes; End consulta-as novamente. Não há histórico salvo no disco. Trocar de canal ou servidor libera a janela anterior; voltar exige abrir um canal para uma nova consulta. F6 descarta a janela ao voltar à conta.
 
@@ -232,10 +232,21 @@ Use ao menos 44 colunas e 14 linhas. Na altura mínima, o tópico fica oculto pa
 
 ### Imagens e player de vídeo
 
-O programa consulta suporte a Sixel e tamanho das células do terminal. Em
-terminal compatível, baixa e mostra as imagens JPEG, PNG, WebP e GIF visíveis na
-conversa ativa; GIF aparece com seu primeiro frame. Sem suporte confirmado,
-mostra cards e metadados em texto, sem baixar imagens automaticamente.
+O programa consulta suporte aos protocolos gráficos Kitty e Sixel e o tamanho
+das células. Também reconhece terminais iTerm2 pela identificação do ambiente.
+Kitty e terminais que implementam seu protocolo podem mostrar imagens e vídeo
+sem Sixel. A libchafa codifica os pixels para Kitty/iTerm2; a libsixel mantém a
+saída Sixel. Esses modos exibem pixels, sem converter imagens em caracteres.
+
+Imagens já visíveis são preservadas ao digitar ou mudar o foco. No protocolo
+Kitty, a rolagem move e recorta a imagem sem reenviar seus pixels. As atualizações
+da conversa e do vídeo são agrupadas quando o terminal oferece atualização sincronizada.
+
+Em terminal compatível, baixa e mostra as imagens JPEG, PNG, WebP e GIF visíveis
+na conversa ativa; GIF aparece com seu primeiro frame. Sem protocolo compatível
+ou tamanho das células disponível, mostra cards e metadados em texto, sem baixar
+imagens automaticamente. Multiplexadores precisam encaminhar as consultas e o
+protocolo gráfico; a identificação iTerm2 é desativada dentro de tmux/screen.
 
 Pressione F7 com o histórico em foco ou clique numa mídia. Quando houver vários
 itens visíveis, escolha com ↑/↓ e Enter, ou clique na lista. Vídeos MP4, WebM e

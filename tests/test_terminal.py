@@ -49,11 +49,13 @@ class TerminalStream(pyte.ByteStream):
 
 
 class Terminal:
-    def __init__(self, arguments=(), *, terminal_type="xterm-256color", environment=None, allow_local_http=True):
+    def __init__(self, arguments=(), *, terminal_type="xterm-256color", environment=None, allow_local_http=True,
+                 unset_environment=()):
         self.master, self.slave = pty.openpty()
         self.original = termios.tcgetattr(self.slave)
         fcntl.ioctl(self.slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
         env = dict(os.environ, TERM=terminal_type, LANG="C.UTF-8", LC_ALL="C.UTF-8")
+        for key in unset_environment: env.pop(key, None)
         # Existing PTY suites must never open the user's personal wallet.
         env["DBUS_SESSION_BUS_ADDRESS"] = "unix:path=/nonexistent/papo-test-bus"
         self.configuration = tempfile.TemporaryDirectory(prefix="papo-terminal-config-")

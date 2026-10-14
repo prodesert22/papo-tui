@@ -1,5 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
-#include "ui/sixel.h"
+#include "ui/graphics.h"
 #include "ui/mouse.h"
 #include "ui/chat.h"
 #include "ui/theme.h"
@@ -1006,7 +1006,7 @@ int chat_demo_run(void)
             draw(ui); redraw = false; paste_steps = 0;
         }
         wint_t key;
-        int type = sixel_terminal_input(&key);
+        int type = graphics_terminal_input(&key);
         if (type == ERR) {
             if (redraw) { draw(ui); redraw = false; paste_steps = 0; }
             continue;

@@ -13,6 +13,7 @@ pkg_check_modules(NCURSES REQUIRED IMPORTED_TARGET ncursesw>=6.1)
 pkg_check_modules(FORM REQUIRED IMPORTED_TARGET formw>=6.1)
 pkg_check_modules(UNIBREAK REQUIRED IMPORTED_TARGET libunibreak>=6.1)
 pkg_check_modules(SIXEL REQUIRED IMPORTED_TARGET libsixel>=1.8)
+pkg_check_modules(CHAFA REQUIRED IMPORTED_TARGET chafa>=1.16)
 pkg_check_modules(MPV REQUIRED IMPORTED_TARGET mpv>=2.0)
 pkg_check_modules(AVFORMAT REQUIRED IMPORTED_TARGET libavformat>=58)
 pkg_check_modules(AVCODEC REQUIRED IMPORTED_TARGET libavcodec>=58)
@@ -67,8 +68,8 @@ add_library(papo_send_editor src/ui/send_editor.c src/ui/text.c src/app/instance
 target_link_libraries(papo_send_editor PUBLIC papo_outbox papo_sessions PkgConfig::NCURSES PkgConfig::UNIBREAK)
 target_compile_options(papo_send_editor PRIVATE -Wall -Wextra -Wpedantic -Werror)
 
-add_library(papo_media src/ui/media.c src/ui/sixel.c src/ui/message_blocks.c)
-target_link_libraries(papo_media PUBLIC papo_send_editor PkgConfig::SIXEL PkgConfig::MPV
+add_library(papo_media src/ui/media.c src/ui/graphics.c src/ui/sixel.c src/ui/message_blocks.c)
+target_link_libraries(papo_media PUBLIC papo_send_editor PkgConfig::SIXEL PkgConfig::CHAFA PkgConfig::MPV
     PkgConfig::AVFORMAT PkgConfig::AVCODEC PkgConfig::AVUTIL PkgConfig::SWSCALE Threads::Threads)
 target_compile_options(papo_media PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_executable(papo-tui src/main.c src/ui/login.c src/ui/chat.c src/ui/history.c src/ui/profiles.c src/ui/theme.c src/ui/button.c)

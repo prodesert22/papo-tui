@@ -1,6 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include "ui/media.h"
-#include "ui/sixel.h"
+#include "ui/graphics.h"
 #include "ui/text.h"
 #include "ui/theme.h"
 #include "net/media.h"
@@ -30,13 +30,13 @@ typedef struct {
     message_media item;
     entry_state state;
     char *path;
-    sixel_image image;
+    graphics_image image;
     uint64_t token, used;
-    int width, height, top, bottom;
+    int width, height;
     const char *error;
 } cache_entry;
 typedef struct { int entry, y, x, width, height, top, bottom; } placement;
-typedef struct { char *path; uint64_t token; int width, height, top, bottom; bool video; } job;
+typedef struct { char *path; uint64_t token; int width, height; bool video; graphics_terminal terminal; uint32_t image_id; bool preview; } job;
 struct media_view {
     auth_client *auth;
     media_download *download;
@@ -44,13 +44,14 @@ struct media_view {
     placement visible[VISIBLE_COUNT];
     int visible_count, fetching;
     uint64_t serial, tick, generation;
+    graphics_terminal terminal;
     pthread_t thread;
     pthread_mutex_t lock;
     pthread_cond_t wake;
     bool started, stopping, pending, result_ready;
     atomic_uint_fast64_t active;
     job task;
-    sixel_image result;
+    graphics_image result;
     uint64_t result_token;
     const char *result_error;
     int pause_commands, mute_commands, seek_commands, volume_commands;
@@ -61,13 +62,13 @@ struct media_view {
     int selected, modal_entry, modal_width, modal_height;
     message_media selected_item;
     uint64_t modal_token;
-    sixel_image modal_image;
+    graphics_image modal_image;
     const char *modal_error;
 };
 static void delete_entry(cache_entry *e)
 {
     if (e->path) { unlink(e->path); free(e->path); }
-    sixel_image_free(&e->image); memset(e, 0, sizeof(*e));
+    graphics_image_free(&e->image); memset(e, 0, sizeof(*e));
 }
 static void free_job(job *j) { free(j->path); memset(j, 0, sizeof(*j)); }
 typedef struct { media_view *view; uint64_t token; } image_guard;
@@ -76,7 +77,7 @@ static int image_interrupt(void *context)
     image_guard *guard = context;
     return atomic_load(&guard->view->active) != guard->token;
 }
-static bool image_decode(const job *j, sixel_image *out, media_view *v)
+static bool image_decode(const job *j, graphics_image *out, media_view *v)
 {
     AVFormatContext *format = avformat_alloc_context();
     AVCodecContext *decoder = NULL;
@@ -144,12 +145,10 @@ static bool image_decode(const job *j, sixel_image *out, media_view *v)
             rgb[at + (size_t)c] = (unsigned char)((color * a + bg[c] * (255 - a)) / 255);
         }
     }
-    int top = j->top, bottom = j->bottom;
-    if (top < 0 || bottom < 0 || top + bottom >= h) goto done;
-    int visible_h = h - top - bottom;
-    visible_h -= visible_h % 6; /* Sixel bands never cross the viewport. */
-    if (visible_h < 6) goto done;
-    ok = atomic_load(&v->active) == j->token && sixel_image_encode(rgb + (size_t)top * (size_t)w * 3, w, visible_h, out);
+    if (atomic_load(&v->active) != j->token) goto done;
+    ok = j->preview ? graphics_image_encode_preview(rgb, w, h, j->terminal, j->image_id, out) :
+                     graphics_image_encode_id(rgb, w, h, j->terminal, j->image_id, out);
+    if (atomic_load(&v->active) != j->token) { graphics_image_free(out); ok = false; }
  done:
     av_dict_free(&options); sws_freeContext(scale); free(rgba); free(rgb);
     av_packet_free(&packet); av_frame_free(&frame); avcodec_free_context(&decoder);
@@ -173,10 +172,10 @@ static mpv_handle *player_create(mpv_render_context **render)
  error:
     mpv_terminate_destroy(player); return NULL;
 }
-static void publish(media_view *v, uint64_t token, sixel_image *image, const char *error)
+static void publish(media_view *v, uint64_t token, graphics_image *image, const char *error)
 {
     pthread_mutex_lock(&v->lock);
-    sixel_image_free(&v->result); v->result = *image; memset(image, 0, sizeof(*image));
+    graphics_image_free(&v->result); v->result = *image; memset(image, 0, sizeof(*image));
     v->result_token = token; v->result_error = error; v->result_ready = true;
     pthread_mutex_unlock(&v->lock);
 }
@@ -206,7 +205,7 @@ static void *worker(void *context)
         if (pending) {
             if (atomic_load(&v->active) != next.token) { free_job(&next); continue; }
             if (!next.video) {
-                sixel_image image = {0};
+                graphics_image image = {0};
                 bool ok = image_decode(&next, &image, v);
                 publish(v, next.token, &image, ok ? NULL : "Imagem inválida, grande demais ou não suportada.");
                 free_job(&next); continue;
@@ -218,7 +217,7 @@ static void *worker(void *context)
             player = player_create(&render);
             const char *args[] = {"loadfile", current.path, "replace", NULL};
             if (!player || mpv_command(player, args) < 0) {
-                sixel_image empty = {0}; publish(v, current.token, &empty, "Não foi possível iniciar o player.");
+                graphics_image empty = {0}; publish(v, current.token, &empty, "Não foi possível iniciar o player.");
                 if (render) mpv_render_context_free(render);
                 if (player) mpv_terminate_destroy(player);
                 render = NULL; player = NULL; free_job(&current); continue;
@@ -234,7 +233,7 @@ static void *worker(void *context)
             while ((event = mpv_wait_event(player, 0))->event_id != MPV_EVENT_NONE) {
                 if (event->event_id == MPV_EVENT_END_FILE) {
                     const mpv_event_end_file *end = event->data;
-                    if (end && end->error < 0) { sixel_image empty = {0}; publish(v, current.token, &empty, "Vídeo inválido ou codec indisponível."); }
+                    if (end && end->error < 0) { graphics_image empty = {0}; publish(v, current.token, &empty, "Vídeo inválido ou codec indisponível."); }
                 }
             }
             int paused = 0, muted = 0;
@@ -259,14 +258,14 @@ static void *worker(void *context)
                 last_frame = now; force_frame = false;
                 size_t pixels = (size_t)current.width * (size_t)current.height;
                 unsigned char *rgba = malloc(pixels * 4), *rgb = malloc(pixels * 3);
-                sixel_image image = {0};
+                graphics_image image = {0};
                 if (rgba && rgb) {
                     int dimensions[] = {current.width, current.height}; size_t stride = (size_t)current.width * 4;
                     mpv_render_param params[] = {{MPV_RENDER_PARAM_SW_SIZE, dimensions}, {MPV_RENDER_PARAM_SW_FORMAT, "rgb0"},
                         {MPV_RENDER_PARAM_SW_STRIDE, &stride}, {MPV_RENDER_PARAM_SW_POINTER, rgba}, {MPV_RENDER_PARAM_INVALID, NULL}};
                     if (mpv_render_context_render(render, params) >= 0) {
                         for (size_t i = 0; i < pixels; ++i) memcpy(rgb + i * 3, rgba + i * 4, 3);
-                        if (sixel_image_encode(rgb, current.width, current.height, &image)) publish(v, current.token, &image, NULL);
+                        if (graphics_image_encode_id(rgb, current.width, current.height, current.terminal, current.image_id, &image)) publish(v, current.token, &image, NULL);
                     }
                 }
                 free(rgba); free(rgb);
@@ -288,13 +287,13 @@ static void *worker(void *context)
     if (player) mpv_terminate_destroy(player);
     free_job(&current); return NULL;
 }
-static bool submit_job(media_view *v, const char *path, uint64_t token, int w, int h, int top, int bottom, bool video)
+static bool submit_job(media_view *v, const char *path, uint64_t token, int w, int h, bool video)
 {
     char *copy = strdup(path);
     if (!copy) return false;
     pthread_mutex_lock(&v->lock);
     free_job(&v->task);
-    v->task = (job){copy, token, w, h, top, bottom, video};
+    v->task = (job){copy, token, w, h, video, graphics_terminal_get(), graphics_image_next_id(), v->modal == MODAL_NONE};
     v->pending = true; atomic_store(&v->active, token); pthread_cond_signal(&v->wake);
     pthread_mutex_unlock(&v->lock); return true;
 }
@@ -333,12 +332,13 @@ static void close_modal(media_view *v)
     v->playing = false; v->pause_commands = v->seek_commands = v->volume_commands = v->mute_commands = 0;
     pthread_cond_signal(&v->wake); pthread_mutex_unlock(&v->lock);
     if (v->window) { delwin(v->window); v->window = NULL; }
-    sixel_image_free(&v->modal_image); v->modal = MODAL_NONE; v->modal_entry = -1;
+    graphics_image_free(&v->modal_image); v->modal = MODAL_NONE; v->modal_entry = -1;
     v->modal_token = 0; v->modal_error = NULL;
 }
 void media_view_reset(media_view *v)
 {
     if (!v) return;
+    graphics_images_clear();
     close_modal(v); media_download_cancel(v->download); v->fetching = -1;
     for (int i = 0; i < CACHE_COUNT; ++i) delete_entry(&v->cache[i]);
     v->visible_count = 0; v->generation = auth_context_generation(v->auth);
@@ -349,7 +349,7 @@ void media_view_destroy(media_view *v)
     pthread_mutex_lock(&v->lock); v->stopping = true; atomic_store(&v->active, 0);
     pthread_cond_signal(&v->wake); pthread_mutex_unlock(&v->lock);
     if (v->started) pthread_join(v->thread, NULL);
-    media_view_reset(v); free_job(&v->task); sixel_image_free(&v->result);
+    media_view_reset(v); free_job(&v->task); graphics_image_free(&v->result);
     pthread_cond_destroy(&v->wake); pthread_mutex_destroy(&v->lock);
     media_download_destroy(v->download); free(v);
 }
@@ -370,7 +370,7 @@ static int cache_find(media_view *v, const message_media *item)
     if (oldest >= 0) { delete_entry(&v->cache[oldest]); v->cache[oldest].item = *item; }
     return oldest;
 }
-void media_view_begin(media_view *v) { if (v) { v->visible_count = 0; ++v->tick; } }
+void media_view_begin(media_view *v) { if (v) { graphics_frame_begin(); v->visible_count = 0; ++v->tick; } }
 void media_view_offer(media_view *v, const message_media *item, int y, int x, int width, int height, int top, int bottom)
 {
     if (!v || v->visible_count == VISIBLE_COUNT) return;
@@ -449,11 +449,15 @@ static bool request_entry(media_view *v, int index)
 }
 static void geometry(int columns, int rows, int *w, int *h)
 {
-    sixel_terminal t = sixel_terminal_get();
+    graphics_terminal t = graphics_terminal_get();
     *w = columns * t.cell_width; *h = rows * t.cell_height;
     if (*w > 640) *w = 640;
     if (*h > 360) *h = 360;
-    *h -= *h % 6;
+    if (t.protocol == GRAPHICS_SIXEL) *h -= *h % 6;
+    else {
+        if (t.cell_width > 0) *w -= *w % t.cell_width;
+        if (t.cell_height > 0) *h -= *h % t.cell_height;
+    }
 }
 bool media_view_poll(media_view *v, history *h)
 {
@@ -462,7 +466,15 @@ bool media_view_poll(media_view *v, history *h)
         bool changed = v->visible_count || v->modal != MODAL_NONE || v->fetching >= 0;
         media_view_reset(v); return changed;
     }
-    bool changed = media_download_poll(v->download);
+    graphics_terminal terminal = graphics_terminal_get();
+    bool changed = terminal.protocol != v->terminal.protocol || terminal.cell_width != v->terminal.cell_width ||
+                   terminal.cell_height != v->terminal.cell_height || terminal.supported != v->terminal.supported;
+    if (changed && v->modal_token) {
+        v->modal_token = 0; graphics_image_free(&v->modal_image);
+        if (v->modal == MODAL_PLAYING) v->modal = MODAL_LOADING;
+    }
+    v->terminal = terminal;
+    changed |= media_download_poll(v->download);
     for (int i = 0; i < CACHE_COUNT; ++i) if (*v->cache[i].item.id && !live(h, &v->cache[i].item)) {
         if (v->modal_entry == i) close_modal(v);
         if (v->fetching == i) { media_download_cancel(v->download); v->fetching = -1; }
@@ -480,14 +492,14 @@ bool media_view_poll(media_view *v, history *h)
         changed = true;
         if (v->modal_token && v->result_token == v->modal_token) {
             if (v->result_error) { v->modal_error = v->result_error; v->modal = MODAL_ERROR; }
-            else { sixel_image_free(&v->modal_image); v->modal_image = v->result; memset(&v->result, 0, sizeof(v->result)); v->modal = MODAL_PLAYING; }
+            else { graphics_image_free(&v->modal_image); v->modal_image = v->result; memset(&v->result, 0, sizeof(v->result)); v->modal = MODAL_PLAYING; }
         } else for (int i = 0; i < CACHE_COUNT; ++i) if (v->cache[i].token && v->cache[i].token == v->result_token) {
             cache_entry *e = &v->cache[i];
             if (v->result_error) { e->error = v->result_error; e->state = ENTRY_ERROR; }
-            else { sixel_image_free(&e->image); e->image = v->result; memset(&v->result, 0, sizeof(v->result)); e->state = ENTRY_READY; }
+            else { graphics_image_free(&e->image); e->image = v->result; memset(&v->result, 0, sizeof(v->result)); e->state = ENTRY_READY; }
             break;
         }
-        sixel_image_free(&v->result); v->result_ready = false;
+        graphics_image_free(&v->result); v->result_ready = false;
     }
     changed |= v->status_changed; v->status_changed = false;
     bool idle = !v->pending;
@@ -495,7 +507,7 @@ bool media_view_poll(media_view *v, history *h)
     size_t bytes = 0;
     for (int i = 0; i < CACHE_COUNT; ++i) if (!v->cache[i].item.video) {
         struct stat st;
-        bytes += v->cache[i].image.length;
+        bytes += graphics_image_bytes(&v->cache[i].image);
         if (v->cache[i].path && !stat(v->cache[i].path, &st)) bytes += (size_t)st.st_size;
     }
     while (bytes > CACHE_BYTES) {
@@ -507,10 +519,10 @@ bool media_view_poll(media_view *v, history *h)
         }
         if (oldest < 0) break;
         cache_entry *e = &v->cache[oldest]; struct stat st;
-        bytes -= e->image.length;
+        bytes -= graphics_image_bytes(&e->image);
         if (e->path && !stat(e->path, &st)) bytes -= (size_t)st.st_size;
         if (e->path) { unlink(e->path); free(e->path); e->path = NULL; }
-        sixel_image_free(&e->image); e->state = ENTRY_ERROR; e->error = "Limite do cache atingido. F7: tentar novamente.";
+        graphics_image_free(&e->image); e->state = ENTRY_ERROR; e->error = "Limite do cache atingido. F7: tentar novamente.";
         changed = true;
     }
     if (v->modal != MODAL_NONE && v->modal != MODAL_LIST && v->modal != MODAL_ERROR && v->modal_entry >= 0) {
@@ -521,13 +533,13 @@ bool media_view_poll(media_view *v, history *h)
             int w, height; geometry(COLS - 10, LINES - 11, &w, &height);
             if (w > 0 && height >= 6) {
                 v->modal_token = ++v->serial;
-                if (!submit_job(v, e->path, v->modal_token, w, height, 0, 0, e->item.video)) { v->modal_error = "Não foi possível preparar o player."; v->modal = MODAL_ERROR; }
+                if (!submit_job(v, e->path, v->modal_token, w, height, e->item.video)) { v->modal_error = "Não foi possível preparar o player."; v->modal = MODAL_ERROR; }
                 changed = true;
             }
         }
         return changed;
     }
-    if (v->modal != MODAL_NONE || !sixel_terminal_get().supported) return changed;
+    if (v->modal != MODAL_NONE || !graphics_terminal_get().supported) return changed;
     bool in_worker = !idle;
     for (int i = 0; i < CACHE_COUNT; ++i) in_worker |= v->cache[i].state == ENTRY_JOB;
     for (int i = 0; i < v->visible_count; ++i) {
@@ -535,13 +547,14 @@ bool media_view_poll(media_view *v, history *h)
         if (!*e->item.id || e->item.video || p->height < 1) continue;
         if (e->state == ENTRY_NEW && v->fetching < 0) { changed |= request_entry(v, p->entry); break; }
         int w, height; geometry(p->width, p->height, &w, &height);
-        sixel_terminal term = sixel_terminal_get();
+        graphics_terminal term = graphics_terminal_get();
         int top = p->top * term.cell_height, bottom = p->bottom * term.cell_height;
         if (w < 1 || height < 6 || top + bottom >= height) continue;
-        bool resize = e->width != w || e->height != height || e->top != top || e->bottom != bottom;
+        bool resize = e->width != w || e->height != height || e->image.protocol != term.protocol ||
+                      e->image.cell_width != term.cell_width || e->image.cell_height != term.cell_height;
         if (!in_worker && e->path && (e->state == ENTRY_FILE || (e->state == ENTRY_READY && resize))) {
-            e->token = ++v->serial; e->width = w; e->height = height; e->top = top; e->bottom = bottom;
-            if (submit_job(v, e->path, e->token, w, height, top, bottom, false)) e->state = ENTRY_JOB;
+            e->token = ++v->serial; e->width = w; e->height = height;
+            if (submit_job(v, e->path, e->token, w, height, false)) e->state = ENTRY_JOB;
             else { e->state = ENTRY_ERROR; e->error = "Memória insuficiente para exibir a imagem."; }
             break;
         }
@@ -559,7 +572,7 @@ static void select_item(media_view *v, int index)
     v->selected_item = item;
     v->modal_entry = cache_find(v, &item);
     v->modal = MODAL_LOADING;
-    if (v->modal_entry < 0 || !sixel_terminal_get().supported) { v->modal_error = "Este terminal não confirmou suporte a Sixel."; v->modal = MODAL_ERROR; }
+    if (v->modal_entry < 0 || !graphics_terminal_get().supported) { v->modal_error = "Este terminal não oferece um protocolo gráfico compatível."; v->modal = MODAL_ERROR; }
     else if (v->cache[v->modal_entry].state == ENTRY_ERROR) { delete_entry(&v->cache[v->modal_entry]); v->cache[v->modal_entry].item = v->selected_item; }
 }
 bool media_view_modal(const media_view *v) { return v && v->modal != MODAL_NONE; }
@@ -580,7 +593,7 @@ bool media_view_key(media_view *v, int type, wint_t key)
         if ((type == OK && (key == '\n' || key == '\r')) || (type == KEY_CODE_YES && key == KEY_ENTER)) select_item(v, v->selected);
         return true;
     }
-    if (v->modal == MODAL_ERROR && type == OK && (key == '\r' || key == '\n') && v->modal_entry >= 0 && sixel_terminal_get().supported) {
+    if (v->modal == MODAL_ERROR && type == OK && (key == '\r' || key == '\n') && v->modal_entry >= 0 && graphics_terminal_get().supported) {
         delete_entry(&v->cache[v->modal_entry]); v->cache[v->modal_entry].item = v->selected_item;
         v->modal = MODAL_LOADING; v->modal_token = 0; return true;
     }
@@ -633,7 +646,7 @@ void media_view_draw(media_view *v)
     if (v->window && (getmaxx(v->window) != width || getmaxy(v->window) != height)) {
         delwin(v->window); v->window = NULL;
         if (v->modal_token && v->modal_entry >= 0) {
-            v->modal_token = 0; sixel_image_free(&v->modal_image); v->modal = MODAL_LOADING;
+            v->modal_token = 0; graphics_image_free(&v->modal_image); v->modal = MODAL_LOADING;
         }
     }
     if (!v->window) v->window = newwin(height, width, 2, 3);
@@ -668,18 +681,22 @@ void media_view_draw(media_view *v)
     }
     touchwin(w); wnoutrefresh(w);
 }
-void media_view_flush(media_view *v)
+void media_view_prepare(media_view *v)
 {
-    if (!v || !sixel_terminal_get().supported) return;
+    if (!v || !graphics_terminal_get().supported) return;
     if (media_view_modal(v)) {
-        if (v->window && v->modal == MODAL_PLAYING) sixel_image_draw(&v->modal_image, getbegy(v->window) + 2, getbegx(v->window) + 2);
+        if (v->window && v->modal == MODAL_PLAYING) graphics_image_place(&v->modal_image, getbegy(v->window) + 2, getbegx(v->window) + 2, 0, 0);
         return;
     }
     for (int i = 0; i < v->visible_count; ++i) {
         placement *p = &v->visible[i]; cache_entry *e = &v->cache[p->entry];
         int w, h; geometry(p->width, p->height, &w, &h);
-        sixel_terminal t = sixel_terminal_get();
-        if (e->state == ENTRY_READY && e->width == w && e->height == h && e->top == p->top * t.cell_height && e->bottom == p->bottom * t.cell_height)
-            sixel_image_draw(&e->image, p->y, p->x);
+        graphics_terminal t = graphics_terminal_get();
+        if (e->state != ENTRY_READY || e->width != w || e->height != h) continue;
+        const graphics_image *image = t.protocol == GRAPHICS_KITTY ? &e->image :
+            graphics_image_crop(&e->image, p->top * t.cell_height, p->bottom * t.cell_height);
+        graphics_image_place(image, p->y, p->x,
+            t.protocol == GRAPHICS_KITTY ? p->top * t.cell_height : 0,
+            t.protocol == GRAPHICS_KITTY ? p->bottom * t.cell_height : 0);
     }
 }
