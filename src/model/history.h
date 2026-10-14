@@ -8,6 +8,7 @@
 #define HISTORY_BYTE_LIMIT (4U * 1024U * 1024U)
 
 typedef struct history history;
+typedef enum { HISTORY_NOTICE_READ, HISTORY_NOTICE_EVENT, HISTORY_NOTICE_COUNT } history_notice_kind;
 /* Owns all JSON models; borrows the auth client. One active conversation, no
  * inactive history cache. Returned objects/strings are borrowed until poll,
  * event, confirmation, selection, reload or destroy. Callers retain anchors
@@ -49,6 +50,9 @@ const char *history_users_notice(const history *h);
 const char *history_mention_name(void *context, const char *id);
 const char *history_author(const history *h, const char *id);
 const char *history_status(const history *h);
+/* Independent latest read/event notices. Empty text clears that context. */
+const char *history_notice(const history *h, history_notice_kind kind, uint64_t *revision);
+const char *history_event_compact(const history *h);
 bool history_loading(const history *h);
 bool history_has_more(const history *h);
 bool history_evicted(const history *h);

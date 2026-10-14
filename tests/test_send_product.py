@@ -28,7 +28,7 @@ class SendProduct(unittest.TestCase):
         self.wait(terminal, 'geral')
         terminal.send('\x1bOB\x1bOB\n')
         self.wait(terminal, '# geral · Histórico')
-        self.wait(terminal, 'Escreva uma mensagem')
+        self.wait(terminal, 'Editor')
         return terminal
 
     def editor_text(self, terminal):

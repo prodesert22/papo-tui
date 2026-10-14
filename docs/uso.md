@@ -230,6 +230,15 @@ Uma falha de página antiga preserva as mensagens já carregadas e o ponto de le
 
 Use ao menos 44 colunas e 14 linhas. Na altura mínima, o tópico fica oculto para preservar espaço de leitura. A partir de 80 colunas, lista e histórico aparecem juntos; em telas estreitas, os controles de foco alternam o painel visível. Ao voltar ao formulário da conta, amplie para 44×22. Colagem delimitada no editor ou conversa preserva as linhas e nunca envia automaticamente. Nas abas, sem canal de texto aberto ou em modais, a colagem não aciona controles.
 
+A última linha acompanha o foco: mostra à esquerda somente as dicas de abas,
+canais, histórico, editor ou do cartão/modal aberto. À direita ficam os avisos,
+separados por `|`, com o mais recente no canto direito. Conexão, histórico,
+envio, edição, eventos e mensagens não lidas têm avisos independentes; uma
+confirmação de envio não apaga o estado da conexão. Um novo aviso substitui
+apenas o anterior do mesmo contexto. Em janelas estreitas, os textos ficam
+mais curtos; `+N` indica avisos antigos que reaparecem ao ampliar a janela.
+Trocar de canal limpa os avisos da conversa anterior e preserva a conexão.
+
 ### Menções
 
 Digite `@` no editor para abrir o cartão de usuários e continue digitando para

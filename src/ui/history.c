@@ -10,6 +10,7 @@
 #include "app/session_store.h"
 #include "ui/send_editor.h"
 #include "ui/mention_popup.h"
+#include "ui/status_bar.h"
 #include <wctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -36,6 +37,8 @@ typedef struct {
     char anchor[37];
     char editor_channel[64];
     const char *feedback;
+    status_bar status;
+    uint64_t notice_revisions[HISTORY_NOTICE_COUNT];
     uint64_t retry_id;
     uint64_t unseen;
     size_t section, offset;
@@ -230,6 +233,110 @@ static int input_height(view *ui)
 {
     return getmaxy(ui->body) - ui->editor_border - 1 - (getmaxy(ui->body) >= 10 ? 1 : 0);
 }
+static bool collect_notices(view *ui, auth_client *auth)
+{
+    const char *connection = NULL;
+    if (!auth_has_session(auth))
+        connection = "Revalidando sessão…";
+    else if (auth_ws_reconnecting(auth))
+        connection = "Reconectando tempo real…";
+    else
+        switch (auth_ws_state(auth)) {
+        case WS_OPEN:
+            connection = "Tempo real conectado";
+            break;
+        case WS_QUEUED:
+        case WS_CONNECTING:
+            connection = "Conectando tempo real…";
+            break;
+        case WS_ERROR:
+            connection = auth_ws_message(auth);
+            break;
+        case WS_CLOSING:
+        case WS_CLOSED:
+            connection = "Tempo real encerrado";
+            break;
+        default:
+            break;
+        }
+    const char *compact_connection = auth_ws_state(auth) == WS_OPEN && auth_has_session(auth) &&
+                                     !auth_ws_reconnecting(auth) ? "Conectado" : connection;
+    bool changed = status_bar_set_compact(&ui->status, STATUS_CONNECTION, connection, compact_connection);
+    changed |= status_bar_set_compact(&ui->status, STATUS_SEND,
+                                      *ui->editor_channel ? send_editor_feedback(ui->editor) : NULL,
+                                      *ui->editor_channel ? send_editor_compact_notice(ui->editor) : NULL);
+    /* Apply model notices in the order in which their contexts changed. */
+    for (int n = 0; n < HISTORY_NOTICE_COUNT; ++n) {
+        int next = -1;
+        uint64_t earliest = UINT64_MAX;
+        for (int kind = 0; kind < HISTORY_NOTICE_COUNT; ++kind) {
+            uint64_t revision = 0;
+            history_notice(ui->model, (history_notice_kind)kind, &revision);
+            if (revision != ui->notice_revisions[kind] && revision < earliest) {
+                next = kind;
+                earliest = revision;
+            }
+        }
+        if (next < 0) break;
+        const char *message = history_notice(ui->model, (history_notice_kind)next, NULL);
+        if (next == HISTORY_NOTICE_EVENT) {
+            bool replaced =
+                status_bar_set_compact(&ui->status, STATUS_EVENT, message, history_event_compact(ui->model));
+            changed |= replaced || status_bar_touch(&ui->status, STATUS_EVENT);
+        } else
+            changed |= status_bar_set(&ui->status, STATUS_HISTORY, message);
+        ui->notice_revisions[next] = earliest;
+    }
+    changed |= status_bar_set(&ui->status, STATUS_EDITOR, ui->feedback);
+    char unread[128] = "";
+    if (ui->unseen)
+        snprintf(unread, sizeof(unread), "%llu novas mensagens · End: ir ao fim",
+                 (unsigned long long)ui->unseen);
+    changed |= status_bar_set(&ui->status, STATUS_UNREAD, unread);
+    return changed;
+}
+static void draw_footer(view *ui)
+{
+    const char *full, *shorter, *minimal;
+    if (ui->duplicate_modal) {
+        full = "←→ escolher · Enter confirmar · Esc cancelar";
+        shorter = "Enter confirmar · Esc cancelar";
+        minimal = "Enter · Esc";
+    } else if (media_view_modal(ui->media)) {
+        full = shorter = minimal = "Esc: voltar da mídia";
+    } else if (mention_popup_open(ui->mentions)) {
+        full = "↑↓ escolher · Tab/Enter mencionar · Roda: rolar · Esc fechar";
+        shorter = "↑↓ escolher · Tab mencionar · Esc fechar";
+        minimal = "↑↓ · Tab";
+    } else if (ui->focus == SERVER_TABS) {
+        bool adding = ui->tab_cursor == ui->connections->count;
+        full = adding ? "←→ servidores · Enter adicionar · ↓ canais · Ctrl+Q sair"
+                      : "←→ servidores · Enter ativar · ↓ canais · Ctrl+Q sair";
+        shorter =
+            adding ? "←→ servidores · ↓ canais · Enter adicionar" : "←→ servidores · ↓ canais · Enter ativar";
+        minimal = "←→ · Enter";
+    } else if (ui->focus == CHANNEL_LIST) {
+        full = "↑↓ canais · Enter/→ abrir · ← abas · Ctrl+R atualizar";
+        shorter = "↑↓ canais · Enter abrir · ← abas";
+        minimal = "↑↓ · Enter";
+    } else if (ui->focus == MESSAGE_INPUT) {
+        full = "Enter enviar · Ctrl+N nova linha · @ mencionar · Esc histórico · Ctrl+T tentar";
+        shorter = "Enter enviar · Ctrl+N linha · Esc histórico";
+        minimal = "Enter";
+    } else {
+        full = input(ui)
+                   ? "↑↓ rolar · PgUp/PgDn páginas · F7 mídia · Digite: editor · ← canais · Ctrl+R atualizar"
+                   : "↑↓ rolar · ← canais · Ctrl+R atualizar";
+        shorter = "↑↓ rolar · F7 mídia · Ctrl+R atualizar";
+        minimal = "↑↓ · F7";
+    }
+    wbkgd(ui->footer, COLOR_PAIR(PANEL));
+    werase(ui->footer);
+    wattrset(ui->footer, COLOR_PAIR(BORDER));
+    mvwhline(ui->footer, 0, 0, ACS_HLINE, getmaxx(ui->footer));
+    status_bar_draw(&ui->status, ui->footer, 1, full, shorter, minimal);
+}
+
 static void draw_confirmation(view *ui)
 {
     if (!ui->duplicate_modal) return;
@@ -271,20 +378,7 @@ static void draw(view *ui, auth_client *auth, draw_scope scope)
         if (COLS >= 80) mvwvline(ui->frame, CONTENT_Y, ui->side + 1, ACS_VLINE, LINES - CONTENT_Y - 3);
     }
     if (scope != DRAW_CONVERSATION) draw_tabs(ui, auth);
-    wbkgd(ui->footer, COLOR_PAIR(PANEL)); werase(ui->footer);
-    wattrset(ui->footer, COLOR_PAIR(PANEL_MUTED));
-    char progress[192];
-    const char *connection = auth_ws_reconnecting(auth) ? auth_message(auth) :
-                             history_recovering(ui->model) ? "Recuperando histórico…" : NULL;
-    if (ui->unseen) {
-        snprintf(progress, sizeof(progress), "%llu novas mensagens · End: ir ao fim%s",
-                 (unsigned long long)ui->unseen, connection ? " · Reconectando" : "");
-        text_label(ui->footer, 0, 1, COLS - 4, progress);
-    } else text_label(ui->footer, 0, 1, COLS - 4, connection ? connection : history_status(ui->model));
-    text_label(ui->footer, 1, 1, COLS - 4, ui->focus == SERVER_TABS ? "←→ servidores · Enter: adicionar · ↓ canais · Ctrl+Q: sair" :
-               ui->focus == CHANNEL_LIST ? "↑↓ canais · ← abas · → conversa · Ctrl+L: sair da conta" :
-               ui->focus == MESSAGE_INPUT ? "Enter enviar · Ctrl+N nova linha · Esc histórico · Ctrl+T tentar" :
-               "↑↓ rolar · F7 mídia · Digite: editor · Ctrl+R atualizar");
+    draw_footer(ui);
     if (ui->list && scope != DRAW_CONVERSATION) {
         wbkgd(ui->list, COLOR_PAIR(ui->focus == CHANNEL_LIST ? FOCUS_AREA : PANEL)); werase(ui->list);
         wattrset(ui->list, COLOR_PAIR(ui->focus == CHANNEL_LIST ? FOCUS_MUTED : PANEL_MUTED) | A_BOLD);
@@ -307,8 +401,6 @@ static void draw(view *ui, auth_client *auth, draw_scope scope)
             wattrset(ui->list, COLOR_PAIR(selected && ui->focus == CHANNEL_LIST ? FOCUSED : selected ? PANEL_ACTIVE : ui->focus == CHANNEL_LIST ? FOCUS_AREA : PANEL));
             text_label(ui->list, row + 1, 1, ui->side - 2, label);
         }
-        wattrset(ui->list, COLOR_PAIR(ui->focus == CHANNEL_LIST ? FOCUS_MUTED : PANEL_MUTED));
-        text_label(ui->list, getmaxy(ui->list) - 1, 1, ui->side - 2, "↑↓ escolher · Enter abrir");
     }
     if (ui->body && scope != DRAW_NAVIGATION) {
         wbkgd(ui->body, COLOR_PAIR(PANEL)); werase(ui->body);
@@ -356,14 +448,6 @@ static void draw(view *ui, auth_client *auth, draw_scope scope)
             wattrset(ui->body, COLOR_PAIR(PANEL_MUTED));
             text_label(ui->body, ui->editor_border + 1, 3, getmaxx(ui->body) - 6,
                        auth_has_session(auth) ? "Abra um canal de texto" : "Confirme a sessão");
-        }
-        if (getmaxy(ui->body) >= 10) {
-            wattrset(ui->body, COLOR_PAIR(PANEL_MUTED));
-            text_label(ui->body, getmaxy(ui->body) - 1, 2, getmaxx(ui->body) - 4,
-                       ui->feedback ? ui->feedback : editor ? send_editor_notice(ui->editor) : "Selecione uma conversa para escrever.");
-        } else if (editor || ui->feedback) {
-            wattrset(ui->footer, COLOR_PAIR(PANEL_MUTED));
-            text_label(ui->footer, 0, 1, COLS - 4, ui->feedback ? ui->feedback : send_editor_notice(ui->editor));
         }
         if (editing && editor) {
             text_layout measured; text_measure(editor, getmaxx(ui->body) - 6, &measured);
@@ -414,6 +498,8 @@ static void open_channel(view *ui)
         ui->feedback = "Não foi possível trocar o editor; rascunho preservado."; return;
     }
     if (history_select(ui->model, ui->highlighted)) {
+        for (int context = STATUS_HISTORY; context < STATUS_CONTEXT_COUNT; ++context)
+            status_bar_set(&ui->status, (status_context)context, NULL);
         media_view_reset(ui->media);
         snprintf(ui->editor_channel, sizeof(ui->editor_channel), "%s", text ? str(channel, "id") : "");
         ui->feedback = NULL;
@@ -558,6 +644,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                                  !ui->duplicate_modal && !media_view_modal(ui->media))) {
             redraw = true; scope = DRAW_ALL;
         }
+        if (collect_notices(ui, auth)) redraw = true;
         if (!auth_has_session(auth) && !auth_busy(auth)) break;
         if (redraw) { draw(ui, auth, scope); redraw = false; scope = DRAW_ALL; }
         wint_t key; int type = sixel_terminal_input(&key);
@@ -673,7 +760,8 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             }
             if (!(e.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED))) continue;
             if (media_view_click(ui->media, e.y, e.x)) continue;
-            if (ui->unseen && e.y == getbegy(ui->footer)) {
+            if (ui->unseen && e.y == getbegy(ui->footer) + 1 &&
+                status_bar_hit(&ui->status, STATUS_UNREAD, e.x - getbegx(ui->footer))) {
                 ui->at_end = true; ui->unseen = 0; ui->anchor[0] = 0; continue;
             }
             int y = e.y, x = e.x;

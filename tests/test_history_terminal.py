@@ -65,6 +65,9 @@ class HistoryTerminal(unittest.TestCase):
                 terminal.send('Rascunho preservado\x1b\x1bOH\x1bOD')
                 self.wait(terminal, 'Mensagem 0151')
                 self.wait(terminal, 'Foco: Canais')
+                # ncurses emits the footer after the conversation cells. Wait
+                # for the complete focus transition before recording colors.
+                self.wait(terminal, '↑↓ canais')
                 before = terminal.screen.display[8][26:]
                 requests = [r for r in server.requests if '/messages' in r[1]]
                 screen = ConversationObserver(80, 24)

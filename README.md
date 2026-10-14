@@ -180,6 +180,15 @@ O editor informa quando o envio está aguardando, enviando, confirmado, rejeitad
 
 Após uma queda, a aba ativa revalida a sessão, atualiza canais e recupera mensagens novas e a janela de histórico carregada, incluindo edições e exclusões ocorridas offline. Rascunhos e posição de leitura são preservados enquanto suas mensagens ainda estiverem disponíveis. Os limites de memória continuam valendo; se a mensagem usada como referência desaparecer, a leitura usa a próxima sobrevivente, ou a anterior. A recuperação não oferece replay completo: alterações fora da janela são consultadas ao abrir novamente esse trecho. Nenhum envio pendente é repetido automaticamente.
 
+A última linha acompanha o foco: mostra à esquerda somente as dicas de abas,
+canais, histórico, editor ou do cartão/modal aberto. À direita ficam os avisos,
+separados por `|`, com o mais recente no canto direito. Conexão, histórico,
+envio, edição, eventos e mensagens não lidas têm avisos independentes; uma
+confirmação de envio não apaga o estado da conexão. Um novo aviso substitui
+apenas o anterior do mesmo contexto. Em janelas estreitas, os textos ficam
+mais curtos; `+N` indica avisos antigos que reaparecem ao ampliar a janela.
+Trocar de canal limpa os avisos da conversa anterior e preserva a conexão.
+
 ## Menções
 
 Digite `@` no editor para abrir o cartão de usuários e continue digitando para

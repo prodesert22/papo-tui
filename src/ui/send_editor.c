@@ -19,6 +19,8 @@ struct send_editor {
     char channel[64];
     uint64_t generation, revision;
     const char *notice;
+    bool feedback;
+    const char *compact_notice;
 };
 
 static cursor_state *find_cursor(send_editor *editor, const char *channel)
@@ -77,6 +79,7 @@ static void synchronize_generation(send_editor *editor)
     editor->channel[0] = '\0';
     editor->generation = generation;
     editor->notice = "Confirme a sessão para continuar.";
+    editor->feedback = false;
 }
 
 bool send_editor_changed(send_editor *editor)
@@ -111,6 +114,7 @@ bool send_editor_select(send_editor *editor, const char *channel)
     memcpy(editor->channel, channel, strlen(channel) + 1);
     editor->revision = revision;
     editor->notice = "Escreva uma mensagem; Enter envia.";
+    editor->feedback = false;
     return true;
 }
 
@@ -123,6 +127,12 @@ text_buffer *send_editor_input(send_editor *editor)
 
 static void submit_notice(send_editor *editor, outbox_submit_result result)
 {
+    editor->feedback = true;
+    editor->compact_notice = result == OUTBOX_ACCEPTED ? "Aguardando envio" :
+                             result == OUTBOX_EMPTY ? "Mensagem vazia" :
+                             result == OUTBOX_BUSY ? "Envio em andamento" :
+                             result == OUTBOX_CONFIRM_DUPLICATION ? "Confirmar reenvio" :
+                             result == OUTBOX_NO_SESSION ? "Confirme a sessão" : "Falha no envio";
     switch (result) {
         case OUTBOX_ACCEPTED: editor->notice = "Mensagem aguardando envio; você pode continuar digitando."; break;
         case OUTBOX_EMPTY: editor->notice = "Escreva uma mensagem antes de enviar."; break;
@@ -131,6 +141,22 @@ static void submit_notice(send_editor *editor, outbox_submit_result result)
         case OUTBOX_NO_SESSION: editor->notice = "Confirme a sessão antes de enviar."; break;
         case OUTBOX_FULL: editor->notice = "Não há espaço para mais envios; revise os resultados pendentes."; break;
         default: editor->notice = "Não foi possível preparar o envio; rascunho preservado."; break;
+    }
+}
+static const char *compact_operation(const outbox_operation *operation)
+{
+    if (operation->state == OUTBOX_CONFIRMED) return "Mensagem confirmada";
+    if (operation->state == OUTBOX_SENDING) return "Enviando mensagem";
+    if (operation->state == OUTBOX_QUEUED) return "Aguardando envio";
+    if (operation->state == OUTBOX_UNCERTAIN) return "Envio sem confirmação";
+    if (operation->cancelled) return "Envio cancelado";
+    switch (operation->status) {
+        case 400: case 413: case 415: case 422: return "Mensagem recusada";
+        case 401: return "Envio não autorizado";
+        case 403: return "Sem permissão";
+        case 404: return "Conversa indisponível";
+        case 429: return "Limite de envios";
+        default: return "Envio falhou";
     }
 }
 
@@ -178,8 +204,15 @@ void send_editor_poll(send_editor *editor)
         }
     }
     outbox_operation latest;
-    if (outbox_latest(editor->box, editor->channel, &latest)) editor->notice = outbox_operation_notice(&latest);
+    if (outbox_latest(editor->box, editor->channel, &latest)) {
+        editor->notice = outbox_operation_notice(&latest); editor->feedback = true;
+        editor->compact_notice = compact_operation(&latest);
+    }
 }
 
 const char *send_editor_notice(const send_editor *editor) { return editor ? editor->notice : ""; }
+const char *send_editor_feedback(const send_editor *editor)
+{ return editor && editor->feedback ? editor->notice : NULL; }
+const char *send_editor_compact_notice(const send_editor *editor)
+{ return editor && editor->feedback ? editor->compact_notice : NULL; }
 outbox *send_editor_outbox(send_editor *editor) { return editor ? editor->box : NULL; }

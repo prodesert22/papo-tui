@@ -30,6 +30,9 @@ struct history {
     bool want_channels, want_messages, want_authors, older, more, evicted;
     enum request_kind failed;
     char cursor_time[65], cursor_id[37], status[192];
+    char notices[HISTORY_NOTICE_COUNT][192];
+    uint64_t notice_sequence, notice_revisions[HISTORY_NOTICE_COUNT];
+    const char *event_compact; /* Static diagnostic label, never remote text. */
 };
 
 bool history_uuid(const char *value)
@@ -50,7 +53,23 @@ static bool string_field(json_t *obj, const char *key, size_t limit, bool option
     return s && json_string_length(v) <= limit && strlen(s) == json_string_length(v);
 }
 static bool remember(history *h, const json_t *event);
-static void status(history *h, const char *value) { snprintf(h->status, sizeof(h->status), "%s", value); }
+static void notice(history *h, history_notice_kind kind, const char *value)
+{
+    if (!strcmp(h->notices[kind], value)) return;
+    snprintf(h->notices[kind], sizeof(h->notices[kind]), "%s", value);
+    h->notice_revisions[kind] = ++h->notice_sequence;
+}
+static void status(history *h, const char *value)
+{
+    snprintf(h->status, sizeof(h->status), "%s", value);
+    notice(h, HISTORY_NOTICE_READ, value);
+}
+static void event_status(history *h, const char *value, const char *compact)
+{
+    snprintf(h->notices[HISTORY_NOTICE_EVENT], sizeof(h->notices[HISTORY_NOTICE_EVENT]), "%s", value);
+    h->notice_revisions[HISTORY_NOTICE_EVENT] = ++h->notice_sequence;
+    h->event_compact = compact;
+}
 static void clear_messages(history *h)
 {
     ++h->messages_revision;
@@ -64,6 +83,8 @@ static void clear_messages(history *h)
     h->failed = NONE;
     h->cursor_id[0] = h->cursor_time[0] = '\0';
     h->want_authors = h->want_messages = false;
+    notice(h, HISTORY_NOTICE_READ, "");
+    notice(h, HISTORY_NOTICE_EVENT, "");
 }
 history *history_create(auth_client *auth)
 {
@@ -90,6 +111,14 @@ size_t history_message_count(const history *h) { return json_array_size(h->messa
 json_t *history_message(const history *h, size_t i) { return json_array_get(h->messages, i); }
 uint64_t history_messages_revision(const history *h) { return h->messages_revision; }
 const char *history_status(const history *h) { return h->status; }
+const char *history_notice(const history *h, history_notice_kind kind, uint64_t *revision)
+{
+    if (!h || kind < 0 || kind >= HISTORY_NOTICE_COUNT) return "";
+    if (revision) *revision = h->notice_revisions[kind];
+    return h->notices[kind];
+}
+const char *history_event_compact(const history *h)
+{ return h->event_compact ? h->event_compact : ""; }
 bool history_has_more(const history *h) { return h->more; }
 bool history_evicted(const history *h) { return h->evicted; }
 bool history_recovering(const history *h) { return h->recovering; }
@@ -271,6 +300,7 @@ static bool channels_response(history *h, json_t *body)
         if (!strcmp(selected_id, str(sorted[i], "id"))) h->selected = i;
     if (*selected_id && h->selected == SIZE_MAX) clear_messages(h);
     status(h, count ? "Escolha um canal para ler." : "Nenhum canal disponível.");
+    if (count) notice(h, HISTORY_NOTICE_READ, "");
     return true;
 }
 static bool message_valid(json_t *m, const char *channel)
@@ -434,7 +464,7 @@ bool history_confirm(history *h, json_t *message, uint64_t generation)
     if (!patched(h, message)) return false;
     if (added && contains(h->messages, str(message, "id"))) ++h->insertions;
     h->want_authors = true;
-    status(h, "Mensagem confirmada.");
+    /* The editor owns the send notice; confirmation must not replace reads. */
     return true;
 }
 static bool replay(history *h)
@@ -523,6 +553,7 @@ static bool messages_response(history *h, json_t *body)
     }
     h->want_authors = history_message_count(h) > 0;
     status(h, history_message_count(h) ? h->more ? "PageUp no início: carregar anteriores." : "Início do histórico alcançado." : "Nenhuma mensagem neste canal.");
+    notice(h, HISTORY_NOTICE_READ, "");
     return true;
 fail:
     json_decref(next); return false;
@@ -550,14 +581,14 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
     const char *type = str((json_t *)event, "type");
     if (!type || !string_field((json_t *)event, "type", 128, false)) goto invalid;
     if (!strcmp(type, "heartbeat_ack")) return true;
-    if (!strcmp(type, "error")) { status(h, "O servidor informou um erro de tempo real."); return true; }
+    if (!strcmp(type, "error")) { event_status(h, "O servidor informou um erro de tempo real.", "Erro remoto"); return true; }
     bool message = !strcmp(type, "message"), edit = !strcmp(type, "message_edit"),
          del = !strcmp(type, "message_delete");
     bool embeds = !strcmp(type, "message_embeds_update");
     bool create = !strcmp(type, "channel_create"), update = !strcmp(type, "channel_update"),
          remove = !strcmp(type, "channel_delete");
     if (!(message || edit || del || embeds || create || update || remove)) {
-        status(h, "Evento de tempo real não suportado ignorado."); return true;
+        event_status(h, "Evento de tempo real não suportado ignorado.", "Evento ignorado"); return true;
     }
     const char *channel = str((json_t *)event, "channel_id"),
                *id = str((json_t *)event, embeds ? "message_id" : "id");
@@ -676,9 +707,9 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
     if (active && edit) h->want_authors = true;
     return true;
 invalid:
-    status(h, "Evento de tempo real inválido ignorado."); return false;
+    event_status(h, "Evento de tempo real inválido ignorado.", "Evento inválido"); return false;
 allocation:
-    status(h, "Não foi possível aplicar o evento. Ctrl+R: recuperar."); return false;
+    event_status(h, "Não foi possível aplicar o evento. Ctrl+R: recuperar.", "Falha no evento"); return false;
 }
 static bool recovery_response(history *h, json_t *body)
 {
@@ -730,6 +761,7 @@ static bool recovery_response(history *h, json_t *body)
     json_decref(h->boundary); h->boundary = NULL;
     h->recovering = false; h->failures = 0; h->want_authors = history_message_count(h) > 0;
     status(h, "Tempo real conectado. Histórico recuperado.");
+    notice(h, HISTORY_NOTICE_READ, "");
     return true;
 }
 static bool authors_response(history *h, json_t *body)
@@ -848,6 +880,7 @@ bool history_poll(history *h)
             }
             if (kind == AUTHORS) {
                 if (ok) {
+                    notice(h, HISTORY_NOTICE_READ, "");
                     size_t i; json_t *id;
                     json_array_foreach(h->summary_ids, i, id)
                         if (json_object_set_new(h->queried, json_string_value(id), json_true())) ok = false;
@@ -892,6 +925,7 @@ bool history_poll(history *h)
                        kind == MESSAGES ? request_messages(h) : kind == AUTHORS ? request_authors(h) : kind == USERS ? request_users(h) : false;
         if (started && kind == AUTHORS && !auth_busy(h->auth)) {
             h->want_authors = false;
+            notice(h, HISTORY_NOTICE_READ, "");
             json_decref(h->summary_ids); h->summary_ids = NULL;
             return changed;
         }
