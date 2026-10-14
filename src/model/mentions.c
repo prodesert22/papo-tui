@@ -36,6 +36,48 @@ bool mention_contains(const char *text, const char *id)
     }
     return false;
 }
+static void visit_text(const json_t *object, const char *key, mention_visitor visitor, void *context)
+{
+    const char *value = json_string_value(json_object_get(object, key));
+    mention_range range;
+    size_t from = 0;
+    while (mention_next(value, from, &range)) {
+        visitor(context, &range);
+        from = range.end;
+    }
+}
+void mention_visit_message(const json_t *message, mention_visitor visitor, void *context)
+{
+    if (!visitor) return;
+    visit_text(message, "content", visitor, context);
+    const json_t *embeds = json_object_get(message, "embeds");
+    for (size_t i = 0; i < json_array_size(embeds) && i < 10; ++i) {
+        const json_t *embed = json_array_get(embeds, i);
+        const char *keys[] = {"title", "description", "site_name", "provider", "url"};
+        for (size_t k = 0; k < sizeof(keys) / sizeof(keys[0]); ++k)
+            visit_text(embed, keys[k], visitor, context);
+        visit_text(json_object_get(embed, "author"), "name", visitor, context);
+        visit_text(json_object_get(embed, "footer"), "text", visitor, context);
+        const json_t *fields = json_object_get(embed, "fields");
+        for (size_t j = 0; j < json_array_size(fields) && j < 25; ++j) {
+            visit_text(json_array_get(fields, j), "name", visitor, context);
+            visit_text(json_array_get(fields, j), "value", visitor, context);
+        }
+    }
+}
+typedef struct { const char *id; bool found; } mention_match;
+static void match_user(void *context, const mention_range *range)
+{
+    mention_match *match = context;
+    match->found |= !strcasecmp(range->id, match->id);
+}
+bool mention_message_contains(const json_t *message, const char *id)
+{
+    if (!id) return false;
+    mention_match match = {id, false};
+    mention_visit_message(message, match_user, &match);
+    return match.found;
+}
 void mention_cleanup(void)
 {
     if (ready) {

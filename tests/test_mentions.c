@@ -85,6 +85,45 @@ int main(void)
         }
     assert(colored);
     message_blocks_free(&blocks);
+    /* All displayed embed text resolves and highlights canonical mentions,
+     * including tokens crossing a decoder chunk and inline field columns. */
+    json_object_set_new(m, "content", json_null());
+    json_t *embed = json_pack("{s:s,s:s,s:s,s:{s:s},s:{s:s},s:[{s:s,s:s,s:b},{s:s,s:s,s:b}]}",
+        "title", token, "description", long_text, "site_name", draft,
+        "author", "name", token, "footer", "text", token,
+        "fields", "name", token, "value", token, "inline", 1,
+        "name", token, "value", token, "inline", 1);
+    assert(embed);
+    json_t *embeds = json_array();
+    assert(embeds && !json_array_append_new(embeds, embed));
+    assert(!json_object_set_new(m, "embeds", embeds));
+    assert(mention_message_contains(m, id));
+    assert(!mention_message_contains(m, "00000000-0000-4000-8000-000000000002"));
+    for (int width = 18; width <= 76; width += 29) {
+        assert(message_blocks_build_mentions(&blocks, m, "Autor", "", width, false, name, NULL, id));
+        assert(blocks.self_mention);
+        size_t marked = 0;
+        for (size_t i = 0; i < blocks.count; ++i)
+            for (int j = 0; j < blocks.rows[i].count; ++j) {
+                message_segment *segment = &blocks.rows[i].segments[j];
+                assert(!strstr(segment->text, "@mention("));
+                if (!blocks.rows[i].card) continue;
+                for (size_t k = 0; k < segment->highlight_length; ++k) marked += segment->highlight[k] != 0;
+            }
+        assert(marked == 9 * 8); /* Nine @Álice 界 labels, eight Unicode scalars each. */
+        message_blocks_free(&blocks);
+    }
+    json_object_set_new(embed, "description", json_null());
+    json_object_set_new(embed, "title", json_string("Plain title"));
+    assert(message_blocks_build_mentions(&blocks, m, "Autor", "", 76, false, name, NULL, id));
+    bool plain_bold = false;
+    for (size_t i = 0; i < blocks.count; ++i)
+        for (int j = 0; j < blocks.rows[i].count; ++j) {
+            message_segment *segment = &blocks.rows[i].segments[j];
+            if (!strcmp(segment->text, "Plain title")) plain_bold = segment->bold && !segment->highlight;
+        }
+    assert(plain_bold);
+    message_blocks_free(&blocks);
     json_decref(m);
     mention_cleanup();
     return 0;
