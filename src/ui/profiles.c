@@ -1,4 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
+#include "ui/graphics.h"
+#include "ui/mouse.h"
 #include "ui/profiles.h"
 #include "ui/text.h"
 #include "ui/theme.h"
@@ -449,7 +451,7 @@ static void restore_rate_fields(profile_ui *ui)
 static int click(profile_ui *ui, server_profile *output)
 {
     MEVENT mouse;
-    if (getmouse(&mouse) != OK || ui->paste || !ui->window || !(mouse.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED))) return 0;
+    if (ui_mouse_get(&mouse) != OK || ui->paste || !ui->window || !(mouse.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED))) return 0;
     int row = mouse.y, column = mouse.x;
     if (!wmouse_trafo(ui->window, &row, &column, false)) return 0;
     if (ui->dialog) {
@@ -526,7 +528,7 @@ static int profiles_run(profile_config *config, bool allow_local_http,
         if (before != auth_get_state(ui->discovery)) redraw = true;
         if (redraw && (!ui->paste || paste_steps >= 32)) { draw(ui); redraw = false; paste_steps = 0; }
         wint_t key;
-        int type = get_wch(&key);
+        int type = graphics_terminal_input(&key);
         if (type == ERR) {
             if (redraw) { draw(ui); redraw = false; paste_steps = 0; }
             continue;

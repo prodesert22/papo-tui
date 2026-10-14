@@ -134,6 +134,14 @@ def main():
             a.send('\x1bOA\x1bOC'); a.click(6, 4); pump(.5)
             checks['reselecting_current_channel_preserves_live_message'] = (
                 'R7 WS durante navegação' in screen(a) and b'Carregando hist' not in a.output[output:])
+            phase = 'split mouse click after keyboard channel selection'
+            a.send('\x1bOD\x1bOB\n')
+            wait(a, '# r7-outro · Histórico')
+            a.send('\x1b[<0;5;7M')
+            wait(a, '# r7-geral · Histórico'); pump(.08)
+            a.send('\x1b[<0;5;7m')
+            wait(a, 'R7 WS durante navegação')
+            checks['split_mouse_release_does_not_block_history_response'] = True
             phase = 'live embed updates'
             observer = websocket.create_connection(secure.replace('https://', 'wss://', 1) + '/ws',
                 cookie='Auth=' + sessions[0].cookies.get('Auth'), sslopt={'ca_certs': str(cert)}, timeout=2,

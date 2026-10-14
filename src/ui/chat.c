@@ -1,4 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
+#include "ui/graphics.h"
+#include "ui/mouse.h"
 #include "ui/chat.h"
 #include "ui/theme.h"
 #include "ui/button.h"
@@ -818,7 +820,7 @@ static bool modal_click(chat_ui *ui, const MEVENT *event, bool *quit)
 static bool click(chat_ui *ui, bool *quit)
 {
     MEVENT event;
-    if (getmouse(&event) != OK || ui->paste || !ui->frame ||
+    if (ui_mouse_get(&event) != OK || ui->paste || !ui->frame ||
         !(event.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED | BUTTON4_PRESSED | BUTTON5_PRESSED))) return true;
     if (ui->modal_type != NO_MODAL) return modal_click(ui, &event, quit);
     int y = event.y, x = event.x;
@@ -974,7 +976,7 @@ int chat_demo_run(void)
     if (!initscr()) { free(ui); return 1; }
     raw(); nonl(); noecho(); keypad(stdscr, true);
     mouseinterval(0);
-    mousemask(BUTTON1_PRESSED | BUTTON1_CLICKED | BUTTON4_PRESSED | BUTTON5_PRESSED, NULL);
+    mousemask(BUTTON1_PRESSED | BUTTON1_RELEASED | BUTTON1_CLICKED | BUTTON4_PRESSED | BUTTON5_PRESSED, NULL);
     timeout(30); set_escdelay(25);
     ui_theme theme;
     theme_init(&theme);
@@ -1004,7 +1006,7 @@ int chat_demo_run(void)
             draw(ui); redraw = false; paste_steps = 0;
         }
         wint_t key;
-        int type = get_wch(&key);
+        int type = graphics_terminal_input(&key);
         if (type == ERR) {
             if (redraw) { draw(ui); redraw = false; paste_steps = 0; }
             continue;

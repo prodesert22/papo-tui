@@ -46,12 +46,12 @@ class MockServer:
             def log_message(self, *_args):
                 pass
 
-            def respond(self, status, body=None, cookie=None, retry_after=None):
+            def respond(self, status, body=None, cookie=None, retry_after=None, content_type=None):
                 if status >= 400:
                     body = {"type": "https://papo.invalid/errors/test", "title": "Request rejected", "status": status, **(body or {})}
-                data = json.dumps(body).encode() if body is not None else b""
+                data = body if isinstance(body, bytes) else json.dumps(body).encode() if body is not None else b""
                 self.send_response(status)
-                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Type", content_type or "application/json")
                 self.send_header("Content-Length", str(len(data)))
                 if cookie:
                     self.send_header("Set-Cookie", f"Auth={cookie}; Path=/; HttpOnly; SameSite=Strict" + ("; Secure" if secure_cookie else "") +

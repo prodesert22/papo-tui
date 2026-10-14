@@ -6,12 +6,12 @@ O aplicativo oferece login, cadastro de conta, renovação de sessão, perfis lo
 
 ## Compilar e executar
 
-Pré-requisitos: compilador C17, CMake 3.21+, pkg-config, ncursesw/formw 6.1+, libcurl 7.86+, Jansson 2.14+ e libunibreak 6.1+. A libcurl precisa oferecer WS/WSS, TLS e DNS assíncrono; o CMake verifica essas capacidades. Para os testes, Python 3.10+, OpenSSL CLI e as dependências de `requirements-dev.txt`.
+Pré-requisitos: compilador C17, CMake 3.21+, pkg-config, ncursesw/formw 6.1+, libcurl 7.86+, Jansson 2.14+, libunibreak 6.1+, libsixel 1.8+, libchafa 1.16+, libmpv (API 2.0+) e bibliotecas de desenvolvimento do FFmpeg (libavformat/libavcodec 58+, libavutil 56+, libswscale 5+). A libcurl precisa oferecer WS/WSS, TLS e DNS assíncrono; o CMake verifica essas capacidades. Para os testes, Python 3.10+, FFmpeg CLI, OpenSSL CLI e as dependências de `requirements-dev.txt`.
 
 No Arch Linux:
 
 ```sh
-sudo pacman -S --needed base-devel cmake pkgconf ncurses curl jansson libunibreak python
+sudo pacman -S --needed base-devel cmake pkgconf ncurses curl jansson libunibreak libsixel chafa mpv ffmpeg python
 ```
 
 ```sh
@@ -138,6 +138,7 @@ Consulte [instalação e uso](docs/uso.md) para os requisitos, execução, conex
 - libunibreak para delimitar grafemas no editor de mensagens e na apresentação de texto.
 - libcurl multi para HTTP e handshake WS assíncronos, TLS, URLs e cookies; APIs WS para leitura/escrita sem bloquear a interface.
 - Jansson para JSON.
+- libsixel para saída Sixel e libchafa para os protocolos gráficos Kitty/iTerm2; FFmpeg para imagens e libmpv para vídeo/áudio. Um worker faz a conversão sem operar o terminal ou a rede.
 
 ```text
 src/main.c       Entrada e ciclo de vida
@@ -158,6 +159,13 @@ Use [`openapi.yml`](openapi.yml) como referência para endpoints, autenticação
 As ferramentas em `tools/` auxiliam a validação do contrato durante o desenvolvimento. Seus relatórios e inventários são gerados em `build/`; não fazem parte da documentação de uso.
 
 ## Estado atual
+
+Cards de embed, imagens por Sixel/Kitty/iTerm2 e player de vídeo em modal com áudio mantêm
+a interface em ncurses. Dependências adicionais:
+libsixel (MIT), [libchafa](https://hpjansson.org/chafa/development/) (LGPLv3+, protocolos Kitty/iTerm2), FFmpeg (decodificação de imagens) e libmpv (reprodução e áudio).
+Os downloads continuam no transporte autenticado do Papo; a mídia não recebe
+cookies nem URLs remotas no player. O backend atual não expõe os bytes da imagem
+adicional do embed nem do ícone do rodapé.
 
 - [x] Especificação OpenAPI disponível.
 - [x] Tela de login, HTTP e aplicativo compilável.
@@ -186,7 +194,7 @@ Ao abrir a leitura, o foco começa nas abas. Use ←/→ para escolher o servido
 
 Em tela ampla, Tab/Shift+Tab alternam entre abas, canais, histórico e editor quando há um canal de texto aberto. ← nos canais, ou ↑ no primeiro canal, volta às abas; ←/→ nas abas trocam de servidor e Enter em **+ Adicionar** abre o formulário. ↓ nas abas foca os canais. Esc sai do editor para o histórico; nos demais painéis, alterna canais/histórico. Abaixo de 80 colunas, Tab/Shift+Tab e os controles **Canais / Conversa** alternam o painel visível. F6 volta à conta, Ctrl+L sai da conta e remove sua aba, Ctrl+P abre a seleção de perfil encerrando a sessão local atual, e Ctrl+Q/Ctrl+C fecha o programa. O mínimo dessa tela é 44×14; para abrir o formulário, amplie para 44×22.
 
-Mensagens aparecem em ordem cronológica, com data, autor, indicação de edição e referências de resposta. Anexos e embeds mostram metadados em texto, sem abrir URLs ou baixar mídia. Os embeds recebidos ou atualizados em tempo real aparecem na mensagem sem precisar reabrir o canal, incluindo mensagens sem texto. Autores ausentes têm um rótulo de indisponibilidade. Ao abrir um canal de texto, digite para focar o editor, incluindo o primeiro caractere. Enter no histórico também foca o editor. Enter no editor envia, Ctrl+N insere uma nova linha e colagem delimitada preserva linhas sem enviar. Setas, Home/End, Backspace e Delete editam grafemas; clique no editor para posicionar o cursor. Esc volta ao histórico. A área em foco recebe um fundo discretamente mais claro. Mensagens de outras contas chegam automaticamente. Eventos repetidos e confirmações REST/WS da mesma mensagem são reconciliados pelo ID. A tela acompanha novas mensagens quando você está no fim; ao ler mensagens anteriores, indica novidades sem mover a leitura. End ou clique no indicador volta ao fim.
+Mensagens aparecem em ordem cronológica, com data, autor, indicação de edição e referências de resposta. Anexos mostram seus metadados e, em terminais com protocolo gráfico compatível, imagens visíveis são baixadas e renderizadas no histórico. Embeds aparecem em cards com autor, título, descrição, fields e rodapé. F7 ou clique abre a mídia em um modal; vídeos são baixados antes de reproduzir com áudio. Os embeds recebidos ou atualizados em tempo real aparecem na mensagem sem precisar reabrir o canal, incluindo mensagens sem texto. Autores ausentes têm um rótulo de indisponibilidade. Ao abrir um canal de texto, digite para focar o editor, incluindo o primeiro caractere. Enter no histórico também foca o editor. Enter no editor envia, Ctrl+N insere uma nova linha e colagem delimitada preserva linhas sem enviar. Setas, Home/End, Backspace e Delete editam grafemas; clique no editor para posicionar o cursor. Esc volta ao histórico. A área em foco recebe um fundo discretamente mais claro. Mensagens de outras contas chegam automaticamente. Eventos repetidos e confirmações REST/WS da mesma mensagem são reconciliados pelo ID. A tela acompanha novas mensagens quando você está no fim; ao ler mensagens anteriores, indica novidades sem mover a leitura. End ou clique no indicador volta ao fim.
 
 A janela em memória contém até 1.000 mensagens ou 4 MiB de JSON serializado. Ao carregar páginas antigas além desse limite, libera mensagens recentes; End volta a consultá-las. Trocar de canal ou servidor descarta seu histórico local. As outras abas e os históricos não são persistidos; somente o cookie da última sessão pode ficar no chaveiro. Abrir a lista de canais não consulta seus históricos em segundo plano.
 
@@ -195,6 +203,59 @@ Rascunhos e cursor ficam em memória por sessão e canal, inclusive ao trocar de
 O editor informa quando o envio está aguardando, enviando, confirmado, rejeitado ou sem confirmação. Falhas preservam o texto. **Ctrl+T** tenta novamente o texto do último envio com falha no canal atual. Timeout ou resposta perdida podem ocorrer após a criação da mensagem; nesse caso, Enter ou Ctrl+T abre uma confirmação, inicialmente em **Cancelar**. Se desejar reenviar mesmo com possibilidade de duplicação, escolha **Reenviar** com → ou clique e confirme. Não há reenvio automático.
 
 Após uma queda, a aba ativa revalida a sessão, atualiza canais e recupera mensagens novas e a janela de histórico carregada, incluindo edições e exclusões ocorridas offline. Rascunhos e posição de leitura são preservados enquanto suas mensagens ainda estiverem disponíveis. Os limites de memória continuam valendo; se a mensagem usada como referência desaparecer, a leitura usa a próxima sobrevivente, ou a anterior. A recuperação não oferece replay completo: alterações fora da janela são consultadas ao abrir novamente esse trecho. Nenhum envio pendente é repetido automaticamente.
+
+## Imagens, vídeos e embeds
+
+F7 no histórico abre a mídia visível; quando há vários itens, ↑/↓ e Enter
+escolhem um deles. Clique numa prévia também abre o modal. Esc fecha ou cancela
+o carregamento. No vídeo, Espaço pausa, ←/→ avançam ou recuam 5 segundos, ↑/↓
+alteram o volume e `m` silencia. Redimensionar preserva a reprodução; rascunhos
+e leitura permanecem ao voltar. O áudio usa o dispositivo disponível; sem um
+dispositivo, o vídeo continua e o modal informa a indisponibilidade do áudio.
+
+O modal centraliza a mídia e usa margens que preservam a coluna de canais em
+telas largas. Esc ou clique fora fecha a visualização. Clique no botão
+**[Info]**, fixo no cabeçalho do modal, para abrir ou fechar as propriedades
+à direita: nome, MIME, bytes, moderação,
+dimensões e identificadores disponíveis. PageUp/PageDown ou a roda do mouse
+sobre esse painel rola os dados; `i` e F8 também alternam o painel. Nenhum novo
+download é necessário para abri-lo.
+
+Imagens JPEG, PNG, WebP e GIF são exibidas por Sixel ou pelos protocolos gráficos Kitty/iTerm2.
+Anexos de imagem mostram apenas a mídia, usando o arquivo original sem ampliar
+suas dimensões; imagens maiores são reduzidas proporcionalmente para a largura
+disponível e o limite de 640×360 pixels. GIFs animados se repetem no histórico
+e no modal, com até 256 frames/32 MiB de pixels decodificados por arquivo.
+A negociação consulta capacidades e tamanho das células
+sem bloquear a interface ou inserir respostas no editor. Sem suporte gráfico
+confirmado, os cards e metadados continuam em texto e nenhuma imagem é baixada
+automaticamente. URLs externas permanecem texto.
+
+As imagens são carregadas somente no trecho visível da conversa aberta. Vídeos
+MP4, WebM e Ogg carregam por completo antes do player, sem autoplay. O limite é
+16 MiB/16 megapixels por imagem, 128 MiB por vídeo e 64 MiB de cache de imagens;
+a saída gráfica do player é limitada a 640×360 pixels e 15 frames/s. A qualidade
+final também depende do terminal. Mídia inválida, codec ausente, falta de
+permissão e limites aparecem na tela; F7/Enter no erro permite tentar novamente.
+
+Os arquivos ficam em diretório temporário privado (`700`), com arquivos `600`,
+sem cookies. Trocar de canal/servidor, voltar à conta ou encerrar a sessão libera
+o cache; fechar o modal cancela seu download e remove o vídeo temporário.
+Requisições usam os cookies da própria instância, a verificação TLS e o mesmo
+limite global de requisições do restante do cliente. HTTP 429 exige nova
+tentativa manual após a espera.
+
+Cards usam uma barra à esquerda na cor do embed e fundo discretamente mais
+claro, sem borda ao redor nem rótulos de embed/rodapé. Autor e rodapé têm
+menos destaque; o tamanho da fonte é definido pelo terminal. Mensagens sem
+texto não recebem um texto substituto. Fields ficam em até três colunas,
+ou empilhados em tela estreita. O avatar fica junto ao autor. A miniatura
+de embeds customizados fica à direita quando há espaço; prévias de links e
+miniaturas em telas estreitas ficam abaixo dos fields. Ambos usam os bytes
+expostos pelo backend. A imagem adicional indica indisponibilidade; seus
+bytes e os do ícone do rodapé não são expostos pela API atual. Vídeos de
+iframe, como YouTube, mostram URL e metadados. O editor continua enviando texto; não há interpretação de Markdown
+do Discord nem execução de HTML remoto.
 
 ## Recuperar a última sessão
 
@@ -273,6 +334,33 @@ build/test-env/bin/python -m tools.check_r7 --backend-binary /caminho/papo-serve
 ```
 
 O roteiro simula indisponibilidade no proxy de desenvolvimento e produz mensagens, edições e exclusões enquanto os clientes estão desconectados. Recursos temporários são removidos ao terminar; evidências sem credenciais ficam em `build/r7/validation/summary.json`.
+
+As suítes `media-layout-sixel`, `media-integration` e `media-terminal` verificam
+cards, fields inline, sanitização, pixels Sixel/Kitty/iTerm2, imagens JPEG/PNG/WebP/GIF,
+player com áudio, pausa/seek/resize, arquivos privados, cancelamento e falhas
+HTTP e remoção de imagens ao trocar de canal ou fechar o modal. A PTY responde às consultas gráficas de forma sintética; essa evidência é
+separada das capturas de emuladores reais.
+
+Para validar os downloads HTTPS e a apresentação contra o backend real em
+banco temporário:
+
+```sh
+go build -o build/integration/tls-proxy tools/tls_proxy.go
+build/test-env/bin/python -m tools.check_media --backend-binary /caminho/papo-server --tls-proxy build/integration/tls-proxy
+```
+
+A ferramenta cria somente dados sintéticos na cópia temporária do banco e
+remove contas, arquivos e processos ao terminar. Evidências sem credenciais
+ficam em `build/media/validation/summary.json`. Para capturas de janelas
+dedicadas de Konsole e Kitty em sessão X11/XWayland, com qdbus6, xdotool e
+ImageMagick disponíveis:
+
+```sh
+build/test-env/bin/python -m tools.check_media_terminals
+```
+
+Capturas e resultados ficam em `build/media/terminals/`; esse roteiro usa
+backend simulado e não abre o chaveiro pessoal.
 
 A suíte `api-contract` valida 51 fixtures REST e 17 exemplos WS, cursor composto com timestamps iguais, limites de lote, YAML 1.2, isolamento de cookies e relatórios sem segredos. Regerar o inventário local e os exemplos após uma mudança no contrato:
 

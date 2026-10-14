@@ -1,4 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
+#include "ui/graphics.h"
+#include "ui/mouse.h"
 #include "ui/login.h"
 #include "ui/theme.h"
 #include "ui/button.h"
@@ -482,7 +484,7 @@ static void extra_action(login_ui *ui, auth_client *client);
 static bool click(login_ui *ui, auth_client *client)
 {
     MEVENT event;
-    if (getmouse(&event) != OK || ui->paste || !ui->card || !ui->form ||
+    if (ui_mouse_get(&event) != OK || ui->paste || !ui->card || !ui->form ||
         !(event.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED))) return false;
     int y = event.y, x = event.x;
     if (!wmouse_trafo(ui->card, &y, &x, false)) return false;
@@ -737,7 +739,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
     noecho();
     keypad(stdscr, true);
     mouseinterval(0); /* Act on presses, without a delayed second click event. */
-    mousemask(BUTTON1_PRESSED | BUTTON1_CLICKED, NULL);
+    mousemask(BUTTON1_PRESSED | BUTTON1_RELEASED | BUTTON1_CLICKED, NULL);
     timeout(30);
     set_escdelay(25);
     ui_theme theme;
@@ -820,6 +822,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         }
         if (redraw) {
             draw(&ui, client);
+            graphics_terminal_probe();
             redraw = false;
         }
         if (ui.open_chat && auth_has_session(client) && !ui.paste) {
@@ -830,7 +833,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
             continue;
         }
         wint_t key;
-        int type = get_wch(&key);
+        int type = graphics_terminal_input(&key);
         if (type == ERR) continue;
         if (startup_restore && !(type == KEY_CODE_YES && key == KEY_RESIZE)) {
             session_store_cancel_resume(connections->sessions); startup_restore = false;

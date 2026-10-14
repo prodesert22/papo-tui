@@ -54,7 +54,7 @@ class Emulator:
         label = 'R2' if demo else 'R1'
         self.tmux_server = 'papo-probe-' + str(os.getpid())
         observer = [sys.executable, str(ROOT / 'tools/terminal_observer.py'),
-                    '--report', str(self.state_path), str(binary)]
+                    '--report', str(self.state_path), '--isolated-session', str(binary)]
         if demo:
             observer.append('--demo')
         else:
