@@ -180,7 +180,7 @@ Cada conexão mantém sua própria sessão isolada; somente a última conexão a
 
 Esc no formulário de adição retorna ao servidor anterior, quando sua sessão ainda está válida. Se houver uma conexão em andamento, a primeira pressão de Esc cancela a tentativa; pressione novamente para voltar. Login, cadastro e renovação usam os mesmos controles do formulário inicial.
 
-Depois do login, a lista de canais abre automaticamente. F6 volta à tela da conta; use **Canais / F6**, F6 ou Tab e Enter nesse botão para reabrir a leitura. A lista é ordenada pela posição informada pelo servidor, sem inferir subcategorias. Use ↑/↓, PageUp/PageDown e Home/End para destacar um canal; Enter, → ou clique abre-o. Categorias são separadores e não abrem histórico. Canais de voz informam que chamadas ainda não estão disponíveis.
+Depois do login, a lista de canais abre automaticamente. F6 volta à tela da conta; use **Canais / F6**, F6 ou Tab e Enter nesse botão para reabrir a leitura. A lista é ordenada pela posição informada pelo servidor, sem inferir subcategorias. Use ↑/↓, PageUp/PageDown e Home/End para destacar um canal; Enter, → ou clique abre-o. Navegar pela lista mantém o histórico e as mensagens em tempo real do canal aberto. Confirmar esse mesmo canal preserva a posição de leitura e o rascunho, sem refazer a consulta. Clique no título **Canais** para focar a lista. Categorias são separadores e não abrem histórico. Canais de voz informam que chamadas ainda não estão disponíveis.
 
 Abrir a lista não lê mensagens. Apenas o canal que você abre tem seu histórico consultado; essa consulta também marca leitura no servidor. `*` ao lado do nome indica uma última mensagem ainda não lida nos dados da lista e desaparece quando o histórico cobre essa mensagem.
 

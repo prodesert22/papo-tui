@@ -33,6 +33,11 @@ class SidebarObserver(ObservedScreen):
     def scroll_up(self, *args, **kwargs): return self.observe(super().scroll_up, *args, **kwargs)
     def scroll_down(self, *args, **kwargs): return self.observe(super().scroll_down, *args, **kwargs)
 
+class ConversationObserver(SidebarObserver):
+    def sidebar(self):
+        return tuple(tuple(self.buffer[y][x] for x in range(26, self.columns - 1))
+                     for y in range(5, self.lines - 3))
+
 class HistoryTerminal(unittest.TestCase):
     def wait(self, terminal, text):
         deadline = time.monotonic() + 8
@@ -49,6 +54,71 @@ class HistoryTerminal(unittest.TestCase):
         t.send('\x1bOB\x1bOB\n')  # tabs -> category -> first text channel -> open
         self.wait(t, 'Editor')
         return t
+
+    def test_channel_navigation_keeps_chat_and_reopening_current_does_not_reload(self):
+        with HistoryMock('slow') as server:
+            terminal = self.open(server)
+            try:
+                self.wait(terminal, 'Mensagem 0250')
+                terminal.read(.2)
+                terminal.send('Rascunho preservado\x1b\x1bOH\x1bOD')
+                self.wait(terminal, 'Mensagem 0151')
+                self.wait(terminal, 'Foco: Canais')
+                before = terminal.screen.display[8][26:]
+                requests = [r for r in server.requests if '/messages' in r[1]]
+                screen = ConversationObserver(80, 24)
+                stream = TerminalStream(screen); stream.feed(bytes(terminal.output))
+                terminal.screen, terminal.stream = screen, stream
+                conversation = screen.sidebar(); screen.watch = True
+                for key in ('\x1bOB', '\x1bOA', '\x1bOH', '\x1bOF', '\x1b[5~', '\x1b[6~'):
+                    terminal.send(key)
+                    self.assertEqual(screen.sidebar(), conversation)
+                    self.assertEqual(screen.sidebar_changes, [], f'Chat flashed during channel navigation: {key!r}')
+                screen.watch = False
+                # Return the highlight to the open channel and confirm it.
+                terminal.send('\x1bOH\x1bOB\n')
+                terminal.read(.5)
+                self.assertEqual(terminal.screen.display[8][26:], before)
+                self.assertIn('Rascunho preservado', '\n'.join(terminal.screen.display))
+                for action in (lambda: terminal.click(7, 4), lambda: terminal.send('\x1bOD\x1bOC')):
+                    output = len(terminal.output); action(); terminal.read(.5)
+                    self.assertNotIn(b'Carregando hist', terminal.output[output:])
+                    self.assertEqual(terminal.screen.display[8][26:], before)
+                self.assertEqual([r for r in server.requests if '/messages' in r[1]], requests)
+                # Clicking the sidebar heading focuses navigation, not a read.
+                terminal.click(5, 4); terminal.send('\x1bOB')
+                self.assertIn('Foco: Canais', terminal.screen.display[2])
+                self.assertEqual(terminal.screen.display[8][26:], before)
+                self.assertEqual([r for r in server.requests if '/messages' in r[1]], requests)
+                # A different channel must still make exactly one new read.
+                terminal.click(8, 4); self.wait(terminal, 'Conteúdo do outro canal')
+                self.assertEqual(len([r for r in server.requests if '/messages' in r[1]]), len(requests) + 1)
+            finally: self.assertTrue(terminal.close())
+
+    def test_reopening_empty_current_channel_preserves_empty_state(self):
+        with HistoryMock('empty') as server:
+            terminal = self.open(server)
+            try:
+                self.wait(terminal, 'Nenhuma mensagem neste canal')
+                requests = [r for r in server.requests if '/messages' in r[1]]
+                output = len(terminal.output)
+                terminal.click(7, 4); terminal.send('\x1bOD\x1bOC'); terminal.read(.2)
+                self.assertIn('Nenhuma mensagem neste canal', '\n'.join(terminal.screen.display))
+                self.assertNotIn(b'Carregando hist', terminal.output[output:])
+                self.assertEqual([r for r in server.requests if '/messages' in r[1]], requests)
+            finally: self.assertTrue(terminal.close())
+
+    def test_selecting_current_channel_does_not_restart_pending_history(self):
+        with HistoryMock('slow') as server:
+            terminal = self.open(server)
+            try:
+                self.assertTrue(server.history_started.wait(1))
+                terminal.click(7, 4)
+                terminal.send('\x1bOD\x1bOC')
+                self.wait(terminal, 'Mensagem 0250')
+                terminal.read(.5)
+                self.assertEqual(len([r for r in server.requests if '/messages' in r[1]]), 1)
+            finally: self.assertTrue(terminal.close())
 
     def test_history_scroll_never_clears_or_moves_sidebar_between_frames(self):
         with HistoryMock(count=250) as server:
@@ -82,6 +152,7 @@ class HistoryTerminal(unittest.TestCase):
                 # and the editor's draft/cursor across subsequent focus changes.
                 screen.watch = False
                 terminal.send('Rascunho sem flash')
+                self.wait(terminal, 'Rascunho sem flash')
                 terminal.send('\x1bOD')
                 screen.sidebar_changes.clear(); screen.watch = True
                 cursor = (screen.cursor.y, screen.cursor.x)

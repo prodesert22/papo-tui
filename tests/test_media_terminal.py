@@ -108,6 +108,27 @@ class MediaTerminal(unittest.TestCase):
                 t.send('\x1b[18~'); self.wait(t, 'suporte a Sixel')
                 t.send('\x1b'); self.wait(t, 'Editor')
             finally: self.assertTrue(t.close())
+    def test_channel_navigation_preserves_image_and_reopening_uses_cache(self):
+        with self.serve(self.images['png'], 'image/png') as server:
+            t = self.open(server)
+            try:
+                self.wait_frames(t)
+                t.send('Rascunho com imagem\x1b')
+                t.click(5, 4); t.read(.2)
+                conversation = [row[26:] for row in t.screen.display[5:-3]]
+                frames = len(t.stream.frames)
+                requests = [r for r in server.requests if '/messages' in r[1] or '/attachments/' in r[1]]
+                for key in ('\x1bOB', '\x1bOA', '\x1bOH', '\x1bOF', '\x1b[5~', '\x1b[6~'):
+                    t.send(key)
+                    self.assertEqual([row[26:] for row in t.screen.display[5:-3]], conversation)
+                    self.assertEqual(len(t.stream.frames), frames, 'Navigation redrew the image')
+                t.send('\x1bOH\x1bOB\n')
+                self.wait(t, 'Rascunho com imagem')
+                t.send('\x1b[18~'); self.wait(t, 'Imagem')
+                self.wait_frames(t, frames + 1)
+                self.assertEqual([r for r in server.requests if '/messages' in r[1] or '/attachments/' in r[1]], requests)
+                t.send('\x1b'); self.wait(t, 'Rascunho com imagem')
+            finally: self.assertTrue(t.close())
     def test_embed_thumbnail_base64_and_unavailable_extra_image(self):
         with self.serve(self.images['png'], 'image/png', embed=True) as server:
             server.messages[0]['embeds'] = [{'id': uuid(902), 'title': 'Embed fixture',
