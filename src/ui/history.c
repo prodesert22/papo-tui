@@ -4,6 +4,8 @@
 #include "ui/text.h"
 #include "ui/theme.h"
 #include "ui/button.h"
+#include "ui/media.h"
+#include "ui/sixel.h"
 #include "app/session_store.h"
 #include "ui/send_editor.h"
 #include <wctype.h>
@@ -19,6 +21,8 @@ enum { SERVER_TABS, CHANNEL_LIST, HISTORY_PANEL, MESSAGE_INPUT };
 typedef struct { int x, width; } click_range;
 typedef struct {
     history *model;
+    media_view *media;
+    char block[128];
     send_editor *editor; /* Borrowed from the instance connection. */
     instance_connections *connections;
     WINDOW *frame, *tabs, *footer, *list, *body, *confirm;
@@ -37,72 +41,6 @@ static const char *str(json_t *obj, const char *key)
 {
     const char *s = json_string_value(json_object_get(obj, key));
     return s ? s : "";
-}
-static bool line(json_t *out, const char *prefix, const char *value)
-{
-    size_t a = strlen(prefix), b = strlen(value);
-    char *s = malloc(a + b + 1);
-    if (!s) return false;
-    memcpy(s, prefix, a); memcpy(s + a, value, b + 1);
-    json_t *v = json_string(s); free(s);
-    return v && json_array_append_new(out, v) == 0;
-}
-static json_t *presentation(view *ui, json_t *message)
-{
-    json_t *out = json_array();
-    if (!out) return NULL;
-    char header[1200];
-    snprintf(header, sizeof(header), "%s · %s%s", str(message, "created_at"),
-             history_author(ui->model, str(message, "author_id")), *str(message, "edited_at") ? " · editada" : "");
-    if (!line(out, "", header)) goto fail;
-    if (*str(message, "edited_at") && !line(out, "Editada em: ", str(message, "edited_at"))) goto fail;
-    const char *reply = str(message, "reply_to");
-    if (*reply) {
-        json_t *target = NULL;
-        for (size_t i = 0; i < history_message_count(ui->model); ++i) {
-            json_t *m = history_message(ui->model, i);
-            if (!strcmp(reply, str(m, "id"))) { target = m; break; }
-        }
-        if (!line(out, "Resposta: ", target ? str(target, "id") : "mensagem não disponível")) goto fail;
-    }
-    json_t *content = json_object_get(message, "content");
-    if (!line(out, "", json_is_string(content) ? json_string_value(content) : "[Sem conteúdo textual]")) goto fail;
-    size_t i; json_t *item;
-    json_array_foreach(json_object_get(message, "attachments"), i, item) {
-        if (!line(out, "Anexo: ", *str(item, "original_file_name") ? str(item, "original_file_name") : "arquivo sem nome") ||
-            !line(out, "Tipo: ", str(item, "mime_type"))) goto fail;
-        char size[80];
-        snprintf(size, sizeof(size), "%lld bytes", (long long)json_integer_value(json_object_get(item, "size_bytes")));
-        if (!line(out, "Tamanho: ", size) || !line(out, "Moderação: ", str(item, "moderation_status"))) goto fail;
-    }
-    json_array_foreach(json_object_get(message, "embeds"), i, item) {
-        if (!line(out, "Embed: ", *str(item, "title") ? str(item, "title") : "sem título")) goto fail;
-        const char *keys[] = {"description", "url", "provider", "site_name", "source_type", "fetch_method"};
-        const char *labels[] = {"", "URL: ", "Provedor: ", "Site: ", "Origem: ", "Método: "};
-        for (size_t k = 0; k < 6; ++k)
-            if (*str(item, keys[k]) && !line(out, labels[k], str(item, keys[k]))) goto fail;
-        json_t *author = json_object_get(item, "author"), *footer = json_object_get(item, "footer");
-        if (*str(author, "name") && !line(out, "Autor do embed: ", str(author, "name"))) goto fail;
-        if (*str(author, "url") && !line(out, "URL do autor: ", str(author, "url"))) goto fail;
-        if (*str(footer, "text") && !line(out, "Rodapé: ", str(footer, "text"))) goto fail;
-        size_t field_index; json_t *field;
-        json_array_foreach(json_object_get(item, "fields"), field_index, field) {
-            if (field_index >= 25) break;
-            if (!line(out, "Campo: ", str(field, "name")) || !line(out, "", str(field, "value"))) goto fail;
-        }
-        const char *media_keys[] = {"thumbnail", "image", "video"};
-        const char *media_labels[] = {"Miniatura: ", "Imagem: ", "Vídeo: "};
-        for (size_t k = 0; k < 3; ++k) {
-            json_t *media = json_object_get(item, media_keys[k]);
-            if (!json_is_object(media)) continue;
-            if (!line(out, media_labels[k], str(media, "mime_type"))) goto fail;
-            if (*str(media, "url") && !line(out, "URL de mídia: ", str(media, "url"))) goto fail;
-        }
-    }
-    if (!line(out, "", "")) goto fail;
-    return out;
-fail:
-    json_decref(out); return NULL;
 }
 static void destroy_layout(view *ui)
 {
@@ -206,44 +144,51 @@ static int walk(view *ui, int first, bool paint, bool save, int *anchor)
     int total = 0, width = ui->body ? getmaxx(ui->body) - 4 : ui->width - 4;
     *anchor = 0;
     for (size_t i = 0; i < history_message_count(ui->model); ++i) {
-        json_t *m = history_message(ui->model, i), *sections = presentation(ui, m);
-        if (!sections) continue;
-        if (!strcmp(ui->anchor, str(m, "id")) && ui->section >= json_array_size(sections)) {
-            ui->section = 0; ui->offset = 0;
+        json_t *m = history_message(ui->model, i);
+        const char *reply = "mensagem não disponível";
+        if (*str(m, "reply_to")) for (size_t j = 0; j < history_message_count(ui->model); ++j)
+            if (!strcmp(str(m, "reply_to"), str(history_message(ui->model, j), "id"))) { reply = str(m, "reply_to"); break; }
+        message_blocks blocks;
+        if (!message_blocks_build(&blocks, m, history_author(ui->model, str(m, "author_id")), reply, width,
+                                  sixel_terminal_get().supported)) continue;
+        bool anchored = !strcmp(ui->anchor, str(m, "id"));
+        if (anchored) *anchor = total;
+        int offered = -1;
+        for (size_t row = 0; row < blocks.count; ++row) {
+            const message_row *r = &blocks.rows[row];
+            char key[128]; size_t offset = 0;
+            if (r->count) { snprintf(key, sizeof(key), "%s", r->segments[0].key); offset = r->segments[0].offset; }
+            else if (r->media_index >= 0) {
+                const message_media *item = &blocks.media[r->media_index];
+                snprintf(key, sizeof(key), "media:%s:%s", item->id, item->role);
+                offset = (size_t)(r->media_row < 0 ? 0 : r->media_row);
+            } else snprintf(key, sizeof(key), "gap:%zu", row);
+            if (anchored && !strcmp(key, ui->block) && offset <= ui->offset) *anchor = total + (int)row;
+            if (save && first == total + (int)row) {
+                snprintf(ui->anchor, sizeof(ui->anchor), "%s", str(m, "id"));
+                snprintf(ui->block, sizeof(ui->block), "%s", key); ui->offset = offset;
+            }
+            if (paint && total + (int)row >= first && total + (int)row < first + ui->visible) {
+                int y = ui->history_top + total + (int)row - first;
+                int pair = ui->focus == HISTORY_PANEL ? HISTORY_AREA : PANEL;
+                int accent = ui->focus == HISTORY_PANEL ? HISTORY_ACCENT : PANEL_ACCENT;
+                if (r->count && !strcmp(r->segments[0].key, "header")) pair = accent;
+                message_row_draw(ui->body, r, y, 2, width, pair, accent);
+                if (r->media_index >= 0 && r->media_index != offered && ui->media) {
+                    offered = r->media_index;
+                    int start = total + (int)row - r->media_row;
+                    int top = first > start ? first - start : 0;
+                    int bottom = start + r->media_height > first + ui->visible ? start + r->media_height - first - ui->visible : 0;
+                    if (bottom > r->media_height) bottom = r->media_height;
+                    int graphics_y = getbegy(ui->body) + ui->history_top + (start > first ? start - first : 0);
+                    if (!r->media_height) graphics_y = getbegy(ui->body) + y;
+                    media_view_offer(ui->media, &blocks.media[r->media_index], graphics_y,
+                                     getbegx(ui->body) + 2 + (r->media_width ? r->media_x : r->card ? 2 : 0),
+                                     r->media_width ? r->media_width : width - (r->card ? 4 : 0), r->media_height, top, bottom);
+                }
+            }
         }
-        size_t section; json_t *field;
-        json_array_foreach(sections, section, field) {
-            const char *p = json_string_value(field);
-            size_t offset = 0;
-            do {
-                text_buffer buffer; text_layout measured;
-                if (!text_decode_chunk(&buffer, &p)) {
-                    text_decode(&buffer, "Texto indisponível.");
-                    p += strlen(p);
-                }
-                text_measure(&buffer, width, &measured);
-                if (!strcmp(ui->anchor, str(m, "id")) && ui->section == section &&
-                    ui->offset >= offset && (ui->offset < offset + buffer.length + 1 || !*p)) {
-                    if (ui->offset > offset + buffer.length) ui->offset = offset + buffer.length;
-                    int row = 0;
-                    for (size_t k = 0; k < measured.count; ++k)
-                        if (measured.cells[k].start <= ui->offset - offset) row = measured.cells[k].row;
-                    *anchor = total + row;
-                }
-                if (save && first >= total && first < total + measured.rows) {
-                    snprintf(ui->anchor, sizeof(ui->anchor), "%s", str(m, "id"));
-                    ui->section = section; ui->offset = offset;
-                    for (size_t k = 0; k < measured.count; ++k)
-                        if (measured.cells[k].row == first - total) { ui->offset += measured.cells[k].start; break; }
-                }
-                if (paint && total < first + ui->visible && total + measured.rows > first) {
-                    wattrset(ui->body, COLOR_PAIR(section == 0 ? (ui->focus == HISTORY_PANEL ? HISTORY_ACCENT : PANEL_ACCENT) : ui->focus == HISTORY_PANEL ? HISTORY_AREA : PANEL));
-                    text_draw(ui->body, &buffer, &measured, first - total, ui->visible, ui->history_top, 2);
-                }
-                total += measured.rows; offset += buffer.length;
-            } while (*p);
-        }
-        json_decref(sections);
+        total += (int)blocks.count; message_blocks_free(&blocks);
     }
     return total;
 }
@@ -301,6 +246,8 @@ static void draw_confirmation(view *ui)
 static void draw(view *ui, auth_client *auth, bool conversation_only)
 {
     curs_set(0);
+    media_view_begin(ui->media);
+    message_colors_begin();
     if (!ui->frame) {
         erase(); text_label(stdscr, 0, 0, COLS, "Amplie o terminal para 44×14. F6: conta."); refresh(); return;
     }
@@ -326,7 +273,7 @@ static void draw(view *ui, auth_client *auth, bool conversation_only)
     text_label(ui->footer, 1, 1, COLS - 4, ui->focus == SERVER_TABS ? "←→ servidores · Enter: adicionar · ↓ canais · Ctrl+Q: sair" :
                ui->focus == CHANNEL_LIST ? "↑↓ canais · ← abas · → conversa · Ctrl+L: sair da conta" :
                ui->focus == MESSAGE_INPUT ? "Enter enviar · Ctrl+N nova linha · Esc histórico · Ctrl+T tentar" :
-               "↑↓ rolar · ← canais · Digite: editor · Ctrl+R atualizar");
+               "↑↓ rolar · F7 mídia · Digite: editor · Ctrl+R atualizar");
     if (ui->list && !conversation_only) {
         wbkgd(ui->list, COLOR_PAIR(ui->focus == CHANNEL_LIST ? FOCUS_AREA : PANEL)); werase(ui->list);
         wattrset(ui->list, COLOR_PAIR(ui->focus == CHANNEL_LIST ? FOCUS_MUTED : PANEL_MUTED) | A_BOLD);
@@ -424,7 +371,11 @@ static void draw(view *ui, auth_client *auth, bool conversation_only)
     }
     wnoutrefresh(ui->footer);
     if (ui->focus == MESSAGE_INPUT && input(ui) && ui->body && !ui->duplicate_modal) wnoutrefresh(ui->body);
-    draw_confirmation(ui); doupdate();
+    draw_confirmation(ui);
+    media_view_draw(ui->media);
+    if (media_view_modal(ui->media)) curs_set(0);
+    doupdate();
+    if (!ui->duplicate_modal) media_view_flush(ui->media);
 }
 static void set_focus(view *ui, int focus)
 {
@@ -443,6 +394,7 @@ static void open_channel(view *ui)
         ui->feedback = "Não foi possível trocar o editor; rascunho preservado."; return;
     }
     if (history_select(ui->model, ui->highlighted)) {
+        media_view_reset(ui->media);
         snprintf(ui->editor_channel, sizeof(ui->editor_channel), "%s", text ? str(channel, "id") : "");
         ui->feedback = NULL;
         ui->unseen = 0;
@@ -559,8 +511,9 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
     if (!ui) return HISTORY_ACCOUNT;
     ui->connections = connections; ui->active_tab = ui->tab_cursor = instances_index(connections, auth);
     ui->editor = instances_editor(connections, auth);
+    ui->media = media_view_create(auth);
     ui->model = history_create(auth); ui->at_end = ui->show_channels = true; ui->focus = focus_tabs ? SERVER_TABS : CHANNEL_LIST;
-    if (!ui->model || !ui->editor || ui->active_tab == SIZE_MAX || !layout(ui)) { history_destroy(ui->model); destroy_layout(ui); free(ui); return HISTORY_ACCOUNT; }
+    if (!ui->model || !ui->editor || ui->active_tab == SIZE_MAX || !layout(ui)) { media_view_destroy(ui->media); history_destroy(ui->model); destroy_layout(ui); free(ui); return HISTORY_ACCOUNT; }
     mmask_t previous_mouse;
     mousemask(BUTTON1_PRESSED | BUTTON1_CLICKED | BUTTON4_PRESSED | BUTTON5_PRESSED, &previous_mouse);
     bool redraw = true, conversation_only = false; int result = HISTORY_ACCOUNT;
@@ -570,19 +523,20 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         if (session_store_poll(connections->sessions, auth)) { redraw = true; conversation_only = false; }
         if (instances_poll(connections, auth)) { redraw = true; conversation_only = false; }
         if (poll_model(ui, auth) || before != auth_get_state(auth)) { redraw = true; conversation_only = false; }
+        if (media_view_poll(ui->media, ui->model)) { if (!redraw) conversation_only = true; redraw = true; }
         if (!auth_has_session(auth) && !auth_busy(auth)) break;
         if (redraw) { draw(ui, auth, conversation_only); redraw = false; conversation_only = false; }
-        wint_t key; int type = get_wch(&key);
+        wint_t key; int type = sixel_terminal_input(&key);
         if (type == ERR) continue;
         if (type == KEY_CODE_YES && key == PASTE_START) {
             ui->paste = true; ui->paste_cr = false;
-            if (!ui->duplicate_modal && input(ui) && ui->focus != SERVER_TABS) { set_focus(ui, MESSAGE_INPUT); redraw = true; }
+            if (!ui->duplicate_modal && !media_view_modal(ui->media) && input(ui) && ui->focus != SERVER_TABS) { set_focus(ui, MESSAGE_INPUT); redraw = true; }
             continue;
         }
         if (type == KEY_CODE_YES && key == PASTE_END) { ui->paste = false; continue; }
         if (type == KEY_CODE_YES && key == KEY_RESIZE) { layout(ui); redraw = true; continue; }
         if (ui->paste) {
-            if (!ui->duplicate_modal && ui->focus == MESSAGE_INPUT && type == OK && input(ui)) {
+            if (!ui->duplicate_modal && !media_view_modal(ui->media) && ui->focus == MESSAGE_INPUT && type == OK && input(ui)) {
                 text_buffer *editor = input(ui);
                 if (key == '\n' && ui->paste_cr) { ui->paste_cr = false; continue; }
                 ui->paste_cr = key == '\r';
@@ -624,6 +578,12 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         if (type == KEY_CODE_YES && key == KEY_F(6)) break;
         if (type == OK && key == 16) { result = HISTORY_PROFILES; break; }
         if (type == OK && key == 12) { auth_logout(auth); break; }
+        if (media_view_modal(ui->media) && type == KEY_CODE_YES && key == KEY_MOUSE) {
+            MEVENT e;
+            if (getmouse(&e) == OK && (e.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED))) media_view_click(ui->media, e.y, e.x);
+            continue;
+        }
+        if ((media_view_modal(ui->media) || ui->focus == HISTORY_PANEL) && media_view_key(ui->media, type, key)) continue;
         if (type == OK && key == 20 && input(ui)) {
             outbox_operation latest;
             if (outbox_latest(send_editor_outbox(ui->editor), ui->editor_channel, &latest) &&
@@ -665,6 +625,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 continue;
             }
             if (!(e.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED))) continue;
+            if (media_view_click(ui->media, e.y, e.x)) continue;
             if (ui->unseen && e.y == getbegy(ui->footer)) {
                 ui->at_end = true; ui->unseen = 0; ui->anchor[0] = 0; continue;
             }
@@ -748,5 +709,5 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
     }
 finished:
     mousemask(previous_mouse, NULL);
-    destroy_layout(ui); history_destroy(ui->model); free(ui); touchwin(stdscr); return result;
+    media_view_destroy(ui->media); destroy_layout(ui); history_destroy(ui->model); free(ui); touchwin(stdscr); return result;
 }

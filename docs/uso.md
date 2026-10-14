@@ -2,12 +2,12 @@
 
 ## Requisitos
 
-Compilador C17, CMake 3.21+, pkg-config, ncursesw/formw 6.1+, libcurl 7.86+ com WS/WSS, TLS e DNS assíncrono, Jansson 2.14+ e libunibreak 6.1+. Use um terminal UTF-8 com pelo menos 44 colunas e 22 linhas disponíveis ao aplicativo. No tmux, reserve também as linhas da barra de status.
+Compilador C17, CMake 3.21+, pkg-config, ncursesw/formw 6.1+, libcurl 7.86+ com WS/WSS, TLS e DNS assíncrono, Jansson 2.14+, libunibreak 6.1+, libsixel 1.8+, libmpv (API 2.0+) e FFmpeg (libavformat/libavcodec 58+, libavutil 56+, libswscale 5+). Use um terminal UTF-8 com pelo menos 44 colunas e 22 linhas disponíveis ao aplicativo. No tmux, reserve também as linhas da barra de status.
 
 No Arch Linux:
 
 ```sh
-sudo pacman -S --needed base-devel cmake pkgconf ncurses curl jansson libunibreak
+sudo pacman -S --needed base-devel cmake pkgconf ncurses curl jansson libunibreak libsixel mpv ffmpeg
 ```
 
 ## Compilar e executar
@@ -210,6 +210,7 @@ Abrir a lista não lê mensagens. Apenas o canal que você abre tem seu históri
 | Clique no editor | Focar e posicionar o cursor |
 | Clique em Canais / Conversa | Alternar o painel |
 | Roda do mouse sobre o histórico | Rolar o texto |
+| F7 no histórico; clique na mídia | Abrir uma prévia ou selecionar entre as mídias visíveis |
 | F6 | Voltar à tela da conta |
 | Ctrl+L | Sair da conta e remover sua aba |
 | Ctrl+P | Abrir seleção de perfil e encerrar a sessão local |
@@ -217,7 +218,7 @@ Abrir a lista não lê mensagens. Apenas o canal que você abre tem seu históri
 
 As páginas chegam em grupos de até 100 mensagens e aparecem em ordem cronológica. Ao alcançar o começo da janela, pressione PageUp para carregar uma página anterior. A mensagem e o trecho que estavam no topo continuam no mesmo lugar, inclusive após redimensionar o terminal. A lista de canais permanece estável durante a rolagem. Use Home depois do carregamento para ver o novo início. End volta à página recente.
 
-A tela mostra tópico, timestamps, autor ou **Autor indisponível**, indicação e data de edição, texto ausente e resposta cuja mensagem não está na janela atual. Anexos mostram nome, tipo, tamanho e moderação; embeds mostram seus textos e referências de mídia. Os embeds recebidos ou atualizados em tempo real aparecem na mensagem sem precisar reabrir o canal, incluindo mensagens sem texto. URLs são apenas texto e não são abertas. O editor aceita texto em canais de texto. Digitar a partir da conversa foca o editor e inclui o primeiro caractere. Enter envia; Ctrl+N insere uma quebra de linha. Você pode continuar editando, mudar de canal ou redimensionar durante o envio. A confirmação inclui a mensagem no histórico e remove somente o texto enviado que permaneceu intacto, preservando continuação e texto reescrito. Mensagens de outras contas chegam automaticamente; edições, exclusões e mudanças de canais também atualizam a tela. Eventos repetidos e confirmações REST/WS são reconciliados pelo ID da mensagem. Quando você está no fim, a tela acompanha novas mensagens; ao ler mensagens anteriores, mostra um indicador sem deslocar a leitura. End ou clique nesse indicador volta ao fim.
+A tela mostra tópico, timestamps, autor ou **Autor indisponível**, indicação e data de edição, texto ausente e resposta cuja mensagem não está na janela atual. Anexos mostram nome, tipo, tamanho e moderação; imagens visíveis são carregadas em terminais Sixel. Embeds aparecem em cards com seus textos, fields e mídia disponível. Os embeds recebidos ou atualizados em tempo real aparecem na mensagem sem precisar reabrir o canal, incluindo mensagens sem texto. URLs são apenas texto e não são abertas. O editor aceita texto em canais de texto. Digitar a partir da conversa foca o editor e inclui o primeiro caractere. Enter envia; Ctrl+N insere uma quebra de linha. Você pode continuar editando, mudar de canal ou redimensionar durante o envio. A confirmação inclui a mensagem no histórico e remove somente o texto enviado que permaneceu intacto, preservando continuação e texto reescrito. Mensagens de outras contas chegam automaticamente; edições, exclusões e mudanças de canais também atualizam a tela. Eventos repetidos e confirmações REST/WS são reconciliados pelo ID da mensagem. Quando você está no fim, a tela acompanha novas mensagens; ao ler mensagens anteriores, mostra um indicador sem deslocar a leitura. End ou clique nesse indicador volta ao fim.
 
 A janela guarda até 1.000 mensagens ou 4 MiB de JSON serializado. Carregar páginas antigas além desse limite libera mensagens recentes; End consulta-as novamente. Não há histórico salvo no disco. Trocar de canal ou servidor libera a janela anterior; voltar exige abrir um canal para uma nova consulta. F6 descarta a janela ao voltar à conta.
 
@@ -228,6 +229,47 @@ Rascunhos e posição de leitura são preservados dentro dos limites de memória
 Uma falha de página antiga preserva as mensagens já carregadas e o ponto de leitura. Ctrl+R tenta novamente a consulta que falhou. HTTP 429 aguarda o cooldown global e exige nova tentativa manual; nenhuma leitura fica repetindo automaticamente após erro. Canais sem mensagens, sem permissão ou removidos têm uma mensagem própria.
 
 Use ao menos 44 colunas e 14 linhas. Na altura mínima, o tópico fica oculto para preservar espaço de leitura. A partir de 80 colunas, lista e histórico aparecem juntos; em telas estreitas, os controles de foco alternam o painel visível. Ao voltar ao formulário da conta, amplie para 44×22. Colagem delimitada no editor ou conversa preserva as linhas e nunca envia automaticamente. Nas abas, sem canal de texto aberto ou em modais, a colagem não aciona controles.
+
+### Imagens e player de vídeo
+
+O programa consulta suporte a Sixel e tamanho das células do terminal. Em
+terminal compatível, baixa e mostra as imagens JPEG, PNG, WebP e GIF visíveis na
+conversa ativa; GIF aparece com seu primeiro frame. Sem suporte confirmado,
+mostra cards e metadados em texto, sem baixar imagens automaticamente.
+
+Pressione F7 com o histórico em foco ou clique numa mídia. Quando houver vários
+itens visíveis, escolha com ↑/↓ e Enter, ou clique na lista. Vídeos MP4, WebM e
+Ogg são baixados completamente antes da reprodução em um modal, com indicação
+do carregamento. Esc cancela ou fecha e volta à conversa com o rascunho
+preservado. Nenhum vídeo inicia automaticamente.
+
+| Controle no player | Ação |
+| --- | --- |
+| Espaço | Pausar ou continuar |
+| ← / → | Recuar ou avançar 5 segundos |
+| ↑ / ↓ | Aumentar ou diminuir o volume |
+| m | Silenciar ou restaurar o áudio |
+| Esc | Fechar ou cancelar o carregamento |
+| Enter na mensagem de erro | Tentar novamente |
+
+Redimensionar preserva o vídeo. O áudio usa o dispositivo disponível; quando
+nenhum dispositivo pode ser aberto, o player informa isso e continua com o
+vídeo. A renderização é limitada a 640×360 pixels e 15 frames/s.
+
+Imagens aceitam até 16 MiB e 16 megapixels, vídeos até 128 MiB e o cache de
+imagens até 64 MiB. Arquivos temporários são privados e não incluem cookies;
+fechar o modal remove seu vídeo. Trocar de conversa/servidor, voltar à conta ou
+sair libera as imagens. Downloads respeitam TLS, a sessão da instância e o
+limite global de requisições. Erros preservam a navegação; após HTTP 429, aguarde
+antes da tentativa manual.
+
+Embeds mostram autor, site/provedor, título, descrição, fields e rodapé dentro
+de um retângulo com a cor informada pelo servidor. Fields inline ficam lado a
+lado quando cabem e se empilham em telas estreitas. A thumbnail e o avatar são
+renderizados quando a API fornece seus bytes. A imagem adicional e o ícone do
+rodapé indicam indisponibilidade no backend atual. Vídeos de iframe, como
+YouTube, mostram URL e metadados. URLs não são abertas automaticamente e os
+textos não interpretam Markdown do Discord.
 
 ### Rascunhos e falhas de envio
 

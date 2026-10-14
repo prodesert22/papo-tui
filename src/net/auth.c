@@ -1265,6 +1265,49 @@ void auth_destroy(auth_client *client)
 }
 
 auth_state auth_get_state(const auth_client *client) { return client->state; }
+CURL *auth_media_easy(auth_client *client, auth_media_kind kind, const char *id)
+{
+    if (!auth_has_session(client) || !id || strlen(id) != 36) return NULL;
+    for (size_t i = 0; i < 36; ++i) {
+        bool dash = i == 8 || i == 13 || i == 18 || i == 23;
+        if (dash ? id[i] != '-' : !((id[i] >= '0' && id[i] <= '9') ||
+            (id[i] >= 'a' && id[i] <= 'f') || (id[i] >= 'A' && id[i] <= 'F'))) return NULL;
+    }
+    const char *formats[] = {"/attachments/%s", "/attachments/%s/thumbnail",
+                            "/embeds/%s", "/embeds/%s/video"};
+    if (kind < AUTH_MEDIA_ATTACHMENT || kind > AUTH_MEDIA_VIDEO) return NULL;
+    char path[96];
+    snprintf(path, sizeof(path), formats[kind], id);
+    size_t length = strlen(client->base) + strlen(path) + 1;
+    char *url = malloc(length);
+    CURL *easy = curl_easy_init();
+    if (!url || !easy) { free(url); curl_easy_cleanup(easy); return NULL; }
+    snprintf(url, length, "%s%s", client->base, path);
+#define MEDIA_SET(option, value) do { if (curl_easy_setopt(easy, option, value) != CURLE_OK) goto error; } while (0)
+    MEDIA_SET(CURLOPT_URL, url);
+    MEDIA_SET(CURLOPT_SHARE, client->cookies);
+    MEDIA_SET(CURLOPT_COOKIEFILE, "");
+    MEDIA_SET(CURLOPT_FOLLOWLOCATION, 0L);
+    MEDIA_SET(CURLOPT_FRESH_CONNECT, 1L);
+    MEDIA_SET(CURLOPT_FORBID_REUSE, 1L);
+    MEDIA_SET(CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
+    MEDIA_SET(CURLOPT_PROTOCOLS_STR, "http,https");
+    MEDIA_SET(CURLOPT_SSL_VERIFYPEER, 1L);
+    MEDIA_SET(CURLOPT_SSL_VERIFYHOST, 2L);
+    MEDIA_SET(CURLOPT_CONNECTTIMEOUT_MS, 5000L);
+    MEDIA_SET(CURLOPT_TIMEOUT_MS, 120000L);
+    MEDIA_SET(CURLOPT_LOW_SPEED_LIMIT, 1024L);
+    MEDIA_SET(CURLOPT_LOW_SPEED_TIME, 15L);
+    MEDIA_SET(CURLOPT_NOSIGNAL, 1L);
+    MEDIA_SET(CURLOPT_USERAGENT, "papo-tui/0.1.0-dev");
+    const char *ca_bundle = getenv("CURL_CA_BUNDLE");
+    if (ca_bundle && *ca_bundle) MEDIA_SET(CURLOPT_CAINFO, ca_bundle);
+    free(url);
+    return easy;
+error:
+    free(url); curl_easy_cleanup(easy); return NULL;
+#undef MEDIA_SET
+}
 bool auth_busy(const auth_client *client)
 {
     return (client->validation_wait && client->recovering) || client->queued || client->attached ||

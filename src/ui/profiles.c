@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
+#include "ui/sixel.h"
 #include "ui/profiles.h"
 #include "ui/text.h"
 #include "ui/theme.h"
@@ -526,7 +527,7 @@ static int profiles_run(profile_config *config, bool allow_local_http,
         if (before != auth_get_state(ui->discovery)) redraw = true;
         if (redraw && (!ui->paste || paste_steps >= 32)) { draw(ui); redraw = false; paste_steps = 0; }
         wint_t key;
-        int type = get_wch(&key);
+        int type = sixel_terminal_input(&key);
         if (type == ERR) {
             if (redraw) { draw(ui); redraw = false; paste_steps = 0; }
             continue;

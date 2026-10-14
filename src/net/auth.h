@@ -29,6 +29,13 @@ typedef enum { AUTH_INPUT_NONE, AUTH_INPUT_URL, AUTH_INPUT_USERNAME,
                AUTH_INPUT_PASSWORD, AUTH_INPUT_SERVER_PASSWORD } auth_input_error;
 
 typedef struct auth_client auth_client;
+typedef enum { AUTH_MEDIA_ATTACHMENT, AUTH_MEDIA_THUMBNAIL, AUTH_MEDIA_EMBED,
+               AUTH_MEDIA_VIDEO } auth_media_kind;
+/* Internal read-only media transport. Creates an owned easy handle configured
+ * for this instance's cookies and TLS policy; never dispatches HTTP. The media
+ * owner must destroy it before auth_destroy and acquire the global budget.
+ * Only UUID-addressed, documented media endpoints are accepted. Main thread. */
+CURL *auth_media_easy(auth_client *client, auth_media_kind kind, const char *id);
 /* Gate called before admitting refresh/logout to HTTP: 1 permits, 0 waits,
  * -1 fails closed. Borrowed context; detach the gate before destroying it. */
 typedef int (*auth_session_gate)(void *context, auth_client *client);

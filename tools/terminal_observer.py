@@ -19,6 +19,7 @@ def write(path, result):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--report', type=Path, required=True)
+    parser.add_argument('--isolated-session', action='store_true')
     parser.add_argument('binary', type=Path)
     parser.add_argument('application_args', nargs=argparse.REMAINDER)
     arguments = parser.parse_args()
@@ -31,7 +32,10 @@ def main():
         stopping = True
 
     signal.signal(signal.SIGTERM, stop)
-    child = subprocess.Popen([str(arguments.binary.resolve()), *arguments.application_args])
+    environment = dict(os.environ)
+    if arguments.isolated_session:
+        environment["DBUS_SESSION_BUS_ADDRESS"] = "unix:path=/nonexistent/papo-test-bus"
+    child = subprocess.Popen([str(arguments.binary.resolve()), *arguments.application_args], env=environment)
     result = {'pid': child.pid, 'term': os.environ.get('TERM'), 'running': True}
     try:
         while child.poll() is None and not stopping:
