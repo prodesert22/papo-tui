@@ -237,7 +237,7 @@ static int walk(view *ui, int first, bool paint, bool save, int *anchor)
                 }
                 if (blocks.self_mention && row + 1 < blocks.count) {
                     wattrset(ui->body, COLOR_PAIR(accent) | A_BOLD);
-                    mvwaddch(ui->body, y, r->indent, ACS_VLINE);
+                    mvwaddch(ui->body, y, 0, ACS_VLINE);
                 }
                 for (int k = 0; k < r->media_count && offered && ui->media; ++k) {
                     const message_media_region *region = &r->media[k];
