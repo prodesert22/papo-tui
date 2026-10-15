@@ -184,8 +184,8 @@ void r8_modal_draw(r8_modal *m)
     const char *title=m->kind==R8_USERS ? "Nova DM" : m->kind==R8_HELP ? "Ajuda" : m->prefs ? "Preferências" : m->detail ? "Detalhes da notificação" : "Notificações";
     wattrset(w,COLOR_PAIR(PANEL_ACCENT)|A_BOLD); text_label(w,1,2,width-4,title); wattrset(w,COLOR_PAIR(PANEL));
     if (m->kind==R8_HELP) {
-        const char *lines[]={"Tab/Shift+Tab: percorrer áreas","Canais/DMs: ←→ escolher, Enter ativar","↑↓: navegar · Enter: abrir conversa","F9: notificações · F10: nova DM","Ctrl+D na lista DMs: fechar conversa","Ctrl+R: atualizar ou reconectar","F6: conta · Ctrl+L: sair da conta","Esc: voltar · Ctrl+Q: sair"};
-        for (size_t i=0;i<8 && (int)i+3<height-2;++i) text_label(w,(int)i+3,2,width-4,lines[i]);
+        const char *lines[]={"Tab/Shift+Tab: percorrer áreas","Canais/DMs: ←→ escolher, Enter ativar","↑↓: navegar · Enter: abrir texto/DM","Voz: F4 abre o histórico","F9: notificações · F10: nova DM","Ctrl+D na lista DMs: fechar conversa","Ctrl+R: atualizar ou reconectar","F6: conta · Ctrl+L: sair da conta","Esc: voltar · Ctrl+Q: sair"};
+        for (size_t i=0;i<sizeof(lines)/sizeof(lines[0]) && (int)i+3<height-2;++i) text_label(w,(int)i+3,2,width-4,lines[i]);
     } else if (m->prefs) {
         button_draw(w,3,2,width-4,m->config && m->config->desktop_notifications ? "[x] Avisos no desktop" : "[ ] Avisos no desktop",m->focus==0 ? BUTTON_FOCUSED : BUTTON_NORMAL,BUTTON_PANEL);
         button_draw(w,5,2,width-4,m->config && m->config->notification_preview ? "[x] Mostrar prévia" : "[ ] Mostrar prévia",m->focus==1 ? BUTTON_FOCUSED : BUTTON_NORMAL,BUTTON_PANEL);

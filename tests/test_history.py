@@ -109,14 +109,14 @@ class HistoryTests(unittest.TestCase):
             self.assertTrue(result['pages'][-1]['evicted'])
             self.assertEqual(result['recent']['ids'], [uuid(100 + n) for n in range(1151, 1251)])
 
-    def test_cancel_clears_instance_data_and_voice_does_not_fetch(self):
+    def test_cancel_clears_instance_data_and_voice_has_message_history(self):
         with HistoryMock() as server:
             self.assertTrue(self.run_probe(server, 'context')['cleared'])
         with HistoryMock() as server:
             result = self.run_probe(server, 'voice')
-            self.assertIn('Chamadas', result['voice']['status'])
-            self.assertEqual(result['voice']['count'], 0)
-            self.assertEqual(sum('/messages' in r[1] for r in server.requests), 1)
+            self.assertEqual(result['voice']['count'], 100)
+            self.assertEqual(result['voice']['ids'], [uuid(500 + n) for n in range(151, 251)])
+            self.assertEqual(sum('/messages' in r[1] for r in server.requests), 2)
 
     def test_byte_budget_and_global_request_budget(self):
         with HistoryMock(count=700) as server:

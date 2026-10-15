@@ -202,6 +202,9 @@ if(BUILD_TESTING)
     add_test(NAME history-terminal COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_history_terminal.py $<TARGET_FILE:papo-tui>)
     set_tests_properties(history-integration history-terminal PROPERTIES TIMEOUT 120)
+    add_test(NAME voice-conversation-terminal COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_voice_conversation.py $<TARGET_FILE:papo-tui>)
+    set_tests_properties(voice-conversation-terminal PROPERTIES TIMEOUT 120)
     add_test(NAME message-send-product COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_send_product.py $<TARGET_FILE:papo-tui>)
     set_tests_properties(message-send-product PROPERTIES TIMEOUT 120)

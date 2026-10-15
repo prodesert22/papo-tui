@@ -184,7 +184,7 @@ Cada conexão mantém sua própria sessão isolada; somente a última conexão a
 
 Esc no formulário de adição retorna ao servidor anterior, quando sua sessão ainda está válida. Se houver uma conexão em andamento, a primeira pressão de Esc cancela a tentativa; pressione novamente para voltar. Login, cadastro e renovação usam os mesmos controles do formulário inicial.
 
-Depois do login, a lista de canais abre automaticamente. F6 volta à tela da conta; use **Canais / F6**, F6 ou Tab e Enter nesse botão para reabrir a leitura. A lista é ordenada pela posição informada pelo servidor, sem inferir subcategorias. Use ↑/↓, PageUp/PageDown e Home/End para destacar um canal; Enter, → ou clique abre-o. Navegar pela lista mantém o histórico e as mensagens em tempo real do canal aberto. Confirmar esse mesmo canal preserva a posição de leitura e o rascunho, sem refazer a consulta. Os botões **Canais** e **DMs** ficam lado a lado no cabeçalho da lista. Clique no botão ou use Tab para focar o grupo, ←/→ para escolher e Enter/Espaço para ativar; ↓ ativa e entra na lista. Mudar a lista preserva a conversa e o rascunho abertos. Categorias são separadores e não abrem histórico. Canais de voz informam que chamadas ainda não estão disponíveis.
+Depois do login, a lista de canais abre automaticamente. F6 volta à tela da conta; use **Canais / F6**, F6 ou Tab e Enter nesse botão para reabrir a leitura. A lista é ordenada pela posição informada pelo servidor, sem inferir subcategorias. Use ↑/↓, PageUp/PageDown e Home/End para destacar um canal; Enter, → ou clique abre um canal de texto. Navegar pela lista mantém o histórico e as mensagens em tempo real do canal aberto. Confirmar esse mesmo canal preserva a posição de leitura e o rascunho, sem refazer a consulta. Os botões **Canais** e **DMs** ficam lado a lado no cabeçalho da lista. Clique no botão ou use Tab para focar o grupo, ←/→ para escolher e Enter/Espaço para ativar; ↓ ativa e entra na lista. Mudar a lista preserva a conversa e o rascunho abertos. Categorias são separadores e não abrem histórico. Na lista, **F4** abre a conversa de um canal de voz, com histórico, editor e envio de texto. **Enter** nesses canais fica reservado para chamadas futuras; Enter, → e clique apenas mostram a orientação para abrir o histórico e preservam a conversa atual.
 
 Abrir a lista não lê mensagens. Apenas o canal que você abre tem seu histórico consultado; essa consulta também marca leitura no servidor. `*` ao lado do nome indica uma última mensagem ainda não lida nos dados da lista e desaparece após carregar com sucesso a última mensagem.
 
@@ -193,6 +193,8 @@ Abrir a lista não lê mensagens. Apenas o canal que você abre tem seu históri
 | Tab / Shift+Tab | Percorrer abas, botões Canais/DMs, lista, histórico e editor disponível |
 | ← / → nos botões Canais/DMs; Enter/Espaço | Escolher e ativar a lista |
 | ↓ nos botões Canais/DMs | Ativar e entrar na lista |
+| F4 na lista, em um canal de voz | Abrir seu histórico de conversa |
+| Enter na lista, em um canal de voz | Reservado para chamadas futuras; mostrar orientação |
 | Esc no editor | Voltar ao histórico |
 | Esc nos demais painéis | Alternar canais e histórico |
 | ↑ no primeiro item da lista; ↑ nos botões Canais/DMs | Focar os botões; voltar às abas |
@@ -207,7 +209,7 @@ Abrir a lista não lê mensagens. Apenas o canal que você abre tem seu históri
 | Home no histórico | Ir ao início da janela carregada |
 | End no histórico | Voltar ao fim das novidades; sem indicador, consultar a página recente |
 | Ctrl+R | Antecipar reconexão quando desconectado; conectado, atualizar o canal aberto ou tentar novamente |
-| Digitar; Enter no histórico | Focar o editor do canal de texto |
+| Digitar; Enter no histórico | Focar o editor da conversa aberta |
 | Enter no editor | Enviar o texto |
 | Ctrl+N na conversa | Focar o editor e inserir uma quebra de linha |
 | Setas, Home/End, Backspace/Delete no editor | Editar o texto por grafemas |
@@ -229,7 +231,7 @@ Abrir a lista não lê mensagens. Apenas o canal que você abre tem seu históri
 
 As páginas chegam em grupos de até 100 mensagens e aparecem em ordem cronológica. Ao alcançar o começo da janela, pressione PageUp para carregar uma página anterior. A mensagem e o trecho que estavam no topo continuam no mesmo lugar, inclusive após redimensionar o terminal. A lista de canais permanece estável durante a rolagem. Use Home depois do carregamento para ver o novo início. End volta à página recente.
 
-A tela mostra tópico, timestamps, autor ou **Autor indisponível**, indicação e data de edição e resposta cuja mensagem não está na janela atual. Anexos mostram nome, tipo, tamanho e moderação; imagens visíveis são carregadas em terminais Sixel/Kitty/iTerm2. Embeds aparecem em cards com seus textos, fields e mídia disponível. Os embeds recebidos ou atualizados em tempo real aparecem na mensagem sem precisar reabrir o canal, incluindo mensagens sem texto. URLs são apenas texto e não são abertas. O editor aceita texto em canais de texto. Digitar a partir da conversa foca o editor e inclui o primeiro caractere. Enter envia; Ctrl+N insere uma quebra de linha. Você pode continuar editando, mudar de canal ou redimensionar durante o envio. A confirmação inclui a mensagem no histórico e remove somente o texto enviado que permaneceu intacto, preservando continuação e texto reescrito. Mensagens de outras contas chegam automaticamente; edições, exclusões e mudanças de canais também atualizam a tela. Eventos repetidos e confirmações REST/WS são reconciliados pelo ID da mensagem. Quando você está no fim, a tela acompanha novas mensagens; ao ler mensagens anteriores, mostra um indicador sem deslocar a leitura. End ou clique nesse indicador volta ao fim.
+A tela mostra tópico, timestamps, autor ou **Autor indisponível**, indicação e data de edição e resposta cuja mensagem não está na janela atual. Anexos mostram nome, tipo, tamanho e moderação; imagens visíveis são carregadas em terminais Sixel/Kitty/iTerm2. Embeds aparecem em cards com seus textos, fields e mídia disponível. Os embeds recebidos ou atualizados em tempo real aparecem na mensagem sem precisar reabrir o canal, incluindo mensagens sem texto. URLs são apenas texto e não são abertas. O editor aceita mensagens nos canais de texto e de voz. Digitar a partir da conversa foca o editor e inclui o primeiro caractere. Enter envia; Ctrl+N insere uma quebra de linha. Você pode continuar editando, mudar de canal ou redimensionar durante o envio. A confirmação inclui a mensagem no histórico e remove somente o texto enviado que permaneceu intacto, preservando continuação e texto reescrito. Mensagens de outras contas chegam automaticamente; edições, exclusões e mudanças de canais também atualizam a tela. Eventos repetidos e confirmações REST/WS são reconciliados pelo ID da mensagem. Quando você está no fim, a tela acompanha novas mensagens; ao ler mensagens anteriores, mostra um indicador sem deslocar a leitura. End ou clique nesse indicador volta ao fim.
 
 A janela guarda até 1.000 mensagens ou 4 MiB de JSON serializado. Carregar páginas antigas além desse limite libera mensagens recentes; End consulta-as novamente. Não há histórico salvo no disco. Trocar de canal ou servidor libera a janela anterior; voltar exige abrir um canal para uma nova consulta. F6 descarta a janela ao voltar à conta.
 
@@ -239,7 +241,7 @@ Rascunhos e posição de leitura são preservados dentro dos limites de memória
 
 Uma falha de página antiga preserva as mensagens já carregadas e o ponto de leitura. Ctrl+R tenta novamente a consulta que falhou. HTTP 429 aguarda o cooldown global e exige nova tentativa manual; nenhuma leitura fica repetindo automaticamente após erro. Canais sem mensagens, sem permissão ou removidos têm uma mensagem própria.
 
-Use ao menos 44 colunas e 14 linhas. Na altura mínima, o tópico fica oculto para preservar espaço de leitura. A partir de 80 colunas, lista e histórico aparecem juntos; em telas estreitas, os controles de foco alternam o painel visível. Ao voltar ao formulário da conta, amplie para 44×22. Colagem delimitada no editor ou conversa preserva as linhas e nunca envia automaticamente. Nas abas, sem canal de texto aberto ou em modais, a colagem não aciona controles.
+Use ao menos 44 colunas e 14 linhas. Na altura mínima, o tópico fica oculto para preservar espaço de leitura. A partir de 80 colunas, lista e histórico aparecem juntos; em telas estreitas, os controles de foco alternam o painel visível. Ao voltar ao formulário da conta, amplie para 44×22. Colagem delimitada no editor ou conversa preserva as linhas e nunca envia automaticamente. Nas abas, sem conversa aberta ou em modais, a colagem não aciona controles.
 
 A última linha acompanha o foco: mostra à esquerda somente as dicas de abas,
 canais, histórico, editor ou do cartão/modal aberto. À direita ficam os avisos,

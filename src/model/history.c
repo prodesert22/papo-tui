@@ -346,7 +346,7 @@ void history_typing_activity(history *h)
     json_t *channel = h ? history_channel(h, h->selected) : NULL;
     if (!h || !auth_has_session(h->auth) || auth_ws_state(h->auth) != WS_OPEN ||
         h->context != auth_context_generation(h->auth) ||
-        !str(channel, "type") || strcmp(str(channel, "type"), "text") ||
+        !str(channel, "type") || (strcmp(str(channel, "type"), "text") && strcmp(str(channel, "type"), "voice")) ||
         !net_now_ms(&now) || (h->typing_sent && now - h->typing_sent < TYPING_SEND_MS)) return;
     json_t *event = json_pack("{s:s,s:s}", "type", "typing", "channel_id", str(channel, "id"));
     if (event && auth_send_event(h->auth, event)) h->typing_sent = now;
@@ -360,7 +360,8 @@ static bool typing_event(history *h, const json_t *event)
         !json_is_boolean(json_object_get(event, "is_typing"))) return false;
     json_t *active = history_channel(h, h->selected);
     if (auth_ws_state(h->auth) != WS_OPEN || !str(active, "id") || strcmp(channel, str(active, "id")) ||
-        strcmp(str(active, "type"), "text") || !strcmp(id, auth_user_id(h->auth))) return true;
+        (strcmp(str(active, "type"), "text") && strcmp(str(active, "type"), "voice")) ||
+        !strcmp(id, auth_user_id(h->auth))) return true;
     if (json_is_false(json_object_get(event, "is_typing"))) { typing_remove(h, id); return true; }
     uint64_t now;
     if (!net_now_ms(&now)) return true;
@@ -456,8 +457,7 @@ bool history_select(history *h, size_t index)
     }
     if (h->pending != NONE && h->pending != INBOX) { auth_cancel_read(h->auth); h->pending = NONE; }
     ++h->selection; clear_messages(h); h->selected = index; h->older = false;
-    if (!strcmp(str(c, "type"), "voice")) status(h, "Chamadas de voz ainda não estão disponíveis.");
-    else { h->want_messages = true; status(h, "Carregando histórico…"); }
+    h->want_messages = true; status(h, "Carregando histórico…");
     return true;
 }
 void history_recent(history *h)
@@ -1220,7 +1220,7 @@ bool history_poll(history *h)
             }
             if (ok && kind == CHANNELS && h->recovering) {
                 json_t *channel = history_channel(h, h->selected);
-                if (channel && !strcmp(str(channel, "type"), "text")) h->want_messages = true;
+                if (channel && (!strcmp(str(channel, "type"), "text") || !strcmp(str(channel, "type"), "voice"))) h->want_messages = true;
                 else { h->recovering = false; clear_journal(h); }
             }
             if (kind == AUTHORS) {

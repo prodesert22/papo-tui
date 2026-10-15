@@ -315,7 +315,7 @@ static void scroll_history(view *ui, int delta)
 static text_buffer *input(view *ui)
 {
     json_t *channel = history_channel(ui->model, history_selected(ui->model));
-    return channel && !strcmp(str(channel, "type"), "text") &&
+    return channel && (!strcmp(str(channel, "type"), "text") || !strcmp(str(channel, "type"), "voice")) &&
         !strcmp(str(channel, "id"), ui->editor_channel) ? send_editor_input(ui->editor) : NULL;
 }
 static int input_height(view *ui)
@@ -447,9 +447,11 @@ static void draw_footer(view *ui)
         full="←→ Canais/DMs · Enter ativar · ↓ lista · F9 avisos · F10 nova DM";
         shorter="←→ escolher · Enter ativar · ↓ lista"; minimal="←→ · Enter";
     } else if (ui->focus == CHANNEL_LIST) {
-        full = "↑↓ canais · Enter/→ abrir · ← abas · Ctrl+R atualizar";
-        shorter = "↑↓ canais · Enter abrir · ← abas";
-        minimal = "↑↓ · Enter";
+        bool voice = !strcmp(str(list_channel(ui, ui->highlighted), "type"), "voice");
+        full = voice ? "↑↓ canais · F4 histórico · Enter voz (em breve) · ← abas"
+                     : "↑↓ canais · Enter/→ abrir · ← abas · Ctrl+R atualizar";
+        shorter = voice ? "↑↓ canais · F4 histórico · ← abas" : "↑↓ canais · Enter abrir · ← abas";
+        minimal = voice ? "F4 histórico" : "↑↓ · Enter";
     } else if (ui->focus == MESSAGE_INPUT) {
         full = "Enter enviar · Ctrl+N linha · Shift+setas selecionar · Ctrl+Shift+C copiar · Ctrl+C limpar · @ mencionar · Esc histórico";
         shorter = "Enter enviar · Ctrl+Shift+C copiar · Esc histórico";
@@ -554,7 +556,7 @@ static void draw(view *ui, auth_client *auth, draw_scope scope)
                 mvwhline(ui->body, row, 0, ' ', getmaxx(ui->body));
         }
         json_t *c = history_channel(ui->model, history_selected(ui->model));
-        char title[2200]; snprintf(title, sizeof(title), "%s%s · Histórico", c ? json_is_true(json_object_get(c,"_dm")) ? "DM com " : "# " : "", c ? str(c, "name") : "Conversa");
+        char title[2200]; snprintf(title, sizeof(title), "%s%s · Histórico", c ? json_is_true(json_object_get(c,"_dm")) ? "DM com " : !strcmp(str(c,"type"),"voice") ? "♪ " : "# " : "", c ? str(c, "name") : "Conversa");
         wattrset(ui->body, COLOR_PAIR(ui->focus == HISTORY_PANEL ? HISTORY_MUTED : PANEL_MUTED) | A_BOLD);
         text_label(ui->body, 0, 2, getmaxx(ui->body) - 4, title);
         wattrset(ui->body, COLOR_PAIR(ui->focus == HISTORY_PANEL ? HISTORY_MUTED : PANEL_MUTED));
@@ -668,21 +670,27 @@ static void set_focus(view *ui, int focus)
     if (focus == HISTORY_PANEL || focus == MESSAGE_INPUT) ui->show_channels = false;
     if (COLS < 80 && was_channels != ui->show_channels) layout(ui);
 }
-static void open_channel(view *ui)
+static void open_channel(view *ui, bool voice_history)
 {
+    json_t *channel = list_channel(ui, ui->highlighted);
+    if (!channel || !strcmp(str(channel, "type"), "category")) return;
+    bool voice = !strcmp(str(channel, "type"), "voice");
+    if (voice && !voice_history) {
+        set_focus(ui, CHANNEL_LIST);
+        ui->feedback = "Voz em breve. F4 abre o histórico."; return;
+    }
+    if (voice) ui->feedback = NULL;
     /* Selecting the displayed channel only changes focus. Preserve pending
      * reads, the reading anchor, the draft and the current message window. */
     if (history_selected(ui->model) == list_index(ui,ui->highlighted)) { set_focus(ui, HISTORY_PANEL); return; }
-    json_t *channel = list_channel(ui, ui->highlighted);
-    bool text = !strcmp(str(channel, "type"), "text");
-    if (text && !send_editor_select(ui->editor, str(channel, "id"))) {
+    if (!send_editor_select(ui->editor, str(channel, "id"))) {
         ui->feedback = "Não foi possível trocar o editor; rascunho preservado."; return;
     }
     if (history_select(ui->model, list_index(ui,ui->highlighted))) {
         for (int context = STATUS_HISTORY; context <= STATUS_CLIPBOARD; ++context)
             status_bar_set(&ui->status, (status_context)context, NULL);
         media_view_reset(ui->media);
-        snprintf(ui->editor_channel, sizeof(ui->editor_channel), "%s", text ? str(channel, "id") : "");
+        snprintf(ui->editor_channel, sizeof(ui->editor_channel), "%s", str(channel, "id"));
         ui->feedback = NULL;
         ui->unseen = 0;
         ui->at_end = true; ui->anchor[0] = 0; set_focus(ui, HISTORY_PANEL);
@@ -839,7 +847,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 if (strcmp(destination,str(c,"id"))) continue;
                 switch_list(ui,json_is_true(json_object_get(c,"_dm")));
                 for (size_t j=0;j<list_count(ui);++j) if (list_index(ui,j)==i) ui->highlighted=j;
-                open_channel(ui); found=true; break;
+                open_channel(ui, true); found=true; break;
             }
             if (!found) inbox_resolve_dm(box,destination);
             inbox_opened_clear(box); r8_modal_destination_clear(ui->r8); redraw=true;
@@ -1042,7 +1050,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                     if (y==0 && x>=1 && x<19) {
                         switch_list(ui,x>=11); set_focus(ui,LIST_BUTTONS); scope=DRAW_ALL;
                     } else if (y < getmaxy(ui->list) - 1 && index < list_count(ui)) {
-                        ui->highlighted = index; open_channel(ui);
+                        ui->highlighted = index; open_channel(ui, false);
                     } else {
                         if (ui->focus == CHANNEL_LIST || ui->focus == SERVER_TABS) scope = DRAW_NAVIGATION;
                         set_focus(ui, CHANNEL_LIST);
@@ -1100,7 +1108,9 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 ui->highlighted = ui->highlighted > (size_t)(LINES - CONTENT_Y - 5) ? ui->highlighted - (size_t)(LINES - CONTENT_Y - 5) : 0;
             else if (type == KEY_CODE_YES && key == KEY_NPAGE && count) {
                 ui->highlighted += (size_t)(LINES - CONTENT_Y - 5); if (ui->highlighted >= count) ui->highlighted = count - 1;
-            } else if (enter || (type == KEY_CODE_YES && key == KEY_RIGHT)) { scope = DRAW_ALL; open_channel(ui); }
+            } else if (enter || (type == KEY_CODE_YES && (key == KEY_RIGHT || key == KEY_F(4)))) {
+                scope = DRAW_ALL; open_channel(ui, type == KEY_CODE_YES && key == KEY_F(4));
+            }
         } else {
             if (type == KEY_CODE_YES && key == KEY_LEFT) set_focus(ui, CHANNEL_LIST);
             else if (type == KEY_CODE_YES && (key == KEY_PPAGE || key == KEY_UP || key == KEY_HOME)) {

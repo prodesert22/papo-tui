@@ -8,6 +8,7 @@ def uuid(n): return f'00000000-0000-4000-8000-{n:012x}'
 STAMP = '2026-10-12T12:00:00.123456Z'
 CHANNEL = uuid(10)
 OTHER = uuid(11)
+VOICE = uuid(12)
 
 class HistoryMock(MockServer):
     def __init__(self, case='normal', count=250):
@@ -19,7 +20,7 @@ class HistoryMock(MockServer):
         self.api_handler = self.route
         self.channels = [
             {'id': OTHER, 'name': 'outro', 'position': 3, 'topic': 'Outra conversa', 'type': 'text'},
-            {'id': uuid(12), 'name': 'voz', 'position': 4, 'topic': None, 'type': 'voice'},
+            {'id': VOICE, 'name': 'voz', 'position': 4, 'topic': None, 'type': 'voice'},
             {'id': uuid(9), 'name': 'Categoria', 'position': 1, 'topic': None, 'type': 'category'},
             {'id': CHANNEL, 'name': 'geral', 'position': 2, 'topic': 'Tópico remoto\x1b]52;c;INJECT\x07', 'type': 'text',
              'last_message': {'id': uuid(100 + count)}, 'last_read_message': None},
@@ -44,6 +45,10 @@ class HistoryMock(MockServer):
                 messages = [dict(self.message(1), channel_id=OTHER, content='Conteúdo do outro canal')]
                 messages += [m for m in self.sent_messages if m['channel_id'] == OTHER]
                 return 200, {'channel_id': OTHER, 'messages': list(reversed(messages)), 'has_more': False}
+            if channel not in (CHANNEL, VOICE): return 404, None
+            source = self.messages if channel == CHANNEL else [
+                dict(m, id=uuid(500 + n), channel_id=VOICE, content=f'Conversa de voz {n:04d}')
+                for n, m in enumerate(self.messages, 1)]
             if self.case == 'slow': time.sleep(0.4)
             if self.case in ('forbidden', 'removed', 'limited', 'failure'):
                 return {'forbidden': 403, 'removed': 404, 'limited': 429, 'failure': 500}[self.case], None
@@ -54,13 +59,13 @@ class HistoryMock(MockServer):
             if cursor:
                 self.older_calls += 1
                 assert query['since'] == [STAMP]
-                upper = int(cursor.split('-')[-1], 16) - 100 - 1
+                upper = int(cursor.split('-')[-1], 16) - (100 if channel == CHANNEL else 500) - 1
                 if self.case == 'overlap': upper += 1
                 if self.case == 'older-error' and self.older_calls == 1: return 503, None
-            page = list(reversed(self.messages[max(0, upper - 100):upper]))
+            page = list(reversed(source[max(0, upper - 100):upper]))
             more = upper > 100
             if not cursor and self.sent_messages:
-                messages = self.messages + [m for m in self.sent_messages if m['channel_id'] == CHANNEL]
+                messages = source + [m for m in self.sent_messages if m['channel_id'] == channel]
                 page = list(reversed(messages[-100:])); more = len(messages) > 100
             if self.case == 'empty-page' and cursor: page, more = [], True
             if self.case == 'empty': page, more = [], False
@@ -68,8 +73,8 @@ class HistoryMock(MockServer):
             if self.case == 'invalid-date': page = [dict(page[0], created_at='2026-02-30T00:00:00Z')]
             if self.case == 'null-item': page = [None]
             if self.case == 'too-many': page += [self.message(1)]
-            if self.case == 'repeat' and cursor: page, more = list(reversed(self.messages[-100:])), True
-            return 200, {'channel_id': CHANNEL, 'messages': page, 'has_more': more}
+            if self.case == 'repeat' and cursor: page, more = list(reversed(source[-100:])), True
+            return 200, {'channel_id': channel, 'messages': page, 'has_more': more}
         if url.path.endswith('/users/user_summary_batch') and method == 'POST':
             self.summary_calls += 1
             assert 1 <= len(body['ids']) <= 1000
