@@ -235,12 +235,13 @@ bool graphics_image_encode_preview(const unsigned char *pixels, int width, int h
     size_t at = 0;
     for (int top = 0; top < rows; ++top) for (int bottom = 0; bottom < rows - top; ++bottom) {
         if (!top && !bottom) continue;
-        int h = height - (top + bottom) * t.cell_height;
+        int crop_bottom = bottom ? height - (rows - bottom) * t.cell_height : 0;
+        int h = height - top * t.cell_height - crop_bottom;
         if (h < 1) continue;
         graphics_image *crop = &out->crops[at++];
         if (!graphics_image_encode_id(pixels + (size_t)top * (size_t)t.cell_height * (size_t)width * 3,
                                       width, h, t, id, crop)) { graphics_image_free(out); return false; }
-        crop->crop_top = top * t.cell_height; crop->crop_bottom = bottom * t.cell_height;
+        crop->crop_top = top * t.cell_height; crop->crop_bottom = crop_bottom;
     }
     return true;
 }

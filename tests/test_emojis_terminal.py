@@ -1,6 +1,10 @@
 """Emoji picker, authenticated assets and retained pictures in a real PTY."""
 import base64
+import fcntl
 from datetime import datetime, timezone
+import signal
+import struct
+import termios
 import time
 import unittest
 from urllib.parse import urlsplit, parse_qs
@@ -112,6 +116,9 @@ class EmojiTerminal(unittest.TestCase):
         with self.server(content='😄 '*90) as s:
             t = self.open(s,protocol='kitty')
             try:
+                # Focus the composer before measuring repeated input redraws;
+                # changing focus can create a new avatar background variant.
+                t.send('x')
                 # The button uses the same icon but a different background.
                 self.until(t,lambda:len(t.stream.placements)>65)
                 by_image={}
@@ -121,6 +128,7 @@ class EmojiTerminal(unittest.TestCase):
                 shared=max(by_image,key=lambda id:len(by_image[id]))
                 pixels=next(p for h,p in t.stream.kitty_frames if h[b'i']==shared)
                 self.assertTrue(any(r>g+15 and g>b+30 for r,g,b in zip(pixels[::4],pixels[1::4],pixels[2::4])), 'Unicode icon must contain color pixels')
+                self.until(t,lambda:any(h.get(b's')==b'48' and h.get(b'v')==b'48' for h,p in t.stream.kitty_frames))
                 t.read(.3); uploads=len(t.stream.frames)
                 t.send('a'); t.send('b'); t.read(.2)
                 self.assertEqual(len(t.stream.frames),uploads)
@@ -205,7 +213,7 @@ class EmojiTerminal(unittest.TestCase):
             finally:self.assertTrue(t.close())
 
     def test_header_avatar_position_local_time_and_edited_marker(self):
-        with self.server(content='Corpo usa largura inteira') as s:
+        with self.server(content='Corpo alinhado ao autor') as s:
             s.messages[0]['edited_at']=s.messages[0]['created_at']
             t=self.open(s,protocol='kitty',environment={'TZ':'UTC','LC_TIME':'C'})
             try:
@@ -221,18 +229,49 @@ class EmojiTerminal(unittest.TestCase):
                 self.assertEqual((min(y for x,y in red), max(y for x,y in red)), (0,47))
                 self.assertEqual(len(red),48*48)
                 rows=t.screen.display
-                body=next(i for i,row in enumerate(rows) if 'Corpo usa largura inteira' in row)
+                body=next(i for i,row in enumerate(rows) if 'Corpo alinhado ao autor' in row)
                 head=next(i for i,row in enumerate(rows) if 'editado' in row)
                 placement = next(pos for p,pos in zip(t.stream.placements, t.stream.placement_positions)
                                  if p[b'i'] == avatar[b'i'])
                 self.assertEqual(placement, (head,28))
-                self.assertEqual(body-head,3)
-                self.assertEqual(rows[body].index('Corpo'),28)
-                self.assertGreaterEqual(rows[head].index('Apelido'),35)
+                self.assertEqual(body-head,1)
+                self.assertEqual(rows[body].index('Corpo'),rows[head].index('Apelido'))
+                self.assertEqual(rows[head].index('Apelido'),34)
                 self.assertNotIn('Editada em:','\n'.join(rows))
                 self.assertNotIn('2026-','\n'.join(rows))
                 self.assertEqual(sum('/users/profile_batch' in r[1] for r in s.requests),1)
             finally: self.assertTrue(t.close())
+
+    def test_avatar_remains_visible_when_header_scrolls_out(self):
+        with self.server() as s:
+            s.messages[0]['content']='\n'.join(f'Linha {n:02d}' for n in range(30))
+            t=self.open(s,protocol='kitty')
+            try:
+                self.wait(t,'Linha 29');t.send('\x1bOH');self.wait(t,'Apelido')
+                self.until(t,lambda:any(h.get(b's')==b'48' and h.get(b'v')==b'48' for h,p in t.stream.kitty_frames))
+                avatar_ids={h[b'i'] for h,p in t.stream.kitty_frames if h.get(b's')==b'48' and h.get(b'v')==b'48'}
+                before=len(t.stream.placements)
+                t.send('\x1bOB')
+                self.until(t,lambda:any(p[b'i'] in avatar_ids and p.get(b'y')==b'16' and p.get(b'h')==b'32'
+                                         for p in t.stream.placements[before:]))
+                self.assertNotIn('Apelido','\n'.join(t.screen.display))
+                self.assertIn('Linha 00',t.screen.display[8])
+            finally:self.assertTrue(t.close())
+
+    def test_message_alignment_tracks_terminal_cell_width(self):
+        with self.server(content='Texto alinhado') as s:
+            t=self.open(s,protocol='kitty')
+            try:
+                self.wait(t,'Texto alinhado');self.wait(t,'Apelido')
+                for cell_width,expected in ((10,33),(8,34)):
+                    fcntl.ioctl(t.slave,termios.TIOCSWINSZ,struct.pack('HHHH',24,80,80*cell_width,24*16))
+                    t.process.send_signal(signal.SIGWINCH)
+                    def aligned():
+                        rows=t.screen.display
+                        return any('Apelido' in row and row.index('Apelido')==expected for row in rows) and \
+                               any('Texto alinhado' in row and row.index('Texto alinhado')==expected for row in rows)
+                    self.until(t,aligned)
+            finally:self.assertTrue(t.close())
 
     def test_avatar_fills_48_pixels_without_padding_across_focus_changes(self):
         environments = ({'TERM':'xterm-kitty','KITTY_WINDOW_ID':'1'},
@@ -300,6 +339,8 @@ class EmojiTerminal(unittest.TestCase):
                 self.assertEqual(sum('Apelido' in row for row in t.screen.display),1)
                 positions=[next(i for i,row in enumerate(t.screen.display) if f'Grupo {n}' in row) for n in (1,2,3)]
                 self.assertEqual(positions,list(range(positions[0],positions[0]+3)))
+                name_x=next(row.index('Apelido') for row in t.screen.display if 'Apelido' in row)
+                self.assertTrue(all(t.screen.display[row].index('Grupo')==name_x for row in positions))
                 event=dict(s.message(4),type='message',author_id=uuid(21),content='Grupo 4',
                            created_at=datetime.now(timezone.utc).isoformat())
                 s.emit(event);self.wait(t,'Grupo 4')
@@ -340,7 +381,7 @@ class EmojiTerminal(unittest.TestCase):
                 self.assertEqual(sum('App A [APP]' in row for row in t.screen.display),1)
                 self.assertEqual(sum('App B [APP]' in row for row in t.screen.display),1)
                 rows=[next(i for i,row in enumerate(t.screen.display) if f'App texto {n}' in row) for n in (1,2,3)]
-                self.assertEqual(rows[1]-rows[0],1);self.assertGreater(rows[2]-rows[1],3)
+                self.assertEqual(rows[1]-rows[0],1);self.assertEqual(rows[2]-rows[1],3)
                 self.assertFalse(any('/users/profile_batch' in r[1] for r in s.requests))
             finally:self.assertTrue(t.close())
 

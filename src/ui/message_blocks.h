@@ -6,6 +6,7 @@
 #include <ncurses.h>
 #define MESSAGE_MEDIA_LABEL 512
 #define MESSAGE_COLUMNS 3
+#define MESSAGE_AVATAR_PIXELS 48
 /* Owned presentation, borrowed input JSON only during construction. Stable
  * block keys and Unicode offsets survive reflow and inserts in other blocks. */
 typedef struct {
@@ -44,6 +45,7 @@ typedef struct {
     text_icon_painter icon_painter;
     void *icon_context;
     bool header;
+    int indent;
 } message_row;
 typedef void (*message_media_measure)(void *context, const message_media *item, int available_width, int *width, int *height);
 typedef struct {

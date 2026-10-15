@@ -504,8 +504,8 @@ arquivos temporários privados, limitados a 160 MiB e removidos ao fechar a tela
 O cabeçalho mostra o avatar de 48 × 48 pixels à esquerda, sem margem adicionada,
 com nome, horário local e **editado** alinhados ao topo do avatar. Hoje aparece somente a hora;
 nas mensagens antigas, data e hora seguem o formato e o fuso do sistema. O
-conteúdo abaixo ocupa a largura inteira. Perfis são consultados em lotes para
-autores visíveis, respeitando a sessão e o limite global de requisições.
+conteúdo começa na linha imediatamente abaixo do nome e na mesma coluna, junto
+à borda do avatar. Perfis são consultados em lotes para autores visíveis, respeitando a sessão e o limite global de requisições.
 Imagens retangulares usam recorte central proporcional para preencher o avatar.
 Mensagens consecutivas do mesmo autor compartilham nome, avatar e horário;
 as seguintes mostram apenas o conteúdo. Uma mudança de autor ou de identidade

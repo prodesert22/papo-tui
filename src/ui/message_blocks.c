@@ -4,6 +4,7 @@
 #include "ui/text.h"
 #include "ui/theme.h"
 #include "ui/message_time.h"
+#include "ui/graphics.h"
 #include <time.h>
 #include <limits.h>
 #include <linebreak.h>
@@ -292,14 +293,18 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
     b->icon_resolver=icons;b->icon_painter=painter;b->icon_context=icon_context;
     b->self_mention=mention_message_contains(m,self);
     if (width < 8) width = 8;
+    graphics_terminal terminal = graphics_terminal_get();
+    int author_x = graphics && terminal.cell_width > 0 ?
+        (MESSAGE_AVATAR_PIXELS + terminal.cell_width - 1) / terminal.cell_width : 6;
+    if (author_x > width - 8) author_x = width - 8;
     char label[1600];
     if (!continuation) {
         char timestamp[192];
         message_time_format(str(m, "created_at"), time(NULL), timestamp, sizeof(timestamp));
-        for (int i = 0; i < 3; ++i) if (!blank(b, false, false, false, 0)) goto error;
+        if (!blank(b, false, false, false, 0)) goto error;
         bool app = history_message_webhook(m);
         int metadata = text_label(NULL, 0, 0, 200, timestamp) + (*str(m, "edited_at") ? 12 : 3) + (app ? 6 : 0);
-        int author_width = width - 7 - metadata;
+        int author_width = width - author_x - metadata;
         if (author_width < 4) author_width = 4;
         text_buffer name;
         if (!text_decode(&name, author)) text_decode(&name, "usuário");
@@ -311,7 +316,7 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
         char author_text[TEXT_UTF8_BYTES]; if (!text_encode(&name, author_text)) goto error;
         snprintf(label, sizeof(label), "%.*s%s · %s%s", 1024, author_text, app ? " [APP]" : "", timestamp, *str(m, "edited_at") ? " · editado" : "");
         size_t header_end;
-        if (!column(b, 0, "header", label, 7, width - 7, true, false, 0, &header_end)) goto error;
+        if (!column(b, 0, "header", label, author_x, width - author_x, true, false, 0, &header_end)) goto error;
         text_buffer initials = {0}, decoded;
         if (text_decode(&decoded, author)) {
             for (size_t k = 0; k < decoded.length && initials.length < 2; ++k)
@@ -319,9 +324,12 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
         }
         char initial_text[TEXT_UTF8_BYTES];
         if (!initials.length) { initials.data[0] = '?'; initials.length = 1; }
-        if (!text_encode(&initials, initial_text) || !column(b, 1, "header:avatar", initial_text, 1, 5, false, false, 0, &header_end)) goto error;
+        if (!text_encode(&initials, initial_text)) goto error;
+        if (author_x > 1 && !column(b, 0, "header:avatar", initial_text, 1, author_x - 1, false, false, 0, &header_end)) goto error;
         for (size_t i = 0; i < b->count; ++i) b->rows[i].header = true;
     }
+    size_t content_start = b->count;
+    width -= author_x;
     if (*str(m, "reply_to") && !labeled(b, "reply", "Resposta: ", reply, width, false, false, 0)) goto error;
     if (*str(m, "content") && !text(b, "content", str(m, "content"), width, false, false, 0)) goto error;
     size_t index; json_t *item;
@@ -455,6 +463,7 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
         style(b, marker, true, false);
     }
     if (!blank(b, false, false, false, 0)) goto error;
+    for (size_t i = content_start; i < b->count; ++i) b->rows[i].indent = author_x;
     return true;
 error:
     message_blocks_free(b); return false;
@@ -499,6 +508,8 @@ static int color_pair(unsigned rgb, int fallback)
 }
 void message_row_draw(WINDOW *w, const message_row *row, int y, int x, int width, int pair, int accent)
 {
+    x += row->indent; width -= row->indent;
+    if (width < 1) return;
     wattrset(w, COLOR_PAIR(pair));
     if (row->card) {
         if (row->card_width > 0 && row->card_width < width) width = row->card_width;

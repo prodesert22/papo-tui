@@ -106,9 +106,10 @@ static void time_and_header(void)
         "created_at", "2026-10-14T12:34:56Z", "edited_at", "2026-10-14T12:35:56Z", "author_id", id);
     message_blocks b;
     assert(message_blocks_build_visual(&b,m,"Author Name","",60,true,NULL,NULL,NULL,NULL,NULL,resolve,NULL,NULL,false));
-    assert(b.rows[0].header && b.rows[1].header && b.rows[2].header);
-    assert(strstr(b.rows[0].segments[0].text,"editado") && b.rows[0].segments[0].x == 7);
-    assert(!b.rows[3].header && b.rows[3].segments[0].x == 0 && b.rows[3].icon_count == 2);
+    assert(b.rows[0].header && !b.rows[1].header);
+    assert(strstr(b.rows[0].segments[0].text,"editado") && b.rows[0].segments[0].x == 6);
+    assert(!b.rows[1].header && b.rows[1].segments[0].x == 0 && b.rows[1].icon_count == 2);
+    assert(b.rows[1].indent == b.rows[0].segments[0].x);
     message_blocks_free(&b);
     json_object_set_new(m, "webhook_id", json_string(id));
     json_object_set_new(m, "author_id", json_null());
@@ -164,6 +165,7 @@ static void grouping(void)
     assert(message_blocks_build_visual(&blocks,b,"App","",60,true,NULL,NULL,NULL,NULL,NULL,resolve,NULL,NULL,true));
     assert(!blocks.rows[0].header && !strcmp(blocks.rows[0].segments[0].key, "content"));
     assert(blocks.rows[0].segments[0].x == 0);
+    assert(blocks.rows[0].indent == 6);
     assert(!strcmp(blocks.rows[1].segments[0].key, "edited") && blocks.rows[1].segments[0].muted);
     for (size_t i = 0; i < blocks.count; ++i) assert(!blocks.rows[i].header);
     message_blocks_free(&blocks);

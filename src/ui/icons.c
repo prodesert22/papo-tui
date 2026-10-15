@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "ui/icons.h"
 #include "ui/image_decode.h"
+#include "ui/message_blocks.h"
 #include "ui/theme.h"
 #include "model/emoji_catalog.h"
 #include "model/history.h"
@@ -14,7 +15,6 @@
 #include <wchar.h>
 #define ICON_ENTRIES 8192
 #define ICON_BYTES (32U * 1024U * 1024U)
-#define AVATAR_PIXELS 48
 typedef struct {
     char key[224];
     char *path;
@@ -247,12 +247,14 @@ static size_t entry_bytes(const icon_entry *e) { return graphics_image_bytes(&e-
 static icon_entry *get_entry(icon_view *v, const char *key, uint64_t revision, const char *path,
                               const char *text, int width, int height, uint32_t bg)
 {
+    graphics_terminal terminal = graphics_terminal_get();
     icon_entry *slot = NULL;
     for (size_t i = 0; i < ICON_ENTRIES; ++i) {
         icon_entry *e = &v->entries[i];
         if (!strcmp(e->key, key)) {
             if (e->revision != revision || e->width != width || e->height != height || e->background != bg ||
-                (e->image.data && e->image.protocol != graphics_terminal_get().protocol)) {
+                (e->image.data && (e->image.protocol != terminal.protocol ||
+                 e->image.cell_width != terminal.cell_width || e->image.cell_height != terminal.cell_height))) {
                 if (e->busy) return NULL;
                 entry_clear(e); slot = e; break;
             }
@@ -346,11 +348,12 @@ static bool avatar_image(icon_view *v, const author_avatar *avatar, const char *
     snprintf(key, sizeof(key), "avatar:%s:%x", avatar->id, background(pair));
     /* The image itself fills 48x48; no surrounding header-colored canvas. */
     icon_entry *e = get_entry(v, key, avatar->revision, avatar->path, NULL,
-                              AVATAR_PIXELS, AVATAR_PIXELS, background(pair));
+                              MESSAGE_AVATAR_PIXELS, MESSAGE_AVATAR_PIXELS, background(pair));
     int crop_top = top * t.cell_height;
-    int crop_bottom = AVATAR_PIXELS - (3 - bottom) * t.cell_height;
+    int rows = (MESSAGE_AVATAR_PIXELS + t.cell_height - 1) / t.cell_height;
+    int crop_bottom = MESSAGE_AVATAR_PIXELS - (rows - bottom) * t.cell_height;
     if (crop_bottom < 0) crop_bottom = 0;
-    if (crop_top + crop_bottom >= AVATAR_PIXELS) return false;
+    if (crop_top + crop_bottom >= MESSAGE_AVATAR_PIXELS) return false;
     icons_scope(v, message, 0);
     return offer(v, e, y, x, crop_top, crop_bottom, SIZE_MAX);
 }

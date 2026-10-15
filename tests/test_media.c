@@ -149,6 +149,15 @@ static void preview_crops(void)
         assert(!graphics_image_crop(&image, 36, 0));
         graphics_image_free(&image);
         assert(!image.data && !image.crops);
+        /* A partially filled last cell must disappear when clipping that row. */
+        t.cell_height = 16;
+        assert(graphics_image_encode_preview(pixels, 12, 36, t, 123, &image));
+        crop = graphics_image_crop(&image, 0, 4);
+        assert(crop && crop->height == 32 && crop->rows == 2);
+        crop = graphics_image_crop(&image, 16, 4);
+        assert(crop && crop->height == 16 && crop->rows == 1);
+        graphics_image_free(&image);
+        t.cell_height = 6;
         t.protocol = GRAPHICS_ITERM2;
     }
 }

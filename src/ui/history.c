@@ -162,6 +162,10 @@ static void draw_tabs(view *ui, auth_client *auth)
 static int walk(view *ui, int first, bool paint, bool save, int *anchor)
 {
     int total = 0, width = ui->body ? getmaxx(ui->body) - 4 : ui->width - 4;
+    graphics_terminal terminal = graphics_terminal_get();
+    int avatar_rows = terminal.supported && terminal.cell_height > 0 ?
+        (MESSAGE_AVATAR_PIXELS + terminal.cell_height - 1) / terminal.cell_height : 1;
+    int group_start = 0;
     *anchor = 0;
     for (size_t i = 0; i < history_message_count(ui->model); ++i) {
         json_t *m = history_message(ui->model, i);
@@ -178,16 +182,31 @@ static int walk(view *ui, int first, bool paint, bool save, int *anchor)
         bool anchored = !strcmp(ui->anchor, str(m, "id"));
         if (anchored) *anchor = total;
         bool *offered = paint && ui->media ? calloc(blocks.media_count + 1, sizeof(*offered)) : NULL;
-        bool avatar_offered = false;
+        if (!continuation) group_start = total;
         size_t rows = blocks.count;
         bool followed = message_same_author(m, history_message(ui->model, i + 1));
         /* Keep one separator between groups; continuations flow directly into
          * each other. At minimum height prefer content over the final gap. */
-        if ((followed || (ui->visible == 1 && i + 1 == history_message_count(ui->model))) && rows &&
+        bool compact_end = ui->visible == 1 && i + 1 == history_message_count(ui->model);
+        if ((followed || compact_end) && rows &&
             !blocks.rows[rows - 1].count && !blocks.rows[rows - 1].media_count &&
             !blocks.rows[rows - 1].card) --rows;
+        /* The avatar occupies the group's left gutter, alongside its text.
+         * Reserve space only at the end of a short group to keep the next
+         * author's avatar from overlapping it. */
+        if (!followed && !compact_end && total + (int)rows < group_start + avatar_rows)
+            rows = (size_t)(group_start + avatar_rows - total);
+        if (paint && !continuation && !emoji_picker_open(ui->emojis) && !media_view_modal(ui->media)) {
+            int top = first > total ? first - total : 0;
+            int bottom = total + avatar_rows > first + ui->visible ? total + avatar_rows - first - ui->visible : 0;
+            if (top + bottom < avatar_rows)
+                icons_message_avatar(ui->icons, m,
+                    getbegy(ui->body) + ui->history_top + total + top - first,
+                    getbegx(ui->body) + 2, top, bottom, ui->focus == HISTORY_PANEL ? HISTORY_AREA : PANEL);
+        }
+        const message_row padding = {0};
         for (size_t row = 0; row < rows; ++row) {
-            const message_row *r = &blocks.rows[row];
+            const message_row *r = row < blocks.count ? &blocks.rows[row] : &padding;
             char key[128]; size_t offset = 0;
             if (r->count) { snprintf(key, sizeof(key), "%s", r->segments[0].key); offset = r->segments[0].offset; }
             else if (r->media_count) {
@@ -213,21 +232,12 @@ static int walk(view *ui, int first, bool paint, bool save, int *anchor)
                         char scope[180]; snprintf(scope, sizeof(scope), "%s:%s", str(m, "id"), icon->key);
                         icons_scope(ui->icons, scope, 0);
                         int icon_pair = r->card ? EMBED_AREA : pair;
-                        icons_paint(ui->icons, ui->body, icon->id, y, 2 + icon->x, icon_pair, false, icon->offset);
-                    }
-                    if (r->header && row < 3 && !avatar_offered) {
-                        avatar_offered = true;
-                        int top = first > total ? first - total : 0;
-                        int bottom = total + 3 > first + ui->visible ? total + 3 - first - ui->visible : 0;
-                        if (top + bottom < 3)
-                            icons_message_avatar(ui->icons, m,
-                                getbegy(ui->body) + ui->history_top + total + top - first,
-                                getbegx(ui->body) + 2, top, bottom, ui->focus == HISTORY_PANEL ? HISTORY_AREA : PANEL);
+                        icons_paint(ui->icons, ui->body, icon->id, y, 2 + r->indent + icon->x, icon_pair, false, icon->offset);
                     }
                 }
                 if (blocks.self_mention && row + 1 < blocks.count) {
                     wattrset(ui->body, COLOR_PAIR(accent) | A_BOLD);
-                    mvwaddch(ui->body, y, 0, ACS_VLINE);
+                    mvwaddch(ui->body, y, r->indent, ACS_VLINE);
                 }
                 for (int k = 0; k < r->media_count && offered && ui->media; ++k) {
                     const message_media_region *region = &r->media[k];
@@ -240,7 +250,7 @@ static int walk(view *ui, int first, bool paint, bool save, int *anchor)
                     int graphics_y = getbegy(ui->body) + ui->history_top + (start > first ? start - first : 0);
                     if (!region->height) graphics_y = getbegy(ui->body) + y;
                     media_view_offer(ui->media, &blocks.media[region->index], graphics_y,
-                                     getbegx(ui->body) + 2 + region->x,
+                                     getbegx(ui->body) + 2 + r->indent + region->x,
                                      region->width, region->height, top, bottom);
                 }
             }

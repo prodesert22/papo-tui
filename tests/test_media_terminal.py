@@ -471,6 +471,9 @@ class MediaTerminal(unittest.TestCase):
                 'thumbnail': {'mime_type': 'image/png'}, 'image': {'mime_type': 'image/png'}, 'footer': {'text': 'Footer'}}]
             t = self.open(server)
             try:
+                # Keep the thumbnail and fallback notice visible together;
+                # message indentation reduces the card's available width.
+                t.resize(30,100)
                 self.wait_frames(t); self.wait(t, 'indisponível no backend')
                 self.assertEqual(sum('/embeds/' in r[1] for r in server.requests), 1)
             finally: self.assertTrue(t.close())

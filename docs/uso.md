@@ -362,7 +362,10 @@ Unicode permanece em texto e personalizados permanecem como `:nome:`.
 O avatar preenche 48 × 48 pixels, sem margem adicionada. Imagens retangulares
 usam recorte central proporcional para preencher essa área, sem distorção.
 Nome, hora e **editado** ficam à direita, alinhados ao topo do avatar; o texto
-da mensagem começa abaixo, usando toda a largura. Avatares ausentes ou
+da mensagem começa na linha imediatamente abaixo, na mesma coluna do nome.
+O espaço entre avatar e nome acompanha a largura das células, sem uma coluna vazia adicional.
+Esse alinhamento também se aplica às mensagens agrupadas, anexos e embeds.
+Avatares ausentes ou
 inválidos mostram iniciais. Hoje aparece só o horário; nos outros dias, data
 e hora, seguindo `LC_TIME` e o fuso local. O indicador **editado** substitui a
 antiga linha separada de edição. Nomes longos são abreviados e metadados se
