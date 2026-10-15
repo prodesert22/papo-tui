@@ -64,7 +64,7 @@ class FooterTerminal(unittest.TestCase):
                 terminal.resize(24, 220)
                 self.assertIn('O servidor informou um erro', self.footer(terminal))
                 self.assertIn('Mensagem confirmada pelo servidor', self.footer(terminal))
-                terminal.send('\x1b\x1bOD\x1bOD'); self.wait(terminal, 'Foco: Abas')
+                terminal.send('\x1b\x1bOD\x1bOH\x1bOA\x1bOA'); self.wait(terminal, 'Foco: Abas')
                 self.assertIn('←→ servidores', self.footer(terminal)); self.assertNotIn('F7', self.footer(terminal))
             finally: self.assertTrue(terminal.close())
 

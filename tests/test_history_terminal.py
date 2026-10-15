@@ -384,7 +384,7 @@ class HistoryTerminal(unittest.TestCase):
         with HistoryMock() as server:
             t = self.open(server)
             try:
-                t.send('\x1bOD\x1bOD\x1bOC')  # history -> channels -> tabs -> add
+                t.send('\x1bOD\x1bOH\x1bOA\x1bOA\x1bOC')  # history -> first channel -> buttons -> tabs -> add
                 self.assertIn('Foco: Abas', '\n'.join(t.screen.display))
                 self.assertIn('>+ Adicionar<', t.screen.display[1])
                 t.send('\x1bOD')

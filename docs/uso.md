@@ -209,7 +209,7 @@ Abrir a lista não lê mensagens. Apenas o canal que você abre tem seu históri
 | Esc no editor | Voltar ao histórico |
 | Esc nos demais painéis | Alternar canais e histórico |
 | ↑ no primeiro item da lista; ↑ nos botões Canais/DMs | Focar os botões; voltar às abas |
-| ← na lista | Focar as abas |
+| ← na lista | Manter o foco na lista |
 | ← / → nas abas | Trocar de servidor; → na última aba destaca **+ Adicionar** |
 | Enter em **+ Adicionar**; clique no botão | Abrir login/cadastro de outro servidor |
 | ↓ nas abas | Focar os canais |

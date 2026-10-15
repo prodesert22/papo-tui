@@ -580,9 +580,9 @@ static void draw_footer(view *ui)
         shorter="←→ escolher · Enter ativar · ↓ lista"; minimal="←→ · Enter";
     } else if (ui->focus == CHANNEL_LIST) {
         bool voice = !strcmp(str(list_channel(ui, ui->highlighted), "type"), "voice");
-        full = voice ? "↑↓ canais · F4 histórico · Enter voz (em breve) · ← abas"
-                     : "↑↓ canais · Enter/→ abrir · ← abas · Ctrl+R atualizar";
-        shorter = voice ? "↑↓ canais · F4 histórico · ← abas" : "↑↓ canais · Enter abrir · ← abas";
+        full = voice ? "↑↓ canais · F4 histórico · Enter voz (em breve) · ↑ topo"
+                     : "↑↓ canais · Enter/→ abrir · ↑ topo · Ctrl+R atualizar";
+        shorter = voice ? "↑↓ canais · F4 histórico · ↑ topo" : "↑↓ canais · Enter abrir · ↑ topo";
         minimal = voice ? "F4 histórico" : "↑↓ · Enter";
     } else if (ui->focus == EMOJI_BUTTON) {
         full = shorter = "Enter/F4 emojis · Shift+Tab editor · Esc voltar"; minimal = "Enter emojis";
@@ -1320,8 +1320,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         } else if (ui->focus == CHANNEL_LIST) {
             scope = DRAW_NAVIGATION;
             size_t count = list_count(ui);
-            if (type==KEY_CODE_YES && key==KEY_LEFT) set_focus(ui,SERVER_TABS);
-            else if (type==KEY_CODE_YES && key==KEY_UP && !ui->highlighted) set_focus(ui,LIST_BUTTONS);
+            if (type==KEY_CODE_YES && key==KEY_UP && !ui->highlighted) set_focus(ui,LIST_BUTTONS);
             else if (type == KEY_CODE_YES && key == KEY_UP && ui->highlighted) --ui->highlighted;
             else if (type == KEY_CODE_YES && key == KEY_DOWN && ui->highlighted + 1 < count) ++ui->highlighted;
             else if (type == KEY_CODE_YES && key == KEY_HOME) ui->highlighted = 0;

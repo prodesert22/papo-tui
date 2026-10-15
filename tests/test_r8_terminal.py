@@ -173,6 +173,13 @@ class R8Terminal(unittest.TestCase):
     def test_adjacent_buttons_keyboard_mouse_and_no_history_on_switch(self):
         with R8Mock() as server:
             t=self.login(server)
+            t.send('\x1bOB\x1bOB\x1bOD')
+            self.wait(t,'Foco: Canais')
+            self.assertNotIn('← abas',t.screen.display[-2])
+            t.send('\x1bOA'); self.wait(t,'Foco: Canais')
+            t.send('\x1bOD'); self.wait(t,'Foco: Canais')
+            t.send('\x1bOA'); self.wait(t,'Foco: Canais/DMs')
+            t.send('\x1bOA'); self.wait(t,'Foco: Abas')
             t.send('\t\x1bOC\n')
             self.wait(t,'Bia ·')
             self.assertFalse(any('/messages' in r[1] for r in server.requests))
@@ -180,6 +187,8 @@ class R8Terminal(unittest.TestCase):
             self.assertIn('Categoria','\n'.join(t.screen.display))
             t.click(5,13); self.wait(t,'Bia ·')
             self.assertFalse(any('/messages' in r[1] for r in server.requests))
+            t.send('\x1bOB\x1bOD'); self.wait(t,'Foco: DMs')
+            t.send('\x1bOA'); self.wait(t,'Foco: Canais/DMs')
             t.send('\x1bOB\n'); self.wait(t,'Mensagem direta')
             t.send('rascunho DM\x1b'); t.click(5,4)
             self.wait(t,'Categoria'); self.assertIn('rascunho DM','\n'.join(t.screen.display))
