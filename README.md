@@ -309,10 +309,12 @@ sobre esse painel rola os dados; `i` e F8 também alternam o painel. Nenhum novo
 download é necessário para abri-lo.
 
 Imagens JPEG, PNG, WebP e GIF são exibidas por Sixel ou pelos protocolos gráficos Kitty/iTerm2.
-Anexos de imagem mostram apenas a mídia, usando o arquivo original sem ampliar
-suas dimensões; imagens maiores são reduzidas proporcionalmente para a largura
-e a altura disponíveis no histórico ou no modal, acompanhando o tamanho da janela
-e das células do terminal. GIFs animados se repetem no histórico
+Anexos de imagem mostram apenas a mídia, usando o arquivo original. No histórico,
+preservam suas dimensões sem ampliar e são reduzidos proporcionalmente para caber
+na área disponível, com altura máxima de **720 pixels**. No modal, esse teto não
+se aplica: a imagem é ampliada ou reduzida proporcionalmente até caber na área
+disponível, sem deformação. O tamanho acompanha a janela e as células do terminal.
+GIFs animados se repetem no histórico
 e no modal, com até 256 frames/32 MiB de pixels decodificados por arquivo;
 quando a resolução excede o orçamento da animação, é exibido o primeiro frame.
 A negociação consulta capacidades e tamanho das células

@@ -356,10 +356,12 @@ da conversa e do vídeo são agrupadas quando o terminal oferece atualização s
 Em terminal compatível, baixa e mostra as imagens JPEG, PNG, WebP e GIF visíveis
 na conversa ativa. Anexos de imagem mostram a mídia diretamente, sem linhas de
 nome, tipo, tamanho ou moderação. F7 ou clique continuam abrindo o arquivo.
-O cliente usa o anexo original, preserva suas dimensões sem ampliar e reduz
-proporcionalmente quando necessário para caber na largura e na altura disponíveis
-no histórico ou no modal. O tamanho acompanha o redimensionamento da janela e
-as dimensões das células do terminal. GIFs animados se repetem enquanto estiverem visíveis,
+O cliente usa o anexo original. No histórico, preserva suas dimensões sem ampliar
+e reduz proporcionalmente quando necessário para caber na área disponível, com
+altura máxima de **720 pixels**. No modal, esse teto não se aplica: a imagem usa
+a área disponível, com ampliação ou redução proporcional, sem deformação.
+O tamanho acompanha o redimensionamento da janela e as dimensões das células do
+terminal. GIFs animados se repetem enquanto estiverem visíveis,
 respeitando os intervalos dos frames; ao rolar para fora ou trocar de canal,
 deixam de atualizar a tela. A animação aceita até 256 frames e 32 MiB de pixels
 decodificados por arquivo; quando a resolução excede o orçamento da animação,

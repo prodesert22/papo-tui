@@ -22,6 +22,7 @@
 #include <sys/stat.h>
 #define CACHE_COUNT 64
 #define VISIBLE_COUNT 32
+#define HISTORY_IMAGE_HEIGHT 720
 #define VIDEO_RESERVATION (12U * 1024U * 1024U)
 typedef enum { ENTRY_NEW, ENTRY_READY, ENTRY_ERROR } entry_state;
 typedef struct {
@@ -332,6 +333,16 @@ static void geometry(int columns, int rows, int *w, int *h)
     double ratio = fmin(1, sqrt(GRAPHICS_IMAGE_PIXELS / (width * height)));
     *w = (int)fmax(1, width * ratio); *h = (int)fmax(1, height * ratio);
 }
+static void history_geometry(const media_view *v, const message_media *item, int columns, int rows, int *w, int *h)
+{
+    geometry(columns, native_media(item) && v->viewport_rows ? v->viewport_rows : rows, w, h);
+    if (native_media(item) && *h > HISTORY_IMAGE_HEIGHT) *h = HISTORY_IMAGE_HEIGHT;
+}
+static void modal_image_geometry(int source_w, int source_h, int *w, int *h)
+{
+    double scale = fmin((double)*w / source_w, (double)*h / source_h);
+    *w = (int)fmax(1, source_w * scale); *h = (int)fmax(1, source_h * scale);
+}
 void media_view_viewport(media_view *v, int rows)
 {
     if (!v) return;
@@ -354,7 +365,7 @@ void media_view_measure(void *context, const message_media *item, int available_
         source_width = e->image.source_width; source_height = e->image.source_height; break;
     }
     if (source_width < 1 || source_height < 1) return;
-    int max_w, max_h; geometry(available_width, v->viewport_rows ? v->viewport_rows : 6, &max_w, &max_h);
+    int max_w, max_h; history_geometry(v, item, available_width, 6, &max_w, &max_h);
     double scale = fmin(1, fmin((double)max_w / source_width, (double)max_h / source_height));
     int w = (int)fmax(1, source_width * scale), h = (int)fmax(1, source_height * scale);
     *width = (w + t.cell_width - 1) / t.cell_width;
@@ -373,7 +384,7 @@ void media_view_offer(media_view *v, const message_media *item, int y, int x, in
     p->resource = e->resource; media_resource_ref(p->resource);
     graphics_terminal t = graphics_terminal_get();
     if (e->resource && !e->item.video && t.supported && height > 0) {
-        int w, h; geometry(width, native_media(item) && v->viewport_rows ? v->viewport_rows : height, &w, &h);
+        int w, h; history_geometry(v, item, width, height, &w, &h);
         uint64_t now = 0; net_now_ms(&now);
         image_decode_request request = {.width = w, .height = h, .native = native_media(item), .terminal = t,
             .top = top * t.cell_height, .bottom = bottom * t.cell_height};
@@ -415,10 +426,8 @@ static bool modal_layout_update(media_view *v)
         if (v->modal_image.data && !v->selected_item.video) {
             int source_w = v->modal_image.source_width, source_h = v->modal_image.source_height;
             if (source_w > 0 && source_h > 0) {
-                double scale = fmin(1, fmin((double)width / source_w, (double)height / source_h));
-                int w = (int)(source_w * scale), h = (int)(source_h * scale);
-                if (w < 1) w = 1;
-                if (h < 1) h = 1;
+                int w = width, h = height;
+                modal_image_geometry(source_w, source_h, &w, &h);
                 reload = v->modal_image.width != w || v->modal_image.height != h;
             } else reload = v->modal_image.width > width || v->modal_image.height > height;
         }
@@ -516,6 +525,13 @@ bool media_view_poll(media_view *v, history *h)
             }
         } else {
             image_decode_request request = {.width = v->modal_width, .height = v->modal_height, .native = true, .terminal = terminal};
+            int source_w = 0, source_h = 0;
+            if (media_resource_dimensions(e->resource, author, &source_w, &source_h)) {
+                /* Fit the canvas first so enlargement preserves the aspect
+                 * ratio. Canonical pixels remain bounded by the source size. */
+                modal_image_geometry(source_w, source_h, &request.width, &request.height);
+                request.native = false;
+            }
             const graphics_image *image = media_resource_image(e->resource, author, request, now);
             if (image) {
                 changed |= v->modal_image.revision != image->revision;
@@ -534,7 +550,7 @@ bool media_view_poll(media_view *v, history *h)
             (source_w != e->image.source_width || source_h != e->image.source_height)) {
             e->image.source_width = source_w; e->image.source_height = source_h; ++v->dimensions_revision; changed = true;
         }
-        int w, height; geometry(p->width, native_media(&e->item) && v->viewport_rows ? v->viewport_rows : p->height, &w, &height);
+        int w, height; history_geometry(v, &e->item, p->width, p->height, &w, &height);
         image_decode_request request = {.width = w, .height = height, .native = native_media(&e->item), .terminal = terminal,
             .top = p->top * terminal.cell_height, .bottom = p->bottom * terminal.cell_height};
         const graphics_image *image = media_resource_image(e->resource, !strcmp(e->item.role, "author"), request, now);

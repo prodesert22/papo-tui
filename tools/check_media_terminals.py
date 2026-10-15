@@ -18,6 +18,8 @@ from tools.check_terminals import Emulator, wait_for
 
 def screenshot(emulator, path):
     window = emulator.window if emulator.name == 'Konsole' else str(json.loads(emulator.kitty('ls'))[0]['platform_window_id'])
+    # Expose this disposable window so the GPU paints its current contents.
+    subprocess.run(['xdotool', 'windowactivate', '--sync', window], capture_output=True, check=True, timeout=10)
     subprocess.run(['import', '-window', window, str(path)], capture_output=True, check=True, timeout=10)
 
 def colored_pixels(emulator, path, color):
@@ -68,6 +70,7 @@ def main():
                 emulator = Emulator(name, args.binary.resolve(), Path(directory.name), None); emulators.append(emulator)
                 try:
                     phase = name + ' image login'
+                    wait_for(lambda: '[ Entrar ]' in emulator.screen())
                     emulator.send(server.url + '\tjosé\tSynthetic!123\n')
                     wait_for(lambda: 'geral' in emulator.screen()); emulator.send('\x1bOB\x1bOB\n')
                     phase = name + ' image card and viewport'
@@ -86,7 +89,8 @@ def main():
                     phase = name + ' image modal'
                     emulator.send('\x1b[18~'); wait_for(lambda: 'Escolha uma mídia' in emulator.screen()); emulator.send('\n'); time.sleep(.6)
                     checks[name.lower() + '_media_modal'] = 'Esc: voltar' in emulator.screen()
-                    checks[name.lower() + '_native_modal_image_pixels'] = colored_pixels(emulator, work / (name.lower() + '-modal.png'), 'red') > 100
+                    wait_for(lambda: colored_pixels(emulator, work / (name.lower() + '-modal.png'), 'red') > 10000)
+                    checks[name.lower() + '_native_modal_image_pixels'] = True
                     emulator.send('\x1b'); emulator.send('\n\x03\x1b'); emulator.resize_narrow(); time.sleep(.3); emulator.resize(False)
                     wait_for(lambda: 'Conversar em #' in emulator.screen() and 'Canais' in emulator.screen() and
                              emulator.state().get('rows', 0) >= 25 and emulator.state().get('columns', 0) >= 80)
@@ -103,10 +107,13 @@ def main():
                         '-frames:v', '1', '-threads', '1', '-y', str(large)], check=True, capture_output=True)
         for name in names:
             phase = name + ' large image startup'
-            with helper.serve(large.read_bytes(), 'image/png') as server:
+            with helper.serve(large.read_bytes(), 'image/png', embed=True) as server:
+                server.messages[0]['embeds'] = [{'id': uuid(902), 'source_type': 'link',
+                    'title': 'Link preview', 'thumbnail': {'mime_type': 'image/png'}}]
                 directory = tempfile.TemporaryDirectory(prefix='papo-native-large-'); directories.append(directory)
                 emulator = Emulator(name, args.binary.resolve(), Path(directory.name), None); emulators.append(emulator)
                 try:
+                    wait_for(lambda: '[ Entrar ]' in emulator.screen())
                     emulator.send(server.url + '\tjosé\tSynthetic!123\n')
                     wait_for(lambda: 'geral' in emulator.screen()); emulator.send('\x1bOB\x1bOB\n')
                     wait_for(lambda: 'Conversar em #' in emulator.screen())
@@ -122,7 +129,8 @@ def main():
                         sizes[stage] = w, h; positions[stage] = x, y
                         if stage == 'modal' and x <= positions['history'][0] + 30: return False
                         if stage == 'properties' and abs(x - positions['modal'][0]) < 15: return False
-                        return w > 640 and h > 360 and abs(h / w - 1.5) < .02
+                        sized = (w == 480 and h == 720) if stage == 'history' else h > 720
+                        return sized and abs(h / w - 1.5) < .02
                     wait_for(lambda: measured('history'))
                     emulator.send('\x1b[18~'); wait_for(lambda: '[Info]' in emulator.screen())
                     phase = name + ' large modal image'
@@ -130,9 +138,10 @@ def main():
                     emulator.send('i'); wait_for(lambda: 'Propriedades' in emulator.screen())
                     wait_for(lambda: measured('properties'))
                     large_sizes[name.lower()] = sizes
-                    checks[name.lower() + '_large_history_and_modal_pixels'] = all(
-                        abs(h / w - 1.5) < .02 and w <= 1000 and h <= 1500 for w, h in sizes.values())
-                    checks[name.lower() + '_resize_uses_original_download'] = sum('/attachments/' in r[1] for r in server.requests) == 1
+                    checks[name.lower() + '_history_image_height_720px'] = sizes['history'] == (480, 720)
+                    checks[name.lower() + '_modal_image_exceeds_history_height'] = all(
+                        h > 720 and abs(h / w - 1.5) < .02 for stage, (w, h) in sizes.items() if stage != 'history')
+                    checks[name.lower() + '_resize_reuses_embed_download'] = sum('/embeds/' in r[1] for r in server.requests) == 1
                 finally:
                     emulator.close()
                     checks[name.lower() + '_large_image_restores_terminal'] = emulator.state().get('restored', False)
@@ -143,6 +152,7 @@ def main():
                 emulator = Emulator(name, args.binary.resolve(), Path(directory.name), None); emulators.append(emulator)
                 try:
                     phase = name + ' video login'
+                    wait_for(lambda: '[ Entrar ]' in emulator.screen())
                     emulator.send(server.url + '\tjosé\tSynthetic!123\n')
                     wait_for(lambda: 'geral' in emulator.screen()); emulator.send('\x1bOB\x1bOB\n')
                     wait_for(lambda: 'Vídeo' in emulator.screen()); emulator.send('\x1b[18~')

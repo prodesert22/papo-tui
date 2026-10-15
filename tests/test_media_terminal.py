@@ -190,7 +190,11 @@ class MediaTerminal(unittest.TestCase):
     def test_large_images_follow_history_and_modal_viewports(self):
         for protocol in ('sixel', 'kitty', 'iterm2'):
             for shape, content in self.large_images.items():
-                with self.subTest(protocol=protocol, shape=shape), self.serve(content, 'image/png') as server:
+                embed = shape == 'portrait'
+                with self.subTest(protocol=protocol, shape=shape), self.serve(content, 'image/png', embed=embed) as server:
+                    if embed:
+                        server.messages[0]['embeds'] = [{'id': uuid(902), 'source_type': 'link',
+                            'title': 'Link preview', 'thumbnail': {'mime_type': 'image/png'}}]
                     t = self.open(server, protocol=protocol)
                     try:
                         self.wait_frames(t)
@@ -199,11 +203,13 @@ class MediaTerminal(unittest.TestCase):
                         if shape == 'landscape':
                             self.assertTrue(1000 <= size[0] < 1008 and 500 <= size[1] < 516, size)
                         else:
+                            self.assertEqual(size, (480, 720))
                             self.assertAlmostEqual(size[1] / size[0], 1.5, delta=.05)
                         if protocol == 'kitty':
                             t.read(.1)
                             placement = t.stream.placements[-1]
                             self.assertEqual(placement[b'y'], b'0')
+                            self.assertLessEqual(int(placement[b'h']), 720)
                             self.assertAlmostEqual(int(placement[b'h']) / int(placement[b'w']),
                                                    .5 if shape == 'landscape' else 1.5, delta=.01)
                         count = len(t.stream.frames)
@@ -214,14 +220,33 @@ class MediaTerminal(unittest.TestCase):
                             while len(t.stream.placements) <= placements and time.monotonic() < deadline: t.read(.03)
                             self.assertGreater(len(t.stream.placements), placements)
                         else: self.wait_frames(t, count + 1)
-                        self.wait_raster(t, lambda w, h: w > 400 and h > 360)
+                        modal_size = self.wait_raster(t, lambda w, h: h > 720 if shape == 'portrait' else w > 1008)
+                        self.assertAlmostEqual(modal_size[1] / modal_size[0],
+                                               .5 if shape == 'landscape' else 1.5, delta=.05)
                         t.send('i'); self.wait(t, 'Propriedades')
-                        self.wait_raster(t, lambda w, h: w > 400 and h > 360)
+                        self.wait_raster(t, lambda w, h: h > 720 if shape == 'portrait' else w > 1008)
                         t.resize(28, 100)
                         self.wait_raster(t, lambda w, h: 0 < h <= 256)
                         t.send('\x1b'); self.wait(t, 'Conversar em #')
-                        self.assertEqual(sum('/attachments/' in r[1] for r in server.requests), 1)
+                        endpoint = '/embeds/' if embed else '/attachments/'
+                        self.assertEqual(sum(endpoint in r[1] for r in server.requests), 1)
                     finally: self.assertTrue(t.close())
+    def test_history_height_cap_with_partial_terminal_cells(self):
+        with self.serve(self.large_images['portrait'], 'image/png') as server:
+            t = self.open(server, protocol='kitty')
+            try:
+                self.wait_frames(t)
+                t.resize(70, 220)
+                t.send('\x1b[6;25;11t')
+                self.wait_raster(t, lambda w, h: 720 <= h <= 750 and 480 <= w <= 495)
+                t.read(.1)
+                placement = t.stream.placements[-1]
+                self.assertEqual((int(placement[b'w']), int(placement[b'h'])), (480, 720))
+                self.assertEqual(placement[b'y'], b'0')
+                # The extra raster pixels only pad the last terminal cell;
+                # the Kitty placement must stop at exactly 720 actual pixels.
+                self.assertGreater(self.raster_size(t)[1], 720)
+            finally: self.assertTrue(t.close())
     def test_gif_plays_inline_at_native_size_without_attachment_metadata(self):
         for protocol in ('sixel', 'kitty', 'iterm2'):
             with self.subTest(protocol=protocol), tempfile.TemporaryDirectory() as directory, self.serve(self.animated_gif, 'image/gif') as server:
@@ -445,34 +470,44 @@ class MediaTerminal(unittest.TestCase):
                     self.assertEqual(sum('/attachments/' in r[1] for r in server.requests), 1)
                 finally: self.assertTrue(t.close())
 
-    def test_modal_centers_pixels_and_properties_reuses_image(self):
-        with self.serve(self.images['png'], 'image/png') as server:
-            item = server.messages[0]['attachments'][0]
-            item['created_at'] = '2026-10-14T15:51:18Z'
+    def test_modal_fits_small_embed_and_properties_reuses_download(self):
+        with self.serve(self.images['png'], 'image/png', embed=True) as server:
+            server.messages[0]['embeds'] = [{'id': uuid(902), 'source_type': 'link',
+                'created_at': '2026-10-14T15:51:18Z', 'title': 'Link preview',
+                'thumbnail': {'mime_type': 'image/png', 'size_bytes': len(self.images['png'])},
+                'image': {'mime_type': 'image/png'}}]
             t = self.open(server, protocol='kitty')
             try:
                 self.wait_frames(t); t.send('\x1b[18~'); self.wait(t, '[Info]')
-                self.wait(t, "Imagem"); t.read(.15)
+                self.wait(t, "Imagem"); self.wait_raster(t, lambda w, h: w >= 232 and h >= 176); t.read(.1)
                 # 80x24: viewer keeps channels at x<26, with outer margins
                 # at (30,3). The image area spans x=33..72 and y=6..16.
-                self.assertEqual(t.stream.placement_positions[-1], (11, 52))
+                self.assertEqual(t.stream.placement_positions[-1], (6, 38))
+                placement = t.stream.placements[-1]
+                self.assertEqual((int(placement[b'w']), int(placement[b'h'])), (234, 176))
                 self.assertIn('Canais', '\n'.join(t.screen.display))
                 frames = len(t.stream.frames)
                 image_id = t.stream.placements[-1][b'i']
                 t.click(4, 33); self.wait(t, 'Propriedades'); t.read(.15)
-                self.assertEqual(len(t.stream.frames), frames)
-                self.assertEqual(t.stream.placements[-1][b'i'], image_id)
-                self.assertEqual(t.stream.placement_positions[-1], (11, 42))
+                self.wait_frames(t, frames + 1); t.read(.1)
+                self.assertEqual(t.stream.placement_positions[-1], (7, 33))
+                placement = t.stream.placements[-1]
+                self.assertEqual((int(placement[b'w']), int(placement[b'h'])), (168, 126))
                 self.assertIn('image/png', '\n'.join(t.screen.display))
                 self.assertIn(str(len(self.images['png'])) + ' bytes', '\n'.join(t.screen.display))
+                frames = len(t.stream.frames)
                 t.click(4, 33); t.read(.1)
+                self.wait_frames(t, frames + 1); t.read(.05)
                 self.assertNotIn('Propriedades', '\n'.join(t.screen.display))
-                self.assertEqual(t.stream.placement_positions[-1], (11, 52))
-                self.assertEqual(len(t.stream.frames), frames)
+                self.assertEqual(t.stream.placement_positions[-1], (6, 38))
+                self.assertEqual(t.stream.placements[-1][b'i'], image_id)
+                # Kitty deleted the inactive placement, so it needs another
+                # upload of the same cached variant when its pane returns.
+                self.assertEqual(len(t.stream.frames), frames + 1)
                 t.click(8, 4); t.read(.2)
                 self.assertNotIn('Esc: voltar', '\n'.join(t.screen.display))
                 self.assertIn('# geral', '\n'.join(t.screen.display))
-                self.assertEqual(sum('/attachments/' in r[1] for r in server.requests), 1)
+                self.assertEqual(sum('/embeds/' in r[1] for r in server.requests), 1)
                 self.assertFalse(any('/channels/' + uuid(11) + '/messages' in r[1] for r in server.requests))
             finally: self.assertTrue(t.close())
 
