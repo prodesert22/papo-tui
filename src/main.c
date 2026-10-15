@@ -30,7 +30,8 @@ int main(int argc, char **argv)
             return 1;
         }
     }
-    if (!setlocale(LC_ALL, "")) {
+    /* libmpv requires C numeric formatting; preserve the terminal's UTF-8 locale. */
+    if (!setlocale(LC_ALL, "") || !setlocale(LC_NUMERIC, "C")) {
         fputs("Não foi possível inicializar a localidade do terminal.\n", stderr);
         return 1;
     }

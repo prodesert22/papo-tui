@@ -1,4 +1,5 @@
 """Lazy dependency loading and failure handling; synthetic HTTP and PTY only."""
+import locale
 from pathlib import Path
 import shutil
 import signal
@@ -109,6 +110,39 @@ class MediaBackends(unittest.TestCase):
                 self.assertIn(VIDEO.name, maps)
                 self.assertIn('libmpv.', maps)
                 self.assertNotIn(IMAGE.name, maps)
+            finally:
+                self.assertTrue(terminal.close())
+
+    def test_video_plays_with_comma_decimal_locale_and_utf8_text(self):
+        previous = locale.setlocale(locale.LC_NUMERIC)
+        selected = None
+        try:
+            for candidate in ("pt_BR.UTF-8", "de_DE.UTF-8", "fr_FR.UTF-8"):
+                try:
+                    locale.setlocale(locale.LC_NUMERIC, candidate)
+                except locale.Error:
+                    continue
+                if locale.localeconv()["decimal_point"] == ",":
+                    selected = candidate
+                    break
+        finally:
+            locale.setlocale(locale.LC_NUMERIC, previous)
+        if selected is None:
+            self.skipTest("Requires a UTF-8 locale with a comma decimal separator")
+
+        with self.helper.serve(media.MediaTerminal.video, "video/mp4") as server:
+            terminal = self.helper.open(
+                server, protocol="kitty", environment={"LANG": selected, "LC_ALL": selected}
+            )
+            try:
+                terminal.send("Ação ç界\x1b\x1b[18~")
+                self.helper.wait_frames(terminal, 2)
+                self.helper.wait(terminal, "Reproduzindo")
+                terminal.send(" ")
+                self.helper.wait(terminal, "Pausado")
+                self.assertNotIn(b"non-C locale", terminal.output)
+                terminal.send("\x1b")
+                self.assertIn("Ação ç界", "\n".join(terminal.screen.display))
             finally:
                 self.assertTrue(terminal.close())
 
