@@ -256,7 +256,7 @@ static void batch_test(media_cache *cache)
     media_resource_release(r);
     puts("{\"batch\":true,\"decodes\":1,\"encodes\":2,\"largest_size_shared\":true}");
 }
-static void unified_test(media_cache *cache)
+static void unified_test(media_cache *cache, bool retain_avatars)
 {
     const char *path = getenv("PAPO_TEST_LOCAL_IMAGE"); assert(path);
     media_resource *r[5] = {
@@ -268,6 +268,9 @@ static void unified_test(media_cache *cache)
     };
     for (int i = 0; i < 5; ++i) assert(r[i]);
     assert(r[3] == r[4]);
+    if (retain_avatars) {
+        media_resource_cache_for_session(r[1]); media_resource_cache_for_session(r[2]);
+    }
     image_decode_request image = request(48);
     image.height = 48; image.native = false; image.center = image.cover = image.matte = true;
     image.background = 0x15181e;
@@ -289,8 +292,25 @@ static void unified_test(media_cache *cache)
     assert(media_resource_object(r[3], false) != object);
     media_cache_stats stats; media_cache_get_stats(&stats);
     assert(stats.objects == 2 && stats.decodes == 1 && stats.encodes == 2 && stats.requests == 2);
+    if (retain_avatars) {
+        uint64_t later = now_ms() + 600000;
+        media_cache_begin(cache); media_cache_begin(cache); media_cache_poll(cache, later);
+        assert(!media_resource_object(r[0], false)); /* Ordinary media still expires. */
+        for (int i = 1; i < 3; ++i) {
+            assert(media_resource_object(r[i], false) == object);
+            assert(media_resource_image(r[i], false, image, later) == encoded);
+        }
+        media_cache_get_stats(&stats);
+        assert(stats.requests == 2 && stats.decodes == 1 && stats.encodes == 2);
+        /* Retention does not pin avatars against the shared memory budget. */
+        media_cache_begin(cache); media_cache_begin(cache);
+        assert(media_cache_reserve(MEDIA_CACHE_MEMORY)); bounds();
+        media_cache_get_stats(&stats); assert(!stats.memory);
+        media_cache_unreserve(MEDIA_CACHE_MEMORY);
+    }
     for (int i = 0; i < 5; ++i) media_resource_release(r[i]);
-    printf("{\"sources\":4,\"objects\":2,\"decodes\":1,\"encodes\":2,\"requests\":2,\"shared\":true}\n");
+    printf("{\"sources\":4,\"objects\":2,\"decodes\":1,\"encodes\":2,\"requests\":2,\"shared\":true,\"avatars_retained\":%s}\n",
+           retain_avatars ? "true" : "false");
 }
 int main(int argc, char **argv)
 {
@@ -301,8 +321,8 @@ int main(int argc, char **argv)
     if (!strcmp(argv[2], "batch")) {
         batch_test(c); media_cache_destroy(c); auth_destroy(a); goto finished;
     }
-    if (!strcmp(argv[2], "unified")) {
-        unified_test(c); media_cache_destroy(c); auth_destroy(a); goto finished;
+    if (!strcmp(argv[2], "unified") || !strcmp(argv[2], "avatars")) {
+        unified_test(c, !strcmp(argv[2], "avatars")); media_cache_destroy(c); auth_destroy(a); goto finished;
     }
     if (!strcmp(argv[2], "pressure")) {
         pressure_test(a, c); media_cache_destroy(c); auth_destroy(a); goto finished;

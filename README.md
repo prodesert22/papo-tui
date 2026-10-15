@@ -360,8 +360,8 @@ sem cookies. Imagens recentes podem ser reutilizadas ao trocar de canal/servidor
 ou voltar à conta, dentro da mesma sessão; sair da conta limpa seu contexto.
 Há até quatro downloads simultâneos, com prioridade para o modal. Imagens com
 os mesmos bytes compartilham o objeto e suas variantes dentro da sessão;
-instâncias e contas permanecem isoladas. As representações fora da tela expiram
-após um minuto, e os arquivos sem uso, após cinco minutos. Os arquivos de imagem
+instâncias e contas permanecem isoladas. As representações de anexos, embeds e
+emojis fora da tela expiram após um minuto, e seus arquivos sem uso, após cinco minutos. Os arquivos de imagem
 concluídos têm limite separado de 128 MiB. Sob pressão, o cache libera as
 representações menos recentes e GIFs podem passar ao primeiro frame. Itens
 adiados por falta de orçamento voltam ao processamento quando há espaço.
@@ -586,7 +586,7 @@ por segundo. Arquivos inválidos mantêm texto ou iniciais; animações que exce
 os limites usam o primeiro frame. Imagens de mensagens, embeds, avatares e emojis
 usam o mesmo cache global de 256 MiB, com quatro workers, processamento em lotes
 e deduplicação por conteúdo. As entradas compactadas de emojis/avatares usam
-arquivos temporários privados, limitados a 160 MiB e removidos ao fechar a tela.
+arquivos temporários privados, limitados a 160 MiB e removidos ao sair da conta ou encerrar o aplicativo.
 
 O cabeçalho mostra o avatar de 48 × 48 pixels à esquerda, sem margem adicionada,
 com nome, horário local e **editado** alinhados ao topo do avatar. Hoje aparece somente a hora;
@@ -594,8 +594,13 @@ nas mensagens antigas, data e hora seguem o formato e o fuso do sistema. O
 conteúdo começa na linha imediatamente abaixo do nome e na mesma coluna, junto
 à borda do avatar. Perfis são consultados em lotes para autores visíveis,
 com prioridade sobre a busca de nomes e as páginas de emojis, respeitando a
-sessão e o limite global de requisições. Avatares visíveis são preservados no
-orçamento compartilhado de arquivos de entrada para evitar downloads repetidos.
+sessão e o limite global de requisições. Cada usuário tem sua entrada de avatar
+reutilizada ao rolar e voltar a conversas, inclusive quando não possui imagem.
+Avatares já processados permanecem em memória sem expiração por tempo, dentro
+dos limites compartilhados de memória e arquivos. Quando o servidor informa
+uma troca de avatar, a imagem anterior continua disponível enquanto a nova é
+consultada. Falhas preservam a imagem atual; Ctrl+R permite tentar novamente.
+Uma resposta com a mesma imagem reutiliza o conteúdo já carregado.
 Imagens retangulares usam recorte central proporcional para preencher o avatar.
 Mensagens consecutivas do mesmo autor compartilham nome, avatar e horário;
 as seguintes mostram apenas o conteúdo. Uma mudança de autor ou de identidade

@@ -198,6 +198,7 @@ static bool avatar_image(icon_view *v, const author_avatar *avatar, const char *
     if (crop_top + crop_bottom >= MESSAGE_AVATAR_PIXELS) return false;
     media_resource *resource = avatar->url ? media_cache_acquire_url(v->store, avatar->url, avatar->revision) :
         media_cache_acquire_file(v->store, avatar->path, avatar->revision);
+    media_resource_cache_for_session(resource);
     image_decode_request request = {.width=MESSAGE_AVATAR_PIXELS,.height=MESSAGE_AVATAR_PIXELS,.terminal=terminal,
         .cover=true,.center=true,.matte=true,.background=background(pair),.max_side=512};
     icons_scope(v, message, 0);

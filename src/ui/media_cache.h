@@ -35,6 +35,9 @@ media_resource *media_cache_acquire_file(media_cache *cache, const char *path, u
 media_resource *media_cache_acquire_unicode(media_cache *cache, const char *text);
 /* A presentation keeps one balanced visible lease per occurrence. */
 void media_resource_hold(media_resource *resource, bool visible);
+/* Reuse avatars across scrolling/idle periods. This skips age-based expiry;
+ * global memory/file budgets and resource limits still apply. */
+void media_resource_cache_for_session(media_resource *resource);
 void media_resource_ref(media_resource *resource);
 void media_resource_keep_image(media_resource *resource, bool author, const graphics_image *image);
 void media_resource_retry(media_resource *resource);

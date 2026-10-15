@@ -12,7 +12,7 @@
 #include <errno.h>
 #include <curl/curl.h>
 #define EMOJI_COUNT 500
-#define AVATAR_COUNT 128
+#define AVATAR_LIMIT 10000U
 #define APP_AVATAR_COUNT 32
 #define TEMP_BYTES (160U * 1024U * 1024U)
 typedef struct {
@@ -21,7 +21,8 @@ typedef struct {
 } app_avatar;
 struct chat_assets {
     server_emoji emojis[EMOJI_COUNT];
-    author_avatar avatars[AVATAR_COUNT];
+    GHashTable *avatars; /* Owns stable per-user entries for this session. */
+    GPtrArray *visible_avatars; /* Borrows entries visited in the current frame. */
     app_avatar apps[APP_AVATAR_COUNT];
     size_t count, bytes;
     uint64_t revision, emoji_revision, epoch, refreshed, tick, visible_tick;
@@ -43,6 +44,12 @@ static void remove_file(chat_assets *a, char **path, size_t *bytes)
 {
     if (*path) { unlink(*path); free(*path); *path = NULL; }
     a->bytes -= *bytes; *bytes = 0;
+}
+static void avatar_free(gpointer value)
+{
+    author_avatar *p = value;
+    if (p->path) { unlink(p->path); free(p->path); }
+    free(p);
 }
 static uint64_t fingerprint(const char *value)
 {
@@ -88,13 +95,15 @@ chat_assets *chat_assets_create(void)
     if (!a) return NULL;
     snprintf(a->directory, sizeof(a->directory), "/tmp/papo-assets-XXXXXX");
     if (!mkdtemp(a->directory)) { free(a); return NULL; }
+    a->avatars = g_hash_table_new_full(g_str_hash, g_str_equal, NULL, avatar_free);
+    a->visible_avatars = g_ptr_array_new(); a->visible_tick = 1;
     return a;
 }
 void chat_assets_destroy(chat_assets *a)
 {
     if (!a) return;
     for (size_t i = 0; i < a->count; ++i) remove_file(a, &a->emojis[i].path, &a->emojis[i].bytes);
-    for (size_t i = 0; i < AVATAR_COUNT; ++i) remove_file(a, &a->avatars[i].path, &a->avatars[i].bytes);
+    g_ptr_array_free(a->visible_avatars, true); g_hash_table_destroy(a->avatars);
     for (size_t i = 0; i < APP_AVATAR_COUNT; ++i) remove_file(a, &a->apps[i].image.path, &a->apps[i].image.bytes);
     json_decref(a->profiles); rmdir(a->directory); free(a);
 }
@@ -177,22 +186,15 @@ uint64_t chat_assets_emoji_revision(const chat_assets *a) { return a ? a->emoji_
 const author_avatar *chat_assets_avatar(chat_assets *a, const char *id)
 {
     if (!a || !history_uuid(id)) return NULL;
-    author_avatar *slot = NULL;
-    for (size_t i = 0; i < AVATAR_COUNT; ++i) {
-        author_avatar *p = &a->avatars[i];
-        if (!strcmp(p->id, id)) { p->used = ++a->tick; return p; }
-        if (!*p->id) slot = p;
+    author_avatar *p = g_hash_table_lookup(a->avatars, id);
+    if (!p) {
+        if (g_hash_table_size(a->avatars) >= AVATAR_LIMIT) return NULL;
+        p = calloc(1, sizeof(*p)); if (!p) return NULL;
+        snprintf(p->id, sizeof(p->id), "%s", id); p->dirty = true; p->version = 1;
+        g_hash_table_insert(a->avatars, p->id, p);
     }
-    if (!slot) {
-        for (size_t i = 0; i < AVATAR_COUNT; ++i) {
-            author_avatar *p = &a->avatars[i];
-            if (!p->requested && (!slot || p->used < slot->used)) slot = p;
-        }
-    }
-    if (!slot) return NULL;
-    remove_file(a, &slot->path, &slot->bytes);
-    memset(slot, 0, sizeof(*slot)); snprintf(slot->id, sizeof(slot->id), "%s", id);
-    slot->dirty = true; slot->used = ++a->tick; return slot;
+    if (p->used < a->visible_tick) g_ptr_array_add(a->visible_avatars, p);
+    p->used = ++a->tick; return p;
 }
 const author_avatar *chat_assets_webhook_avatar(chat_assets *a, const json_t *message)
 {
@@ -217,14 +219,18 @@ const author_avatar *chat_assets_webhook_avatar(chat_assets *a, const json_t *me
 void chat_assets_avatar_invalidate(chat_assets *a, const char *id)
 {
     if (!a || !history_uuid(id)) return;
-    for (size_t i = 0; a && i < AVATAR_COUNT; ++i) if (!strcmp(a->avatars[i].id, id)) {
-        author_avatar *p = &a->avatars[i]; remove_file(a, &p->path, &p->bytes);
-        ++p->revision; p->dirty = true; ++a->revision;
+    author_avatar *p = g_hash_table_lookup(a->avatars, id);
+    if (p) {
+        /* Keep the last good image until the new snapshot is validated. */
+        ++p->version; p->dirty = true; p->failed = false; ++a->revision;
     }
 }
 bool chat_assets_profiles_wanted(const chat_assets *a)
 {
-    for (size_t i = 0; a && i < AVATAR_COUNT; ++i) if (a->avatars[i].dirty && !a->avatars[i].requested && a->avatars[i].used >= a->visible_tick) return true;
+    for (size_t i = 0; a && i < a->visible_avatars->len; ++i) {
+        author_avatar *p = g_ptr_array_index(a->visible_avatars, i);
+        if (p->dirty && !p->requested) return true;
+    }
     return false;
 }
 json_t *chat_assets_profiles_request(chat_assets *a)
@@ -233,12 +239,12 @@ json_t *chat_assets_profiles_request(chat_assets *a)
     if (a->profiles) return a->profiles;
     a->profiles = json_array();
     if (!a->profiles) return NULL;
-    for (size_t i = 0; i < AVATAR_COUNT && json_array_size(a->profiles) < 4; ++i) {
-        author_avatar *p = &a->avatars[i];
-        if (!p->dirty || p->requested || p->used < a->visible_tick) continue;
+    for (size_t i = 0; i < a->visible_avatars->len && json_array_size(a->profiles) < 4; ++i) {
+        author_avatar *p = g_ptr_array_index(a->visible_avatars, i);
+        if (!p->dirty || p->requested) continue;
         size_t n = json_array_size(a->profiles);
         if (json_array_append_new(a->profiles, json_string(p->id))) break;
-        a->profile_versions[n] = p->revision; p->requested = true; p->dirty = false;
+        a->profile_versions[n] = p->version; p->requested = true; p->dirty = false;
     }
     return a->profiles;
 }
@@ -249,50 +255,76 @@ bool chat_assets_profiles_response(chat_assets *a, json_t *response, long status
     bool ok = status == 200 && json_is_array(profiles) && json_array_size(profiles) <= 4;
     size_t i; json_t *id;
     json_array_foreach(a->profiles, i, id) {
-        author_avatar *p = (author_avatar *)chat_assets_avatar(a, json_string_value(id));
+        author_avatar *p = g_hash_table_lookup(a->avatars, json_string_value(id));
         if (!p) continue;
         p->requested = false;
-        if (p->revision != a->profile_versions[i]) continue;
+        if (p->version != a->profile_versions[i]) continue;
+        p->failed = !ok;
+        if (!ok) continue;
         json_t *found = NULL, *profile; size_t k;
         if (ok) json_array_foreach(profiles, k, profile) if (!strcmp(str(profile, "id"), p->id)) { found = profile; break; }
-        size_t length = json_string_length(json_object_get(found, "avatar_blob"));
+        json_t *blob = json_object_get(found, "avatar_blob");
+        size_t length = json_string_length(blob);
         if (length && length <= 2796204 && valid_string(found, "avatar_blob", 2796204)) {
+            char *checksum = g_compute_checksum_for_string(G_CHECKSUM_SHA256, str(found, "avatar_blob"), -1);
+            if (!checksum) { p->failed = true; continue; }
+            if (p->path && !strcmp(checksum, p->checksum)) { g_free(checksum); continue; }
             /* Compact inputs share the existing asset file budget. Evicting
              * visible avatars from a smaller private quota caused repeated
              * profile reads despite the shared decoded-image cache. */
-            remove_file(a, &p->path, &p->bytes);
             while (length / 4 * 3 > temporary_available(a)) {
                 author_avatar *victim = NULL;
-                for (size_t j = 0; j < AVATAR_COUNT; ++j) {
-                    author_avatar *v = &a->avatars[j];
+                GHashTableIter iter; gpointer value;
+                g_hash_table_iter_init(&iter, a->avatars);
+                while (g_hash_table_iter_next(&iter, NULL, &value)) {
+                    author_avatar *v = value;
                     if (v != p && v->path && !v->requested && v->used < a->visible_tick &&
                         (!victim || v->used < victim->used)) victim = v;
                 }
                 if (!victim) break;
                 remove_file(a, &victim->path, &victim->bytes);
                 /* Retry only when the evicted author becomes visible again. */
-                victim->id[0] = 0;
+                victim->dirty = true; ++victim->revision;
             }
-            p->path = blob_file(a, str(found, "avatar_blob"), 2U * 1024U * 1024U, &p->bytes);
+            size_t bytes = 0;
+            char *path = blob_file(a, str(found, "avatar_blob"), 2U * 1024U * 1024U, &bytes);
+            if (path) {
+                remove_file(a, &p->path, &p->bytes);
+                p->path = path; p->bytes = bytes;
+                snprintf(p->checksum, sizeof(p->checksum), "%s", checksum); ++p->revision;
+            } else p->failed = true;
+            g_free(checksum);
+        } else if ((!blob || json_is_null(blob) || (json_is_string(blob) && !length))) {
+            if (p->path) { remove_file(a, &p->path, &p->bytes); p->checksum[0] = 0; ++p->revision; }
+        } else {
+            p->failed = true;
         }
-        ++p->revision;
     }
     json_decref(a->profiles); a->profiles = NULL; ++a->revision; return ok;
 }
 void chat_assets_cancel(chat_assets *a)
 {
     if (!a) return;
-    for (size_t i = 0; i < AVATAR_COUNT; ++i) if (a->avatars[i].requested) {
-        a->avatars[i].requested = false; a->avatars[i].dirty = true;
+    size_t i; json_t *id;
+    json_array_foreach(a->profiles, i, id) {
+        author_avatar *p = g_hash_table_lookup(a->avatars, json_string_value(id));
+        if (p) { p->requested = false; p->dirty = true; }
     }
     json_decref(a->profiles); a->profiles = NULL;
 }
 
-void chat_assets_visible_begin(chat_assets *a) { if (a) a->visible_tick = a->tick + 1; }
+void chat_assets_visible_begin(chat_assets *a)
+{
+    if (a) { a->visible_tick = a->tick + 1; g_ptr_array_set_size(a->visible_avatars, 0); }
+}
 void chat_assets_profiles_retry(chat_assets *a)
 {
     for (size_t i = 0; a && i < APP_AVATAR_COUNT; ++i)
         if (*a->apps[i].url) { ++a->apps[i].image.revision; ++a->revision; }
-    for (size_t i = 0; a && i < AVATAR_COUNT; ++i)
-        if (*a->avatars[i].id && !a->avatars[i].path && !a->avatars[i].requested) a->avatars[i].dirty = true;
+    if (!a) return;
+    GHashTableIter iter; gpointer value; g_hash_table_iter_init(&iter, a->avatars);
+    while (g_hash_table_iter_next(&iter, NULL, &value)) {
+        author_avatar *p = value;
+        if ((!p->path || p->failed) && !p->requested) p->dirty = true;
+    }
 }

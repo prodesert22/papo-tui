@@ -3,6 +3,7 @@ import base64
 import fcntl
 from datetime import datetime, timezone
 import signal
+import re
 import struct
 import termios
 import threading
@@ -254,6 +255,66 @@ class EmojiTerminal(unittest.TestCase):
                     self.assertEqual(reads(),1);self.wait(t,'Apelido')
                     self.assertNotIn('URL do servidor','\n'.join(t.screen.display))
                 finally:self.assertTrue(t.close())
+
+    def test_scrolling_past_128_authors_reuses_their_avatars(self):
+        with self.server(count=160) as s:
+            for n, message in enumerate(s.messages, 1):
+                message.update(author_id=uuid(5000+n), content=f'Mensagem {n:04d}', created_at=STAMP)
+            route = s.api_handler
+            reads = []
+            def profiles(method, path, body):
+                if path.endswith('/users/profile_batch'): reads.extend(body['ids'])
+                return route(method, path, body)
+            s.api_handler = profiles
+            t = self.open(s, protocol='kitty', size=(100,100))
+            try:
+                self.wait(t, 'Mensagem 0160')
+                def visible():
+                    return {uuid(5000+int(n)) for n in re.findall(r'Mensagem (\d{4})', '\n'.join(t.screen.display))}
+                recent = visible()
+                for _ in range(12):
+                    users = visible()
+                    self.until(t, lambda: users.issubset(set(reads)))
+                    self.until(t, lambda: len(self.avatar_positions(t)) >= max(1,len(users)-1))
+                    if 'Mensagem 0001' in '\n'.join(t.screen.display): break
+                    t.send('\x1b[5~')
+                self.assertGreater(len(set(reads)),128)
+                t.send('\x1bOF')
+                self.wait(t, 'Mensagem 0160')
+                self.until(t, lambda: len(self.avatar_positions(t)) >= max(1,len(recent)-1))
+                t.read(.2)
+                self.assertTrue(all(reads.count(user) == 1 for user in recent))
+                self.assertEqual(len(reads),len(set(reads)))
+            finally:self.assertTrue(t.close())
+
+    def test_avatar_update_keeps_cached_image_while_loading_replacement(self):
+        with self.server(realtime=True) as s:
+            route = s.api_handler
+            started, release = threading.Event(), threading.Event()
+            reads = []
+            def profiles(method, path, body):
+                if path.endswith('/users/profile_batch'):
+                    reads.append(body['ids'])
+                    if len(reads) > 1:
+                        started.set(); release.wait(8)
+                        return 200, {'profiles':[{'id':user,'avatar_blob':base64.b64encode(self.gif).decode(),
+                                                  'avatar_format':'GIF'} for user in body['ids']]}
+                return route(method, path, body)
+            s.api_handler = profiles
+            t = self.open(s, protocol='kitty')
+            try:
+                self.until(t, lambda: bool(self.avatar_positions(t)) and bool(s.peers))
+                previous = self.avatar_positions(t)
+                s.emit({'type':'avatar_update','user_id':s.messages[0]['author_id']})
+                self.until(t, started.is_set)
+                t.read(.2)
+                self.assertEqual(self.avatar_positions(t),previous)
+                release.set()
+                self.until(t, lambda: bool(self.avatar_positions(t)) and self.avatar_positions(t).isdisjoint(previous))
+                t.send('\x1bOH\x1bOF'); t.read(.3)
+                self.assertEqual(len(reads),2)
+            finally:
+                release.set(); self.assertTrue(t.close())
 
     def test_deleted_channel_closes_picker_and_cannot_send(self):
         with self.server(realtime=True) as s:

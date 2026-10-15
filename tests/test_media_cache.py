@@ -20,6 +20,12 @@ PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4
 
 class Cache(unittest.TestCase):
     def test_message_avatar_local_file_and_unicode_share_the_same_pipeline(self):
+        self.run_unified_scenario('unified')
+
+    def test_avatars_reuse_pixels_after_idle_without_ignoring_memory_budget(self):
+        self.run_unified_scenario('avatars')
+
+    def run_unified_scenario(self, mode):
         with HistoryMock(count=1) as server, tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'source.png'; path.write_bytes(PNG)
             original = server.route
@@ -28,7 +34,7 @@ class Cache(unittest.TestCase):
                     return 200, PNG, None, None, 'image/png'
                 return original(method, route_path, body)
             server.api_handler = route
-            result = subprocess.run([BINARY, server.url, 'unified'],
+            result = subprocess.run([BINARY, server.url, mode],
                                     env=dict(os.environ, TMPDIR=directory, PAPO_TEST_LOCAL_IMAGE=str(path)),
                                     capture_output=True, text=True, timeout=20)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -37,6 +43,7 @@ class Cache(unittest.TestCase):
             self.assertEqual(report['decodes'], 1)
             self.assertEqual(report['encodes'], 2)
             self.assertTrue(report['shared'])
+            self.assertEqual(report['avatars_retained'], mode == 'avatars')
             self.assertEqual(list(Path(directory).iterdir()), [path])
             self.assertTrue(all(not r[2] for r in server.requests if '/webhooks/' in r[1]))
 

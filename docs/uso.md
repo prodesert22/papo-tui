@@ -433,15 +433,19 @@ Falhas não geram tentativas automáticas; Ctrl+R permite tentar novamente.
 Emojis personalizados e avatares em GIF se repetem somente enquanto visíveis,
 até 15 atualizações por segundo. Animações que excedem os limites usam o
 primeiro frame. Avatares são carregados apenas para autores visíveis, em lotes,
-com prioridade sobre a busca de nomes e as páginas de emojis. Seus arquivos
-permanecem em cache enquanto visíveis e houver espaço no orçamento compartilhado.
-São atualizados após eventos de troca de avatar. Ctrl+R permite tentar novamente
-quando um avatar falha. Tudo fica isolado por instância e sessão, respeitando
+com prioridade sobre a busca de nomes e as páginas de emojis. O cache por usuário
+é reutilizado ao rolar e voltar a conversas, inclusive quando o perfil não tem
+avatar. Imagens já processadas não expiram por tempo durante a sessão; continuam
+disponíveis dentro dos limites compartilhados de memória e arquivos. Quando o
+servidor informa uma troca de avatar, o cliente consulta a nova imagem mantendo
+a anterior disponível. Uma resposta idêntica reutiliza a imagem já carregada;
+falhas preservam a anterior e Ctrl+R permite tentar novamente.
+Tudo fica isolado por instância e sessão, respeitando
 TLS e o limite global de requisições. Todas as imagens — incluindo
 avatares, emojis e embeds — compartilham o cache global de 256 MiB e o pool
 de quatro workers, com processamento em lotes e deduplicação por conteúdo.
 As entradas compactadas de emojis/avatares usam arquivos temporários privados,
-limitados a 160 MiB e removidos ao voltar à conta ou sair. O cache compartilhado
+limitados a 160 MiB e removidos ao sair da conta ou encerrar o aplicativo. O cache compartilhado
 pode manter imagens já processadas enquanto a sessão continuar aberta.
 
 ### Imagens e player de vídeo
@@ -524,8 +528,9 @@ a interface continua respondendo durante o processamento de imagens.
 Imagens recentes ficam disponíveis para reutilização entre conversas da mesma
 sessão, inclusive ao voltar à conta ou trocar de aba. Bytes iguais compartilham
 o objeto e as variantes de mesmo tamanho/protocolo; contas e instâncias ficam
-isoladas. Representações fora da tela expiram após um minuto, e arquivos sem uso,
-após cinco minutos. Sob pressão, o cache libera as representações menos recentes
+isoladas. Representações de anexos, embeds e emojis fora da tela expiram após um
+minuto, e seus arquivos sem uso, após cinco minutos. Avatares são reutilizados
+durante a sessão, dentro dos mesmos limites. Sob pressão, o cache libera as representações menos recentes
 e GIFs podem passar ao primeiro frame; itens adiados são processados quando há
 espaço. Sair da conta limpa o contexto. Arquivos temporários são privados e não
 incluem cookies; fechar o modal cancela o carregamento e remove seu vídeo.

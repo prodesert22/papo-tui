@@ -39,7 +39,7 @@ struct image_object {
     char *path, *glyph;
     size_t bytes, refs;
     uint64_t used, epoch;
-    bool pinned, failed;
+    bool pinned, failed, keep_cached;
     const char *error;
     animation *frames;
     task *job;
@@ -53,7 +53,7 @@ struct media_resource {
     size_t refs, visible_refs;
     enum { SOURCE_REST, SOURCE_URL, SOURCE_FILE, SOURCE_UNICODE } source_type;
     char *source;
-    bool video, wanted, modal;
+    bool video, wanted, modal, keep_cached;
     unsigned expired;
     enum { RESOURCE_NEW, RESOURCE_FETCH, RESOURCE_INGEST, RESOURCE_READY, RESOURCE_ERROR } state;
     const char *error;
@@ -419,6 +419,7 @@ static bool collect(media_cache *c)
                 r->job = NULL;
                 if (ok) for (int i = 0; i < 2; ++i) {
                     object_unref(r->objects[i]); r->objects[i] = intern(c, &t->blobs[i]);
+                    if (r->objects[i] && r->keep_cached) r->objects[i]->keep_cached = true;
                 }
                 if (ok) r->expired = 0;
                 r->state = cancelled(t) ? RESOURCE_NEW : ok ? RESOURCE_READY : RESOURCE_ERROR;
@@ -581,6 +582,12 @@ void media_resource_hold(media_resource *r, bool visible)
     if (visible) ++r->visible_refs;
     else if (r->visible_refs) --r->visible_refs;
 }
+void media_resource_cache_for_session(media_resource *r)
+{
+    if (!r) return;
+    r->keep_cached = true;
+    for (int i = 0; i < 2; ++i) if (r->objects[i]) r->objects[i]->keep_cached = true;
+}
 void media_cache_begin(media_cache *c)
 {
     if (!c) return;
@@ -633,11 +640,11 @@ static bool maintain(uint64_t now)
             media_resource *r = p;
             for (int i = 0; i < 2; ++i) {
                 image_object *o = r->objects[i];
-                if (o && !o->pinned && !object_busy(o) && now >= o->used && now - o->used >= 300000) {
+                if (o && !r->keep_cached && !o->pinned && !object_busy(o) && now >= o->used && now - o->used >= 300000) {
                     r->objects[i] = NULL; r->expired |= 1U << i; object_unref(o);
                 }
             }
-            if (!r->wanted && !r->job && r->state != RESOURCE_FETCH &&
+            if (!r->keep_cached && !r->wanted && !r->job && r->state != RESOURCE_FETCH &&
                 (now >= r->used && now - r->used >= 300000)) {
                 /* Handles still held by a position can request again. */
                 object_unref(r->objects[0]); object_unref(r->objects[1]); r->objects[0] = r->objects[1] = NULL;
@@ -650,12 +657,12 @@ static bool maintain(uint64_t now)
             image_object *o = p;
             for (variant *v = o->variants, *next; v; v = next) {
                 next = v->next;
-                if (!v->pinned && !v->job && now >= v->used && now - v->used >= 60000) {
+                if (!o->keep_cached && !v->pinned && !v->job && now >= v->used && now - v->used >= 60000) {
                     remove_variant(o, v); changed = true;
                 }
             }
             /* Drop unneeded representations before shared decoded frames. */
-            if (now >= o->used && now - o->used >= 60000) {
+            if (!o->keep_cached && now >= o->used && now - o->used >= 60000) {
                 drop_variants(o);
                 if (!o->pinned && !o->job && o->frames) {
                     bool busy = false;
@@ -663,7 +670,7 @@ static bool maintain(uint64_t now)
                     if (!busy) { release_memory(o->frames->bytes + sizeof(animation)); animation_free(o->frames); o->frames = NULL; changed = true; }
                 }
             }
-            if (!o->pinned && o->refs == 1 && !o->job && (now >= o->used && now - o->used >= 300000)) {
+            if (!o->keep_cached && !o->pinned && o->refs == 1 && !o->job && (now >= o->used && now - o->used >= 300000)) {
                 g_hash_table_iter_remove(&it); changed = true;
             }
         }

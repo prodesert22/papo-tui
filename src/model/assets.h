@@ -14,11 +14,12 @@ typedef struct {
 } server_emoji;
 typedef struct {
     char id[37];
+    char checksum[65];
     char *path;
     size_t bytes;
-    uint64_t revision, used;
+    uint64_t revision, used, version;
     const char *url; /* Borrowed descriptor; the shared image cache owns transfers. */
-    bool requested, dirty;
+    bool requested, dirty, failed;
 } author_avatar;
 chat_assets *chat_assets_create(void);
 void chat_assets_destroy(chat_assets *a);
@@ -33,7 +34,9 @@ const char *chat_assets_notice(const chat_assets *a);
 uint64_t chat_assets_revision(const chat_assets *a);
 /* Avatar downloads do not alter the text/emoji layout of cached messages. */
 uint64_t chat_assets_emoji_revision(const chat_assets *a);
-/* Borrowed values; no network I/O. A visible author queues a bounded profile read. */
+/* Session-owned entries keyed by user UUID (up to 10,000). A visible uncached
+ * author queues a bounded profile read. Repaints/scrolling reuse the entry;
+ * avatar_update schedules replacement without discarding the current image. */
 const author_avatar *chat_assets_avatar(chat_assets *a, const char *id);
 /* Public webhook attribution; visible URLs share a bounded per-session cache.
  * No I/O in this accessor; the shared image cache owns asynchronous transfers. */
