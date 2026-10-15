@@ -33,7 +33,7 @@ static void cards(void)
         }
     }
     assert(columns && title && footer && unavailable);
-    for (size_t i = 0; i < narrow.count; ++i) assert(narrow.rows[i].count <= 1);
+    for (size_t i = 0; i < narrow.count; ++i) if (!narrow.rows[i].header) assert(narrow.rows[i].count <= 1);
     assert(narrow.count > wide.count);
     message_blocks_free(&wide); message_blocks_free(&narrow); json_decref(m);
 }
@@ -71,7 +71,7 @@ static void embed_layout(void)
     assert(simultaneous && author && group_row && fourth_row > group_row);
     message_blocks_free(&b);
     assert(message_blocks_build(&b, m, "User", "", 24, false));
-    for (size_t r = 0; r < b.count; ++r) assert(b.rows[r].count <= 1);
+    for (size_t r = 0; r < b.count; ++r) if (!b.rows[r].header) assert(b.rows[r].count <= 1);
     message_blocks_free(&b); json_decref(m);
 }
 static void protocol(void)
@@ -150,6 +150,15 @@ static void preview_crops(void)
         assert(!graphics_image_crop(&image, 36, 0));
         graphics_image_free(&image);
         assert(!image.data && !image.crops);
+        /* A partially filled last cell must disappear when clipping that row. */
+        t.cell_height = 16;
+        assert(graphics_image_encode_preview(pixels, 12, 36, t, 123, &image));
+        crop = graphics_image_crop(&image, 0, 4);
+        assert(crop && crop->height == 32 && crop->rows == 2);
+        crop = graphics_image_crop(&image, 16, 4);
+        assert(crop && crop->height == 16 && crop->rows == 1);
+        graphics_image_free(&image);
+        t.cell_height = 6;
         t.protocol = GRAPHICS_ITERM2;
     }
 }
@@ -240,7 +249,7 @@ static void gallery_regions(const message_blocks *b, int positions[4][4])
             if (region->row) continue;
             assert(region->index >= 0 && region->index < 4);
             int *p = positions[region->index];
-            p[0] = row->x + region->x; p[1] = row->y; p[2] = region->width; p[3] = region->height;
+            p[0] = row->indent + row->x + region->x; p[1] = row->y; p[2] = region->width; p[3] = region->height;
             ++found;
         }
     }
@@ -262,11 +271,13 @@ static void image_gallery(void)
         {{0, 1}, {10, 1}, {0, 6}, {12, 6}}, {{0, 1}, {0, 6}, {0, 9}, {0, 16}}};
     for (size_t w = 0; w < sizeof(widths) / sizeof(*widths); ++w) {
         message_blocks b; int positions[4][4] = {{0}};
-        assert(message_blocks_build_sized(&b, m, "Sender", "", widths[w], true, gallery_measure, (void *)sizes));
-        assert(b.height == heights[w]); gallery_regions(&b, positions);
+        assert(message_blocks_build_sized(&b, m, "Sender", "", widths[w] + 6, true, gallery_measure, (void *)sizes));
+        int headers = 0;
+        for (size_t i = 0; i < b.count; ++i) headers += b.rows[i].header;
+        assert(b.height == heights[w] - 1 + headers); gallery_regions(&b, positions);
         for (int i = 0; i < 4; ++i) {
-            assert(positions[i][0] == expected[w][i][0] && positions[i][1] == expected[w][i][1]);
-            assert(positions[i][0] + positions[i][2] <= widths[w]);
+            assert(positions[i][0] == expected[w][i][0] + 6 && positions[i][1] == expected[w][i][1] - 1 + headers);
+            assert(positions[i][0] + positions[i][2] <= widths[w] + 6);
         }
         message_blocks_free(&b);
     }
@@ -287,7 +298,7 @@ static void embed_gallery(void)
     }
     const int sizes[4][2] = {{8, 4}, {8, 4}, {8, 4}, {8, 4}};
     message_blocks b; int positions[4][4] = {{0}};
-    assert(message_blocks_build_sized(&b, m, "Sender", "", 43, true, gallery_measure, (void *)sizes));
+    assert(message_blocks_build_sized(&b, m, "Sender", "", 49, true, gallery_measure, (void *)sizes));
     gallery_regions(&b, positions);
     assert(positions[0][1] == positions[1][1] && positions[1][1] == positions[2][1]);
     assert(positions[1][0] - positions[0][0] == 15 && positions[2][0] - positions[1][0] == 15);

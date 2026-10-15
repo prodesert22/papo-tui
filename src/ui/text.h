@@ -9,6 +9,13 @@
 #define TEXT_LIMIT 2048
 #define TEXT_UTF8_BYTES (TEXT_LIMIT * 4 + 1)
 
+/* An inline picture projects an original source range into a two-cell object.
+ * Resolvers never own input; painters only stage graphics on the main thread. */
+typedef size_t (*text_icon_resolver)(void *context, const uint32_t *text, size_t length,
+                                     size_t at, uint32_t *icon);
+typedef bool (*text_icon_painter)(void *context, WINDOW *window, uint32_t icon,
+                                  int y, int x, int pair, bool selected, size_t offset);
+
 /* Owned bounded buffer, Unicode scalar offsets and viewport. Segmentation is
  * provided by libunibreak; cursor offsets always fall between graphemes. */
 typedef struct {
@@ -21,6 +28,10 @@ typedef struct {
     mention_resolver resolver; /* Borrowed for the current view. */
     void *resolver_context;
     bool trailing; /* Prefer the preceding visual line at a soft wrap. */
+    text_icon_resolver icon_resolver;
+    text_icon_painter icon_painter;
+    void *icon_context;
+    const uint32_t *icon_map; /* Borrowed only during a projection/measurement. */
 } text_buffer;
 
 typedef struct {
@@ -29,6 +40,7 @@ typedef struct {
     int row, column, width;
     wchar_t glyph[CCHARW_MAX];
     bool newline;
+    uint32_t icon;
 } text_cell;
 
 typedef struct {
@@ -72,6 +84,7 @@ void text_drag(text_buffer *buffer, int width, int row, int column);
 
 /* Canonical tokens stay in data; only layout projects their labels. */
 void text_mentions(text_buffer *buffer, mention_resolver resolver, void *context);
+void text_icons(text_buffer *buffer, text_icon_resolver resolver, text_icon_painter painter, void *context);
 void text_project(const text_buffer *buffer, text_buffer *display);
 void text_draw_styled(WINDOW *window, const text_buffer *buffer, const text_layout *layout,
                       const unsigned char *highlight, size_t length, int first, int height,

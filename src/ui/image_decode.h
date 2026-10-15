@@ -32,6 +32,11 @@ typedef struct {
     animation *animation;
     size_t frame;
     int top, bottom;
+    bool matte, center, first_frame;
+    uint32_t background;
+    int max_side;
+    /* Fill the output with a proportional center crop instead of letterboxing. */
+    bool cover;
 } image_decode_request;
 void animation_ref(animation *frames);
 void animation_free(animation *frames);

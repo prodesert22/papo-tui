@@ -22,7 +22,8 @@ typedef struct {
     int y, x, rows, columns, top, bottom;
     const graphics_image *image; /* Borrowed only until this frame is flushed. */
 } displayed_image;
-static displayed_image displayed[64], desired[64];
+static displayed_image *displayed, *desired;
+static size_t displayed_capacity, desired_capacity;
 static size_t displayed_count, desired_count;
 static WINDOW *physical_snapshot;
 static bool synchronized;
@@ -234,12 +235,13 @@ bool graphics_image_encode_preview(const unsigned char *pixels, int width, int h
     size_t at = 0;
     for (int top = 0; top < rows; ++top) for (int bottom = 0; bottom < rows - top; ++bottom) {
         if (!top && !bottom) continue;
-        int h = height - (top + bottom) * t.cell_height;
+        int crop_bottom = bottom ? height - (rows - bottom) * t.cell_height : 0;
+        int h = height - top * t.cell_height - crop_bottom;
         if (h < 1) continue;
         graphics_image *crop = &out->crops[at++];
         if (!graphics_image_encode_id(pixels + (size_t)top * (size_t)t.cell_height * (size_t)width * 3,
                                       width, h, t, id, crop)) { graphics_image_free(out); return false; }
-        crop->crop_top = top * t.cell_height; crop->crop_bottom = bottom * t.cell_height;
+        crop->crop_top = top * t.cell_height; crop->crop_bottom = crop_bottom;
     }
     return true;
 }
@@ -302,12 +304,19 @@ void graphics_image_place_id(const graphics_image *image, uint32_t placement_id,
 {
     if (!image || !image->data || image->protocol != graphics_terminal_get().protocol ||
         top < 0 || bottom < 0 || top + bottom >= image->height ||
-        y < 0 || x < 0 || desired_count == sizeof(desired) / sizeof(desired[0])) return;
+        y < 0 || x < 0 || !placement_id || desired_count >= 65536) return;
+    if (desired_count == desired_capacity) {
+        size_t capacity = desired_capacity ? desired_capacity * 2 : 64;
+        displayed_image *next = realloc(desired, capacity * sizeof(*next));
+        if (!next) return;
+        desired = next; desired_capacity = capacity;
+    }
     int rows = (image->height - top - bottom + image->cell_height - 1) / image->cell_height;
     if (y + rows > LINES || x + image->columns > COLS) return;
     desired[desired_count++] = (displayed_image){image->protocol, image->id, placement_id, image->revision,
         y, x, rows, image->columns, top, bottom, image};
 }
+
 void graphics_frame_prepare(void)
 {
     fputs("\0337", stdout);
@@ -357,7 +366,13 @@ void graphics_frame_flush(void)
                 next->image->height - next->top - next->bottom);
         } else fwrite(next->image->data, 1, next->image->length, stdout);
     }
-    memcpy(displayed, desired, desired_count * sizeof(*desired)); displayed_count = desired_count;
+    if (displayed_capacity < desired_count) {
+        displayed_image *next = realloc(displayed, desired_capacity * sizeof(*next));
+        if (!next) { desired_count = 0; fputs("\0338", stdout); fflush(stdout); return; }
+        displayed = next; displayed_capacity = desired_capacity;
+    }
+    if (desired_count) memcpy(displayed, desired, desired_count * sizeof(*desired));
+    displayed_count = desired_count;
     for (size_t i = 0; i < displayed_count; ++i) displayed[i].image = NULL;
     desired_count = 0; fputs("\0338", stdout); fflush(stdout);
 }

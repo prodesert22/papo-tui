@@ -19,7 +19,10 @@ from test_terminal import Terminal, TerminalStream
 import test_history_terminal as history_tests
 
 class GraphicsStream:
-    def __init__(self, screen):
+    def __init__(self, screen, *, include_icons=True):
+        self.include_icons = include_icons
+        self.control_ids = set()
+        self.kitty_control = False
         self.stream = TerminalStream(screen)
         self.pending = b''
         self.frames = []
@@ -63,27 +66,37 @@ class GraphicsStream:
                 header, _, data = sequence[3:-2].partition(b';')
                 values = dict(field.split(b'=', 1) for field in header.split(b',') if b'=' in field)
                 if values.get(b'a') == b'd':
-                    image_id = int(values[b'i']); self.deleted_ids.append(image_id)
+                    image_id = int(values[b'i'])
+                    if image_id in self.control_ids and not self.include_icons: continue
+                    self.deleted_ids.append(image_id)
                     if b'p' in values:
                         self.live_placements.discard((image_id, int(values[b'p'])))
                     else:
                         self.live_placements = {pair for pair in self.live_placements if pair[0] != image_id}
                     if not any(pair[0] == image_id for pair in self.live_placements): self.live_ids.discard(image_id)
                 elif values.get(b'a') == b'p':
+                    if int(values[b'i']) in self.control_ids and not self.include_icons: continue
                     self.placements.append(values)
                     self.placement_positions.append((self.screen.cursor.y, self.screen.cursor.x))
                     self.live_ids.add(int(values[b'i']))
                     self.live_placements.add((int(values[b'i']), int(values[b'p'])))
                 elif values.get(b'a') in (b'T', b't'):
                     self.kitty_header = values; self.kitty_parts = []
+                    # Media regression assertions concern attachment/embed/player
+                    # pixels, rather than the newly graphical composer button.
+                    self.kitty_control = self.screen.cursor.x == self.screen.columns - 7
+                    if self.kitty_control: self.control_ids.add(int(values[b'i']))
                 elif self.kitty_header is not None:
                     if data: self.kitty_parts.append(data)
                     if values.get(b'm') == b'0':
                         pixels = base64.b64decode(b''.join(self.kitty_parts), validate=True)
+                        if self.kitty_control and not self.include_icons:
+                            self.kitty_header = None; continue
                         self.kitty_frames.append((self.kitty_header, pixels))
                         if self.kitty_header[b'a'] == b'T': self.live_ids.add(int(self.kitty_header[b'i']))
                         self.frames.append(pixels); self.protocols.append('kitty'); self.kitty_header = None
             else:
+                if not self.include_icons and self.screen.cursor.x == self.screen.columns - 7: continue
                 self.frames.append(sequence); self.protocols.append('iterm2' if iterm else 'sixel')
 
 class MediaTerminal(unittest.TestCase):
@@ -130,7 +143,7 @@ class MediaTerminal(unittest.TestCase):
         if not hasattr(self, "terminals"): self.terminals = []
         self.terminals.append(t)
         self.addCleanup(lambda: t.close() if t.process.poll() is None else None)
-        stream = GraphicsStream(t.screen); stream.feed(bytes(t.output)); t.stream = stream
+        stream = GraphicsStream(t.screen, include_icons=getattr(self, "include_icons", False)); stream.feed(bytes(t.output)); t.stream = stream
         if protocol == 'kitty':
             query = re.search(rb'\x1b_Gi=(\d+),s=1,v=1,a=q', t.output)
             self.assertIsNotNone(query)
@@ -436,7 +449,8 @@ class MediaTerminal(unittest.TestCase):
                     server.messages[0]['attachments'] = [dict(original, id=uuid(901 + i)) for i in range(4)]
                 t = self.open(server, protocol='kitty')
                 try:
-                    t.resize(50, 150); t.send('\x1b[6;4;1t')
+                    # One-pixel cells still reserve 48 columns for the avatar.
+                    t.resize(50, 180); t.send('\x1b[6;4;1t')
                     def slots():
                         live = {}
                         for position, p in zip(t.stream.placement_positions, t.stream.placements):
@@ -454,7 +468,7 @@ class MediaTerminal(unittest.TestCase):
                     wide = wait_rows(1)
                     gap = 6 if embed else 2  # Cards retain two padding columns on either side.
                     self.assertTrue(all(wide[i + 1][1] - wide[i][1] == 16 + gap for i in range(3)))
-                    t.resize(50, 80); narrow = wait_rows(2)
+                    t.resize(50, 124); narrow = wait_rows(2)
                     self.assertEqual(narrow[0][0], narrow[1][0])
                     self.assertEqual(narrow[2][0], narrow[3][0])
                     self.assertEqual(narrow[0][1], narrow[2][1])
@@ -675,6 +689,9 @@ class MediaTerminal(unittest.TestCase):
                 'thumbnail': {'mime_type': 'image/png'}, 'image': {'mime_type': 'image/png'}, 'footer': {'text': 'Footer'}}]
             t = self.open(server)
             try:
+                # Keep the thumbnail and fallback notice visible together;
+                # message indentation reduces the card's available width.
+                t.resize(30,100)
                 self.wait_frames(t); self.wait(t, 'indisponível no backend')
                 self.assertEqual(sum('/embeds/' in r[1] for r in server.requests), 1)
             finally: self.assertTrue(t.close())

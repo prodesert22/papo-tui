@@ -36,6 +36,9 @@ typedef enum { AUTH_MEDIA_ATTACHMENT, AUTH_MEDIA_THUMBNAIL, AUTH_MEDIA_EMBED,
  * owner must destroy it before auth_destroy and acquire the global budget.
  * Only UUID-addressed, documented media endpoints are accepted. Main thread. */
 CURL *auth_media_easy(auth_client *client, auth_media_kind kind, const char *id);
+/* Public webhook avatars: no cookies, credentials or redirects. HTTPS URLs or
+ * the documented /webhooks/<uuid>/avatar path on this instance only. */
+CURL *auth_avatar_easy(auth_client *client, const char *reference);
 /* Gate called before admitting refresh/logout to HTTP: 1 permits, 0 waits,
  * -1 fails closed. Borrowed context; detach the gate before destroying it. */
 typedef int (*auth_session_gate)(void *context, auth_client *client);
@@ -78,6 +81,9 @@ bool auth_get_json(auth_client *client, const char *path);
  * participates in the same queue/budget and may recover one 401, like GET.
  * This endpoint has no mutation semantics; no generic POST replay API exists. */
 bool auth_user_summaries(auth_client *client, const json_t *ids);
+/* Bounded asset reads through the same authenticated queue and global budget. */
+bool auth_user_profiles(auth_client *client, const json_t *ids);
+bool auth_emojis(auth_client *client, const char *path);
 /* Discards an external read/result while preserving the verified session and
  * global budget. An already-started refresh/whoami recovery finishes safely;
  * its cancelled external read will not be replayed afterward. */

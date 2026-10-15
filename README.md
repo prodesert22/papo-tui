@@ -6,12 +6,12 @@ O aplicativo oferece login, cadastro de conta, renovação de sessão, perfis lo
 
 ## Compilar e executar
 
-Pré-requisitos: compilador C17, CMake 3.21+, pkg-config, ncursesw/formw 6.1+, libcurl 7.86+, Jansson 2.14+, libunibreak 6.1+, libsixel 1.8+, libchafa 1.16+, GLib 2.66+, libmpv (API 2.0+) e bibliotecas de desenvolvimento do FFmpeg (libavformat/libavcodec 58+, libavutil 56+, libswscale 5+). A libcurl precisa oferecer WS/WSS, TLS e DNS assíncrono; o CMake verifica essas capacidades. Para os testes, Python 3.10+, FFmpeg CLI, OpenSSL CLI e as dependências de `requirements-dev.txt`.
+Pré-requisitos: compilador C17, CMake 3.21+, pkg-config, ncursesw/formw 6.1+, libcurl 7.86+, Jansson 2.14+, libunibreak 6.1+, libsixel 1.8+, libchafa 1.16+, GLib 2.66+, PangoCairo 1.50+, fonte Noto Color Emoji, libmpv (API 2.0+) e bibliotecas de desenvolvimento do FFmpeg (libavformat/libavcodec 58+, libavutil 56+, libswscale 5+). A libcurl precisa oferecer WS/WSS, TLS e DNS assíncrono; o CMake verifica essas capacidades. Para os testes, Python 3.10+, FFmpeg CLI, OpenSSL CLI e as dependências de `requirements-dev.txt`.
 
 No Arch Linux:
 
 ```sh
-sudo pacman -S --needed base-devel cmake pkgconf ncurses curl jansson libunibreak libsixel chafa glib2 mpv ffmpeg python
+sudo pacman -S --needed base-devel cmake pkgconf ncurses curl jansson libunibreak libsixel chafa glib2 pango cairo noto-fonts-emoji mpv ffmpeg python
 ```
 
 ```sh
@@ -526,3 +526,38 @@ ctest --test-dir build/sanitized --output-on-failure
 ```
 
 Em ambientes sob ptrace, o LeakSanitizer não funciona. Nesses ambientes, execute `ASAN_OPTIONS=detect_leaks=0 ctest --test-dir build/sanitized --output-on-failure`: AddressSanitizer e UndefinedBehaviorSanitizer continuam ativos, mas vazamentos não são verificados.
+
+### Emojis e avatares
+
+O botão **[😄]**, à direita do editor, abre o seletor de emojis. **F4** também
+abre; Tab no editor foca o botão, e Enter o aciona. Shift+Tab volta ao editor.
+O modal possui busca por nomes e palavras-chave em português/inglês e abas
+**Unicode** e **Servidor**. Tab percorre busca, abas e grade; ←/→ nas abas
+escolhe a origem; na grade, setas, PageUp/PageDown ou roda navegam. Clique ou
+Enter insere na seleção/posição do cursor e fecha, sem enviar a mensagem.
+Esc ou clique fora cancela. F5 atualiza os emojis do servidor.
+
+Unicode é enviado como Unicode; personalizados usam `:nome:`. Kitty, Sixel e
+iTerm2 mostram ícones coloridos no histórico, editor e seletor. O catálogo
+Unicode 17.0/CLDR 48 é local; a fonte Noto Color Emoji deve estar instalada.
+Sem protocolo gráfico ou fonte disponível, permanece a representação textual.
+GIFs de emojis e avatares animam somente enquanto visíveis, até 15 atualizações
+por segundo. Arquivos inválidos mantêm texto ou iniciais; animações que excedem
+os limites usam o primeiro frame. Os caches têm limites de
+256 MiB para mídia e 32 MiB para ícones; imagens compactadas de emojis/avatares usam
+arquivos temporários privados, limitados a 160 MiB e removidos ao fechar a tela.
+
+O cabeçalho mostra o avatar de 48 × 48 pixels à esquerda, sem margem adicionada,
+com nome, horário local e **editado** alinhados ao topo do avatar. Hoje aparece somente a hora;
+nas mensagens antigas, data e hora seguem o formato e o fuso do sistema. O
+conteúdo começa na linha imediatamente abaixo do nome e na mesma coluna, junto
+à borda do avatar. Perfis são consultados em lotes para autores visíveis, respeitando a sessão e o limite global de requisições.
+Imagens retangulares usam recorte central proporcional para preencher o avatar.
+Mensagens consecutivas do mesmo autor compartilham nome, avatar e horário;
+as seguintes mostram apenas o conteúdo. Uma mudança de autor ou de identidade
+externa do webhook inicia outro grupo. Mensagens editadas de usuários iniciam
+um novo grupo e mantêm o indicador.
+
+Mensagens de webhook mostram o nome informado pelo app, a tag **[APP]** e seu
+avatar no cabeçalho. Avatares públicos são carregados sem cookies de sessão;
+quando indisponíveis, aparecem as iniciais do app.

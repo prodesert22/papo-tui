@@ -2,12 +2,12 @@
 
 ## Requisitos
 
-Compilador C17, CMake 3.21+, pkg-config, ncursesw/formw 6.1+, libcurl 7.86+ com WS/WSS, TLS e DNS assíncrono, Jansson 2.14+, libunibreak 6.1+, libsixel 1.8+, libchafa 1.16+, GLib 2.66+, libmpv (API 2.0+) e FFmpeg (libavformat/libavcodec 58+, libavutil 56+, libswscale 5+). Use um terminal UTF-8 com pelo menos 44 colunas e 22 linhas disponíveis ao aplicativo. No tmux, reserve também as linhas da barra de status.
+Compilador C17, CMake 3.21+, pkg-config, ncursesw/formw 6.1+, libcurl 7.86+ com WS/WSS, TLS e DNS assíncrono, Jansson 2.14+, libunibreak 6.1+, libsixel 1.8+, libchafa 1.16+, GLib 2.66+, PangoCairo 1.50+, fonte Noto Color Emoji, libmpv (API 2.0+) e FFmpeg (libavformat/libavcodec 58+, libavutil 56+, libswscale 5+). Use um terminal UTF-8 com pelo menos 44 colunas e 22 linhas disponíveis ao aplicativo. No tmux, reserve também as linhas da barra de status.
 
 No Arch Linux:
 
 ```sh
-sudo pacman -S --needed base-devel cmake pkgconf ncurses curl jansson libunibreak libsixel chafa glib2 mpv ffmpeg
+sudo pacman -S --needed base-devel cmake pkgconf ncurses curl jansson libunibreak libsixel chafa glib2 pango cairo noto-fonts-emoji mpv ffmpeg
 ```
 
 ## Compilar e executar
@@ -340,6 +340,73 @@ históricos inativos. Durante o carregamento, os resultados são parciais. O
 cache fica somente em memória, limitado a 10.000 usuários ou 16 MiB, incluindo os índices de pesquisa. Usuários sem referência no histórico, na digitação ou no seletor expiram após cinco minutos; abrir novamente o seletor recarrega as páginas necessárias. Se houver
 falha, Ctrl+R no cartão tenta novamente. Uma única opção também exige
 confirmação; textos colados, e-mails e URLs não abrem o seletor automaticamente.
+
+### Emojis e avatares
+
+Clique em **[😄]**, à direita do editor, ou pressione **F4** para abrir o
+seletor. Tab a partir do editor foca esse botão; Enter o abre e Shift+Tab
+retorna ao editor. O botão permanece fixo ao escrever ou redimensionar.
+
+Digite no campo **Buscar** para filtrar nomes e palavras-chave em português
+ou inglês, ignorando maiúsculas e acentos. Tab/Shift+Tab percorre busca, abas e
+grade. Nas abas, ←/→ escolhe **Unicode** ou **Servidor**; na grade, as setas
+movem o destaque e PageUp/PageDown ou a roda do mouse rolam os resultados.
+O rodapé identifica o emoji destacado. Enter ou clique insere no cursor ou
+substitui a seleção, fecha o modal e retorna ao editor. Isso não envia a
+mensagem. Se não couber no limite do editor, o rascunho é preservado e o modal
+informa o problema. Esc ou clique fora cancela sem acionar canais ao fundo.
+
+Unicode é inserido como sua sequência original. Emojis personalizados usam
+`:nome:`, preservando o nome do servidor, inclusive Unicode e capitalização.
+F5 atualiza o catálogo remoto; ao reabrir depois de cinco minutos ele também
+é atualizado. As páginas aparecem progressivamente; falhas preservam os itens
+já carregados e F5 permite tentar novamente. Não há upload, exclusão ou
+seleção de reações nessa tela.
+
+Instale **PangoCairo 1.50+** e a fonte **Noto Color Emoji** para os ícones Unicode
+coloridos. O catálogo Unicode 17.0/CLDR 48 vem com o programa e funciona sem
+internet. No histórico, editor e seletor, Kitty, Sixel e iTerm2 usam imagens
+coloridas; emojis no texto ocupam duas colunas e uma linha. Seleção, cursor,
+exclusão e cópia preservam o texto enviado. Sem suporte gráfico ou fonte,
+Unicode permanece em texto e personalizados permanecem como `:nome:`.
+
+O avatar preenche 48 × 48 pixels, sem margem adicionada. Imagens retangulares
+usam recorte central proporcional para preencher essa área, sem distorção.
+Nome, hora e **editado** ficam à direita, alinhados ao topo do avatar; o texto
+da mensagem começa na linha imediatamente abaixo, na mesma coluna do nome.
+O espaço entre avatar e nome acompanha a largura das células, sem uma coluna vazia adicional.
+Esse alinhamento também se aplica às mensagens agrupadas, anexos e embeds.
+Avatares ausentes ou
+inválidos mostram iniciais. Hoje aparece só o horário; nos outros dias, data
+e hora, seguindo `LC_TIME` e o fuso local. O indicador **editado** substitui a
+antiga linha separada de edição. Nomes longos são abreviados e metadados se
+ajustam em telas estreitas.
+
+Mensagens consecutivas do mesmo autor ou webhook compartilham um único
+cabeçalho com nome, avatar, data e hora. As seguintes mostram seu conteúdo,
+incluindo anexos, embeds e o indicador de edição quando aplicável, sem espaços
+extras entre elas. Uma mudança de autor, webhook ou identidade externa
+(origem, ID, nome ou avatar) inicia outro grupo. O agrupamento acompanha a
+ordem do histórico, sem limite de tempo entre mensagens consecutivas. A
+primeira mensagem carregada sempre mostra o cabeçalho. Mensagens editadas de
+usuários iniciam um novo grupo.
+
+Mensagens recebidas por webhook mostram o nome de exibição informado pelo
+backend, seguido de **[APP]**, e o avatar do app. A atribuição externa fornecida
+para uma mensagem é preservada. Sem nome disponível, aparece **Webhook**; sem
+avatar válido, aparecem as iniciais. Os avatares públicos do Papo e URLs HTTPS
+externas são carregados sem cookies de sessão e sem seguir redirecionamentos.
+Falhas não geram tentativas automáticas; Ctrl+R permite tentar novamente.
+
+Emojis personalizados e avatares em GIF se repetem somente enquanto visíveis,
+até 15 atualizações por segundo. Animações que excedem os limites usam o
+primeiro frame. Avatares são carregados apenas para autores visíveis, em lotes,
+e atualizados após eventos de troca de avatar. Ctrl+R permite tentar novamente
+quando um avatar falha. Tudo fica isolado por instância e sessão, respeitando
+TLS e o limite global de requisições. Os caches têm limites de 256 MiB para mídia
+e 32 MiB para ícones; arquivos temporários de emojis/avatares são privados,
+limitados a 160 MiB
+e removidos ao voltar à conta ou sair.
 
 ### Imagens e player de vídeo
 

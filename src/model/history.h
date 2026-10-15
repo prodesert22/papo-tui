@@ -2,6 +2,7 @@
 #define PAPO_HISTORY_H
 #include "net/auth.h"
 #include "model/mentions.h"
+#include "model/assets.h"
 
 #define HISTORY_CHANNEL_LIMIT 500
 #define HISTORY_MESSAGE_LIMIT 1000
@@ -17,6 +18,9 @@ history *history_create(auth_client *auth);
 /* Valid live embed updates also invalidate media in inactive conversations. */
 void history_set_media_updates(history *h, void (*update)(void *, const json_t *), void *context);
 void history_destroy(history *h);
+chat_assets *history_assets(history *h);
+bool history_message_webhook(const json_t *message);
+const char *history_message_author(const history *h, const json_t *message);
 bool history_poll(history *h);
 /* Copies a confirmed Message. Merges only the active channel/current
  * generation, with definitive ID deduplication and bounded memory. No HTTP. */

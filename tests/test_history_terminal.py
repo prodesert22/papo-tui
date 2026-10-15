@@ -295,7 +295,7 @@ class HistoryTerminal(unittest.TestCase):
                 self.wait(t, 'mensagem não disponível')
                 self.assertNotIn('Sem conteúdo textual', '\n'.join(t.screen.display))
                 self.wait(t, 'relatório.txt')
-                self.wait(t, 'editada')
+                self.wait(t, 'editado')
                 self.assertNotIn(b'\x1b[31m', t.output)
                 t.send('\x1bOF')
                 self.wait(t, 'Prévia')

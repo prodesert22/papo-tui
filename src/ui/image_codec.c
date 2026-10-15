@@ -53,7 +53,8 @@ static bool decode_file(const image_decode_request *j, graphics_image *out, anim
     av_dict_set(&options, "ignore_loop", "1", 0);
     if (avformat_open_input(&format, j->path, NULL, &options) < 0) goto done;
     AVDictionary *decode_options = NULL;
-    av_dict_set(&decode_options, "max_pixels", "16777216", 0);
+    size_t source_limit = j->max_side > 0 && j->max_side <= 4096 ? (size_t)j->max_side * (size_t)j->max_side : IMAGE_PIXELS;
+    av_dict_set_int(&decode_options, "max_pixels", (int64_t)source_limit, 0);
     av_dict_set(&decode_options, "threads", "1", 0);
     int info = avformat_find_stream_info(format, &decode_options);
     av_dict_free(&decode_options);
@@ -65,16 +66,17 @@ static bool decode_file(const image_decode_request *j, graphics_image *out, anim
         parameters->codec_id != AV_CODEC_ID_WEBP && parameters->codec_id != AV_CODEC_ID_GIF) goto done;
     if (parameters->width < 1 || parameters->height < 1 ||
         (size_t)parameters->width > IMAGE_PIXELS / (size_t)parameters->height) goto done;
+    if (j->max_side && (parameters->width > j->max_side || parameters->height > j->max_side)) goto done;
     const AVCodec *codec = avcodec_find_decoder(parameters->codec_id);
     if (!codec || !(decoder = avcodec_alloc_context3(codec))) goto done;
-    decoder->max_pixels = IMAGE_PIXELS;
+    decoder->max_pixels = source_limit;
     decoder->thread_count = 1;
     if (avcodec_parameters_to_context(decoder, parameters) < 0 || avcodec_open2(decoder, codec, NULL) < 0) goto done;
     frame = av_frame_alloc(); packet = av_packet_alloc();
     frames = host.allocate_zero(1, sizeof(*frames));
     if (frames) atomic_init(&frames->references, 1);
     if (!frame || !packet || !frames) goto done;
-    bool gif = parameters->codec_id == AV_CODEC_ID_GIF, static_only = j->static_only;
+    bool gif = parameters->codec_id == AV_CODEC_ID_GIF, static_only = j->static_only || j->first_frame;
     int read_status = 0;
     for (unsigned n = 0; n < 4096 && (read_status = av_read_frame(format, packet)) >= 0; ++n) {
         if (decode_interrupt(&guard)) goto done;
@@ -91,7 +93,8 @@ static bool decode_file(const image_decode_request *j, graphics_image *out, anim
         if (!frames->count) {
             int w = j->width, h = j->height;
             if (!graphics_image_capacity(w, h)) goto done;
-            double ratio = fmin((double)w / frame->width, (double)h / frame->height);
+            double ratio = j->cover ? fmax((double)w / frame->width, (double)h / frame->height) :
+                                      fmin((double)w / frame->width, (double)h / frame->height);
             if (j->native && ratio > 1) ratio = 1;
             int sw = (int)(frame->width * ratio), sh = (int)(frame->height * ratio);
             if (sw < 1) sw = 1;
@@ -108,7 +111,8 @@ static bool decode_file(const image_decode_request *j, graphics_image *out, anim
         if (frame->width != frames->source_width || frame->height != frames->source_height ||
             frames->count == ANIMATION_FRAMES) goto done;
         int sw = 0, sh = 0;
-        double ratio = fmin((double)j->width / frame->width, (double)j->height / frame->height);
+        double ratio = j->cover ? fmax((double)j->width / frame->width, (double)j->height / frame->height) :
+                                  fmin((double)j->width / frame->width, (double)j->height / frame->height);
         if (j->native && ratio > 1) ratio = 1;
         sw = (int)(frame->width * ratio); sh = (int)(frame->height * ratio);
         if (sw < 1) sw = 1;
@@ -131,10 +135,13 @@ static bool decode_file(const image_decode_request *j, graphics_image *out, anim
         if (sws_scale(scale, (const uint8_t *const *)frame->data, frame->linesize, 0, frame->height, dest, stride) != sh) { host.release(rgb); goto done; }
         for (int y = 0; y < frames->height; ++y) for (int x = 0; x < frames->width; ++x) {
             size_t at = ((size_t)y * (size_t)frames->width + (size_t)x) * 3;
-            const unsigned char bg[] = {0x15, 0x18, 0x1e};
+            uint32_t background = j->matte ? j->background : 0x15181e;
+            const unsigned char bg[] = {(unsigned char)(background >> 16), (unsigned char)(background >> 8), (unsigned char)background};
             for (int c = 0; c < 3; ++c) {
                 unsigned alpha = 0, color = 0;
-                if (y < sh && x < sw) { size_t pos = ((size_t)y * (size_t)sw + (size_t)x) * 4; alpha = rgba[pos + 3]; color = rgba[pos + (size_t)c]; }
+                int px = x - (j->center ? (frames->width - sw) / 2 : 0);
+                int py = y - (j->center ? (frames->height - sh) / 2 : 0);
+                if (py >= 0 && px >= 0 && py < sh && px < sw) { size_t pos = ((size_t)py * (size_t)sw + (size_t)px) * 4; alpha = rgba[pos + 3]; color = rgba[pos + (size_t)c]; }
                 rgb[at + (size_t)c] = (unsigned char)((color * alpha + bg[c] * (255 - alpha)) / 255);
             }
         }

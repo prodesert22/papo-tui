@@ -63,7 +63,7 @@ struct auth_client {
     char *server_password;
     char *payload;
     char *response;
-    size_t response_length;
+    size_t response_length, response_limit;
     bool overflow;
     bool server_public;
     bool server_password_error;
@@ -308,7 +308,7 @@ static size_t receive(char *data, size_t size, size_t count, void *context)
     auth_client *client = context;
     if (size && count > SIZE_MAX / size) return 0;
     size_t bytes = size * count;
-    if (bytes > RESPONSE_LIMIT - client->response_length) {
+    if (bytes > client->response_limit - client->response_length) {
         client->overflow = true;
         return 0;
     }
@@ -340,6 +340,8 @@ static bool request(auth_client *client, auth_state state, const char *path,
     free(client->response);
     client->response = NULL;
     client->response_length = 0;
+    client->response_limit = state == AUTH_API_GET && !strncmp(path, "/emojis?", 8) ? 12U * 1024U * 1024U :
+        state == AUTH_API_GET && !strcmp(path, "/users/profile_batch") ? 16U * 1024U * 1024U : RESPONSE_LIMIT;
     client->overflow = false;
     client->retry_after = PAPO_RATE_DEFAULT_COOLDOWN_SECONDS;
     /* A fresh HTTP/1.1 connection avoids libcurl's stale-connection/stream
@@ -732,11 +734,11 @@ void auth_cancel_read(auth_client *client)
     clear_api(client);
 }
 
-bool auth_user_summaries(auth_client *client, const json_t *ids)
+static bool user_batch(auth_client *client, const json_t *ids, const char *path, size_t limit)
 {
     if (!auth_has_session(client) || client->state != AUTH_READY || client->queued || client->attached ||
         client->api_path || client->response_ready || !json_is_array(ids) ||
-        !json_array_size(ids) || json_array_size(ids) > 1000) return false;
+        !json_array_size(ids) || json_array_size(ids) > limit) return false;
     size_t index;
     json_t *id;
     json_array_foreach(ids, index, id) {
@@ -751,12 +753,19 @@ bool auth_user_summaries(auth_client *client, const json_t *ids)
     if (!copy) return false;
     json_t *body = json_pack("{s:o}", "ids", copy);
     if (!body) return false;
-    client->api_path = strdup("/users/user_summary_batch");
+    client->api_path = strdup(path);
     if (!client->api_path) { json_decref(body); return false; }
     client->api_body = body;
     client->api_retried = false;
     return request(client, AUTH_API_GET, client->api_path, body, true);
 }
+
+bool auth_user_summaries(auth_client *client, const json_t *ids)
+{ return user_batch(client, ids, "/users/user_summary_batch", 1000); }
+bool auth_user_profiles(auth_client *client, const json_t *ids)
+{ return user_batch(client, ids, "/users/profile_batch", 4); }
+bool auth_emojis(auth_client *client, const char *path)
+{ return path && !strncmp(path, "/emojis?order=asc", 17) && auth_get_json(client, path); }
 
 json_t *auth_take_response(auth_client *client, long *status, uint64_t *generation)
 {
@@ -1268,6 +1277,34 @@ void auth_destroy(auth_client *client)
 }
 
 auth_state auth_get_state(const auth_client *client) { return client->state; }
+static CURL *media_easy(auth_client *client, const char *url, bool cookies)
+{
+    CURL *easy = curl_easy_init();
+    if (!easy) return NULL;
+#define MEDIA_SET(option, value) do { if (curl_easy_setopt(easy, option, value) != CURLE_OK) goto error; } while (0)
+    MEDIA_SET(CURLOPT_URL, url);
+    if (cookies) {
+        MEDIA_SET(CURLOPT_SHARE, client->cookies);
+        MEDIA_SET(CURLOPT_COOKIEFILE, "");
+    }
+    MEDIA_SET(CURLOPT_FOLLOWLOCATION, 0L);
+    MEDIA_SET(CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
+    MEDIA_SET(CURLOPT_PROTOCOLS_STR, "http,https");
+    MEDIA_SET(CURLOPT_SSL_VERIFYPEER, 1L);
+    MEDIA_SET(CURLOPT_SSL_VERIFYHOST, 2L);
+    MEDIA_SET(CURLOPT_CONNECTTIMEOUT_MS, 5000L);
+    MEDIA_SET(CURLOPT_TIMEOUT_MS, 120000L);
+    MEDIA_SET(CURLOPT_LOW_SPEED_LIMIT, 1024L);
+    MEDIA_SET(CURLOPT_LOW_SPEED_TIME, 15L);
+    MEDIA_SET(CURLOPT_NOSIGNAL, 1L);
+    MEDIA_SET(CURLOPT_USERAGENT, "papo-tui/0.1.0-dev");
+    const char *ca_bundle = getenv("CURL_CA_BUNDLE");
+    if (ca_bundle && *ca_bundle) MEDIA_SET(CURLOPT_CAINFO, ca_bundle);
+    return easy;
+error:
+    curl_easy_cleanup(easy); return NULL;
+#undef MEDIA_SET
+}
 CURL *auth_media_easy(auth_client *client, auth_media_kind kind, const char *id)
 {
     if (!auth_has_session(client) || !id || strlen(id) != 36) return NULL;
@@ -1283,31 +1320,46 @@ CURL *auth_media_easy(auth_client *client, auth_media_kind kind, const char *id)
     snprintf(path, sizeof(path), formats[kind], id);
     size_t length = strlen(client->base) + strlen(path) + 1;
     char *url = malloc(length);
-    CURL *easy = curl_easy_init();
-    if (!url || !easy) { free(url); curl_easy_cleanup(easy); return NULL; }
+    if (!url) return NULL;
     snprintf(url, length, "%s%s", client->base, path);
-#define MEDIA_SET(option, value) do { if (curl_easy_setopt(easy, option, value) != CURLE_OK) goto error; } while (0)
-    MEDIA_SET(CURLOPT_URL, url);
-    MEDIA_SET(CURLOPT_SHARE, client->cookies);
-    MEDIA_SET(CURLOPT_COOKIEFILE, "");
-    MEDIA_SET(CURLOPT_FOLLOWLOCATION, 0L);
-    MEDIA_SET(CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
-    MEDIA_SET(CURLOPT_PROTOCOLS_STR, "http,https");
-    MEDIA_SET(CURLOPT_SSL_VERIFYPEER, 1L);
-    MEDIA_SET(CURLOPT_SSL_VERIFYHOST, 2L);
-    MEDIA_SET(CURLOPT_CONNECTTIMEOUT_MS, 5000L);
-    MEDIA_SET(CURLOPT_TIMEOUT_MS, 120000L);
-    MEDIA_SET(CURLOPT_LOW_SPEED_LIMIT, 1024L);
-    MEDIA_SET(CURLOPT_LOW_SPEED_TIME, 15L);
-    MEDIA_SET(CURLOPT_NOSIGNAL, 1L);
-    MEDIA_SET(CURLOPT_USERAGENT, "papo-tui/0.1.0-dev");
-    const char *ca_bundle = getenv("CURL_CA_BUNDLE");
-    if (ca_bundle && *ca_bundle) MEDIA_SET(CURLOPT_CAINFO, ca_bundle);
-    free(url);
-    return easy;
-error:
-    free(url); curl_easy_cleanup(easy); return NULL;
-#undef MEDIA_SET
+    CURL *easy = media_easy(client, url, true);
+    free(url); return easy;
+}
+CURL *auth_avatar_easy(auth_client *client, const char *reference)
+{
+    if (!auth_has_session(client) || !reference || !*reference || strlen(reference) > 2048) return NULL;
+    for (const unsigned char *p = (const unsigned char *)reference; *p; ++p)
+        if (*p <= 0x20 || *p == 0x7f) return NULL;
+    char *relative = NULL;
+    if (*reference == '/') {
+        if (strlen(reference) != 53 || strncmp(reference, "/webhooks/", 10) || strcmp(reference + 46, "/avatar")) return NULL;
+        for (size_t i = 0; i < 36; ++i) {
+            char c = reference[10 + i];
+            bool dash = i == 8 || i == 13 || i == 18 || i == 23;
+            if (dash ? c != '-' : !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) return NULL;
+        }
+        size_t length = strlen(client->base) + strlen(reference) + 1;
+        relative = malloc(length);
+        if (!relative) return NULL;
+        snprintf(relative, length, "%s%s", client->base, reference);
+        reference = relative;
+    }
+    CURLU *parsed = curl_url();
+    char *scheme = NULL, *part = NULL;
+    bool valid = parsed && curl_url_set(parsed, CURLUPART_URL, reference, 0) == CURLUE_OK &&
+                 curl_url_get(parsed, CURLUPART_SCHEME, &scheme, 0) == CURLUE_OK;
+    if (valid) {
+        size_t base_length = strlen(client->base);
+        bool local_http = !strcmp(scheme, "http") && !strncmp(reference, client->base, base_length) && reference[base_length] == '/';
+        valid = !strcmp(scheme, "https") || local_http;
+        const CURLUPart forbidden[] = {CURLUPART_USER, CURLUPART_PASSWORD, CURLUPART_FRAGMENT};
+        for (size_t i = 0; i < sizeof(forbidden) / sizeof(forbidden[0]); ++i) {
+            if (curl_url_get(parsed, forbidden[i], &part, 0) == CURLUE_OK) valid = false;
+            curl_free(part); part = NULL;
+        }
+    }
+    CURL *easy = valid ? media_easy(client, reference, false) : NULL;
+    curl_free(scheme); curl_url_cleanup(parsed); free(relative); return easy;
 }
 bool auth_busy(const auth_client *client)
 {

@@ -60,6 +60,7 @@ void graphics_frame_invalidate(void);
 void graphics_image_place_id(const graphics_image *image, uint32_t placement_id, int y, int x, int top, int bottom);
 void graphics_image_place(const graphics_image *image, int y, int x, int top, int bottom);
 /* Prepare after window composition, before doupdate; flush afterwards. */
+/* Stable occurrence ID allows one encoded image at multiple locations. */
 void graphics_frame_prepare(void);
 void graphics_frame_flush(void);
 void graphics_update_begin(void);

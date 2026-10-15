@@ -27,15 +27,18 @@ int main(int argc, char **argv)
     bool video = !strcmp(argv[2], "video") || !strcmp(argv[2], "attachment-video");
     auth_media_kind kind = !strcmp(argv[2], "embed") ? AUTH_MEDIA_EMBED : !strcmp(argv[2], "video") ? AUTH_MEDIA_VIDEO : AUTH_MEDIA_ATTACHMENT;
     if (!strcmp(argv[2], "invalid")) id = "../../passwords";
-    if (!strcmp(argv[2], "budget")) {
+    bool avatar = !strncmp(argv[2], "avatar", 6);
+    if (!strcmp(argv[2], "budget") || !strcmp(argv[2], "avatar-budget")) {
         net_rate_configure(.01, 1);
         while (net_rate_try_acquire() == 1) {}
     }
-    bool requested = media_download_request(m, kind, id, video);
-    if (!strcmp(argv[2], "invalid")) { printf("rejected=%d\n", !requested); goto done; }
+    const char *reference = getenv("PAPO_AVATAR_REFERENCE");
+    if (!reference) reference = "/webhooks/00000000-0000-4000-8000-000000000901/avatar";
+    bool requested = avatar ? media_download_avatar_request(m, reference) : media_download_request(m, kind, id, video);
+    if (!strcmp(argv[2], "invalid") || !strcmp(argv[2], "avatar-invalid")) { printf("rejected=%d\n", !requested); goto done; }
     if (!requested) return 5;
     tick(auth, m);
-    if (!strcmp(argv[2], "cancel") || !strcmp(argv[2], "budget")) {
+    if (!strcmp(argv[2], "cancel") || !strcmp(argv[2], "budget") || !strcmp(argv[2], "avatar-budget")) {
         media_download_cancel(m);
         printf("cancelled=%d session=%d\n", media_download_state(m) == MEDIA_IDLE, auth_has_session(auth)); goto done;
     }
