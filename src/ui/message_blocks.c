@@ -31,6 +31,7 @@ bool message_same_author(const json_t *previous, const json_t *message)
         return true;
     }
     const char *id = str(message, "author_id");
+    if (*str(message, "edited_at")) return false;
     return history_uuid(id) && !strcmp(str(previous, "author_id"), id);
 }
 uint64_t message_media_version(const json_t *entry)
