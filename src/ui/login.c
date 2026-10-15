@@ -19,6 +19,7 @@
 #include <wchar.h>
 #include <wctype.h>
 #include "ui/history.h"
+#include "model/history.h"
 #include "ui/send_editor.h"
 #include "ui/text.h"
 #include "ui/clipboard.h"
@@ -685,6 +686,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
     profile_config *config = profiles_create();
     if (!config) { auth_destroy(client); instances_destroy(connections); connections = NULL; fputs("Não foi possível carregar os perfis locais.\n", stderr); return 1; }
     connections->sessions = session_store_create(config->directory, !open_profiles);
+    connections->config=config;
     interrupted = 0;
     if (!terminal_recovery_begin()) {
         auth_destroy(client); instances_destroy(connections); connections = NULL; profiles_destroy(config);
@@ -733,6 +735,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
     }
     bool redraw = true;
     while (!result && !quit && !interrupted) {
+        connections->config=config;
         if (ui.layout_failed) { result = 1; break; }
         if (session_store_poll(connections->sessions, client)) redraw = true;
         if (startup_restore) {
@@ -742,7 +745,6 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
                 auth_session_free(&snapshot); startup_restore = false; redraw = true;
             } else if (!session_store_restoring(connections->sessions)) startup_restore = false;
         }
-        if (instances_poll(connections, client)) redraw = true;
         auth_state before = auth_get_state(client);
         bool before_busy = auth_busy(client);
         bool before_session = auth_has_session(client);
@@ -750,12 +752,17 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         auth_realtime_active(client, true);
         auth_poll(client);
         send_editor_poll(instances_editor(connections, client));
+        if (instances_poll(connections, client)) redraw = true;
         if (before != auth_get_state(client) || before_busy != auth_busy(client)) redraw = true;
         if (before != AUTH_ERROR && auth_get_state(client) == AUTH_ERROR) apply_input_error(&ui, client);
         if (ws_before != auth_ws_state(client)) redraw = true;
-        json_t *event;
-        while ((event = auth_next_event(client))) { instances_media_event(connections, client, event); json_decref(event); }
-        if (auth_response_ready(client)) json_decref(auth_take_response(client, NULL, NULL));
+        history *account_model=instances_history(connections,client);
+        if (account_model) { history_active(account_model,false); if (history_poll(account_model)) redraw=true; }
+        else {
+            json_t *event;
+            while ((event=auth_next_event(client))) { instances_media_event(connections,client,event); json_decref(event); }
+            if (auth_response_ready(client)) json_decref(auth_take_response(client,NULL,NULL));
+        }
         if (!before_session && auth_has_session(client)) {
             /* Only a new login opens channels. Returning with F6 or verifying
              * an existing session after renewal must keep the account view. */

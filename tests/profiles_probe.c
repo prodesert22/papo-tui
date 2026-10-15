@@ -116,6 +116,8 @@ int main(int argc, char **argv)
     else if (strcmp(mode, "remove") == 0 && argc == 3) ok = profiles_remove(config, argv[2]);
     else if (strcmp(mode, "select") == 0 && argc == 4)
         ok = profiles_select(config, argv[2], strcmp(argv[3], "allow") == 0);
+    else if (strcmp(mode,"notifications")==0 && argc==4)
+        ok=profiles_set_notifications(config,strcmp(argv[2],"true")==0,strcmp(argv[3],"true")==0);
     else if (strcmp(mode, "rate") == 0 && argc == 4) {
         json_error_t error;
         json_t *rate = json_loads(argv[2], JSON_DECODE_ANY, &error);
@@ -145,11 +147,12 @@ int main(int argc, char **argv)
             json_decref(items); items = NULL;
         }
     }
-    json_t *result = items ? json_pack("{s:b,s:b,s:s,s:s,s:s,s:f,s:I,s:O}", "ok", ok,
+    json_t *result = items ? json_pack("{s:b,s:b,s:s,s:s,s:s,s:f,s:I,s:O,s:b,s:b}", "ok", ok,
                         "writable", config->writable, "message", config->message,
                         "id", id, "selected", config->selected,
                         "requests_per_second", config->requests_per_second,
-                        "request_burst", (json_int_t)config->request_burst, "profiles", items) : NULL;
+                        "request_burst", (json_int_t)config->request_burst, "profiles", items,
+                        "desktop_notifications",config->desktop_notifications,"notification_preview",config->notification_preview) : NULL;
     json_decref(items);
     profiles_destroy(config);
     int status = emit(result);

@@ -2,7 +2,7 @@
 
 Cliente de conversas para terminal, em C, para conectar-se a instâncias independentes do Papo por URL.
 
-O aplicativo oferece login, cadastro de conta, renovação de sessão, perfis locais com nome e URL e conversas em canais com histórico paginado e envio de texto. Login e cadastro usam URL do servidor, usuário, senha e senha do servidor. A tela organiza cabeçalho, formulário e estado/controles em três áreas. O aplicativo consulta a instância, autoriza o acesso privado quando necessário, autentica a conta e confirma a sessão. As senhas são ocultas e nunca são persistidas. A última sessão pode ser recuperada com GNOME Keyring ou KWallet.
+O aplicativo oferece login, cadastro de conta, renovação de sessão, perfis locais com nome e URL e conversas em canais e DMs com histórico paginado, envio de texto, presença e notificações. Login e cadastro usam URL do servidor, usuário, senha e senha do servidor. A tela organiza cabeçalho, formulário e estado/controles em três áreas. O aplicativo consulta a instância, autoriza o acesso privado quando necessário, autentica a conta e confirma a sessão. As senhas são ocultas e nunca são persistidas. A última sessão pode ser recuperada com GNOME Keyring ou KWallet.
 
 ## Compilar e executar
 
@@ -126,13 +126,14 @@ Consulte [instalação e uso](docs/uso.md) para os requisitos, execução, conex
 - libunibreak para delimitar grafemas no editor de mensagens e na apresentação de texto.
 - libcurl multi para HTTP e handshake WS assíncronos, TLS, URLs e cookies; APIs WS para leitura/escrita sem bloquear a interface.
 - Jansson para JSON.
+- GIO 2.66+ opcional para notificações assíncronas no desktop, via D-Bus, e integração com chaveiros.
 - libsixel para saída Sixel e libchafa para os protocolos gráficos Kitty/iTerm2; FFmpeg para imagens e libmpv para vídeo/áudio. Um pool de dois workers da GLib processa imagens; um worker separado cuida do vídeo. O terminal e a rede permanecem na thread principal.
 
 ```text
 src/main.c       Entrada e ciclo de vida
 src/app/         Conexões abertas por instância
 src/ui/          Login, perfis, leitura, menções, tema e edição Unicode
-src/model/       Canais, histórico paginado e autores
+src/model/       Canais, DMs, histórico, autores, presença e notificações
 src/config/      Perfis públicos e persistência XDG
 src/net/         Estado de autenticação e transporte HTTP
 tests/           Backend simulado e testes em pseudoterminal
@@ -169,10 +170,11 @@ adicional do embed nem do ícone do rodapé.
 - [x] R5: canais ordenados, tópicos, histórico paginado, autores e metadados em modo de leitura.
 - [x] R6: envio multipart, rascunhos por sessão/canal, confirmação no histórico e retry manual com resultado incerto.
 - [x] R7: eventos em tempo real, reconciliação REST/WS, reconexão automática e recuperação da janela carregada.
+- [x] R8: DMs, descoberta de destinatários, presença, central de notificações e avisos opcionais no desktop, com validação no backend real.
 
-## Conversar em canais
+## Conversar em canais e DMs
 
-Após entrar, a lista de canais abre automaticamente. F6 volta à tela da conta; o botão **Canais / F6** e a tecla F6 permitem reabrir a leitura. Escolha um canal com ↑/↓ e abra com Enter, → ou clique. Navegar pela lista mantém o histórico e o recebimento de mensagens em tempo real do canal aberto; confirmar ou clicar no canal atual preserva mensagens, posição de leitura e rascunho, sem recarregar. Clique no título **Canais** para focar a lista. Categorias são separadores; canais de voz mostram que chamadas ainda não estão disponíveis. A leitura usa apenas o canal aberto, e consultar seu histórico também marca leitura no servidor. `*` indica uma última mensagem ainda não lida nos dados consultados.
+Após entrar, a lista de canais abre automaticamente. F6 volta à tela da conta; o botão **Canais / F6** e a tecla F6 permitem reabrir a leitura. Escolha um canal de texto com ↑/↓ e abra com Enter, → ou clique. Navegar pela lista mantém o histórico e o recebimento de mensagens em tempo real do canal aberto; confirmar ou clicar no canal atual preserva mensagens, posição de leitura e rascunho, sem recarregar. Os botões **Canais** e **DMs**, lado a lado no cabeçalho da lista, escolhem quais conversas listar. Clique no botão ou use Tab para focar o grupo, ←/→ para escolher e Enter/Espaço para ativar; ↓ ativa e entra na lista. Alternar a lista preserva a conversa aberta e seu rascunho. Categorias são separadores. Na lista, **F4** abre a conversa de um canal de voz, com o mesmo histórico, editor e envio de texto. **Enter** nesses canais fica reservado para chamadas futuras; Enter, → e clique apenas mostram a orientação para abrir o histórico e preservam a conversa atual. A leitura usa apenas o canal aberto, e consultar seu histórico também marca leitura no servidor. `*` indica uma última mensagem ainda não lida nos dados consultados.
 
 A tela organiza abas de servidores no topo, com linha separadora e uma linha de margem abaixo, canais à esquerda, histórico e área de edição no painel central. **+ Adicionar**, à direita das abas, abre o formulário de login/cadastro de outro servidor. Depois do login, a nova conexão aparece em uma aba; clique nas abas para trocar de servidor. As sessões ficam separadas, até o limite de 64 conexões nesta execução; somente a última conexão ativa pode ser recuperada na próxima abertura. Entrar novamente na mesma URL substitui sua conexão anterior. Esc no formulário de adição volta ao servidor anterior; se houver uma conexão em andamento, Esc primeiro a cancela.
 
@@ -180,11 +182,11 @@ No histórico, ↑/↓ e PageUp/PageDown rolam o texto. A lista de canais perman
 
 Ao abrir a leitura, o foco começa nas abas. Use ←/→ para escolher o servidor ou destacar **+ Adicionar**, e Enter para abrir o formulário. O botão fica branco sem foco e laranja ao selecionar, quando aparece como **>+ Adicionar<**. ↓ entra na lista de canais.
 
-Em tela ampla, Tab/Shift+Tab alternam entre abas, canais, histórico e editor quando há um canal de texto aberto. ← nos canais, ou ↑ no primeiro canal, volta às abas; ←/→ nas abas trocam de servidor e Enter em **+ Adicionar** abre o formulário. ↓ nas abas foca os canais. Esc sai do editor para o histórico; nos demais painéis, alterna canais/histórico. Abaixo de 80 colunas, Tab/Shift+Tab e os controles **Canais / Conversa** alternam o painel visível. F6 volta à conta, Ctrl+L sai da conta e remove sua aba, Ctrl+P abre a seleção de perfil encerrando a sessão local atual, e Ctrl+Q fecha o programa; Ctrl+C limpa o campo focado ou fecha fora dos campos. O mínimo dessa tela é 44×14; para abrir o formulário, amplie para 44×22.
+Tab/Shift+Tab percorrem abas, botões **Canais/DMs**, lista, histórico, editor e botão de emojis disponíveis, também em tela estreita. ↑ no primeiro item da lista foca os botões; ↑ nos botões volta às abas. ← na lista volta às abas; ←/→ nas abas trocam de servidor. ↓ nas abas entra na lista. Esc sai do editor para o histórico; nos demais painéis, alterna lista/histórico. Abaixo de 80 colunas, o foco escolhe o painel visível. F6 volta à conta, Ctrl+L sai da conta e remove sua aba, Ctrl+P abre a seleção de perfil encerrando a sessão local atual, e Ctrl+Q fecha o programa; Ctrl+C limpa o campo focado ou fecha fora dos campos. F1 abre a ajuda. O mínimo dessa tela é 44×14; para abrir o formulário, amplie para 44×22.
 
-Mensagens aparecem em ordem cronológica, com data, autor, indicação de edição e referências de resposta. Anexos mostram seus metadados e, em terminais com protocolo gráfico compatível, imagens visíveis são baixadas e renderizadas no histórico. Embeds aparecem em cards com autor, título, descrição, fields e rodapé. F7 ou clique abre a mídia em um modal; vídeos são baixados antes de reproduzir com áudio. Os embeds recebidos ou atualizados em tempo real aparecem na mensagem sem precisar reabrir o canal, incluindo mensagens sem texto. Autores ausentes têm um rótulo de indisponibilidade. Ao abrir um canal de texto, digite para focar o editor, incluindo o primeiro caractere. Enter no histórico também foca o editor. Enter no editor envia, Ctrl+N insere uma nova linha e colagem delimitada preserva linhas sem enviar. Setas, Home/End, Backspace e Delete editam grafemas; clique no editor para posicionar o cursor. Esc volta ao histórico. A área em foco recebe um fundo discretamente mais claro. Mensagens de outras contas chegam automaticamente. Eventos repetidos e confirmações REST/WS da mesma mensagem são reconciliados pelo ID. A tela acompanha novas mensagens quando você está no fim; ao ler mensagens anteriores, indica novidades sem mover a leitura. End ou clique no indicador volta ao fim.
+Mensagens aparecem em ordem cronológica, com data, autor, indicação de edição e referências de resposta. Anexos mostram seus metadados e, em terminais com protocolo gráfico compatível, imagens visíveis são baixadas e renderizadas no histórico. Embeds aparecem em cards com autor, título, descrição, fields e rodapé. F7 ou clique abre a mídia em um modal; vídeos são baixados antes de reproduzir com áudio. Os embeds recebidos ou atualizados em tempo real aparecem na mensagem sem precisar reabrir o canal, incluindo mensagens sem texto. Autores ausentes têm um rótulo de indisponibilidade. Ao abrir uma conversa de texto ou voz, digite para focar o editor, incluindo o primeiro caractere. Enter no histórico também foca o editor. Enter no editor envia, Ctrl+N insere uma nova linha e colagem delimitada preserva linhas sem enviar. Setas, Home/End, Backspace e Delete editam grafemas; clique no editor para posicionar o cursor. Esc volta ao histórico. A área em foco mantém seu realce sobre o fundo preto. Na navegação, esse realce abrange os botões Canais/DMs e a lista. Mensagens de outras contas chegam automaticamente. Eventos repetidos e confirmações REST/WS da mesma mensagem são reconciliados pelo ID. A tela acompanha novas mensagens quando você está no fim; ao ler mensagens anteriores, indica novidades sem mover a leitura. End ou clique no indicador volta ao fim.
 
-A janela em memória contém até 1.000 mensagens ou 4 MiB de JSON serializado. Ao carregar páginas antigas além desse limite, libera mensagens recentes; End volta a consultá-las. Trocar de canal ou servidor descarta seu histórico local. As outras abas e os históricos não são persistidos; somente o cookie da última sessão pode ficar no chaveiro. Abrir a lista de canais não consulta seus históricos em segundo plano.
+A janela em memória contém até 1.000 mensagens ou 4 MiB de JSON serializado. Ao carregar páginas antigas além desse limite, libera mensagens recentes; End volta a consultá-las. Trocar de canal ou servidor descarta seu histórico local. As outras abas e os históricos não são persistidos; somente o cookie da última sessão pode ficar no chaveiro. Os cursores locais de leitura são guardados separadamente, sem o conteúdo das mensagens. Abrir a lista de canais não consulta seus históricos em segundo plano.
 
 Rascunhos e cursor ficam em memória por sessão e canal, inclusive ao trocar de servidor ou voltar à conta com F6. Você pode continuar digitando durante o envio; a confirmação remove somente o texto enviado que permaneceu intacto. Texto reescrito e continuação são preservados. Sair da conta, substituir a conexão da mesma URL ou fechar o programa descarta esses dados. O editor aceita até 2048 caracteres Unicode/8192 bytes UTF-8; cada sessão guarda até 64 rascunhos e 32 operações.
 
@@ -199,7 +201,7 @@ envio, edição, eventos e mensagens não lidas têm avisos independentes; uma
 confirmação de envio não apaga o estado da conexão. Um novo aviso substitui
 apenas o anterior do mesmo contexto. Em janelas estreitas, os textos ficam
 mais curtos; `+N` indica avisos antigos que reaparecem ao ampliar a janela.
-Trocar de canal limpa os avisos da conversa anterior e preserva a conexão.
+Trocar de conversa preserva os avisos de conexão e notificações. **Desconectado** aparece nessa área e permanece visível durante a queda, inclusive em telas estreitas.
 
 O campo da conversa mostra **Conversar em #nome_canal** quando está vazio e
 cresce de uma até cinco linhas conforme o texto quebra ou ocupa mais espaço.
@@ -261,6 +263,26 @@ acima de quatro, “Várias pessoas estão digitando…”. O indicador acompanh
 somente o canal aberto, não inclui você e desaparece após seis segundos sem
 atividade, quando a pessoa envia uma mensagem ou fica offline. Ao editar,
 o aplicativo avisa pelo WebSocket no máximo uma vez a cada dois segundos.
+
+## DMs e presença
+
+**F10** abre **Nova DM**. Digite para filtrar nickname ou username, use ↑/↓ e Enter, ou clique no destinatário. A lista é carregada em páginas e exclui sua conta e usuários banidos. Ctrl+R atualiza a lista; Esc cancela. A DM aberta usa o mesmo histórico, editor, menções e envio dos canais. Na lista **DMs**, **Ctrl+D** fecha a conversa para sua conta, preservando o histórico no servidor; uma nova mensagem pode fazê-la reaparecer. Erros de bloqueio e acesso aparecem nos avisos.
+
+Um círculo vermelho **●** à direita de um canal ou DM indica que a última mensagem difere do cursor de leitura informado pelo backend (`last_read_message`). Quando não há ID no cursor, a comparação usa `last_read_at` e o horário da última mensagem. Conversas sem última mensagem ficam sem círculo. O aplicativo consulta esses dados ao abrir, mantendo a leitura entre execuções. O círculo aparece também no botão **Canais** ou **DMs** quando alguma conversa dessa lista tem mensagens não lidas. Ele fica em posição fixa à direita, visível em nomes longos e sobre o fundo de seleção. Carregar com sucesso a última mensagem apaga o círculo, mesmo se a lista remota ainda trouxer um cursor antigo. O aplicativo salva apenas o ID e o horário dessa leitura, separados por servidor e conta. Ao reiniciar, consulta o backend e concilia seu cursor com a leitura salva; mensagens posteriores continuam acendendo o círculo. Esse registro local não sincroniza outros dispositivos. Leituras anteriores a esta versão dependem do cursor informado pelo backend; o registro local passa a existir quando você lê a conversa nesta versão. Falhas ao carregar mensagens preservam o indicador. Notificações antigas da central não acendem esse círculo, e ler seus detalhes não altera o cursor da conversa.
+
+A lista de DMs mostra presença e o número de mensagens não lidas informado pelo servidor. `?` indica presença ainda desconhecida. O `*` acompanha o mesmo cursor usado pelo círculo; o contador de DMs não substitui esse cursor. Novas mensagens visíveis no fim da conversa ativa, com o terminal em foco, provocam uma consulta de leitura e a confirmação do cursor, agrupadas para evitar consultas por mensagem. Canais e DMs inativos não têm históricos consultados em segundo plano. Digitação funciona também nas DMs; a atividade enviada depende de interação real.
+
+Os cursores ficam em `$XDG_STATE_HOME/papo-tui/read-cursors.json`, ou em `~/.local/state/papo-tui/read-cursors.json`, com diretório `700` e arquivo `600`. O registro guarda até 1.000 conversas por servidor/conta, 64 contextos e 4 MiB no total; contextos mais antigos podem ser descartados ao atingir o limite. Ele não contém mensagens, senhas nem cookies. Se a gravação falhar, os avisos informam que a leitura será mantida apenas na sessão atual.
+
+## Central e avisos de notificações
+
+**F9** abre a central do servidor ativo. ↑/↓, PageUp/PageDown e Home/End navegam; Enter ou clique abre os detalhes e marca somente a notificação visualizada. Enter nos detalhes abre sua conversa quando o destino estiver disponível. Tab percorre lista, **Preferências** e **Mais antigas**; Enter aciona o botão, Ctrl+R atualiza/tenta novamente e Esc volta ou fecha. Consultar a lista não marca notificações. Uma notificação também pode ser marcada quando sua mensagem aparece no trecho visível da conversa, com foco confirmado ou interação recente em terminais sem relato de foco.
+
+A contagem mostra as não lidas conhecidas; `+` na aba e **há mais páginas** na central indicam listagem parcial. A central guarda até 1.000 registros ou 4 MiB em memória. Eventos sem registro persistido aparecem como **Aviso** e duram somente a sessão, até 256 eventos ou 1 MiB; seus IDs não são enviados para marcação. Ler o histórico da conversa e marcar uma notificação são ações distintas. Não há garantia de sincronização imediata com outros dispositivos; Ctrl+R atualiza os dados.
+
+Avisos no desktop mostram servidor, autor e prévia quando uma notificação chega fora da conversa visível ou com o terminal sem foco confirmado. Eventos próximos são agrupados por servidor em dois segundos. Os popups são informativos e não abrem conversas ao clicar. Em **F9 → Preferências**, Enter/Espaço ou clique alterna **Avisos no desktop** e **Mostrar prévia**. As duas opções são globais e persistidas na configuração local; ficam habilitadas por padrão. Configurações anteriores continuam sendo lidas e migram na próxima gravação. As preferências de prévia se aplicam aos popups.
+
+O desktop requer GIO 2.66+ e um serviço compatível com `org.freedesktop.Notifications` na sessão D-Bus; no Arch, instale `glib2` antes de configurar o CMake. Sem esse serviço, a central continua disponível e o rodapé informa a indisponibilidade após uma tentativa. Para compilar sem popups, use `-DPAPO_DESKTOP_NOTIFICATIONS=OFF`, independentemente do suporte a chaveiros. As conexões já abertas das outras abas continuam recebendo DMs e notificações.
 
 ## Menções
 
@@ -354,8 +376,8 @@ Requisições usam os cookies da própria instância, a verificação TLS e o me
 limite global de requisições do restante do cliente. HTTP 429 exige nova
 tentativa manual após a espera.
 
-Cards usam uma barra à esquerda na cor do embed e fundo discretamente mais
-claro, sem borda ao redor nem rótulos de embed/rodapé. Autor e rodapé têm
+Cards usam uma barra à esquerda na cor do embed e fundo preto,
+sem borda ao redor nem rótulos de embed/rodapé. Autor e rodapé têm
 menos destaque; o tamanho da fonte é definido pelo terminal. Mensagens sem
 texto não recebem um texto substituto. Fields ficam em até três colunas,
 ou empilhados em tela estreita. O avatar fica junto ao autor. A miniatura
@@ -374,7 +396,7 @@ O suporte usa bibliotecas opcionais: `libsecret-1` 0.20+ e `gio-2.0` 2.66+. No A
 
 A renovação automática permanece ativa. Um JWT de 24 horas pode ser renovado pelo backend com o cookie ainda válido; cada rotação emite um novo JWT de 24 horas e cookie de 30 dias. A validação REST é a fonte de verdade. Fechar o programa mantém a última sessão salva; **Sair da conta** invalida sua recuperação e solicita revogação. Erros de rede na recuperação mostram o login; credenciais definitivamente rejeitadas são removidas.
 
-Somente dados públicos e um marcador de recuperação ficam em `$XDG_STATE_HOME/papo-tui`, ou `~/.local/state/papo-tui`, com diretório `700` e arquivos `600`. Builds sem GIO guardam esses dados públicos junto à configuração. A configuração local define um contexto independente, e uma segunda janela nesse contexto exige login próprio, sem compartilhar a sessão persistida. Cookies nunca são gravados em arquivos de texto.
+Somente dados públicos e um marcador de recuperação ficam em `$XDG_STATE_HOME/papo-tui`, ou `~/.local/state/papo-tui`, com diretório `700` e arquivos `600`. Builds sem GIO guardam os dados públicos de recuperação de sessão junto à configuração; os cursores de leitura continuam no diretório de estado. A configuração local define um contexto independente, e uma segunda janela nesse contexto exige login próprio, sem compartilhar a sessão persistida. Cookies nunca são gravados em arquivos de texto.
 
 ## Testes
 
@@ -519,6 +541,24 @@ build/test-env/bin/python -m tools.check_terminals --tmux /usr/bin/tmux
 
 Os resultados e as telas ficam em `build/r1/terminals/`. A ferramenta usa uma configuração temporária de Konsole e um servidor tmux isolado; fecha suas janelas ao terminar. Eventos de mouse são enviados à PTY no protocolo declarado pelo terminfo; `infocmp` também deve estar disponível.
 
+As suítes `r8-integration`, `r8-terminal` e `desktop-notifications` verificam DMs, descoberta, presença, indicadores, paginação, leitura explícita, avisos efêmeros e popups em um D-Bus privado. O serviço simulado não usa o daemon da sessão pessoal.
+
+Para demonstrar R8 com o backend Go e PostgreSQL disponíveis:
+
+```sh
+build/test-env/bin/python -m tools.check_r8 --backend-binary /caminho/papo-server --tls-proxy /caminho/tls-proxy
+```
+
+A ferramenta usa duas contas sintéticas e uma cópia isolada de esquema/metadados, valida a TUI por HTTPS/WSS e remove seus recursos temporários. Compara o banco de origem antes/depois; não altera contas existentes. Resultados sem credenciais ficam em `build/r8/validation/summary.json`.
+
+Com Kitty, Konsole e as ferramentas gráficas descritas acima, os controles de R8 podem ser exercitados em janelas dedicadas:
+
+```sh
+build/test-env/bin/python -m tools.check_r8_terminals --tmux /caminho/tmux
+```
+
+Esse cenário usa fixtures sintéticas, não o backend de desenvolvimento. As telas e os resultados ficam em `build/r8/terminals/`.
+
 ```sh
 cmake -S . -B build/sanitized -DPAPO_SANITIZERS=ON -DPython3_EXECUTABLE="$PWD/build/test-env/bin/python"
 cmake --build build/sanitized
@@ -529,7 +569,7 @@ Em ambientes sob ptrace, o LeakSanitizer não funciona. Nesses ambientes, execut
 
 ### Emojis e avatares
 
-O botão **[😄]**, à direita do editor, abre o seletor de emojis. **F4** também
+O botão **[😄]**, à direita do editor, abre o seletor de emojis. **F4**, com foco no histórico, editor ou botão de emojis, também
 abre; Tab no editor foca o botão, e Enter o aciona. Shift+Tab volta ao editor.
 O modal possui busca por nomes e palavras-chave em português/inglês e abas
 **Unicode** e **Servidor**. Tab percorre busca, abas e grade; ←/→ nas abas

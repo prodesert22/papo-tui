@@ -2,7 +2,7 @@
 import time
 import unittest
 from urllib.parse import urlsplit
-from history_mock import CHANNEL, OTHER, uuid
+from history_mock import CHANNEL, OTHER, uuid, assert_history_reads
 from realtime_mock import RealtimeMock
 from test_terminal import Terminal
 
@@ -107,7 +107,7 @@ class TypingTerminal(unittest.TestCase):
             server.typing(); self.wait(terminal, 'Pessoa1 está digitando…')
             terminal.click(8, 4); self.wait(terminal, '# outro · Histórico')
             self.assertNotIn('digitando', self.line(terminal))
-            self.assertEqual(sum('/messages' in r[1] for r in server.requests if r[0] == 'GET'), 2)
+            assert_history_reads(self, server, {CHANNEL: (1, 2), OTHER: (1, 1)})
 
     def test_expiry_is_refreshed_and_disconnect_clears_indicator(self):
         with TypingServer() as server:

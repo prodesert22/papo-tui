@@ -22,7 +22,8 @@ typedef enum {
     AUTH_REGISTERED,
     AUTH_REFRESH,
     AUTH_API_GET,
-    AUTH_MESSAGE_SEND
+    AUTH_MESSAGE_SEND,
+    AUTH_API_MUTATION
 } auth_state;
 
 typedef enum { AUTH_INPUT_NONE, AUTH_INPUT_URL, AUTH_INPUT_USERNAME,
@@ -77,6 +78,11 @@ bool auth_refresh(auth_client *client);
  * Rejects concurrent submissions; a pending GET may recover one 401. Completed responses are bounded to one owned JSON value.
  * Message mutations use a separate response slot and never replay. */
 bool auth_get_json(auth_client *client, const char *path);
+/* Copies a JSON mutation into the same queue/budget. Never replays, including
+ * after 401. Consume through auth_take_response; status 0 / uncertain require
+ * reconciliation before a manual retry. DELETE accepts a NULL body. */
+bool auth_mutate_json(auth_client *client, const char *method, const char *path, const json_t *body);
+bool auth_api_uncertain(const auth_client *client);
 /* Read-only POST /users/user_summary_batch. Copies 1..1000 UUID strings;
  * participates in the same queue/budget and may recover one 401, like GET.
  * This endpoint has no mutation semantics; no generic POST replay API exists. */

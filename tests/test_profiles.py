@@ -63,7 +63,7 @@ class ProfilesTests(unittest.TestCase):
         self.assertEqual(self.path.stat().st_mode & 0o7777, 0o600)
         self.assertEqual(self.path.parent.stat().st_mode & 0o7777, 0o700)
         persisted = json.loads(self.path.read_text())
-        self.assertEqual(set(persisted), {"version", "profiles", "selected_profile", "requests_per_second", "request_burst"})
+        self.assertEqual(set(persisted), {"version", "profiles", "selected_profile", "requests_per_second", "request_burst", "desktop_notifications", "notification_preview"})
         self.assertTrue(all(set(item) == {"id", "name", "url"} for item in persisted["profiles"]))
         self.assertEqual(list(self.path.parent.glob("config.tmp.*")), [])
         self.assertTrue(self.probe("remove", first)["ok"])
@@ -105,7 +105,7 @@ class ProfilesTests(unittest.TestCase):
         self.assertEqual(self.probe("list")["requests_per_second"], 10)
         self.assertEqual(self.path.read_bytes(), before)
         self.assertTrue(self.probe("rate", "2.5", "3")["ok"])
-        self.assertEqual(json.loads(self.path.read_text())["version"], 2)
+        self.assertEqual(json.loads(self.path.read_text())["version"], 3)
         restored = self.probe("list")
         self.assertEqual((restored["requests_per_second"], restored["request_burst"], restored["selected"]), (2.5, 3, first))
         before = self.path.read_bytes()
@@ -115,6 +115,19 @@ class ProfilesTests(unittest.TestCase):
                 self.assertFalse(self.probe("rate", rate, burst)["ok"])
                 self.assertEqual(self.path.read_bytes(), before)
         self.assertTrue(self.probe("rate", "10", "25")["ok"])
+
+    def test_notifications_defaults_v2_migration_restart_and_invalid_boolean(self):
+        self.seed(self.configuration())
+        before=self.path.read_bytes()
+        defaults=self.probe('list')
+        self.assertTrue(defaults['desktop_notifications']); self.assertTrue(defaults['notification_preview'])
+        self.assertEqual(before,self.path.read_bytes())
+        self.assertTrue(self.probe('notifications','false','false')['ok'])
+        loaded=self.probe('list'); self.assertFalse(loaded['desktop_notifications']); self.assertFalse(loaded['notification_preview'])
+        valid=json.loads(self.path.read_text()); self.assertEqual(valid['version'],3)
+        valid['notification_preview']='false'; self.seed(valid); before=self.path.read_bytes()
+        self.assertFalse(self.probe('list')['writable'])
+        self.assertFalse(self.probe('notifications','true','true')['ok']); self.assertEqual(before,self.path.read_bytes())
 
     def test_invalid_configuration_is_preserved_and_partial_data_discarded(self):
         bad_profile = {"id": "0" * 32, "name": "Valid", "url": "https://example.com"}

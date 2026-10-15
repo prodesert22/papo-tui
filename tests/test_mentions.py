@@ -5,7 +5,7 @@ import subprocess
 import time
 import unittest
 from urllib.parse import urlsplit, parse_qs
-from history_mock import CHANNEL, OTHER, STAMP, uuid
+from history_mock import CHANNEL, OTHER, STAMP, uuid, assert_history_reads
 from realtime_mock import RealtimeMock
 from test_terminal import Terminal, BINARY
 
@@ -117,7 +117,7 @@ class Mentions(unittest.TestCase):
                 self.assertEqual(candidates(), ['person003', 'bob', 'alice', 'person002'])
                 t.send('\t\n'); self.wait(t, 'Mensagem confirmada')
                 self.assertEqual(s.sent_messages[0]['content'], f'@mention(<@{uuid(1000)}>) ')
-                self.assertEqual(sum('/messages' in r[1] for r in s.requests if r[0]=='GET'), 1)
+                assert_history_reads(self, s, {CHANNEL: (1, 5)})
             finally: self.assertTrue(t.close())
 
     def test_deleted_latest_message_and_channel_switch_change_recent_authors(self):
@@ -144,7 +144,7 @@ class Mentions(unittest.TestCase):
                 t.click(8, 4); self.wait(t, 'Bob no outro canal')
                 t.send('@'); self.wait(t, '@alice')
                 self.assertIn('@bob', first_candidate())
-                self.assertEqual(sum('/messages' in r[1] for r in s.requests if r[0]=='GET'), 2)
+                assert_history_reads(self, s, {CHANNEL: (1, 3), OTHER: (1, 1)})
                 self.assertEqual(s.user_reads, 1)
             finally: self.assertTrue(t.close())
     def test_enter_selects_then_atomic_delete_and_multiple_mentions(self):
@@ -220,7 +220,7 @@ class Mentions(unittest.TestCase):
                 self.assertTrue(any(t.screen.buffer[y][26].data in ('│','x') for y in range(8,16)))
                 s.emit(dict(type='message_edit',id=m['id'],channel_id=CHANNEL,content='Sem menção',edited_at=STAMP))
                 self.wait(t,'Sem menção');self.assertNotIn('@josé','\n'.join(t.screen.display))
-                self.assertEqual(sum('/messages' in r[1] for r in s.requests if r[0]=='GET'),1)
+                assert_history_reads(self, s, {CHANNEL: (1, 2)})
             finally:self.assertTrue(t.close())
     def test_embed_mentions_resolve_highlight_and_follow_live_updates(self):
         with MentionServer(2) as s:
@@ -260,7 +260,7 @@ class Mentions(unittest.TestCase):
                             embeds=[{'description': f'Atualizado @mention(<@{uuid(1001)}>)'}]))
                 self.wait(t, 'Atualizado @bob')
                 self.assertNotIn('@Álice', '\n'.join(t.screen.display))
-                self.assertEqual(sum('/messages' in r[1] for r in s.requests if r[0] == 'GET'), 1)
+                assert_history_reads(self, s, {CHANNEL: (1, 2)})
             finally: self.assertTrue(t.close())
 
     def test_picker_keeps_websocket_and_draft_alive(self):

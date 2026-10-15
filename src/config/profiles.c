@@ -154,14 +154,19 @@ static bool decode(profile_config *config, json_t *root)
     json_int_t version = json_integer_value(json_object_get(root, "version"));
     if (version == 1) {
         if (json_object_size(root) != 3) return false;
-    } else if (version == 2) {
+    } else if (version == 2 || version == 3) {
         json_t *rate = json_object_get(root, "requests_per_second");
         json_t *burst = json_object_get(root, "request_burst");
-        if (json_object_size(root) != 5 || !json_is_number(rate) || !json_is_integer(burst) ||
+        if (json_object_size(root) != (version == 2 ? 5U : 7U) || !json_is_number(rate) || !json_is_integer(burst) ||
             json_integer_value(burst) <= 0 || json_integer_value(burst) > UINT_MAX ||
             !net_rate_parameters_valid(json_number_value(rate), (unsigned)json_integer_value(burst))) return false;
         config->requests_per_second = json_number_value(rate);
         config->request_burst = (unsigned)json_integer_value(burst);
+        if (version == 3) {
+            json_t *desktop=json_object_get(root,"desktop_notifications"),*preview=json_object_get(root,"notification_preview");
+            if (!json_is_boolean(desktop) || !json_is_boolean(preview)) return false;
+            config->desktop_notifications=json_is_true(desktop); config->notification_preview=json_is_true(preview);
+        }
     } else return false;
     json_t *array = json_object_get(root, "profiles");
     json_t *selected = json_object_get(root, "selected_profile");
@@ -191,6 +196,7 @@ bool profiles_reload(profile_config *config)
     memset(config, 0, sizeof(*config));
     config->requests_per_second = PAPO_REQUESTS_PER_SECOND;
     config->request_burst = PAPO_REQUEST_BURST;
+    config->desktop_notifications=config->notification_preview=true;
     config->directory = open_directory(config);
     if (config->directory < 0) return false;
     int fd = openat(config->directory, "config.json", O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
@@ -228,6 +234,7 @@ bool profiles_reload(profile_config *config)
         config->selected[0] = '\0';
         config->requests_per_second = PAPO_REQUESTS_PER_SECOND;
         config->request_burst = PAPO_REQUEST_BURST;
+        config->desktop_notifications=config->notification_preview=true;
         return error(config, "Configuração inválida ou incompatível; arquivo preservado. Corrija-o e use Ctrl+R.");
     }
     config->writable = config->existed = true;
@@ -279,9 +286,11 @@ static bool save_locked(profile_config *config)
         }
     }
     json_t *selection = *config->selected ? json_string(config->selected) : json_null();
-    json_t *root = selection ? json_pack("{s:i,s:O,s:O,s:f,s:I}", "version", 2, "profiles", array,
+    json_t *root = selection ? json_pack("{s:i,s:O,s:O,s:f,s:I,s:b,s:b}", "version", 3, "profiles", array,
                                          "selected_profile", selection, "requests_per_second", config->requests_per_second,
-                                         "request_burst", (json_int_t)config->request_burst) : NULL;
+                                         "request_burst", (json_int_t)config->request_burst,
+                                         "desktop_notifications",config->desktop_notifications,
+                                         "notification_preview",config->notification_preview) : NULL;
     json_decref(selection);
     json_decref(array);
     char *serialized = root ? json_dumps(root, JSON_INDENT(2) | JSON_SORT_KEYS) : NULL;
@@ -417,4 +426,11 @@ bool profiles_set_rate(profile_config *config, double requests_per_second, unsig
     else if (strncmp(config->message, "Perfis salvos;", strlen("Perfis salvos;")) == 0)
         snprintf(config->message, sizeof(config->message), "Limites salvos: %.8g req/s · burst %u.", requests_per_second, burst);
     return true;
+}
+bool profiles_set_notifications(profile_config *config, bool desktop, bool preview)
+{
+    profile_config *copy=candidate(config);
+    if (!copy) return false;
+    copy->desktop_notifications=desktop; copy->notification_preview=preview;
+    return commit(config,copy);
 }

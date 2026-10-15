@@ -586,9 +586,9 @@ static int color_pair(unsigned rgb, int fallback)
     int oldfg, background;
     if (extended_pair_content(fallback, &oldfg, &background) == ERR) return fallback;
     for (int i = 0; i < frame_color_count; ++i)
-        if (frame_colors[i].fg == fg && frame_colors[i].bg == background) return 32 + i;
-    if (frame_color_count == 32) return fallback;
-    int pair = 32 + frame_color_count;
+        if (frame_colors[i].fg == fg && frame_colors[i].bg == background) return THEME_PAIR_END + i;
+    if (frame_color_count == 32 || THEME_PAIR_END + frame_color_count >= COLOR_PAIRS) return fallback;
+    int pair = THEME_PAIR_END + frame_color_count;
     if (init_extended_pair(pair, fg, background) == ERR) return fallback;
     frame_colors[frame_color_count].fg = fg; frame_colors[frame_color_count++].bg = background;
     return pair;

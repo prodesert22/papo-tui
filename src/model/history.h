@@ -3,6 +3,7 @@
 #include "net/auth.h"
 #include "model/mentions.h"
 #include "model/assets.h"
+#include "model/inbox.h"
 
 #define HISTORY_CHANNEL_LIMIT 500
 #define HISTORY_MESSAGE_LIMIT 1000
@@ -21,6 +22,12 @@ void history_destroy(history *h);
 chat_assets *history_assets(history *h);
 bool history_message_webhook(const json_t *message);
 const char *history_message_author(const history *h, const json_t *message);
+/* A connection owns the model; views borrow it. Inactive contexts keep only
+ * metadata and never request message history. R8 is opt-in for old probes. */
+void history_enable_r8(history *h);
+inbox *history_inbox(history *h);
+void history_active(history *h, bool active);
+void history_activity(history *h);
 bool history_poll(history *h);
 /* Copies a confirmed Message. Merges only the active channel/current
  * generation, with definitive ID deduplication and bounded memory. No HTTP. */
@@ -40,6 +47,13 @@ void history_older(history *h);
 bool history_retry(history *h);
 size_t history_channel_count(const history *h);
 json_t *history_channel(const history *h, size_t index);
+/* Reconcile backend cursors with locally saved successful reads, scoped to
+ * the normalized instance URL and verified account UUID. NULL h checks only
+ * the backend snapshot. Notifications/counts do not override reading. */
+bool history_channel_unread(const history *h, const json_t *channel);
+/* Schedule a coalesced read of the active, actually visible latest message.
+ * NULL cancels a queued read when the view loses visibility/focus. */
+void history_read_visible(history *h, const char *message_id);
 size_t history_selected(const history *h);
 size_t history_message_count(const history *h);
 json_t *history_message(const history *h, size_t index);
@@ -53,6 +67,7 @@ char *history_search_normalize(const char *text);
 bool history_maintain(history *h, uint64_t now);
 void history_users_active(history *h, bool active);
 void history_users_retry(history *h);
+void history_users_refresh(history *h);
 size_t history_user_count(const history *h);
 uint64_t history_users_revision(const history *h);
 json_t *history_user(const history *h, size_t index);

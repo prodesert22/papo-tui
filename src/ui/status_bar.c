@@ -85,6 +85,12 @@ void status_bar_draw(status_bar *bar, WINDOW *window, int row, const char *full,
         need += cells(notice->text);
     }
     if (count) need += 3 * ((int)count - 1);
+    if (bar->connection_critical) {
+        for (size_t i=0;i<count;++i) if (ordered[i]==STATUS_CONNECTION) {
+            for (size_t j=i;j+1<count;++j) ordered[j]=ordered[j+1];
+            ordered[count-1]=STATUS_CONNECTION; break;
+        }
+    }
     const char *hints = full;
     if (count && cells(hints) + 3 + need > available) hints = shorter;
     if (count && cells(hints) + 3 + need > available) hints = minimal;

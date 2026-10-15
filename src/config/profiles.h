@@ -18,12 +18,13 @@ typedef struct {
 
 /* Owns its directory descriptor. Contains public connection metadata only.
  * Mutations become visible in memory only after an atomic save succeeds. */
-typedef struct {
+typedef struct profile_config {
     server_profile profiles[PROFILE_LIMIT];
     size_t count;
     char selected[PROFILE_ID_BYTES];
     double requests_per_second;
     unsigned request_burst;
+    bool desktop_notifications, notification_preview;
     int directory;
     bool writable, existed;
     struct stat revision;
@@ -39,5 +40,6 @@ bool profiles_update(profile_config *config, const char *id, const char *name,
 bool profiles_remove(profile_config *config, const char *id);
 bool profiles_select(profile_config *config, const char *id, bool allow_local_http);
 bool profiles_set_rate(profile_config *config, double requests_per_second, unsigned burst);
+bool profiles_set_notifications(profile_config *config, bool desktop, bool preview);
 
 #endif

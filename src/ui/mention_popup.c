@@ -26,6 +26,34 @@ static const char *str(json_t *u, const char *key)
     const char *s = json_string_value(json_object_get(u, key));
     return s ? s : "";
 }
+static bool contains_folded(const text_buffer *name, const text_buffer *query)
+{
+    for (size_t i = 0; i + query->length <= name->length; ++i) {
+        size_t j = 0;
+        while (j < query->length && towlower(name->data[i + j]) == towlower(query->data[j]))
+            ++j;
+        if (j == query->length) return true;
+    }
+    return false;
+}
+static void remove_separators(text_buffer *text)
+{
+    size_t length = 0;
+    for (size_t i = 0; i < text->length; ++i)
+        if (iswalnum(text->data[i])) text->data[length++] = text->data[i];
+    text->length = length;
+    text->data[length] = 0;
+}
+bool mention_name_matches(const char *name, const char *query)
+{
+    text_buffer a, b;
+    if (!text_decode(&a, name) || !text_decode(&b, query)) return false;
+    if (contains_folded(&a, &b)) return true;
+    /* Normalize only the comparison; names and wire identities stay intact. */
+    remove_separators(&a);
+    remove_separators(&b);
+    return b.length && contains_folded(&a, &b);
+}
 static int compare(const void *a, const void *b)
 {
     const candidate *x = a, *y = b;

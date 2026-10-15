@@ -119,8 +119,23 @@ class MockServer:
                     elif outer.scenario == "api-limited": self.respond(429, retry_after="1")
                     elif outer.scenario == "api-violation": self.respond(200, {"connection_violation": True})
                     else: self.respond(200, {"fixture": True})
+                elif self.path.split('?')[0].endswith('/dms'):
+                    self.respond(200, {'dms': []})
+                elif self.path.split('?')[0].endswith('/notifications'):
+                    self.respond(200, {'notifications': [], 'has_more': False})
                 else:
                     self.respond(404, {"title": "Not found"})
+
+            def mutation_fixture(self):
+                outer.request_times.append(time.monotonic())
+                data=self.rfile.read(int(self.headers.get('Content-Length',0)))
+                body=json.loads(data) if data else None
+                outer.requests.append((self.command,self.path,self.headers.get('Cookie'),body))
+                response=outer.api_handler(self.command,self.path,body) if outer.api_handler else None
+                self.respond(*(response if response is not None else (404,None)))
+
+            do_PUT=mutation_fixture
+            do_DELETE=mutation_fixture
 
             def do_POST(self):
                 outer.request_times.append(time.monotonic())

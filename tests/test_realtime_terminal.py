@@ -2,7 +2,7 @@
 import time
 import unittest
 from realtime_mock import RealtimeMock
-from history_mock import CHANNEL, uuid, STAMP
+from history_mock import CHANNEL, uuid, STAMP, assert_history_reads
 import test_send_product as product
 
 
@@ -18,7 +18,7 @@ class RealtimeTerminal(unittest.TestCase):
             try:
                 terminal.send('Rascunho ao navegar\x1b')
                 terminal.click(5, 4)
-                terminal.send('\x1bOB')  # highlight another channel, keep geral open
+                terminal.send('\x1bOB\x1bOB')  # buttons -> list -> other channel; keep geral open
                 self.assertIn('Foco: Canais', terminal.screen.display[2])
                 self.assertIn('# geral · Histórico', self.screen(terminal))
                 message = server.message(4); message['content'] = 'Recebida enquanto navego nos canais'
@@ -27,7 +27,8 @@ class RealtimeTerminal(unittest.TestCase):
                 self.assertIn('Rascunho ao navegar', self.editor_text(terminal))
                 terminal.send('\x1bOA\n')  # refocus the already open channel
                 self.wait(terminal, message['content'])
-                self.assertEqual(sum('/messages' in r[1] for r in server.requests), 1)
+                # A visible new message can trigger one cursor synchronization.
+                assert_history_reads(self, server, {CHANNEL: (1, 2)})
                 terminal.send('\x1bOH\x1bOD\x1bOB')
                 before = [row[26:] for row in terminal.screen.display[8:12]]
                 message = server.message(5); message['content'] = 'Recebida sem deslocar a leitura'
@@ -37,7 +38,7 @@ class RealtimeTerminal(unittest.TestCase):
                 terminal.send('\x1bOA\x1bOC\x1bOF')
                 self.wait(terminal, message['content'])
                 self.assertIn('Rascunho ao navegar', self.editor_text(terminal))
-                self.assertEqual(sum('/messages' in r[1] for r in server.requests), 1)
+                assert_history_reads(self, server, {CHANNEL: (1, 3)})
             finally: self.assertTrue(terminal.close())
 
     def test_embed_only_message_renders_live_without_reopening_channel(self):
@@ -59,7 +60,7 @@ class RealtimeTerminal(unittest.TestCase):
                 self.assertIn('Descrição ao vivo', self.screen(terminal))
                 self.assertIn('Valor do embed', self.screen(terminal))
                 self.assertIn('Rascunho durante embed', self.editor_text(terminal))
-                self.assertEqual(sum('/messages' in r[1] for r in server.requests), 1)
+                assert_history_reads(self, server, {CHANNEL: (1, 2)})
                 server.emit(dict(event, embeds=[{'title': 'Novo título'}]))
                 self.wait(terminal, 'Novo título')
                 self.assertNotIn('Título recebido via WS', self.screen(terminal))
@@ -79,7 +80,7 @@ class RealtimeTerminal(unittest.TestCase):
                 self.wait(terminal, m['content'])
                 server.emit(dict(m, type='message')); terminal.read(.2)
                 self.assertEqual(self.screen(terminal).count(m['content']), 1)
-                self.assertEqual(sum('/messages' in r[1] for r in server.requests), 1)
+                assert_history_reads(self, server, {CHANNEL: (1, 2)})
             finally: self.assertTrue(terminal.close())
 
     def test_scrolled_history_indicates_new_messages_and_deleted_anchor(self):

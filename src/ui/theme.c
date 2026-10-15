@@ -7,7 +7,7 @@
 #define FIRST_CUSTOM_COLOR 240
 
 enum { BACKGROUND, SURFACE, RAISED, TEXT, SECONDARY, ORANGE, RED, GREEN, RULE, WARM, HISTORY_BACKGROUND,
-       PROFILE_WHITE, PROFILE_HIGHLIGHT };
+       PROFILE_WHITE, PROFILE_HIGHLIGHT, NOTIFICATION_RED };
 
 static short component(unsigned char value)
 {
@@ -22,8 +22,8 @@ void theme_init(ui_theme *theme)
     const char *term = getenv("TERM"), *kitty_window = getenv("KITTY_WINDOW_ID");
     bool kitty = (term && !strcmp(term, "xterm-kitty")) || (kitty_window && *kitty_window);
     static const unsigned char rgb[THEME_COLOR_COUNT][3] = {
-        {0x0d, 0x0f, 0x12}, /* #0d0f12 canvas */
-        {0x15, 0x18, 0x1e}, /* #15181e panels */
+        {0x00, 0x00, 0x00}, /* #000000 canvas */
+        {0x00, 0x00, 0x00}, /* #000000 panels; keep focus colors distinct */
         {0x1d, 0x20, 0x26}, /* #1d2026 subtle panel focus */
         {0xe4, 0xe6, 0xeb}, /* #e4e6eb text */
         {0xa0, 0xa4, 0xaf}, /* #a0a4af secondary text */
@@ -35,9 +35,10 @@ void theme_init(ui_theme *theme)
         {0x15, 0x17, 0x1b}, /* #15171b subtle history focus */
         {0xff, 0xff, 0xff}, /* #ffffff profile labels and controls */
         {0x50, 0x38, 0x1f}, /* #50381f dark orange profile focus */
+        {0xff, 0x00, 0x00}, /* #ff0000 unread notification dot */
     };
     /* Fixed xterm palette approximations. Never redefine the first 16 colors. */
-    int colors[THEME_COLOR_COUNT] = {232, 233, 234, 254, 247, 215, 210, 150, 238, 235, 233, 231, 94};
+    int colors[THEME_COLOR_COUNT] = {16, 16, 234, 254, 247, 215, 210, 150, 238, 235, 233, 231, 94, 196};
     if (COLORS >= 0x1000000) {
         /* Direct-color terminfo: color numbers are packed RGB values. */
         for (int i = 0; i < THEME_COLOR_COUNT; ++i)
@@ -46,13 +47,13 @@ void theme_init(ui_theme *theme)
         const int basic[THEME_COLOR_COUNT] = {
             COLOR_BLACK, COLOR_BLACK, COLOR_BLACK, COLOR_WHITE, COLOR_WHITE,
             COLOR_YELLOW, COLOR_RED, COLOR_GREEN, COLOR_WHITE, COLOR_BLACK, COLOR_BLACK,
-            COLOR_WHITE, COLOR_YELLOW
+            COLOR_WHITE, COLOR_YELLOW, COLOR_RED
         };
         memcpy(colors, basic, sizeof(colors));
     } else if (can_change_color() && !kitty && !getenv("KONSOLE_VERSION")) {
         /* Konsole may advertise ccc while ignoring terminfo's rgb: syntax.
          * Kitty resets overridden indices on configuration reload, turning
-         * our custom 240..252 theme into gray. Keep both indexed palettes
+         * our custom theme colors into gray. Keep both indexed palettes
          * intact; the direct-color branch above still provides exact RGB. */
         for (int i = 0; i < THEME_COLOR_COUNT; ++i) {
             short index = FIRST_CUSTOM_COLOR + i;
@@ -90,10 +91,14 @@ void theme_init(ui_theme *theme)
     init_extended_pair(PROFILE_FOCUS, colors[PROFILE_WHITE], colors[PROFILE_HIGHLIGHT]);
     init_extended_pair(PROFILE_BUTTON_SELECTED, colors[ORANGE], colors[WARM]);
     init_extended_pair(PROFILE_BUTTON_FOCUS, colors[ORANGE], colors[PROFILE_HIGHLIGHT]);
-    init_extended_pair(EMBED_AREA, colors[TEXT], colors[RAISED]);
-    init_extended_pair(EMBED_MUTED, colors[SECONDARY], colors[RAISED]);
-    init_extended_pair(EMBED_ACCENT, colors[ORANGE], colors[RAISED]);
+    init_extended_pair(EMBED_AREA, colors[TEXT], colors[SURFACE]);
+    init_extended_pair(EMBED_MUTED, colors[SECONDARY], colors[SURFACE]);
+    init_extended_pair(EMBED_ACCENT, colors[ORANGE], colors[SURFACE]);
     init_extended_pair(TEXT_SELECTION, colors[BACKGROUND], colors[ORANGE]);
+    init_extended_pair(NOTIFICATION, colors[NOTIFICATION_RED], colors[SURFACE]);
+    init_extended_pair(NOTIFICATION_FOCUS, colors[NOTIFICATION_RED], colors[RAISED]);
+    init_extended_pair(NOTIFICATION_SELECTED, colors[NOTIFICATION_RED], colors[WARM]);
+    init_extended_pair(NOTIFICATION_BUTTON_FOCUS, colors[NOTIFICATION_RED], colors[PROFILE_HIGHLIGHT]);
     wbkgd(stdscr, COLOR_PAIR(NORMAL));
 }
 

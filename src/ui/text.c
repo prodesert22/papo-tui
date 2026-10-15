@@ -10,6 +10,7 @@
 
 void text_input_init(void)
 {
+    define_key("\033[I",TEXT_FOCUS_IN); define_key("\033[O",TEXT_FOCUS_OUT);
     init_graphemebreak(); init_wordbreak();
     define_key("\033[200~", TEXT_PASTE_START); define_key("\033[201~", TEXT_PASTE_END);
     /* ncurses owns sequence decoding. CSI-u disambiguates Ctrl+Shift+C from
@@ -75,9 +76,15 @@ void text_input_init(void)
         define_key(sequence, KEY_F(i + 1));
     }
 }
+static bool focus_known, terminal_focused;
+bool text_terminal_focused(void) { return focus_known && terminal_focused; }
+bool text_terminal_focus_unknown(void) { return !focus_known; }
 int text_input_read(wint_t *key)
 {
     int type = get_wch(key);
+    if (type==KEY_CODE_YES && (*key==TEXT_FOCUS_IN || *key==TEXT_FOCUS_OUT)) {
+        focus_known=true; terminal_focused=*key==TEXT_FOCUS_IN;
+    }
     if (type == KEY_CODE_YES && *key >= TEXT_CONTROL_BASE && *key < TEXT_CONTROL_BASE + 32) {
         *key -= TEXT_CONTROL_BASE;
         return OK;
@@ -86,6 +93,7 @@ int text_input_read(wint_t *key)
 }
 void text_input_terminal_active(bool active)
 {
+    fputs(active ? "\033[?1004h" : "\033[?1004l",stdout); fflush(stdout);
     const char *id = getenv("KITTY_WINDOW_ID"), *term = getenv("TERM");
     if ((id && *id) || (term && !strcmp(term, "xterm-kitty"))) {
         fputs(active ? "\033]1337;SetUserVar=papo_tui=MQ==\a" : "\033]1337;SetUserVar=papo_tui\a", stdout);

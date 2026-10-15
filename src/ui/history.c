@@ -15,6 +15,10 @@
 #include <time.h>
 #include "ui/status_bar.h"
 #include "ui/clipboard.h"
+#include "ui/r8_modal.h"
+#include "app/desktop.h"
+#include "config/profiles.h"
+#include "net/clock.h"
 #include <wctype.h>
 #include <glib.h>
 #include <stdio.h>
@@ -25,7 +29,7 @@
 #define PASTE_END (KEY_MAX + 2)
 #define CONTENT_Y 5
 
-enum { SERVER_TABS, CHANNEL_LIST, HISTORY_PANEL, MESSAGE_INPUT, EMOJI_BUTTON };
+enum { SERVER_TABS, CHANNEL_LIST, HISTORY_PANEL, MESSAGE_INPUT, EMOJI_BUTTON, LIST_BUTTONS };
 typedef enum { DRAW_ALL, DRAW_CONVERSATION, DRAW_NAVIGATION, DRAW_EDITOR, DRAW_MEDIA } draw_scope;
 #define LAYOUT_BYTES (8U * 1024U * 1024U)
 typedef struct { int x, width; } click_range;
@@ -46,6 +50,12 @@ typedef struct {
     size_t layout_bytes;
     uint64_t layout_sequence;
     history *model;
+    r8_modal *r8;
+    bool list_dms;
+    int list_button;
+    size_t highlights[2];
+    uint64_t inbox_revision;
+    uint64_t view_requested_until;
     mention_popup *mentions;
     icon_view *icons;
     emoji_picker *emojis;
@@ -75,6 +85,51 @@ static const char *str(json_t *obj, const char *key)
 {
     const char *s = json_string_value(json_object_get(obj, key));
     return s ? s : "";
+}
+static size_t list_index(view *ui, size_t row)
+{
+    for (size_t i=0;i<history_channel_count(ui->model);++i) {
+        json_t *c=history_channel(ui->model,i);
+        if (json_is_true(json_object_get(c,"_dm"))!=ui->list_dms) continue;
+        if (!row--) return i;
+    }
+    return SIZE_MAX;
+}
+static size_t list_count(view *ui)
+{
+    size_t n=0;
+    for (size_t i=0;i<history_channel_count(ui->model);++i)
+        if (json_is_true(json_object_get(history_channel(ui->model,i),"_dm"))==ui->list_dms) ++n;
+    return n;
+}
+static json_t *list_channel(view *ui,size_t row) { return history_channel(ui->model,list_index(ui,row)); }
+static bool list_notified(view *ui, bool dms)
+{
+    for (size_t i=0;i<history_channel_count(ui->model);++i) {
+        json_t *channel=history_channel(ui->model,i);
+        if (json_is_true(json_object_get(channel,"_dm"))==dms && history_channel_unread(ui->model,channel)) return true;
+    }
+    return false;
+}
+static void notification_dot(WINDOW *window, int row, int column, int pair)
+{
+    attr_t previous=getattrs(window);
+    wattrset(window,(has_colors() ? COLOR_PAIR(pair) : 0) | A_BOLD);
+    mvwaddstr(window,row,column,"●");
+    wattrset(window,previous);
+}
+static void list_button(view *ui, int button, int column, int width, const char *label)
+{
+    button_state state=ui->focus==LIST_BUTTONS && ui->list_button==button ? BUTTON_FOCUSED :
+                       ui->list_dms==(button!=0) ? BUTTON_SELECTED : BUTTON_NORMAL;
+    button_draw(ui->list,0,column,width,label,state,BUTTON_PANEL);
+    if (list_notified(ui,button!=0)) notification_dot(ui->list,0,column+width-1,
+        state==BUTTON_FOCUSED ? NOTIFICATION_BUTTON_FOCUS : state==BUTTON_SELECTED ? NOTIFICATION_SELECTED : NOTIFICATION);
+}
+static void switch_list(view *ui,bool dms)
+{
+    ui->highlights[ui->list_dms]=ui->highlighted;
+    ui->list_dms=dms; ui->list_button=dms; ui->highlighted=ui->highlights[dms]; ui->first_channel=0;
 }
 static void destroy_layout(view *ui)
 {
@@ -122,6 +177,9 @@ static bool hit(click_range range, int x)
 static int tab_width(view *ui, size_t index, int available)
 {
     int width = text_label(NULL, 0, 0, 128, ui->connections->items[index].name) + 4;
+    inbox *box=history_inbox(ui->connections->items[index].model);
+    if (inbox_unread(box) || inbox_has_more(box)) width+=8;
+    if (inbox_unseen_conversations(box)) width+=2;
     return width > available ? available : width;
 }
 static void draw_tabs(view *ui, auth_client *auth)
@@ -154,17 +212,22 @@ static void draw_tabs(view *ui, auth_client *auth)
         }
         bool selected = i == ui->active_tab, active = focused && i == ui->tab_cursor;
         wattrset(ui->tabs, COLOR_PAIR(active ? FOCUSED : selected ? PANEL_ACTIVE : PANEL_MUTED) | (selected || active ? A_BOLD : A_NORMAL));
-        char label[160];
-        snprintf(label, sizeof(label), "%c%s%c", selected ? '[' : active ? '>' : ' ', ui->connections->items[i].name, selected ? ']' : active ? '<' : ' ');
+        char label[192];
+        inbox *box=history_inbox(ui->connections->items[i].model);
+        char badge[32]="";
+        if (inbox_unread(box) || inbox_has_more(box)) snprintf(badge,sizeof(badge)," · %zu%s",inbox_unread(box),inbox_has_more(box) ? "+" : "");
+        snprintf(label, sizeof(label), "%c%s%s%s%c", selected ? '[' : active ? '>' : ' ', ui->connections->items[i].name,badge,
+                 inbox_unseen_conversations(box) ? " *" : "",selected ? ']' : active ? '<' : ' ');
         ui->tab_hits[i] = (click_range){x, text_label(ui->tabs, 0, x, size, label)};
         x += size;
     }
     bool adding = focused && ui->tab_cursor == ui->connections->count;
     button_draw(ui->tabs, 0, ui->add_hit.x, ui->add_hit.width, adding ? ">+ Adicionar<" : "[+ Adicionar]",
                 adding ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
-    const char *areas[] = {"Abas", "Canais", "Histórico", "Mensagem", "Emojis"};
+    const char *areas[] = {"Abas", "Canais", "Histórico", "Mensagem", "Emojis", "Canais/DMs"};
     char summary[1200];
-    snprintf(summary, sizeof(summary), "%s · Foco: %s · F6: conta", auth_username(auth), areas[ui->focus]);
+    snprintf(summary, sizeof(summary), "%s · Foco: %s · F6: conta", auth_username(auth),
+             ui->focus==CHANNEL_LIST ? ui->list_dms ? "DMs" : "Canais" : areas[ui->focus]);
     wattrset(ui->tabs, COLOR_PAIR(focused ? FOCUS_MUTED : PANEL_MUTED));
     if (COLS < 80) {
         text_label(ui->tabs, 1, 0, width - 20, summary);
@@ -240,6 +303,8 @@ static void account_layout(view *ui, cached_layout *c)
  * resize maps the offset back to its new row; prepending pages adds no drift. */
 static int walk(view *ui, int first, bool paint, bool save, int *anchor)
 {
+    uint64_t now=0; net_now_ms(&now);
+    bool observed=text_terminal_focused() || (text_terminal_focus_unknown() && now<ui->view_requested_until);
     int total = 0, width = ui->body ? getmaxx(ui->body) - 4 : ui->width - 4;
     bool saved = false;
     graphics_terminal terminal = graphics_terminal_get();
@@ -284,7 +349,7 @@ static int walk(view *ui, int first, bool paint, bool save, int *anchor)
             !blocks->rows[rows - 1].card) { --rows; --height; }
         if (!followed && !compact_end && total + height < group_start + avatar_rows)
             height = group_start + avatar_rows - total;
-        if (paint && avatar_visible && !emoji_picker_open(ui->emojis) && !media_view_modal(ui->media)) {
+        if (paint && avatar_visible && !r8_modal_is_open(ui->r8) && !emoji_picker_open(ui->emojis) && !media_view_modal(ui->media)) {
             int top = first > total ? first - total : 0;
             int bottom = total + avatar_rows > first + ui->visible ? total + avatar_rows - first - ui->visible : 0;
             if (top + bottom < avatar_rows)
@@ -314,7 +379,7 @@ static int walk(view *ui, int first, bool paint, bool save, int *anchor)
                 int accent = ui->focus == HISTORY_PANEL ? HISTORY_ACCENT : PANEL_ACCENT;
                 if (r->count && !strcmp(r->segments[0].key, "header")) pair = accent;
                 message_row_draw(ui->body, r, y, 2 + r->x, width - r->x, pair, accent);
-                if (!emoji_picker_open(ui->emojis) && !media_view_modal(ui->media)) {
+                if (!r8_modal_is_open(ui->r8) && !emoji_picker_open(ui->emojis) && !media_view_modal(ui->media)) {
                     for (size_t k = 0; k < r->icon_count; ++k) {
                         const message_icon_region *icon = &r->icons[k];
                         char scope[180]; snprintf(scope, sizeof(scope), "%s:%s", str(m, "id"), icon->key);
@@ -322,6 +387,11 @@ static int walk(view *ui, int first, bool paint, bool save, int *anchor)
                         int icon_pair = r->card ? EMBED_AREA : pair;
                         icons_paint(ui->icons, ui->body, icon->id, y, 2 + r->x + r->indent + icon->x, icon_pair, false, icon->offset);
                     }
+                }
+                if (observed && !emoji_picker_open(ui->emojis) && !r8_modal_is_open(ui->r8) && !media_view_modal(ui->media)) {
+                    if ((r->count && strcmp(r->segments[0].key,"header")) || r->media_count)
+                        inbox_view_message(history_inbox(ui->model),str(m,"id"));
+                    if (ui->at_end && (r->count || r->media_count)) history_read_visible(ui->model,str(m,"id"));
                 }
                 if (blocks->self_mention && r->y + 1 < blocks->height) {
                     wattrset(ui->body, COLOR_PAIR(accent) | A_BOLD);
@@ -357,6 +427,9 @@ static int position(view *ui)
 static void scroll_history(view *ui, int delta)
 {
     if (!ui->body) return;
+    if (!history_message_count(ui->model) && delta<0) {
+        ui->at_end=false; ui->anchor[0]=0; return;
+    }
     int anchor, total = walk(ui, 0, false, false, &anchor);
     int last = total > ui->visible ? total - ui->visible : 0;
     int first = (ui->at_end ? last : anchor) + delta;
@@ -369,7 +442,7 @@ static void scroll_history(view *ui, int delta)
 static text_buffer *input(view *ui)
 {
     json_t *channel = history_channel(ui->model, history_selected(ui->model));
-    return channel && !strcmp(str(channel, "type"), "text") &&
+    return channel && (!strcmp(str(channel, "type"), "text") || !strcmp(str(channel, "type"), "voice")) &&
         !strcmp(str(channel, "id"), ui->editor_channel) ? send_editor_input(ui->editor) : NULL;
 }
 static int input_width(view *ui) { return ui->body ? getmaxx(ui->body) - 12 : 3; }
@@ -405,9 +478,9 @@ static bool collect_notices(view *ui, auth_client *auth)
 {
     const char *connection = NULL;
     if (!auth_has_session(auth))
-        connection = "Revalidando sessão…";
+        connection = auth_ws_epoch(auth) && auth_ws_state(auth)!=WS_OPEN ? "Desconectado · Revalidando sessão…" : "Revalidando sessão…";
     else if (auth_ws_reconnecting(auth))
-        connection = "Reconectando tempo real…";
+        connection = auth_ws_epoch(auth) ? "Desconectado · Reconectando…" : "Conectando tempo real…";
     else
         switch (auth_ws_state(auth)) {
         case WS_OPEN:
@@ -418,11 +491,11 @@ static bool collect_notices(view *ui, auth_client *auth)
             connection = "Conectando tempo real…";
             break;
         case WS_ERROR:
-            connection = auth_ws_message(auth);
+            connection = "Desconectado · Ctrl+R: reconectar";
             break;
         case WS_CLOSING:
         case WS_CLOSED:
-            connection = "Tempo real encerrado";
+            connection = "Desconectado";
             break;
         default:
             break;
@@ -430,6 +503,14 @@ static bool collect_notices(view *ui, auth_client *auth)
     const char *compact_connection = auth_ws_state(auth) == WS_OPEN && auth_has_session(auth) &&
                                      !auth_ws_reconnecting(auth) ? "Conectado" : connection;
     bool changed = status_bar_set_compact(&ui->status, STATUS_CONNECTION, connection, compact_connection);
+    ui->status.connection_critical=auth_ws_epoch(auth) && auth_ws_state(auth)!=WS_OPEN;
+    if (ui->status.connection_critical) changed |= status_bar_set_compact(&ui->status,STATUS_CONNECTION,connection,"Desconectado");
+    inbox *box=history_inbox(ui->model);
+    char notifications[192]="";
+    if (inbox_unread(box)) snprintf(notifications,sizeof(notifications),"%zu avisos%s · F9",inbox_unread(box),inbox_has_more(box) ? "+" : "");
+    changed |= status_bar_set(&ui->status,STATUS_NOTIFICATIONS,*inbox_notice(box) ? inbox_notice(box) : notifications);
+    changed |= status_bar_set_compact(&ui->status,STATUS_DESKTOP,
+        ui->connections->config && ui->connections->config->desktop_notifications ? desktop_notice(ui->connections->desktop) : "","Desktop indisponível");
     changed |= status_bar_set_compact(&ui->status, STATUS_SEND,
                                       *ui->editor_channel ? send_editor_feedback(ui->editor) : NULL,
                                       *ui->editor_channel ? send_editor_compact_notice(ui->editor) : NULL);
@@ -472,7 +553,9 @@ static bool collect_notices(view *ui, auth_client *auth)
 static void draw_footer(view *ui)
 {
     const char *full, *shorter, *minimal;
-    if (ui->duplicate_modal) {
+    if (r8_modal_is_open(ui->r8)) {
+        full=shorter="↑↓ escolher · Enter abrir · Tab ações · Esc voltar"; minimal="Enter · Esc";
+    } else if (ui->duplicate_modal) {
         full = "←→ escolher · Enter confirmar · Esc cancelar";
         shorter = "Enter confirmar · Esc cancelar";
         minimal = "Enter · Esc";
@@ -492,10 +575,15 @@ static void draw_footer(view *ui)
         shorter =
             adding ? "←→ servidores · ↓ canais · Enter adicionar" : "←→ servidores · ↓ canais · Enter ativar";
         minimal = "←→ · Enter";
+    } else if (ui->focus == LIST_BUTTONS) {
+        full="←→ Canais/DMs · Enter ativar · ↓ lista · F9 avisos · F10 nova DM";
+        shorter="←→ escolher · Enter ativar · ↓ lista"; minimal="←→ · Enter";
     } else if (ui->focus == CHANNEL_LIST) {
-        full = "↑↓ canais · Enter/→ abrir · ← abas · Ctrl+R atualizar";
-        shorter = "↑↓ canais · Enter abrir · ← abas";
-        minimal = "↑↓ · Enter";
+        bool voice = !strcmp(str(list_channel(ui, ui->highlighted), "type"), "voice");
+        full = voice ? "↑↓ canais · F4 histórico · Enter voz (em breve) · ← abas"
+                     : "↑↓ canais · Enter/→ abrir · ← abas · Ctrl+R atualizar";
+        shorter = voice ? "↑↓ canais · F4 histórico · ← abas" : "↑↓ canais · Enter abrir · ← abas";
+        minimal = voice ? "F4 histórico" : "↑↓ · Enter";
     } else if (ui->focus == EMOJI_BUTTON) {
         full = shorter = "Enter/F4 emojis · Shift+Tab editor · Esc voltar"; minimal = "Enter emojis";
     } else if (ui->focus == MESSAGE_INPUT) {
@@ -567,26 +655,38 @@ static void draw(view *ui, auth_client *auth, draw_scope scope)
     if (paint_navigation) draw_tabs(ui, auth);
     draw_footer(ui);
     if (ui->list && paint_navigation) {
-        wbkgd(ui->list, COLOR_PAIR(ui->focus == CHANNEL_LIST ? FOCUS_AREA : PANEL)); werase(ui->list);
-        wattrset(ui->list, COLOR_PAIR(ui->focus == CHANNEL_LIST ? FOCUS_MUTED : PANEL_MUTED) | A_BOLD);
-        text_label(ui->list, 0, 1, ui->side - 2, "Canais");
+        bool focused=ui->focus==CHANNEL_LIST || ui->focus==LIST_BUTTONS;
+        wbkgd(ui->list, COLOR_PAIR(focused ? FOCUS_AREA : PANEL)); werase(ui->list);
+        wattrset(ui->list, COLOR_PAIR(focused ? FOCUS_MUTED : PANEL_MUTED) | A_BOLD);
+        list_button(ui,0,1,9,"[Canais]");
+        list_button(ui,1,11,8,"[DMs]");
         int rows = getmaxy(ui->list) - 2;
-        size_t count = history_channel_count(ui->model);
+        size_t count = list_count(ui);
+        if (!count) text_label(ui->list,1,1,ui->side-2,ui->list_dms ? "Nenhuma DM disponível." : "Nenhum canal disponível.");
         if (ui->highlighted >= count) ui->highlighted = count ? count - 1 : 0;
         if ((int)ui->highlighted < ui->first_channel) ui->first_channel = (int)ui->highlighted;
         if ((int)ui->highlighted >= ui->first_channel + rows) ui->first_channel = (int)ui->highlighted - rows + 1;
         if (auth_has_session(auth)) for (int row = 0; row < rows; ++row) {
             size_t index = (size_t)(ui->first_channel + row);
-            json_t *c = history_channel(ui->model, index);
+            json_t *c = list_channel(ui, index);
             if (!c) break;
-            const char *type = str(c, "type"), *last = str(json_object_get(c, "last_message"), "id");
-            bool unread = *last && strcmp(last, str(c, "last_read_message"));
+            const char *type = str(c, "type");
+            bool unread = history_channel_unread(ui->model,c);
             char label[2200];
-            snprintf(label, sizeof(label), "%c %s%s%s", index == history_selected(ui->model) ? '>' : index == ui->highlighted ? '*' : ' ',
+            snprintf(label, sizeof(label), "%c %s%s%s", list_index(ui,index) == history_selected(ui->model) ? '>' : index == ui->highlighted ? '*' : ' ',
                      !strcmp(type, "category") ? "── " : !strcmp(type, "voice") ? "♪ " : "# ", unread ? "* " : "", str(c, "name"));
+            if (ui->list_dms) {
+                json_t *user=json_object_get(c,"user");
+                snprintf(label,sizeof(label),"%s%s · %s (%lld)",unread ? "* " : "",
+                    str(c,"name"),r8_presence_label(inbox_presence(history_inbox(ui->model),str(user,"id"))),
+                    (long long)json_integer_value(json_object_get(c,"unread_count")));
+            }
             bool selected = index == ui->highlighted;
-            wattrset(ui->list, COLOR_PAIR(selected && ui->focus == CHANNEL_LIST ? FOCUSED : selected ? PANEL_ACTIVE : ui->focus == CHANNEL_LIST ? FOCUS_AREA : PANEL));
-            text_label(ui->list, row + 1, 1, ui->side - 2, label);
+            bool notified=unread;
+            wattrset(ui->list, COLOR_PAIR(selected && focused ? FOCUSED : selected ? PANEL_ACTIVE : focused ? FOCUS_AREA : PANEL));
+            text_label(ui->list, row + 1, 1, ui->side - 2 - (notified ? 1 : 0), label);
+            if (notified) notification_dot(ui->list,row+1,ui->side-2,
+                focused ? NOTIFICATION_FOCUS : selected ? NOTIFICATION_SELECTED : NOTIFICATION);
         }
     }
     if (ui->body && (paint_history || scope == DRAW_EDITOR)) {
@@ -598,11 +698,11 @@ static void draw(view *ui, auth_client *auth, draw_scope scope)
             for (int row = 0; row < ui->editor_border; ++row)
                 mvwhline(ui->body, row, 0, ' ', getmaxx(ui->body));
         }
-        char title[2200]; snprintf(title, sizeof(title), "%s%s · Histórico", c ? "# " : "", c ? str(c, "name") : "Conversa");
+        char title[2200]; snprintf(title, sizeof(title), "%s%s · Histórico", c ? json_is_true(json_object_get(c,"_dm")) ? "DM com " : !strcmp(str(c,"type"),"voice") ? "♪ " : "# " : "", c ? str(c, "name") : "Conversa");
         wattrset(ui->body, COLOR_PAIR(ui->focus == HISTORY_PANEL ? HISTORY_MUTED : PANEL_MUTED) | A_BOLD);
         text_label(ui->body, 0, 2, getmaxx(ui->body) - 4, title);
         wattrset(ui->body, COLOR_PAIR(ui->focus == HISTORY_PANEL ? HISTORY_MUTED : PANEL_MUTED));
-        if (ui->history_top == 3) text_label(ui->body, 1, 2, getmaxx(ui->body) - 4, str(c, "topic"));
+        if (ui->history_top == 3) text_label(ui->body, 1, 2, getmaxx(ui->body) - 4, json_is_true(json_object_get(c,"_dm")) ? r8_presence_label(inbox_presence(history_inbox(ui->model),str(json_object_get(c,"user"),"id"))) : str(c, "topic"));
         if (ui->history_top > 1) {
             wattrset(ui->body, COLOR_PAIR(ui->focus == HISTORY_PANEL ? HISTORY_BORDER : BORDER));
             mvwhline(ui->body, ui->history_top - 1, 0, ACS_HLINE, getmaxx(ui->body));
@@ -637,7 +737,7 @@ static void draw(view *ui, auth_client *auth, draw_scope scope)
             text_layout measured; text_measure(editor, width, &measured);
             if (!ui->editor_scrolling) text_keep_cursor(editor, &measured, height);
             if (!editor->length) {
-                char placeholder[2200]; snprintf(placeholder, sizeof(placeholder), "Conversar em #%s", str(c, "name"));
+                char placeholder[2200]; snprintf(placeholder, sizeof(placeholder), json_is_true(json_object_get(c,"_dm")) ? "Conversar com %s" : "Conversar em #%s", str(c, "name"));
                 wattrset(ui->body, COLOR_PAIR(editing ? FOCUS_MUTED : PANEL_MUTED));
                 text_label(ui->body, input_top(ui), 3, width, placeholder);
             } else {
@@ -699,7 +799,7 @@ static void draw(view *ui, auth_client *auth, draw_scope scope)
                            getbegx(ui->body) + 3 + measured.cursor_column, getbegx(ui->body) + 1, getmaxx(ui->body) - 2);
     }
     bool caret = false;
-    if (ui->focus == MESSAGE_INPUT && input(ui) && ui->body && !ui->duplicate_modal && !media_view_modal(ui->media) && !emoji_picker_open(ui->emojis)) {
+    if (ui->focus == MESSAGE_INPUT && input(ui) && ui->body && !ui->duplicate_modal && !r8_modal_is_open(ui->r8) && !media_view_modal(ui->media) && !emoji_picker_open(ui->emojis)) {
         text_buffer *editor = input(ui); text_layout measured;
         text_measure(editor, input_width(ui), &measured);
         caret = measured.cursor_row >= editor->first_row && measured.cursor_row < editor->first_row + input_height(ui);
@@ -707,17 +807,19 @@ static void draw(view *ui, auth_client *auth, draw_scope scope)
                           getbegx(ui->body) + 3 + measured.cursor_column);
     }
     if (!caret) setsyx(-1, -1);
-    if (paint_media && (emoji_picker_open(ui->emojis) || media_view_modal(ui->media) || ui->duplicate_modal || mention_popup_open(ui->mentions)))
+    if (paint_media && (r8_modal_is_open(ui->r8) || emoji_picker_open(ui->emojis) || media_view_modal(ui->media) || ui->duplicate_modal || mention_popup_open(ui->mentions)))
         icons_begin(ui->icons);
     if (emoji_picker_open(ui->emojis)) {
         emoji_picker_draw(ui->emojis);
         caret = emoji_picker_cursor(ui->emojis);
     }
     if (paint_media) {
-        if (!ui->duplicate_modal && !mention_popup_open(ui->mentions) && !emoji_picker_open(ui->emojis)) media_view_prepare(ui->media);
+        if (!ui->duplicate_modal && !r8_modal_is_open(ui->r8) && !mention_popup_open(ui->mentions) && !emoji_picker_open(ui->emojis)) media_view_prepare(ui->media);
         icons_prepare(ui->icons);
         graphics_frame_prepare();
     }
+    r8_modal_draw(ui->r8);
+    if (r8_modal_is_open(ui->r8)) { caret=false; setsyx(-1,-1); }
     doupdate();
     if (paint_media) graphics_frame_flush();
     graphics_update_end();
@@ -730,32 +832,38 @@ static void set_focus(view *ui, int focus)
     if (ui->focus == focus) return;
     bool was_channels = ui->show_channels;
     ui->focus = focus;
-    if (focus == CHANNEL_LIST) ui->show_channels = true;
+    if (focus == CHANNEL_LIST || focus == LIST_BUTTONS) ui->show_channels = true;
     if (focus == HISTORY_PANEL || focus == MESSAGE_INPUT || focus == EMOJI_BUTTON) ui->show_channels = false;
     if (COLS < 80 && was_channels != ui->show_channels) layout(ui);
 }
 static void open_emojis(view *ui)
 {
-    if (!input(ui) || ui->duplicate_modal || media_view_modal(ui->media)) return;
+    if (!input(ui) || ui->duplicate_modal || r8_modal_is_open(ui->r8) || media_view_modal(ui->media)) return;
     mention_popup_close(ui->mentions); ui->dragging = false;
     ui->emoji_return_focus = ui->focus;
     emoji_picker_show(ui->emojis, ui->editor_channel, auth_context_generation(ui->connections->items[ui->active_tab].auth));
 }
-static void open_channel(view *ui)
+static void open_channel(view *ui, bool voice_history)
 {
+    json_t *channel = list_channel(ui, ui->highlighted);
+    if (!channel || !strcmp(str(channel, "type"), "category")) return;
+    bool voice = !strcmp(str(channel, "type"), "voice");
+    if (voice && !voice_history) {
+        set_focus(ui, CHANNEL_LIST);
+        ui->feedback = "Voz em breve. F4 abre o histórico."; return;
+    }
+    if (voice) ui->feedback = NULL;
     /* Selecting the displayed channel only changes focus. Preserve pending
      * reads, the reading anchor, the draft and the current message window. */
-    if (history_selected(ui->model) == ui->highlighted) { set_focus(ui, HISTORY_PANEL); return; }
-    json_t *channel = history_channel(ui->model, ui->highlighted);
-    bool text = !strcmp(str(channel, "type"), "text");
-    if (text && !send_editor_select(ui->editor, str(channel, "id"))) {
+    if (history_selected(ui->model) == list_index(ui,ui->highlighted)) { set_focus(ui, HISTORY_PANEL); return; }
+    if (!send_editor_select(ui->editor, str(channel, "id"))) {
         ui->feedback = "Não foi possível trocar o editor; rascunho preservado."; return;
     }
-    if (history_select(ui->model, ui->highlighted)) {
-        for (int context = STATUS_HISTORY; context < STATUS_CONTEXT_COUNT; ++context)
+    if (history_select(ui->model, list_index(ui,ui->highlighted))) {
+        for (int context = STATUS_HISTORY; context <= STATUS_CLIPBOARD; ++context)
             status_bar_set(&ui->status, (status_context)context, NULL);
         media_view_suspend(ui->media);
-        snprintf(ui->editor_channel, sizeof(ui->editor_channel), "%s", text ? str(channel, "id") : "");
+        snprintf(ui->editor_channel, sizeof(ui->editor_channel), "%s", str(channel, "id"));
         ui->feedback = NULL;
         ui->unseen = 0;
         ui->at_end = true; ui->anchor[0] = 0; set_focus(ui, HISTORY_PANEL);
@@ -808,7 +916,7 @@ static bool poll_editor(view *ui, auth_client *auth)
 static bool poll_model(view *ui, auth_client *auth)
 {
     char highlighted[37];
-    snprintf(highlighted, sizeof(highlighted), "%s", str(history_channel(ui->model, ui->highlighted), "id"));
+    snprintf(highlighted, sizeof(highlighted), "%s", str(list_channel(ui, ui->highlighted), "id"));
     /* Retain IDs around the reading anchor, never borrowed model pointers. */
     char neighbors[HISTORY_MESSAGE_LIMIT][37]; size_t count = 0, anchored = 0;
     if (!ui->at_end) for (size_t i = 0; i < history_message_count(ui->model); ++i) {
@@ -823,8 +931,8 @@ static bool poll_model(view *ui, auth_client *auth)
     changed |= history_poll(ui->model) || before != auth_ws_state(auth);
     uint64_t delta = history_insertions(ui->model) - inserted;
     if (!ui->at_end) ui->unseen += delta;
-    for (size_t i = 0; i < history_channel_count(ui->model); ++i)
-        if (!strcmp(highlighted, str(history_channel(ui->model, i), "id"))) ui->highlighted = i;
+    for (size_t i = 0; i < list_count(ui); ++i)
+        if (!strcmp(highlighted, str(list_channel(ui, i), "id"))) ui->highlighted = i;
     if (!ui->at_end && count) {
         bool found = false;
         for (size_t i = 0; i < history_message_count(ui->model); ++i)
@@ -874,13 +982,15 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         connection->media_destroy = dispose_media; connection->media_idle = idle_media; connection->media_update = update_media;
         ui->media = connection->media;
     }
-    ui->model = history_create(auth);
+    ui->model = instances_history(connections,auth);
+    if (ui->model) history_active(ui->model,true);
+    ui->r8 = ui->model ? r8_modal_create(ui->model,auth,connections->config) : NULL;
     history_set_media_updates(ui->model, update_media, ui->media);
     ui->mentions = ui->model ? mention_popup_create(ui->model) : NULL;
     ui->icons = ui->model ? icons_create(history_assets(ui->model)) : NULL;
     ui->emojis = ui->icons ? emoji_picker_create(history_assets(ui->model), ui->icons) : NULL;
     ui->at_end = ui->show_channels = true; ui->focus = focus_tabs ? SERVER_TABS : CHANNEL_LIST;
-    if (!ui->model || !ui->mentions || !ui->icons || !ui->emojis || !ui->editor || ui->active_tab == SIZE_MAX || !layout(ui)) { emoji_picker_destroy(ui->emojis); icons_destroy(ui->icons); mention_popup_destroy(ui->mentions); media_view_suspend(ui->media); history_destroy(ui->model); destroy_layout(ui); g_hash_table_destroy(ui->layout_index); free(ui); return HISTORY_ACCOUNT; }
+    if (!ui->model || !ui->r8 || !ui->mentions || !ui->icons || !ui->emojis || !ui->editor || ui->active_tab == SIZE_MAX || !layout(ui)) { emoji_picker_destroy(ui->emojis); icons_destroy(ui->icons); mention_popup_destroy(ui->mentions); media_view_suspend(ui->media); if (ui->model) history_active(ui->model,false); r8_modal_destroy(ui->r8); destroy_layout(ui); g_hash_table_destroy(ui->layout_index); free(ui); return HISTORY_ACCOUNT; }
     mmask_t previous_mouse;
     /* A separately delivered release must reach getmouse(). If it is filtered
      * out, ncurses can wait for another gesture inside get_wch(), stalling HTTP
@@ -890,10 +1000,15 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
     bool redraw = true; draw_scope scope = DRAW_ALL; int result = HISTORY_ACCOUNT;
     while (!*interrupted) {
         if (ui->layout_failed) break;
+        uint64_t visible_now=0; net_now_ms(&visible_now);
+        if (!ui->body || !ui->at_end || r8_modal_is_open(ui->r8) || ui->duplicate_modal ||
+            mention_popup_open(ui->mentions) || emoji_picker_open(ui->emojis) || media_view_modal(ui->media) ||
+            !(text_terminal_focused() || (text_terminal_focus_unknown() && visible_now<ui->view_requested_until)))
+            history_read_visible(ui->model,NULL);
         auth_state before = auth_get_state(auth);
         if (session_store_poll(connections->sessions, auth)) { redraw = true; scope = DRAW_ALL; }
-        if (instances_poll(connections, auth)) { redraw = true; scope = DRAW_ALL; }
         if (poll_model(ui, auth) || before != auth_get_state(auth)) { redraw = true; scope = DRAW_ALL; }
+        if (instances_poll(connections, auth)) { redraw = true; scope = DRAW_ALL; }
         uint64_t dimensions = media_view_dimensions_revision(ui->media);
         if (media_view_poll(ui->media, ui->model)) {
             bool reflow = dimensions != media_view_dimensions_revision(ui->media);
@@ -912,25 +1027,54 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         if (clipboard_poll()) redraw = true;
         if (input(ui)) { text_mentions(input(ui), history_mention_name, ui->model); text_icons(input(ui), icons_resolve, icons_paint, ui->icons); }
         if (editor_geometry(ui)) { redraw = true; scope = DRAW_ALL; }
-        if (mention_popup_update(ui->mentions, input(ui), ui->focus == MESSAGE_INPUT && !ui->paste &&
-                                 !ui->duplicate_modal && !media_view_modal(ui->media) && !emoji_picker_open(ui->emojis))) {
+        if (!r8_modal_is_open(ui->r8) && mention_popup_update(ui->mentions, input(ui), ui->focus == MESSAGE_INPUT && !ui->paste &&
+                                 !ui->duplicate_modal && !r8_modal_is_open(ui->r8) && !media_view_modal(ui->media) && !emoji_picker_open(ui->emojis))) {
             redraw = true; scope = DRAW_ALL;
         }
+        inbox *box=history_inbox(ui->model);
+        if (ui->inbox_revision!=inbox_revision(box)) { ui->inbox_revision=inbox_revision(box); redraw=true; scope=DRAW_ALL; }
+        const char *opened=inbox_opened(box);
+        const char *destination=*opened ? opened : r8_modal_destination(ui->r8);
+        if (*destination) {
+            bool found=false;
+            for (size_t i=0;i<history_channel_count(ui->model);++i) {
+                json_t *c=history_channel(ui->model,i);
+                if (strcmp(destination,str(c,"id"))) continue;
+                switch_list(ui,json_is_true(json_object_get(c,"_dm")));
+                for (size_t j=0;j<list_count(ui);++j) if (list_index(ui,j)==i) ui->highlighted=j;
+                open_channel(ui, true); found=true; break;
+            }
+            if (!found) inbox_resolve_dm(box,destination);
+            inbox_opened_clear(box); r8_modal_destination_clear(ui->r8); redraw=true;
+        }
+        instances_visible(connections,auth,ui->body && ui->at_end && !r8_modal_is_open(ui->r8) && !emoji_picker_open(ui->emojis) && !media_view_modal(ui->media) ? str(history_channel(ui->model,history_selected(ui->model)),"id") : "");
         if (collect_notices(ui, auth)) redraw = true;
         if (!auth_has_session(auth) && !auth_busy(auth)) break;
         if (redraw) { draw(ui, auth, scope); redraw = false; scope = DRAW_ALL; }
         wint_t key; int type = ui->paste ? text_paste_read(&ui->paste_data, &key, true, graphics_terminal_input, 30) : graphics_terminal_input(&key);
         if (type == ERR) continue;
+        if (type==KEY_CODE_YES && (key==TEXT_FOCUS_IN || key==TEXT_FOCUS_OUT)) {
+            ui->view_requested_until=0;
+            redraw=true; scope=DRAW_ALL; continue;
+        }
+        if (!(type==KEY_CODE_YES && (key==PASTE_START || key==PASTE_END || key==KEY_RESIZE || key==TEXT_IGNORED)) && !ui->paste) {
+            uint64_t now; if (net_now_ms(&now)) ui->view_requested_until=now+2000;
+            history_activity(ui->model);
+        }
         if (type == KEY_CODE_YES && key == PASTE_START) {
             ui->paste = true; text_paste_begin(&ui->paste_data); ui->dragging = false;
-            if (!ui->duplicate_modal && !media_view_modal(ui->media) && !emoji_picker_open(ui->emojis) && input(ui) && ui->focus != SERVER_TABS) { set_focus(ui, MESSAGE_INPUT); redraw = true; }
+            if (!ui->duplicate_modal && !r8_modal_is_open(ui->r8) && !media_view_modal(ui->media) && !emoji_picker_open(ui->emojis) && input(ui) && ui->focus != SERVER_TABS) { set_focus(ui, MESSAGE_INPUT); redraw = true; }
             continue;
         }
         if (type == KEY_CODE_YES && key == PASTE_END) {
             ui->paste = false;
-            if (!ui->duplicate_modal && !media_view_modal(ui->media) && !emoji_picker_open(ui->emojis) && ui->focus == MESSAGE_INPUT && input(ui)) {
+            if (!ui->duplicate_modal && !r8_modal_is_open(ui->r8) && !media_view_modal(ui->media) && !emoji_picker_open(ui->emojis) && ui->focus == MESSAGE_INPUT && input(ui)) {
                 if (!text_paste_commit(&ui->paste_data, input(ui))) ui->feedback = "Colagem excede o limite; rascunho preservado.";
-                else { ui->feedback = send_editor_changed(ui->editor) ? NULL : "Não foi possível salvar o rascunho."; history_typing_activity(ui->model); }
+                else {
+                    ui->feedback = send_editor_changed(ui->editor) ? NULL : "Não foi possível salvar o rascunho.";
+                    history_typing_activity(ui->model); history_activity(ui->model);
+                    uint64_t now; if (net_now_ms(&now)) ui->view_requested_until=now+2000;
+                }
                 ui->editor_scrolling = false; redraw = true; scope = DRAW_ALL;
             } else text_paste_cancel(&ui->paste_data);
             mention_popup_update(ui->mentions, input(ui), ui->focus == MESSAGE_INPUT);
@@ -940,11 +1084,11 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         if (ui->paste) continue;
         redraw = true;
         if (type == KEY_CODE_YES && key == TEXT_COPY) {
-            if (ui->focus == MESSAGE_INPUT && input(ui) && !ui->duplicate_modal && !media_view_modal(ui->media))
+            if (ui->focus == MESSAGE_INPUT && input(ui) && !ui->duplicate_modal && !r8_modal_is_open(ui->r8) && !media_view_modal(ui->media))
                 clipboard_copy(input(ui));
             continue;
         }
-        if (type == OK && (key == 17 || (key == 3 && (ui->focus != MESSAGE_INPUT || ui->duplicate_modal || media_view_modal(ui->media))))) { result = HISTORY_EXIT; break; }
+        if (type == OK && (key == 17 || (key == 3 && !r8_modal_is_open(ui->r8) && (ui->focus != MESSAGE_INPUT || ui->duplicate_modal || media_view_modal(ui->media))))) { result = HISTORY_EXIT; break; }
         bool accepted = false;
         if (emoji_picker_open(ui->emojis)) {
             if (type == KEY_CODE_YES && key == KEY_MOUSE) {
@@ -956,7 +1100,11 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             else if (!emoji_picker_open(ui->emojis)) set_focus(ui, ui->emoji_return_focus);
             scope = DRAW_ALL; continue;
         }
-        if (type == KEY_CODE_YES && key == KEY_F(4) && !ui->duplicate_modal && !media_view_modal(ui->media)) { open_emojis(ui); scope = DRAW_ALL; continue; }
+        if (type == KEY_CODE_YES && key == KEY_F(4) &&
+            (ui->focus == HISTORY_PANEL || ui->focus == MESSAGE_INPUT || ui->focus == EMOJI_BUTTON) &&
+            !ui->duplicate_modal && !r8_modal_is_open(ui->r8) && !media_view_modal(ui->media)) {
+            open_emojis(ui); scope = DRAW_ALL; continue;
+        }
 
         if (mention_popup_key(ui->mentions, input(ui), type, key, &accepted)) {
             if (accepted) { send_editor_changed(ui->editor); history_typing_activity(ui->model); }
@@ -988,6 +1136,22 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         if (type == KEY_CODE_YES && key == KEY_F(6)) break;
         if (type == OK && key == 16) { result = HISTORY_PROFILES; break; }
         if (type == OK && key == 12) { auth_logout(auth); break; }
+        if (r8_modal_is_open(ui->r8)) { r8_modal_key(ui->r8,type,key); scope=DRAW_ALL; continue; }
+        if (type==KEY_CODE_YES && (key==KEY_F(9) || key==KEY_F(10) || key==KEY_F(1))) {
+            if (!media_view_modal(ui->media)) {
+                mention_popup_close(ui->mentions);
+                r8_modal_open(ui->r8,key==KEY_F(9) ? R8_NOTIFICATIONS : key==KEY_F(10) ? R8_USERS : R8_HELP);
+            }
+            scope=DRAW_ALL; continue;
+        }
+        if (type==OK && key==4 && ui->focus==CHANNEL_LIST && ui->list_dms) {
+            json_t *dm=list_channel(ui,ui->highlighted); outbox_operation operation;
+            bool busy=outbox_latest(send_editor_outbox(ui->editor),str(dm,"id"),&operation) &&
+                (operation.state==OUTBOX_QUEUED || operation.state==OUTBOX_SENDING);
+            if (busy) ui->feedback="Aguarde o envio antes de fechar a DM.";
+            else if (dm) inbox_close_dm(history_inbox(ui->model),str(dm,"id"));
+            continue;
+        }
         if (media_view_modal(ui->media) && type == KEY_CODE_YES && key == KEY_MOUSE) {
             MEVENT e;
             if (ui_mouse_get(&e) == OK) {
@@ -1008,25 +1172,18 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         if (type == OK && key == 18) {
             chat_assets_profiles_retry(history_assets(ui->model));
             if (auth_ws_reconnecting(auth)) { auth_connect_ws(auth); continue; }
+            inbox_retry(history_inbox(ui->model));
             if (history_message_count(ui->model)) {
                 if (!history_retry(ui->model)) { ui->at_end = true; ui->anchor[0] = 0; }
             } else if (history_selected(ui->model) != SIZE_MAX) history_recent(ui->model);
             else history_reload_channels(ui->model);
             continue;
         }
-        if ((type == OK && key == '\t') || (type == KEY_CODE_YES && key == KEY_BTAB)) {
-            if (input(ui) && ui->focus == MESSAGE_INPUT && type == OK) { set_focus(ui, EMOJI_BUTTON); continue; }
-            if (ui->focus == EMOJI_BUTTON) { set_focus(ui, type == KEY_CODE_YES ? MESSAGE_INPUT : COLS < 80 ? CHANNEL_LIST : SERVER_TABS); continue; }
-            if (COLS < 80) {
-                if (ui->focus == SERVER_TABS) set_focus(ui, CHANNEL_LIST);
-                else if (ui->focus == HISTORY_PANEL || ui->focus == MESSAGE_INPUT) set_focus(ui, CHANNEL_LIST);
-                else if (history_selected(ui->model) != ui->highlighted) open_channel(ui);
-                else set_focus(ui, HISTORY_PANEL);
-            } else {
-                int count = input(ui) ? 5 : 3;
-                set_focus(ui, type == KEY_CODE_YES ? (ui->focus + count - 1) % count : (ui->focus + 1) % count);
-            }
-            continue;
+        if ((type==OK && key=='\t') || (type==KEY_CODE_YES && key==KEY_BTAB)) {
+            int order[]={SERVER_TABS,LIST_BUTTONS,CHANNEL_LIST,HISTORY_PANEL,MESSAGE_INPUT,EMOJI_BUTTON};
+            int count=input(ui) ? 6 : 4, at=0;
+            while (at<count && order[at]!=ui->focus) ++at;
+            set_focus(ui,order[(at+(type==OK ? 1 : count-1))%count]); continue;
         }
         if (type == OK && key == 27) { set_focus(ui, ui->focus == EMOJI_BUTTON ? MESSAGE_INPUT : ui->focus == MESSAGE_INPUT ? HISTORY_PANEL : ui->focus == HISTORY_PANEL ? CHANNEL_LIST : HISTORY_PANEL); continue; }
         if (type == OK && key == 14 && ui->focus != SERVER_TABS && input(ui)) {
@@ -1106,8 +1263,10 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 y = e.y; x = e.x;
                 if (ui->list && wmouse_trafo(ui->list, &y, &x, false)) {
                     size_t index = y >= 1 ? (size_t)(ui->first_channel + y - 1) : SIZE_MAX;
-                    if (y < getmaxy(ui->list) - 1 && index < history_channel_count(ui->model)) {
-                        ui->highlighted = index; open_channel(ui);
+                    if (y==0 && x>=1 && x<19) {
+                        switch_list(ui,x>=11); set_focus(ui,LIST_BUTTONS); scope=DRAW_ALL;
+                    } else if (y < getmaxy(ui->list) - 1 && index < list_count(ui)) {
+                        ui->highlighted = index; open_channel(ui, false);
                     } else {
                         if (ui->focus == CHANNEL_LIST || ui->focus == SERVER_TABS) scope = DRAW_NAVIGATION;
                         set_focus(ui, CHANNEL_LIST);
@@ -1132,6 +1291,13 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             else if (type == KEY_CODE_YES && (key == KEY_LEFT || key == KEY_UP)) set_focus(ui, MESSAGE_INPUT);
             continue;
         }
+        if (ui->focus==LIST_BUTTONS) {
+            if (type==KEY_CODE_YES && (key==KEY_LEFT || key==KEY_RIGHT)) ui->list_button=key==KEY_RIGHT;
+            else if (enter || (type==OK && key==' ')) switch_list(ui,ui->list_button!=0);
+            else if (type==KEY_CODE_YES && key==KEY_DOWN) { switch_list(ui,ui->list_button!=0); set_focus(ui,CHANNEL_LIST); }
+            else if (type==KEY_CODE_YES && key==KEY_UP) set_focus(ui,SERVER_TABS);
+            scope=DRAW_ALL; continue;
+        }
         if (ui->focus != SERVER_TABS && input(ui) && type == OK && iswprint(key)) {
             if (ui->focus != MESSAGE_INPUT) set_focus(ui, MESSAGE_INPUT);
             else if (!mention_popup_open(ui->mentions)) scope = DRAW_EDITOR;
@@ -1153,8 +1319,9 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             } else if (enter) { int action = activate_tab(ui, ui->tab_cursor, selected); if (action >= 0) { result = action; break; } }
         } else if (ui->focus == CHANNEL_LIST) {
             scope = DRAW_NAVIGATION;
-            size_t count = history_channel_count(ui->model);
-            if (type == KEY_CODE_YES && (key == KEY_LEFT || (key == KEY_UP && !ui->highlighted))) set_focus(ui, SERVER_TABS);
+            size_t count = list_count(ui);
+            if (type==KEY_CODE_YES && key==KEY_LEFT) set_focus(ui,SERVER_TABS);
+            else if (type==KEY_CODE_YES && key==KEY_UP && !ui->highlighted) set_focus(ui,LIST_BUTTONS);
             else if (type == KEY_CODE_YES && key == KEY_UP && ui->highlighted) --ui->highlighted;
             else if (type == KEY_CODE_YES && key == KEY_DOWN && ui->highlighted + 1 < count) ++ui->highlighted;
             else if (type == KEY_CODE_YES && key == KEY_HOME) ui->highlighted = 0;
@@ -1163,7 +1330,9 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 ui->highlighted = ui->highlighted > (size_t)(LINES - CONTENT_Y - 5) ? ui->highlighted - (size_t)(LINES - CONTENT_Y - 5) : 0;
             else if (type == KEY_CODE_YES && key == KEY_NPAGE && count) {
                 ui->highlighted += (size_t)(LINES - CONTENT_Y - 5); if (ui->highlighted >= count) ui->highlighted = count - 1;
-            } else if (enter || (type == KEY_CODE_YES && key == KEY_RIGHT)) { scope = DRAW_ALL; open_channel(ui); }
+            } else if (enter || (type == KEY_CODE_YES && (key == KEY_RIGHT || key == KEY_F(4)))) {
+                scope = DRAW_ALL; open_channel(ui, type == KEY_CODE_YES && key == KEY_F(4));
+            }
         } else {
             if (type == KEY_CODE_YES && key == KEY_LEFT) set_focus(ui, CHANNEL_LIST);
             else if (type == KEY_CODE_YES && (key == KEY_PPAGE || key == KEY_UP || key == KEY_HOME)) {
@@ -1184,6 +1353,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         }
     }
 finished:
+    instances_visible(connections,NULL,NULL);
     text_paste_cancel(&ui->paste_data);
     mousemask(previous_mouse, NULL);
     ui_mouse_drag_tracking((previous_mouse & REPORT_MOUSE_POSITION) != 0);
@@ -1192,5 +1362,5 @@ finished:
     text_buffer *draft = send_editor_input(ui->editor);
     if (draft) { text_mentions(draft, NULL, NULL); text_icons(draft, NULL, NULL, NULL); }
     for (size_t i = 0; i < HISTORY_MESSAGE_LIMIT; ++i) release_layout(ui, &ui->layouts[i]);
-    media_view_suspend(ui->media); destroy_layout(ui); history_destroy(ui->model); g_hash_table_destroy(ui->layout_index); free(ui); touchwin(stdscr); return result;
+    media_view_suspend(ui->media); destroy_layout(ui); if (ui->model) history_active(ui->model,false); r8_modal_destroy(ui->r8); g_hash_table_destroy(ui->layout_index); free(ui); touchwin(stdscr); return result;
 }

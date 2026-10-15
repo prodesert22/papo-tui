@@ -6,6 +6,8 @@
 
 /* Calendar parsing/conversion belongs to libc; output is UTC epoch millis. */
 bool session_time_parse(const char *value, uint64_t *epoch_ms);
+/* Compare instants, preserving fractional seconds beyond millisecond precision. */
+bool session_time_compare(const char *left, const char *right, int *ordering);
 /* Refuse expired/insufficient lifetimes and overflowing monotonic deadlines. */
 bool session_time_deadline(uint64_t expires_ms, uint64_t wall_ms, uint64_t monotonic_ms,
                            uint64_t *deadline_ms);
