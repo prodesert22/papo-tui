@@ -10,10 +10,27 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-static const char *str(json_t *obj, const char *key)
+static const char *str(const json_t *obj, const char *key)
 {
     const char *s = json_string_value(json_object_get(obj, key));
     return s ? s : "";
+}
+bool message_same_author(const json_t *previous, const json_t *message)
+{
+    if (!json_is_object(previous) || !json_is_object(message) ||
+        strcmp(str(previous, "channel_id"), str(message, "channel_id"))) return false;
+    bool app = history_message_webhook(message);
+    if (app != history_message_webhook(previous)) return false;
+    if (app) {
+        if (strcmp(str(previous, "webhook_id"), str(message, "webhook_id"))) return false;
+        json_t *a = json_object_get(previous, "external_author"), *b = json_object_get(message, "external_author");
+        const char *fields[] = {"source", "id", "name", "avatar_url"};
+        for (size_t i = 0; i < sizeof(fields) / sizeof(fields[0]); ++i)
+            if (strcmp(str(a, fields[i]), str(b, fields[i]))) return false;
+        return true;
+    }
+    const char *id = str(message, "author_id");
+    return history_uuid(id) && !strcmp(str(previous, "author_id"), id);
 }
 uint64_t message_media_version(const json_t *entry)
 {
@@ -261,46 +278,50 @@ bool message_blocks_build_sized_mentions(message_blocks *b, json_t *m, const cha
                           mention_resolver resolver, void *resolver_context, const char *self)
 {
     return message_blocks_build_visual(b,m,author,reply,width,graphics,measure,measure_context,
-        resolver,resolver_context,self,NULL,NULL,NULL);
+                                       resolver,resolver_context,self,NULL,NULL,NULL,false);
 }
 bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *author,
                           const char *reply, int width, bool graphics,
                           message_media_measure measure, void *measure_context,
                           mention_resolver resolver, void *resolver_context, const char *self,
-                          text_icon_resolver icons, text_icon_painter painter, void *icon_context)
+                          text_icon_resolver icons, text_icon_painter painter, void *icon_context,
+                          bool continuation)
 {
     memset(b, 0, sizeof(*b)); b->measure = measure; b->measure_context = measure_context;
     b->resolver=resolver;b->resolver_context=resolver_context;
     b->icon_resolver=icons;b->icon_painter=painter;b->icon_context=icon_context;
     b->self_mention=mention_message_contains(m,self);
     if (width < 8) width = 8;
-    char label[1600], timestamp[192];
-    message_time_format(str(m, "created_at"), time(NULL), timestamp, sizeof(timestamp));
-    for (int i = 0; i < 3; ++i) if (!blank(b, false, false, false, 0)) goto error;
-    bool app = history_message_webhook(m);
-    int metadata = text_label(NULL, 0, 0, 200, timestamp) + (*str(m, "edited_at") ? 12 : 3) + (app ? 6 : 0);
-    int author_width = width - 7 - metadata;
-    if (author_width < 4) author_width = 4;
-    text_buffer name;
-    if (!text_decode(&name, author)) text_decode(&name, "usuário");
-    text_layout name_layout; text_measure(&name, author_width + 1, &name_layout);
-    size_t cut = name.length;
-    for (size_t k = 0; k + 1 < name_layout.count; ++k) if (name_layout.cells[k].row) { cut = name_layout.cells[k].start; break; }
-    if (cut < name.length && cut) name.data[cut - 1] = 0x2026;
-    name.length = cut; name.data[cut] = 0;
-    char author_text[TEXT_UTF8_BYTES]; if (!text_encode(&name, author_text)) goto error;
-    snprintf(label, sizeof(label), "%.*s%s · %s%s", 1024, author_text, app ? " [APP]" : "", timestamp, *str(m, "edited_at") ? " · editado" : "");
-    size_t header_end;
-    if (!column(b, 0, "header", label, 7, width - 7, true, false, 0, &header_end)) goto error;
-    text_buffer initials = {0}, decoded;
-    if (text_decode(&decoded, author)) {
-        for (size_t k = 0; k < decoded.length && initials.length < 2; ++k)
-            if ((k == 0 || decoded.data[k - 1] == ' ') && decoded.data[k] > ' ') initials.data[initials.length++] = decoded.data[k];
+    char label[1600];
+    if (!continuation) {
+        char timestamp[192];
+        message_time_format(str(m, "created_at"), time(NULL), timestamp, sizeof(timestamp));
+        for (int i = 0; i < 3; ++i) if (!blank(b, false, false, false, 0)) goto error;
+        bool app = history_message_webhook(m);
+        int metadata = text_label(NULL, 0, 0, 200, timestamp) + (*str(m, "edited_at") ? 12 : 3) + (app ? 6 : 0);
+        int author_width = width - 7 - metadata;
+        if (author_width < 4) author_width = 4;
+        text_buffer name;
+        if (!text_decode(&name, author)) text_decode(&name, "usuário");
+        text_layout name_layout; text_measure(&name, author_width + 1, &name_layout);
+        size_t cut = name.length;
+        for (size_t k = 0; k + 1 < name_layout.count; ++k) if (name_layout.cells[k].row) { cut = name_layout.cells[k].start; break; }
+        if (cut < name.length && cut) name.data[cut - 1] = 0x2026;
+        name.length = cut; name.data[cut] = 0;
+        char author_text[TEXT_UTF8_BYTES]; if (!text_encode(&name, author_text)) goto error;
+        snprintf(label, sizeof(label), "%.*s%s · %s%s", 1024, author_text, app ? " [APP]" : "", timestamp, *str(m, "edited_at") ? " · editado" : "");
+        size_t header_end;
+        if (!column(b, 0, "header", label, 7, width - 7, true, false, 0, &header_end)) goto error;
+        text_buffer initials = {0}, decoded;
+        if (text_decode(&decoded, author)) {
+            for (size_t k = 0; k < decoded.length && initials.length < 2; ++k)
+                if ((k == 0 || decoded.data[k - 1] == ' ') && decoded.data[k] > ' ') initials.data[initials.length++] = decoded.data[k];
+        }
+        char initial_text[TEXT_UTF8_BYTES];
+        if (!initials.length) { initials.data[0] = '?'; initials.length = 1; }
+        if (!text_encode(&initials, initial_text) || !column(b, 1, "header:avatar", initial_text, 1, 5, false, false, 0, &header_end)) goto error;
+        for (size_t i = 0; i < b->count; ++i) b->rows[i].header = true;
     }
-    char initial_text[TEXT_UTF8_BYTES];
-    if (!initials.length) { initials.data[0] = '?'; initials.length = 1; }
-    if (!text_encode(&initials, initial_text) || !column(b, 1, "header:avatar", initial_text, 1, 5, false, false, 0, &header_end)) goto error;
-    for (size_t i = 0; i < b->count; ++i) b->rows[i].header = true;
     if (*str(m, "reply_to") && !labeled(b, "reply", "Resposta: ", reply, width, false, false, 0)) goto error;
     if (*str(m, "content") && !text(b, "content", str(m, "content"), width, false, false, 0)) goto error;
     size_t index; json_t *item;
@@ -427,6 +448,11 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
         }
         if (!blank(b, true, false, true, color)) goto error;
         for (size_t r = card_start; r < b->count; ++r) b->rows[r].card_width = card_width;
+    }
+    if (continuation && *str(m, "edited_at")) {
+        size_t marker = b->count;
+        if (!text(b, "edited", "editado", width, false, false, 0)) goto error;
+        style(b, marker, true, false);
     }
     if (!blank(b, false, false, false, 0)) goto error;
     return true;

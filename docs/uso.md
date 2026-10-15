@@ -368,6 +368,14 @@ e hora, seguindo `LC_TIME` e o fuso local. O indicador **editado** substitui a
 antiga linha separada de edição. Nomes longos são abreviados e metadados se
 ajustam em telas estreitas.
 
+Mensagens consecutivas do mesmo autor ou webhook compartilham um único
+cabeçalho com nome, avatar, data e hora. As seguintes mostram seu conteúdo,
+incluindo anexos, embeds e o indicador de edição quando aplicável, sem espaços
+extras entre elas. Uma mudança de autor, webhook ou identidade externa
+(origem, ID, nome ou avatar) inicia outro grupo. O agrupamento acompanha a
+ordem do histórico, sem limite de tempo entre mensagens consecutivas. A
+primeira mensagem carregada sempre mostra o cabeçalho.
+
 Mensagens recebidas por webhook mostram o nome de exibição informado pelo
 backend, seguido de **[APP]**, e o avatar do app. A atribuição externa fornecida
 para uma mensagem é preservada. Sem nome disponível, aparece **Webhook**; sem

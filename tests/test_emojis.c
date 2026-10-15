@@ -105,7 +105,7 @@ static void time_and_header(void)
     json_t *m = json_pack("{s:s,s:s,s:s,s:s,s:s}", "id", id, "content", "😄 :cat:",
         "created_at", "2026-10-14T12:34:56Z", "edited_at", "2026-10-14T12:35:56Z", "author_id", id);
     message_blocks b;
-    assert(message_blocks_build_visual(&b,m,"Author Name","",60,true,NULL,NULL,NULL,NULL,NULL,resolve,NULL,NULL));
+    assert(message_blocks_build_visual(&b,m,"Author Name","",60,true,NULL,NULL,NULL,NULL,NULL,resolve,NULL,NULL,false));
     assert(b.rows[0].header && b.rows[1].header && b.rows[2].header);
     assert(strstr(b.rows[0].segments[0].text,"editado") && b.rows[0].segments[0].x == 7);
     assert(!b.rows[3].header && b.rows[3].segments[0].x == 0 && b.rows[3].icon_count == 2);
@@ -114,7 +114,7 @@ static void time_and_header(void)
     json_object_set_new(m, "author_id", json_null());
     json_object_set_new(m, "external_author", json_pack("{s:s}", "name", "Deploy App"));
     assert(history_message_webhook(m) && !strcmp(history_message_author(NULL, m), "Deploy App"));
-    assert(message_blocks_build_visual(&b,m,history_message_author(NULL,m),"",60,true,NULL,NULL,NULL,NULL,NULL,resolve,NULL,NULL));
+    assert(message_blocks_build_visual(&b,m,history_message_author(NULL,m),"",60,true,NULL,NULL,NULL,NULL,NULL,resolve,NULL,NULL,false));
     assert(strstr(b.rows[0].segments[0].text, "Deploy App [APP]"));
     message_blocks_free(&b);
     json_object_del(m, "external_author");
@@ -131,8 +131,58 @@ static void font_render(void)
     assert(image.data && image.columns == 2 && image.rows == 1 && image.id == 77);
     graphics_image_free(&image);
 }
+static void grouping(void)
+{
+    json_t *a = json_pack("{s:s,s:s,s:s,s:s,s:s}", "id", id, "channel_id", id,
+        "author_id", id, "content", "First", "created_at", "2026-10-14T12:34:56Z");
+    json_t *b = json_deep_copy(a); assert(a && b);
+    assert(!message_same_author(NULL, b) && message_same_author(a, b));
+    const char *other = "00000000-0000-4000-8000-000000000002";
+    json_object_set_new(b, "author_id", json_string(other)); assert(!message_same_author(a, b));
+    json_object_set_new(b, "author_id", json_string(id));
+    json_object_set_new(b, "channel_id", json_string(other)); assert(!message_same_author(a, b));
+    json_object_set_new(b, "channel_id", json_string(id));
+    json_object_set_new(b, "created_at", json_string("2026-10-15T12:34:56Z"));
+    assert(message_same_author(a, b));
+    json_object_set_new(a, "author_id", json_null()); json_object_set_new(b, "author_id", json_null());
+    assert(!message_same_author(a, b));
+    json_object_set_new(a, "webhook_id", json_string(id)); assert(!message_same_author(a, b));
+    json_object_set_new(b, "webhook_id", json_string(id)); assert(message_same_author(a, b));
+    json_t *external = json_pack("{s:s,s:s,s:s,s:s}", "source", "discord", "id", "external-id",
+                                "name", "App", "avatar_url", "https://example.invalid/avatar.png");
+    json_object_set(a, "external_author", external);
+    json_object_set_new(b, "external_author", json_deep_copy(external));
+    assert(message_same_author(a, b));
+    const char *fields[] = {"source", "id", "name", "avatar_url"};
+    for (size_t i = 0; i < sizeof(fields) / sizeof(fields[0]); ++i) {
+        json_object_set_new(json_object_get(b, "external_author"), fields[i], json_string("different"));
+        assert(!message_same_author(a, b));
+        json_object_set_new(b, "external_author", json_deep_copy(external));
+    }
+    json_object_set_new(b, "edited_at", json_string("2026-10-15T12:35:56Z"));
+    message_blocks blocks;
+    assert(message_blocks_build_visual(&blocks,b,"App","",60,true,NULL,NULL,NULL,NULL,NULL,resolve,NULL,NULL,true));
+    assert(!blocks.rows[0].header && !strcmp(blocks.rows[0].segments[0].key, "content"));
+    assert(blocks.rows[0].segments[0].x == 0);
+    assert(!strcmp(blocks.rows[1].segments[0].key, "edited") && blocks.rows[1].segments[0].muted);
+    for (size_t i = 0; i < blocks.count; ++i) assert(!blocks.rows[i].header);
+    message_blocks_free(&blocks);
+    json_object_set_new(b, "attachments", json_pack("[{s:s,s:s,s:s}]", "id", other,
+                        "mime_type", "image/png", "original_file_name", "picture.png"));
+    json_object_set_new(b, "embeds", json_pack("[{s:s,s:s}]", "id", other, "title", "Preview"));
+    assert(message_blocks_build_visual(&blocks,b,"App","",60,true,NULL,NULL,NULL,NULL,NULL,resolve,NULL,NULL,true));
+    assert(blocks.media_count == 1);
+    bool preview = false;
+    for (size_t i = 0; i < blocks.count; ++i) {
+        assert(!blocks.rows[i].header);
+        for (int j = 0; j < blocks.rows[i].count; ++j)
+            preview |= strstr(blocks.rows[i].segments[j].text, "Preview") != NULL;
+    }
+    assert(preview);
+    message_blocks_free(&blocks); json_decref(external); json_decref(a); json_decref(b);
+}
 int main(void)
 {
     assert(setlocale(LC_ALL,"C.UTF-8")); init_graphemebreak();
-    sequences(); assets(); time_and_header(); font_render(); puts("Emoji, assets and header checks passed"); return 0;
+    sequences(); assets(); time_and_header(); grouping(); font_render(); puts("Emoji, assets, grouping and header checks passed"); return 0;
 }

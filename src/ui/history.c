@@ -169,17 +169,21 @@ static int walk(view *ui, int first, bool paint, bool save, int *anchor)
         if (*str(m, "reply_to")) for (size_t j = 0; j < history_message_count(ui->model); ++j)
             if (!strcmp(str(m, "reply_to"), str(history_message(ui->model, j), "id"))) { reply = str(m, "reply_to"); break; }
         message_blocks blocks;
+        bool continuation = i && message_same_author(history_message(ui->model, i - 1), m);
         if (!message_blocks_build_visual(&blocks, m, history_message_author(ui->model, m), reply, width,
                                   graphics_terminal_get().supported && ui->media, media_view_measure, ui->media,
                                   history_mention_name, ui->model,
-                                  auth_user_id(ui->connections->items[ui->active_tab].auth), icons_resolve, icons_paint, ui->icons)) continue;
+                                  auth_user_id(ui->connections->items[ui->active_tab].auth), icons_resolve, icons_paint, ui->icons,
+                                  continuation)) continue;
         bool anchored = !strcmp(ui->anchor, str(m, "id"));
         if (anchored) *anchor = total;
         bool *offered = paint && ui->media ? calloc(blocks.media_count + 1, sizeof(*offered)) : NULL;
         bool avatar_offered = false;
         size_t rows = blocks.count;
-        /* At minimum height, retain the final message instead of its spacing. */
-        if (ui->visible == 1 && i + 1 == history_message_count(ui->model) && rows &&
+        bool followed = message_same_author(m, history_message(ui->model, i + 1));
+        /* Keep one separator between groups; continuations flow directly into
+         * each other. At minimum height prefer content over the final gap. */
+        if ((followed || (ui->visible == 1 && i + 1 == history_message_count(ui->model))) && rows &&
             !blocks.rows[rows - 1].count && !blocks.rows[rows - 1].media_count &&
             !blocks.rows[rows - 1].card) --rows;
         for (size_t row = 0; row < rows; ++row) {

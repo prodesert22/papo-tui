@@ -507,6 +507,9 @@ nas mensagens antigas, data e hora seguem o formato e o fuso do sistema. O
 conteúdo abaixo ocupa a largura inteira. Perfis são consultados em lotes para
 autores visíveis, respeitando a sessão e o limite global de requisições.
 Imagens retangulares usam recorte central proporcional para preencher o avatar.
+Mensagens consecutivas do mesmo autor compartilham nome, avatar e horário;
+as seguintes mostram apenas o conteúdo. Uma mudança de autor ou de identidade
+externa do webhook inicia outro grupo. Mensagens editadas mantêm o indicador.
 
 Mensagens de webhook mostram o nome informado pelo app, a tag **[APP]** e seu
 avatar no cabeçalho. Avatares públicos são carregados sem cookies de sessão;

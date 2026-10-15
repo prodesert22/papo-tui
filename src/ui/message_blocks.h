@@ -61,6 +61,9 @@ typedef struct {
     void *icon_context;
 } message_blocks;
 uint64_t message_media_version(const json_t *entry);
+/* Adjacent messages can share a header only within the same channel and
+ * author identity. Webhook display overrides remain distinct. */
+bool message_same_author(const json_t *previous, const json_t *message);
 bool message_blocks_build(message_blocks *out, json_t *message, const char *author,
                           const char *reply, int width, bool graphics);
 bool message_blocks_build_sized(message_blocks *out, json_t *message, const char *author,
@@ -78,7 +81,8 @@ bool message_blocks_build_visual(message_blocks *out, json_t *message, const cha
                           const char *reply, int width, bool graphics,
                           message_media_measure measure, void *measure_context,
                           mention_resolver resolver, void *resolver_context, const char *self,
-                          text_icon_resolver icons, text_icon_painter painter, void *icon_context);
+                          text_icon_resolver icons, text_icon_painter painter, void *icon_context,
+                          bool continuation);
 void message_colors_begin(void);
 void message_row_draw(WINDOW *window, const message_row *row, int y, int x,
                       int width, int pair, int accent);

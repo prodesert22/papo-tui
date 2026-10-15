@@ -5,7 +5,7 @@ import time
 import unittest
 from urllib.parse import urlsplit, parse_qs
 import test_media_terminal as media_tests
-from history_mock import HistoryMock, CHANNEL, uuid
+from history_mock import HistoryMock, CHANNEL, STAMP, uuid
 from realtime_mock import RealtimeMock
 from test_terminal import editor_region
 
@@ -267,6 +267,7 @@ class EmojiTerminal(unittest.TestCase):
             t=self.open(s,protocol='kitty')
             try:
                 self.wait(t,'Build Bot [APP]')
+                self.assertEqual(sum('Build Bot [APP]' in row for row in t.screen.display),1)
                 self.assertNotIn('Autor indisponível','\n'.join(t.screen.display))
                 def variants():
                     frames={}
@@ -284,6 +285,85 @@ class EmojiTerminal(unittest.TestCase):
                 t.click(8,4);self.wait(t,'Conteúdo do outro canal')
                 before=len(t.stream.kitty_frames);t.read(.3)
                 self.assertFalse(any(h[b'i'] in app_ids for h,p in t.stream.kitty_frames[before:]))
+            finally:self.assertTrue(t.close())
+
+    def test_consecutive_author_messages_share_one_header_and_avatar(self):
+        with self.server(count=3,realtime=True) as s:
+            for i,m in enumerate(s.messages):m.update(author_id=uuid(21),content=f'Grupo {i+1}')
+            t=self.open(s,protocol='kitty')
+            try:
+                t.resize(40,100);self.wait(t,'Grupo 3');self.wait(t,'Apelido')
+                self.until(t,lambda:bool(s.peers))
+                self.until(t,lambda:any(h.get(b's')==b'48' and h.get(b'v')==b'48' for h,p in t.stream.kitty_frames))
+                avatar_ids={h[b'i'] for h,p in t.stream.kitty_frames if h.get(b's')==b'48' and h.get(b'v')==b'48'}
+                self.assertEqual(len({p[b'p'] for p in t.stream.placements if p[b'i'] in avatar_ids}),1)
+                self.assertEqual(sum('Apelido' in row for row in t.screen.display),1)
+                positions=[next(i for i,row in enumerate(t.screen.display) if f'Grupo {n}' in row) for n in (1,2,3)]
+                self.assertEqual(positions,list(range(positions[0],positions[0]+3)))
+                event=dict(s.message(4),type='message',author_id=uuid(21),content='Grupo 4',
+                           created_at=datetime.now(timezone.utc).isoformat())
+                s.emit(event);self.wait(t,'Grupo 4')
+                self.assertEqual(sum('Apelido' in row for row in t.screen.display),1)
+                s.emit({'type':'message_edit','id':event['id'],'channel_id':CHANNEL,'content':'Grupo 4 editado',
+                        'edited_at':datetime.now(timezone.utc).isoformat()})
+                self.wait(t,'Grupo 4 editado')
+                self.until(t,lambda:sum('editado' in row for row in t.screen.display)==2)
+                self.assertEqual(sum('Apelido' in row for row in t.screen.display),1)
+                event=dict(s.message(5),type='message',author_id=uuid(23),content='Outro autor',
+                           created_at=datetime.now(timezone.utc).isoformat())
+                s.emit(event);self.wait(t,'Outro autor');self.wait(t,'Autor 7')
+                self.assertEqual(sum('Apelido' in row for row in t.screen.display),1)
+            finally:self.assertTrue(t.close())
+
+    def test_deleting_intervening_author_joins_neighboring_groups(self):
+        with self.server(count=3,realtime=True) as s:
+            for i,m in enumerate(s.messages):m.update(author_id=uuid(23) if i==1 else uuid(21),content=f'Bloco {i+1}')
+            t=self.open(s,protocol='kitty')
+            try:
+                t.resize(40,100);self.wait(t,'Bloco 1');self.wait(t,'Bloco 3')
+                self.until(t,lambda:sum('Apelido' in row for row in t.screen.display)==2)
+                s.emit({'type':'message_delete','id':s.messages[1]['id'],'channel_id':CHANNEL})
+                self.until(t,lambda:'Bloco 2' not in '\n'.join(t.screen.display))
+                self.assertEqual(sum('Apelido' in row for row in t.screen.display),1)
+                rows=[i for i,row in enumerate(t.screen.display) if 'Bloco 1' in row or 'Bloco 3' in row]
+                self.assertEqual(rows[1]-rows[0],1)
+            finally:self.assertTrue(t.close())
+
+    def test_webhook_display_identity_change_starts_another_group(self):
+        with self.server(count=3) as s:
+            for i,m in enumerate(s.messages):
+                m.update(author_id=None,webhook_id=uuid(900),content=f'App texto {i+1}',
+                         external_author={'source':'webhook','id':'same-id','name':'App A' if i<2 else 'App B'})
+            t=self.open(s,protocol='kitty')
+            try:
+                t.resize(40,100);self.wait(t,'App texto 3')
+                self.assertEqual(sum('App A [APP]' in row for row in t.screen.display),1)
+                self.assertEqual(sum('App B [APP]' in row for row in t.screen.display),1)
+                rows=[next(i for i,row in enumerate(t.screen.display) if f'App texto {n}' in row) for n in (1,2,3)]
+                self.assertEqual(rows[1]-rows[0],1);self.assertGreater(rows[2]-rows[1],3)
+                self.assertFalse(any('/users/profile_batch' in r[1] for r in s.requests))
+            finally:self.assertTrue(t.close())
+
+    def test_grouping_survives_prepend_scroll_and_resize(self):
+        with self.server(count=130) as s:
+            for i,m in enumerate(s.messages):m.update(author_id=uuid(21),content=f'Agrupada {i+1:03d}',created_at=STAMP)
+            t=self.open(s,protocol='kitty')
+            try:
+                self.wait(t,'Agrupada 130');t.send('\x1bOH');self.wait(t,'Agrupada 031');self.wait(t,'Apelido')
+                self.assertEqual(sum('Apelido' in row for row in t.screen.display),1)
+                # Wait for the visible header's profile request to finish;
+                # pagination intentionally waits while a history read is busy.
+                self.until(t,lambda:any(h.get(b's')==b'48' and h.get(b'v')==b'48' for h,p in t.stream.kitty_frames))
+                t.send('\x1bOA');self.until(t,lambda:s.older_calls==1)
+                self.until(t,lambda:'Agrupada 031' in t.screen.display[8])
+                self.assertNotIn('Apelido','\n'.join(t.screen.display[8:15]))
+                t.send('\x1bOH');self.wait(t,'Agrupada 001');self.wait(t,'Apelido')
+                self.assertEqual(sum('Apelido' in row for row in t.screen.display),1)
+                t.resize(30,90);self.wait(t,'Agrupada 001')
+                self.assertEqual(sum('Apelido' in row for row in t.screen.display),1)
+                t.send('\x1bOF');self.wait(t,'Agrupada 130')
+                self.assertEqual(s.older_calls,1)
+                self.assertFalse(any('/channels/'+uuid(11)+'/messages' in r[1] for r in s.requests))
             finally:self.assertTrue(t.close())
 
     def test_webhook_attribution_arrives_over_websocket(self):
