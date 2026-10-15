@@ -911,7 +911,7 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
         if (added && contains(h->messages, id) && !h->replaying) ++h->insertions;
         h->want_authors = true;
     }
-    if (active && edit) h->want_authors = true;
+    if (active && (edit || embeds)) h->want_authors = true;
     return true;
 invalid:
     event_status(h, "Evento de tempo real inválido ignorado.", "Evento inválido"); return false;
@@ -999,6 +999,22 @@ static bool request_messages(history *h)
     } else snprintf(path, sizeof(path), "/channels/%s/messages?order=desc", id);
     return auth_get_json(h->auth, path);
 }
+typedef struct {
+    history *model;
+    json_t *ids, *seen;
+    bool ok;
+} mention_batch;
+static void collect_mention(void *context, const mention_range *range)
+{
+    mention_batch *batch = context;
+    history *h = batch->model;
+    const char *id = range->id;
+    if (!batch->ok || user_resolved(h, id) || json_object_get(h->queried, id) ||
+        json_object_get(batch->seen, id) || json_array_size(batch->ids) >= 1000 ||
+        json_object_size(h->queried) + json_array_size(batch->ids) >= 10000) return;
+    batch->ok = !json_array_append_new(batch->ids, json_string(id)) &&
+                !json_object_set_new(batch->seen, id, json_true());
+}
 static bool request_authors(history *h)
 {
     json_t *ids = json_array(), *seen = json_object();
@@ -1028,17 +1044,9 @@ static bool request_authors(history *h)
             json_object_size(h->queried) + json_array_size(ids) < 10000) {
             ok &= !json_array_append_new(ids, json_string(id)) && !json_object_set_new(seen, id, json_true());
         }
-        mention_range r;
-        size_t at = 0;
-        while (mention_next(str(m, "content"), at, &r)) {
-            at = r.end;
-            if (user_resolved(h, r.id) || json_object_get(h->queried, r.id) ||
-                json_object_get(seen, r.id) || json_array_size(ids) >= 1000 ||
-                json_object_size(h->queried) + json_array_size(ids) >= 10000)
-                continue;
-            ok &= !json_array_append_new(ids, json_string(r.id)) &&
-                  !json_object_set_new(seen, r.id, json_true());
-        }
+        mention_batch batch = {h, ids, seen, ok};
+        mention_visit_message(m, collect_mention, &batch);
+        ok = batch.ok;
     }
     if (h->r8) {
         size_t total=inbox_notification_count(h->inbox)+inbox_event_count(h->inbox);

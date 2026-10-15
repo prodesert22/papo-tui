@@ -281,8 +281,10 @@ aberto escolhe a menção; depois de fechá-lo, Enter envia a mensagem.
 
 O editor mostra o nome, mantendo a identidade do usuário no envio. Uma menção
 confirmada é uma unidade: setas a atravessam e Backspace/Delete a removem por
-inteiro. Todas as menções aparecem em laranja; mensagens que mencionam sua
-conta recebem uma barra vertical à esquerda. Sem cores, o destaque usa negrito.
+inteiro. Todas as menções aparecem em laranja, inclusive nos títulos,
+descrições, autor, rodapé e campos dos embeds, independentemente da cor do
+card. Mensagens que mencionam sua conta, também nos embeds, recebem uma
+barra vertical à esquerda. Sem cores, o destaque usa negrito.
 As mensagens continuam chegando pelo WebSocket enquanto o cartão está aberto.
 
 O cartão mostra primeiro quem enviou mensagens mais recentemente no canal

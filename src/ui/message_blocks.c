@@ -43,8 +43,10 @@ static bool blank(message_blocks *b, bool card, bool top, bool bottom, unsigned 
 static void card_measure(const text_buffer *buffer, int width, text_layout *layout)
 {
     char breaks[TEXT_LIMIT];
+    text_buffer visible;
+    text_project(buffer, &visible);
     init_linebreak();
-    set_linebreaks_utf32(buffer->data, buffer->length, NULL, breaks);
+    set_linebreaks_utf32(visible.data, visible.length, NULL, breaks);
     text_measure(buffer, TEXT_LIMIT * 2 + 1, layout);
     size_t count = layout->count - 1;
     int row = 0, column = 0;
@@ -54,7 +56,7 @@ static void card_measure(const text_buffer *buffer, int width, text_layout *layo
         while (end < count && !layout->cells[end].newline && column + layout->cells[end].width <= width) {
             const text_cell *cell = &layout->cells[end++];
             column += cell->width;
-            if (breaks[cell->end - 1] == LINEBREAK_ALLOWBREAK) boundary = end;
+            if (breaks[cell->display_end - 1] == LINEBREAK_ALLOWBREAK) boundary = end;
         }
         if (end < count && !layout->cells[end].newline && boundary > start) end = boundary;
         if (end == start && !layout->cells[end].newline) ++end;
@@ -84,7 +86,9 @@ static bool column(message_blocks *b, size_t start, const char *key, const char 
         text_buffer buffer;
         text_layout layout;
         const char *begin=p;
-        bool styled = b->resolver && !strcmp(key, "content");
+        mention_range first_mention;
+        bool styled = b->resolver && (card || !strcmp(key, "content")) &&
+                      mention_next(value, 0, &first_mention);
         if (!text_decode_chunk(&buffer, &p)) return false;
         if(styled && *p) {
             mention_range range;size_t from=0,cut=(size_t)(p-begin);
@@ -244,7 +248,7 @@ bool message_blocks_build_sized_mentions(message_blocks *b, json_t *m, const cha
 {
     memset(b, 0, sizeof(*b)); b->measure = measure; b->measure_context = measure_context;
     b->resolver=resolver;b->resolver_context=resolver_context;
-    b->self_mention=mention_contains(str(m,"content"),self);
+    b->self_mention=mention_message_contains(m,self);
     if (width < 8) width = 8;
     char label[1600];
     snprintf(label, sizeof(label), "%s · %s%s", str(m, "created_at"), author, *str(m, "edited_at") ? " · editada" : "");
@@ -439,7 +443,8 @@ void message_row_draw(WINDOW *w, const message_row *row, int y, int x, int width
             text_buffer buffer; text_layout layout;
             if(text_decode(&buffer,s->text)) {
                 text_measure(&buffer,s->width,&layout);
-                text_draw_styled(w,&buffer,&layout,s->highlight,s->highlight_length,0,1,y,x+s->x,text_pair,accent);
+                text_draw_styled(w,&buffer,&layout,s->highlight,s->highlight_length,0,1,y,x+s->x,text_pair,
+                                 row->card ? EMBED_ACCENT : accent);
             }
         } else text_label(w, y, x + s->x, s->width, s->text);
     }

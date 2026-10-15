@@ -222,6 +222,47 @@ class Mentions(unittest.TestCase):
                 self.wait(t,'Sem menção');self.assertNotIn('@josé','\n'.join(t.screen.display))
                 self.assertEqual(sum('/messages' in r[1] for r in s.requests if r[0]=='GET'),1)
             finally:self.assertTrue(t.close())
+    def test_embed_mentions_resolve_highlight_and_follow_live_updates(self):
+        with MentionServer(2) as s:
+            t = self.open(s)
+            token = f'@mention(<@{uuid(1000)}>)'
+            embed = dict(title='Título ' + token, description='Descrição ' + token,
+                         site_name='Site ' + token, color='#00b0f4',
+                         author={'name': 'Autor ' + token}, footer={'text': 'Rodapé ' + token},
+                         fields=[{'name': 'Campo ' + token, 'value': 'Valor ' + token, 'inline': True},
+                                 {'name': 'Conta', 'value': f'@mention(<@{uuid(1)}>)', 'inline': True}])
+            try:
+                t.resize(45, 120)
+                m = dict(s.message(1), content='', embeds=[embed])
+                s.emit(dict(m, type='message'))
+                self.wait(t, '@Álice'); self.wait(t, '@josé'); t.read(.2)
+                screen = '\n'.join(t.screen.display)
+                self.assertEqual(screen.count('@Álice'), 7)
+                self.assertNotIn('@mention(', screen)
+                self.assertEqual(s.user_reads, 0)
+                mentions = [(y, x) for y, line in enumerate(t.screen.display)
+                            for x in range(len(line)) if line.startswith('@Álice', x)]
+                first_y, first_x = mentions[0]
+                orange = t.screen.buffer[first_y][first_x].fg
+                for y, x in mentions:
+                    for k in range(len('@Álice')):
+                        cell = t.screen.buffer[y][x + k]
+                        self.assertEqual(cell.fg, orange)
+                        self.assertTrue(cell.bold)
+                    bar_x = t.screen.display[y].index('▎')
+                    self.assertNotEqual(orange, t.screen.buffer[y][bar_x].fg)
+                    self.assertEqual(t.screen.buffer[y][x].bg, t.screen.buffer[y][bar_x].bg)
+                title_y = next(y for y, line in enumerate(t.screen.display) if 'Título ' in line)
+                title_x = t.screen.display[title_y].index('Título ')
+                self.assertTrue(t.screen.buffer[title_y][title_x].bold)
+                self.assertTrue(any(t.screen.buffer[y][26].data in ('│', 'x') for y in range(8, 20)))
+                s.emit(dict(type='message_embeds_update', channel_id=CHANNEL, message_id=m['id'],
+                            embeds=[{'description': f'Atualizado @mention(<@{uuid(1001)}>)'}]))
+                self.wait(t, 'Atualizado @bob')
+                self.assertNotIn('@Álice', '\n'.join(t.screen.display))
+                self.assertEqual(sum('/messages' in r[1] for r in s.requests if r[0] == 'GET'), 1)
+            finally: self.assertTrue(t.close())
+
     def test_picker_keeps_websocket_and_draft_alive(self):
         with MentionServer(2) as s:
             t=self.open(s)
@@ -272,6 +313,8 @@ class Mentions(unittest.TestCase):
             try:
                 for n in (1, 2):
                     message = dict(s.message(n), content=f'@mention(<@{missing}>) chegada {n}')
+                    if n == 2:
+                        message.update(content='', embeds=[{'description': f'@mention(<@{missing}>) chegada {n}'}])
                     s.emit(dict(message, type='message')); self.wait(t, f'chegada {n}')
                     t.read(.3)
                 self.assertIn('@usuário indisponível', '\n'.join(t.screen.display))
