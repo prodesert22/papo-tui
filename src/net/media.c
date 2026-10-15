@@ -21,7 +21,7 @@ struct media_download {
     uint64_t generation;
     unsigned retry_after;
     long status;
-    bool attached, overflow, video;
+    bool attached, overflow, video, public_avatar;
     const char *error;
 };
 int media_download_temp(media_download *m, char **path)
@@ -96,17 +96,14 @@ static size_t header(char *data, size_t size, size_t count, void *context)
         m->retry_after = net_rate_retry_after(data + 12, bytes - 12);
     return bytes;
 }
-bool media_download_request(media_download *m, auth_media_kind kind, const char *id, bool video)
+static bool begin_request(media_download *m, CURL *easy, auth_media_kind kind, bool video, bool avatar)
 {
-    if (!m || !auth_has_session(m->auth) || !id || strlen(id) != 36) return false;
     media_download_cancel(m);
-    /* The factory validates both UUID and endpoint kind before any dispatch. */
-    m->easy = auth_media_easy(m->auth, kind, id);
+    m->easy = easy;
     if (!m->easy) return false;
-    m->kind = kind; m->video = video;
-    snprintf(m->id, sizeof(m->id), "%s", id);
+    m->kind = kind; m->video = video; m->public_avatar = avatar;
     m->generation = auth_context_generation(m->auth);
-    m->limit = kind == AUTH_MEDIA_EMBED ? MEDIA_EMBED_LIMIT : video ? MEDIA_VIDEO_LIMIT : MEDIA_IMAGE_LIMIT;
+    m->limit = avatar ? 2U * 1024U * 1024U : kind == AUTH_MEDIA_EMBED ? MEDIA_EMBED_LIMIT : video ? MEDIA_VIDEO_LIMIT : MEDIA_IMAGE_LIMIT;
     m->overflow = false; m->status = 0; m->mime[0] = 0; m->error = NULL;
     int fd = media_download_temp(m, &m->path);
     if (fd < 0 || !(m->file = fdopen(fd, "wb"))) {
@@ -122,6 +119,16 @@ bool media_download_request(media_download *m, auth_media_kind kind, const char 
     }
     m->state = MEDIA_WAITING;
     return true;
+}
+bool media_download_request(media_download *m, auth_media_kind kind, const char *id, bool video)
+{
+    if (!m || !auth_has_session(m->auth) || !id || strlen(id) != 36) return false;
+    return begin_request(m, auth_media_easy(m->auth, kind, id), kind, video, false);
+}
+bool media_download_avatar_request(media_download *m, const char *reference)
+{
+    if (!m) return false;
+    return begin_request(m, auth_avatar_easy(m->auth, reference), AUTH_MEDIA_ATTACHMENT, false, true);
 }
 static void finish(media_download *m, CURLcode result)
 {
@@ -141,7 +148,7 @@ static void finish(media_download *m, CURLcode result)
     if (m->status == 429) { net_rate_defer(m->retry_after); m->error = "Limite de requisições. Aguarde e tente novamente."; }
     else if (m->status == 401) {
         m->error = "Sessão rejeitada. Aguarde a revalidação e tente novamente.";
-        if (!auth_busy(m->auth)) auth_refresh(m->auth);
+        if (!m->public_avatar && !auth_busy(m->auth)) auth_refresh(m->auth);
     } else if (m->status == 403 || m->status == 404) m->error = "Mídia indisponível ou sem permissão.";
     else if (m->overflow || result == CURLE_FILESIZE_EXCEEDED) m->error = "Mídia excede o limite de tamanho.";
     else if (result == CURLE_PEER_FAILED_VERIFICATION) m->error = "Certificado TLS da mídia não é confiável.";

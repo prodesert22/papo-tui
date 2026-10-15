@@ -102,8 +102,8 @@ bool image_decode_file(const image_decode_request *j, graphics_image *out, anima
         if (!frames->count) {
             int w = j->width, h = j->height;
             if (w < 1 || h < 1 || w > 640 || h > 360) goto done;
-            double ratio = fmin((double)w / frame->width, (double)h / frame->height);
-            if (j->fit_side > 0) ratio = fmin(ratio, fmin((double)j->fit_side / frame->width, (double)j->fit_side / frame->height));
+            double ratio = j->cover ? fmax((double)w / frame->width, (double)h / frame->height) :
+                                      fmin((double)w / frame->width, (double)h / frame->height);
             if (j->native && ratio > 1) ratio = 1;
             int sw = (int)(frame->width * ratio), sh = (int)(frame->height * ratio);
             if (sw < 1) sw = 1;
@@ -119,8 +119,8 @@ bool image_decode_file(const image_decode_request *j, graphics_image *out, anima
         if (frame->width != frames->source_width || frame->height != frames->source_height ||
             frames->count == ANIMATION_FRAMES) goto done;
         int sw = 0, sh = 0;
-        double ratio = fmin((double)j->width / frame->width, (double)j->height / frame->height);
-        if (j->fit_side > 0) ratio = fmin(ratio, fmin((double)j->fit_side / frame->width, (double)j->fit_side / frame->height));
+        double ratio = j->cover ? fmax((double)j->width / frame->width, (double)j->height / frame->height) :
+                                  fmin((double)j->width / frame->width, (double)j->height / frame->height);
         if (j->native && ratio > 1) ratio = 1;
         sw = (int)(frame->width * ratio); sh = (int)(frame->height * ratio);
         if (sw < 1) sw = 1;

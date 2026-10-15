@@ -16,6 +16,8 @@ size_t icons_resolve(void *context, const uint32_t *text, size_t length, size_t 
 bool icons_paint(void *context, WINDOW *w, uint32_t icon, int y, int x, int pair, bool selected, size_t offset);
 bool icons_avatar(icon_view *v, const char *id, const char *message,
                   int y, int x, int top, int bottom, int pair);
+bool icons_message_avatar(icon_view *v, const json_t *message,
+                          int y, int x, int top, int bottom, int pair);
 /* Same worker implementation as the picker/history; useful for decoder checks. */
 bool icons_render_unicode(const char *text, int width, int height, uint32_t background,
                            graphics_terminal terminal, uint32_t id, graphics_image *image);

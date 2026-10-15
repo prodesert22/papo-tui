@@ -1,5 +1,6 @@
 """Synthetic authenticated binary transport, not backend observations."""
 import os
+import ssl
 import stat
 import subprocess
 import sys
@@ -24,7 +25,7 @@ class MediaTests(unittest.TestCase):
     def server(self, status=200, mime='image/png', body=b'fixture', delay=0):
         server = MockServer()
         def route(method, path, _body):
-            if '/attachments/' not in path and '/embeds/' not in path: return None
+            if '/attachments/' not in path and '/embeds/' not in path and '/webhooks/' not in path: return None
             if delay: server.stopping.wait(delay)
             return status, body if status == 200 else None, None, '1' if status == 429 else None, mime
         server.api_handler = route
@@ -73,5 +74,48 @@ class MediaTests(unittest.TestCase):
             self.assertTrue(any(r[1].endswith('/embeds/' + ID + '/video') for r in server.requests))
         with self.server(mime='application/json', body=b'{"image_data":null}') as server:
             self.assertIn('ready=1', self.probe(server, 'embed'))
+
+    def test_public_webhook_avatar_has_no_cookie_and_uses_global_budget(self):
+        with self.server() as server:
+            output = self.probe(server, 'avatar')
+            self.assertIn('ready=1',output);self.assertIn('private=1',output)
+            calls=[r for r in server.requests if '/webhooks/' in r[1]]
+            self.assertEqual(len(calls),1);self.assertFalse(calls[0][2])
+        with self.server() as server:
+            self.assertIn('cancelled=1',self.probe(server,'avatar-budget'))
+            self.assertFalse(any('/webhooks/' in r[1] for r in server.requests))
+
+    def test_public_avatar_rejects_unsafe_urls_before_http(self):
+        for reference in ('//evil.test/avatar','/auth/logout','file:///etc/passwd',
+                          'http://evil.test/avatar','https://user:pass@evil.test/avatar',
+                          'https://evil.test/avatar#fragment','https://evil.test/\x1bavatar',
+                          '/webhooks/invalid/avatar'):
+            with self.subTest(reference=reference),self.server() as server:
+                self.assertIn('rejected=1',self.probe(server,'avatar-invalid',{'PAPO_AVATAR_REFERENCE':reference}))
+                self.assertFalse(any('/webhooks/' in r[1] for r in server.requests))
+
+    def test_public_avatar_size_mime_and_redirect_limits(self):
+        for status,mime,body in ((200,'text/html',b'html'),(200,'image/png',b'x'*(2*1024*1024+1)),(302,'image/png',b'')):
+            with self.subTest(status=status,mime=mime),self.server(status=status,mime=mime,body=body) as server:
+                self.assertIn('failed=1',self.probe(server,'avatar'))
+                self.assertEqual(sum('/webhooks/' in r[1] for r in server.requests),1)
+
+    def test_external_https_avatar_never_receives_session_cookies_and_verifies_tls(self):
+        with tempfile.TemporaryDirectory(prefix='papo-avatar-tls-') as directory:
+            cert,key=Path(directory)/'cert.pem',Path(directory)/'key.pem'
+            subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-days','1',
+                            '-keyout',str(key),'-out',str(cert),'-subj','/CN=127.0.0.1',
+                            '-addext','subjectAltName=IP:127.0.0.1'],check=True,
+                           stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            context=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER);context.load_cert_chain(cert,key)
+            with MockServer(tls_context=context) as external,self.server() as server:
+                external.api_handler=lambda method,path,body:(200,b'fixture',None,None,'image/png')
+                reference=external.url+'/webhooks/'+ID+'/avatar'
+                env={'PAPO_AVATAR_REFERENCE':reference,'CURL_CA_BUNDLE':str(cert)}
+                self.assertIn('ready=1',self.probe(server,'avatar',env))
+                self.assertEqual(len(external.requests),1);self.assertFalse(external.requests[0][2])
+                self.assertIn('failed=1',self.probe(server,'avatar',dict(env,CURL_CA_BUNDLE='')))
+                self.assertIn('failed=1',self.probe(server,'avatar',dict(env,PAPO_AVATAR_REFERENCE=reference.replace('127.0.0.1','localhost'))))
+                self.assertEqual(len(external.requests),1)
 
 if __name__ == '__main__': unittest.main()

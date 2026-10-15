@@ -17,6 +17,8 @@ typedef enum { HISTORY_NOTICE_READ, HISTORY_NOTICE_EVENT, HISTORY_NOTICE_COUNT }
 history *history_create(auth_client *auth);
 void history_destroy(history *h);
 chat_assets *history_assets(history *h);
+bool history_message_webhook(const json_t *message);
+const char *history_message_author(const history *h, const json_t *message);
 bool history_poll(history *h);
 /* Copies a confirmed Message. Merges only the active channel/current
  * generation, with definitive ID deduplication and bounded memory. No HTTP. */

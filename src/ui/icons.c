@@ -3,6 +3,7 @@
 #include "ui/image_decode.h"
 #include "ui/theme.h"
 #include "model/emoji_catalog.h"
+#include "model/history.h"
 #include "net/clock.h"
 #include <pango/pangocairo.h>
 #include <pthread.h>
@@ -13,7 +14,7 @@
 #include <wchar.h>
 #define ICON_ENTRIES 8192
 #define ICON_BYTES (32U * 1024U * 1024U)
-#define AVATAR_PIXELS 40
+#define AVATAR_PIXELS 48
 typedef struct {
     char key[224];
     char *path;
@@ -33,7 +34,8 @@ typedef struct {
     char *path, *text;
     uint64_t token;
     uint32_t background, image_id;
-    int width, height, fit_side;
+    int width, height;
+    bool cover;
     graphics_terminal terminal;
     animation *frames;
     size_t frame;
@@ -137,7 +139,7 @@ static void *worker(void *context)
             image_decode_request request = {.path = j.path, .width = j.width, .height = j.height,
                 .terminal = j.terminal, .image_id = j.image_id, .preview = true,
                 .animation = j.frames, .frame = j.frame, .matte = true, .background = j.background,
-                .center = true, .max_side = 512, .fit_side = j.fit_side};
+                .center = true, .max_side = 512, .cover = j.cover};
             if (j.frames) ok = image_encode_frame(&request, &image);
             else {
                 ok = image_decode_file(&request, &image, &frames, interrupted, v);
@@ -336,19 +338,33 @@ bool icons_paint(void *context, WINDOW *w, uint32_t icon, int y, int x, int pair
     icon_entry *e = get_entry(v, key, revision, path, text, terminal.cell_width * 2, terminal.cell_height, bg);
     return offer(v, e, getbegy(w) + y, getbegx(w) + x, 0, 0, offset);
 }
+static bool avatar_image(icon_view *v, const author_avatar *avatar, const char *message,
+                         int y, int x, int top, int bottom, int pair)
+{
+    if (!avatar || !avatar->path) return false;
+    graphics_terminal t = graphics_terminal_get(); char key[224];
+    snprintf(key, sizeof(key), "avatar:%s:%x", avatar->id, background(pair));
+    /* The image itself fills 48x48; no surrounding header-colored canvas. */
+    icon_entry *e = get_entry(v, key, avatar->revision, avatar->path, NULL,
+                              AVATAR_PIXELS, AVATAR_PIXELS, background(pair));
+    int crop_top = top * t.cell_height;
+    int crop_bottom = AVATAR_PIXELS - (3 - bottom) * t.cell_height;
+    if (crop_bottom < 0) crop_bottom = 0;
+    if (crop_top + crop_bottom >= AVATAR_PIXELS) return false;
+    icons_scope(v, message, 0);
+    return offer(v, e, y, x, crop_top, crop_bottom, SIZE_MAX);
+}
 bool icons_avatar(icon_view *v, const char *id, const char *message, int y, int x, int top, int bottom, int pair)
 {
     if (!v || !graphics_terminal_get().supported) return false;
-    const author_avatar *avatar = chat_assets_avatar(v->assets, id);
-    if (!avatar || !avatar->path) return false;
-    graphics_terminal t = graphics_terminal_get(); char key[224];
-    snprintf(key, sizeof(key), "avatar:%s:%x", id, background(pair));
-    /* Center the 40px content inside the header's cell-aligned canvas so all
-     * graphics protocols share the same alignment and scrolling crops. */
-    icon_entry *e = get_entry(v, key, avatar->revision, avatar->path, NULL,
-                              t.cell_width * 6, t.cell_height * 3, background(pair));
-    icons_scope(v, message, 0);
-    return offer(v, e, y, x, top * t.cell_height, bottom * t.cell_height, SIZE_MAX);
+    return avatar_image(v, chat_assets_avatar(v->assets, id), message, y, x, top, bottom, pair);
+}
+bool icons_message_avatar(icon_view *v, const json_t *message, int y, int x, int top, int bottom, int pair)
+{
+    if (!v || !graphics_terminal_get().supported) return false;
+    const author_avatar *avatar = history_message_webhook(message) ? chat_assets_webhook_avatar(v->assets, message) :
+        chat_assets_avatar(v->assets, json_string_value(json_object_get(message, "author_id")));
+    return avatar_image(v, avatar, json_string_value(json_object_get(message, "id")), y, x, top, bottom, pair);
 }
 bool icons_poll(icon_view *v)
 {
@@ -396,7 +412,7 @@ bool icons_poll(icon_view *v)
         size_t frame = e->frames ? animation_frame_at(e->frames, e->epoch, now) : 0;
         if (e->image.data && (!e->frames || frame == e->frame || now - e->presented < 67)) continue;
         icon_job j = {.token = ++v->serial, .background = e->background, .width = e->width, .height = e->height,
-            .fit_side = !strncmp(e->key, "avatar:", 7) ? AVATAR_PIXELS : 0,
+            .cover = !strncmp(e->key, "avatar:", 7),
             .terminal = graphics_terminal_get(), .image_id = e->image.id ? e->image.id : graphics_image_next_id(),
             .frames = e->frames, .frame = frame};
         if (e->path) j.path = strdup(e->path);

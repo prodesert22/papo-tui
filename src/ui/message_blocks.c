@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include "ui/message_blocks.h"
+#include "model/history.h"
 #include "ui/text.h"
 #include "ui/theme.h"
 #include "ui/message_time.h"
@@ -276,7 +277,8 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
     char label[1600], timestamp[192];
     message_time_format(str(m, "created_at"), time(NULL), timestamp, sizeof(timestamp));
     for (int i = 0; i < 3; ++i) if (!blank(b, false, false, false, 0)) goto error;
-    int metadata = text_label(NULL, 0, 0, 200, timestamp) + (*str(m, "edited_at") ? 12 : 3);
+    bool app = history_message_webhook(m);
+    int metadata = text_label(NULL, 0, 0, 200, timestamp) + (*str(m, "edited_at") ? 12 : 3) + (app ? 6 : 0);
     int author_width = width - 7 - metadata;
     if (author_width < 4) author_width = 4;
     text_buffer name;
@@ -287,9 +289,9 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
     if (cut < name.length && cut) name.data[cut - 1] = 0x2026;
     name.length = cut; name.data[cut] = 0;
     char author_text[TEXT_UTF8_BYTES]; if (!text_encode(&name, author_text)) goto error;
-    snprintf(label, sizeof(label), "%.*s · %s%s", 1024, author_text, timestamp, *str(m, "edited_at") ? " · editado" : "");
+    snprintf(label, sizeof(label), "%.*s%s · %s%s", 1024, author_text, app ? " [APP]" : "", timestamp, *str(m, "edited_at") ? " · editado" : "");
     size_t header_end;
-    if (!column(b, 1, "header", label, 7, width - 7, true, false, 0, &header_end)) goto error;
+    if (!column(b, 0, "header", label, 7, width - 7, true, false, 0, &header_end)) goto error;
     text_buffer initials = {0}, decoded;
     if (text_decode(&decoded, author)) {
         for (size_t k = 0; k < decoded.length && initials.length < 2; ++k)

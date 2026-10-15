@@ -213,24 +213,117 @@ class EmojiTerminal(unittest.TestCase):
                 self.until(t,lambda:any(h.get(b's')==b'48' and h.get(b'v')==b'48' for h,_ in t.stream.kitty_frames))
                 avatar, pixels = next((h,p) for h,p in t.stream.kitty_frames
                                       if h.get(b's')==b'48' and h.get(b'v')==b'48')
-                # The 4:3 fixture fits into 40x40 as 40x30, with equal padding
-                # on both axes in the 48x48 header canvas.
+                # The rectangular fixture fills the 48x48 avatar by cropping,
+                # without adding a colored frame around its pixels.
                 red = [(i % 48, i // 48) for i in range(48*48)
                        if pixels[i*4] > 230 and pixels[i*4+1] < 25 and pixels[i*4+2] < 25]
-                self.assertEqual((min(x for x,y in red), max(x for x,y in red)), (4,43))
-                self.assertEqual((min(y for x,y in red), max(y for x,y in red)), (9,38))
+                self.assertEqual((min(x for x,y in red), max(x for x,y in red)), (0,47))
+                self.assertEqual((min(y for x,y in red), max(y for x,y in red)), (0,47))
+                self.assertEqual(len(red),48*48)
                 rows=t.screen.display
                 body=next(i for i,row in enumerate(rows) if 'Corpo usa largura inteira' in row)
                 head=next(i for i,row in enumerate(rows) if 'editado' in row)
                 placement = next(pos for p,pos in zip(t.stream.placements, t.stream.placement_positions)
                                  if p[b'i'] == avatar[b'i'])
-                self.assertEqual(placement, (head-1,28))
-                self.assertEqual(body-head,2)
+                self.assertEqual(placement, (head,28))
+                self.assertEqual(body-head,3)
                 self.assertEqual(rows[body].index('Corpo'),28)
                 self.assertGreaterEqual(rows[head].index('Apelido'),35)
                 self.assertNotIn('Editada em:','\n'.join(rows))
                 self.assertNotIn('2026-','\n'.join(rows))
                 self.assertEqual(sum('/users/profile_batch' in r[1] for r in s.requests),1)
             finally: self.assertTrue(t.close())
+
+    def test_avatar_fills_48_pixels_without_padding_across_focus_changes(self):
+        environments = ({'TERM':'xterm-kitty','KITTY_WINDOW_ID':'1'},
+                        {'TERM':'xterm-256color','KONSOLE_VERSION':'250000'})
+        for environment in environments:
+            with self.subTest(environment=environment), self.server() as s:
+                t=self.open(s,protocol='kitty',environment=environment)
+                try:
+                    self.wait(t,'Apelido')
+                    def fills_avatar():
+                        frames=[p for h,p in t.stream.kitty_frames if h.get(b's')==b'48' and h.get(b'v')==b'48']
+                        return bool(frames) and all(frames[-1][i*4]>230 and frames[-1][i*4+1]<25 and frames[-1][i*4+2]<25 for i in range(48*48))
+                    self.until(t,fills_avatar)
+                    t.send('\t');self.wait(t,'Foco: Mensagem')
+                    self.until(t,fills_avatar)
+                    t.send('\x1b[Z');self.wait(t,'Foco: Histórico')
+                    self.until(t,fills_avatar)
+                    self.assertEqual(sum('/users/profile_batch' in r[1] for r in s.requests),1)
+                finally:self.assertTrue(t.close())
+
+    def test_webhook_app_name_badge_and_shared_animated_avatar(self):
+        with self.server(count=2) as s:
+            reference = '/webhooks/' + uuid(900) + '/avatar'
+            for m in s.messages:
+                m.update(author_id=None, webhook_id=uuid(900),
+                         external_author={'source':'webhook','id':uuid(900),'name':'Build Bot','avatar_url':reference})
+            route=s.api_handler
+            def avatar(method,path,body):
+                if path.endswith(reference): return 200,self.gif,None,None,'image/gif'
+                return route(method,path,body)
+            s.api_handler=avatar
+            t=self.open(s,protocol='kitty')
+            try:
+                self.wait(t,'Build Bot [APP]')
+                self.assertNotIn('Autor indisponível','\n'.join(t.screen.display))
+                def variants():
+                    frames={}
+                    for h,p in t.stream.kitty_frames:
+                        if h.get(b's')==b'48' and h.get(b'v')==b'48':frames.setdefault(h[b'i'],set()).add(p)
+                    return frames
+                self.until(t,lambda:any(len(p)>1 for p in variants().values()))
+                app_ids=set(variants())
+                calls=[r for r in s.requests if r[1].endswith(reference)]
+                self.assertEqual(len(calls),1);self.assertFalse(calls[0][2])
+                self.assertEqual(s.summary_calls,0)
+                self.assertFalse(any('/users/profile_batch' in r[1] for r in s.requests))
+                t.send('x');t.read(.15)
+                self.assertEqual(sum(r[1].endswith(reference) for r in s.requests),1)
+                t.click(8,4);self.wait(t,'Conteúdo do outro canal')
+                before=len(t.stream.kitty_frames);t.read(.3)
+                self.assertFalse(any(h[b'i'] in app_ids for h,p in t.stream.kitty_frames[before:]))
+            finally:self.assertTrue(t.close())
+
+    def test_webhook_attribution_arrives_over_websocket(self):
+        with self.server(realtime=True) as s:
+            route=s.api_handler
+            reference='/webhooks/'+uuid(900)+'/avatar'
+            def avatar(method,path,body):
+                if path.endswith(reference):return 200,self.png,None,None,'image/png'
+                return route(method,path,body)
+            s.api_handler=avatar
+            t=self.open(s,protocol='kitty')
+            try:
+                self.wait(t,'Mensagem 0001');self.until(t,lambda:bool(s.peers))
+                event=dict(s.message(2),type='message',author_id='',webhook_id=uuid(900),content='Evento do app',
+                           created_at=datetime.now(timezone.utc).isoformat(),
+                           external_author={'source':'discord','id':'external-id','name':'Deploy App','avatar_url':reference})
+                s.emit(event);self.wait(t,'Deploy App [APP]');self.wait(t,'Evento do app')
+                self.until(t,lambda:any(r[1].endswith(reference) for r in s.requests))
+                self.assertFalse(next(r for r in s.requests if r[1].endswith(reference))[2])
+                self.assertEqual(s.message_count,0)
+            finally:self.assertTrue(t.close())
+
+    def test_webhook_avatar_failure_keeps_name_badge_and_does_not_retry(self):
+        for status in (401,403,404,429,500):
+            with self.subTest(status=status),self.server() as s:
+                reference='/webhooks/'+uuid(900)+'/avatar'
+                s.messages[0].update(author_id=None,webhook_id=uuid(900),
+                    external_author={'source':'webhook','id':uuid(900),'name':'Build Bot','avatar_url':reference})
+                route=s.api_handler
+                def fail(method,path,body):
+                    if path.endswith(reference):return status,None
+                    return route(method,path,body)
+                s.api_handler=fail
+                t=self.open(s,protocol='kitty')
+                try:
+                    self.wait(t,'Build Bot [APP]')
+                    reads=lambda:sum(r[1].endswith(reference) for r in s.requests)
+                    self.until(t,lambda:reads()==1);t.read(.25);t.send('x');t.read(.15)
+                    self.assertEqual(reads(),1);self.assertEqual(s.refresh_count,0)
+                    self.assertNotIn('Autor indisponível','\n'.join(t.screen.display))
+                finally:self.assertTrue(t.close())
 
 if __name__=='__main__': unittest.main()

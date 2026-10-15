@@ -26,8 +26,8 @@ typedef struct {
     bool matte, center, first_frame;
     uint32_t background;
     int max_side;
-    /* Optional content size limit inside the output canvas; zero uses it all. */
-    int fit_side;
+    /* Fill the output with a proportional center crop instead of letterboxing. */
+    bool cover;
 } image_decode_request;
 void animation_ref(animation *frames);
 void animation_free(animation *frames);

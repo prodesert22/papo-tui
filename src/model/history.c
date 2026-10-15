@@ -143,6 +143,17 @@ const char *history_author(const history *h, const char *id)
     const char *name = history_mention_name((void *)h, id);
     return name ? name : "Autor indisponível";
 }
+bool history_message_webhook(const json_t *message)
+{
+    return history_uuid(str((json_t *)message, "webhook_id"));
+}
+const char *history_message_author(const history *h, const json_t *message)
+{
+    if (!history_message_webhook(message)) return history_author(h, str((json_t *)message, "author_id"));
+    json_t *external = json_object_get(message, "external_author");
+    const char *name = str(external, "name");
+    return name && *name && strlen(name) <= 512 && strlen(name) == json_string_length(json_object_get(external, "name")) ? name : "Webhook";
+}
 void history_users_active(history *h, bool active) { h->users_active = active; }
 void history_users_retry(history *h) { h->users_failed = false; }
 size_t history_user_count(const history *h) { return json_array_size(h->directory); }
@@ -331,7 +342,8 @@ static bool request_users(history *h)
 
 void history_reload_channels(history *h)
 {
-    if (h->pending != NONE) { auth_cancel_read(h->auth); chat_assets_cancel(h->assets); h->pending = NONE; }
+    if (h->pending != NONE) { auth_cancel_read(h->auth); h->pending = NONE; }
+    chat_assets_cancel(h->assets);
     ++h->selection; clear_messages(h); json_decref(h->channels); h->channels = NULL;
     h->selected = SIZE_MAX; h->want_channels = true;
     status(h, "Carregando canais…");
@@ -340,7 +352,8 @@ bool history_select(history *h, size_t index)
 {
     json_t *c = history_channel(h, index);
     if (!c || !strcmp(str(c, "type"), "category")) return false;
-    if (h->pending != NONE) { auth_cancel_read(h->auth); chat_assets_cancel(h->assets); h->pending = NONE; }
+    if (h->pending != NONE) { auth_cancel_read(h->auth); h->pending = NONE; }
+    chat_assets_cancel(h->assets);
     ++h->selection; clear_messages(h); h->selected = index; h->older = false;
     if (!strcmp(str(c, "type"), "voice")) status(h, "Chamadas de voz ainda não estão disponíveis.");
     else { h->want_messages = true; status(h, "Carregando histórico…"); }
@@ -1008,6 +1021,7 @@ bool history_poll(history *h)
         history_reload_channels(h); h->pending = NONE; changed = true;
         h->epoch = auth_ws_epoch(h->auth);
     }
+    changed |= chat_assets_webhooks_poll(h->assets, h->auth);
     uint64_t epoch = auth_ws_epoch(h->auth);
     bool connected = auth_has_session(h->auth) && auth_ws_state(h->auth) == WS_OPEN;
     if ((h->typing_connected && !connected) || epoch != h->epoch) {

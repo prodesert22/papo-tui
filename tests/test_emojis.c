@@ -4,6 +4,7 @@
 #include "ui/icons.h"
 #include "ui/message_time.h"
 #include "ui/message_blocks.h"
+#include "model/history.h"
 #include <assert.h>
 #include <locale.h>
 #include <stdlib.h>
@@ -106,9 +107,21 @@ static void time_and_header(void)
     message_blocks b;
     assert(message_blocks_build_visual(&b,m,"Author Name","",60,true,NULL,NULL,NULL,NULL,NULL,resolve,NULL,NULL));
     assert(b.rows[0].header && b.rows[1].header && b.rows[2].header);
-    assert(strstr(b.rows[1].segments[0].text,"editado") && b.rows[1].segments[0].x == 7);
+    assert(strstr(b.rows[0].segments[0].text,"editado") && b.rows[0].segments[0].x == 7);
     assert(!b.rows[3].header && b.rows[3].segments[0].x == 0 && b.rows[3].icon_count == 2);
-    message_blocks_free(&b); json_decref(m);
+    message_blocks_free(&b);
+    json_object_set_new(m, "webhook_id", json_string(id));
+    json_object_set_new(m, "author_id", json_null());
+    json_object_set_new(m, "external_author", json_pack("{s:s}", "name", "Deploy App"));
+    assert(history_message_webhook(m) && !strcmp(history_message_author(NULL, m), "Deploy App"));
+    assert(message_blocks_build_visual(&b,m,history_message_author(NULL,m),"",60,true,NULL,NULL,NULL,NULL,NULL,resolve,NULL,NULL));
+    assert(strstr(b.rows[0].segments[0].text, "Deploy App [APP]"));
+    message_blocks_free(&b);
+    json_object_del(m, "external_author");
+    assert(!strcmp(history_message_author(NULL, m), "Webhook"));
+    json_object_set_new(m, "webhook_id", json_string("invalid"));
+    assert(!history_message_webhook(m));
+    json_decref(m);
 }
 static void font_render(void)
 {

@@ -169,7 +169,7 @@ static int walk(view *ui, int first, bool paint, bool save, int *anchor)
         if (*str(m, "reply_to")) for (size_t j = 0; j < history_message_count(ui->model); ++j)
             if (!strcmp(str(m, "reply_to"), str(history_message(ui->model, j), "id"))) { reply = str(m, "reply_to"); break; }
         message_blocks blocks;
-        if (!message_blocks_build_visual(&blocks, m, history_author(ui->model, str(m, "author_id")), reply, width,
+        if (!message_blocks_build_visual(&blocks, m, history_message_author(ui->model, m), reply, width,
                                   graphics_terminal_get().supported && ui->media, media_view_measure, ui->media,
                                   history_mention_name, ui->model,
                                   auth_user_id(ui->connections->items[ui->active_tab].auth), icons_resolve, icons_paint, ui->icons)) continue;
@@ -216,7 +216,7 @@ static int walk(view *ui, int first, bool paint, bool save, int *anchor)
                         int top = first > total ? first - total : 0;
                         int bottom = total + 3 > first + ui->visible ? total + 3 - first - ui->visible : 0;
                         if (top + bottom < 3)
-                            icons_avatar(ui->icons, str(m, "author_id"), str(m, "id"),
+                            icons_message_avatar(ui->icons, m,
                                 getbegy(ui->body) + ui->history_top + total + top - first,
                                 getbegx(ui->body) + 2, top, bottom, ui->focus == HISTORY_PANEL ? HISTORY_AREA : PANEL);
                     }

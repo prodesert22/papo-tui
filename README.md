@@ -501,9 +501,13 @@ os limites usam o primeiro frame. Os caches de mídia e ícones compartilham um
 orçamento de 64 MiB (32 MiB cada), e imagens compactadas de emojis/avatares usam
 arquivos temporários privados, limitados a 160 MiB e removidos ao fechar a tela.
 
-O cabeçalho mostra o avatar de até 40 × 40 pixels centralizado na área à esquerda
-e, centralizados verticalmente, nome,
-horário local e **editado**, quando aplicável. Hoje aparece somente a hora;
+O cabeçalho mostra o avatar de 48 × 48 pixels à esquerda, sem margem adicionada,
+com nome, horário local e **editado** alinhados ao topo do avatar. Hoje aparece somente a hora;
 nas mensagens antigas, data e hora seguem o formato e o fuso do sistema. O
 conteúdo abaixo ocupa a largura inteira. Perfis são consultados em lotes para
 autores visíveis, respeitando a sessão e o limite global de requisições.
+Imagens retangulares usam recorte central proporcional para preencher o avatar.
+
+Mensagens de webhook mostram o nome informado pelo app, a tag **[APP]** e seu
+avatar no cabeçalho. Avatares públicos são carregados sem cookies de sessão;
+quando indisponíveis, aparecem as iniciais do app.

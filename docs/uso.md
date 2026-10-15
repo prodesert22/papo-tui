@@ -359,15 +359,21 @@ coloridas; emojis no texto ocupam duas colunas e uma linha. Seleção, cursor,
 exclusão e cópia preservam o texto enviado. Sem suporte gráfico ou fonte,
 Unicode permanece em texto e personalizados permanecem como `:nome:`.
 
-O avatar é renderizado em até 40 × 40 pixels, preservando a proporção e
-centralizado horizontal e verticalmente na área de seis colunas por três
-linhas do cabeçalho.
-Nome, hora e **editado** ficam centralizados verticalmente à direita; o texto
+O avatar preenche 48 × 48 pixels, sem margem adicionada. Imagens retangulares
+usam recorte central proporcional para preencher essa área, sem distorção.
+Nome, hora e **editado** ficam à direita, alinhados ao topo do avatar; o texto
 da mensagem começa abaixo, usando toda a largura. Avatares ausentes ou
 inválidos mostram iniciais. Hoje aparece só o horário; nos outros dias, data
 e hora, seguindo `LC_TIME` e o fuso local. O indicador **editado** substitui a
 antiga linha separada de edição. Nomes longos são abreviados e metadados se
 ajustam em telas estreitas.
+
+Mensagens recebidas por webhook mostram o nome de exibição informado pelo
+backend, seguido de **[APP]**, e o avatar do app. A atribuição externa fornecida
+para uma mensagem é preservada. Sem nome disponível, aparece **Webhook**; sem
+avatar válido, aparecem as iniciais. Os avatares públicos do Papo e URLs HTTPS
+externas são carregados sem cookies de sessão e sem seguir redirecionamentos.
+Falhas não geram tentativas automáticas; Ctrl+R permite tentar novamente.
 
 Emojis personalizados e avatares em GIF se repetem somente enquanto visíveis,
 até 15 atualizações por segundo. Animações que excedem os limites usam o

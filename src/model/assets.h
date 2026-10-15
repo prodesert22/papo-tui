@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
+#include "net/auth.h"
 typedef struct chat_assets chat_assets;
 typedef struct {
     char id[37], name[129], format[8], created[65];
@@ -31,6 +32,10 @@ const char *chat_assets_notice(const chat_assets *a);
 uint64_t chat_assets_revision(const chat_assets *a);
 /* Borrowed values; no network I/O. A visible author queues a bounded profile read. */
 const author_avatar *chat_assets_avatar(chat_assets *a, const char *id);
+/* Public webhook attribution; visible URLs share a bounded per-session cache.
+ * No I/O in this accessor. Poll starts/advances the asynchronous transfer. */
+const author_avatar *chat_assets_webhook_avatar(chat_assets *a, const json_t *message);
+bool chat_assets_webhooks_poll(chat_assets *a, auth_client *auth);
 void chat_assets_avatar_invalidate(chat_assets *a, const char *id);
 json_t *chat_assets_profiles_request(chat_assets *a);
 bool chat_assets_profiles_wanted(const chat_assets *a);

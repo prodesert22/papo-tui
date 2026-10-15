@@ -12,6 +12,8 @@ typedef struct media_download media_download;
 media_download *media_download_create(auth_client *auth);
 void media_download_destroy(media_download *m);
 bool media_download_request(media_download *m, auth_media_kind kind, const char *id, bool video);
+/* Public avatar URL, bounded to 2 MiB; same asynchronous global rate budget. */
+bool media_download_avatar_request(media_download *m, const char *reference);
 bool media_download_poll(media_download *m);
 void media_download_cancel(media_download *m);
 media_state media_download_state(const media_download *m);
