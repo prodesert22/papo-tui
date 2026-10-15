@@ -168,6 +168,7 @@ const char *history_mention_name(void *context, const char *id)
 }
 static bool user_resolved(const history *h, const char *id)
 {
+    if (!h || !id || !*id) return false;
     const char *name = str(json_object_get(h->users, id), "username");
     return name && *name;
 }
@@ -407,9 +408,29 @@ static bool channels_response(history *h, json_t *body)
 static bool message_valid(json_t *m, const char *channel)
 {
     uint64_t time;
-    if (!string_field(m, "id", 36, false) || !string_field(m, "author_id", 36, false) ||
+    /* Backend webhooks (papo-backend#26): Message.author_id is nullable in
+     * REST (null) and empty ("") in WS MessageOutbound for webhook messages.
+     * Accept a missing/null/empty author and validate UUID only when present.
+     * webhook_id/external_author are optional display-only attribution. */
+    const char *author_id = str(m, "author_id");
+    bool author_missing = !author_id || !*author_id;
+    json_t *author_value = json_object_get(m, "author_id");
+    if (!author_missing && (!string_field(m, "author_id", 36, false) || !history_uuid(author_id)))
+        return false;
+    if (author_value && !json_is_null(author_value) && !json_is_string(author_value)) return false;
+    json_t *webhook_value = json_object_get(m, "webhook_id");
+    if (webhook_value && !json_is_null(webhook_value)) {
+        const char *webhook_id = json_string_value(webhook_value);
+        if (!webhook_id || !*webhook_id) return false;
+        if (json_string_length(webhook_value) > 36 || strlen(webhook_id) != json_string_length(webhook_value) ||
+            !history_uuid(webhook_id))
+            return false;
+    }
+    json_t *external = json_object_get(m, "external_author");
+    if (external && !json_is_null(external) && !json_is_object(external)) return false;
+    if (!string_field(m, "id", 36, false) ||
         !string_field(m, "channel_id", 36, false) ||
-        !history_uuid(str(m, "id")) || !history_uuid(str(m, "author_id")) ||
+        !history_uuid(str(m, "id")) ||
         !str(m, "channel_id") || strcmp(str(m, "channel_id"), channel) ||
         !string_field(m, "created_at", 64, false) || !session_time_parse(str(m, "created_at"), &time) ||
         !string_field(m, "content", 32768, true) || !string_field(m, "edited_at", 64, true) ||
@@ -763,15 +784,19 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
         size_t ci = find(h->channels, channel);
         json_t *c = json_array_get(h->channels, ci);
         if (c) {
+            json_t *author_field = json_object_get(event, "author_id");
             json_t *copy = json_pack("{s:O,s:O,s:O,s:O}", "id", json_object_get(event, "id"),
-                                    "author_id", json_object_get(event, "author_id"),
+                                    "author_id", author_field ? author_field : json_null(),
                                     "created_at", json_object_get(event, "created_at"),
                                     "content", json_object_get(event, "content") ? json_object_get(event, "content") : json_null());
             if (!copy || json_object_set_new(c, "last_message", copy)) goto allocation;
         }
     }
     if (!active) return true;
-    if (message && !h->replaying) typing_remove(h, str((json_t *)event, "author_id"));
+    if (message && !h->replaying) {
+        const char *author_typing = str((json_t *)event, "author_id");
+        if (author_typing && *author_typing) typing_remove(h, author_typing);
+    }
     if (edit || del || embeds) {
         json_t *previous = json_object_get(h->patches, id);
         json_t *existing = json_array_get(h->messages, find(h->messages, id));
@@ -943,7 +968,9 @@ static bool request_authors(history *h)
     json_array_foreach(h->messages, i, m)
     {
         const char *id = str(m, "author_id");
-        if (!user_resolved(h, id) && !json_object_get(h->queried, id) &&
+        /* Webhook messages carry author_id null (REST) or "" (WS); they are
+         * display-only and never resolve via user_summary_batch. */
+        if (id && *id && history_uuid(id) && !user_resolved(h, id) && !json_object_get(h->queried, id) &&
             !json_object_get(seen, id) && json_array_size(ids) < 1000 &&
             json_object_size(h->queried) + json_array_size(ids) < 10000) {
             ok &= !json_array_append_new(ids, json_string(id)) && !json_object_set_new(seen, id, json_true());

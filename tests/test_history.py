@@ -174,6 +174,17 @@ class HistoryTests(unittest.TestCase):
             self.assertEqual(len(requests[0][3]['ids']), 3)
             self.assertEqual(len(requests[1][3]['ids']), 1)
 
+    def test_webhook_messages_with_null_author_do_not_break_history(self):
+        with HistoryMock(count=5) as server:
+            for message in server.messages:
+                message['author_id'] = None
+                message['webhook_id'] = uuid(900)
+                message['external_author'] = {'source': 'ci', 'id': '1', 'name': 'Bot'}
+            result = self.run_probe(server, 'single')
+            self.assertEqual(result['pages'][0]['count'], 5)
+            self.assertEqual(set(result['pages'][0]['authors']), {'Autor indisponível'})
+            self.assertEqual(server.summary_calls, 0)
+
     def test_same_uuid_in_another_instance_does_not_reuse_history_or_authors(self):
         with HistoryMock(count=1) as first, HistoryMock(count=1) as second:
             second.messages[0]['content'] = 'Segunda instância'

@@ -68,6 +68,7 @@ static bool update_recent(mention_popup *p)
      * ties. A later message replaces an author's previous rank. */
     for (size_t i = 0; i < history_message_count(p->h); ++i) {
         const char *id = str(history_message(p->h, i), "author_id");
+        if (!id || !*id) continue;
         if (json_object_set_new(next, id, json_integer((json_int_t)i + 1))) {
             json_decref(next);
             return false;
