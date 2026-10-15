@@ -1,13 +1,11 @@
 #define _POSIX_C_SOURCE 200809L
 #include "ui/image_decode.h"
-#include <libavutil/log.h>
 #include <assert.h>
 #include <stdio.h>
 static bool cancelled(void *context) { (void)context; return true; }
 int main(int argc, char **argv)
 {
     assert(argc == 7);
-    av_log_set_level(AV_LOG_QUIET);
     image_decode_request request = {.width = 640, .height = 360, .native = true, .preview = true,
         .image_id = 42, .terminal = {.protocol = GRAPHICS_SIXEL, .cell_width = 8, .cell_height = 16}};
     for (int mode = GRAPHICS_SIXEL; mode <= GRAPHICS_ITERM2; ++mode) {

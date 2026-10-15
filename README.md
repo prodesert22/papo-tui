@@ -22,6 +22,13 @@ cmake --build build
 
 Use um terminal UTF-8, com pelo menos 44 colunas e 22 linhas disponíveis ao aplicativo. No tmux, reserve também as linhas da barra de status. Para compilar somente o aplicativo, use `-DBUILD_TESTING=OFF` na configuração do CMake. `--help` e `--version` funcionam fora de um terminal interativo.
 
+Os codecs de imagens e o player são compilados como módulos e carregados somente
+quando usados, usando GModule da GLib. Para instalar o aplicativo completo, use
+`cmake --install build --prefix /caminho/de/instalacao`. Ao mover um build sem
+instalá-lo, leve também o diretório `papo-backends` ao lado do executável.
+Se um módulo estiver ausente ou incompatível, a mídia correspondente mostra um erro;
+login e conversas de texto continuam disponíveis.
+
 ## Login
 
 ### Perfis de instância
@@ -328,6 +335,10 @@ adiados por falta de orçamento voltam ao processamento quando há espaço.
 Fechar o modal cancela seu carregamento e remove o vídeo temporário. O orçamento
 de imagens cobre também os buffers gráficos reservados ao player; ele não é um
 limite absoluto para o RSS do processo.
+Os codecs e o player são carregados no primeiro uso e permanecem disponíveis
+até encerrar o programa. Em sistemas com glibc, grandes liberações do cache
+também agendam a devolução de páginas livres ao sistema, em segundo plano e
+com frequência limitada.
 Requisições usam os cookies da própria instância, a verificação TLS e o mesmo
 limite global de requisições do restante do cliente. HTTP 429 exige nova
 tentativa manual após a espera.

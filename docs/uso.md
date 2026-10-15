@@ -20,7 +20,14 @@ cmake --build build
 ./build/papo-tui
 ```
 
-O executável fica em `build/papo-tui`. Para consultar as opções ou a versão:
+O executável fica em `build/papo-tui`. Imagens e vídeo usam os módulos de
+`build/papo-backends`, carregados somente quando necessários. Para instalar o
+conjunto, use `cmake --install build --prefix /caminho/de/instalacao`. Se mover o
+build manualmente, mantenha `papo-backends` ao lado do executável. Um módulo
+ausente ou incompatível mostra erro na mídia correspondente; reinstale o
+conjunto e reabra o programa. Conversas de texto continuam disponíveis.
+
+Para consultar as opções ou a versão:
 
 ```sh
 ./build/papo-tui --help
@@ -406,6 +413,9 @@ após cinco minutos. Sob pressão, o cache libera as representações menos rece
 e GIFs podem passar ao primeiro frame; itens adiados são processados quando há
 espaço. Sair da conta limpa o contexto. Arquivos temporários são privados e não
 incluem cookies; fechar o modal cancela o carregamento e remove seu vídeo.
+Codecs e player permanecem carregados após seu primeiro uso, até encerrar o
+aplicativo. Em sistemas com glibc, grandes liberações do cache também devolvem
+páginas livres ao sistema em segundo plano, com frequência limitada.
 Downloads respeitam TLS, a sessão da instância e o
 limite global de requisições. Erros preservam a navegação; após HTTP 429, aguarde
 antes da tentativa manual.

@@ -9,8 +9,7 @@
 #include "ui/theme.h"
 #include "net/media.h"
 #include "net/clock.h"
-#include <mpv/client.h>
-#include <mpv/render.h>
+#include "ui/media_backend.h"
 #include <pthread.h>
 #include <math.h>
 #include <inttypes.h>
@@ -97,24 +96,6 @@ static void clear_modal_image(media_view *v)
     else memset(&v->modal_image, 0, sizeof(v->modal_image));
     v->modal_shared = false;
 }
-static mpv_handle *player_create(mpv_render_context **render)
-{
-    mpv_handle *player = mpv_create();
-    if (!player) return NULL;
-    const char *options[][2] = {{"config", "no"}, {"terminal", "no"}, {"load-scripts", "no"},
-        {"ytdl", "no"}, {"input-terminal", "no"}, {"input-default-bindings", "no"},
-        {"vo", "libmpv"}, {"hwdec", "no"}, {"keep-open", "yes"}, {"access-references", "no"},
-        {"audio-fallback-to-null", "yes"}, {"vd-lavc-o", "max_pixels=16777216"},
-        {"demuxer", "lavf"}, {"demuxer-lavf-o", "protocol_whitelist=file"}, {"volume", "50"}};
-    for (size_t i = 0; i < sizeof(options) / sizeof(options[0]); ++i)
-        if (mpv_set_option_string(player, options[i][0], options[i][1]) < 0) goto error;
-    if (mpv_initialize(player) < 0) goto error;
-    mpv_render_param parameters[] = {{MPV_RENDER_PARAM_API_TYPE, (void *)MPV_RENDER_API_TYPE_SW}, {MPV_RENDER_PARAM_INVALID, NULL}};
-    if (mpv_render_context_create(render, player, parameters) < 0) goto error;
-    return player;
- error:
-    mpv_terminate_destroy(player); return NULL;
-}
 static void publish(media_view *v, uint64_t token, graphics_image *image, animation *animated, const char *error)
 {
     pthread_mutex_lock(&v->lock);
@@ -127,8 +108,8 @@ static void *worker(void *context)
 {
     media_view *v = context;
     job current = {0};
-    mpv_handle *player = NULL;
-    mpv_render_context *render = NULL;
+    void *player = NULL;
+    const video_player_api *api = NULL;
     uint64_t last_frame = 0;
     bool force_frame = false;
     for (;;) {
@@ -143,7 +124,7 @@ static void *worker(void *context)
         if (stop) { free_job(&next); break; }
         bool reuse = player && pending && next.video && !strcmp(current.path, next.path);
         if (player && !reuse && (pending || atomic_load(&v->active) != current.token)) {
-            mpv_render_context_free(render); mpv_terminate_destroy(player); player = NULL; render = NULL;
+            api->close(player); player = NULL;
             free_job(&current); atomic_store(&v->player_idle, true);
         }
         if (pending) {
@@ -153,56 +134,38 @@ static void *worker(void *context)
             else {
             current = next;
             force_frame = true;
-            player = player_create(&render);
-            const char *args[] = {"loadfile", current.path, "replace", NULL};
-            if (!player || mpv_command(player, args) < 0) {
-                graphics_image empty = {0}; publish(v, current.token, &empty, NULL, "Não foi possível iniciar o player.");
-                if (render) mpv_render_context_free(render);
-                if (player) mpv_terminate_destroy(player);
-                render = NULL; player = NULL; free_job(&current); atomic_store(&v->player_idle, true); continue;
+            api = media_video_backend();
+            player = api ? api->open(current.path) : NULL;
+            if (!player) {
+                graphics_image empty = {0};
+                publish(v, current.token, &empty, NULL, api ? "Não foi possível iniciar o player." :
+                    "Módulo de vídeo ausente ou incompatível. Reinstale o aplicativo.");
+                free_job(&current); atomic_store(&v->player_idle, true); continue;
             }
             }
         }
         if (player) {
-            if (pause % 2) { const char *args[] = {"cycle", "pause", NULL}; mpv_command(player, args); }
-            if (mute % 2) { const char *args[] = {"cycle", "mute", NULL}; mpv_command(player, args); }
-            if (seek) { char amount[32]; snprintf(amount, sizeof(amount), "%d", seek); const char *args[] = {"seek", amount, "relative", NULL}; mpv_command(player, args); }
-            if (volume) { char amount[32]; snprintf(amount, sizeof(amount), "%d", volume); const char *args[] = {"add", "volume", amount, NULL}; mpv_command(player, args); }
-            mpv_event *event;
-            while ((event = mpv_wait_event(player, 0))->event_id != MPV_EVENT_NONE) {
-                if (event->event_id == MPV_EVENT_END_FILE) {
-                    const mpv_event_end_file *end = event->data;
-                    if (end && end->error < 0) { graphics_image empty = {0}; publish(v, current.token, &empty, NULL, "Vídeo inválido ou codec indisponível."); }
-                }
+            video_controls controls = {pause, mute, seek, volume};
+            video_info info;
+            api->update(player, &controls, &info);
+            if (info.invalid) {
+                graphics_image empty = {0}; publish(v, current.token, &empty, NULL, "Vídeo inválido ou codec indisponível.");
             }
-            int paused = 0, muted = 0;
-            double position = 0, duration = 0, volume_value = 50;
-            mpv_get_property(player, "pause", MPV_FORMAT_FLAG, &paused);
-            mpv_get_property(player, "mute", MPV_FORMAT_FLAG, &muted);
-            mpv_get_property(player, "time-pos", MPV_FORMAT_DOUBLE, &position);
-            mpv_get_property(player, "duration", MPV_FORMAT_DOUBLE, &duration);
-            mpv_get_property(player, "volume", MPV_FORMAT_DOUBLE, &volume_value);
-            char *ao = mpv_get_property_string(player, "current-ao");
             pthread_mutex_lock(&v->lock);
-            bool missing = ao && !strcmp(ao, "null");
-            v->status_changed |= v->paused != (paused != 0) || v->muted != (muted != 0) ||
-                v->audio_missing != missing || fabs(v->position - position) >= 1 || v->volume != volume_value;
-            v->audio_missing = missing;
-            v->playing = true; v->paused = paused != 0; v->muted = muted != 0;
-            v->position = position; v->duration = duration; v->volume = volume_value;
+            v->status_changed |= v->paused != info.paused || v->muted != info.muted ||
+                v->audio_missing != info.audio_missing || fabs(v->position - info.position) >= 1 || v->volume != info.volume;
+            v->audio_missing = info.audio_missing;
+            v->playing = true; v->paused = info.paused; v->muted = info.muted;
+            v->position = info.position; v->duration = info.duration; v->volume = info.volume;
             pthread_mutex_unlock(&v->lock);
-            mpv_free(ao);
             uint64_t now = 0;
-            if (net_now_ms(&now) && now - last_frame >= 67 && (force_frame || (mpv_render_context_update(render) & MPV_RENDER_UPDATE_FRAME))) {
+            if (net_now_ms(&now) && now - last_frame >= 67 && (force_frame || api->changed(player))) {
                 last_frame = now; force_frame = false;
                 size_t pixels = (size_t)current.width * (size_t)current.height;
                 unsigned char *rgba = malloc(pixels * 4), *rgb = malloc(pixels * 3);
                 graphics_image image = {0};
                 if (rgba && rgb) {
-                    int dimensions[] = {current.width, current.height}; size_t stride = (size_t)current.width * 4;
-                    mpv_render_param params[] = {{MPV_RENDER_PARAM_SW_SIZE, dimensions}, {MPV_RENDER_PARAM_SW_FORMAT, "rgb0"},
-                        {MPV_RENDER_PARAM_SW_STRIDE, &stride}, {MPV_RENDER_PARAM_SW_POINTER, rgba}, {MPV_RENDER_PARAM_INVALID, NULL}};
-                    if (mpv_render_context_render(render, params) >= 0) {
+                    if (api->render(player, rgba, current.width, current.height)) {
                         for (size_t i = 0; i < pixels; ++i) memcpy(rgb + i * 3, rgba + i * 4, 3);
                         if (graphics_image_encode_id(rgb, current.width, current.height, current.terminal, current.image_id, &image)) publish(v, current.token, &image, NULL, NULL);
                     }
@@ -222,8 +185,7 @@ static void *worker(void *context)
         }
         pthread_mutex_unlock(&v->lock);
     }
-    if (render) mpv_render_context_free(render);
-    if (player) mpv_terminate_destroy(player);
+    if (player) api->close(player);
     free_job(&current); atomic_store(&v->player_idle, true); return NULL;
 }
 static bool submit_job(media_view *v, const job *request)

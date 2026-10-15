@@ -39,7 +39,7 @@ def main():
         deadline = time.monotonic() + timeout
         while not predicate() and time.monotonic() < deadline: t.read(.005)
         if not predicate(): raise AssertionError('Controlled scenario did not finish')
-    def run(binary):
+    def run(binary, *, instrument=False):
         test_terminal.BINARY = str(binary.resolve())
         with tempfile.TemporaryDirectory(prefix='papo-performance-') as directory, HistoryMock(count=100) as server:
             metrics = Path(directory) / 'metrics.json'
@@ -57,7 +57,9 @@ def main():
             server.api_handler = route
             server.messages[-1]['attachments'] = [dict(id=uuid(901 + i), mime_type='image/png',
                 original_file_name='Synthetic image', size_bytes=len(MediaTerminal.images['png'])) for i in range(4)]
-            environment = {'TMPDIR': directory, 'LD_PRELOAD': str(args.instrumentation.resolve()), 'PAPO_MEDIA_METRICS': str(metrics)}
+            environment = {'TMPDIR': directory}
+            if instrument:
+                environment.update(LD_PRELOAD=str(args.instrumentation.resolve()), PAPO_MEDIA_METRICS=str(metrics))
             t = test_terminal.Terminal(environment=environment)
             stream = GraphicsStream(t.screen); stream.feed(bytes(t.output)); t.stream = stream
             try:
@@ -99,12 +101,20 @@ def main():
                     'kitty_image_ids': len({h[b'i'] for h, _ in stream.kitty_frames}),
                     'kitty_positions': len({(p[b'i'], p[b'p']) for p in stream.placements})}
             finally: assert t.close()
-            result.update(json.loads(metrics.read_text()))
+            if instrument:
+                result.update(json.loads(metrics.read_text()))
             result['binary_sha256'] = hashlib.sha256(binary.read_bytes()).hexdigest()
             return result
     try:
         report['before'] = run(args.baseline)
         report['after'] = run(args.binary)
+        # Preloading FFmpeg for counters would defeat lazy loading in the RAM
+        # and keyboard measurements. Collect only counters in a separate pass.
+        for label, binary in (('before', args.baseline), ('after', args.binary)):
+            counters = run(binary, instrument=True)
+            for key in ('avcodec_open2_calls', 'graphic_encodes', 'graphic_payload_bytes'):
+                report[label][key] = counters[key]
+        report['instrumentation'] = 'separate pass; RSS and timings measured without LD_PRELOAD'
         report['passed'] = report['after']['keyboard_p95_ms'] < 100 and report['after']['loading_keyboard_p95_ms'] < 100 and report['after']['peak_downloads'] == 4
         args.output.write_text(json.dumps(report, indent=2) + '\n')
         print(json.dumps(report))

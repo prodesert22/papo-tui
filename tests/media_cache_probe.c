@@ -9,6 +9,9 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#ifdef __GLIBC__
+#include <malloc.h>
+#endif
 
 static void pause_tick(void) { struct timespec delay = {0, 1000000}; nanosleep(&delay, NULL); }
 /* Linker fault injection affects project allocations, not system libraries. */
@@ -18,6 +21,16 @@ char *__real_strdup(const char *text);
 static atomic_bool worker_delay, fail_calloc, fail_strdup;
 static atomic_uint blocked_workers;
 static pthread_t main_thread;
+#ifdef __GLIBC__
+int __real_malloc_trim(size_t pad);
+static atomic_uint trim_calls;
+int __wrap_malloc_trim(size_t pad)
+{
+    assert(!pthread_equal(pthread_self(), main_thread));
+    atomic_fetch_add(&trim_calls, 1);
+    return __real_malloc_trim(pad);
+}
+#endif
 void *__wrap_malloc(size_t size)
 {
     if (atomic_load(&worker_delay) && !pthread_equal(pthread_self(), main_thread)) {
@@ -57,6 +70,16 @@ static void bounds(void)
     assert(s.files + s.file_reserved <= MEDIA_CACHE_FILES && s.jobs <= MEDIA_CACHE_QUEUE + 2);
     assert(s.queued <= MEDIA_CACHE_QUEUE && s.workers <= 2 && s.peak_workers <= 2 && s.downloads <= 4);
 }
+static size_t rss_kib(void)
+{
+    FILE *file = fopen("/proc/self/smaps_rollup", "r");
+    size_t rss = 0; char line[256];
+    if (file) {
+        while (fgets(line, sizeof(line), file)) if (sscanf(line, "Rss: %zu kB", &rss) == 1) break;
+        fclose(file);
+    }
+    return rss;
+}
 static void pressure_test(auth_client *auth, media_cache *cache)
 {
     media_resource *resources[12];
@@ -64,7 +87,7 @@ static void pressure_test(auth_client *auth, media_cache *cache)
         char id[37]; snprintf(id, sizeof(id), "00000000-0000-4000-8000-%012x", 901 + i);
         resources[i] = media_cache_acquire(cache, AUTH_MEDIA_ATTACHMENT, id, 1, false); assert(resources[i]);
     }
-    size_t peak = 0, least_animated = 12;
+    size_t peak = 0, least_animated = 12, baseline = rss_kib(), reclaimed_rss = 0;
     uint64_t epoch = now_ms();
     for (int cycle = 0; cycle < 3; ++cycle) {
         uint64_t base = epoch + (uint64_t)cycle * 400000, current = base;
@@ -86,6 +109,7 @@ static void pressure_test(auth_client *auth, media_cache *cache)
             bounds(); pause_tick();
         }
         assert(ready);
+        media_cache_stats before_expiry; media_cache_get_stats(&before_expiry);
         size_t animated = 0;
         for (int i = 0; i < 12; ++i) animated += media_resource_animated(resources[i], false);
         if (animated < least_animated) least_animated = animated;
@@ -102,9 +126,33 @@ static void pressure_test(auth_client *auth, media_cache *cache)
         media_cache_get_stats(&stats); assert(!stats.memory && !stats.reserved);
         media_cache_begin(cache); media_cache_poll(cache, current + 370000);
         media_cache_get_stats(&stats); assert(!stats.files && !stats.objects && !stats.file_reserved);
+#ifdef __GLIBC__
+        for (int n = 0; n < 12000; ++n) {
+            media_cache_begin(cache); media_cache_poll(cache, current + 370000 + (uint64_t)n);
+            media_cache_get_stats(&stats);
+            if (stats.trim_attempts > before_expiry.trim_attempts && !stats.jobs && stats.reclaim_pending < 16U * 1024U * 1024U) break;
+            pause_tick();
+        }
+        assert(stats.trim_attempts > before_expiry.trim_attempts && !stats.jobs && stats.reclaim_pending < 16U * 1024U * 1024U);
+        assert(atomic_load(&trim_calls) == stats.trim_attempts);
+        size_t rss = rss_kib();
+        if (rss > reclaimed_rss) reclaimed_rss = rss;
+#ifndef PAPO_TEST_SANITIZERS
+        /* First use also loads codecs, which are outside the image budget. */
+        if (baseline && rss > baseline + 64U * 1024U) {
+            struct mallinfo2 info = mallinfo2();
+            fprintf(stderr, "RSS baseline=%zu after=%zu attempts=%llu heap_used=%zu heap_free=%zu mmap=%zu\n",
+                baseline, rss, (unsigned long long)stats.trim_attempts, info.uordblks, info.fordblks, info.hblkhd);
+        }
+        assert(!baseline || rss <= baseline + 64U * 1024U);
+#endif
+#endif
     }
     for (int i = 0; i < 12; ++i) media_resource_release(resources[i]);
-    printf("{\"cycles\":3,\"peak_accounted_bytes\":%zu,\"least_animated\":%zu,\"released_each_cycle\":true}\n", peak, least_animated);
+    media_cache_stats final; media_cache_get_stats(&final);
+    printf("{\"cycles\":3,\"peak_accounted_bytes\":%zu,\"least_animated\":%zu,\"released_each_cycle\":true,"
+           "\"trim_attempts\":%llu,\"baseline_rss_kib\":%zu,\"maximum_rss_after_trim_kib\":%zu}\n",
+           peak, least_animated, (unsigned long long)final.trim_attempts, baseline, reclaimed_rss);
 }
 int main(int argc, char **argv)
 {

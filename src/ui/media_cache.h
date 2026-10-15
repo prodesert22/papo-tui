@@ -13,6 +13,8 @@ typedef struct {
     size_t memory, reserved, files, file_reserved, objects, references, jobs, downloads;
     unsigned workers, peak_workers, queued;
     uint64_t requests, decodes, encodes, deduplicated;
+    uint64_t trim_attempts, trims;
+    size_t reclaim_pending;
 } media_cache_stats;
 /* All calls and reference changes are on the main thread. A cache is scoped to
  * one auth client/generation; all caches share the process budget and pool.

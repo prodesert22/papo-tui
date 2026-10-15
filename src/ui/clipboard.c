@@ -1,7 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "ui/clipboard.h"
 #include "net/clock.h"
-#include <libavutil/base64.h>
+#include <glib.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -36,9 +36,12 @@ static void feedback(const char *text)
 }
 static bool terminal_copy(void)
 {
-    char encoded[AV_BASE64_SIZE(TEXT_UTF8_BYTES)];
-    bool ok = av_base64_encode(encoded, sizeof(encoded), (const unsigned char *)copy.data, (int)copy.length) &&
-              fprintf(stdout, "\033]52;c;%s\a", encoded) >= 0 && fflush(stdout) == 0;
+    char encoded[((TEXT_UTF8_BYTES + 2) / 3) * 4 + 1];
+    int state = 0, save = 0;
+    size_t length = g_base64_encode_step((const guchar *)copy.data, copy.length, false, encoded, &state, &save);
+    length += g_base64_encode_close(false, encoded + length, &state, &save);
+    encoded[length] = 0;
+    bool ok = fprintf(stdout, "\033]52;c;%s\a", encoded) >= 0 && fflush(stdout) == 0;
     volatile char *p = encoded;
     for (size_t i = 0; i < sizeof(encoded); ++i) p[i] = 0;
     wipe(); feedback(ok ? "Texto copiado" : "Falha ao copiar texto");

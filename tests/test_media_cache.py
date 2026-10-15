@@ -86,6 +86,8 @@ class Cache(unittest.TestCase):
             report = json.loads(result.stdout)
             self.assertLessEqual(report['peak_accounted_bytes'], 256 * 1024 * 1024)
             self.assertGreater(report['peak_accounted_bytes'], 240 * 1024 * 1024)
+            if os.confstr('CS_GNU_LIBC_VERSION'):
+                self.assertGreaterEqual(report['trim_attempts'], 3)
             self.assertEqual(list(files.iterdir()), [])
             print(json.dumps(report))
 
