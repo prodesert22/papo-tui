@@ -66,6 +66,9 @@ void history_typing_text(const history *h, char *text, size_t capacity);
 /* Actual editor mutation only. Nonblocking WS, throttled per active channel. */
 void history_typing_activity(history *h);
 bool history_loading(const history *h);
+/* A successful recent page is available, including an empty conversation;
+ * failed/pending reads and a window that evicted its newest page are excluded. */
+bool history_recent_ready(const history *h);
 bool history_has_more(const history *h);
 bool history_evicted(const history *h);
 /* UUID validation protects endpoint interpolation. */

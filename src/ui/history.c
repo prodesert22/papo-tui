@@ -54,7 +54,7 @@ typedef struct {
     uint64_t retry_id;
     uint64_t unseen;
     size_t section, offset;
-    bool at_end, paste, show_channels, layout_failed, duplicate_modal, reenviar;
+    bool at_end, paste, show_channels, layout_failed, duplicate_modal, reenviar, conversation_requested;
     bool dragging, editor_scrolling;
     text_paste paste_data;
 } view;
@@ -80,6 +80,39 @@ static size_t list_count(view *ui)
     return n;
 }
 static json_t *list_channel(view *ui,size_t row) { return history_channel(ui->model,list_index(ui,row)); }
+static bool conversation_notified(view *ui, json_t *channel)
+{
+    inbox *box=history_inbox(ui->model);
+    const char *id=str(channel,"id"),*last=str(json_object_get(channel,"last_message"),"id");
+    if (inbox_conversation_acknowledged(box,id,last)) return false;
+    return strcmp(str(channel,"type"),"category") &&
+        (inbox_conversation_unseen(box,id) || inbox_conversation_notified(box,id) ||
+         (json_is_true(json_object_get(channel,"_dm")) && json_integer_value(json_object_get(channel,"unread_count"))>0) ||
+         (*last && strcmp(last,str(channel,"last_read_message")) && !inbox_message_viewed(box,last)));
+}
+static bool list_notified(view *ui, bool dms)
+{
+    for (size_t i=0;i<history_channel_count(ui->model);++i) {
+        json_t *channel=history_channel(ui->model,i);
+        if (json_is_true(json_object_get(channel,"_dm"))==dms && conversation_notified(ui,channel)) return true;
+    }
+    return false;
+}
+static void notification_dot(WINDOW *window, int row, int column, int pair)
+{
+    attr_t previous=getattrs(window);
+    wattrset(window,(has_colors() ? COLOR_PAIR(pair) : 0) | A_BOLD);
+    mvwaddstr(window,row,column,"●");
+    wattrset(window,previous);
+}
+static void list_button(view *ui, int button, int column, int width, const char *label)
+{
+    button_state state=ui->focus==LIST_BUTTONS && ui->list_button==button ? BUTTON_FOCUSED :
+                       ui->list_dms==(button!=0) ? BUTTON_SELECTED : BUTTON_NORMAL;
+    button_draw(ui->list,0,column,width,label,state,BUTTON_PANEL);
+    if (list_notified(ui,button!=0)) notification_dot(ui->list,0,column+width-1,
+        state==BUTTON_FOCUSED ? NOTIFICATION_BUTTON_FOCUS : state==BUTTON_SELECTED ? NOTIFICATION_SELECTED : NOTIFICATION);
+}
 static void switch_list(view *ui,bool dms)
 {
     ui->highlights[ui->list_dms]=ui->highlighted;
@@ -487,10 +520,11 @@ static void draw(view *ui, auth_client *auth, draw_scope scope)
     if (scope != DRAW_CONVERSATION) draw_tabs(ui, auth);
     draw_footer(ui);
     if (ui->list && scope != DRAW_CONVERSATION) {
-        wbkgd(ui->list, COLOR_PAIR(ui->focus == CHANNEL_LIST ? FOCUS_AREA : PANEL)); werase(ui->list);
-        wattrset(ui->list, COLOR_PAIR(ui->focus == CHANNEL_LIST ? FOCUS_MUTED : PANEL_MUTED) | A_BOLD);
-        button_draw(ui->list,0,1,9,"[Canais]",ui->focus==LIST_BUTTONS && ui->list_button==0 ? BUTTON_FOCUSED : !ui->list_dms ? BUTTON_SELECTED : BUTTON_NORMAL,BUTTON_PANEL);
-        button_draw(ui->list,0,11,8,"[DMs]",ui->focus==LIST_BUTTONS && ui->list_button==1 ? BUTTON_FOCUSED : ui->list_dms ? BUTTON_SELECTED : BUTTON_NORMAL,BUTTON_PANEL);
+        bool focused=ui->focus==CHANNEL_LIST || ui->focus==LIST_BUTTONS;
+        wbkgd(ui->list, COLOR_PAIR(focused ? FOCUS_AREA : PANEL)); werase(ui->list);
+        wattrset(ui->list, COLOR_PAIR(focused ? FOCUS_MUTED : PANEL_MUTED) | A_BOLD);
+        list_button(ui,0,1,9,"[Canais]");
+        list_button(ui,1,11,8,"[DMs]");
         int rows = getmaxy(ui->list) - 2;
         size_t count = list_count(ui);
         if (!count) text_label(ui->list,1,1,ui->side-2,ui->list_dms ? "Nenhuma DM disponível." : "Nenhum canal disponível.");
@@ -514,8 +548,11 @@ static void draw(view *ui, auth_client *auth, draw_scope scope)
                     (long long)json_integer_value(json_object_get(c,"unread_count")));
             }
             bool selected = index == ui->highlighted;
-            wattrset(ui->list, COLOR_PAIR(selected && ui->focus == CHANNEL_LIST ? FOCUSED : selected ? PANEL_ACTIVE : ui->focus == CHANNEL_LIST ? FOCUS_AREA : PANEL));
-            text_label(ui->list, row + 1, 1, ui->side - 2, label);
+            bool notified=conversation_notified(ui,c);
+            wattrset(ui->list, COLOR_PAIR(selected && focused ? FOCUSED : selected ? PANEL_ACTIVE : focused ? FOCUS_AREA : PANEL));
+            text_label(ui->list, row + 1, 1, ui->side - 2 - (notified ? 1 : 0), label);
+            if (notified) notification_dot(ui->list,row+1,ui->side-2,
+                focused ? NOTIFICATION_FOCUS : selected ? NOTIFICATION_SELECTED : NOTIFICATION);
         }
     }
     if (ui->body && scope != DRAW_NAVIGATION) {
@@ -589,6 +626,16 @@ static void draw(view *ui, auth_client *auth, draw_scope scope)
                 wmove(ui->body, input_top(ui) + measured.cursor_row - editor->first_row, 3 + measured.cursor_column);
         }
     }
+    if (ui->body && scope!=DRAW_NAVIGATION && ui->at_end && history_recent_ready(ui->model) &&
+        !r8_modal_is_open(ui->r8) && !ui->duplicate_modal && !mention_popup_open(ui->mentions) && !media_view_modal(ui->media)) {
+        uint64_t now=0; net_now_ms(&now);
+        if (text_terminal_focused() || (text_terminal_focus_unknown() &&
+            (now<ui->view_requested_until || ui->conversation_requested))) {
+            json_t *channel=history_channel(ui->model,history_selected(ui->model));
+            inbox_acknowledge_conversation(history_inbox(ui->model),str(channel,"id"),str(json_object_get(channel,"last_message"),"id"));
+            ui->conversation_requested=false;
+        }
+    }
     if (scope == DRAW_ALL) { touchwin(ui->frame); wnoutrefresh(ui->frame); }
     if (scope != DRAW_CONVERSATION) {
         wnoutrefresh(ui->tabs);
@@ -644,13 +691,14 @@ static void open_channel(view *ui)
 {
     /* Selecting the displayed channel only changes focus. Preserve pending
      * reads, the reading anchor, the draft and the current message window. */
-    if (history_selected(ui->model) == list_index(ui,ui->highlighted)) { set_focus(ui, HISTORY_PANEL); return; }
+    if (history_selected(ui->model) == list_index(ui,ui->highlighted)) { ui->conversation_requested=true; set_focus(ui, HISTORY_PANEL); return; }
     json_t *channel = list_channel(ui, ui->highlighted);
     bool text = !strcmp(str(channel, "type"), "text");
     if (text && !send_editor_select(ui->editor, str(channel, "id"))) {
         ui->feedback = "Não foi possível trocar o editor; rascunho preservado."; return;
     }
     if (history_select(ui->model, list_index(ui,ui->highlighted))) {
+        ui->conversation_requested=true;
         for (int context = STATUS_HISTORY; context <= STATUS_CLIPBOARD; ++context)
             status_bar_set(&ui->status, (status_context)context, NULL);
         media_view_reset(ui->media);
@@ -817,7 +865,11 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         if (redraw) { draw(ui, auth, scope); redraw = false; scope = DRAW_ALL; }
         wint_t key; int type = ui->paste ? text_paste_read(&ui->paste_data, &key, true, graphics_terminal_input, 30) : graphics_terminal_input(&key);
         if (type == ERR) continue;
-        if (type==KEY_CODE_YES && (key==TEXT_FOCUS_IN || key==TEXT_FOCUS_OUT)) { ui->view_requested_until=0; redraw=true; scope=DRAW_ALL; continue; }
+        if (type==KEY_CODE_YES && (key==TEXT_FOCUS_IN || key==TEXT_FOCUS_OUT)) {
+            ui->view_requested_until=0;
+            if (key==TEXT_FOCUS_OUT) ui->conversation_requested=false;
+            redraw=true; scope=DRAW_ALL; continue;
+        }
         if (!(type==KEY_CODE_YES && (key==PASTE_START || key==PASTE_END || key==KEY_RESIZE || key==TEXT_IGNORED)) && !ui->paste) {
             uint64_t now; if (net_now_ms(&now)) ui->view_requested_until=now+2000;
             history_activity(ui->model);

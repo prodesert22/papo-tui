@@ -23,7 +23,7 @@ def exercise(terminal, server):
     terminal.resize(False)
     terminal.stage = 'login'
     terminal.send(server.url + '\tjosé\tSynthetic!123\n')
-    see('[Canais]  [DMs]'); see('Categoria'); see('Tempo real conectado')
+    see('[Canais]'); see('[DMs]'); see('Categoria'); see('Tempo real conectado')
     terminal.stage = 'keyboard_buttons'
     terminal.send('\t\x1bOC\n'); see('Bia ·')
     checks['adjacent_buttons_keyboard'] = True

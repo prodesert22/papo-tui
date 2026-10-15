@@ -164,6 +164,11 @@ bool history_has_more(const history *h) { return h->more; }
 bool history_evicted(const history *h) { return h->evicted; }
 bool history_recovering(const history *h) { return h->recovering; }
 uint64_t history_insertions(const history *h) { return h->insertions; }
+bool history_recent_ready(const history *h)
+{
+    return h->messages && !h->want_messages && h->pending!=MESSAGES && h->failed!=MESSAGES &&
+           !h->recovering && !h->evicted;
+}
 bool history_loading(const history *h)
 {
     return auth_has_session(h->auth) &&

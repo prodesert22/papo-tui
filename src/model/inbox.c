@@ -10,7 +10,7 @@
 enum operation { NONE, DMS, RECENT, OLDER, NEWER, OPEN, CLOSE, READ, RESOLVE };
 struct inbox {
     auth_client *auth;
-    json_t *dms, *notifications, *events, *presence, *seen, *viewed, *messages, *alerts, *reads, *batch, *journal, *fresh, *unseen;
+    json_t *dms, *notifications, *events, *presence, *seen, *viewed, *messages, *alerts, *reads, *batch, *journal, *fresh, *unseen, *acknowledged;
     enum operation pending, action;
     bool want_dms, want_recent, want_newer, want_older, more, read_failed, presence_ready, presence_partial;
     char oldest_time[65], oldest_id[37], newest_time[65], newest_id[37];
@@ -100,9 +100,9 @@ inbox *inbox_create(auth_client *auth)
     b->dms=json_array(); b->notifications=json_array(); b->events=json_array(); b->presence=json_object();
     b->seen=json_object(); b->viewed=json_object(); b->messages=json_object(); b->alerts=json_array();
     b->reads=json_array(); b->journal=json_array();
-    b->unseen=json_object();
+    b->unseen=json_object(); b->acknowledged=json_object();
     if (!b->dms || !b->notifications || !b->events || !b->presence || !b->seen || !b->viewed ||
-        !b->messages || !b->alerts || !b->reads || !b->journal || !b->unseen) { inbox_destroy(b); return NULL; }
+        !b->messages || !b->alerts || !b->reads || !b->journal || !b->unseen || !b->acknowledged) { inbox_destroy(b); return NULL; }
     b->want_dms=b->want_recent=true;
     return b;
 }
@@ -111,14 +111,14 @@ void inbox_destroy(inbox *b)
     if (!b) return;
     json_decref(b->dms); json_decref(b->notifications); json_decref(b->events); json_decref(b->presence);
     json_decref(b->seen); json_decref(b->viewed); json_decref(b->messages); json_decref(b->alerts);
-    json_decref(b->reads); json_decref(b->batch); json_decref(b->journal); json_decref(b->fresh); json_decref(b->unseen); free(b);
+    json_decref(b->reads); json_decref(b->batch); json_decref(b->journal); json_decref(b->fresh); json_decref(b->unseen); json_decref(b->acknowledged); free(b);
 }
 void inbox_reset(inbox *b)
 {
     json_array_clear(b->dms); json_array_clear(b->notifications); json_array_clear(b->events);
     json_array_clear(b->alerts); json_array_clear(b->reads); json_array_clear(b->journal);
     json_object_clear(b->presence); json_object_clear(b->seen); json_object_clear(b->viewed); json_object_clear(b->messages);
-    json_object_clear(b->unseen); b->presence_partial=false;
+    json_object_clear(b->unseen); json_object_clear(b->acknowledged); b->presence_partial=false;
     json_decref(b->batch); b->batch=NULL; b->pending=b->action=NONE;
     json_decref(b->fresh); b->fresh=NULL; b->refresh_id[0]=b->refresh_time[0]=0;
     b->oldest_id[0]=b->newest_id[0]=b->oldest_time[0]=b->newest_time[0]=b->opened[0]=b->notice[0]=0;
@@ -154,6 +154,12 @@ static bool notification_valid(json_t *n)
         text_field(n,"message_content",2048,false) && json_is_boolean(json_object_get(n,"read")) &&
         text_field(n,"created_at",64,false) && session_time_parse(s(n,"created_at"),&time);
 }
+static bool notification_after_ack(const json_t *n, const json_t *ack)
+{
+    if (!ack || !*s(ack,"time")) return false;
+    int time=compare_time(s(n,"created_at"),s(ack,"time"));
+    return time>0 || (!time && strcmp(s(n,"id"),s(ack,"notification_id"))>0);
+}
 static bool notifications_response(inbox *b,json_t *body,enum operation kind)
 {
     json_t *page=json_object_get(body,"notifications"),*more=json_object_get(body,"has_more");
@@ -165,6 +171,19 @@ static bool notifications_response(inbox *b,json_t *body,enum operation kind)
                  (kind==NEWER && !strcmp(s(last,"id"),b->newest_id)))) return false;
     for (size_t i=0;i<count;++i) {
         json_t *n=json_array_get(page,i); json_t *copy=json_deep_copy(n);
+        json_t *ack=json_object_get(b->acknowledged,s(n,"channel_id"));
+        for (size_t j=0;ack && j<json_array_size(b->events);++j) {
+            json_t *e=json_array_get(b->events,j);
+            if ((!strcmp(s(e,"id"),s(n,"id")) || !strcmp(s(e,"message_id"),s(n,"message_id"))) &&
+                json_is_true(json_object_get(e,"_badge_acknowledged")) && notification_after_ack(n,ack)) {
+                json_object_set(ack,"time",json_object_get(n,"created_at"));
+                json_object_set(ack,"notification_id",json_object_get(n,"id"));
+            }
+        }
+        if (kind!=OLDER && !json_is_true(json_object_get(n,"read")) &&
+            !json_object_get(b->viewed,s(n,"message_id")) &&
+            notification_after_ack(n,json_object_get(b->acknowledged,s(n,"channel_id"))))
+            json_object_del(b->acknowledged,s(n,"channel_id"));
         if (!copy || !upsert(kind==RECENT ? b->fresh : b->notifications,copy)) { json_decref(copy); return false; }
         json_decref(copy);
         bounded_key(b->messages,s(n,"message_id"),json_object_get(n,"channel_id"));
@@ -209,6 +228,16 @@ static bool notifications_response(inbox *b,json_t *body,enum operation kind)
     }
     if (kind!=NEWER) b->more=count && json_is_true(more);
     else b->want_newer=count && json_is_true(more);
+    /* A channel may be opened before the initial notification snapshot. That
+     * initial backlog must not resurrect its badge. Later records can do so. */
+    const char *channel; json_t *ack;
+    json_object_foreach(b->acknowledged,channel,ack) {
+        (void)channel;
+        if (!*s(ack,"time") && *b->newest_id) {
+            json_object_set_new(ack,"time",json_string(b->newest_time));
+            json_object_set_new(ack,"notification_id",json_string(b->newest_id));
+        }
+    }
     return true;
 }
 static bool presence_set(json_t *map,const json_t *event)
@@ -259,8 +288,11 @@ bool inbox_event(inbox *b,const json_t *event)
         if (!uuid_field(event,"id") || !uuid_field(event,"channel_id") || !text_field(event,"content",32768,true) ||
             !text_field(event,"created_at",64,false) || !session_time_parse(s(event,"created_at"),&time) ||
             !text_field(event,"author_id",36,true) || (*s(event,"author_id") && !history_uuid(s(event,"author_id")))) return false;
+        bool known=json_object_get(b->messages,s(event,"id"))!=NULL;
         bounded_key(b->messages,s(event,"id"),json_object_get(event,"channel_id"));
-        if (strcmp(s(event,"author_id"),auth_user_id(b->auth)) && !json_object_get(b->viewed,s(event,"id"))) {
+        if (strcmp(s(event,"author_id"),auth_user_id(b->auth)) && !json_object_get(b->viewed,s(event,"id")) &&
+            !(known && json_object_get(b->acknowledged,s(event,"channel_id")))) {
+            json_object_del(b->acknowledged,s(event,"channel_id"));
             json_t *prior=json_object_get(b->unseen,s(event,"channel_id"));
             if (!prior || compare_time(s(event,"created_at"),s(prior,"created_at"))>=0) {
                 json_t *mark=json_pack("{s:s,s:s}","id",s(event,"id"),"created_at",s(event,"created_at"));
@@ -293,6 +325,10 @@ bool inbox_event(inbox *b,const json_t *event)
         persisted=true; break;
     }
     json_t *copy=json_deep_copy(event);
+    const char *channel=inbox_message_channel(b,s(event,"message_id"));
+    if (*channel && !json_object_get(b->viewed,s(event,"message_id")) &&
+        (!persisted || notification_after_ack(n,json_object_get(b->acknowledged,channel))))
+        json_object_del(b->acknowledged,channel);
     if (copy && json_object_get(b->viewed,s(event,"message_id"))) json_object_set_new(copy,"_viewed",json_true());
     if (!copy || (!persisted && json_array_append(b->events,copy)) || json_array_append(b->alerts,copy)) { json_decref(copy); return false; }
     json_decref(copy); trim(b->events,256,1024U*1024U,false); trim(b->alerts,256,1024U*1024U,false);
@@ -440,7 +476,8 @@ size_t inbox_unread(const inbox *b)
 void inbox_view_message(inbox *b,const char *id)
 {
     if (!history_uuid(id)) return;
-    bounded_key(b->viewed,id,json_true());
+    bool known=json_object_get(b->viewed,id)!=NULL;
+    if (bounded_key(b->viewed,id,json_true()) && !known) ++b->revision;
     const char *channel; json_t *mark;
     json_object_foreach(b->unseen,channel,mark) if (!strcmp(s(mark,"id"),id)) {
         json_object_del(b->unseen,channel); ++b->revision; break;
@@ -466,6 +503,36 @@ void inbox_read_conversation(inbox *b,const char *id)
     }
 }
 bool inbox_conversation_unseen(const inbox *b,const char *id) { return json_object_get(b->unseen,id)!=NULL; }
+bool inbox_conversation_acknowledged(const inbox *b,const char *id,const char *last)
+{
+    json_t *ack=json_object_get(b->acknowledged,id);
+    return ack && last && !strcmp(s(ack,"last"),last) && !inbox_conversation_unseen(b,id);
+}
+void inbox_acknowledge_conversation(inbox *b,const char *id,const char *last)
+{
+    if (!history_uuid(id) || !last || (*last && !history_uuid(last)) || inbox_conversation_acknowledged(b,id,last)) return;
+    json_t *ack=json_pack("{s:s,s:s,s:s}","last",last,"time",b->newest_time,"notification_id",b->newest_id);
+    if (ack && bounded_key(b->acknowledged,id,ack)) {
+        json_object_del(b->unseen,id); ++b->revision;
+        size_t i; json_t *event;
+        json_array_foreach(b->events,i,event)
+            if (!strcmp(inbox_message_channel(b,s(event,"message_id")),id))
+                json_object_set_new(event,"_badge_acknowledged",json_true());
+    }
+    json_decref(ack);
+}
+bool inbox_conversation_notified(const inbox *b,const char *id)
+{
+    size_t i; json_t *n;
+    if (!history_uuid(id)) return false;
+    json_array_foreach(b->notifications,i,n)
+        if (!json_is_true(json_object_get(n,"read")) && !strcmp(s(n,"channel_id"),id) &&
+            !json_object_get(b->viewed,s(n,"message_id"))) return true;
+    json_array_foreach(b->events,i,n)
+        if (!json_is_true(json_object_get(n,"_viewed")) && !json_object_get(b->viewed,s(n,"message_id")) &&
+            !strcmp(inbox_message_channel(b,s(n,"message_id")),id)) return true;
+    return false;
+}
 bool inbox_message_viewed(const inbox *b,const char *id) { return json_object_get(b->viewed,id)!=NULL; }
 size_t inbox_unseen_conversations(const inbox *b) { return json_object_size(b->unseen); }
 const char *inbox_notice(const inbox *b) { return b->notice; }

@@ -145,7 +145,7 @@ O aplicativo compartilha um limite configurável entre todas as tentativas de co
 
 ## Teclado e mouse
 
-O tema usa fundo quase preto, painéis em cinza escuro e laranja `#ffb347` em títulos, seleções e foco, no login e nas conversas. Os botões usam texto branco em repouso e laranja quando selecionados ou focados. Terminais com paleta fixa usam uma aproximação do tom; em terminais sem cores, o foco dos botões é indicado por vídeo reverso.
+O tema usa fundo preto e laranja `#ffb347` em títulos, seleções e foco, no login e nas conversas. As cores de realce são preservadas para destacar a área em foco sobre o fundo preto. Os botões usam texto branco em repouso e laranja quando selecionados ou focados. Terminais com paleta fixa usam uma aproximação do tom; em terminais sem cores, o foco dos botões é indicado por vídeo reverso.
 No Kitty e no Konsole em modo de 256 cores, o tema usa tons aproximados que
 permanecem estáveis ao recarregar a configuração do terminal. Terminais com
 entrada de cores RGB diretas usam os tons exatos.
@@ -311,6 +311,8 @@ o aplicativo avisa pelo WebSocket no máximo uma vez a cada dois segundos.
 
 **F10** abre **Nova DM**. Digite para filtrar nickname ou username, use ↑/↓ e Enter, ou clique no destinatário. A lista é carregada em páginas e exclui sua conta e usuários banidos. Ctrl+R atualiza a lista; Esc cancela. A DM aberta usa o mesmo histórico, editor, menções e envio dos canais. Na lista **DMs**, **Ctrl+D** fecha a conversa para sua conta, preservando o histórico no servidor; uma nova mensagem pode fazê-la reaparecer. Erros de bloqueio e acesso aparecem nos avisos.
 
+Um círculo vermelho **●** à direita de um canal ou DM indica notificações ou mensagens não lidas conhecidas. O círculo aparece também no botão **Canais** ou **DMs** quando há avisos em alguma conversa dessa lista, inclusive quando ela não está sendo exibida. O indicador fica sobre a linha, em posição fixa à direita, preservando sua visibilidade em nomes longos e o fundo de seleção. Ao abrir a conversa e carregar seu trecho recente, o círculo local desaparece, inclusive se houver notificações antigas fora desse trecho. Notificações ainda não visualizadas permanecem na central. Novas mensagens ou notificações voltam a acender o círculo; falhas de carregamento preservam o aviso.
+
 A lista de DMs mostra presença e o número de mensagens não lidas informado pelo servidor. `?` indica presença ainda desconhecida. O `*` local marca uma nova mensagem ainda não visualizada nesta execução. Esses indicadores são separados: consultar o histórico atualiza a leitura da conversa no backend; visualizar uma mensagem limpa seu indicador local. Canais e DMs inativos não têm históricos consultados em segundo plano. Digitação funciona também nas DMs; a atividade enviada depende de interação real.
 
 ### Central e avisos de notificações
@@ -421,7 +423,7 @@ limite global de requisições. Erros preservam a navegação; após HTTP 429, a
 antes da tentativa manual.
 
 Embeds mostram autor, site/provedor, título, descrição, fields e rodapé sobre
-um fundo discretamente mais claro, com apenas uma barra à esquerda na cor
+um fundo preto, com apenas uma barra à esquerda na cor
 informada pelo servidor. Não há rótulos de embed/rodapé nem texto substituto
 para mensagens sem conteúdo textual. Autor e rodapé usam um tom discreto; o
 tamanho da fonte acompanha a configuração do terminal. Fields inline ficam
