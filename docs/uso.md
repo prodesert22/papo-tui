@@ -216,7 +216,7 @@ Abrir a lista não lê mensagens. Apenas o canal que você abre tem seu históri
 | Clique numa aba; clique em `‹` / `›` | Trocar de servidor; mostrar abas fora da faixa visível |
 | ← no histórico | Voltar à lista |
 | ↑ / ↓ no histórico | Rolar uma linha |
-| PageUp / PageDown | Rolar uma página; PageUp no início carrega mensagens anteriores |
+| PageUp / PageDown | Rolar uma página; a consulta da próxima começa perto da borda |
 | Home no histórico | Ir ao início da janela carregada |
 | End no histórico | Voltar ao fim das novidades; sem indicador, consultar a página recente |
 | Ctrl+R | Antecipar reconexão quando desconectado; conectado, atualizar o canal aberto ou tentar novamente |
@@ -240,11 +240,11 @@ Abrir a lista não lê mensagens. Apenas o canal que você abre tem seu históri
 | Ctrl+Q | Fechar o programa |
 | Ctrl+C | Limpar o campo focado; fechar fora dos campos |
 
-As páginas chegam em grupos de até 100 mensagens e aparecem em ordem cronológica. Ao alcançar o começo da janela, pressione PageUp para carregar uma página anterior. A mensagem e o trecho que estavam no topo continuam no mesmo lugar, inclusive após redimensionar o terminal. A lista de canais permanece estável durante a rolagem. Use Home depois do carregamento para ver o novo início. End volta à página recente.
+As páginas chegam em grupos de até 100 mensagens e aparecem em ordem cronológica. A roda do mouse, ↑/↓ e PageUp/PageDown antecipam a consulta quando faltam cerca de duas telas para a borda da janela carregada. Isso funciona ao buscar mensagens antigas e ao voltar a páginas mais recentes. Se alcançar a borda antes da resposta, a área de avisos mostra **Carregando próximas mensagens** com uma animação, que desaparece após o carregamento. A mensagem e o trecho que estavam no topo continuam no mesmo lugar, inclusive após redimensionar o terminal. A lista de canais permanece estável durante a rolagem. Home vai ao início da janela carregada; End volta à página recente. Falhas preservam a leitura e mostram um aviso; Ctrl+R tenta novamente.
 
 A tela mostra tópico, timestamps, autor ou **Autor indisponível**, indicação e data de edição e resposta cuja mensagem não está na janela atual. Anexos mostram nome, tipo, tamanho e moderação; imagens visíveis são carregadas em terminais Sixel/Kitty/iTerm2. Embeds aparecem em cards com seus textos, fields e mídia disponível. Os embeds recebidos ou atualizados em tempo real aparecem na mensagem sem precisar reabrir o canal, incluindo mensagens sem texto. URLs são apenas texto e não são abertas. O editor aceita mensagens nos canais de texto e de voz. Digitar a partir da conversa foca o editor e inclui o primeiro caractere. Enter envia; Ctrl+N insere uma quebra de linha. Você pode continuar editando, mudar de canal ou redimensionar durante o envio. A confirmação inclui a mensagem no histórico e remove somente o texto enviado que permaneceu intacto, preservando continuação e texto reescrito. Mensagens de outras contas chegam automaticamente; edições, exclusões e mudanças de canais também atualizam a tela. Eventos repetidos e confirmações REST/WS são reconciliados pelo ID da mensagem. Quando você está no fim, a tela acompanha novas mensagens; ao ler mensagens anteriores, mostra um indicador sem deslocar a leitura. End ou clique nesse indicador volta ao fim.
 
-A janela guarda até 1.000 mensagens ou 4 MiB de JSON serializado. Carregar páginas antigas além desse limite libera mensagens recentes; End consulta-as novamente. Não há histórico salvo no disco. Trocar de canal ou servidor libera a janela anterior; voltar exige abrir um canal para uma nova consulta. F6 descarta a janela ao voltar à conta.
+A janela deslizante guarda até 1.000 mensagens ou 4 MiB de JSON serializado. Carregar páginas além desse limite libera mensagens da borda oposta; rolar de volta consulta-as novamente, sem saltar páginas. End consulta diretamente a página recente. Não há histórico salvo no disco. Trocar de canal ou servidor libera a janela anterior; voltar exige abrir um canal para uma nova consulta. F6 descarta a janela ao voltar à conta.
 
 Após uma queda, a conexão ativa recupera mensagens posteriores ao cursor conhecido e recarrega a janela de histórico que estava aberta, incluindo edições e exclusões ocorridas offline. Canais e nomes de autores também são atualizados. A tela informa reconexão e recuperação, e continua aceitando edição, resize e saída. Falhas transitórias durante essa recuperação são repetidas com espera crescente, respeitando o orçamento global e `Retry-After`.
 

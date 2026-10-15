@@ -30,7 +30,7 @@
 #define CONTENT_Y 5
 
 enum { SERVER_TABS, CHANNEL_LIST, HISTORY_PANEL, MESSAGE_INPUT, EMOJI_BUTTON, LIST_BUTTONS };
-typedef enum { DRAW_ALL, DRAW_CONVERSATION, DRAW_NAVIGATION, DRAW_EDITOR, DRAW_MEDIA } draw_scope;
+typedef enum { DRAW_ALL, DRAW_CONVERSATION, DRAW_NAVIGATION, DRAW_EDITOR, DRAW_MEDIA, DRAW_FOOTER } draw_scope;
 #define LAYOUT_BYTES (8U * 1024U * 1024U)
 typedef struct { int x, width; } click_range;
 typedef struct {
@@ -76,6 +76,8 @@ typedef struct {
     uint64_t copy_revision;
     uint64_t retry_id;
     uint64_t unseen;
+    int waiting_page;
+    bool paging_notice;
     size_t section, offset;
     bool at_end, paste, show_channels, layout_failed, duplicate_modal, reenviar;
     bool dragging, editor_scrolling;
@@ -424,20 +426,27 @@ static int position(view *ui)
     int last = total > ui->visible ? total - ui->visible : 0;
     return ui->at_end ? last : anchor > last ? last : anchor;
 }
-static void scroll_history(view *ui, int delta)
+static void scroll_history(view *ui, int delta, bool paginate)
 {
     if (!ui->body) return;
     if (!history_message_count(ui->model) && delta<0) {
-        ui->at_end=false; ui->anchor[0]=0; return;
+        ui->at_end=false; ui->anchor[0]=0; ui->waiting_page=0; return;
     }
     int anchor, total = walk(ui, 0, false, false, &anchor);
     int last = total > ui->visible ? total - ui->visible : 0;
     int first = (ui->at_end ? last : anchor) + delta;
     if (first < 0) first = 0;
     if (first > last) first = last;
-    ui->at_end = first == last;
+    ui->at_end = first == last && !history_has_newer(ui->model);
     if (ui->at_end) ui->unseen = 0;
+    ui->waiting_page = delta < 0 && first == 0 ? -1 : delta > 0 && first == last ? 1 : 0;
     walk(ui, first, false, true, &anchor);
+    /* Load near the edge on actual scroll input. Drawing/polling never chains
+     * reads, and Home remains a jump within the currently loaded window. */
+    if (paginate && delta < 0 && first <= 2 * ui->visible && history_has_more(ui->model)) {
+        ui->at_end = false; history_older(ui->model);
+    } else if (paginate && delta > 0 && first >= last - 2 * ui->visible && history_has_newer(ui->model))
+        history_newer(ui->model);
 }
 static text_buffer *input(view *ui)
 {
@@ -535,6 +544,18 @@ static bool collect_notices(view *ui, auth_client *auth)
         } else
             changed |= status_bar_set(&ui->status, STATUS_HISTORY, message);
         ui->notice_revisions[next] = earliest;
+    }
+    int paging = history_paging_direction(ui->model);
+    if (paging && paging == ui->waiting_page && !ui->at_end && ui->body) {
+        static const char *frames[] = {"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"};
+        uint64_t now = 0; net_now_ms(&now);
+        char loading[128];
+        snprintf(loading, sizeof(loading), "%s Carregando próximas mensagens", frames[(now / 100) % 10]);
+        changed |= status_bar_set(&ui->status, STATUS_HISTORY, loading);
+        ui->paging_notice = true;
+    } else if (ui->paging_notice) {
+        changed |= status_bar_set(&ui->status, STATUS_HISTORY, history_notice(ui->model, HISTORY_NOTICE_READ, NULL));
+        ui->paging_notice = false;
     }
     changed |= status_bar_set(&ui->status, STATUS_EDITOR, ui->feedback);
     bool replaced_copy = status_bar_set(&ui->status, STATUS_CLIPBOARD, clipboard_notice());
@@ -866,6 +887,7 @@ static void open_channel(view *ui, bool voice_history)
         snprintf(ui->editor_channel, sizeof(ui->editor_channel), "%s", str(channel, "id"));
         ui->feedback = NULL;
         ui->unseen = 0;
+        ui->waiting_page = 0;
         ui->at_end = true; ui->anchor[0] = 0; set_focus(ui, HISTORY_PANEL);
     }
 }
@@ -1048,7 +1070,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             inbox_opened_clear(box); r8_modal_destination_clear(ui->r8); redraw=true;
         }
         instances_visible(connections,auth,ui->body && ui->at_end && !r8_modal_is_open(ui->r8) && !emoji_picker_open(ui->emojis) && !media_view_modal(ui->media) ? str(history_channel(ui->model,history_selected(ui->model)),"id") : "");
-        if (collect_notices(ui, auth)) redraw = true;
+        if (collect_notices(ui, auth)) { if (!redraw) scope = DRAW_FOOTER; redraw = true; }
         if (!auth_has_session(auth) && !auth_busy(auth)) break;
         if (redraw) { draw(ui, auth, scope); redraw = false; scope = DRAW_ALL; }
         wint_t key; int type = ui->paste ? text_paste_read(&ui->paste_data, &key, true, graphics_terminal_input, 30) : graphics_terminal_input(&key);
@@ -1225,7 +1247,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 if (e.bstate & (BUTTON4_PRESSED | BUTTON5_PRESSED)) {
                     scope = DRAW_CONVERSATION;
                     if (ui->body && e.x >= getbegx(ui->body) && e.x < getbegx(ui->body) + getmaxx(ui->body) && e.y >= getbegy(ui->body) + ui->history_top && e.y < getbegy(ui->body) + ui->editor_border)
-                        scroll_history(ui, e.bstate & BUTTON4_PRESSED ? -3 : 3);
+                        scroll_history(ui, e.bstate & BUTTON4_PRESSED ? -3 : 3, true);
                     else if (ui->body && input(ui) && e.x >= getbegx(ui->body) && e.x < getbegx(ui->body) + getmaxx(ui->body) &&
                              input_row(ui, e.y - getbegy(ui->body))) {
                         text_buffer *buffer = input(ui); text_layout measured;
@@ -1246,6 +1268,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 if (media_view_click(ui->media, e.y, e.x)) continue;
                 if (ui->unseen && e.y == getbegy(ui->footer) + 1 &&
                     status_bar_hit(&ui->status, STATUS_UNREAD, e.x - getbegx(ui->footer))) {
+                    if (history_has_newer(ui->model)) history_recent(ui->model);
                     ui->at_end = true; ui->unseen = 0; ui->anchor[0] = 0; continue;
                 }
                 int y = e.y, x = e.x;
@@ -1336,11 +1359,9 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             if (type == KEY_CODE_YES && key == KEY_LEFT) set_focus(ui, CHANNEL_LIST);
             else if (type == KEY_CODE_YES && (key == KEY_PPAGE || key == KEY_UP || key == KEY_HOME)) {
                 scope = DRAW_CONVERSATION;
-                int first = position(ui);
-                scroll_history(ui, key == KEY_HOME ? -2147483647 : key == KEY_UP ? -1 : -ui->visible);
-                if (first == 0 && key != KEY_HOME && history_has_more(ui->model)) { ui->at_end = false; history_older(ui->model); }
+                scroll_history(ui, key == KEY_HOME ? -2147483647 : key == KEY_UP ? -1 : -ui->visible, key != KEY_HOME);
             } else if (type == KEY_CODE_YES && (key == KEY_DOWN || key == KEY_NPAGE)) {
-                scope = DRAW_CONVERSATION; scroll_history(ui, key == KEY_DOWN ? 1 : ui->visible);
+                scope = DRAW_CONVERSATION; scroll_history(ui, key == KEY_DOWN ? 1 : ui->visible, true);
             }
             else if (type == KEY_CODE_YES && key == KEY_END) {
                 scope = DRAW_CONVERSATION;

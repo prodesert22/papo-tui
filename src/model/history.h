@@ -41,7 +41,10 @@ uint64_t history_insertions(const history *h);
 void history_reload_channels(history *h);
 bool history_select(history *h, size_t channel);
 void history_recent(history *h);
+/* Queue pages through the existing REST dispatcher, even while an auxiliary
+ * read is pending. Failures require history_retry(), with no automatic replay. */
 void history_older(history *h);
+void history_newer(history *h);
 /* Returns true when retrying in place; false when reloading the recent page
  * or channel list, so the view can reset its anchor deliberately. */
 bool history_retry(history *h);
@@ -83,7 +86,10 @@ void history_typing_text(const history *h, char *text, size_t capacity);
 /* Actual editor mutation only. Nonblocking WS, throttled per active channel. */
 void history_typing_activity(history *h);
 bool history_loading(const history *h);
+/* -1: older page, +1: newer page, 0: no queued/in-flight pagination. */
+int history_paging_direction(const history *h);
 bool history_has_more(const history *h);
+bool history_has_newer(const history *h);
 bool history_evicted(const history *h);
 /* UUID validation protects endpoint interpolation. */
 bool history_uuid(const char *value);

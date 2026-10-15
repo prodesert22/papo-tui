@@ -265,6 +265,141 @@ class HistoryTerminal(unittest.TestCase):
                 self.assertNotIn(b'Synthetic!123', t.output)
             finally: self.assertTrue(t.close())
 
+    def test_wheel_loads_older_pages_without_moving_reading_anchor(self):
+        with HistoryMock() as server:
+            t = self.open(server)
+            try:
+                self.wait(t, 'Mensagem 0250')
+                for calls, message in ((1, 'Mensagem 0151'), (2, 'Mensagem 0051')):
+                    t.send('\x1bOH')
+                    self.wait(t, message)
+                    self.wait(t, 'Apelido')
+                    before = t.screen.display[8]
+                    t.send('\x1b[<64;40;12M')
+                    deadline = time.monotonic() + 3
+                    while server.older_calls < calls and time.monotonic() < deadline: t.read(.03)
+                    t.read(.2)
+                    self.assertEqual(server.older_calls, calls)
+                    self.assertEqual(t.screen.display[8], before)
+                t.send('\x1bOH')
+                self.wait(t, 'Mensagem 0001')
+                t.send('\x1b[<64;40;12M' * 10)
+                t.read(.2)
+                self.assertEqual(server.older_calls, 2)
+            finally: self.assertTrue(t.close())
+
+    def test_prefetch_starts_before_edge_and_loading_animates_only_at_edge(self):
+        with HistoryMock() as server:
+            started, release = threading.Event(), threading.Event()
+            route = server.api_handler
+            def delayed_page(method, path, body):
+                if '/messages?' in path and 'last_id=' in path:
+                    started.set()
+                    release.wait(8)
+                return route(method, path, body)
+            server.api_handler = delayed_page
+            t = self.open(server)
+            try:
+                self.wait(t, 'Mensagem 0250')
+                t.send('\x1bOH\x1b[6~\x1b[6~\x1b[6~')
+                self.assertFalse(started.is_set())
+                for _ in range(15):
+                    t.send('\x1b[<64;40;12M')
+                    if started.is_set(): break
+                self.assertTrue(started.is_set(), 'No page prefetched near the beginning')
+                self.assertNotIn('Mensagem 0151', '\n'.join(t.screen.display))
+                self.assertNotIn('Carregando próximas mensagens', t.screen.display[-2])
+                t.send('\x1bOH')
+                self.wait(t, 'Carregando próximas mensagens')
+                before = t.screen.display[8]
+                footer = t.screen.display[-2]
+                sidebar = [line[1:25] for line in t.screen.display[5:-3]]
+                frames = set()
+                for _ in range(4):
+                    t.read(.13)
+                    line = t.screen.display[-2]
+                    self.assertIn('Carregando próximas mensagens', line)
+                    frames.add(line)
+                    self.assertEqual(t.screen.display[8], before)
+                    self.assertEqual([line[1:25] for line in t.screen.display[5:-3]], sidebar)
+                self.assertGreater(len(frames | {footer}), 1, 'Loading did not animate without input')
+                release.set()
+                deadline = time.monotonic() + 3
+                while 'Carregando próximas mensagens' in t.screen.display[-2] and time.monotonic() < deadline: t.read(.03)
+                self.assertNotIn('Carregando próximas mensagens', t.screen.display[-2])
+                self.assertEqual(t.screen.display[8], before)
+                self.assertEqual(server.older_calls, 1)
+                t.send('\x1bOH')
+                self.wait(t, 'Mensagem 0051')
+            finally:
+                release.set()
+                self.assertTrue(t.close())
+
+    def test_scroll_pagination_error_stops_loading_until_manual_retry(self):
+        with HistoryMock('older-error') as server:
+            t = self.open(server)
+            try:
+                self.wait(t, 'Mensagem 0250')
+                t.send('\x1bOH\x1b[<64;40;12M')
+                self.wait(t, 'Falha ao carregar')
+                self.assertNotIn('Carregando próximas mensagens', t.screen.display[-2])
+                self.assertIn('Mensagem 0151', '\n'.join(t.screen.display))
+                t.send('\x1b[<64;40;12M' * 8)
+                self.assertEqual(server.older_calls, 1)
+                t.send('\x12')
+                deadline = time.monotonic() + 3
+                while server.older_calls < 2 and time.monotonic() < deadline: t.read(.03)
+                t.read(.2)
+                t.send('\x1bOH')
+                self.wait(t, 'Mensagem 0051')
+            finally: self.assertTrue(t.close())
+
+    def test_evicted_recent_pages_prefetch_and_animate_when_scrolling_down(self):
+        with HistoryMock(count=1250) as server:
+            for message in server.messages: message['author_id'] = uuid(21)
+            started, release = threading.Event(), threading.Event()
+            route = server.api_handler
+            def delayed_forward(method, path, body):
+                if '/messages?order=asc' in path:
+                    started.set()
+                    release.wait(8)
+                return route(method, path, body)
+            server.api_handler = delayed_forward
+            t = self.open(server)
+            try:
+                self.wait(t, 'Mensagem 1250')
+                for oldest in range(1151, 50, -100):
+                    t.send('\x1bOH')
+                    self.wait(t, f'Mensagem {oldest:04d}')
+                    t.send('\x1b[<64;40;12M')
+                    # Home only sees the prepended page after its response.
+                    expected = max(1, oldest - 100)
+                    deadline = time.monotonic() + 3
+                    while time.monotonic() < deadline:
+                        t.send('\x1bOH')
+                        if f'Mensagem {expected:04d}' in '\n'.join(t.screen.display): break
+                    self.assertIn(f'Mensagem {expected:04d}', '\n'.join(t.screen.display))
+                t.resize(60, 100)
+                for _ in range(30):
+                    t.send('\x1b[6~')
+                    if started.is_set(): break
+                self.assertTrue(started.is_set(), 'No forward prefetch after sliding the window')
+                self.assertNotIn('Carregando próximas mensagens', t.screen.display[-2])
+                t.send('\x1b[6~' * 4)
+                self.wait(t, 'Carregando próximas mensagens')
+                self.assertIn('Mensagem 1000', '\n'.join(t.screen.display))
+                before = t.screen.display[8]
+                release.set()
+                deadline = time.monotonic() + 3
+                while 'Carregando próximas mensagens' in t.screen.display[-2] and time.monotonic() < deadline: t.read(.03)
+                self.assertNotIn('Carregando próximas mensagens', t.screen.display[-2])
+                self.assertEqual(t.screen.display[8], before)
+                self.assertNotIn('Mensagem 1100', '\n'.join(t.screen.display))
+                self.assertEqual(server.newer_calls, 1)
+            finally:
+                release.set()
+                self.assertTrue(t.close())
+
     def test_delayed_selection_and_mouse(self):
         with HistoryMock('slow') as server:
             t = self.open(server)

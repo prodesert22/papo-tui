@@ -25,6 +25,7 @@ static json_t *snapshot(history *h)
 {
     json_t *out = json_pack("{s:I,s:b,s:b,s:s}", "count", (json_int_t)history_message_count(h),
                            "more", history_has_more(h), "evicted", history_evicted(h), "status", history_status(h));
+    json_object_set_new(out, "newer", json_boolean(history_has_newer(h)));
     json_t *ids = json_array(), *names = json_array();
     for (size_t i = 0; i < history_message_count(h); ++i) {
         json_t *m = history_message(h, i);
@@ -63,14 +64,41 @@ int main(int argc, char **argv)
         for (int i = 0; i < 60; ++i) tick(auth, h);
         history_select(h, selected + 1);
     }
+    if (!strcmp(argv[2], "queue")) {
+        for (int i = 0; i < 5000 && !history_message_count(h); ++i) tick(auth, h);
+        history_older(h); /* Author summary may still own the REST slot. */
+    }
     settle(auth, h); json_array_append_new(pages, snapshot(h));
-    if (!strcmp(argv[2], "pages") || !strcmp(argv[2], "retry") || !strcmp(argv[2], "recent") || !strcmp(argv[2], "confirm-full")) {
+    if (!strcmp(argv[2], "pages") || !strcmp(argv[2], "retry") || !strcmp(argv[2], "recent") ||
+        !strcmp(argv[2], "confirm-full") || !strncmp(argv[2], "sliding", 7)) {
         for (int i = 0; i < 24 && history_has_more(h); ++i) {
             history_older(h); settle(auth, h); json_array_append_new(pages, snapshot(h));
             if (!strcmp(argv[2], "retry") && i == 0) { history_retry(h); settle(auth, h); json_array_append_new(pages, snapshot(h)); }
         }
     }
     json_object_set_new(out, "pages", pages);
+    if (!strncmp(argv[2], "sliding", 7)) {
+        if (!strcmp(argv[2], "sliding-live")) {
+            json_t *message = json_deep_copy(history_message(h, 0));
+            if (!message) return 1;
+            json_object_set_new(message, "id", json_string("00000000-0000-4000-8000-000000000547"));
+            json_object_set_new(message, "type", json_string("message"));
+            if (!history_event(h, message, auth_context_generation(auth))) return 1;
+            json_decref(message);
+            json_object_set_new(out, "live", snapshot(h));
+        }
+        json_t *forward = json_array();
+        for (int i = 0; i < 24 && history_has_newer(h); ++i) {
+            history_newer(h); settle(auth, h); json_array_append_new(forward, snapshot(h));
+            if (i == 0 && !strcmp(argv[2], "sliding-retry")) {
+                history_retry(h); settle(auth, h); json_array_append_new(forward, snapshot(h));
+            }
+            if (strstr(history_status(h), "Falha")) break;
+        }
+        json_object_set_new(out, "forward", forward);
+        history_older(h); settle(auth, h);
+        json_object_set_new(out, "backward", snapshot(h));
+    }
     if ((!strcmp(argv[2], "confirm") || !strcmp(argv[2], "confirm-full")) && history_message_count(h)) {
         json_t *message = json_deep_copy(history_message(h, 0));
         if (!message) return 1;

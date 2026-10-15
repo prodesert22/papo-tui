@@ -140,6 +140,9 @@ int main(void)
     history_destroy(restart); /* No local cursor crosses models or sessions. */
     body=json_pack("{s:s,s:[o],s:b}","channel_id",channel_id,"messages",message(previous_id),"has_more",false);
     h->older=true;
+    /* Match the immutable cursor captured by the REST dispatcher. */
+    snprintf(h->page_id,sizeof(h->page_id),"%s",latest_id);
+    snprintf(h->page_time,sizeof(h->page_time),"%s",stamp);
     assert(body && messages_response(h,body)); json_decref(body);
     assert(!strcmp(str(json_object_get(h->read_messages,channel_id),"id"),latest_id));
     h->older=false;

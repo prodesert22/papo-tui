@@ -33,6 +33,7 @@ class HistoryMock(MockServer):
         self.case, self.count = case, count
         self.history_started = threading.Event()
         self.older_calls = 0
+        self.newer_calls = 0
         self.summary_calls = 0
         self.api_handler = self.route
         self.channels = [
@@ -70,8 +71,21 @@ class HistoryMock(MockServer):
             if self.case in ('forbidden', 'removed', 'limited', 'failure'):
                 return {'forbidden': 403, 'removed': 404, 'limited': 429, 'failure': 500}[self.case], None
             query = parse_qs(url.query)
-            assert query.get('order') == ['desc']
+            assert query.get('order') in (['desc'], ['asc'])
             cursor = query.get('last_id', [None])[0]
+            if query.get('order') == ['asc']:
+                self.newer_calls += 1
+                assert cursor and query['since'] == [STAMP]
+                lower = int(cursor.split('-')[-1], 16) - (100 if channel == CHANNEL else 500)
+                if self.case == 'newer-error' and self.newer_calls == 1: return 503, None
+                if self.case == 'forward-live' and self.newer_calls == 1:
+                    self.messages.append(self.message(self.count + 1))
+                if self.case == 'overlap': lower -= 1
+                page = source[lower:lower + 100]
+                more = lower + 100 < len(source)
+                if self.case == 'empty-newer': page, more = [], True
+                if self.case == 'repeat-newer': page, more = source[max(0, lower - 100):lower], True
+                return 200, {'channel_id': channel, 'messages': page, 'has_more': more}
             upper = self.count
             if cursor:
                 self.older_calls += 1

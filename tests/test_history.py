@@ -127,6 +127,61 @@ class HistoryTests(unittest.TestCase):
             self.assertTrue(result['pages'][-1]['evicted'])
             self.assertEqual(result['recent']['ids'], [uuid(100 + n) for n in range(1151, 1251)])
 
+    def test_sliding_window_moves_in_both_directions_with_exact_cursors(self):
+        for case in ('normal', 'overlap'):
+            with self.subTest(case=case), HistoryMock(case, count=1250) as server:
+                result = self.run_probe(server, 'sliding')
+                oldest = result['pages'][-1]
+                self.assertEqual(oldest['ids'], [uuid(100 + n) for n in range(1, 1001)])
+                self.assertTrue(oldest['newer'])
+                forward = result['forward']
+                self.assertTrue(all(p['count'] <= 1000 for p in forward))
+                self.assertEqual(forward[-1]['ids'], [uuid(100 + n) for n in range(251, 1251)])
+                self.assertFalse(forward[-1]['newer'])
+                self.assertTrue(forward[-1]['more'])
+                all_ids = set(oldest['ids']).union(*(p['ids'] for p in forward))
+                self.assertEqual(all_ids, {uuid(100 + n) for n in range(1, 1251)})
+                self.assertEqual(len(result['backward']['ids']), len(set(result['backward']['ids'])))
+                self.assertTrue(result['backward']['newer'])
+                self.assertEqual(result['backward']['ids'][0], uuid(251 if case == 'normal' else 252))
+
+    def test_forward_byte_budget_and_live_messages_do_not_skip_evicted_tail(self):
+        with HistoryMock(count=700) as server:
+            for m in server.messages: m['content'] = 'x' * 7800
+            result = self.run_probe(server, 'sliding')
+            self.assertTrue(result['pages'][-1]['newer'])
+            self.assertLess(result['forward'][-1]['count'], 700)
+            self.assertEqual(result['forward'][-1]['ids'][-1], uuid(800))
+            self.assertFalse(result['forward'][-1]['newer'])
+        with HistoryMock('forward-live', count=1250) as server:
+            result = self.run_probe(server, 'sliding-live')
+            self.assertEqual(result['live']['ids'], result['pages'][-1]['ids'])
+            self.assertEqual(result['forward'][-1]['ids'], [uuid(100 + n) for n in range(252, 1252)])
+
+    def test_forward_failure_retains_window_and_requires_manual_retry(self):
+        with HistoryMock('newer-error', count=1250) as server:
+            result = self.run_probe(server, 'sliding-retry')
+            self.assertEqual(result['forward'][0]['ids'], result['pages'][-1]['ids'])
+            self.assertIn('Falha', result['forward'][0]['status'])
+            self.assertFalse(result['forward'][-1]['newer'])
+            self.assertEqual(server.newer_calls, 4)
+        with HistoryMock('repeat-newer', count=1250) as server:
+            result = self.run_probe(server, 'sliding')
+            self.assertEqual(result['forward'][0]['ids'], result['pages'][-1]['ids'])
+            self.assertIn('Falha', result['forward'][0]['status'])
+            self.assertEqual(server.newer_calls, 1)
+
+    def test_empty_forward_page_stops_and_pagination_waits_for_author_lookup(self):
+        with HistoryMock('empty-newer', count=1250) as server:
+            result = self.run_probe(server, 'sliding')
+            self.assertEqual(result['forward'][0]['ids'], result['pages'][-1]['ids'])
+            self.assertFalse(result['forward'][0]['newer'])
+            self.assertEqual(server.newer_calls, 1)
+        with HistoryMock() as server:
+            result = self.run_probe(server, 'queue')
+            self.assertEqual(result['pages'][0]['count'], 200)
+            self.assertEqual(server.older_calls, 1)
+
     def test_cancel_clears_instance_data_and_voice_has_message_history(self):
         with HistoryMock() as server:
             self.assertTrue(self.run_probe(server, 'context')['cleared'])
