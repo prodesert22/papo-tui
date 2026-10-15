@@ -103,6 +103,10 @@ As requisições compartilham um limite global configurável, com padrão de 10 
 | Ctrl+Q | Sair do aplicativo |
 | Ctrl+C | Limpar o campo focado; sair quando o foco está fora dos campos |
 
+Em uma falha fatal, o cliente tenta restaurar a entrada, o mouse e a tela do
+terminal antes de encerrar. Se a aba ainda ficar desconfigurada, digite `reset`
+e pressione Enter, mesmo que os caracteres não apareçam.
+
 No login e no cadastro, os botões de ação ficam na mesma linha: **Entrar / Cadastro** ou **Criar conta / Login**. **Selecionar perfil** fica no canto superior direito do formulário. ↓ na senha do servidor foca a ação principal; ←/→ alternam os dois botões, ↓ foca Selecionar perfil e ↑ volta à senha do servidor. ↑ em Selecionar perfil volta à ação principal, e ↓ mantém o foco nesse botão. As setas não dão a volta na tela. Tab segue campos, ação principal, ação secundária e Selecionar perfil; controles indisponíveis são pulados.
 
 Backspace no início do campo mantém o foco; segurar a tecla não navega entre inputs. Em terminais com suporte a mouse, clique no campo para editar naquele ponto ou no rótulo para editar ao final. Cliques fora dos controles são ignorados; durante a conexão, os controles ficam bloqueados.
@@ -307,8 +311,10 @@ download é necessário para abri-lo.
 Imagens JPEG, PNG, WebP e GIF são exibidas por Sixel ou pelos protocolos gráficos Kitty/iTerm2.
 Anexos de imagem mostram apenas a mídia, usando o arquivo original sem ampliar
 suas dimensões; imagens maiores são reduzidas proporcionalmente para a largura
-disponível e o limite de 640×360 pixels. GIFs animados se repetem no histórico
-e no modal, com até 256 frames/32 MiB de pixels decodificados por arquivo.
+e a altura disponíveis no histórico ou no modal, acompanhando o tamanho da janela
+e das células do terminal. GIFs animados se repetem no histórico
+e no modal, com até 256 frames/32 MiB de pixels decodificados por arquivo;
+quando a resolução excede o orçamento da animação, é exibido o primeiro frame.
 A negociação consulta capacidades e tamanho das células
 sem bloquear a interface ou inserir respostas no editor. Sem suporte gráfico
 confirmado, os cards e metadados continuam em texto e nenhuma imagem é baixada

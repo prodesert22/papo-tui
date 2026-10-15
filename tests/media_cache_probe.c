@@ -154,6 +154,75 @@ static void pressure_test(auth_client *auth, media_cache *cache)
            "\"trim_attempts\":%llu,\"baseline_rss_kib\":%zu,\"maximum_rss_after_trim_kib\":%zu}\n",
            peak, least_animated, (unsigned long long)final.trim_attempts, baseline, reclaimed_rss);
 }
+static void resize_test(auth_client *auth, media_cache *cache, bool cancel_upgrade)
+{
+    media_resource *r[2];
+    for (int i = 0; i < 2; ++i) {
+        char id[37]; snprintf(id, sizeof(id), "00000000-0000-4000-8000-%012x", 901 + i);
+        r[i] = media_cache_acquire(cache, AUTH_MEDIA_ATTACHMENT, id, 1, false); assert(r[i]);
+    }
+    image_decode_request small = request(160), large = request(1600);
+    small.height = 80; large.height = 1000;
+    const graphics_image *image = NULL;
+    for (int n = 0; n < 10000; ++n) {
+        auth_poll(auth); media_cache_begin(cache);
+        for (int i = 0; i < 2; ++i) media_resource_use(r[i], false);
+        media_cache_poll(cache, now_ms());
+        image = media_resource_image(r[0], false, small, now_ms());
+        const graphics_image *second = media_resource_image(r[1], false, small, now_ms());
+        bounds();
+        if (image && second) { assert(image == second); break; }
+        pause_tick();
+    }
+    assert(image && image->width == 160 && image->height == 80);
+    const void *identity = media_resource_object(r[0], false);
+    assert(identity == media_resource_object(r[1], false));
+    media_cache_stats before; media_cache_get_stats(&before);
+    assert(before.decodes == 1 && before.encodes == 1 && !before.jobs);
+    size_t held = MEDIA_CACHE_MEMORY - before.memory;
+    assert(media_cache_reserve(held));
+    assert(!media_resource_image(r[0], false, large, now_ms()));
+    media_cache_stats blocked; media_cache_get_stats(&blocked);
+    assert(blocked.decodes == 1 && !blocked.jobs); bounds();
+    media_cache_unreserve(held);
+    if (cancel_upgrade) {
+        atomic_store(&worker_delay, true);
+        assert(!media_resource_image(r[0], false, large, now_ms()));
+        for (int n = 0; n < 5000 && !atomic_load(&blocked_workers); ++n) pause_tick();
+        assert(atomic_load(&blocked_workers));
+        uint64_t started = now_ms(); media_cache_reset(cache); assert(now_ms() - started < 100);
+        atomic_store(&worker_delay, false);
+    } else {
+        image = NULL;
+        for (int n = 0; n < 10000; ++n) {
+            media_cache_begin(cache);
+            for (int i = 0; i < 2; ++i) media_resource_use(r[i], true);
+            media_cache_poll(cache, now_ms());
+            image = media_resource_image(r[0], false, large, now_ms());
+            const graphics_image *second = media_resource_image(r[1], false, large, now_ms());
+            bounds();
+            if (image && second) { assert(image == second); break; }
+            pause_tick();
+        }
+        assert(image && image->width == 1000 && image->height == 500);
+        assert(identity == media_resource_object(r[0], false));
+        for (int n = 0; n < 10000; ++n) {
+            media_cache_begin(cache); media_resource_use(r[0], false); media_cache_poll(cache, now_ms());
+            image = media_resource_image(r[0], false, small, now_ms());
+            media_cache_stats stats; media_cache_get_stats(&stats); bounds();
+            if (image && !stats.jobs) break;
+            pause_tick();
+        }
+        assert(image && image->width == 160 && image->height == 80);
+        media_cache_stats after; media_cache_get_stats(&after);
+        assert(after.decodes == 2 && after.encodes == 3 && after.objects == 1);
+        assert(after.memory > before.memory + 1400000);
+        media_cache_begin(cache); media_cache_poll(cache, now_ms() + 61000);
+        media_cache_get_stats(&after); assert(!after.memory && !after.reserved);
+    }
+    for (int i = 0; i < 2; ++i) media_resource_release(r[i]);
+    printf("{\"resize\":true,\"cancelled_upgrade\":%s,\"shared_object\":true,\"deferred_resumed\":true}\n", cancel_upgrade ? "true" : "false");
+}
 int main(int argc, char **argv)
 {
     main_thread = pthread_self();
@@ -162,6 +231,9 @@ int main(int argc, char **argv)
     media_cache *c = media_cache_create(a); assert(c);
     if (!strcmp(argv[2], "pressure")) {
         pressure_test(a, c); media_cache_destroy(c); auth_destroy(a); goto finished;
+    }
+    if (!strcmp(argv[2], "resize") || !strcmp(argv[2], "cancel-upgrade")) {
+        resize_test(a, c, !strcmp(argv[2], "cancel-upgrade")); media_cache_destroy(c); auth_destroy(a); goto finished;
     }
     atomic_store(&fail_calloc, true);
     assert(!media_cache_acquire(c, AUTH_MEDIA_ATTACHMENT, "00000000-0000-4000-8000-000000000999", 0, false));

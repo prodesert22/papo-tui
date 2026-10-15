@@ -19,6 +19,27 @@ FFMPEG = sys.argv.pop(1)
 PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1cAAAAASUVORK5CYII=')
 
 class Cache(unittest.TestCase):
+    def test_resize_upgrades_shared_pixels_without_download_and_cancels_safely(self):
+        with tempfile.TemporaryDirectory() as assets:
+            path = Path(assets) / 'large.png'
+            subprocess.run([FFMPEG, '-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=1000x500',
+                            '-frames:v', '1', '-threads', '1', '-y', str(path)], check=True, capture_output=True)
+            content = path.read_bytes()
+            for mode in ('resize', 'cancel-upgrade'):
+                with self.subTest(mode=mode), HistoryMock(count=1) as server, tempfile.TemporaryDirectory() as tmp:
+                    original = server.route
+                    def route(method, path, body):
+                        if '/attachments/' in path:
+                            return 200, content, None, None, 'image/png'
+                        return original(method, path, body)
+                    server.api_handler = route
+                    result = subprocess.run([BINARY, server.url, mode], env=dict(os.environ, TMPDIR=tmp),
+                                            capture_output=True, text=True, timeout=20)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertEqual(sum('/attachments/' in r[1] for r in server.requests), 2)
+                    self.assertEqual(list(Path(tmp).iterdir()), [])
+                    print(result.stdout.strip())
+
     def test_concurrent_completions_share_objects_and_variants(self):
         self.run_identity_scenario('dedup')
 

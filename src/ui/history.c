@@ -95,6 +95,7 @@ static bool layout(view *ui)
     ui->editor_padding = rows - ui->history_top >= 7 ? 1 : 0;
     ui->editor_rows = 1; ui->editor_border = rows - 4 - 2 * ui->editor_padding;
     ui->visible = ui->editor_border - ui->history_top;
+    media_view_viewport(ui->media, ui->visible);
     ui->frame = newwin(LINES, COLS, 0, 0);
     if (!ui->frame) return false;
     wbkgd(ui->frame, COLOR_PAIR(NORMAL));
@@ -348,6 +349,7 @@ static bool editor_geometry(view *ui)
     bool changed = rows != ui->editor_rows;
     ui->editor_rows = rows; ui->editor_border = getmaxy(ui->body) - rows - 2 * ui->editor_padding - 3;
     ui->visible = ui->editor_border - ui->history_top;
+    media_view_viewport(ui->media, ui->visible);
     return changed;
 }
 static bool collect_notices(view *ui, auth_client *auth)

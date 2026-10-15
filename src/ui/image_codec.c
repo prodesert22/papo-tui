@@ -10,7 +10,8 @@ static image_codec_host host;
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
-#define IMAGE_PIXELS (16U * 1024U * 1024U)
+#define IMAGE_PIXELS GRAPHICS_IMAGE_PIXELS
+_Static_assert(IMAGE_PIXEL_PADDING >= AV_INPUT_BUFFER_PADDING_SIZE, "insufficient SIMD pixel padding");
 typedef struct { bool (*cancelled)(void *context); void *context; } decode_guard;
 static int decode_interrupt(void *context)
 {
@@ -73,7 +74,7 @@ static bool decode_file(const image_decode_request *j, graphics_image *out, anim
     frames = host.allocate_zero(1, sizeof(*frames));
     if (frames) atomic_init(&frames->references, 1);
     if (!frame || !packet || !frames) goto done;
-    bool gif = parameters->codec_id == AV_CODEC_ID_GIF;
+    bool gif = parameters->codec_id == AV_CODEC_ID_GIF, static_only = j->static_only;
     int read_status = 0;
     for (unsigned n = 0; n < 4096 && (read_status = av_read_frame(format, packet)) >= 0; ++n) {
         if (decode_interrupt(&guard)) goto done;
@@ -89,7 +90,7 @@ static bool decode_file(const image_decode_request *j, graphics_image *out, anim
             (size_t)frame->width > IMAGE_PIXELS / (size_t)frame->height) goto done;
         if (!frames->count) {
             int w = j->width, h = j->height;
-            if (w < 1 || h < 1 || w > 640 || h > 360) goto done;
+            if (!graphics_image_capacity(w, h)) goto done;
             double ratio = fmin((double)w / frame->width, (double)h / frame->height);
             if (j->native && ratio > 1) ratio = 1;
             int sw = (int)(frame->width * ratio), sh = (int)(frame->height * ratio);
@@ -98,7 +99,8 @@ static bool decode_file(const image_decode_request *j, graphics_image *out, anim
             if (j->native) { w = sw; h = sh; }
             frames->width = w; frames->height = h;
             frames->source_width = frame->width; frames->source_height = frame->height;
-            rgba = host.allocate((size_t)sw * (size_t)sh * 4);
+            size_t rgba_bytes = (size_t)sw * (size_t)sh * 4;
+            rgba = host.allocate_zero(1, rgba_bytes + IMAGE_PIXEL_PADDING);
             scale = sws_getContext(frame->width, frame->height, frame->format, sw, sh,
                                   AV_PIX_FMT_RGBA, SWS_BILINEAR, NULL, NULL, NULL);
             if (!rgba || !scale) goto done;
@@ -111,10 +113,20 @@ static bool decode_file(const image_decode_request *j, graphics_image *out, anim
         sw = (int)(frame->width * ratio); sh = (int)(frame->height * ratio);
         if (sw < 1) sw = 1;
         if (sh < 1) sh = 1;
-        size_t bytes = (size_t)frames->width * (size_t)frames->height * 3;
-        if (bytes > ANIMATION_BYTES - frames->bytes) goto done;
+        size_t bytes = image_frame_bytes(frames->width, frames->height);
+        if (bytes > ANIMATION_BYTES || frames->bytes > ANIMATION_BYTES - bytes) {
+            /* Keep the first frame when a larger viewport would exhaust the
+             * animation budget; a single raster is bounded by IMAGE_PIXELS. */
+            static_only = true;
+            if (frames->count) {
+                for (size_t i = 1; i < frames->count; ++i) { host.release(frames->pixels[i]); frames->pixels[i] = NULL; }
+                frames->count = 1; frames->bytes = bytes; frames->duration = frames->delay[0];
+                break;
+            }
+        }
         unsigned char *rgb = host.allocate(bytes);
         if (!rgb) goto done;
+        memset(rgb + bytes - IMAGE_PIXEL_PADDING, 0, IMAGE_PIXEL_PADDING);
         unsigned char *dest[] = {rgba, NULL, NULL, NULL}; int stride[] = {sw * 4, 0, 0, 0};
         if (sws_scale(scale, (const uint8_t *const *)frame->data, frame->linesize, 0, frame->height, dest, stride) != sh) { host.release(rgb); goto done; }
         for (int y = 0; y < frames->height; ++y) for (int x = 0; x < frames->width; ++x) {
@@ -130,9 +142,9 @@ static bool decode_file(const image_decode_request *j, graphics_image *out, anim
         uint32_t delay = duration > 0 && duration <= 60000 ? (uint32_t)duration : 100;
         if (delay < 10) delay = 10;
         frames->delay[frames->count++] = delay; frames->duration += delay; frames->bytes += bytes;
-        if (!gif || j->static_only) break;
+        if (!gif || static_only) break;
     }
-    if (!frames->count || (gif && !j->static_only && read_status != AVERROR_EOF) || decode_interrupt(&guard)) goto done;
+    if (!frames->count || (gif && !static_only && read_status != AVERROR_EOF) || decode_interrupt(&guard)) goto done;
     image_decode_request encoding = *j; encoding.animation = frames;
     ok = j->decode_only || encode_pixels(&encoding, frames->pixels[0], frames->width, frames->height,
                        frames->source_width, frames->source_height, out);
@@ -147,7 +159,7 @@ static bool encode_frame(const image_decode_request *request, graphics_image *ou
     animation *a = request->animation;
     if (!a || request->frame >= a->count) return false;
     int w = request->width, h = request->height;
-    if (w < 1 || h < 1 || w > 640 || h > 360) return false;
+    if (!graphics_image_capacity(w, h)) return false;
     double ratio = fmin((double)w / a->source_width, (double)h / a->source_height);
     if (request->native && ratio > 1) ratio = 1;
     int sw = (int)(a->source_width * ratio), sh = (int)(a->source_height * ratio);
@@ -156,8 +168,10 @@ static bool encode_frame(const image_decode_request *request, graphics_image *ou
     if (request->native) { w = sw; h = sh; }
     if (w == a->width && h == a->height)
         return encode_pixels(request, a->pixels[request->frame], w, h, a->source_width, a->source_height, out);
-    unsigned char *pixels = host.allocate((size_t)w * (size_t)h * 3);
+    size_t bytes = image_frame_bytes(w, h);
+    unsigned char *pixels = host.allocate(bytes);
     if (!pixels) return false;
+    memset(pixels + bytes - IMAGE_PIXEL_PADDING, 0, IMAGE_PIXEL_PADDING);
     for (int y = 0; y < h; ++y) for (int x = 0; x < w; ++x) {
         unsigned char *at = pixels + ((size_t)y * (size_t)w + (size_t)x) * 3;
         at[0] = 0x15; at[1] = 0x18; at[2] = 0x1e;

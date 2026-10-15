@@ -57,6 +57,10 @@ Os textos principais, nomes, campos e botões são brancos; o texto dos botões 
 
 Sem suporte a cores, o foco usa inversão e o perfil destacado fora do foco usa negrito. Em janelas estreitas, os atalhos do rodapé aparecem abreviados para caber na tela.
 
+Em uma falha fatal, o cliente tenta restaurar a entrada, o mouse e a tela do
+terminal antes de encerrar. Se a aba permanecer desconfigurada, digite `reset`
+e pressione Enter, mesmo que os caracteres não apareçam.
+
 **+ Adicionar** aparece somente no topo: clique nela ou destaque-a e pressione Enter para cadastrar um perfil. Enquanto essa opção estiver selecionada, as ações do rodapé ficam indisponíveis e Tab/Shift+Tab e ↓ mantêm o foco no topo. Cancelar o cadastro com Esc mantém esse comportamento; volte a **Listar** para habilitar as ações de um perfil salvo. Salvar o cadastro volta à lista com o novo perfil destacado.
 
 - **+ Adicionar no topo / Ctrl+N:** informar nome e URL.
@@ -353,11 +357,14 @@ Em terminal compatível, baixa e mostra as imagens JPEG, PNG, WebP e GIF visíve
 na conversa ativa. Anexos de imagem mostram a mídia diretamente, sem linhas de
 nome, tipo, tamanho ou moderação. F7 ou clique continuam abrindo o arquivo.
 O cliente usa o anexo original, preserva suas dimensões sem ampliar e reduz
-proporcionalmente quando necessário para caber na largura disponível ou no
-limite de 640×360 pixels. GIFs animados se repetem enquanto estiverem visíveis,
+proporcionalmente quando necessário para caber na largura e na altura disponíveis
+no histórico ou no modal. O tamanho acompanha o redimensionamento da janela e
+as dimensões das células do terminal. GIFs animados se repetem enquanto estiverem visíveis,
 respeitando os intervalos dos frames; ao rolar para fora ou trocar de canal,
 deixam de atualizar a tela. A animação aceita até 256 frames e 32 MiB de pixels
-decodificados por arquivo; arquivos que excedem esses limites mostram erro.
+decodificados por arquivo; quando a resolução excede o orçamento da animação,
+é exibido o primeiro frame. O processamento de animações com mais de 256 frames
+é interrompido com erro.
 Sem protocolo compatível
 ou tamanho das células disponível, mostra cards e metadados em texto, sem baixar
 imagens automaticamente. Multiplexadores precisam encaminhar as consultas e o

@@ -45,6 +45,7 @@ static void embed_layout(void)
     message_blocks b;
     assert(message_blocks_build(&b, m, "User", "", 120, true));
     assert(b.media_count == 2);
+    assert(!b.media[0].full_width && !b.media[1].full_width);
     bool simultaneous = false, author = false;
     size_t group_row = 0, fourth_row = 0;
     for (size_t r = 0; r < b.count; ++r) {
@@ -92,7 +93,7 @@ static void protocol(void)
     unsigned color = decoded[0];
     assert(color < (unsigned)colors && palette[color * 3] > 240 && palette[color * 3 + 1] < 16 && palette[color * 3 + 2] < 16);
     free(decoded); free(palette); sixel_image_free(&image);
-    assert(!sixel_image_encode(pixels, 100000, 12, &image));
+    assert(!sixel_image_encode(pixels, 100000, 100000, &image));
 }
 static void graphics_protocols(void)
 {
@@ -132,7 +133,7 @@ static void graphics_protocols(void)
     assert(graphics_image_encode(pixels, 12, 12, t, &image));
     assert(image.protocol == GRAPHICS_ITERM2 && !memcmp(image.data, "\033]1337;File=inline=1;", 21));
     assert(image.data[image.length - 1] == '\a'); graphics_image_free(&image);
-    assert(!graphics_image_encode(pixels, 641, 12, t, &image));
+    assert(!graphics_image_encode(pixels, 100000, 100000, t, &image));
 }
 static void preview_crops(void)
 {

@@ -17,4 +17,8 @@ with tempfile.TemporaryDirectory(prefix='papo-image-decode-') as directory:
     broken = root / 'broken.gif'; broken.write_bytes(b'GIF89a\x10\x00\x0c\x00invalid')
     long_gif = root / 'long.gif'
     ffmpeg('-stream_loop', '128', '-i', gif, '-frames:v', '257', long_gif)
-    subprocess.run([sys.argv[1], str(png), str(gif), str(large), str(tall), str(broken), str(long_gif)], check=True)
+    portrait, large_gif = root / 'portrait.png', root / 'large.gif'
+    ffmpeg('-f', 'lavfi', '-i', 'color=red:s=1000x1500', '-frames:v', '1', portrait)
+    ffmpeg('-f', 'lavfi', '-i', 'testsrc2=size=960x720:rate=10:duration=1.7', '-frames:v', '17', large_gif)
+    subprocess.run([sys.argv[1], str(png), str(gif), str(large), str(tall), str(broken), str(long_gif),
+                    str(portrait), str(large_gif)], check=True)

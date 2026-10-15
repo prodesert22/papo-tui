@@ -217,6 +217,7 @@ static bool media(message_blocks *b, json_t *message, json_t *entry, const char 
 {
     int n = add_media(b, message, entry, role, label, kind, video);
     if (n < 0) return strlen(str(entry, "id")) != 36;
+    b->media[n].full_width = true;
     size_t start = b->count;
     /* A graphical preview is the image itself; F7 is documented in the UI. */
     if ((!graphics || video) && !labeled(b, key, video ? "[▶ Vídeo / F7] " : "[Imagem / F7] ", label, width, false, card, color)) return false;

@@ -22,6 +22,7 @@
 #include "ui/send_editor.h"
 #include "ui/text.h"
 #include "ui/clipboard.h"
+#include "ui/terminal.h"
 
 #define FIELD_COUNT 5
 #define CONFIRM_FIELD 4
@@ -685,7 +686,11 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
     if (!config) { auth_destroy(client); instances_destroy(connections); connections = NULL; fputs("Não foi possível carregar os perfis locais.\n", stderr); return 1; }
     connections->sessions = session_store_create(config->directory, !open_profiles);
     interrupted = 0;
-    if (!initscr()) { auth_destroy(client); instances_destroy(connections); connections = NULL; profiles_destroy(config); return 1; }
+    if (!terminal_recovery_begin()) {
+        auth_destroy(client); instances_destroy(connections); connections = NULL; profiles_destroy(config);
+        fputs("Não foi possível preservar o estado do terminal.\n", stderr); return 1;
+    }
+    if (!initscr()) { terminal_recovery_end(); auth_destroy(client); instances_destroy(connections); connections = NULL; profiles_destroy(config); return 1; }
     /* raw also disables IXON, so Ctrl+Q reaches the application. */
     raw(); nonl();
     noecho();
@@ -894,6 +899,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
     ui_mouse_drag_tracking(false);
     theme_restore(&theme);
     endwin();
+    terminal_recovery_end();
     sigaction(SIGINT, &previous_int, NULL);
     sigaction(SIGTERM, &previous_term, NULL);
     if (!instances_contains(connections, client)) {

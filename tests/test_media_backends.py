@@ -1,6 +1,7 @@
 """Lazy dependency loading and failure handling; synthetic HTTP and PTY only."""
 from pathlib import Path
 import shutil
+import signal
 import sys
 import tempfile
 import unittest
@@ -78,6 +79,23 @@ class MediaBackends(unittest.TestCase):
                 self.assertNotIn('libmpv.', maps)
             finally:
                 self.assertTrue(terminal.close())
+
+    def test_abort_in_image_worker_restores_terminal(self):
+        with tempfile.TemporaryDirectory() as tmp, self.helper.serve(media.MediaTerminal.images['png'], 'image/png') as server:
+            self.bundle(tmp, FAKE)
+            gate = Path(tmp) / 'abort-worker'
+            terminal = self.helper.open(server, protocol='kitty', environment={'PAPO_TEST_BACKEND_CRASH_GATE': str(gate)})
+            # This child is expected to abort; the ordinary helper requires a
+            # zero status and remains active for all other media tests.
+            self.helper.terminals.remove(terminal)
+            try:
+                gate.touch()
+                terminal.process.wait(timeout=10)
+                self.assertEqual(terminal.process.returncode, -signal.SIGABRT)
+            finally:
+                self.assertTrue(terminal.close())
+            for reset in (b'\x1b[?2026l', b'\x1b[?1006l', b'\x1b[?2004l', b'\x1b[?1049l'):
+                self.assertIn(reset, terminal.output)
 
     def test_first_video_loads_player_and_copied_bundle_works(self):
         with tempfile.TemporaryDirectory() as tmp, self.helper.serve(media.MediaTerminal.video, 'video/mp4') as server:

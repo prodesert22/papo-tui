@@ -101,6 +101,12 @@ class MediaTerminal(unittest.TestCase):
         subprocess.run([FFMPEG, '-v', 'error', '-f', 'lavfi', '-i', 'color=c=red:s=16x96',
                         '-frames:v', '1', '-threads', '1', '-y', str(path)], check=True, capture_output=True)
         cls.tall_image = path.read_bytes()
+        cls.large_images = {}
+        for shape, size in (('landscape', '1000x500'), ('portrait', '1000x1500')):
+            path = Path(cls.assets.name) / (shape + '.png')
+            subprocess.run([FFMPEG, '-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=' + size,
+                            '-frames:v', '1', '-threads', '1', '-y', str(path)], check=True, capture_output=True)
+            cls.large_images[shape] = path.read_bytes()
         path = Path(cls.assets.name) / 'animated.gif'
         subprocess.run([FFMPEG, '-v', 'error', '-f', 'lavfi', '-i', 'color=red:s=16x12:d=0.2:r=5',
                         '-f', 'lavfi', '-i', 'color=blue:s=16x12:d=0.2:r=5',
@@ -159,6 +165,63 @@ class MediaTerminal(unittest.TestCase):
         deadline = time.monotonic() + 10
         while len(terminal.stream.frames) < count and time.monotonic() < deadline: terminal.read(.03)
         self.assertGreaterEqual(len(terminal.stream.frames), count)
+    def raster_size(self, terminal):
+        stream = terminal.stream
+        if not stream.frames: return 0, 0
+        if stream.protocols[-1] == 'kitty':
+            header = stream.kitty_frames[-1][0]
+            return int(header[b's']), int(header[b'v'])
+        if stream.protocols[-1] == 'sixel':
+            raster = re.search(rb'"\d+;\d+;(\d+);(\d+)', stream.frames[-1])
+            self.assertIsNotNone(raster)
+            return int(raster[1]), int(raster[2])
+        payload = base64.b64decode(stream.frames[-1].split(b':', 1)[1][:-1], validate=True)
+        offset = int.from_bytes(payload[4:8], 'little')
+        count = int.from_bytes(payload[offset:offset + 2], 'little')
+        tags = {int.from_bytes(payload[pos:pos + 2], 'little'): int.from_bytes(payload[pos + 8:pos + 12], 'little')
+                for pos in range(offset + 2, offset + 2 + count * 12, 12)}
+        return tags[256], tags[257]
+    def wait_raster(self, terminal, predicate):
+        deadline = time.monotonic() + 10
+        while not predicate(*self.raster_size(terminal)) and time.monotonic() < deadline: terminal.read(.03)
+        size = self.raster_size(terminal)
+        self.assertTrue(predicate(*size), (size, '\n'.join(terminal.screen.display)))
+        return size
+    def test_large_images_follow_history_and_modal_viewports(self):
+        for protocol in ('sixel', 'kitty', 'iterm2'):
+            for shape, content in self.large_images.items():
+                with self.subTest(protocol=protocol, shape=shape), self.serve(content, 'image/png') as server:
+                    t = self.open(server, protocol=protocol)
+                    try:
+                        self.wait_frames(t)
+                        t.resize(70, 220)
+                        size = self.wait_raster(t, lambda w, h: w > 400 and h > 360)
+                        if shape == 'landscape':
+                            self.assertTrue(1000 <= size[0] < 1008 and 500 <= size[1] < 516, size)
+                        else:
+                            self.assertAlmostEqual(size[1] / size[0], 1.5, delta=.05)
+                        if protocol == 'kitty':
+                            t.read(.1)
+                            placement = t.stream.placements[-1]
+                            self.assertEqual(placement[b'y'], b'0')
+                            self.assertAlmostEqual(int(placement[b'h']) / int(placement[b'w']),
+                                                   .5 if shape == 'landscape' else 1.5, delta=.01)
+                        count = len(t.stream.frames)
+                        placements = len(t.stream.placements)
+                        t.send('\x1b[18~'); self.wait(t, '[Info]')
+                        if protocol == 'kitty':
+                            deadline = time.monotonic() + 10
+                            while len(t.stream.placements) <= placements and time.monotonic() < deadline: t.read(.03)
+                            self.assertGreater(len(t.stream.placements), placements)
+                        else: self.wait_frames(t, count + 1)
+                        self.wait_raster(t, lambda w, h: w > 400 and h > 360)
+                        t.send('i'); self.wait(t, 'Propriedades')
+                        self.wait_raster(t, lambda w, h: w > 400 and h > 360)
+                        t.resize(28, 100)
+                        self.wait_raster(t, lambda w, h: 0 < h <= 256)
+                        t.send('\x1b'); self.wait(t, 'Conversar em #')
+                        self.assertEqual(sum('/attachments/' in r[1] for r in server.requests), 1)
+                    finally: self.assertTrue(t.close())
     def test_gif_plays_inline_at_native_size_without_attachment_metadata(self):
         for protocol in ('sixel', 'kitty', 'iterm2'):
             with self.subTest(protocol=protocol), tempfile.TemporaryDirectory() as directory, self.serve(self.animated_gif, 'image/gif') as server:
@@ -354,7 +417,7 @@ class MediaTerminal(unittest.TestCase):
                 self.assertEqual(sum('/attachments/' in r[1] for r in server.requests), 1)
             finally: self.assertTrue(t.close())
 
-    def test_resize_repaints_images_when_the_pixel_limit_keeps_geometry_equal(self):
+    def test_resize_repaints_images_that_already_fit_at_original_size(self):
         for protocol in ('sixel', 'kitty', 'iterm2'):
             with self.subTest(protocol=protocol), self.serve(self.images['png'], 'image/png') as server:
                 t = self.open(server, protocol=protocol)

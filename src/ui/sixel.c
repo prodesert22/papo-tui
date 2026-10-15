@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include "ui/sixel.h"
+#include "ui/graphics.h"
 #include <sixel.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -40,10 +41,12 @@ bool sixel_terminal_reply(sixel_terminal *t, const char *reply)
     }
     return false;
 }
+typedef struct { sixel_image *image; size_t limit; } sixel_writer;
 static int append(char *data, int size, void *context)
 {
-    sixel_image *out = context;
-    if (size < 0 || (size_t)size > 4U * 1024U * 1024U - out->length) return -1;
+    sixel_writer *writer = context;
+    sixel_image *out = writer->image;
+    if (size < 0 || (size_t)size > writer->limit - out->length) return -1;
     char *next = realloc(out->data, out->length + (size_t)size);
     if (!next && size) return -1;
     out->data = next; memcpy(next + out->length, data, (size_t)size); out->length += (size_t)size;
@@ -52,11 +55,13 @@ static int append(char *data, int size, void *context)
 bool sixel_image_encode(const unsigned char *pixels, int width, int height, sixel_image *out)
 {
     memset(out, 0, sizeof(*out));
-    if (!pixels || width < 1 || height < 1 || width > 640 || height > 360) return false;
+    size_t capacity = graphics_image_capacity(width, height);
+    if (!pixels || !capacity) return false;
+    sixel_writer writer = {out, capacity};
     sixel_output_t *output = NULL;
     sixel_dither_t *dither = NULL;
     bool ok = false;
-    if (SIXEL_FAILED(sixel_output_new(&output, append, out, NULL)) ||
+    if (SIXEL_FAILED(sixel_output_new(&output, append, &writer, NULL)) ||
         SIXEL_FAILED(sixel_dither_new(&dither, 256, NULL))) goto done;
     if (SIXEL_FAILED(sixel_dither_initialize(dither, (unsigned char *)pixels, width, height, SIXEL_PIXELFORMAT_RGB888,
         SIXEL_LARGE_AUTO, SIXEL_REP_AUTO, SIXEL_QUALITY_LOW))) goto done;

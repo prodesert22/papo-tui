@@ -2,7 +2,7 @@
 #define PAPO_MEDIA_BACKEND_H
 #include "ui/image_decode.h"
 
-#define PAPO_MEDIA_BACKEND_ABI 1U
+#define PAPO_MEDIA_BACKEND_ABI 2U
 /* Private, versioned module boundary. No curses, auth or mutable models cross it.
  * Pixel buffers use the process allocator. Modules remain resident after use;
  * every player/context and frame must still be released by its owner. */

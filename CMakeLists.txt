@@ -96,7 +96,7 @@ target_compile_definitions(papo_media PRIVATE
     PAPO_BACKEND_INSTALL_DIR="${CMAKE_INSTALL_FULL_BINDIR}/papo-backends")
 add_dependencies(papo_media papo_image_codec papo_video_player)
 target_compile_options(papo_media PRIVATE -Wall -Wextra -Wpedantic -Werror)
-add_executable(papo-tui src/main.c src/ui/login.c src/ui/history.c src/ui/profiles.c src/ui/theme.c src/ui/button.c)
+add_executable(papo-tui src/main.c src/ui/login.c src/ui/terminal.c src/ui/history.c src/ui/profiles.c src/ui/theme.c src/ui/button.c)
 target_link_libraries(papo-tui PRIVATE papo_media PkgConfig::FORM PkgConfig::NCURSES PkgConfig::UNIBREAK)
 target_compile_definitions(papo-tui PRIVATE PAPO_VERSION="${PROJECT_VERSION}-dev")
 
@@ -171,6 +171,18 @@ if(BUILD_TESTING)
     target_compile_options(image-decode-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
     add_test(NAME image-decode COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_image_decode.py $<TARGET_FILE:image-decode-test> ${FFMPEG_CLI})
+    add_executable(image-buffer-test tests/test_image_buffer.c)
+    target_include_directories(image-buffer-test PRIVATE src)
+    target_link_libraries(image-buffer-test PRIVATE PkgConfig::GMODULE PkgConfig::NCURSES)
+    target_compile_options(image-buffer-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    if(PAPO_SANITIZERS)
+        target_compile_options(image-buffer-test PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+        target_link_options(image-buffer-test PRIVATE -fsanitize=address,undefined)
+    endif()
+    add_dependencies(image-buffer-test papo_image_codec)
+    add_test(NAME image-buffer-boundaries COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_image_buffer.py $<TARGET_FILE:image-buffer-test>
+        $<TARGET_FILE:papo_image_codec> ${FFMPEG_CLI})
     add_test(NAME media-integration COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_media.py $<TARGET_FILE:media-probe>)
     add_test(NAME media-terminal COMMAND ${Python3_EXECUTABLE}

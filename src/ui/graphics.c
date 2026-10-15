@@ -160,7 +160,7 @@ bool graphics_image_encode_id(const unsigned char *pixels, int width, int height
                               graphics_terminal t, uint32_t id, graphics_image *out)
 {
     memset(out, 0, sizeof(*out));
-    if (!pixels || width < 1 || height < 1 || width > 640 || height > 360 ||
+    if (!pixels || !graphics_image_capacity(width, height) ||
         t.protocol == GRAPHICS_TEXT || t.cell_width < 1 || t.cell_width > 128 ||
         t.cell_height < 1 || t.cell_height > 128) return false;
     out->protocol = t.protocol; out->id = id;
@@ -203,7 +203,7 @@ bool graphics_image_encode_id(const unsigned char *pixels, int width, int height
     chafa_placement_set_valign(placement, CHAFA_ALIGN_START);
     chafa_canvas_set_placement(canvas, placement);
     printed = chafa_canvas_print(canvas, info);
-    if (!printed || !printed->len || printed->len > 4U * 1024U * 1024U) goto done;
+    if (!printed || !printed->len || printed->len > graphics_image_capacity(width, height)) goto done;
     out->data = malloc(printed->len);
     if (!out->data) goto done;
     memcpy(out->data, printed->str, printed->len); out->length = printed->len; ok = true;

@@ -51,7 +51,7 @@ struct media_view {
     media_cache *store;
     cache_entry cache[CACHE_COUNT];
     placement visible[VISIBLE_COUNT];
-    int visible_count;
+    int visible_count, viewport_rows;
     uint64_t serial, tick, generation, history_revision, dimensions_revision;
     graphics_terminal terminal;
     pthread_t thread;
@@ -206,7 +206,7 @@ static bool submit_job(media_view *v, const job *request)
 }
 static bool native_media(const message_media *item)
 {
-    return !strcmp(item->role, "attachment") || !strcmp(item->role, "image");
+    return item->full_width || !strcmp(item->role, "attachment") || !strcmp(item->role, "image");
 }
 
 media_view *media_view_create(auth_client *auth)
@@ -316,7 +316,7 @@ static int cache_find(media_view *v, const message_media *item)
 {
     int oldest = -1;
     for (int i = 0; i < CACHE_COUNT; ++i) {
-        if (*v->cache[i].item.id && same(&v->cache[i].item, item)) return i;
+        if (*v->cache[i].item.id && same(&v->cache[i].item, item)) { v->cache[i].item = *item; return i; }
         if (i == v->modal_entry) continue;
         bool visible = false;
         for (int j = 0; j < v->visible_count; ++j) visible |= v->visible[j].entry == i;
@@ -325,25 +325,40 @@ static int cache_find(media_view *v, const message_media *item)
     if (oldest >= 0) { delete_entry(&v->cache[oldest]); v->cache[oldest].item = *item; v->cache[oldest].placement_id = graphics_image_next_id(); }
     return oldest;
 }
+static void geometry(int columns, int rows, int *w, int *h)
+{
+    graphics_terminal t = graphics_terminal_get();
+    double width = fmax(1, (double)columns * t.cell_width), height = fmax(1, (double)rows * t.cell_height);
+    double ratio = fmin(1, sqrt(GRAPHICS_IMAGE_PIXELS / (width * height)));
+    *w = (int)fmax(1, width * ratio); *h = (int)fmax(1, height * ratio);
+}
+void media_view_viewport(media_view *v, int rows)
+{
+    if (!v) return;
+    /* Every message ends with a separator row. Keep a fitted attachment fully
+     * visible at the bottom of history instead of clipping its first row. */
+    if (rows > 1) --rows;
+    if (rows < 1) rows = 1;
+    if (v->viewport_rows != rows) { v->viewport_rows = rows; ++v->dimensions_revision; }
+}
 void media_view_measure(void *context, const message_media *item, int available_width, int *width, int *height)
 {
     media_view *v = context;
     if (!v || !native_media(item)) return;
     graphics_terminal t = graphics_terminal_get();
     if (!t.supported) return;
+    int source_width = item->source_width, source_height = item->source_height;
     for (int i = 0; i < CACHE_COUNT; ++i) {
         cache_entry *e = &v->cache[i];
         if (!same(&e->item, item) || !e->image.source_width || !e->image.source_height) continue;
-        int max_w = available_width * t.cell_width;
-        if (max_w > 640) max_w = 640;
-        double scale = fmin(1, fmin((double)max_w / e->image.source_width, 360.0 / e->image.source_height));
-        int w = (int)(e->image.source_width * scale), h = (int)(e->image.source_height * scale);
-        if (w < 1) w = 1;
-        if (h < 1) h = 1;
-        *width = (w + t.cell_width - 1) / t.cell_width;
-        *height = (h + t.cell_height - 1) / t.cell_height;
-        return;
+        source_width = e->image.source_width; source_height = e->image.source_height; break;
     }
+    if (source_width < 1 || source_height < 1) return;
+    int max_w, max_h; geometry(available_width, v->viewport_rows ? v->viewport_rows : 6, &max_w, &max_h);
+    double scale = fmin(1, fmin((double)max_w / source_width, (double)max_h / source_height));
+    int w = (int)fmax(1, source_width * scale), h = (int)fmax(1, source_height * scale);
+    *width = (w + t.cell_width - 1) / t.cell_width;
+    *height = (h + t.cell_height - 1) / t.cell_height;
 }
 void media_view_frame(media_view *v) { if (v) graphics_frame_begin(); }
 void media_view_begin(media_view *v) { if (v) { graphics_frame_begin(); clear_positions(v); ++v->tick; } }
@@ -358,9 +373,7 @@ void media_view_offer(media_view *v, const message_media *item, int y, int x, in
     p->resource = e->resource; media_resource_ref(p->resource);
     graphics_terminal t = graphics_terminal_get();
     if (e->resource && !e->item.video && t.supported && height > 0) {
-        int w = width * t.cell_width, h = height * t.cell_height;
-        if (w > 640) w = 640;
-        if (h > 360 || native_media(item)) h = 360;
+        int w, h; geometry(width, native_media(item) && v->viewport_rows ? v->viewport_rows : height, &w, &h);
         uint64_t now = 0; net_now_ms(&now);
         image_decode_request request = {.width = w, .height = h, .native = native_media(item), .terminal = t,
             .top = top * t.cell_height, .bottom = bottom * t.cell_height};
@@ -387,20 +400,16 @@ static bool live(history *h, const message_media *item)
     }
     return false;
 }
-static void geometry(int columns, int rows, int *w, int *h)
-{
-    graphics_terminal t = graphics_terminal_get();
-    *w = columns * t.cell_width; *h = rows * t.cell_height;
-    if (*w > 640) *w = 640;
-    if (*h > 360) *h = 360;
-
-}
 static bool modal_layout_update(media_view *v)
 {
     media_modal_layout layout;
     if (!media_modal_geometry(COLS, LINES, v->info_open && v->modal != MODAL_LIST,
                               v->modal_image.columns, v->modal_image.rows, &layout)) return false;
     int width, height; geometry(layout.area_width, layout.area_height, &width, &height);
+    if (v->selected_item.video) {
+        if (width > 640) width = 640;
+        if (height > 360) height = 360;
+    }
     if (v->modal_token && (width != v->modal_width || height != v->modal_height)) {
         bool reload = v->selected_item.video || !v->modal_image.data;
         if (v->modal_image.data && !v->selected_item.video) {
@@ -525,8 +534,7 @@ bool media_view_poll(media_view *v, history *h)
             (source_w != e->image.source_width || source_h != e->image.source_height)) {
             e->image.source_width = source_w; e->image.source_height = source_h; ++v->dimensions_revision; changed = true;
         }
-        int w, height; geometry(p->width, p->height, &w, &height);
-        if (native_media(&e->item)) height = 360;
+        int w, height; geometry(p->width, native_media(&e->item) && v->viewport_rows ? v->viewport_rows : p->height, &w, &height);
         image_decode_request request = {.width = w, .height = height, .native = native_media(&e->item), .terminal = terminal,
             .top = p->top * terminal.cell_height, .bottom = p->bottom * terminal.cell_height};
         const graphics_image *image = media_resource_image(e->resource, !strcmp(e->item.role, "author"), request, now);

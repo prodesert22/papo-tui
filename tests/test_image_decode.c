@@ -5,7 +5,7 @@
 static bool cancelled(void *context) { (void)context; return true; }
 int main(int argc, char **argv)
 {
-    assert(argc == 7);
+    assert(argc == 9);
     image_decode_request request = {.width = 640, .height = 360, .native = true, .preview = true,
         .image_id = 42, .terminal = {.protocol = GRAPHICS_SIXEL, .cell_width = 8, .cell_height = 16}};
     for (int mode = GRAPHICS_SIXEL; mode <= GRAPHICS_ITERM2; ++mode) {
@@ -54,6 +54,25 @@ int main(int argc, char **argv)
         request.path = argv[6];
         assert(!image_decode_file(&request, &image, &frames, NULL, NULL));
         assert(!frames && !image.data);
+        request.width = 1600; request.height = 1000; request.path = argv[3];
+        assert(image_decode_file(&request, &image, &frames, NULL, NULL));
+        assert(image.width == 1000 && image.height == 500 && !frames);
+        graphics_image_free(&image);
+        request.path = argv[7]; request.width = 1200; request.height = 900;
+        assert(image_decode_file(&request, &image, &frames, NULL, NULL));
+        assert(image.width == 600 && image.height == 900 && !frames);
+        assert(image.source_width == 1000 && image.source_height == 1500);
+        graphics_image_free(&image);
+        request.path = argv[8]; request.width = 960; request.height = 720; request.retain_static = true;
+        assert(image_decode_file(&request, &image, &frames, NULL, NULL));
+        assert(image.width == 960 && image.height == 720);
+        assert(frames && frames->count == 1 && frames->bytes == image_frame_bytes(960, 720));
+        assert(image.length <= graphics_image_capacity(image.width, image.height));
+        animation_free(frames); frames = NULL; graphics_image_free(&image);
+        request.width = request.height = 100000;
+        assert(!image_decode_file(&request, &image, &frames, NULL, NULL));
+        assert(!frames && !image.data);
+        request.width = 640; request.height = 360; request.retain_static = false;
         request.path = argv[5];
         assert(!image_decode_file(&request, &image, &frames, NULL, NULL));
         assert(!frames && !image.data);

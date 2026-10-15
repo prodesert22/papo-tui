@@ -5,6 +5,15 @@
 #include <stdint.h>
 #include <ncurses.h>
 
+/* Bound raster area and encoded payloads, independently of screen geometry.
+ * The cache reserves this capacity before dispatching a graphics worker. */
+#define GRAPHICS_IMAGE_PIXELS (16U * 1024U * 1024U)
+static inline size_t graphics_image_capacity(int width, int height)
+{
+    if (width < 1 || height < 1 || (size_t)width > GRAPHICS_IMAGE_PIXELS / (size_t)height) return 0;
+    return (size_t)width * (size_t)height * 8U + 64U * 1024U;
+}
+
 typedef enum { GRAPHICS_TEXT, GRAPHICS_SIXEL, GRAPHICS_KITTY, GRAPHICS_ITERM2 } graphics_protocol;
 typedef struct {
     graphics_protocol protocol;

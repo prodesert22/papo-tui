@@ -3,6 +3,7 @@ import os
 import pty
 import select
 import signal
+import resource
 import struct
 import subprocess
 import sys
@@ -217,6 +218,26 @@ class TerminalTests(unittest.TestCase):
                 self.assertEqual(terminal.process.returncode, 0)
                 self.assertIn(b"\x1b[?2004l", terminal.output)
                 self.assertIn(b"\x1b[?1049l", terminal.output)
+                self.assertFalse(terminal.screen.cursor.hidden)
+
+    def test_fatal_signals_restore_input_and_terminal_modes(self):
+        for number in (signal.SIGABRT, signal.SIGSEGV):
+            with self.subTest(signal=number):
+                limit = resource.getrlimit(resource.RLIMIT_CORE)
+                try:
+                    resource.setrlimit(resource.RLIMIT_CORE, (0, limit[1]))
+                    # Explicit signals exercise restoration independently of
+                    # ASan's fault diagnostic handler (ordinary tests retain it).
+                    options = os.environ.get('ASAN_OPTIONS', 'detect_leaks=0') + ':handle_segv=0:handle_abort=0'
+                    terminal = Terminal(environment={'ASAN_OPTIONS': options})
+                finally:
+                    resource.setrlimit(resource.RLIMIT_CORE, limit)
+                terminal.wait_text('URL do servidor')
+                self.assertNotEqual(termios.tcgetattr(terminal.slave), terminal.original)
+                self.assertTrue(terminal.close(signal_number=number))
+                self.assertEqual(terminal.process.returncode, -number)
+                for reset in (b'\x1b[?2026l', b'\x1b[?1002l', b'\x1b[?1006l', b'\x1b[?2004l', b'\x1b[?1049l'):
+                    self.assertIn(reset, terminal.output)
                 self.assertFalse(terminal.screen.cursor.hidden)
 
     def test_four_fields_resize_password_mask_and_real_request(self):

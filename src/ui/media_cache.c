@@ -15,8 +15,6 @@
 #include <malloc.h>
 #endif
 
-#define ENCODE_RESERVE (4U * 1024U * 1024U)
-#define STATIC_RESERVE (640U * 360U * 3U)
 #define RESOURCE_LIMIT 256U
 #define TRIM_BYTES (16U * 1024U * 1024U)
 #define TRIM_INTERVAL_MS 5000U
@@ -279,7 +277,7 @@ static bool make_room(size_t memory, size_t files)
             release_memory(decoded->frames->bytes + sizeof(animation)); animation_free(decoded->frames); decoded->frames = NULL;
         } else if (animated) {
             animation *a = animated->frames;
-            size_t first = (size_t)a->width * (size_t)a->height * 3;
+            size_t first = image_frame_bytes(a->width, a->height);
             for (size_t i = 1; i < a->count; ++i) { free(a->pixels[i]); a->pixels[i] = NULL; }
             release_memory(a->bytes - first);
             a->bytes = first; a->count = 1; a->duration = a->delay[0];
@@ -396,8 +394,14 @@ static bool collect(media_cache *c)
             if (o->job == t) {
                 o->job = NULL; o->failed = !ok && !cancelled(t); o->error = t->error;
                 if (ok) {
-                    o->frames = t->output_frames; t->output_frames = NULL; o->epoch = c->now;
+                    if (o->frames) {
+                        release_memory(o->frames->bytes + sizeof(animation)); animation_free(o->frames);
+                    } else o->epoch = c->now;
+                    o->frames = t->output_frames; t->output_frames = NULL;
                     shared.stats.memory += o->frames->bytes + sizeof(animation);
+                    for (variant *v = o->variants; v; v = v->next) {
+                        v->frame = SIZE_MAX; v->presented = 0; v->failed = false;
+                    }
                 }
             }
         } else if (t->kind == TASK_TRIM) {
@@ -682,34 +686,44 @@ static bool equal_request(const image_decode_request *a, const image_decode_requ
 }
 const graphics_image *media_resource_image(media_resource *r, bool author, image_decode_request request, uint64_t now)
 {
-    if (!r || r->video) return NULL;
+    if (!r || r->video || !graphics_image_capacity(request.width, request.height)) return NULL;
     image_object *o = r->objects[author ? 1 : 0];
     if (!o || o->failed) return NULL;
     o->pinned = true; o->used = now;
-    if (!o->frames) {
-        if (o->job && r->modal) g_thread_pool_move_to_front(shared.pool, o->job);
-        if (!o->job) {
-            size_t reserve = ANIMATION_BYTES + sizeof(animation);
+    int decode_width = request.width, decode_height = request.height;
+    int needed_width = request.width, needed_height = request.height;
+    if (o->frames) {
+        double ratio = fmin(1, fmin((double)request.width / o->frames->source_width,
+                                   (double)request.height / o->frames->source_height));
+        needed_width = (int)(o->frames->source_width * ratio);
+        needed_height = (int)(o->frames->source_height * ratio);
+        if (needed_width < 1) needed_width = 1;
+        if (needed_height < 1) needed_height = 1;
+    }
+    bool enlarge = o->frames && (needed_width > o->frames->width || needed_height > o->frames->height);
+    if (o->job && r->modal) g_thread_pool_move_to_front(shared.pool, o->job);
+    if (!o->frames || enlarge) {
+        /* Never replace canonical pixels while an encoder still borrows them.
+         * Retain existing graphics until the larger decode is published. */
+        if (!object_busy(o)) {
+            size_t raster = image_frame_bytes(needed_width, needed_height);
+            size_t reserve = (raster > ANIMATION_BYTES ? raster : ANIMATION_BYTES) + sizeof(animation);
             task *t = task_new(r->cache, reserve);
-            if (!t) { reserve = STATIC_RESERVE + sizeof(animation); t = task_new(r->cache, reserve); }
+            bool static_only = false;
+            if (!t) { reserve = raster + sizeof(animation); t = task_new(r->cache, reserve); static_only = true; }
             if (t) {
                 t->kind = TASK_DECODE; t->priority = r->modal; t->object = o; object_ref(o);
                 t->path = strdup(o->path);
-                t->request = (image_decode_request){.path = t->path, .width = 640, .height = 360, .native = true,
-                    .decode_only = true, .retain_static = true, .static_only = reserve < ANIMATION_BYTES};
+                t->request = (image_decode_request){.path = t->path, .width = decode_width, .height = decode_height, .native = true,
+                    .decode_only = true, .retain_static = true, .static_only = static_only};
                 if (!t->path) { object_unref(o); free(t); return NULL; }
                 o->job = t; task_push(t); ++shared.stats.decodes;
             }
         }
-        return NULL;
+        if (!o->frames) return NULL;
     }
     if (request.native) {
-        double ratio = fmin(1, fmin((double)request.width / o->frames->source_width,
-                                   (double)request.height / o->frames->source_height));
-        request.width = (int)(o->frames->source_width * ratio);
-        request.height = (int)(o->frames->source_height * ratio);
-        if (request.width < 1) request.width = 1;
-        if (request.height < 1) request.height = 1;
+        request.width = needed_width; request.height = needed_height;
     }
     if (request.terminal.protocol == GRAPHICS_KITTY) request.top = request.bottom = 0;
     variant *v;
@@ -726,8 +740,8 @@ const graphics_image *media_resource_image(media_resource *r, bool author, image
     v->pinned = true; v->used = now;
     if (v->job && r->modal) g_thread_pool_move_to_front(shared.pool, v->job);
     size_t frame = animation_frame_at(o->frames, o->epoch, now);
-    if (!v->job && !v->failed && (!v->image.data || (frame != v->frame && now - v->presented >= 67))) {
-        task *t = task_new(r->cache, ENCODE_RESERVE);
+    if (!o->job && !enlarge && !v->job && !v->failed && (!v->image.data || (frame != v->frame && now - v->presented >= 67))) {
+        task *t = task_new(r->cache, graphics_image_capacity(request.width, request.height));
         if (t) {
             t->kind = TASK_ENCODE; t->object = o; object_ref(o); t->variant = v; t->priority = r->modal;
             t->frames = o->frames; animation_ref(t->frames);

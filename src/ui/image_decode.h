@@ -3,9 +3,17 @@
 #include "ui/graphics.h"
 #include <stdatomic.h>
 /* Shared decoded frames have immutable pixels; each worker job owns a reference.
- * Decoding is bounded to 256 frames / 32 MiB per animation. */
+ * Animations are bounded to 256 frames / 32 MiB; larger rasters retain only
+ * their first frame, within the input pixel limit. */
 #define ANIMATION_BYTES (32U * 1024U * 1024U)
 #define ANIMATION_FRAMES 256
+/* libswscale SIMD readers may fetch past the last RGB pixel. This zeroed tail
+ * belongs to each allocation and is included in decoded cache accounting. */
+#define IMAGE_PIXEL_PADDING 64U
+static inline size_t image_frame_bytes(int width, int height)
+{
+    return (size_t)width * (size_t)height * 3U + IMAGE_PIXEL_PADDING;
+}
 typedef struct {
     atomic_uint references;
     unsigned char *pixels[ANIMATION_FRAMES];
