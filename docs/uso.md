@@ -184,17 +184,19 @@ Cada conexão mantém sua própria sessão isolada; somente a última conexão a
 
 Esc no formulário de adição retorna ao servidor anterior, quando sua sessão ainda está válida. Se houver uma conexão em andamento, a primeira pressão de Esc cancela a tentativa; pressione novamente para voltar. Login, cadastro e renovação usam os mesmos controles do formulário inicial.
 
-Depois do login, a lista de canais abre automaticamente. F6 volta à tela da conta; use **Canais / F6**, F6 ou Tab e Enter nesse botão para reabrir a leitura. A lista é ordenada pela posição informada pelo servidor, sem inferir subcategorias. Use ↑/↓, PageUp/PageDown e Home/End para destacar um canal; Enter, → ou clique abre-o. Navegar pela lista mantém o histórico e as mensagens em tempo real do canal aberto. Confirmar esse mesmo canal preserva a posição de leitura e o rascunho, sem refazer a consulta. Clique no título **Canais** para focar a lista. Categorias são separadores e não abrem histórico. Canais de voz informam que chamadas ainda não estão disponíveis.
+Depois do login, a lista de canais abre automaticamente. F6 volta à tela da conta; use **Canais / F6**, F6 ou Tab e Enter nesse botão para reabrir a leitura. A lista é ordenada pela posição informada pelo servidor, sem inferir subcategorias. Use ↑/↓, PageUp/PageDown e Home/End para destacar um canal; Enter, → ou clique abre-o. Navegar pela lista mantém o histórico e as mensagens em tempo real do canal aberto. Confirmar esse mesmo canal preserva a posição de leitura e o rascunho, sem refazer a consulta. Os botões **Canais** e **DMs** ficam lado a lado no cabeçalho da lista. Clique no botão ou use Tab para focar o grupo, ←/→ para escolher e Enter/Espaço para ativar; ↓ ativa e entra na lista. Mudar a lista preserva a conversa e o rascunho abertos. Categorias são separadores e não abrem histórico. Canais de voz informam que chamadas ainda não estão disponíveis.
 
 Abrir a lista não lê mensagens. Apenas o canal que você abre tem seu histórico consultado; essa consulta também marca leitura no servidor. `*` ao lado do nome indica uma última mensagem ainda não lida nos dados da lista e desaparece quando o histórico cobre essa mensagem.
 
 | Controle | Ação na leitura |
 | --- | --- |
-| Tab / Shift+Tab em tela ampla | Alternar abas, canais, histórico e editor disponível |
-| Tab / Shift+Tab em tela estreita | Alternar canais e conversa em uma pressão |
+| Tab / Shift+Tab | Percorrer abas, botões Canais/DMs, lista, histórico e editor disponível |
+| ← / → nos botões Canais/DMs; Enter/Espaço | Escolher e ativar a lista |
+| ↓ nos botões Canais/DMs | Ativar e entrar na lista |
 | Esc no editor | Voltar ao histórico |
 | Esc nos demais painéis | Alternar canais e histórico |
-| ← nos canais; ↑ no primeiro canal | Focar as abas |
+| ↑ no primeiro item da lista; ↑ nos botões Canais/DMs | Focar os botões; voltar às abas |
+| ← na lista | Focar as abas |
 | ← / → nas abas | Trocar de servidor; → na última aba destaca **+ Adicionar** |
 | Enter em **+ Adicionar**; clique no botão | Abrir login/cadastro de outro servidor |
 | ↓ nas abas | Focar os canais |
@@ -215,6 +217,10 @@ Abrir a lista não lê mensagens. Apenas o canal que você abre tem seu históri
 | Clique em Canais / Conversa | Alternar o painel |
 | Roda do mouse sobre o histórico | Rolar o texto |
 | F7 no histórico; clique na mídia | Abrir uma prévia ou selecionar entre as mídias visíveis |
+| F1 | Abrir ajuda |
+| F9 | Abrir central de notificações do servidor ativo |
+| F10 | Escolher destinatário e abrir DM |
+| Ctrl+D na lista DMs | Fechar a DM destacada para sua conta |
 | F6 | Voltar à tela da conta |
 | Ctrl+L | Sair da conta e remover sua aba |
 | Ctrl+P | Abrir seleção de perfil e encerrar a sessão local |
@@ -242,7 +248,7 @@ envio, edição, eventos e mensagens não lidas têm avisos independentes; uma
 confirmação de envio não apaga o estado da conexão. Um novo aviso substitui
 apenas o anterior do mesmo contexto. Em janelas estreitas, os textos ficam
 mais curtos; `+N` indica avisos antigos que reaparecem ao ampliar a janela.
-Trocar de canal limpa os avisos da conversa anterior e preserva a conexão.
+Trocar de conversa preserva os avisos de conexão e notificações. **Desconectado** fica nessa área e permanece visível durante a queda, inclusive em telas estreitas.
 
 O campo da conversa mostra **Conversar em #nome_canal** quando está vazio e
 cresce de uma até cinco linhas conforme o texto quebra ou ocupa mais espaço.
@@ -300,6 +306,22 @@ acima de quatro, “Várias pessoas estão digitando…”. O indicador acompanh
 somente o canal aberto, não inclui você e desaparece após seis segundos sem
 atividade, quando a pessoa envia uma mensagem ou fica offline. Ao editar,
 o aplicativo avisa pelo WebSocket no máximo uma vez a cada dois segundos.
+
+### DMs e presença
+
+**F10** abre **Nova DM**. Digite para filtrar nickname ou username, use ↑/↓ e Enter, ou clique no destinatário. A lista é carregada em páginas e exclui sua conta e usuários banidos. Ctrl+R atualiza a lista; Esc cancela. A DM aberta usa o mesmo histórico, editor, menções e envio dos canais. Na lista **DMs**, **Ctrl+D** fecha a conversa para sua conta, preservando o histórico no servidor; uma nova mensagem pode fazê-la reaparecer. Erros de bloqueio e acesso aparecem nos avisos.
+
+A lista de DMs mostra presença e o número de mensagens não lidas informado pelo servidor. `?` indica presença ainda desconhecida. O `*` local marca uma nova mensagem ainda não visualizada nesta execução. Esses indicadores são separados: consultar o histórico atualiza a leitura da conversa no backend; visualizar uma mensagem limpa seu indicador local. Canais e DMs inativos não têm históricos consultados em segundo plano. Digitação funciona também nas DMs; a atividade enviada depende de interação real.
+
+### Central e avisos de notificações
+
+**F9** abre a central do servidor ativo. ↑/↓, PageUp/PageDown e Home/End navegam; Enter ou clique abre os detalhes e marca somente a notificação visualizada. Enter nos detalhes abre sua conversa quando o destino estiver disponível. Tab percorre lista, **Preferências** e **Mais antigas**; Enter aciona o botão, Ctrl+R atualiza/tenta novamente e Esc volta ou fecha. Consultar a lista não marca notificações. Uma notificação também pode ser marcada quando sua mensagem aparece no trecho visível da conversa, com foco confirmado ou interação recente em terminais sem relato de foco.
+
+A contagem mostra as não lidas conhecidas; `+` na aba e **há mais páginas** na central indicam listagem parcial. A central guarda até 1.000 registros ou 4 MiB em memória. Eventos sem registro persistido aparecem como **Aviso** e duram somente a sessão, até 256 eventos ou 1 MiB; seus IDs não são enviados para marcação. Ler o histórico da conversa e marcar uma notificação são ações distintas. Não há garantia de sincronização imediata com outros dispositivos; Ctrl+R atualiza os dados.
+
+Avisos no desktop mostram servidor, autor e prévia quando uma notificação chega fora da conversa visível ou com o terminal sem foco confirmado. Eventos próximos são agrupados por servidor em dois segundos. Os popups são informativos e não abrem conversas ao clicar. Em **F9 → Preferências**, Enter/Espaço ou clique alterna **Avisos no desktop** e **Mostrar prévia**. As duas opções são globais e persistidas na configuração local; ficam habilitadas por padrão. Configurações anteriores continuam sendo lidas e migram na próxima gravação. As preferências de prévia se aplicam aos popups.
+
+O desktop requer GIO 2.66+ e um serviço compatível com `org.freedesktop.Notifications` na sessão D-Bus; no Arch, instale `glib2` antes de configurar o CMake. Sem esse serviço, a central continua disponível e o rodapé informa a indisponibilidade após uma tentativa. Para compilar sem popups, use `-DPAPO_DESKTOP_NOTIFICATIONS=OFF`, independentemente do suporte a chaveiros. As conexões já abertas das outras abas continuam recebendo DMs e notificações.
 
 ### Menções
 

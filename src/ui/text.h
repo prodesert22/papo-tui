@@ -47,12 +47,14 @@ enum { TEXT_PASTE_START = KEY_MAX + 1, TEXT_PASTE_END,
        TEXT_CTRL_LEFT, TEXT_CTRL_RIGHT, TEXT_CTRL_UP, TEXT_CTRL_DOWN, TEXT_CTRL_HOME, TEXT_CTRL_END,
        TEXT_CTRL_SHIFT_LEFT, TEXT_CTRL_SHIFT_RIGHT, TEXT_CTRL_SHIFT_UP, TEXT_CTRL_SHIFT_DOWN,
        TEXT_CTRL_SHIFT_HOME, TEXT_CTRL_SHIFT_END, TEXT_COPY, TEXT_IGNORED,
-       TEXT_CONTROL_BASE }; /* Followed by the encoded ASCII key value. */
+       TEXT_FOCUS_IN, TEXT_FOCUS_OUT, TEXT_CONTROL_BASE }; /* Followed by the encoded ASCII key value. */
 
 void text_input_init(void);
 int text_input_read(wint_t *key);
 /* Kitty's conditional shortcut mapping; fixed non-secret application marker. */
 void text_input_terminal_active(bool active);
+bool text_terminal_focused(void);
+bool text_terminal_focus_unknown(void);
 bool text_selection(const text_buffer *buffer, size_t *start, size_t *end);
 void text_unselect(text_buffer *buffer);
 /* Common editing controls; returns whether this key belongs to the input. */

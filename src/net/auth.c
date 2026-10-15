@@ -50,6 +50,8 @@ struct auth_client {
     uint64_t refresh_at, generation;
     bool registering, authenticated, recovering, after_refresh, logout_requested;
     bool api_retried, response_ready;
+    bool api_uncertain;
+    const char *api_method; /* Static method literal; no borrowed input. */
     auth_input_error input_error;
     char *api_path;
     char *refresh_cookie;
@@ -103,6 +105,7 @@ static void detach(auth_client *client)
     curl_mime_free(client->mime);
     client->mime = NULL;
     curl_easy_setopt(client->easy, CURLOPT_POSTFIELDS, NULL);
+    curl_easy_setopt(client->easy, CURLOPT_CUSTOMREQUEST, NULL);
     erase_free(&client->payload);
     curl_slist_free_all(client->headers);
     client->headers = NULL;
@@ -123,6 +126,8 @@ static void clear_api(auth_client *client)
     json_decref(client->api_response);
     client->api_response = NULL;
     client->response_ready = client->api_retried = false;
+    client->api_method = NULL;
+    client->api_uncertain = false;
 }
 
 static void clear_send(auth_client *client)
@@ -344,7 +349,7 @@ static bool request(auth_client *client, auth_state state, const char *path,
     client->retry_after = PAPO_RATE_DEFAULT_COOLDOWN_SECONDS;
     /* A fresh HTTP/1.1 connection avoids libcurl's stale-connection/stream
      * retries for this non-idempotent mutation. Other REST calls keep defaults. */
-    bool mutation = state == AUTH_MESSAGE_SEND;
+    bool mutation = state == AUTH_MESSAGE_SEND || state == AUTH_API_MUTATION;
     if (curl_easy_setopt(client->easy, CURLOPT_FRESH_CONNECT, mutation ? 1L : 0L) != CURLE_OK ||
         curl_easy_setopt(client->easy, CURLOPT_FORBID_REUSE, mutation ? 1L : 0L) != CURLE_OK ||
         curl_easy_setopt(client->easy, CURLOPT_HTTP_VERSION,
@@ -373,12 +378,21 @@ static bool request(auth_client *client, auth_state state, const char *path,
     } else {
         if (curl_easy_setopt(client->easy, CURLOPT_HTTPGET, 1L) != CURLE_OK) goto error;
     }
+    if (state == AUTH_API_MUTATION &&
+        curl_easy_setopt(client->easy, CURLOPT_CUSTOMREQUEST, client->api_method) != CURLE_OK) goto error;
     client->queued = true;
     client->state = state;
     client->operation = state;
     client->gate_passed = false;
     return true;
 error:
+    if (state == AUTH_API_MUTATION) {
+        detach(client); clear_api(client);
+        client->api_status=0; client->response_generation=client->generation;
+        client->response_ready=true; client->state=AUTH_READY;
+        snprintf(client->message,sizeof(client->message),"Não foi possível preparar a operação.");
+        return true; /* Accepted with an unsent local rejection. */
+    }
     if (state == AUTH_MESSAGE_SEND) {
         detach(client);
         client->send_receipt.outcome = AUTH_SEND_REJECTED;
@@ -614,6 +628,24 @@ bool auth_get_json(auth_client *client, const char *path)
 }
 
 bool auth_response_ready(const auth_client *client) { return client->response_ready; }
+bool auth_api_uncertain(const auth_client *client) { return client->api_uncertain; }
+
+bool auth_mutate_json(auth_client *client, const char *method, const char *path, const json_t *body)
+{
+    if (!method || (strcmp(method, "POST") && strcmp(method, "PUT") && strcmp(method, "DELETE")) ||
+        !auth_has_session(client) || client->state != AUTH_READY || client->queued || client->attached ||
+        client->api_path || client->response_ready || !path || path[0] != '/' || path[1] == '/' ||
+        strlen(path) > 4096 || (strcmp(method, "DELETE") && !json_is_object(body))) return false;
+    for (const unsigned char *p = (const unsigned char *)path; *p; ++p)
+        if (*p < 32 || *p == 127 || *p == '#') return false;
+    char *copy = strdup(path);
+    json_t *payload = body ? json_deep_copy(body) : NULL;
+    if (!copy || (body && !payload)) { free(copy); json_decref(payload); return false; }
+    client->api_path = copy; client->api_body = payload;
+    client->api_method = !strcmp(method, "POST") ? "POST" : !strcmp(method, "PUT") ? "PUT" : "DELETE";
+    client->api_uncertain = false;
+    return request(client, AUTH_API_MUTATION, copy, payload, payload != NULL);
+}
 
 void auth_set_session_gate(auth_client *client, auth_session_gate gate, void *context)
 {
@@ -721,6 +753,7 @@ bool auth_session_restore(auth_client *client, const char *snapshot, const char 
 
 void auth_cancel_read(auth_client *client)
 {
+    if (client->operation == AUTH_API_MUTATION && (client->queued || client->attached)) return;
     if (!client->api_path && !client->response_ready) return;
     if (client->operation == AUTH_API_GET && (client->queued || client->attached)) {
         detach(client);
@@ -861,9 +894,10 @@ static void complete_send(auth_client *client, CURLcode result, long status, boo
         fail(client, "O servidor bloqueou esta conta. Entre novamente após resolver o acesso.");
 }
 
-static void complete_api(auth_client *client, CURLcode result, long status)
+static void complete_api(auth_client *client, CURLcode result, long status, bool transmitted)
 {
-    if (result == CURLE_OK && status == 401) {
+    bool mutation = client->operation == AUTH_API_MUTATION;
+    if (!mutation && result == CURLE_OK && status == 401) {
         if (!client->api_retried) { client->api_retried = true; recover_session(client); }
         else fail(client, "Não foi possível confirmar a sessão após renovar. Entre novamente.");
         return;
@@ -884,12 +918,15 @@ static void complete_api(auth_client *client, CURLcode result, long status)
         fail(client, "A identidade da sessão não pôde ser confirmada. Entre novamente.");
         return;
     }
+    client->api_uncertain = mutation && ((result != CURLE_OK && transmitted) || status >= 500 ||
+                           (status >= 200 && status < 300 && status != 204 && !json_is_object(body)));
     if (result != CURLE_OK || (!body && status == 200)) status = 0;
     free(client->api_path);
     client->api_path = NULL;
     json_decref(client->api_body);
     client->api_body = NULL;
     client->api_retried = false;
+    client->api_method = NULL;
     client->api_response = body;
     client->api_status = status;
     client->response_generation = client->generation;
@@ -898,6 +935,7 @@ static void complete_api(auth_client *client, CURLcode result, long status)
     snprintf(client->message, sizeof(client->message), "%s", status == 200 ? "Consulta concluída." :
              status == 429 ? "Limite de requisições atingido. Aguarde antes de tentar novamente." :
              "Não foi possível concluir a consulta autenticada.");
+    if (mutation && result == CURLE_OK && status == 401) recover_session(client);
 }
 
 static void reconnect_later(auth_client *client, uint64_t now)
@@ -912,10 +950,10 @@ static void reconnect_later(auth_client *client, uint64_t now)
 static void complete(auth_client *client, CURLcode result, long status)
 {
     auth_state previous = client->operation;
-    bool transmitted = previous == AUTH_MESSAGE_SEND && send_transmitted(client);
+    bool transmitted = (previous == AUTH_MESSAGE_SEND || previous == AUTH_API_MUTATION) && send_transmitted(client);
     detach(client);
     if (previous == AUTH_MESSAGE_SEND) { complete_send(client, result, status, transmitted); return; }
-    if (previous == AUTH_API_GET) { complete_api(client, result, status); return; }
+    if (previous == AUTH_API_GET || previous == AUTH_API_MUTATION) { complete_api(client, result, status, transmitted); return; }
     /* A failed read proves unavailability, not revocation. Preserve an already
      * verified context; refresh is deliberately excluded because its POST may
      * have rotated a cookie even when its response was lost. */
@@ -1183,7 +1221,7 @@ void auth_poll(auth_client *client)
         int admitted = net_rate_try_acquire();
         if (admitted == 0) return;
         if (admitted < 0 || curl_multi_add_handle(client->multi, client->easy) != CURLM_OK) {
-            if (client->operation == AUTH_MESSAGE_SEND) complete(client, CURLE_FAILED_INIT, 0);
+            if (client->operation == AUTH_MESSAGE_SEND || client->operation == AUTH_API_MUTATION) complete(client, CURLE_FAILED_INIT, 0);
             else fail(client, "Não foi possível iniciar a conexão.");
             return;
         }
@@ -1193,7 +1231,7 @@ void auth_poll(auth_client *client)
     if (!client->attached) return;
     int running;
     if (curl_multi_perform(client->multi, &running) != CURLM_OK) {
-        if (client->operation == AUTH_MESSAGE_SEND) complete(client, CURLE_RECV_ERROR, 0);
+        if (client->operation == AUTH_MESSAGE_SEND || client->operation == AUTH_API_MUTATION) complete(client, CURLE_RECV_ERROR, 0);
         else fail(client, "A conexão foi interrompida. Tente novamente.");
         return;
     }

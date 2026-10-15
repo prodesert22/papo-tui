@@ -43,7 +43,7 @@ static void remove_separators(text_buffer *text)
     text->length = length;
     text->data[length] = 0;
 }
-static bool contains(const char *name, const char *query)
+bool mention_name_matches(const char *name, const char *query)
 {
     text_buffer a, b;
     if (!text_decode(&a, name) || !text_decode(&b, query)) return false;
@@ -181,7 +181,7 @@ bool mention_popup_update(mention_popup *p, text_buffer *b, bool enabled)
     p->count = 0;
     for (size_t i = 0; i < history_user_count(p->h) && p->count < 10000; ++i) {
         json_t *u = history_user(p->h, i);
-        if (contains(str(u, "username"), q) || contains(str(u, "nickname"), q))
+        if (mention_name_matches(str(u, "username"), q) || mention_name_matches(str(u, "nickname"), q))
             p->matches[p->count++] = (candidate){.index = i, .name = str(u, "username"),
                 .recent = (size_t)json_integer_value(json_object_get(p->recent, str(u, "id")))};
     }

@@ -3,6 +3,7 @@
 #include "model/history.h"
 #include "ui/text.h"
 typedef struct mention_popup mention_popup;
+bool mention_name_matches(const char *name, const char *query);
 mention_popup *mention_popup_create(history *h);
 void mention_popup_destroy(mention_popup *p);
 bool mention_popup_update(mention_popup *p, text_buffer *b, bool enabled);

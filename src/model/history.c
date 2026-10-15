@@ -9,12 +9,15 @@
 #include <stdlib.h>
 #include <string.h>
 
-enum request_kind { NONE, CHANNELS, MESSAGES, AUTHORS, USERS };
+enum request_kind { NONE, CHANNELS, MESSAGES, AUTHORS, USERS, INBOX };
 #define TYPING_LIMIT 128U
 #define TYPING_TIMEOUT_MS 6000U
 #define TYPING_SEND_MS 2000U
 struct history {
     auth_client *auth;
+    inbox *inbox;
+    bool r8, active;
+    uint64_t activity_sent;
     json_t *users, *directory, *queried, *summary_ids;
     size_t user_bytes;
     uint64_t users_revision, messages_revision;
@@ -98,10 +101,11 @@ history *history_create(auth_client *auth)
 {
     history *h = calloc(1, sizeof(*h));
     if (!h) return NULL;
-    h->auth = auth; h->selected = SIZE_MAX;
+    h->auth = auth; h->selected = SIZE_MAX; h->active = true;
+    h->inbox = inbox_create(auth);
     h->context = auth_context_generation(auth); h->want_channels = true;
     h->users = json_object(); h->directory = json_array(); h->queried = json_object();
-    if (!h->users || !h->directory || !h->queried) { history_destroy(h); return NULL; }
+    if (!h->users || !h->directory || !h->queried || !h->inbox) { history_destroy(h); return NULL; }
     h->epoch = auth_ws_epoch(auth);
     status(h, "Carregando canais…");
     return h;
@@ -110,10 +114,39 @@ void history_destroy(history *h)
 {
     if (!h) return;
     if (h->pending != NONE) auth_cancel_read(h->auth);
-    clear_messages(h); json_decref(h->channels); json_decref(h->users); json_decref(h->directory); json_decref(h->queried); json_decref(h->summary_ids); free(h);
+    clear_messages(h); inbox_destroy(h->inbox); json_decref(h->channels); json_decref(h->users); json_decref(h->directory); json_decref(h->queried); json_decref(h->summary_ids); free(h);
 }
-size_t history_channel_count(const history *h) { return json_array_size(h->channels); }
-json_t *history_channel(const history *h, size_t i) { return json_array_get(h->channels, i); }
+void history_enable_r8(history *h) { h->r8 = true; }
+inbox *history_inbox(history *h) { return h->inbox; }
+void history_active(history *h, bool active)
+{
+    if (h->active == active) return;
+    h->active = active;
+    if (!active) {
+        if (h->pending != NONE && h->pending != INBOX) { auth_cancel_read(h->auth); h->pending = NONE; }
+        ++h->selection; clear_messages(h); h->selected = SIZE_MAX; h->users_active = false;
+    } else if (h->r8) inbox_refresh(h->inbox);
+}
+void history_activity(history *h)
+{
+    uint64_t now;
+    if (!h->active || !auth_has_session(h->auth) || auth_ws_state(h->auth) != WS_OPEN ||
+        !net_now_ms(&now) || (h->activity_sent && now-h->activity_sent < 15000)) return;
+    json_t *e = json_pack("{s:s}", "type", "presence_activity");
+    if (e && auth_send_event(h->auth,e)) h->activity_sent = now;
+    json_decref(e);
+}
+size_t history_channel_count(const history *h) { return json_array_size(h->channels) + (h->r8 ? inbox_dm_count(h->inbox) : 0); }
+json_t *history_channel(const history *h, size_t i)
+{ size_t n=json_array_size(h->channels); return i<n ? json_array_get(h->channels,i) : h->r8 && i!=SIZE_MAX ? inbox_dm(h->inbox,i-n) : NULL; }
+static void restore_selection(history *h, const char *id)
+{
+    if (!*id) return;
+    h->selected = SIZE_MAX;
+    for (size_t i=0;i<history_channel_count(h);++i)
+        if (!strcmp(id,str(history_channel(h,i),"id"))) { h->selected=i; break; }
+    if (h->selected==SIZE_MAX) { ++h->selection; clear_messages(h); }
+}
 size_t history_selected(const history *h) { return h->selected; }
 size_t history_message_count(const history *h) { return json_array_size(h->messages); }
 json_t *history_message(const history *h, size_t i) { return json_array_get(h->messages, i); }
@@ -143,6 +176,15 @@ const char *history_author(const history *h, const char *id)
 }
 void history_users_active(history *h, bool active) { h->users_active = active; }
 void history_users_retry(history *h) { h->users_failed = false; }
+void history_users_refresh(history *h)
+{
+    if (h->pending==USERS) { auth_cancel_read(h->auth); h->pending=NONE; }
+    h->users_active=true; h->users_complete=h->users_failed=false;
+    h->users_id[0]=h->users_time[0]=0;
+    json_array_clear(h->directory); ++h->users_revision;
+    const char *id; json_t *user;
+    json_object_foreach(h->users,id,user) { (void)id; json_object_del(user,"_presence"); }
+}
 size_t history_user_count(const history *h) { return json_array_size(h->directory); }
 uint64_t history_users_revision(const history *h) { return h->users_revision; }
 json_t *history_user(const history *h, size_t i)
@@ -195,6 +237,9 @@ static bool cache_user(history *h, json_t *u, bool presence)
                              json_object_get(metadata, "nickname") ? json_object_get(metadata, "nickname") : json_null(),
                              "typing", json_object_get(metadata, "typing") ? json_object_get(metadata, "typing") : json_null(),
                              "_presence", live);
+    json_t *banned=json_object_get(u,"banned");
+    if (!json_is_boolean(banned)) banned=json_object_get(prior,"banned");
+    if (copy) json_object_set_new(copy,"banned",json_is_true(banned) ? json_true() : json_false());
     if (!copy) return false;
     bool ok = json_object_set_new(h->users, id, copy) == 0;
     if (ok) {
@@ -278,8 +323,10 @@ static bool presence_event(history *h, const json_t *event)
     json_t *prior = json_object_get(h->users, id);
     json_t *user = json_pack("{s:s,s:s,s:O,s:O,s:b}", "id", id, "username",
                             prior ? str(prior, "username") : "", "nickname",
-                            json_object_get(event, "nickname") ? json_object_get(event, "nickname") : json_null(),
-                            "typing", json_object_get(event, "typing") ? json_object_get(event, "typing") : json_null(),
+                            json_object_get(event, "nickname") ? json_object_get(event, "nickname") :
+                            prior && json_object_get(prior,"nickname") ? json_object_get(prior,"nickname") : json_null(),
+                            "typing", json_object_get(event, "typing") ? json_object_get(event, "typing") :
+                            prior && json_object_get(prior,"typing") ? json_object_get(prior,"typing") : json_null(),
                             "_presence", true);
     bool ok = user && cache_user(h, user, true);
     json_decref(user);
@@ -328,7 +375,7 @@ static bool request_users(history *h)
 
 void history_reload_channels(history *h)
 {
-    if (h->pending != NONE) { auth_cancel_read(h->auth); h->pending = NONE; }
+    if (h->pending != NONE && h->pending != INBOX) { auth_cancel_read(h->auth); h->pending = NONE; }
     ++h->selection; clear_messages(h); json_decref(h->channels); h->channels = NULL;
     h->selected = SIZE_MAX; h->want_channels = true;
     status(h, "Carregando canais…");
@@ -337,7 +384,11 @@ bool history_select(history *h, size_t index)
 {
     json_t *c = history_channel(h, index);
     if (!c || !strcmp(str(c, "type"), "category")) return false;
-    if (h->pending != NONE) { auth_cancel_read(h->auth); h->pending = NONE; }
+    if (!h->active) return false;
+    if (h->pending==INBOX && auth_get_state(h->auth)!=AUTH_API_MUTATION) {
+        auth_cancel_read(h->auth); inbox_cancel_read(h->inbox); h->pending=NONE;
+    }
+    if (h->pending != NONE && h->pending != INBOX) { auth_cancel_read(h->auth); h->pending = NONE; }
     ++h->selection; clear_messages(h); h->selected = index; h->older = false;
     if (!strcmp(str(c, "type"), "voice")) status(h, "Chamadas de voz ainda não estão disponíveis.");
     else { h->want_messages = true; status(h, "Carregando histórico…"); }
@@ -397,8 +448,8 @@ static bool channels_response(history *h, json_t *body)
         if (json_array_append_new(next, json_deep_copy(sorted[i]))) { json_decref(next); return false; }
     json_decref(h->channels); h->channels = next;
     h->selected = SIZE_MAX;
-    for (size_t i = 0; i < count; ++i)
-        if (!strcmp(selected_id, str(sorted[i], "id"))) h->selected = i;
+    for (size_t i = 0; i < history_channel_count(h); ++i)
+        if (!strcmp(selected_id, str(history_channel(h,i), "id"))) h->selected = i;
     if (*selected_id && h->selected == SIZE_MAX) clear_messages(h);
     status(h, count ? "Escolha um canal para ler." : "Nenhum canal disponível.");
     if (count) notice(h, HISTORY_NOTICE_READ, "");
@@ -588,8 +639,8 @@ static void clear_journal(history *h)
 void history_recover(history *h)
 {
     if (!h || !auth_has_session(h->auth)) return;
-    if (h->pending != NONE) auth_cancel_read(h->auth);
-    h->pending = NONE; ++h->selection;
+    if (h->pending != NONE && h->pending != INBOX) { auth_cancel_read(h->auth); h->pending=NONE; }
+    ++h->selection;
     json_decref(h->fresh); h->fresh = NULL;
     json_decref(h->boundary); h->boundary = NULL;
     clear_journal(h);
@@ -653,6 +704,8 @@ static bool messages_response(history *h, json_t *body)
         }
     }
     h->want_authors = history_message_count(h) > 0;
+    if (h->r8 && !h->older && history_channel(h,h->selected))
+        inbox_read_conversation(h->inbox,str(history_channel(h,h->selected),"id"));
     status(h, history_message_count(h) ? h->more ? "PageUp no início: carregar anteriores." : "Início do histórico alcançado." : "Nenhuma mensagem neste canal.");
     notice(h, HISTORY_NOTICE_READ, "");
     return true;
@@ -679,8 +732,18 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
 {
     if (!h || !auth_has_session(h->auth) || generation != h->context ||
         generation != auth_context_generation(h->auth)) return false;
+    if (h->r8 && !h->replaying && strcmp(str((json_t *)event,"type") ? str((json_t *)event,"type") : "","message")) {
+        char current[37] = "";
+        if (history_channel(h,h->selected)) snprintf(current,sizeof(current),"%s",str(history_channel(h,h->selected),"id"));
+        if (!inbox_event(h->inbox,event)) goto invalid;
+        restore_selection(h,current);
+    }
     const char *type = str((json_t *)event, "type");
     if (!type || !string_field((json_t *)event, "type", 128, false)) goto invalid;
+    if (h->r8 && (!strcmp(type,"dm_update") || !strcmp(type,"new_notification"))) {
+        if (!strcmp(type,"dm_update")) cache_user(h,json_object_get(event,"dm") ? json_object_get(json_object_get(event,"dm"),"user") : NULL,false);
+        h->want_authors=true; return true;
+    }
     if (!strcmp(type, "heartbeat_ack")) return true;
     if (!strcmp(type, "typing")) {
         if (!typing_event(h, event)) goto invalid;
@@ -716,6 +779,12 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
         json_array_foreach(list, i, item) if (!json_is_object(item)) goto invalid;
     }
     if (message && !message_valid((json_t *)event, channel)) goto invalid;
+    if (message && h->r8 && !h->replaying) {
+        char current[37]="";
+        if (history_channel(h,h->selected)) snprintf(current,sizeof(current),"%s",str(history_channel(h,h->selected),"id"));
+        if (!inbox_event(h->inbox,event)) goto invalid;
+        restore_selection(h,current);
+    }
     uint64_t timestamp;
     if (edit && (!json_object_get(event, "content") || !string_field((json_t *)event, "content", 32768, true) ||
         !string_field((json_t *)event, "edited_at", 64, false) ||
@@ -944,6 +1013,16 @@ static bool request_authors(history *h)
                   !json_object_set_new(seen, r.id, json_true());
         }
     }
+    if (h->r8) {
+        size_t total=inbox_notification_count(h->inbox)+inbox_event_count(h->inbox);
+        for (size_t j=0;j<total && json_array_size(ids)<1000;++j) {
+            bool event=j>=inbox_notification_count(h->inbox);
+            json_t *n=event ? inbox_notification_event(h->inbox,j-inbox_notification_count(h->inbox)) : inbox_notification(h->inbox,j);
+            const char *id=str(n,event ? "user_id" : "author_id");
+            if (!history_uuid(id) || user_resolved(h,id) || json_object_get(h->queried,id) || json_object_get(seen,id)) continue;
+            ok &= !json_array_append_new(ids,json_string(id)) && !json_object_set_new(seen,id,json_true());
+        }
+    }
     if (ok && json_array_size(ids)) ok = auth_user_summaries(h->auth, ids);
     if (ok) {
         json_decref(h->summary_ids);
@@ -959,6 +1038,7 @@ bool history_poll(history *h)
     bool changed = false;
     if (h->context != auth_context_generation(h->auth)) {
         h->context = auth_context_generation(h->auth);
+        inbox_reset(h->inbox); h->activity_sent = 0;
         json_object_clear(h->users); json_array_clear(h->directory); json_object_clear(h->queried);
         ++h->users_revision;
         h->users_complete = h->users_failed = h->users_partial = false; h->user_bytes = 0;
@@ -969,6 +1049,7 @@ bool history_poll(history *h)
     uint64_t epoch = auth_ws_epoch(h->auth);
     bool connected = auth_has_session(h->auth) && auth_ws_state(h->auth) == WS_OPEN;
     if ((h->typing_connected && !connected) || epoch != h->epoch) {
+        if (h->r8) inbox_recover(h->inbox);
         h->typing_count = 0; h->typing_sent = 0;
         json_object_clear(h->queried);
         const char *id; json_t *user;
@@ -983,7 +1064,7 @@ bool history_poll(history *h)
     if (epoch != h->epoch) {
         /* Initial snapshots are deferred until the first upgrade. A later
          * upgrade requires authoritative recovery of the displayed window. */
-        if (h->epoch || h->channels || h->messages) history_recover(h);
+        if (h->active && (h->epoch || h->channels || h->messages)) history_recover(h);
         h->epoch = epoch; changed = true;
     }
     json_t *event;
@@ -991,8 +1072,19 @@ bool history_poll(history *h)
         history_event(h, event, h->context); json_decref(event); changed = true;
     }
     if (auth_response_ready(h->auth)) {
+        bool uncertain = auth_api_uncertain(h->auth);
         long code; uint64_t generation;
         json_t *body = auth_take_response(h->auth, &code, &generation);
+        if (h->pending == INBOX) {
+            char current[37] = "";
+            if (history_channel(h,h->selected)) snprintf(current,sizeof(current),"%s",str(history_channel(h,h->selected),"id"));
+            if (generation == h->context && h->request_context == h->context) {
+                inbox_response(h->inbox,body,code,uncertain); restore_selection(h,current);
+                for (size_t i=0;i<inbox_dm_count(h->inbox);++i) cache_user(h,json_object_get(inbox_dm(h->inbox,i),"user"),false);
+                h->want_authors=true;
+            }
+            json_decref(body); h->pending = NONE; return true;
+        }
         if (h->pending != NONE && generation == h->context && h->request_context == h->context &&
             (h->pending == USERS || h->request_selection == h->selection)) {
             enum request_kind kind = h->pending;
@@ -1058,6 +1150,9 @@ bool history_poll(history *h)
     if (h->recovering && ws != WS_OPEN) return changed;
     if (now < h->retry_at) return changed;
     if (h->pending == NONE && auth_has_session(h->auth) && !auth_busy(h->auth)) {
+        if (h->r8 && !h->want_channels && !h->want_messages && inbox_dispatch(h->inbox)) {
+            h->pending=INBOX; h->request_context=h->context; return true;
+        }
         enum request_kind kind = h->want_channels ? CHANNELS : h->want_messages ? MESSAGES : h->want_authors ? AUTHORS : h->users_active && !h->users_complete && !h->users_failed ? USERS : NONE;
         bool started = kind == CHANNELS ? auth_get_json(h->auth, "/channels") :
                        kind == MESSAGES ? request_messages(h) : kind == AUTHORS ? request_authors(h) : kind == USERS ? request_users(h) : false;

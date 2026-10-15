@@ -18,7 +18,7 @@ class RealtimeTerminal(unittest.TestCase):
             try:
                 terminal.send('Rascunho ao navegar\x1b')
                 terminal.click(5, 4)
-                terminal.send('\x1bOB')  # highlight another channel, keep geral open
+                terminal.send('\x1bOB\x1bOB')  # buttons -> list -> other channel; keep geral open
                 self.assertIn('Foco: Canais', terminal.screen.display[2])
                 self.assertIn('# geral · Histórico', self.screen(terminal))
                 message = server.message(4); message['content'] = 'Recebida enquanto navego nos canais'

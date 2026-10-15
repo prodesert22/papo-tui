@@ -13,6 +13,8 @@ typedef enum {
     STATUS_EVENT,
     STATUS_UNREAD,
     STATUS_CLIPBOARD,
+    STATUS_NOTIFICATIONS,
+    STATUS_DESKTOP,
     STATUS_CONTEXT_COUNT
 } status_context;
 
@@ -28,6 +30,7 @@ typedef struct {
 typedef struct {
     status_notice notices[STATUS_CONTEXT_COUNT];
     uint64_t sequence;
+    bool connection_critical;
 } status_bar;
 
 bool status_bar_set(status_bar *bar, status_context context, const char *text);

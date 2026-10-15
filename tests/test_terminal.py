@@ -349,10 +349,10 @@ class TerminalTests(unittest.TestCase):
                 terminal.click(21, 24)
                 terminal.return_to_account()
                 terminal.wait_text("Login realizado")
-                self.assertEqual(len(server.requests), 5)
+                self.assertEqual(len([r for r in server.requests if not r[1].split('?')[0].endswith(('/dms', '/notifications', '/ws'))]), 5)
                 terminal.click(21, 24)
                 terminal.wait_text("Você saiu da conta")
-                self.assertEqual(len(server.requests), 6)
+                self.assertEqual(len([r for r in server.requests if not r[1].split('?')[0].endswith(('/dms', '/notifications', '/ws'))]), 6)
                 self.assertNotIn(b"Synthetic!123", terminal.output)
                 self.assertNotIn(b"Server!123", terminal.output)
             finally:

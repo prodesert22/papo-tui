@@ -2,6 +2,7 @@
 #define PAPO_HISTORY_H
 #include "net/auth.h"
 #include "model/mentions.h"
+#include "model/inbox.h"
 
 #define HISTORY_CHANNEL_LIMIT 500
 #define HISTORY_MESSAGE_LIMIT 1000
@@ -15,6 +16,12 @@ typedef enum { HISTORY_NOTICE_READ, HISTORY_NOTICE_EVENT, HISTORY_NOTICE_COUNT }
  * by UUID, not pointer. */
 history *history_create(auth_client *auth);
 void history_destroy(history *h);
+/* A connection owns the model; views borrow it. Inactive contexts keep only
+ * metadata and never request message history. R8 is opt-in for old probes. */
+void history_enable_r8(history *h);
+inbox *history_inbox(history *h);
+void history_active(history *h, bool active);
+void history_activity(history *h);
 bool history_poll(history *h);
 /* Copies a confirmed Message. Merges only the active channel/current
  * generation, with definitive ID deduplication and bounded memory. No HTTP. */
@@ -43,6 +50,7 @@ uint64_t history_messages_revision(const history *h);
  * history owner through the same REST queue, never by the popup. */
 void history_users_active(history *h, bool active);
 void history_users_retry(history *h);
+void history_users_refresh(history *h);
 size_t history_user_count(const history *h);
 uint64_t history_users_revision(const history *h);
 json_t *history_user(const history *h, size_t index);

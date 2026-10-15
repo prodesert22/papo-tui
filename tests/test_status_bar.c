@@ -61,6 +61,16 @@ int main(void)
     assert(bar.notices[STATUS_CONNECTION].x > bar.notices[STATUS_EDITOR].x);
     assert(status_bar_set(&bar, STATUS_SEND, NULL));
     assert(*bar.notices[STATUS_EVENT].text && *bar.notices[STATUS_CONNECTION].text);
+    assert(status_bar_set_compact(&bar,STATUS_CONNECTION,"Desconectado · Reconectando…","Desconectado"));
+    bar.connection_critical=true;
+    assert(status_bar_set(&bar,STATUS_EDITOR,"Aviso mais recente do editor"));
+    WINDOW *narrow=newwin(1,44,0,0);
+    assert(narrow);
+    status_bar_draw(&bar,narrow,0,"Dicas completas de navegação","Dicas","h");
+    char line[256]; mvwinnstr(narrow,0,0,line,sizeof(line)-1);
+    assert(strstr(line,"Desconectado"));
+    assert(bar.notices[STATUS_CONNECTION].width>0);
+    delwin(narrow);
     delwin(wide);
     endwin();
     delscreen(screen);
