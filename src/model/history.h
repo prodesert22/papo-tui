@@ -2,6 +2,7 @@
 #define PAPO_HISTORY_H
 #include "net/auth.h"
 #include "model/mentions.h"
+#include "model/assets.h"
 
 #define HISTORY_CHANNEL_LIMIT 500
 #define HISTORY_MESSAGE_LIMIT 1000
@@ -15,6 +16,7 @@ typedef enum { HISTORY_NOTICE_READ, HISTORY_NOTICE_EVENT, HISTORY_NOTICE_COUNT }
  * by UUID, not pointer. */
 history *history_create(auth_client *auth);
 void history_destroy(history *h);
+chat_assets *history_assets(history *h);
 bool history_poll(history *h);
 /* Copies a confirmed Message. Merges only the active channel/current
  * generation, with definitive ID deduplication and bounded memory. No HTTP. */

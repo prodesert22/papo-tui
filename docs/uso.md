@@ -330,6 +330,54 @@ cache fica somente em memória, limitado a 10.000 usuários ou 16 MiB. Se houver
 falha, Ctrl+R no cartão tenta novamente. Uma única opção também exige
 confirmação; textos colados, e-mails e URLs não abrem o seletor automaticamente.
 
+### Emojis e avatares
+
+Clique em **[😄]**, à direita do editor, ou pressione **F4** para abrir o
+seletor. Tab a partir do editor foca esse botão; Enter o abre e Shift+Tab
+retorna ao editor. O botão permanece fixo ao escrever ou redimensionar.
+
+Digite no campo **Buscar** para filtrar nomes e palavras-chave em português
+ou inglês, ignorando maiúsculas e acentos. Tab/Shift+Tab percorre busca, abas e
+grade. Nas abas, ←/→ escolhe **Unicode** ou **Servidor**; na grade, as setas
+movem o destaque e PageUp/PageDown ou a roda do mouse rolam os resultados.
+O rodapé identifica o emoji destacado. Enter ou clique insere no cursor ou
+substitui a seleção, fecha o modal e retorna ao editor. Isso não envia a
+mensagem. Se não couber no limite do editor, o rascunho é preservado e o modal
+informa o problema. Esc ou clique fora cancela sem acionar canais ao fundo.
+
+Unicode é inserido como sua sequência original. Emojis personalizados usam
+`:nome:`, preservando o nome do servidor, inclusive Unicode e capitalização.
+F5 atualiza o catálogo remoto; ao reabrir depois de cinco minutos ele também
+é atualizado. As páginas aparecem progressivamente; falhas preservam os itens
+já carregados e F5 permite tentar novamente. Não há upload, exclusão ou
+seleção de reações nessa tela.
+
+Instale **PangoCairo 1.50+** e a fonte **Noto Color Emoji** para os ícones Unicode
+coloridos. O catálogo Unicode 17.0/CLDR 48 vem com o programa e funciona sem
+internet. No histórico, editor e seletor, Kitty, Sixel e iTerm2 usam imagens
+coloridas; emojis no texto ocupam duas colunas e uma linha. Seleção, cursor,
+exclusão e cópia preservam o texto enviado. Sem suporte gráfico ou fonte,
+Unicode permanece em texto e personalizados permanecem como `:nome:`.
+
+O avatar é renderizado em até 40 × 40 pixels, preservando a proporção e
+centralizado horizontal e verticalmente na área de seis colunas por três
+linhas do cabeçalho.
+Nome, hora e **editado** ficam centralizados verticalmente à direita; o texto
+da mensagem começa abaixo, usando toda a largura. Avatares ausentes ou
+inválidos mostram iniciais. Hoje aparece só o horário; nos outros dias, data
+e hora, seguindo `LC_TIME` e o fuso local. O indicador **editado** substitui a
+antiga linha separada de edição. Nomes longos são abreviados e metadados se
+ajustam em telas estreitas.
+
+Emojis personalizados e avatares em GIF se repetem somente enquanto visíveis,
+até 15 atualizações por segundo. Animações que excedem os limites usam o
+primeiro frame. Avatares são carregados apenas para autores visíveis, em lotes,
+e atualizados após eventos de troca de avatar. Ctrl+R permite tentar novamente
+quando um avatar falha. Tudo fica isolado por instância e sessão, respeitando
+TLS e o limite global de requisições. Os caches de mídia e ícones têm 32 MiB
+cada; arquivos temporários de emojis/avatares são privados, limitados a 160 MiB
+e removidos ao voltar à conta ou sair.
+
 ### Imagens e player de vídeo
 
 O programa consulta suporte aos protocolos gráficos Kitty e Sixel e o tamanho

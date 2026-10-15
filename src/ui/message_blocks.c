@@ -2,6 +2,8 @@
 #include "ui/message_blocks.h"
 #include "ui/text.h"
 #include "ui/theme.h"
+#include "ui/message_time.h"
+#include <time.h>
 #include <limits.h>
 #include <linebreak.h>
 #include <stdio.h>
@@ -105,6 +107,8 @@ static bool column(message_blocks *b, size_t start, const char *key, const char 
             }
         }
         if (styled) text_mentions(&buffer, b->resolver, b->resolver_context);
+        if (b->icon_resolver && (card || !strcmp(key, "content")))
+            text_icons(&buffer, b->icon_resolver, b->icon_painter, b->icon_context);
         text_buffer visible; text_project(&buffer, &visible);
         if (card) card_measure(&buffer, width, &layout);
         else text_measure(&buffer, width, &layout);
@@ -133,6 +137,15 @@ static bool column(message_blocks *b, size_t start, const char *key, const char 
                 for (size_t k=0;k<layout.count;++k) if(layout.cells[k].row==line && layout.cells[k].mention)
                     for(size_t q=layout.cells[k].display_start;q<layout.cells[k].display_end && q<first+part.length;++q)
                         if(q>=first)s->highlight[q-first]=1;
+            }
+            for (size_t k = 0; k < layout.count; ++k) if (layout.cells[k].row == line && layout.cells[k].icon) {
+                message_icon_region *icons = realloc(r->icons, (r->icon_count + 1) * sizeof(*icons));
+                if (!icons) return false;
+                r->icons = icons;
+                message_icon_region *icon = &r->icons[r->icon_count++];
+                icon->id = layout.cells[k].icon; icon->x = x + layout.cells[k].column;
+                icon->offset = base + layout.cells[k].start; snprintf(icon->key, sizeof(icon->key), "%s", key);
+                r->icon_painter = b->icon_painter; r->icon_context = b->icon_context;
             }
             r->card = card; r->color = color;
             ++row;
@@ -246,14 +259,46 @@ bool message_blocks_build_sized_mentions(message_blocks *b, json_t *m, const cha
                           message_media_measure measure, void *measure_context,
                           mention_resolver resolver, void *resolver_context, const char *self)
 {
+    return message_blocks_build_visual(b,m,author,reply,width,graphics,measure,measure_context,
+        resolver,resolver_context,self,NULL,NULL,NULL);
+}
+bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *author,
+                          const char *reply, int width, bool graphics,
+                          message_media_measure measure, void *measure_context,
+                          mention_resolver resolver, void *resolver_context, const char *self,
+                          text_icon_resolver icons, text_icon_painter painter, void *icon_context)
+{
     memset(b, 0, sizeof(*b)); b->measure = measure; b->measure_context = measure_context;
     b->resolver=resolver;b->resolver_context=resolver_context;
+    b->icon_resolver=icons;b->icon_painter=painter;b->icon_context=icon_context;
     b->self_mention=mention_message_contains(m,self);
     if (width < 8) width = 8;
-    char label[1600];
-    snprintf(label, sizeof(label), "%s · %s%s", str(m, "created_at"), author, *str(m, "edited_at") ? " · editada" : "");
-    if (!text(b, "header", label, width, false, false, 0)) goto error;
-    if (*str(m, "edited_at") && !labeled(b, "edited", "Editada em: ", str(m, "edited_at"), width, false, false, 0)) goto error;
+    char label[1600], timestamp[192];
+    message_time_format(str(m, "created_at"), time(NULL), timestamp, sizeof(timestamp));
+    for (int i = 0; i < 3; ++i) if (!blank(b, false, false, false, 0)) goto error;
+    int metadata = text_label(NULL, 0, 0, 200, timestamp) + (*str(m, "edited_at") ? 12 : 3);
+    int author_width = width - 7 - metadata;
+    if (author_width < 4) author_width = 4;
+    text_buffer name;
+    if (!text_decode(&name, author)) text_decode(&name, "usuário");
+    text_layout name_layout; text_measure(&name, author_width + 1, &name_layout);
+    size_t cut = name.length;
+    for (size_t k = 0; k + 1 < name_layout.count; ++k) if (name_layout.cells[k].row) { cut = name_layout.cells[k].start; break; }
+    if (cut < name.length && cut) name.data[cut - 1] = 0x2026;
+    name.length = cut; name.data[cut] = 0;
+    char author_text[TEXT_UTF8_BYTES]; if (!text_encode(&name, author_text)) goto error;
+    snprintf(label, sizeof(label), "%.*s · %s%s", 1024, author_text, timestamp, *str(m, "edited_at") ? " · editado" : "");
+    size_t header_end;
+    if (!column(b, 1, "header", label, 7, width - 7, true, false, 0, &header_end)) goto error;
+    text_buffer initials = {0}, decoded;
+    if (text_decode(&decoded, author)) {
+        for (size_t k = 0; k < decoded.length && initials.length < 2; ++k)
+            if ((k == 0 || decoded.data[k - 1] == ' ') && decoded.data[k] > ' ') initials.data[initials.length++] = decoded.data[k];
+    }
+    char initial_text[TEXT_UTF8_BYTES];
+    if (!initials.length) { initials.data[0] = '?'; initials.length = 1; }
+    if (!text_encode(&initials, initial_text) || !column(b, 1, "header:avatar", initial_text, 1, 5, false, false, 0, &header_end)) goto error;
+    for (size_t i = 0; i < b->count; ++i) b->rows[i].header = true;
     if (*str(m, "reply_to") && !labeled(b, "reply", "Resposta: ", reply, width, false, false, 0)) goto error;
     if (*str(m, "content") && !text(b, "content", str(m, "content"), width, false, false, 0)) goto error;
     size_t index; json_t *item;
@@ -393,6 +438,7 @@ void message_blocks_free(message_blocks *b)
     /* capacity includes partially constructed rows on an allocation failure. */
     for (size_t i = 0; i < b->capacity; ++i)
         for (int k = 0; k < b->rows[i].count; ++k) { free(b->rows[i].segments[k].text); free(b->rows[i].segments[k].highlight); }
+    for (size_t i = 0; i < b->capacity; ++i) free(b->rows[i].icons);
     free(b->rows); free(b->media); memset(b, 0, sizeof(*b));
 }
 static struct { int fg, bg; } frame_colors[32];

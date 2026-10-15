@@ -9,12 +9,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-enum request_kind { NONE, CHANNELS, MESSAGES, AUTHORS, USERS };
+enum request_kind { NONE, CHANNELS, MESSAGES, AUTHORS, USERS, EMOJIS, PROFILES };
 #define TYPING_LIMIT 128U
 #define TYPING_TIMEOUT_MS 6000U
 #define TYPING_SEND_MS 2000U
 struct history {
     auth_client *auth;
+    chat_assets *assets;
     json_t *users, *directory, *queried, *summary_ids;
     size_t user_bytes;
     uint64_t users_revision, messages_revision;
@@ -98,10 +99,10 @@ history *history_create(auth_client *auth)
 {
     history *h = calloc(1, sizeof(*h));
     if (!h) return NULL;
-    h->auth = auth; h->selected = SIZE_MAX;
+    h->auth = auth; h->assets = chat_assets_create(); h->selected = SIZE_MAX;
     h->context = auth_context_generation(auth); h->want_channels = true;
     h->users = json_object(); h->directory = json_array(); h->queried = json_object();
-    if (!h->users || !h->directory || !h->queried) { history_destroy(h); return NULL; }
+    if (!h->assets || !h->users || !h->directory || !h->queried) { history_destroy(h); return NULL; }
     h->epoch = auth_ws_epoch(auth);
     status(h, "Carregando canais…");
     return h;
@@ -110,8 +111,9 @@ void history_destroy(history *h)
 {
     if (!h) return;
     if (h->pending != NONE) auth_cancel_read(h->auth);
-    clear_messages(h); json_decref(h->channels); json_decref(h->users); json_decref(h->directory); json_decref(h->queried); json_decref(h->summary_ids); free(h);
+    chat_assets_destroy(h->assets); clear_messages(h); json_decref(h->channels); json_decref(h->users); json_decref(h->directory); json_decref(h->queried); json_decref(h->summary_ids); free(h);
 }
+chat_assets *history_assets(history *h) { return h ? h->assets : NULL; }
 size_t history_channel_count(const history *h) { return json_array_size(h->channels); }
 json_t *history_channel(const history *h, size_t i) { return json_array_get(h->channels, i); }
 size_t history_selected(const history *h) { return h->selected; }
@@ -329,7 +331,7 @@ static bool request_users(history *h)
 
 void history_reload_channels(history *h)
 {
-    if (h->pending != NONE) { auth_cancel_read(h->auth); h->pending = NONE; }
+    if (h->pending != NONE) { auth_cancel_read(h->auth); chat_assets_cancel(h->assets); h->pending = NONE; }
     ++h->selection; clear_messages(h); json_decref(h->channels); h->channels = NULL;
     h->selected = SIZE_MAX; h->want_channels = true;
     status(h, "Carregando canais…");
@@ -338,7 +340,7 @@ bool history_select(history *h, size_t index)
 {
     json_t *c = history_channel(h, index);
     if (!c || !strcmp(str(c, "type"), "category")) return false;
-    if (h->pending != NONE) { auth_cancel_read(h->auth); h->pending = NONE; }
+    if (h->pending != NONE) { auth_cancel_read(h->auth); chat_assets_cancel(h->assets); h->pending = NONE; }
     ++h->selection; clear_messages(h); h->selected = index; h->older = false;
     if (!strcmp(str(c, "type"), "voice")) status(h, "Chamadas de voz ainda não estão disponíveis.");
     else { h->want_messages = true; status(h, "Carregando histórico…"); }
@@ -702,6 +704,10 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
         generation != auth_context_generation(h->auth)) return false;
     const char *type = str((json_t *)event, "type");
     if (!type || !string_field((json_t *)event, "type", 128, false)) goto invalid;
+    if (!strcmp(type, "avatar_update")) {
+        if (!string_field((json_t *)event, "user_id", 36, false) || !history_uuid(str((json_t *)event, "user_id"))) goto invalid;
+        chat_assets_avatar_invalidate(h->assets, str((json_t *)event, "user_id")); return true;
+    }
     if (!strcmp(type, "heartbeat_ack")) return true;
     if (!strcmp(type, "typing")) {
         if (!typing_event(h, event)) goto invalid;
@@ -994,6 +1000,7 @@ bool history_poll(history *h)
     bool changed = false;
     if (h->context != auth_context_generation(h->auth)) {
         h->context = auth_context_generation(h->auth);
+        chat_assets_destroy(h->assets); h->assets = chat_assets_create();
         json_object_clear(h->users); json_array_clear(h->directory); json_object_clear(h->queried);
         ++h->users_revision;
         h->users_complete = h->users_failed = h->users_partial = false; h->user_bytes = 0;
@@ -1029,8 +1036,13 @@ bool history_poll(history *h)
         long code; uint64_t generation;
         json_t *body = auth_take_response(h->auth, &code, &generation);
         if (h->pending != NONE && generation == h->context && h->request_context == h->context &&
-            (h->pending == USERS || h->request_selection == h->selection)) {
+            (h->pending == USERS || h->pending == EMOJIS || h->pending == PROFILES || h->request_selection == h->selection)) {
             enum request_kind kind = h->pending;
+            if (kind == EMOJIS || kind == PROFILES) {
+                if (kind == EMOJIS) chat_assets_emojis_response(h->assets, body, code);
+                else chat_assets_profiles_response(h->assets, body, code);
+                json_decref(body); h->pending = NONE; return true;
+            }
             bool was_recovering = h->recovering;
             if (kind == USERS) {
                 h->users_failed = code != 200 || !users_response(h, body);
@@ -1093,9 +1105,11 @@ bool history_poll(history *h)
     if (h->recovering && ws != WS_OPEN) return changed;
     if (now < h->retry_at) return changed;
     if (h->pending == NONE && auth_has_session(h->auth) && !auth_busy(h->auth)) {
-        enum request_kind kind = h->want_channels ? CHANNELS : h->want_messages ? MESSAGES : h->want_authors ? AUTHORS : h->users_active && !h->users_complete && !h->users_failed ? USERS : NONE;
+        enum request_kind kind = h->want_channels ? CHANNELS : h->want_messages ? MESSAGES : h->want_authors ? AUTHORS : chat_assets_emojis_wanted(h->assets) ? EMOJIS : chat_assets_profiles_wanted(h->assets) ? PROFILES : h->users_active && !h->users_complete && !h->users_failed ? USERS : NONE;
         bool started = kind == CHANNELS ? auth_get_json(h->auth, "/channels") :
-                       kind == MESSAGES ? request_messages(h) : kind == AUTHORS ? request_authors(h) : kind == USERS ? request_users(h) : false;
+                       kind == MESSAGES ? request_messages(h) : kind == AUTHORS ? request_authors(h) : kind == USERS ? request_users(h) :
+                       kind == EMOJIS ? auth_emojis(h->auth, chat_assets_emojis_path(h->assets)) :
+                       kind == PROFILES ? auth_user_profiles(h->auth, chat_assets_profiles_request(h->assets)) : false;
         if (started && kind == AUTHORS && !auth_busy(h->auth)) {
             h->want_authors = false;
             notice(h, HISTORY_NOTICE_READ, "");
@@ -1111,6 +1125,11 @@ bool history_poll(history *h)
             changed = true;
         } else if (kind != NONE && auth_get_state(h->auth) == AUTH_READY && !auth_response_ready(h->auth)) {
             if (kind == USERS) { h->users_failed = true; return true; }
+            if (kind == EMOJIS || kind == PROFILES) {
+                if (kind == EMOJIS) chat_assets_emojis_response(h->assets, NULL, 0);
+                else chat_assets_profiles_response(h->assets, NULL, 0);
+                return true;
+            }
             h->failed = kind;
             h->want_channels = h->want_messages = h->want_authors = false;
             status(h, "Não foi possível preparar a consulta. Ctrl+R: tentar novamente.");

@@ -59,6 +59,20 @@ int main(int argc, char **argv)
         request.path = argv[5];
         assert(!image_decode_file(&request, &image, &frames, NULL, NULL));
         assert(!frames && !image.data);
+        image_decode_request avatar = request;
+        avatar.path = argv[2]; avatar.width = avatar.height = 48;
+        avatar.native = false; avatar.center = avatar.matte = true;
+        avatar.fit_side = 40; avatar.background = 0x15181e;
+        assert(image_decode_file(&avatar, &image, &frames, NULL, NULL));
+        assert(frames && frames->width == 48 && frames->height == 48);
+        for (size_t f = 0; f < frames->count; ++f)
+            for (int y = 0; y < 48; ++y) for (int x = 0; x < 48; ++x) {
+                const unsigned char *pixel = frames->pixels[f] + (y * 48 + x) * 3;
+                if (x >= 4 && x < 44 && y >= 9 && y < 39)
+                    assert(pixel[f ? 2 : 0] > 230);
+                else assert(pixel[0] == 0x15 && pixel[1] == 0x18 && pixel[2] == 0x1e);
+            }
+        graphics_image_free(&image); animation_free(frames); frames = NULL;
     }
     puts("GIF frame pixels/delays, native dimensions, proportional limits, crops and cancellation verified");
     return 0;

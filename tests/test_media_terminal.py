@@ -19,7 +19,10 @@ from test_terminal import Terminal, TerminalStream
 import test_history_terminal as history_tests
 
 class GraphicsStream:
-    def __init__(self, screen):
+    def __init__(self, screen, *, include_icons=True):
+        self.include_icons = include_icons
+        self.control_ids = set()
+        self.kitty_control = False
         self.stream = TerminalStream(screen)
         self.pending = b''
         self.frames = []
@@ -62,21 +65,31 @@ class GraphicsStream:
                 header, _, data = sequence[3:-2].partition(b';')
                 values = dict(field.split(b'=', 1) for field in header.split(b',') if b'=' in field)
                 if values.get(b'a') == b'd':
+                    image_id = int(values[b'i'])
+                    if image_id in self.control_ids and not self.include_icons: continue
                     image_id = int(values[b'i']); self.live_ids.discard(image_id); self.deleted_ids.append(image_id)
                 elif values.get(b'a') == b'p':
+                    if int(values[b'i']) in self.control_ids and not self.include_icons: continue
                     self.placements.append(values)
                     self.placement_positions.append((self.screen.cursor.y, self.screen.cursor.x))
                     self.live_ids.add(int(values[b'i']))
                 elif values.get(b'a') in (b'T', b't'):
                     self.kitty_header = values; self.kitty_parts = []
+                    # Media regression assertions concern attachment/embed/player
+                    # pixels, rather than the newly graphical composer button.
+                    self.kitty_control = self.screen.cursor.x == self.screen.columns - 7
+                    if self.kitty_control: self.control_ids.add(int(values[b'i']))
                 elif self.kitty_header is not None:
                     if data: self.kitty_parts.append(data)
                     if values.get(b'm') == b'0':
                         pixels = base64.b64decode(b''.join(self.kitty_parts), validate=True)
+                        if self.kitty_control and not self.include_icons:
+                            self.kitty_header = None; continue
                         self.kitty_frames.append((self.kitty_header, pixels))
                         if self.kitty_header[b'a'] == b'T': self.live_ids.add(int(self.kitty_header[b'i']))
                         self.frames.append(pixels); self.protocols.append('kitty'); self.kitty_header = None
             else:
+                if not self.include_icons and self.screen.cursor.x == self.screen.columns - 7: continue
                 self.frames.append(sequence); self.protocols.append('iterm2' if iterm else 'sixel')
 
 class MediaTerminal(unittest.TestCase):
@@ -117,7 +130,7 @@ class MediaTerminal(unittest.TestCase):
         if not hasattr(self, "terminals"): self.terminals = []
         self.terminals.append(t)
         self.addCleanup(lambda: t.close() if t.process.poll() is None else None)
-        stream = GraphicsStream(t.screen); stream.feed(bytes(t.output)); t.stream = stream
+        stream = GraphicsStream(t.screen, include_icons=getattr(self, "include_icons", False)); stream.feed(bytes(t.output)); t.stream = stream
         if protocol == 'kitty':
             query = re.search(rb'\x1b_Gi=(\d+),s=1,v=1,a=q', t.output)
             self.assertIsNotNone(query)

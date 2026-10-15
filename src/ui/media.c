@@ -24,7 +24,7 @@
 #include <sys/stat.h>
 #define CACHE_COUNT 64
 #define VISIBLE_COUNT 32
-#define CACHE_BYTES (64U * 1024U * 1024U)
+#define CACHE_BYTES (32U * 1024U * 1024U)
 typedef enum { ENTRY_NEW, ENTRY_FETCH, ENTRY_FILE, ENTRY_JOB, ENTRY_READY, ENTRY_ERROR } entry_state;
 typedef struct {
     message_media item;

@@ -63,7 +63,7 @@ struct auth_client {
     char *server_password;
     char *payload;
     char *response;
-    size_t response_length;
+    size_t response_length, response_limit;
     bool overflow;
     bool server_public;
     bool server_password_error;
@@ -308,7 +308,7 @@ static size_t receive(char *data, size_t size, size_t count, void *context)
     auth_client *client = context;
     if (size && count > SIZE_MAX / size) return 0;
     size_t bytes = size * count;
-    if (bytes > RESPONSE_LIMIT - client->response_length) {
+    if (bytes > client->response_limit - client->response_length) {
         client->overflow = true;
         return 0;
     }
@@ -340,6 +340,8 @@ static bool request(auth_client *client, auth_state state, const char *path,
     free(client->response);
     client->response = NULL;
     client->response_length = 0;
+    client->response_limit = state == AUTH_API_GET && !strncmp(path, "/emojis?", 8) ? 12U * 1024U * 1024U :
+        state == AUTH_API_GET && !strcmp(path, "/users/profile_batch") ? 16U * 1024U * 1024U : RESPONSE_LIMIT;
     client->overflow = false;
     client->retry_after = PAPO_RATE_DEFAULT_COOLDOWN_SECONDS;
     /* A fresh HTTP/1.1 connection avoids libcurl's stale-connection/stream
@@ -731,11 +733,11 @@ void auth_cancel_read(auth_client *client)
     clear_api(client);
 }
 
-bool auth_user_summaries(auth_client *client, const json_t *ids)
+static bool user_batch(auth_client *client, const json_t *ids, const char *path, size_t limit)
 {
     if (!auth_has_session(client) || client->state != AUTH_READY || client->queued || client->attached ||
         client->api_path || client->response_ready || !json_is_array(ids) ||
-        !json_array_size(ids) || json_array_size(ids) > 1000) return false;
+        !json_array_size(ids) || json_array_size(ids) > limit) return false;
     size_t index;
     json_t *id;
     json_array_foreach(ids, index, id) {
@@ -750,12 +752,19 @@ bool auth_user_summaries(auth_client *client, const json_t *ids)
     if (!copy) return false;
     json_t *body = json_pack("{s:o}", "ids", copy);
     if (!body) return false;
-    client->api_path = strdup("/users/user_summary_batch");
+    client->api_path = strdup(path);
     if (!client->api_path) { json_decref(body); return false; }
     client->api_body = body;
     client->api_retried = false;
     return request(client, AUTH_API_GET, client->api_path, body, true);
 }
+
+bool auth_user_summaries(auth_client *client, const json_t *ids)
+{ return user_batch(client, ids, "/users/user_summary_batch", 1000); }
+bool auth_user_profiles(auth_client *client, const json_t *ids)
+{ return user_batch(client, ids, "/users/profile_batch", 4); }
+bool auth_emojis(auth_client *client, const char *path)
+{ return path && !strncmp(path, "/emojis?order=asc", 17) && auth_get_json(client, path); }
 
 json_t *auth_take_response(auth_client *client, long *status, uint64_t *generation)
 {

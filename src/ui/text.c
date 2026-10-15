@@ -106,9 +106,9 @@ void text_unselect(text_buffer *buffer) { buffer->selecting = false; buffer->anc
 /* Build a bounded projection and source-offset map. Labels cannot be longer
  * than their canonical token; this preserves the existing layout capacity. */
 static void project(const text_buffer *source, text_buffer *display, size_t *starts, size_t *ends,
-                    unsigned char *styles)
+                    unsigned char *styles, uint32_t *icons)
 {
-    if (!source->mentions) {
+    if (!source->mentions && !source->icon_resolver) {
         *display = *source;
         return;
     }
@@ -125,6 +125,20 @@ static void project(const text_buffer *source, text_buffer *display, size_t *sta
         }
         bool atom = *token && mention_next(token, 0, &range) && range.start == 0 && range.end == 49;
         size_t end = atom ? i + 49 : i + 1;
+        uint32_t icon = 0;
+        size_t icon_length = !atom && source->icon_resolver ?
+            source->icon_resolver(source->icon_context, source->data, source->length, i, &icon) : 0;
+        if (icon_length && icon_length <= source->length - i) {
+            size_t at = display->length++;
+            display->data[at] = 0x3000;
+            if (starts) starts[at] = i;
+            if (ends) ends[at] = i + icon_length;
+            if (icons) icons[at] = icon;
+            if (styles) styles[at] = 0;
+            if (source->cursor == i) display->cursor = at;
+            else if (source->cursor > i && source->cursor <= i + icon_length) display->cursor = at + 1;
+            i += icon_length; continue;
+        }
         if (!atom) {
             size_t at = display->length++;
             display->data[at] = source->data[i];
@@ -178,13 +192,26 @@ void text_mentions(text_buffer *buffer, mention_resolver resolver, void *context
 }
 void text_project(const text_buffer *buffer, text_buffer *display)
 {
-    project(buffer, display, NULL, NULL, NULL);
+    project(buffer, display, NULL, NULL, NULL, NULL);
+}
+
+void text_icons(text_buffer *buffer, text_icon_resolver resolver, text_icon_painter painter, void *context)
+{
+    buffer->icon_resolver = resolver; buffer->icon_painter = painter; buffer->icon_context = context;
+    buffer->icon_map = NULL;
 }
 
 static void boundaries(const text_buffer *buffer, char breaks[TEXT_LIMIT])
 {
     if (buffer->length)
         set_graphemebreaks_utf32(buffer->data, buffer->length, NULL, breaks);
+    if (buffer->icon_resolver) for (size_t i = 0; i < buffer->length; ++i) {
+        uint32_t icon;
+        size_t length = buffer->icon_resolver(buffer->icon_context, buffer->data, buffer->length, i, &icon);
+        if (!length || length > buffer->length - i) continue;
+        for (size_t k = i; k + 1 < i + length; ++k) breaks[k] = GRAPHEMEBREAK_NOBREAK;
+        breaks[i + length - 1] = GRAPHEMEBREAK_BREAK; i += length - 1;
+    }
     if (buffer->mentions) for (size_t i = 0; i + 49 <= buffer->length; ++i) {
         if (buffer->data[i] != '@') continue;
         char token[50] = {0}; mention_range r;
@@ -283,6 +310,9 @@ void text_horizontal(text_buffer *buffer, bool right)
 static text_cell cell(const text_buffer *buffer, size_t start, size_t end)
 {
     text_cell result = {.start = start, .end = end};
+    if (buffer->icon_map && buffer->icon_map[start]) {
+        result.icon = buffer->icon_map[start]; result.width = 2; result.glyph[0] = ' '; return result;
+    }
     if (end == start + 1 && buffer->data[start] == '\n') {
         result.newline = true;
         return result;
@@ -352,7 +382,7 @@ static void measure_plain(const text_buffer *buffer, int width, text_layout *lay
 
 void text_measure(const text_buffer *buffer, int width, text_layout *layout)
 {
-    if (!buffer->mentions) {
+    if (!buffer->mentions && !buffer->icon_resolver) {
         measure_plain(buffer, width, layout);
         for (size_t i = 0; i < layout->count; ++i) {
             layout->cells[i].display_start = layout->cells[i].start;
@@ -362,7 +392,9 @@ void text_measure(const text_buffer *buffer, int width, text_layout *layout)
     }
     text_buffer display; size_t starts[TEXT_LIMIT+1], ends[TEXT_LIMIT+1];
     unsigned char styles[TEXT_LIMIT+1] = {0};
-    project(buffer, &display, starts, ends, styles);
+    uint32_t icons[TEXT_LIMIT+1] = {0};
+    project(buffer, &display, starts, ends, styles, icons);
+    display.icon_map = icons; display.icon_resolver = NULL; display.mentions = false;
     starts[display.length] = ends[display.length] = buffer->length;
     measure_plain(&display, width, layout);
     for (size_t i = 0; i < layout->count; ++i) {
@@ -590,9 +622,18 @@ void text_draw(WINDOW *window, const text_buffer *buffer, const text_layout *lay
         cchar_t glyph;
         short pair = selected ? (has_colors() ? TEXT_SELECTION : 0) : point->mention ? PANEL_ACCENT : PAIR_NUMBER(attributes);
         attr_t style = selected ? A_BOLD | (has_colors() ? 0 : A_REVERSE) : (attributes & ~A_COLOR) | (point->mention ? A_BOLD : 0);
+        if (point->icon && buffer->icon_painter) {
+            wattrset(window, style | COLOR_PAIR(pair));
+            mvwhline(window, y + point->row - first, x + point->column, ' ', 2);
+            if (!buffer->icon_painter(buffer->icon_context, window, point->icon,
+                y + point->row - first, x + point->column, pair, selected, point->start))
+                mvwaddstr(window, y + point->row - first, x + point->column, "· ");
+            continue;
+        }
         if (setcchar(&glyph, point->newline ? L" " : point->glyph, style, pair, NULL) == OK)
             mvwadd_wch(window, y + point->row - first, x + point->column, &glyph);
     }
+    wattrset(window, attributes);
 }
 
 void text_draw_styled(WINDOW *w, const text_buffer *b, const text_layout *l, const unsigned char *mask,

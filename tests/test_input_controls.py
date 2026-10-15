@@ -293,7 +293,7 @@ class InputControls(unittest.TestCase):
 
     def test_live_drag_across_soft_wrap_and_upward_across_lines(self):
         with HistoryMock(count=0) as server:
-            t = self.open(server); wrap = t.screen.columns - 34
+            t = self.open(server); wrap = t.screen.columns - 40
             t.send('a' * wrap + 'bravo')
             first, end = editor_region(t); self.assertEqual(end - first, 2)
             ordinary = t.screen.buffer[first][29]

@@ -23,6 +23,11 @@ typedef struct {
     animation *animation;
     size_t frame;
     int top, bottom;
+    bool matte, center, first_frame;
+    uint32_t background;
+    int max_side;
+    /* Optional content size limit inside the output canvas; zero uses it all. */
+    int fit_side;
 } image_decode_request;
 void animation_ref(animation *frames);
 void animation_free(animation *frames);

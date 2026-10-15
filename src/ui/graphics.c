@@ -17,12 +17,13 @@ static atomic_uint_fast32_t next_id = 0x50510000U;
 static atomic_uint_fast64_t next_revision = 1;
 typedef struct {
     graphics_protocol protocol;
-    uint32_t id;
+    uint32_t id, placement;
     uint64_t revision;
     int y, x, rows, columns, top, bottom;
     const graphics_image *image; /* Borrowed only until this frame is flushed. */
 } displayed_image;
-static displayed_image displayed[64], desired[64];
+static displayed_image *displayed, *desired;
+static size_t displayed_capacity, desired_capacity;
 static size_t displayed_count, desired_count;
 static WINDOW *physical_snapshot;
 static bool synchronized;
@@ -264,17 +265,17 @@ void graphics_image_free(graphics_image *image)
 
 static bool same_placement(const displayed_image *a, const displayed_image *b)
 {
-    return a->id == b->id && a->protocol == b->protocol && a->y == b->y && a->x == b->x &&
+    return a->id == b->id && a->placement == b->placement && a->protocol == b->protocol && a->y == b->y && a->x == b->x &&
            a->rows == b->rows && a->columns == b->columns && a->top == b->top && a->bottom == b->bottom;
 }
-static displayed_image *find_image(displayed_image *images, size_t count, uint32_t id)
+static displayed_image *find_image(displayed_image *images, size_t count, uint32_t id, uint32_t placement)
 {
-    for (size_t i = 0; i < count; ++i) if (images[i].id == id) return &images[i];
+    for (size_t i = 0; i < count; ++i) if (images[i].id == id && (!placement || images[i].placement == placement)) return &images[i];
     return NULL;
 }
 static void erase_image(const displayed_image *d)
 {
-    if (d->protocol == GRAPHICS_KITTY) fprintf(stdout, "\033_Ga=d,d=I,i=%u,q=2\033\\", d->id);
+    if (d->protocol == GRAPHICS_KITTY) fprintf(stdout, "\033_Ga=d,d=i,i=%u,p=%u,q=2\033\\", d->id, d->placement);
     else {
         for (int row = 0; row < d->rows && d->y + row < LINES; ++row) {
             fprintf(stdout, "\033[%d;%dH", d->y + row + 1, d->x + 1);
@@ -294,29 +295,40 @@ void graphics_frame_invalidate(void)
 {
     for (size_t i = 0; i < displayed_count; ++i) displayed[i].revision = 0;
 }
-void graphics_image_place(const graphics_image *image, int y, int x, int top, int bottom)
+void graphics_image_place_id(const graphics_image *image, uint32_t placement_id, int y, int x, int top, int bottom)
 {
     if (!image || !image->data || image->protocol != graphics_terminal_get().protocol ||
         top < 0 || bottom < 0 || top + bottom >= image->height ||
-        y < 0 || x < 0 || desired_count == sizeof(desired) / sizeof(desired[0])) return;
+        y < 0 || x < 0 || !placement_id || desired_count >= 65536) return;
+    if (desired_count == desired_capacity) {
+        size_t capacity = desired_capacity ? desired_capacity * 2 : 64;
+        displayed_image *next = realloc(desired, capacity * sizeof(*next));
+        if (!next) return;
+        desired = next; desired_capacity = capacity;
+    }
     int rows = (image->height - top - bottom + image->cell_height - 1) / image->cell_height;
     if (y + rows > LINES || x + image->columns > COLS) return;
-    desired[desired_count++] = (displayed_image){image->protocol, image->id, image->revision,
+    desired[desired_count++] = (displayed_image){image->protocol, image->id, placement_id, image->revision,
         y, x, rows, image->columns, top, bottom, image};
 }
+void graphics_image_place(const graphics_image *image, int y, int x, int top, int bottom)
+{ graphics_image_place_id(image, 1, y, x, top, bottom); }
+
 void graphics_frame_prepare(void)
 {
     fputs("\0337", stdout);
     for (size_t i = 0; i < displayed_count; ++i) {
-        displayed_image *old = &displayed[i], *next = find_image(desired, desired_count, old->id);
+        displayed_image *old = &displayed[i], *next = find_image(desired, desired_count, old->id, old->placement);
         if (!next || (old->protocol != GRAPHICS_KITTY && !same_placement(old, next))) erase_image(old);
+        if (old->protocol == GRAPHICS_KITTY && !find_image(desired, desired_count, old->id, 0))
+            fprintf(stdout, "\033_Ga=d,d=I,i=%u,q=2\033\\", old->id);
     }
     fputs("\0338", stdout); fflush(stdout);
     /* Pixels in Sixel/iTerm2 are tied to text cells. Preserve the physical text
      * beneath stationary pictures across forced history redraws and focus
      * background changes. Kitty placements are independent of text cells. */
     if (physical_snapshot) for (size_t i = 0; i < desired_count; ++i) {
-        displayed_image *next = &desired[i], *old = find_image(displayed, displayed_count, next->id);
+        displayed_image *next = &desired[i], *old = find_image(displayed, displayed_count, next->id, next->placement);
         if (next->protocol == GRAPHICS_KITTY || !old || !same_placement(old, next) ||
             old->revision != next->revision) continue;
         int bottom = next->y + next->rows - 1, right = next->x + next->columns - 1;
@@ -330,20 +342,31 @@ void graphics_frame_flush(void)
 {
     fputs("\0337", stdout);
     for (size_t i = 0; i < desired_count; ++i) {
-        displayed_image *next = &desired[i], *old = find_image(displayed, displayed_count, next->id);
+        displayed_image *next = &desired[i], *old = find_image(displayed, displayed_count, next->id, next->placement);
         bool pixels_changed = !old || old->revision != next->revision;
         bool moved = !old || !same_placement(old, next);
         if (!pixels_changed && !moved) continue;
         fprintf(stdout, "\033[%d;%dH", next->y + 1, next->x + 1);
         if (next->protocol == GRAPHICS_KITTY) {
-            if (pixels_changed) fwrite(next->image->data, 1, next->image->length, stdout);
+            displayed_image *shared = find_image(displayed, displayed_count, next->id, 0);
+            if (!shared || shared->revision != next->revision) {
+                bool sent = false;
+                for (size_t k = 0; k < i; ++k) if (desired[k].id == next->id && desired[k].revision == next->revision) sent = true;
+                if (!sent) fwrite(next->image->data, 1, next->image->length, stdout);
+            }
             /* Reusing the placement ID moves/crops the existing image atomically. */
-            fprintf(stdout, "\033_Ga=p,i=%u,p=1,q=2,C=1,x=0,y=%d,w=%d,h=%d,c=0,r=0\033\\",
-                next->id, next->top, next->image->width,
+            fprintf(stdout, "\033_Ga=p,i=%u,p=%u,q=2,C=1,x=0,y=%d,w=%d,h=%d,c=0,r=0\033\\",
+                next->id, next->placement, next->top, next->image->width,
                 next->image->height - next->top - next->bottom);
         } else fwrite(next->image->data, 1, next->image->length, stdout);
     }
-    memcpy(displayed, desired, desired_count * sizeof(*desired)); displayed_count = desired_count;
+    if (displayed_capacity < desired_count) {
+        displayed_image *next = realloc(displayed, desired_capacity * sizeof(*next));
+        if (!next) { desired_count = 0; fputs("\0338", stdout); fflush(stdout); return; }
+        displayed = next; displayed_capacity = desired_capacity;
+    }
+    if (desired_count) memcpy(displayed, desired, desired_count * sizeof(*desired));
+    displayed_count = desired_count;
     for (size_t i = 0; i < displayed_count; ++i) displayed[i].image = NULL;
     desired_count = 0; fputs("\0338", stdout); fflush(stdout);
 }
@@ -353,6 +376,10 @@ void graphics_images_clear(void)
     desired_count = 0;
     if (!displayed_count) return;
     fputs("\0337", stdout);
-    for (size_t i = 0; i < displayed_count; ++i) erase_image(&displayed[i]);
+    for (size_t i = 0; i < displayed_count; ++i) {
+        erase_image(&displayed[i]);
+        if (displayed[i].protocol == GRAPHICS_KITTY)
+            fprintf(stdout, "\033_Ga=d,d=I,i=%u,q=2\033\\", displayed[i].id);
+    }
     displayed_count = 0; fputs("\0338", stdout); fflush(stdout);
 }

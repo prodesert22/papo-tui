@@ -33,7 +33,7 @@ static void cards(void)
         }
     }
     assert(columns && title && footer && unavailable);
-    for (size_t i = 0; i < narrow.count; ++i) assert(narrow.rows[i].count <= 1);
+    for (size_t i = 0; i < narrow.count; ++i) if (!narrow.rows[i].header) assert(narrow.rows[i].count <= 1);
     assert(narrow.count > wide.count);
     message_blocks_free(&wide); message_blocks_free(&narrow); json_decref(m);
 }
@@ -70,7 +70,7 @@ static void embed_layout(void)
     assert(simultaneous && author && group_row && fourth_row > group_row);
     message_blocks_free(&b);
     assert(message_blocks_build(&b, m, "User", "", 24, false));
-    for (size_t r = 0; r < b.count; ++r) assert(b.rows[r].count <= 1);
+    for (size_t r = 0; r < b.count; ++r) if (!b.rows[r].header) assert(b.rows[r].count <= 1);
     message_blocks_free(&b); json_decref(m);
 }
 static void protocol(void)
