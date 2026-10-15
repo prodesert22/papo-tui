@@ -127,7 +127,7 @@ Consulte [instalação e uso](docs/uso.md) para os requisitos, execução, conex
 - libcurl multi para HTTP e handshake WS assíncronos, TLS, URLs e cookies; APIs WS para leitura/escrita sem bloquear a interface.
 - Jansson para JSON.
 - GIO 2.66+ opcional para notificações assíncronas no desktop, via D-Bus, e integração com chaveiros.
-- libsixel para saída Sixel e libchafa para os protocolos gráficos Kitty/iTerm2; FFmpeg para imagens e libmpv para vídeo/áudio. Um pool de dois workers da GLib processa imagens; um worker separado cuida do vídeo. O terminal e a rede permanecem na thread principal.
+- libsixel para saída Sixel e libchafa para os protocolos gráficos Kitty/iTerm2; FFmpeg para imagens e libmpv para vídeo/áudio. Um pool compartilhado de quatro workers da GLib processa todas as imagens em lotes; um worker separado cuida do vídeo. O terminal e a rede permanecem na thread principal.
 
 ```text
 src/main.c       Entrada e ciclo de vida
@@ -583,15 +583,19 @@ Unicode 17.0/CLDR 48 é local; a fonte Noto Color Emoji deve estar instalada.
 Sem protocolo gráfico ou fonte disponível, permanece a representação textual.
 GIFs de emojis e avatares animam somente enquanto visíveis, até 15 atualizações
 por segundo. Arquivos inválidos mantêm texto ou iniciais; animações que excedem
-os limites usam o primeiro frame. Os caches têm limites de
-256 MiB para mídia e 32 MiB para ícones; imagens compactadas de emojis/avatares usam
+os limites usam o primeiro frame. Imagens de mensagens, embeds, avatares e emojis
+usam o mesmo cache global de 256 MiB, com quatro workers, processamento em lotes
+e deduplicação por conteúdo. As entradas compactadas de emojis/avatares usam
 arquivos temporários privados, limitados a 160 MiB e removidos ao fechar a tela.
 
 O cabeçalho mostra o avatar de 48 × 48 pixels à esquerda, sem margem adicionada,
 com nome, horário local e **editado** alinhados ao topo do avatar. Hoje aparece somente a hora;
 nas mensagens antigas, data e hora seguem o formato e o fuso do sistema. O
 conteúdo começa na linha imediatamente abaixo do nome e na mesma coluna, junto
-à borda do avatar. Perfis são consultados em lotes para autores visíveis, respeitando a sessão e o limite global de requisições.
+à borda do avatar. Perfis são consultados em lotes para autores visíveis,
+com prioridade sobre a busca de nomes e as páginas de emojis, respeitando a
+sessão e o limite global de requisições. Avatares visíveis são preservados no
+orçamento compartilhado de arquivos de entrada para evitar downloads repetidos.
 Imagens retangulares usam recorte central proporcional para preencher o avatar.
 Mensagens consecutivas do mesmo autor compartilham nome, avatar e horário;
 as seguintes mostram apenas o conteúdo. Uma mudança de autor ou de identidade
@@ -599,5 +603,8 @@ externa do webhook inicia outro grupo. Mensagens editadas de usuários iniciam
 um novo grupo e mantêm o indicador.
 
 Mensagens de webhook mostram o nome informado pelo app, a tag **[APP]** e seu
-avatar no cabeçalho. Avatares públicos são carregados sem cookies de sessão;
+avatar no cabeçalho. Os avatares usam o mesmo cache e a mesma fila das outras imagens.
+Até quatro downloads de imagens ocorrem em paralelo,
+respeitando o limite global de requisições e reutilizando URLs já carregadas
+na conversa. Avatares públicos são carregados sem cookies de sessão;
 quando indisponíveis, aparecem as iniciais do app.

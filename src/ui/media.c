@@ -259,6 +259,7 @@ void media_view_suspend(media_view *v)
     media_cache_begin(v->store);
     uint64_t now = 0; net_now_ms(&now); media_cache_poll(v->store, now);
 }
+media_cache *media_view_cache(media_view *v) { return v ? v->store : NULL; }
 uint64_t media_view_dimensions_revision(const media_view *v) { return v ? v->dimensions_revision : 0; }
 void media_view_idle(media_view *v)
 {

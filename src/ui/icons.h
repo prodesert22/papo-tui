@@ -2,12 +2,13 @@
 #define PAPO_ICONS_H
 #include "ui/text.h"
 #include "ui/graphics.h"
+#include "ui/media_cache.h"
 #include "model/assets.h"
 #define ICON_CUSTOM UINT32_C(0x80000000)
 typedef struct icon_view icon_view;
-icon_view *icons_create(chat_assets *assets);
+icon_view *icons_create(chat_assets *assets, media_cache *store);
 void icons_destroy(icon_view *v);
-void icons_assets(icon_view *v, chat_assets *assets, uint64_t generation);
+void icons_assets(icon_view *v, chat_assets *assets, media_cache *store, uint64_t generation);
 void icons_begin(icon_view *v);
 /* Keep chat placements while replacing only composer icons. */
 void icons_begin_editor(icon_view *v);

@@ -19,6 +19,42 @@ FFMPEG = sys.argv.pop(1)
 PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1cAAAAASUVORK5CYII=')
 
 class Cache(unittest.TestCase):
+    def test_message_avatar_local_file_and_unicode_share_the_same_pipeline(self):
+        with HistoryMock(count=1) as server, tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'source.png'; path.write_bytes(PNG)
+            original = server.route
+            def route(method, route_path, body):
+                if '/attachments/' in route_path or '/webhooks/' in route_path:
+                    return 200, PNG, None, None, 'image/png'
+                return original(method, route_path, body)
+            server.api_handler = route
+            result = subprocess.run([BINARY, server.url, 'unified'],
+                                    env=dict(os.environ, TMPDIR=directory, PAPO_TEST_LOCAL_IMAGE=str(path)),
+                                    capture_output=True, text=True, timeout=20)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            report = json.loads(result.stdout)
+            self.assertEqual(report['objects'], 2)  # One PNG object and one generated Unicode object.
+            self.assertEqual(report['decodes'], 1)
+            self.assertEqual(report['encodes'], 2)
+            self.assertTrue(report['shared'])
+            self.assertEqual(list(Path(directory).iterdir()), [path])
+            self.assertTrue(all(not r[2] for r in server.requests if '/webhooks/' in r[1]))
+
+    def test_batch_coalesces_sizes_before_starting_one_decode(self):
+        with HistoryMock(count=1) as server, tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'source.png'
+            subprocess.run([FFMPEG, '-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=1000x500',
+                            '-frames:v', '1', '-threads', '1', '-y', str(path)], check=True, capture_output=True)
+            result = subprocess.run([BINARY, server.url, 'batch'],
+                                    env=dict(os.environ, TMPDIR=directory, PAPO_TEST_LOCAL_IMAGE=str(path)),
+                                    capture_output=True, text=True, timeout=20)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            report = json.loads(result.stdout)
+            self.assertTrue(report['largest_size_shared'])
+            self.assertEqual(report['decodes'], 1)
+            self.assertEqual(report['encodes'], 2)
+            self.assertEqual(list(Path(directory).iterdir()), [path])
+
     def test_resize_upgrades_shared_pixels_without_download_and_cancels_safely(self):
         with tempfile.TemporaryDirectory() as assets:
             path = Path(assets) / 'large.png'

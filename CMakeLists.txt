@@ -99,7 +99,7 @@ foreach(target papo_image_codec papo_video_player)
     endif()
 endforeach()
 
-add_library(papo_media src/ui/media.c src/ui/media_cache.c src/ui/media_backend.c src/ui/media_layout.c src/ui/message_time.c src/ui/icons.c src/ui/emoji_picker.c src/ui/image_decode.c src/ui/graphics.c src/ui/sixel.c src/ui/message_blocks.c)
+add_library(papo_media src/ui/media.c src/ui/media_cache.c src/ui/media_backend.c src/ui/media_layout.c src/ui/message_time.c src/ui/emoji_image.c src/ui/icons.c src/ui/emoji_picker.c src/ui/image_decode.c src/ui/graphics.c src/ui/sixel.c src/ui/message_blocks.c)
 target_link_libraries(papo_media PUBLIC papo_send_editor PkgConfig::PANGO PkgConfig::GMODULE PkgConfig::SIXEL PkgConfig::CHAFA Threads::Threads m)
 target_compile_definitions(papo_media PRIVATE
     PAPO_IMAGE_MODULE="$<TARGET_FILE_NAME:papo_image_codec>"

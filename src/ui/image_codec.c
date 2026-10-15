@@ -117,34 +117,43 @@ static bool decode_file(const image_decode_request *j, graphics_image *out, anim
         sw = (int)(frame->width * ratio); sh = (int)(frame->height * ratio);
         if (sw < 1) sw = 1;
         if (sh < 1) sh = 1;
-        size_t bytes = image_frame_bytes(frames->width, frames->height);
+        unsigned char *dest[] = {rgba, NULL, NULL, NULL}; int stride[] = {sw * 4, 0, 0, 0};
+        if (sws_scale(scale, (const uint8_t *const *)frame->data, frame->linesize, 0, frame->height, dest, stride) != sh) goto done;
+        bool alpha = false;
+        if (j->decode_only) for (int y = 0; y < sh && !alpha; ++y)
+            for (int x = 0; x < sw; ++x) if (rgba[((size_t)y * sw + x) * 4 + 3] != 255) { alpha = true; break; }
+        size_t channels = alpha ? 4U : 3U;
+        size_t bytes = (size_t)frames->width * frames->height * channels + IMAGE_PIXEL_PADDING;
         if (bytes > ANIMATION_BYTES || frames->bytes > ANIMATION_BYTES - bytes) {
-            /* Keep the first frame when a larger viewport would exhaust the
-             * animation budget; a single raster is bounded by IMAGE_PIXELS. */
             static_only = true;
             if (frames->count) {
                 for (size_t i = 1; i < frames->count; ++i) { host.release(frames->pixels[i]); frames->pixels[i] = NULL; }
-                frames->count = 1; frames->bytes = bytes; frames->duration = frames->delay[0];
-                break;
+                frames->count = 1;
+                frames->bytes = (size_t)frames->width * frames->height * (frames->rgba[0] ? 4U : 3U) + IMAGE_PIXEL_PADDING;
+                frames->duration = frames->delay[0]; break;
             }
         }
-        unsigned char *rgb = host.allocate(bytes);
+        unsigned char *rgb = host.allocate_zero(1, bytes);
         if (!rgb) goto done;
-        memset(rgb + bytes - IMAGE_PIXEL_PADDING, 0, IMAGE_PIXEL_PADDING);
-        unsigned char *dest[] = {rgba, NULL, NULL, NULL}; int stride[] = {sw * 4, 0, 0, 0};
-        if (sws_scale(scale, (const uint8_t *const *)frame->data, frame->linesize, 0, frame->height, dest, stride) != sh) { host.release(rgb); goto done; }
         for (int y = 0; y < frames->height; ++y) for (int x = 0; x < frames->width; ++x) {
-            size_t at = ((size_t)y * (size_t)frames->width + (size_t)x) * 3;
-            uint32_t background = j->matte ? j->background : 0x15181e;
-            const unsigned char bg[] = {(unsigned char)(background >> 16), (unsigned char)(background >> 8), (unsigned char)background};
-            for (int c = 0; c < 3; ++c) {
-                unsigned alpha = 0, color = 0;
-                int px = x - (j->center ? (frames->width - sw) / 2 : 0);
-                int py = y - (j->center ? (frames->height - sh) / 2 : 0);
-                if (py >= 0 && px >= 0 && py < sh && px < sw) { size_t pos = ((size_t)py * (size_t)sw + (size_t)px) * 4; alpha = rgba[pos + 3]; color = rgba[pos + (size_t)c]; }
-                rgb[at + (size_t)c] = (unsigned char)((color * alpha + bg[c] * (255 - alpha)) / 255);
+            size_t at = ((size_t)y * frames->width + x) * channels;
+            int px = x - (j->center ? (frames->width - sw) / 2 : 0);
+            int py = y - (j->center ? (frames->height - sh) / 2 : 0);
+            bool inside = py >= 0 && px >= 0 && py < sh && px < sw;
+            size_t pos = inside ? ((size_t)py * sw + px) * 4 : 0;
+            if (alpha) {
+                if (inside) memcpy(rgb + at, rgba + pos, 4);
+            } else {
+                uint32_t background = j->matte ? j->background : 0x15181e;
+                for (int c = 0; c < 3; ++c) {
+                    unsigned opacity = inside ? rgba[pos + 3] : 0;
+                    unsigned color = inside ? rgba[pos + (size_t)c] : 0;
+                    unsigned bg = (background >> (16 - 8 * c)) & 255;
+                    rgb[at + (size_t)c] = (unsigned char)((color * opacity + bg * (255 - opacity)) / 255);
+                }
             }
         }
+        frames->rgba[frames->count] = alpha;
         frames->pixels[frames->count] = rgb;
         uint32_t delay = duration > 0 && duration <= 60000 ? (uint32_t)duration : 100;
         if (delay < 10) delay = 10;
@@ -167,30 +176,39 @@ static bool encode_frame(const image_decode_request *request, graphics_image *ou
     if (!a || request->frame >= a->count) return false;
     int w = request->width, h = request->height;
     if (!graphics_image_capacity(w, h)) return false;
-    double ratio = fmin((double)w / a->source_width, (double)h / a->source_height);
+    double ratio = request->cover ? fmax((double)w / a->source_width, (double)h / a->source_height) :
+                                   fmin((double)w / a->source_width, (double)h / a->source_height);
     if (request->native && ratio > 1) ratio = 1;
-    int sw = (int)(a->source_width * ratio), sh = (int)(a->source_height * ratio);
-    if (sw < 1) sw = 1;
-    if (sh < 1) sh = 1;
+    int sw = (int)fmax(1, a->source_width * ratio), sh = (int)fmax(1, a->source_height * ratio);
+    if (!graphics_image_capacity(sw, sh)) return false;
     if (request->native) { w = sw; h = sh; }
-    if (w == a->width && h == a->height)
+    if (w == a->width && h == a->height && !a->rgba[request->frame] && !request->cover)
         return encode_pixels(request, a->pixels[request->frame], w, h, a->source_width, a->source_height, out);
-    size_t bytes = image_frame_bytes(w, h);
-    unsigned char *pixels = host.allocate(bytes);
-    if (!pixels) return false;
-    memset(pixels + bytes - IMAGE_PIXEL_PADDING, 0, IMAGE_PIXEL_PADDING);
-    for (int y = 0; y < h; ++y) for (int x = 0; x < w; ++x) {
-        unsigned char *at = pixels + ((size_t)y * (size_t)w + (size_t)x) * 3;
-        at[0] = 0x15; at[1] = 0x18; at[2] = 0x1e;
-    }
-    struct SwsContext *scale = sws_getContext(a->width, a->height, AV_PIX_FMT_RGB24,
-        sw, sh, AV_PIX_FMT_RGB24, SWS_BILINEAR, NULL, NULL, NULL);
+    unsigned char *pixels = host.allocate_zero(1, image_frame_bytes(w, h));
+    unsigned char *scaled = host.allocate_zero(1, (size_t)sw * sh * 4 + IMAGE_PIXEL_PADDING);
+    if (!pixels || !scaled) { host.release(pixels); host.release(scaled); return false; }
+    int channels = a->rgba[request->frame] ? 4 : 3;
+    struct SwsContext *scale = sws_getContext(a->width, a->height, channels == 4 ? AV_PIX_FMT_RGBA : AV_PIX_FMT_RGB24,
+        sw, sh, AV_PIX_FMT_RGBA, SWS_BILINEAR, NULL, NULL, NULL);
     const uint8_t *src[] = {a->pixels[request->frame], NULL, NULL, NULL};
-    uint8_t *dst[] = {pixels, NULL, NULL, NULL};
-    int strides[] = {a->width * 3, 0, 0, 0}, dest_strides[] = {w * 3, 0, 0, 0};
+    uint8_t *dst[] = {scaled, NULL, NULL, NULL};
+    int strides[] = {a->width * channels, 0, 0, 0}, dest_strides[] = {sw * 4, 0, 0, 0};
     bool ok = scale && sws_scale(scale, src, strides, 0, a->height, dst, dest_strides) == sh;
+    uint32_t background = request->matte ? request->background : 0x15181e;
+    if (ok) for (int y = 0; y < h; ++y) for (int x = 0; x < w; ++x) {
+        int px = x - (request->center ? (w - sw) / 2 : 0);
+        int py = y - (request->center ? (h - sh) / 2 : 0);
+        bool inside = px >= 0 && py >= 0 && px < sw && py < sh;
+        size_t source = inside ? ((size_t)py * sw + px) * 4 : 0, at = ((size_t)y * w + x) * 3;
+        unsigned alpha = inside ? scaled[source + 3] : 0;
+        for (int c = 0; c < 3; ++c) {
+            unsigned color = inside ? scaled[source + (size_t)c] : 0;
+            unsigned bg = (background >> (16 - 8 * c)) & 255;
+            pixels[at + (size_t)c] = (unsigned char)((color * alpha + bg * (255 - alpha)) / 255);
+        }
+    }
     if (ok) ok = encode_pixels(request, pixels, w, h, a->source_width, a->source_height, out);
-    sws_freeContext(scale); host.release(pixels); return ok;
+    sws_freeContext(scale); host.release(scaled); host.release(pixels); return ok;
 }
 
 G_MODULE_EXPORT const image_codec_api *papo_image_backend(const image_codec_host *callbacks)

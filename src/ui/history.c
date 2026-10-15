@@ -266,7 +266,7 @@ static cached_layout *find_layout(view *ui, size_t index, int width)
     graphics_terminal terminal = graphics_terminal_get();
     bool graphics = terminal.supported && ui->media;
     bool continuation = index && message_same_author(history_message(ui->model, index - 1), m);
-    uint64_t assets = chat_assets_revision(history_assets(ui->model));
+    uint64_t assets = chat_assets_emoji_revision(history_assets(ui->model));
     if (c->continuation != continuation || c->assets != assets || c->calendar_day != ui->calendar_day ||
         c->cell_width != terminal.cell_width || c->cell_height != terminal.cell_height || c->revision != revision || c->names != names || c->dimensions != dimensions || c->width != width || c->graphics != graphics || c->reply_revision != reply_revision) {
         release_layout(ui, c); c->height = 0;
@@ -987,7 +987,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
     ui->r8 = ui->model ? r8_modal_create(ui->model,auth,connections->config) : NULL;
     history_set_media_updates(ui->model, update_media, ui->media);
     ui->mentions = ui->model ? mention_popup_create(ui->model) : NULL;
-    ui->icons = ui->model ? icons_create(history_assets(ui->model)) : NULL;
+    ui->icons = ui->model ? icons_create(history_assets(ui->model), media_view_cache(ui->media)) : NULL;
     ui->emojis = ui->icons ? emoji_picker_create(history_assets(ui->model), ui->icons) : NULL;
     ui->at_end = ui->show_channels = true; ui->focus = focus_tabs ? SERVER_TABS : CHANNEL_LIST;
     if (!ui->model || !ui->r8 || !ui->mentions || !ui->icons || !ui->emojis || !ui->editor || ui->active_tab == SIZE_MAX || !layout(ui)) { emoji_picker_destroy(ui->emojis); icons_destroy(ui->icons); mention_popup_destroy(ui->mentions); media_view_suspend(ui->media); if (ui->model) history_active(ui->model,false); r8_modal_destroy(ui->r8); destroy_layout(ui); g_hash_table_destroy(ui->layout_index); free(ui); return HISTORY_ACCOUNT; }
@@ -1017,7 +1017,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             else if (scope == DRAW_EDITOR) scope = DRAW_CONVERSATION;
             redraw = true;
         }
-        icons_assets(ui->icons, history_assets(ui->model), auth_context_generation(auth));
+        icons_assets(ui->icons, history_assets(ui->model), media_view_cache(ui->media), auth_context_generation(auth));
         if (icons_poll(ui->icons)) { if (!redraw) scope = DRAW_MEDIA; else if (scope == DRAW_NAVIGATION) scope = DRAW_ALL; else if (scope == DRAW_EDITOR) scope = DRAW_CONVERSATION; redraw = true; }
         time_t clock = time(NULL); struct tm date;
         if (localtime_r(&clock, &date) && ui->calendar_day != date.tm_year * 366 + date.tm_yday) {

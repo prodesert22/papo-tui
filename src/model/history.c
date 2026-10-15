@@ -271,7 +271,8 @@ void history_read_visible(history *h,const char *id)
 bool history_loading(const history *h)
 {
     return auth_has_session(h->auth) &&
-           (h->want_messages || h->want_channels || h->pending == MESSAGES || h->pending == CHANNELS);
+           (h->want_messages || h->want_channels || h->want_authors ||
+            h->pending == MESSAGES || h->pending == CHANNELS || h->pending == AUTHORS);
 }
 const char *history_author(const history *h, const char *id)
 {
@@ -1312,7 +1313,6 @@ bool history_poll(history *h)
         history_reload_channels(h); h->pending = NONE; changed = true;
         h->epoch = auth_ws_epoch(h->auth);
     }
-    changed |= chat_assets_webhooks_poll(h->assets, h->auth);
     load_reads(h);
     uint64_t epoch = auth_ws_epoch(h->auth);
     bool connected = auth_has_session(h->auth) && auth_ws_state(h->auth) == WS_OPEN;
@@ -1342,6 +1342,7 @@ bool history_poll(history *h)
     }
     if (auth_response_ready(h->auth)) {
         bool uncertain = auth_api_uncertain(h->auth);
+        bool messages_ready = h->pending == MESSAGES;
         long code; uint64_t generation;
         json_t *body = auth_take_response(h->auth, &code, &generation);
         if (h->pending == INBOX) {
@@ -1412,6 +1413,9 @@ bool history_poll(history *h)
             changed = true;
         }
         json_decref(body); h->pending = NONE;
+        /* Give the UI a pass to mark visible authors before scheduling
+         * background reads on the single REST connection. */
+        if (messages_ready) return true;
     }
     uint64_t now;
     if (!net_now_ms(&now)) return changed;
@@ -1441,7 +1445,12 @@ bool history_poll(history *h)
         if (h->r8 && !h->want_channels && !h->want_messages && inbox_dispatch(h->inbox)) {
             h->pending=INBOX; h->request_context=h->context; return true;
         }
-        enum request_kind kind = h->want_channels ? CHANNELS : h->want_messages ? MESSAGES : h->want_authors ? AUTHORS : chat_assets_emojis_wanted(h->assets) ? EMOJIS : chat_assets_profiles_wanted(h->assets) ? PROFILES : h->users_active && !h->users_complete && !h->users_failed ? USERS : NONE;
+        /* Visible avatars already have author IDs; they must not wait for
+         * names from the rest of the history or the entire emoji catalogue. */
+        enum request_kind kind = h->want_channels ? CHANNELS : h->want_messages ? MESSAGES :
+            chat_assets_profiles_wanted(h->assets) ? PROFILES : h->want_authors ? AUTHORS :
+            chat_assets_emojis_wanted(h->assets) ? EMOJIS :
+            h->users_active && !h->users_complete && !h->users_failed ? USERS : NONE;
         bool started = kind == CHANNELS ? auth_get_json(h->auth, "/channels") :
                        kind == MESSAGES ? request_messages(h) : kind == AUTHORS ? request_authors(h) : kind == USERS ? request_users(h) :
                        kind == EMOJIS ? auth_emojis(h->auth, chat_assets_emojis_path(h->assets)) :

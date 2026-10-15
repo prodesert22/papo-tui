@@ -43,6 +43,11 @@ void *__wrap_malloc(size_t size)
 void *__wrap_calloc(size_t count, size_t size)
 {
     if (atomic_exchange(&fail_calloc, false)) return NULL;
+    if (atomic_load(&worker_delay) && !pthread_equal(pthread_self(), main_thread)) {
+        atomic_fetch_add(&blocked_workers, 1);
+        while (atomic_load(&worker_delay)) pause_tick();
+        atomic_fetch_sub(&blocked_workers, 1);
+    }
     return __real_calloc(count, size);
 }
 char *__wrap_strdup(const char *text)
@@ -67,8 +72,8 @@ static void bounds(void)
 {
     media_cache_stats s; media_cache_get_stats(&s);
     assert(s.memory + s.reserved <= MEDIA_CACHE_MEMORY);
-    assert(s.files + s.file_reserved <= MEDIA_CACHE_FILES && s.jobs <= MEDIA_CACHE_QUEUE + 2);
-    assert(s.queued <= MEDIA_CACHE_QUEUE && s.workers <= 2 && s.peak_workers <= 2 && s.downloads <= 4);
+    assert(s.files + s.file_reserved <= MEDIA_CACHE_FILES && s.jobs <= MEDIA_CACHE_QUEUE + MEDIA_CACHE_WORKERS);
+    assert(s.queued <= MEDIA_CACHE_QUEUE && s.workers <= MEDIA_CACHE_WORKERS && s.peak_workers <= MEDIA_CACHE_WORKERS && s.downloads <= 4);
 }
 static size_t rss_kib(void)
 {
@@ -188,6 +193,7 @@ static void resize_test(auth_client *auth, media_cache *cache, bool cancel_upgra
     if (cancel_upgrade) {
         atomic_store(&worker_delay, true);
         assert(!media_resource_image(r[0], false, large, now_ms()));
+        media_cache_poll(cache, now_ms()); /* Submit this visibility batch. */
         for (int n = 0; n < 5000 && !atomic_load(&blocked_workers); ++n) pause_tick();
         assert(atomic_load(&blocked_workers));
         uint64_t started = now_ms(); media_cache_reset(cache); assert(now_ms() - started < 100);
@@ -223,12 +229,81 @@ static void resize_test(auth_client *auth, media_cache *cache, bool cancel_upgra
     for (int i = 0; i < 2; ++i) media_resource_release(r[i]);
     printf("{\"resize\":true,\"cancelled_upgrade\":%s,\"shared_object\":true,\"deferred_resumed\":true}\n", cancel_upgrade ? "true" : "false");
 }
+static void batch_test(media_cache *cache)
+{
+    const char *path = getenv("PAPO_TEST_LOCAL_IMAGE"); assert(path);
+    media_resource *r = media_cache_acquire_file(cache, path, 1); assert(r);
+    for (int n = 0; n < 5000 && !media_resource_object(r, false); ++n) {
+        media_cache_begin(cache); media_resource_use_image(r, false, false);
+        media_cache_poll(cache, now_ms()); pause_tick();
+    }
+    assert(media_resource_object(r, false));
+    image_decode_request small = request(160), large = request(1000);
+    small.height = 80; large.height = 500;
+    assert(!media_resource_image(r, false, small, now_ms()));
+    assert(!media_resource_image(r, false, large, now_ms()));
+    media_cache_stats stats; media_cache_get_stats(&stats);
+    assert(stats.decodes == 1 && stats.jobs == 1 && stats.queued == 1 && !stats.workers);
+    bool ready = false;
+    for (int n = 0; n < 10000 && !ready; ++n) {
+        media_cache_begin(cache); media_resource_use_image(r, false, false);
+        media_cache_poll(cache, now_ms());
+        ready = media_resource_image(r, false, large, now_ms()) && media_resource_image(r, false, small, now_ms());
+        bounds(); pause_tick();
+    }
+    assert(ready); media_cache_get_stats(&stats);
+    assert(stats.decodes == 1 && stats.encodes == 2 && stats.objects == 1 && !stats.requests);
+    media_resource_release(r);
+    puts("{\"batch\":true,\"decodes\":1,\"encodes\":2,\"largest_size_shared\":true}");
+}
+static void unified_test(media_cache *cache)
+{
+    const char *path = getenv("PAPO_TEST_LOCAL_IMAGE"); assert(path);
+    media_resource *r[5] = {
+        media_cache_acquire(cache, AUTH_MEDIA_ATTACHMENT, "00000000-0000-4000-8000-000000000901", 1, false),
+        media_cache_acquire_url(cache, "/webhooks/00000000-0000-4000-8000-000000000900/avatar", 1),
+        media_cache_acquire_file(cache, path, 1),
+        media_cache_acquire_unicode(cache, "😄"),
+        media_cache_acquire_unicode(cache, "😄")
+    };
+    for (int i = 0; i < 5; ++i) assert(r[i]);
+    assert(r[3] == r[4]);
+    image_decode_request image = request(48);
+    image.height = 48; image.native = false; image.center = image.cover = image.matte = true;
+    image.background = 0x15181e;
+    bool ready = false;
+    for (int n = 0; n < 10000 && !ready; ++n) {
+        media_cache_begin(cache);
+        for (int i = 0; i < 5; ++i) media_resource_use_image(r[i], false, false);
+        media_cache_poll(cache, now_ms()); ready = true;
+        for (int i = 0; i < 5; ++i) ready &= media_resource_image(r[i], false, image, now_ms()) != NULL;
+        bounds(); pause_tick();
+    }
+    assert(ready);
+    const void *object = media_resource_object(r[0], false);
+    const graphics_image *encoded = media_resource_image(r[0], false, image, now_ms());
+    for (int i = 1; i < 3; ++i) {
+        assert(media_resource_object(r[i], false) == object);
+        assert(media_resource_image(r[i], false, image, now_ms()) == encoded);
+    }
+    assert(media_resource_object(r[3], false) != object);
+    media_cache_stats stats; media_cache_get_stats(&stats);
+    assert(stats.objects == 2 && stats.decodes == 1 && stats.encodes == 2 && stats.requests == 2);
+    for (int i = 0; i < 5; ++i) media_resource_release(r[i]);
+    printf("{\"sources\":4,\"objects\":2,\"decodes\":1,\"encodes\":2,\"requests\":2,\"shared\":true}\n");
+}
 int main(int argc, char **argv)
 {
     main_thread = pthread_self();
     assert(argc == 3 && !curl_global_init(CURL_GLOBAL_DEFAULT));
     auth_client *a = login(argv[1]);
     media_cache *c = media_cache_create(a); assert(c);
+    if (!strcmp(argv[2], "batch")) {
+        batch_test(c); media_cache_destroy(c); auth_destroy(a); goto finished;
+    }
+    if (!strcmp(argv[2], "unified")) {
+        unified_test(c); media_cache_destroy(c); auth_destroy(a); goto finished;
+    }
     if (!strcmp(argv[2], "pressure")) {
         pressure_test(a, c); media_cache_destroy(c); auth_destroy(a); goto finished;
     }
@@ -349,7 +424,7 @@ int main(int argc, char **argv)
         bounds(); pause_tick();
     }
     assert(resumed);
-    /* Both workers block inside the project allocator while the main thread
+    /* All image workers block inside the project allocator while the main thread
      * fills the bounded queue. This proves queue admission independently of CPU
      * speed and gives a deterministic cancellation point during encoding. */
     atomic_store(&worker_delay, true);
@@ -357,12 +432,13 @@ int main(int argc, char **argv)
         image_decode_request varied = request(16 + i); varied.native = false; varied.height = 8;
         media_resource_image(r[0], false, varied, now_ms()); bounds();
     }
+    media_cache_poll(c, now_ms()); /* Dispatch the staged batch. */
     for (int n = 0; n < 1000; ++n) {
         media_cache_get_stats(&s);
-        if (s.workers == 2 && atomic_load(&blocked_workers) == 2) break;
+        if (s.workers == MEDIA_CACHE_WORKERS && atomic_load(&blocked_workers) == MEDIA_CACHE_WORKERS) break;
         pause_tick();
     }
-    assert(s.workers == 2 && s.queued <= 32 && s.jobs >= 32);
+    assert(s.workers == MEDIA_CACHE_WORKERS && s.queued <= 32 && s.jobs >= 32);
     if (!strcmp(argv[2], "cancel-encode")) {
         uint64_t reset_start = now_ms(); media_cache_reset(c); assert(now_ms() - reset_start < 100);
         for (int i = 0; i < 5; ++i) media_resource_release(r[i]);
@@ -377,7 +453,7 @@ int main(int argc, char **argv)
         media_cache_poll(c, now_ms()); media_cache_get_stats(&s); drained = !s.jobs;
         bounds(); pause_tick();
     }
-    assert(drained && s.peak_workers == 2);
+    assert(drained && s.peak_workers == MEDIA_CACHE_WORKERS);
     atomic_store(&fail_calloc, true);
     image_decode_request failed = request(100); failed.native = false; failed.height = 8;
     assert(!media_resource_image(r[0], false, failed, now_ms())); bounds();
@@ -402,7 +478,7 @@ int main(int argc, char **argv)
     media_cache_get_stats(&s); assert(!s.files && !s.objects);
     for (int i = 0; i < 5; ++i) media_resource_release(r[i]);
     media_cache_destroy(c); auth_destroy(a);
-    printf("\"peak_workers\":2,\"queue_peak\":%u,\"allocation_failures\":true,\"isolation\":true,\"deferred_resumed\":true,\"expiry\":true,\"released\":true}\n", queue_peak);
+    printf("\"peak_workers\":4,\"queue_peak\":%u,\"allocation_failures\":true,\"isolation\":true,\"deferred_resumed\":true,\"expiry\":true,\"released\":true}\n", queue_peak);
  finished:
     media_cache_get_stats(&s);
     assert(!s.memory && !s.reserved && !s.files && !s.file_reserved && !s.objects && !s.references && !s.jobs && !s.downloads && !s.workers && !s.queued);

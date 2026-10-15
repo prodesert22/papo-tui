@@ -77,10 +77,13 @@ static void assets(void)
     json_t *ids = chat_assets_profiles_request(a); assert(json_array_size(ids) == 1);
     json_t *profile = json_pack("{s:s,s:s,s:s}", "id", id, "avatar_blob", "AQID", "avatar_format", "PNG");
     json_t *profiles = json_pack("{s:[O]}", "profiles", profile);
+    uint64_t emoji_revision = chat_assets_emoji_revision(a);
     assert(chat_assets_profiles_response(a, profiles, 200));
+    assert(chat_assets_emoji_revision(a) == emoji_revision);
     avatar = chat_assets_avatar(a, id); assert(avatar && avatar->path);
     char *path = strdup(avatar->path); assert(path);
     chat_assets_visible_begin(a); chat_assets_avatar_invalidate(a, id);
+    assert(chat_assets_emoji_revision(a) == emoji_revision);
     assert(!chat_assets_profiles_wanted(a) && access(path, F_OK) != 0); free(path);
     avatar = chat_assets_avatar(a, id); assert(chat_assets_profiles_wanted(a));
     ids = chat_assets_profiles_request(a); assert(json_array_size(ids) == 1);
@@ -90,6 +93,35 @@ static void assets(void)
     chat_assets_avatar_invalidate(a, id);
     assert(chat_assets_profiles_response(a, profiles, 200)); assert(!chat_assets_avatar(a, id)->path);
     chat_assets_destroy(a); json_decref(profiles); json_decref(profile); json_decref(page); json_decref(items); json_decref(e);
+}
+static void visible_avatar_inputs(void)
+{
+    chat_assets *a = chat_assets_create(); assert(a);
+    char ids[6][37];
+    for (size_t i = 0; i < 6; ++i) {
+        snprintf(ids[i], sizeof(ids[i]), "00000000-0000-4000-8000-%012zu", i + 1);
+        assert(chat_assets_avatar(a, ids[i]));
+    }
+    /* Six legal 1.5 MiB inputs used to evict each other from a separate
+     * 8 MiB avatar quota, continuously re-fetching visible authors. */
+    size_t length = 2U * 1024U * 1024U;
+    char *blob = malloc(length + 1); assert(blob);
+    memset(blob, 'A', length); blob[length] = 0;
+    while (chat_assets_profiles_wanted(a)) {
+        json_t *request = chat_assets_profiles_request(a), *profiles = json_array();
+        assert(request && profiles);
+        size_t i; json_t *user;
+        json_array_foreach(request, i, user)
+            assert(!json_array_append_new(profiles, json_pack("{s:O,s:s}", "id", user, "avatar_blob", blob)));
+        json_t *response = json_pack("{s:o}", "profiles", profiles); assert(response);
+        assert(chat_assets_profiles_response(a, response, 200)); json_decref(response);
+    }
+    for (size_t i = 0; i < 6; ++i) {
+        const author_avatar *avatar = chat_assets_avatar(a, ids[i]);
+        assert(avatar && avatar->path && !access(avatar->path, R_OK));
+    }
+    assert(!chat_assets_profiles_wanted(a));
+    free(blob); chat_assets_destroy(a);
 }
 static void time_and_header(void)
 {
@@ -189,5 +221,5 @@ static void grouping(void)
 int main(void)
 {
     assert(setlocale(LC_ALL,"C.UTF-8")); init_graphemebreak();
-    sequences(); assets(); time_and_header(); grouping(); font_render(); puts("Emoji, assets, grouping and header checks passed"); return 0;
+    sequences(); assets(); visible_avatar_inputs(); time_and_header(); grouping(); font_render(); puts("Emoji, assets, grouping and header checks passed"); return 0;
 }

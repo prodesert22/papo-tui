@@ -2,10 +2,11 @@
 #include "ui/image_decode.h"
 #include <assert.h>
 #include <stdio.h>
+#include <string.h>
 static bool cancelled(void *context) { (void)context; return true; }
 int main(int argc, char **argv)
 {
-    assert(argc == 9);
+    assert(argc == 10);
     image_decode_request request = {.width = 640, .height = 360, .native = true, .preview = true,
         .image_id = 42, .terminal = {.protocol = GRAPHICS_SIXEL, .cell_width = 8, .cell_height = 16}};
     for (int mode = GRAPHICS_SIXEL; mode <= GRAPHICS_ITERM2; ++mode) {
@@ -89,6 +90,22 @@ int main(int argc, char **argv)
             }
         graphics_image_free(&image); animation_free(frames); frames = NULL;
     }
+    /* One canonical transparent raster supports different focus backgrounds. */
+    image_decode_request transparent = {.path=argv[9],.width=48,.height=48,.native=true,
+        .decode_only=true,.retain_static=true};
+    graphics_image red = {0}, blue = {0}; animation *alpha = NULL;
+    assert(image_decode_file(&transparent, &red, &alpha, NULL, NULL));
+    assert(alpha && alpha->rgba[0] && alpha->pixels[0][3] == 0 && !red.data);
+    transparent.animation=alpha; transparent.decode_only=false; transparent.native=false;
+    transparent.center=transparent.cover=transparent.matte=true;
+    transparent.terminal=(graphics_terminal){.protocol=GRAPHICS_KITTY,.cell_width=8,.cell_height=16};
+    transparent.image_id=42; transparent.background=0xff0000;
+    assert(image_encode_frame(&transparent,&red));
+    transparent.background=0x0000ff;
+    assert(image_encode_frame(&transparent,&blue));
+    assert(red.width==48 && red.height==48 && blue.width==48 && blue.height==48);
+    assert(red.length!=blue.length || memcmp(red.data,blue.data,red.length));
+    graphics_image_free(&red); graphics_image_free(&blue); animation_free(alpha);
     puts("GIF frame pixels/delays, native dimensions, proportional limits, crops and cancellation verified");
     return 0;
 }

@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "ui/media_cache.h"
 #include "ui/media_backend.h"
+#include "ui/emoji_image.h"
 #include "net/clock.h"
 #include <glib.h>
 #include <chafa.h>
@@ -15,7 +16,7 @@
 #include <malloc.h>
 #endif
 
-#define RESOURCE_LIMIT 256U
+#define RESOURCE_LIMIT 1024U
 #define TRIM_BYTES (16U * 1024U * 1024U)
 #define TRIM_INTERVAL_MS 5000U
 
@@ -30,12 +31,12 @@ struct variant {
     task *job;
     uint64_t used, presented;
     size_t frame;
-    bool pinned, failed;
+    bool pinned, failed, visible;
 };
 struct image_object {
     media_cache *cache;
-    char hash[65];
-    char *path;
+    char hash[72];
+    char *path, *glyph;
     size_t bytes, refs;
     uint64_t used, epoch;
     bool pinned, failed;
@@ -49,7 +50,9 @@ struct media_resource {
     char key[128], id[37];
     auth_media_kind kind;
     uint64_t revision, used;
-    size_t refs;
+    size_t refs, visible_refs;
+    enum { SOURCE_REST, SOURCE_URL, SOURCE_FILE, SOURCE_UNICODE } source_type;
+    char *source;
     bool video, wanted, modal;
     unsigned expired;
     enum { RESOURCE_NEW, RESOURCE_FETCH, RESOURCE_INGEST, RESOURCE_READY, RESOURCE_ERROR } state;
@@ -74,9 +77,9 @@ struct task {
     variant *variant;
     enum { TASK_INGEST, TASK_DECODE, TASK_ENCODE, TASK_TRIM } kind;
     atomic_bool cancelled, done;
-    char *path;
+    char *path, *input, *glyph;
     char id[37];
-    bool embed, priority, ok;
+    bool embed, priority, ok, submitted;
     size_t reservation, file_reservation;
     image_decode_request request;
     animation *frames, *output_frames;
@@ -129,14 +132,14 @@ static void object_unref(image_object *o)
     release_memory(o->frames ? o->frames->bytes + sizeof(animation) : 0);
     animation_free(o->frames);
     if (o->path) shared.stats.files -= o->bytes;
-    unlink_path(&o->path); --shared.stats.objects; free(o);
+    unlink_path(&o->path); free(o->glyph); --shared.stats.objects; free(o);
 }
 void media_resource_ref(media_resource *r) { if (r) ++r->refs; }
 void media_resource_release(media_resource *r)
 {
     if (!r || --r->refs) return;
     object_unref(r->objects[0]); object_unref(r->objects[1]);
-    unlink_path(&r->video_path); free(r);
+    unlink_path(&r->video_path); free(r->source); free(r);
 }
 void media_resource_retry(media_resource *r)
 {
@@ -164,6 +167,19 @@ static bool hash_blob(task *t, blob *b)
     ok &= !ferror(f) && b->bytes > 0;
     if (ok) snprintf(b->hash, sizeof(b->hash), "%s", g_checksum_get_string(sum));
     fclose(f); g_checksum_free(sum); return ok;
+}
+static bool copy_input(task *t)
+{
+    FILE *source = fopen(t->input, "rb"), *out = fopen(t->path, "wb");
+    bool ok = source && out;
+    unsigned char bytes[64 * 1024]; size_t total = 0, n;
+    if (ok) while ((n = fread(bytes, 1, sizeof(bytes), source))) {
+        if (cancelled(t) || n > t->file_reservation - total || fwrite(bytes, 1, n, out) != n) { ok = false; break; }
+        total += n;
+    }
+    if (source) { ok &= !ferror(source); fclose(source); }
+    if (out && fclose(out)) ok = false;
+    return ok && total > 0;
 }
 static bool extract_blob(task *t, json_t *value, blob *b)
 {
@@ -204,7 +220,8 @@ static void worker(gpointer data, gpointer unused)
     while (running > peak && !atomic_compare_exchange_weak(&peak_workers, &peak, running)) {}
     if (!cancelled(t)) {
         if (t->kind == TASK_INGEST) {
-            if (t->embed) {
+            if (t->input && !copy_input(t)) { t->ok = false; }
+            else if (t->embed) {
                 json_error_t error;
                 json_t *body = json_load_file(t->path, JSON_REJECT_DUPLICATES, &error);
                 const char *id = json_string_value(json_object_get(body, "id"));
@@ -225,6 +242,9 @@ static void worker(gpointer data, gpointer unused)
 #ifdef __GLIBC__
             t->trim_attempted = true; t->ok = malloc_trim(0) != 0;
 #endif
+        } else if (t->glyph) {
+            t->ok = emoji_image_encode(t->glyph, t->request.width, t->request.height, t->request.background,
+                                      t->request.terminal, t->request.image_id, &t->image);
         } else {
             t->ok = image_encode_frame(&t->request, &t->image);
         }
@@ -277,7 +297,7 @@ static bool make_room(size_t memory, size_t files)
             release_memory(decoded->frames->bytes + sizeof(animation)); animation_free(decoded->frames); decoded->frames = NULL;
         } else if (animated) {
             animation *a = animated->frames;
-            size_t first = image_frame_bytes(a->width, a->height);
+            size_t first = (size_t)a->width * a->height * (a->rgba[0] ? 4U : 3U) + IMAGE_PIXEL_PADDING;
             for (size_t i = 1; i < a->count; ++i) { free(a->pixels[i]); a->pixels[i] = NULL; }
             release_memory(a->bytes - first);
             a->bytes = first; a->count = 1; a->duration = a->delay[0];
@@ -305,9 +325,16 @@ static bool make_room(size_t memory, size_t files)
     }
     return true;
 }
+static unsigned queued_tasks(void)
+{
+    unsigned pending = g_thread_pool_unprocessed(shared.pool);
+    for (media_cache *c = shared.caches; c; c = c->next)
+        for (GList *l = c->tasks; l; l = l->next) pending += !((task *)l->data)->submitted;
+    return pending;
+}
 static task *task_new(media_cache *c, size_t reservation)
 {
-    if (g_thread_pool_unprocessed(shared.pool) >= MEDIA_CACHE_QUEUE || shared.stats.jobs >= MEDIA_CACHE_QUEUE + 2 ||
+    if (queued_tasks() >= MEDIA_CACHE_QUEUE || shared.stats.jobs >= MEDIA_CACHE_QUEUE + MEDIA_CACHE_WORKERS ||
         !make_room(reservation, 0)) return NULL;
     task *t = calloc(1, sizeof(*t));
     if (!t) return NULL;
@@ -317,15 +344,24 @@ static task *task_new(media_cache *c, size_t reservation)
 }
 static bool task_push(task *t)
 {
-    GError *error = NULL;
+    /* Publish a whole visibility pass together. Reservation/deduplication
+     * happen before any worker starts consuming this frame's image jobs. */
     t->cache->tasks = g_list_prepend(t->cache->tasks, t);
     shared.stats.reserved += t->reservation; ++shared.stats.jobs;
-    bool ok = g_thread_pool_push(shared.pool, t, &error);
-    if (error) g_error_free(error);
-    /* GLib retains the queued item even if creating a thread fails. Never
-     * publish/free it here; only the worker can acknowledge completion. */
-    if (!ok) atomic_store(&t->cancelled, true);
-    return ok;
+    return true;
+}
+static void flush_tasks(media_cache *c)
+{
+    for (GList *l = g_list_last(c->tasks); l; l = l->prev) {
+        task *t = l->data;
+        if (t->submitted) continue;
+        t->submitted = true;
+        GError *error = NULL;
+        bool ok = g_thread_pool_push(shared.pool, t, &error);
+        if (error) g_error_free(error);
+        /* GLib retains the item even when thread creation fails. */
+        if (!ok) atomic_store(&t->cancelled, true);
+    }
 }
 static void queue_trim(media_cache *c)
 {
@@ -350,6 +386,7 @@ static void task_free(task *t)
     for (int i = 0; i < 2; ++i) unlink_path(&t->blobs[i].path);
     if (t->output_frames) note_released(t->output_frames->bytes);
     animation_free(t->frames); animation_free(t->output_frames); graphics_image_free(&t->image);
+    free(t->input); free(t->glyph);
     media_resource_release(t->resource); object_unref(t->object);
     shared.stats.file_reserved -= t->file_reservation;
     shared.stats.reserved -= t->reservation; --shared.stats.jobs; free(t);
@@ -427,10 +464,10 @@ media_cache *media_cache_create(auth_client *auth)
     media_cache *c = calloc(1, sizeof(*c));
     if (!c) return NULL;
     if (!shared.pool) {
-        /* Set library globals before either image worker can run. */
+        /* Set library globals before image workers can run. */
         chafa_set_n_threads(1);
         GError *error = NULL;
-        shared.pool = g_thread_pool_new(worker, NULL, 2, true, &error);
+        shared.pool = g_thread_pool_new(worker, NULL, MEDIA_CACHE_WORKERS, true, &error);
         if (error) {
             g_error_free(error);
             if (shared.pool) g_thread_pool_free(shared.pool, true, true);
@@ -483,6 +520,7 @@ void media_cache_destroy(media_cache *c)
     media_cache_reset(c);
     /* Normal logout/reset only cancels. Teardown waits before destroying the
      * temp directories and worker publication contexts. */
+    flush_tasks(c);
     while (c->tasks) { collect(c); if (c->tasks) g_usleep(1000); }
     for (int i = 0; i < MEDIA_CACHE_DOWNLOADS; ++i) media_download_destroy(c->downloads[i]);
     g_hash_table_destroy(c->resources); g_hash_table_destroy(c->objects);
@@ -492,10 +530,9 @@ void media_cache_destroy(media_cache *c)
     free(c);
     if (!shared.caches) { g_thread_pool_free(shared.pool, false, true); shared.pool = NULL; }
 }
-media_resource *media_cache_acquire(media_cache *c, auth_media_kind kind, const char *id, uint64_t revision, bool video)
+static media_resource *acquire(media_cache *c, const char *key, auth_media_kind kind, const char *id,
+                               uint64_t revision, bool video, int type, const char *source)
 {
-    if (!c || !id || strlen(id) != 36) return NULL;
-    char key[128]; snprintf(key, sizeof(key), "%d:%s:%llu", (int)kind, id, (unsigned long long)revision);
     media_resource *r = g_hash_table_lookup(c->resources, key);
     if (r) { media_resource_ref(r); return r; }
     if (g_hash_table_size(c->resources) >= RESOURCE_LIMIT) {
@@ -511,20 +548,54 @@ media_resource *media_cache_acquire(media_cache *c, auth_media_kind kind, const 
     }
     r = calloc(1, sizeof(*r));
     if (!r) return NULL;
-    r->cache = c; r->kind = kind; r->video = video; r->revision = revision;
+    r->cache = c; r->kind = kind; r->video = video; r->revision = revision; r->source_type = type;
+    r->source = source ? strdup(source) : NULL;
+    if (source && !r->source) { free(r); return NULL; }
     snprintf(r->key, sizeof(r->key), "%s", key); snprintf(r->id, sizeof(r->id), "%s", id);
     r->refs = 2; g_hash_table_insert(c->resources, r->key, r); return r;
+}
+media_resource *media_cache_acquire(media_cache *c, auth_media_kind kind, const char *id, uint64_t revision, bool video)
+{
+    if (!c || !id || strlen(id) != 36) return NULL;
+    char key[128]; snprintf(key, sizeof(key), "%d:%s:%llu", (int)kind, id, (unsigned long long)revision);
+    return acquire(c, key, kind, id, revision, video, SOURCE_REST, NULL);
+}
+static media_resource *acquire_source(media_cache *c, int type, const char *source, uint64_t revision)
+{
+    if (!c || !source || !*source || strlen(source) > 4096) return NULL;
+    char *digest = g_compute_checksum_for_string(G_CHECKSUM_SHA256, source, -1);
+    if (!digest) return NULL;
+    char key[128]; snprintf(key, sizeof(key), "source:%d:%s:%llu", type, digest, (unsigned long long)revision);
+    g_free(digest);
+    return acquire(c, key, AUTH_MEDIA_ATTACHMENT, "", revision, false, type, source);
+}
+media_resource *media_cache_acquire_url(media_cache *c, const char *url, uint64_t revision)
+{ return acquire_source(c, SOURCE_URL, url, revision); }
+media_resource *media_cache_acquire_file(media_cache *c, const char *path, uint64_t revision)
+{ return acquire_source(c, SOURCE_FILE, path, revision); }
+media_resource *media_cache_acquire_unicode(media_cache *c, const char *text)
+{ return acquire_source(c, SOURCE_UNICODE, text, 0); }
+void media_resource_hold(media_resource *r, bool visible)
+{
+    if (!r) return;
+    if (visible) ++r->visible_refs;
+    else if (r->visible_refs) --r->visible_refs;
 }
 void media_cache_begin(media_cache *c)
 {
     if (!c) return;
     GHashTableIter it; gpointer p;
-    g_hash_table_iter_init(&it, c->resources);
-    while (g_hash_table_iter_next(&it, NULL, &p)) { media_resource *r = p; r->wanted = r->modal = false; }
     g_hash_table_iter_init(&it, c->objects);
     while (g_hash_table_iter_next(&it, NULL, &p)) {
         image_object *o = p; o->pinned = false;
-        for (variant *v = o->variants; v; v = v->next) v->pinned = false;
+        for (variant *v = o->variants; v; v = v->next) {
+            v->pinned = v->visible; v->visible = false;
+        }
+    }
+    g_hash_table_iter_init(&it, c->resources);
+    while (g_hash_table_iter_next(&it, NULL, &p)) {
+        media_resource *r = p; r->wanted = r->modal = false;
+        if (r->visible_refs) media_resource_use_image(r, false, false);
     }
 }
 void media_resource_use(media_resource *r, bool modal)
@@ -646,6 +717,44 @@ bool media_cache_poll(media_cache *c, uint64_t now)
         }
         c->fetching[i] = NULL; media_resource_release(r); --shared.stats.downloads; changed = true;
     }
+    GHashTableIter local; gpointer local_value;
+    g_hash_table_iter_init(&local, c->resources);
+    while (g_hash_table_iter_next(&local, NULL, &local_value)) {
+        media_resource *r = local_value;
+        if (!r->wanted || r->state != RESOURCE_NEW) continue;
+        if (r->source_type == SOURCE_UNICODE) {
+            char *digest = g_compute_checksum_for_string(G_CHECKSUM_SHA256, r->source, -1);
+            if (!digest) continue;
+            char key[72]; snprintf(key, sizeof(key), "glyph:%s", digest);
+            image_object *o = g_hash_table_lookup(c->objects, key);
+            if (!o) {
+                o = calloc(1, sizeof(*o));
+                if (o) o->glyph = strdup(r->source);
+                if (o && o->glyph) {
+                    o->cache = c; snprintf(o->hash, sizeof(o->hash), "%s", key);
+                    object_ref(o); g_hash_table_insert(c->objects, o->hash, o); ++shared.stats.objects;
+                } else { free(o); o = NULL; }
+            }
+            g_free(digest);
+            if (o) { object_ref(o); r->objects[0] = o; r->state = RESOURCE_READY; changed = true; }
+        } else if (r->source_type == SOURCE_FILE) {
+            struct stat info;
+            if (stat(r->source, &info) || info.st_size < 1 || info.st_size > MEDIA_IMAGE_LIMIT) {
+                r->state = RESOURCE_ERROR; r->error = "Arquivo de imagem indisponível."; changed = true; continue;
+            }
+            size_t bytes = (size_t)info.st_size;
+            if (!make_room(0, bytes)) continue;
+            task *t = task_new(c, 0);
+            if (!t) continue;
+            t->input = strdup(r->source);
+            int fd = t->input ? media_download_temp(c->downloads[0], &t->path) : -1;
+            if (fd < 0) { free(t->input); free(t); continue; }
+            close(fd);
+            t->file_reservation = bytes; shared.stats.file_reserved += bytes;
+            t->kind = TASK_INGEST; t->resource = r; media_resource_ref(r);
+            r->job = t; r->state = RESOURCE_INGEST; task_push(t);
+        }
+    }
     bool waiting_modal = false;
     GHashTableIter priority_it; gpointer priority_value;
     g_hash_table_iter_init(&priority_it, c->resources);
@@ -666,21 +775,25 @@ bool media_cache_poll(media_cache *c, uint64_t now)
         g_hash_table_iter_init(&it, c->resources);
         while (g_hash_table_iter_next(&it, NULL, &p)) {
             media_resource *r = p;
-            if (r->wanted && r->state == RESOURCE_NEW && (!best || r->modal > best->modal)) best = r;
+            if (r->wanted && r->state == RESOURCE_NEW && (r->source_type == SOURCE_REST || r->source_type == SOURCE_URL) && (!best || r->modal > best->modal)) best = r;
         }
         if (!best) break;
-        if (media_download_request(c->downloads[i], best->kind, best->id, best->video)) {
+        bool started = best->source_type == SOURCE_URL ? media_download_avatar_request(c->downloads[i], best->source) :
+            media_download_request(c->downloads[i], best->kind, best->id, best->video);
+        if (started) {
             c->fetching[i] = best; media_resource_ref(best); best->state = RESOURCE_FETCH;
             ++shared.stats.requests; ++shared.stats.downloads;
             media_download_poll(c->downloads[i]);
         } else { best->state = RESOURCE_ERROR; best->error = "Não foi possível preparar o download."; }
     }
     queue_trim(c);
+    flush_tasks(c);
     return changed;
 }
 static bool equal_request(const image_decode_request *a, const image_decode_request *b)
 {
     return a->width == b->width && a->height == b->height && a->native == b->native &&
+        a->cover == b->cover && a->center == b->center && a->matte == b->matte && a->background == b->background &&
         a->top == b->top && a->bottom == b->bottom && a->terminal.protocol == b->terminal.protocol &&
         a->terminal.cell_width == b->terminal.cell_width && a->terminal.cell_height == b->terminal.cell_height;
 }
@@ -692,6 +805,7 @@ const graphics_image *media_resource_image(media_resource *r, bool author, image
     o->pinned = true; o->used = now;
     int decode_width = request.width, decode_height = request.height;
     int needed_width = request.width, needed_height = request.height;
+    if (o->frames && request.max_side > 0 && (o->frames->source_width > request.max_side || o->frames->source_height > request.max_side)) return NULL;
     if (o->frames) {
         double ratio = fmin(1, fmin((double)request.width / o->frames->source_width,
                                    (double)request.height / o->frames->source_height));
@@ -701,16 +815,35 @@ const graphics_image *media_resource_image(media_resource *r, bool author, image
         if (needed_height < 1) needed_height = 1;
     }
     bool enlarge = o->frames && (needed_width > o->frames->width || needed_height > o->frames->height);
-    if (o->job && r->modal) g_thread_pool_move_to_front(shared.pool, o->job);
-    if (!o->frames || enlarge) {
+    /* Requests collected in one visibility pass share the largest decode
+     * admitted for that content before the batch reaches the workers. */
+    if (o->job && !o->job->submitted && o->job->kind == TASK_DECODE) {
+        task *pending = o->job;
+        int w = pending->request.width > request.width ? pending->request.width : request.width;
+        int h = pending->request.height > request.height ? pending->request.height : request.height;
+        size_t raster = image_frame_bytes(w, h);
+        size_t reserve = (pending->request.static_only || raster > ANIMATION_BYTES ? raster : ANIMATION_BYTES) +
+            sizeof(animation) + (size_t)w * h * 4 + IMAGE_PIXEL_PADDING;
+        size_t extra = reserve > pending->reservation ? reserve - pending->reservation : 0;
+        if (!extra || make_room(extra, 0)) {
+            pending->request.width = w; pending->request.height = h;
+            pending->reservation += extra; shared.stats.reserved += extra;
+        }
+    }
+    if (o->job && r->modal) {
+        if (!o->job->submitted) o->job->priority = true;
+        else g_thread_pool_move_to_front(shared.pool, o->job);
+    }
+    if (!o->glyph && (!o->frames || enlarge)) {
         /* Never replace canonical pixels while an encoder still borrows them.
          * Retain existing graphics until the larger decode is published. */
         if (!object_busy(o)) {
             size_t raster = image_frame_bytes(needed_width, needed_height);
-            size_t reserve = (raster > ANIMATION_BYTES ? raster : ANIMATION_BYTES) + sizeof(animation);
+            size_t workspace = (size_t)needed_width * needed_height * 4 + IMAGE_PIXEL_PADDING;
+            size_t reserve = (raster > ANIMATION_BYTES ? raster : ANIMATION_BYTES) + sizeof(animation) + workspace;
             task *t = task_new(r->cache, reserve);
             bool static_only = false;
-            if (!t) { reserve = raster + sizeof(animation); t = task_new(r->cache, reserve); static_only = true; }
+            if (!t) { reserve = raster + sizeof(animation) + workspace; t = task_new(r->cache, reserve); static_only = true; }
             if (t) {
                 t->kind = TASK_DECODE; t->priority = r->modal; t->object = o; object_ref(o);
                 t->path = strdup(o->path);
@@ -738,18 +871,48 @@ const graphics_image *media_resource_image(media_resource *r, bool author, image
         v->next = o->variants; o->variants = v;
     }
     v->pinned = true; v->used = now;
-    if (v->job && r->modal) g_thread_pool_move_to_front(shared.pool, v->job);
+    if (r->visible_refs) v->visible = true;
+    if (v->job && r->modal) {
+        if (!v->job->submitted) v->job->priority = true;
+        else g_thread_pool_move_to_front(shared.pool, v->job);
+    }
     size_t frame = animation_frame_at(o->frames, o->epoch, now);
     if (!o->job && !enlarge && !v->job && !v->failed && (!v->image.data || (frame != v->frame && now - v->presented >= 67))) {
-        task *t = task_new(r->cache, graphics_image_capacity(request.width, request.height));
+        size_t workspace = (size_t)request.width * request.height * 7 + IMAGE_PIXEL_PADDING * 2;
+        if (o->frames && request.cover) {
+            double scale = fmax((double)request.width / o->frames->source_width, (double)request.height / o->frames->source_height);
+            double pixels = fmax(1, o->frames->source_width * scale) * fmax(1, o->frames->source_height * scale);
+            if (pixels > GRAPHICS_IMAGE_PIXELS) return NULL;
+            workspace += (size_t)pixels * 4;
+        }
+        task *t = task_new(r->cache, graphics_image_capacity(request.width, request.height) + workspace);
         if (t) {
             t->kind = TASK_ENCODE; t->object = o; object_ref(o); t->variant = v; t->priority = r->modal;
+            if (o->glyph) t->glyph = strdup(o->glyph);
+            if (o->glyph && !t->glyph) { object_unref(o); free(t); return NULL; }
             t->frames = o->frames; animation_ref(t->frames);
             t->request = v->request; t->request.animation = t->frames; t->request.frame = animation_frame_at(t->frames, o->epoch, now);
             v->job = t; task_push(t); ++shared.stats.encodes;
         }
     }
     return v->image.data ? &v->image : NULL;
+}
+const graphics_image *media_resource_fallback_image(media_resource *r, image_decode_request request)
+{
+    image_object *o = r ? r->objects[0] : NULL;
+    if (!o) return NULL;
+    if (o->frames && request.max_side > 0 && (o->frames->source_width > request.max_side || o->frames->source_height > request.max_side)) return NULL;
+    if (request.terminal.protocol == GRAPHICS_KITTY) request.top = request.bottom = 0;
+    for (variant *v = o->variants; v; v = v->next) {
+        image_decode_request candidate = request;
+        candidate.background = v->request.background;
+        if (v->image.data && equal_request(&candidate, &v->request)) {
+            v->pinned = true; v->used = r->cache->now;
+            if (r->visible_refs) v->visible = true;
+            return &v->image;
+        }
+    }
+    return NULL;
 }
 const char *media_resource_path(const media_resource *r) { return r ? r->video_path : NULL; }
 const char *media_resource_error(const media_resource *r, bool author)
@@ -780,7 +943,7 @@ void media_cache_get_stats(media_cache_stats *stats)
     if (!stats) return;
     *stats = shared.stats; stats->workers = atomic_load(&workers); stats->peak_workers = atomic_load(&peak_workers);
     stats->reclaim_pending = shared.released;
-    stats->queued = shared.pool ? g_thread_pool_unprocessed(shared.pool) : 0;
+    stats->queued = shared.pool ? queued_tasks() : 0;
 }
 
 bool media_cache_reserve(size_t bytes)

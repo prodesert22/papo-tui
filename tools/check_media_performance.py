@@ -61,7 +61,7 @@ def main():
             if instrument:
                 environment.update(LD_PRELOAD=str(args.instrumentation.resolve()), PAPO_MEDIA_METRICS=str(metrics))
             t = test_terminal.Terminal(environment=environment)
-            stream = GraphicsStream(t.screen); stream.feed(bytes(t.output)); t.stream = stream
+            stream = GraphicsStream(t.screen, include_icons=False); stream.feed(bytes(t.output)); t.stream = stream
             try:
                 import re
                 query = re.search(rb'\x1b_Gi=(\d+),s=1,v=1,a=q', t.output)

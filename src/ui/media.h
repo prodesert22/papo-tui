@@ -4,6 +4,8 @@
 #include "model/history.h"
 #include <signal.h>
 typedef struct media_view media_view;
+typedef struct media_cache media_cache;
+media_cache *media_view_cache(media_view *view);
 /* Owns cache, downloader, worker, modal and player. Borrows auth. Must be
  * destroyed before the authentication client. Worker never touches curses,
  * cookies or HTTP. Main thread owns every terminal write. */

@@ -133,13 +133,14 @@ class MediaTerminal(unittest.TestCase):
         cls.video = path.read_bytes()
     @classmethod
     def tearDownClass(cls): cls.assets.cleanup()
-    def open(self, server, sixel=True, environment=None, protocol=None):
+    def open(self, server, sixel=True, environment=None, protocol=None, size=None):
         unset = ()
         if protocol == 'iterm2':
             environment = dict(environment or {}, TERM_PROGRAM='iTerm.app', LC_TERMINAL='iTerm2')
             unset = ('KITTY_PID', 'KITTY_WINDOW_ID', 'KONSOLE_VERSION', 'VTE_VERSION', 'GHOSTTY_BIN_DIR',
                      'WEZTERM_EXECUTABLE', 'TMUX', 'STY')
         t = Terminal(environment=environment, unset_environment=unset)
+        if size: t.resize(*size)
         if not hasattr(self, "terminals"): self.terminals = []
         self.terminals.append(t)
         self.addCleanup(lambda: t.close() if t.process.poll() is None else None)

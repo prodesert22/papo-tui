@@ -3,7 +3,6 @@
 #include "model/history.h"
 #include "net/clock.h"
 #include "net/session_time.h"
-#include "net/media.h"
 #include <glib.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,7 +15,6 @@
 #define AVATAR_COUNT 128
 #define APP_AVATAR_COUNT 32
 #define TEMP_BYTES (160U * 1024U * 1024U)
-#define AVATAR_BYTES (8U * 1024U * 1024U)
 typedef struct {
     author_avatar image;
     char url[2049];
@@ -25,10 +23,8 @@ struct chat_assets {
     server_emoji emojis[EMOJI_COUNT];
     author_avatar avatars[AVATAR_COUNT];
     app_avatar apps[APP_AVATAR_COUNT];
-    media_download *download;
-    size_t app_pending, app_bytes;
-    size_t count, bytes, avatar_bytes;
-    uint64_t revision, epoch, refreshed, tick, visible_tick;
+    size_t count, bytes;
+    uint64_t revision, emoji_revision, epoch, refreshed, tick, visible_tick;
     bool wanted, loaded, failed, refreshing;
     char directory[128], cursor[64], last_id[37], endpoint[320], notice[160];
     json_t *profiles;
@@ -54,6 +50,10 @@ static uint64_t fingerprint(const char *value)
     for (const unsigned char *p = (const unsigned char *)value; *p; ++p) { n ^= *p; n *= UINT64_C(1099511628211); }
     return n ? n : 1;
 }
+static size_t temporary_available(const chat_assets *a)
+{
+    return a->bytes <= TEMP_BYTES ? TEMP_BYTES - a->bytes : 0;
+}
 static char *blob_file(chat_assets *a, const char *blob, size_t limit, size_t *size)
 {
     *size = 0;
@@ -65,7 +65,7 @@ static char *blob_file(chat_assets *a, const char *blob, size_t limit, size_t *s
     gsize bytes = 0;
     unsigned char *data = g_base64_decode(blob, &bytes);
     if (!data) return NULL;
-    if (bytes <= 0 || (size_t)bytes > limit || (size_t)bytes > TEMP_BYTES - a->bytes) { g_free(data); return NULL; }
+    if (bytes <= 0 || (size_t)bytes > limit || (size_t)bytes > temporary_available(a)) { g_free(data); return NULL; }
     char pattern[160]; snprintf(pattern, sizeof(pattern), "%s/blob-XXXXXX", a->directory);
     int fd = mkstemp(pattern);
     if (fd < 0) { g_free(data); return NULL; }
@@ -86,7 +86,6 @@ chat_assets *chat_assets_create(void)
 {
     chat_assets *a = calloc(1, sizeof(*a));
     if (!a) return NULL;
-    a->app_pending = SIZE_MAX;
     snprintf(a->directory, sizeof(a->directory), "/tmp/papo-assets-XXXXXX");
     if (!mkdtemp(a->directory)) { free(a); return NULL; }
     return a;
@@ -97,7 +96,6 @@ void chat_assets_destroy(chat_assets *a)
     for (size_t i = 0; i < a->count; ++i) remove_file(a, &a->emojis[i].path, &a->emojis[i].bytes);
     for (size_t i = 0; i < AVATAR_COUNT; ++i) remove_file(a, &a->avatars[i].path, &a->avatars[i].bytes);
     for (size_t i = 0; i < APP_AVATAR_COUNT; ++i) remove_file(a, &a->apps[i].image.path, &a->apps[i].image.bytes);
-    media_download_destroy(a->download);
     json_decref(a->profiles); rmdir(a->directory); free(a);
 }
 void chat_assets_emojis_request(chat_assets *a, bool refresh)
@@ -163,7 +161,7 @@ bool chat_assets_emojis_response(chat_assets *a, json_t *response, long status)
         snprintf(a->notice, sizeof(a->notice), "%zu emojis do servidor · F5 atualizar", a->count);
     }
     if (!ok) { a->wanted = false; a->failed = true; snprintf(a->notice, sizeof(a->notice), status == 429 ? "Limite atingido · Aguarde e use F5" : "Falha nos emojis · F5 tentar novamente"); }
-    ++a->revision; return ok;
+    ++a->revision; ++a->emoji_revision; return ok;
 }
 size_t chat_assets_emoji_count(const chat_assets *a) { return a ? a->count : 0; }
 const server_emoji *chat_assets_emoji(const chat_assets *a, size_t i) { return a && i < a->count ? &a->emojis[i] : NULL; }
@@ -175,6 +173,7 @@ const server_emoji *chat_assets_emoji_id(const chat_assets *a, const char *id)
 }
 const char *chat_assets_notice(const chat_assets *a) { return a ? a->notice : "Emojis indisponíveis"; }
 uint64_t chat_assets_revision(const chat_assets *a) { return a ? a->revision : 0; }
+uint64_t chat_assets_emoji_revision(const chat_assets *a) { return a ? a->emoji_revision : 0; }
 const author_avatar *chat_assets_avatar(chat_assets *a, const char *id)
 {
     if (!a || !history_uuid(id)) return NULL;
@@ -191,7 +190,7 @@ const author_avatar *chat_assets_avatar(chat_assets *a, const char *id)
         }
     }
     if (!slot) return NULL;
-    a->avatar_bytes -= slot->bytes; remove_file(a, &slot->path, &slot->bytes);
+    remove_file(a, &slot->path, &slot->bytes);
     memset(slot, 0, sizeof(*slot)); snprintf(slot->id, sizeof(slot->id), "%s", id);
     slot->dirty = true; slot->used = ++a->tick; return slot;
 }
@@ -206,60 +205,20 @@ const author_avatar *chat_assets_webhook_avatar(chat_assets *a, const json_t *me
     for (size_t i = 0; i < APP_AVATAR_COUNT; ++i) {
         app_avatar *p = &a->apps[i];
         if (!strcmp(p->url, url)) { p->image.used = ++a->tick; return &p->image; }
-        if (i != a->app_pending && (!slot || p->image.used < slot->image.used)) slot = p;
+        if (!slot || p->image.used < slot->image.used) slot = p;
     }
     if (!slot) return NULL;
-    a->app_bytes -= slot->image.bytes; remove_file(a, &slot->image.path, &slot->image.bytes);
+    remove_file(a, &slot->image.path, &slot->image.bytes);
     memset(slot, 0, sizeof(*slot)); snprintf(slot->url, sizeof(slot->url), "%s", url);
     snprintf(slot->image.id, sizeof(slot->image.id), "%016llx", (unsigned long long)fingerprint(url));
-    slot->image.dirty = true; slot->image.used = ++a->tick; slot->image.revision = ++a->revision;
+    slot->image.dirty = true; slot->image.used = ++a->tick; slot->image.revision = 1; slot->image.url = slot->url; ++a->revision;
     return &slot->image;
-}
-bool chat_assets_webhooks_poll(chat_assets *a, auth_client *auth)
-{
-    if (!a || !auth_has_session(auth)) return false;
-    if (a->app_pending != SIZE_MAX) {
-        author_avatar *image = &a->apps[a->app_pending].image;
-        if (image->used < a->visible_tick) {
-            media_download_cancel(a->download); image->dirty = true; a->app_pending = SIZE_MAX;
-            return false;
-        }
-        media_download_poll(a->download);
-        media_state state = media_download_state(a->download);
-        if (state == MEDIA_WAITING || state == MEDIA_DOWNLOADING) return false;
-        size_t bytes = media_download_bytes(a->download);
-        char *path = media_download_take_file(a->download);
-        if (path) {
-            for (size_t i = 0; a->app_bytes + bytes > AVATAR_BYTES && i < APP_AVATAR_COUNT; ++i) {
-                author_avatar *victim = &a->apps[i].image;
-                if (victim == image || !victim->path || victim->used >= a->visible_tick) continue;
-                a->app_bytes -= victim->bytes; remove_file(a, &victim->path, &victim->bytes);
-                victim->dirty = true;
-            }
-            if (a->app_bytes - image->bytes + bytes <= AVATAR_BYTES && bytes <= TEMP_BYTES - a->bytes + image->bytes) {
-                a->app_bytes -= image->bytes; remove_file(a, &image->path, &image->bytes);
-                image->path = path; image->bytes = bytes; a->bytes += bytes; a->app_bytes += bytes;
-            } else { unlink(path); free(path); }
-        }
-        ++image->revision; ++a->revision; a->app_pending = SIZE_MAX; return true;
-    }
-    for (size_t i = 0; i < APP_AVATAR_COUNT; ++i) {
-        author_avatar *image = &a->apps[i].image;
-        if (!image->dirty || image->used < a->visible_tick) continue;
-        image->dirty = false;
-        /* Reserve the maximum transfer size before creating its temp file. */
-        if (TEMP_BYTES - a->bytes < 2U * 1024U * 1024U) continue;
-        if (!a->download) a->download = media_download_create(auth);
-        if (a->download && media_download_avatar_request(a->download, a->apps[i].url)) a->app_pending = i;
-        return false;
-    }
-    return false;
 }
 void chat_assets_avatar_invalidate(chat_assets *a, const char *id)
 {
     if (!a || !history_uuid(id)) return;
     for (size_t i = 0; a && i < AVATAR_COUNT; ++i) if (!strcmp(a->avatars[i].id, id)) {
-        author_avatar *p = &a->avatars[i]; a->avatar_bytes -= p->bytes; remove_file(a, &p->path, &p->bytes);
+        author_avatar *p = &a->avatars[i]; remove_file(a, &p->path, &p->bytes);
         ++p->revision; p->dirty = true; ++a->revision;
     }
 }
@@ -298,20 +257,23 @@ bool chat_assets_profiles_response(chat_assets *a, json_t *response, long status
         if (ok) json_array_foreach(profiles, k, profile) if (!strcmp(str(profile, "id"), p->id)) { found = profile; break; }
         size_t length = json_string_length(json_object_get(found, "avatar_blob"));
         if (length && length <= 2796204 && valid_string(found, "avatar_blob", 2796204)) {
-            while (a->avatar_bytes + (length / 4 * 3) > AVATAR_BYTES) {
+            /* Compact inputs share the existing asset file budget. Evicting
+             * visible avatars from a smaller private quota caused repeated
+             * profile reads despite the shared decoded-image cache. */
+            remove_file(a, &p->path, &p->bytes);
+            while (length / 4 * 3 > temporary_available(a)) {
                 author_avatar *victim = NULL;
                 for (size_t j = 0; j < AVATAR_COUNT; ++j) {
                     author_avatar *v = &a->avatars[j];
-                    if (v != p && v->path && (!victim || v->used < victim->used)) victim = v;
+                    if (v != p && v->path && !v->requested && v->used < a->visible_tick &&
+                        (!victim || v->used < victim->used)) victim = v;
                 }
                 if (!victim) break;
-                a->avatar_bytes -= victim->bytes; remove_file(a, &victim->path, &victim->bytes);
+                remove_file(a, &victim->path, &victim->bytes);
                 /* Retry only when the evicted author becomes visible again. */
                 victim->id[0] = 0;
             }
-            a->avatar_bytes -= p->bytes; remove_file(a, &p->path, &p->bytes);
             p->path = blob_file(a, str(found, "avatar_blob"), 2U * 1024U * 1024U, &p->bytes);
-            a->avatar_bytes += p->bytes;
         }
         ++p->revision;
     }
@@ -320,10 +282,6 @@ bool chat_assets_profiles_response(chat_assets *a, json_t *response, long status
 void chat_assets_cancel(chat_assets *a)
 {
     if (!a) return;
-    if (a->app_pending != SIZE_MAX) {
-        a->apps[a->app_pending].image.dirty = true;
-        media_download_cancel(a->download); a->app_pending = SIZE_MAX;
-    }
     for (size_t i = 0; i < AVATAR_COUNT; ++i) if (a->avatars[i].requested) {
         a->avatars[i].requested = false; a->avatars[i].dirty = true;
     }
@@ -334,7 +292,7 @@ void chat_assets_visible_begin(chat_assets *a) { if (a) a->visible_tick = a->tic
 void chat_assets_profiles_retry(chat_assets *a)
 {
     for (size_t i = 0; a && i < APP_AVATAR_COUNT; ++i)
-        if (*a->apps[i].url) a->apps[i].image.dirty = true;
+        if (*a->apps[i].url) { ++a->apps[i].image.revision; ++a->revision; }
     for (size_t i = 0; a && i < AVATAR_COUNT; ++i)
         if (*a->avatars[i].id && !a->avatars[i].path && !a->avatars[i].requested) a->avatars[i].dirty = true;
 }

@@ -103,7 +103,7 @@ static bool begin_request(media_download *m, CURL *easy, auth_media_kind kind, b
     if (!m->easy) return false;
     m->kind = kind; m->video = video; m->public_avatar = avatar;
     m->generation = auth_context_generation(m->auth);
-    m->limit = avatar ? 2U * 1024U * 1024U : kind == AUTH_MEDIA_EMBED ? MEDIA_EMBED_LIMIT : video ? MEDIA_VIDEO_LIMIT : MEDIA_IMAGE_LIMIT;
+    m->limit = avatar ? MEDIA_AVATAR_LIMIT : kind == AUTH_MEDIA_EMBED ? MEDIA_EMBED_LIMIT : video ? MEDIA_VIDEO_LIMIT : MEDIA_IMAGE_LIMIT;
     m->overflow = false; m->status = 0; m->mime[0] = 0; m->error = NULL;
     int fd = media_download_temp(m, &m->path);
     if (fd < 0 || !(m->file = fdopen(fd, "wb"))) {

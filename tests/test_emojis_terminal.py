@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import signal
 import struct
 import termios
+import threading
 import time
 import unittest
 from urllib.parse import urlsplit, parse_qs
@@ -59,6 +60,10 @@ class EmojiTerminal(unittest.TestCase):
             return parent(method,path,body)
         s.api_handler = route
         return s
+
+    def avatar_positions(self, t):
+        images={int(h[b'i']) for h,p in t.stream.kitty_frames if h.get(b's')==b'48' and h.get(b'v')==b'48'}
+        return {pair for pair in t.stream.live_placements if pair[0] in images}
 
     def test_keyboard_unicode_inserts_at_cursor_without_sending(self):
         with self.server() as s:
@@ -184,6 +189,56 @@ class EmojiTerminal(unittest.TestCase):
                 self.assertEqual(s.refresh_count,1);self.assertEqual(s.message_count,0)
             finally:self.assertTrue(t.close())
 
+    def test_member_avatars_do_not_wait_for_names_or_emoji_pages(self):
+        for blocked in ('/users/user_summary_batch', '/emojis?'):
+            with self.subTest(blocked=blocked),self.server(content=':gato25:',large=True,count=6) as s:
+                for i,m in enumerate(s.messages):m['author_id']=uuid(40+i)
+                route=s.api_handler; release=threading.Event(); entered=threading.Event()
+                def delayed(method,path,body):
+                    if blocked in path:
+                        entered.set();release.wait(8)
+                    return route(method,path,body)
+                s.api_handler=delayed
+                t=self.open(s,protocol='kitty',size=(48,100))
+                try:
+                    self.until(t,lambda:len(self.avatar_positions(t))==6,timeout=3)
+                    self.assertFalse(release.is_set())
+                    self.until(t,entered.is_set)
+                    calls=[r[1] for r in s.requests]
+                    self.assertLess(next(i for i,p in enumerate(calls) if '/users/profile_batch' in p),
+                                    next(i for i,p in enumerate(calls) if blocked in p))
+                finally:
+                    release.set();self.assertTrue(t.close())
+
+    def test_large_member_avatars_survive_redraw_and_channel_return(self):
+        with self.server(count=6) as s:
+            members={uuid(40+i) for i in range(6)}
+            for i,m in enumerate(s.messages):m['author_id']=uuid(40+i)
+            route=s.api_handler; reads=[]
+            blob=base64.b64encode(self.png+b'x'*1500000).decode()
+            def profiles(method,path,body):
+                if path.endswith('/users/profile_batch'):
+                    reads.extend(body['ids'])
+                    self.assertLessEqual(len(body['ids']),4)
+                    return 200,{'profiles':[{'id':id,'avatar_blob':blob,'avatar_format':'PNG'} for id in body['ids']]}
+                return route(method,path,body)
+            s.api_handler=profiles
+            t=self.open(s,protocol='kitty',size=(48,100))
+            try:
+                self.until(t,lambda:len(self.avatar_positions(t))==6)
+                t.send('x');t.read(.2)
+                self.assertEqual(sorted(id for id in reads if id in members),sorted(members))
+                other_reads=lambda:sum('/channels/'+uuid(11)+'/messages' in r[1] for r in s.requests)
+                self.assertEqual(other_reads(),0)
+                t.click(8,4);self.wait(t,'Conteúdo do outro canal')
+                self.until(t,lambda:len(self.avatar_positions(t))==1)
+                t.click(7,4);self.wait(t,'Mensagem 0001')
+                self.until(t,lambda:len(self.avatar_positions(t))==6)
+                t.read(.2)
+                self.assertEqual(sorted(id for id in reads if id in members),sorted(members))
+                self.assertEqual(other_reads(),1)
+            finally:self.assertTrue(t.close())
+
     def test_profile_errors_preserve_initials_and_wait_for_manual_retry(self):
         for status in (403,404,429,500):
             with self.subTest(status=status),self.server() as s:
@@ -291,6 +346,91 @@ class EmojiTerminal(unittest.TestCase):
                     self.until(t,fills_avatar)
                     self.assertEqual(sum('/users/profile_batch' in r[1] for r in s.requests),1)
                 finally:self.assertTrue(t.close())
+
+    def test_webhook_avatars_load_concurrently_and_reuse_completed_downloads(self):
+        with self.server(count=6) as s:
+            for i,m in enumerate(s.messages):
+                m.update(author_id=None,webhook_id=uuid(900+i),content=f'App message {i}',
+                         external_author={'source':'webhook','id':uuid(900+i),'name':f'App {i}',
+                                          'avatar_url':'/webhooks/'+uuid(900+i)+'/avatar'})
+            route=s.api_handler
+            release=threading.Event();lock=threading.Lock()
+            active=peak=reads=0
+            def avatar(method,path,body):
+                nonlocal active,peak,reads
+                if '/webhooks/' in path and path.endswith('/avatar'):
+                    with lock:active+=1;peak=max(peak,active);reads+=1
+                    release.wait(6)
+                    with lock:active-=1
+                    return 200,self.png,None,None,'image/png'
+                return route(method,path,body)
+            s.api_handler=avatar
+            t=self.open(s,protocol='kitty')
+            try:
+                t.resize(48,100);self.wait(t,'App 5 [APP]')
+                self.until(t,lambda:peak==4,timeout=3)
+                self.assertEqual(reads,4)
+                release.set()
+                self.until(t,lambda:reads==6)
+                self.until(t,lambda:len(self.avatar_positions(t))==6)
+                self.assertLessEqual(peak,4)
+                t.click(8,4);self.wait(t,'Conteúdo do outro canal')
+                t.click(7,4);self.wait(t,'App 5 [APP]');t.read(.3)
+                self.assertEqual(reads,6)
+                self.assertTrue(all(not r[2] for r in s.requests if '/webhooks/' in r[1]))
+            finally:release.set();self.assertTrue(t.close())
+
+    def test_cancelled_webhook_avatar_downloads_resume_on_return(self):
+        with self.server(count=4) as s:
+            for i,m in enumerate(s.messages):
+                m.update(author_id=None,webhook_id=uuid(900+i),
+                         external_author={'source':'webhook','id':uuid(900+i),'name':f'App {i}',
+                                          'avatar_url':'/webhooks/'+uuid(900+i)+'/avatar'})
+            route=s.api_handler;release=threading.Event();lock=threading.Lock()
+            reads=active=0
+            def avatar(method,path,body):
+                nonlocal reads,active
+                if '/webhooks/' in path and path.endswith('/avatar'):
+                    with lock:reads+=1;active+=1
+                    release.wait(6)
+                    with lock:active-=1
+                    return 200,self.png,None,None,'image/png'
+                return route(method,path,body)
+            s.api_handler=avatar
+            t=self.open(s,protocol='kitty')
+            try:
+                t.resize(40,100);self.wait(t,'App 0 [APP]')
+                self.until(t,lambda:reads==4)
+                t.click(8,4);self.wait(t,'Conteúdo do outro canal')
+                release.set();self.until(t,lambda:active==0)
+                t.click(7,4);self.wait(t,'App 0 [APP]')
+                self.until(t,lambda:reads==8)
+                self.until(t,lambda:len(self.avatar_positions(t))==4)
+            finally:release.set();self.assertTrue(t.close())
+
+    def test_slow_webhook_avatar_does_not_hold_ready_avatars(self):
+        with self.server(count=4) as s:
+            slow='/webhooks/'+uuid(900)+'/avatar'
+            for i,m in enumerate(s.messages):
+                m.update(author_id=None,webhook_id=uuid(900+i),
+                         external_author={'source':'webhook','id':uuid(900+i),'name':f'App {i}',
+                                          'avatar_url':'/webhooks/'+uuid(900+i)+'/avatar'})
+            route=s.api_handler;release=threading.Event();started=threading.Event()
+            def avatar(method,path,body):
+                if '/webhooks/' in path and path.endswith('/avatar'):
+                    if path.endswith(slow):started.set();release.wait(6)
+                    return 200,self.png,None,None,'image/png'
+                return route(method,path,body)
+            s.api_handler=avatar
+            t=self.open(s,protocol='kitty')
+            try:
+                t.resize(40,100);self.wait(t,'App 0 [APP]')
+                self.until(t,started.is_set)
+                self.until(t,lambda:len(self.avatar_positions(t))==3,timeout=3)
+                self.assertFalse(release.is_set())
+                release.set()
+                self.until(t,lambda:len(self.avatar_positions(t))==4)
+            finally:release.set();self.assertTrue(t.close())
 
     def test_webhook_app_name_badge_and_shared_animated_avatar(self):
         with self.server(count=2) as s:

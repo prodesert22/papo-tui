@@ -424,17 +424,25 @@ backend, seguido de **[APP]**, e o avatar do app. A atribuição externa forneci
 para uma mensagem é preservada. Sem nome disponível, aparece **Webhook**; sem
 avatar válido, aparecem as iniciais. Os avatares públicos do Papo e URLs HTTPS
 externas são carregados sem cookies de sessão e sem seguir redirecionamentos.
+Os avatares usam a mesma fila de imagens. Até quatro downloads são executados
+simultaneamente no cliente, respeitando o
+limite global de requisições. URLs já carregadas são reutilizadas ao voltar
+a um canal na mesma tela de conversas.
 Falhas não geram tentativas automáticas; Ctrl+R permite tentar novamente.
 
 Emojis personalizados e avatares em GIF se repetem somente enquanto visíveis,
 até 15 atualizações por segundo. Animações que excedem os limites usam o
 primeiro frame. Avatares são carregados apenas para autores visíveis, em lotes,
-e atualizados após eventos de troca de avatar. Ctrl+R permite tentar novamente
+com prioridade sobre a busca de nomes e as páginas de emojis. Seus arquivos
+permanecem em cache enquanto visíveis e houver espaço no orçamento compartilhado.
+São atualizados após eventos de troca de avatar. Ctrl+R permite tentar novamente
 quando um avatar falha. Tudo fica isolado por instância e sessão, respeitando
-TLS e o limite global de requisições. Os caches têm limites de 256 MiB para mídia
-e 32 MiB para ícones; arquivos temporários de emojis/avatares são privados,
-limitados a 160 MiB
-e removidos ao voltar à conta ou sair.
+TLS e o limite global de requisições. Todas as imagens — incluindo
+avatares, emojis e embeds — compartilham o cache global de 256 MiB e o pool
+de quatro workers, com processamento em lotes e deduplicação por conteúdo.
+As entradas compactadas de emojis/avatares usam arquivos temporários privados,
+limitados a 160 MiB e removidos ao voltar à conta ou sair. O cache compartilhado
+pode manter imagens já processadas enquanto a sessão continuar aberta.
 
 ### Imagens e player de vídeo
 

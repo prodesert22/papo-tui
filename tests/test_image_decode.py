@@ -20,5 +20,8 @@ with tempfile.TemporaryDirectory(prefix='papo-image-decode-') as directory:
     portrait, large_gif = root / 'portrait.png', root / 'large.gif'
     ffmpeg('-f', 'lavfi', '-i', 'color=red:s=1000x1500', '-frames:v', '1', portrait)
     ffmpeg('-f', 'lavfi', '-i', 'testsrc2=size=960x720:rate=10:duration=1.7', '-frames:v', '17', large_gif)
+    transparent = root / 'transparent.png'
+    raw = root / 'transparent.rgba'; raw.write_bytes(bytes((255, 0, 0, 0)) * 16 * 12)
+    ffmpeg('-f', 'rawvideo', '-pixel_format', 'rgba', '-video_size', '16x12', '-i', raw, '-frames:v', '1', transparent)
     subprocess.run([sys.argv[1], str(png), str(gif), str(large), str(tall), str(broken), str(long_gif),
-                    str(portrait), str(large_gif)], check=True)
+                    str(portrait), str(large_gif), str(transparent)], check=True)

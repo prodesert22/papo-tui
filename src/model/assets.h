@@ -17,6 +17,7 @@ typedef struct {
     char *path;
     size_t bytes;
     uint64_t revision, used;
+    const char *url; /* Borrowed descriptor; the shared image cache owns transfers. */
     bool requested, dirty;
 } author_avatar;
 chat_assets *chat_assets_create(void);
@@ -30,12 +31,13 @@ const server_emoji *chat_assets_emoji(const chat_assets *a, size_t index);
 const server_emoji *chat_assets_emoji_id(const chat_assets *a, const char *id);
 const char *chat_assets_notice(const chat_assets *a);
 uint64_t chat_assets_revision(const chat_assets *a);
+/* Avatar downloads do not alter the text/emoji layout of cached messages. */
+uint64_t chat_assets_emoji_revision(const chat_assets *a);
 /* Borrowed values; no network I/O. A visible author queues a bounded profile read. */
 const author_avatar *chat_assets_avatar(chat_assets *a, const char *id);
 /* Public webhook attribution; visible URLs share a bounded per-session cache.
- * No I/O in this accessor. Poll starts/advances the asynchronous transfer. */
+ * No I/O in this accessor; the shared image cache owns asynchronous transfers. */
 const author_avatar *chat_assets_webhook_avatar(chat_assets *a, const json_t *message);
-bool chat_assets_webhooks_poll(chat_assets *a, auth_client *auth);
 void chat_assets_avatar_invalidate(chat_assets *a, const char *id);
 json_t *chat_assets_profiles_request(chat_assets *a);
 bool chat_assets_profiles_wanted(const chat_assets *a);
