@@ -26,6 +26,7 @@ class GraphicsStream:
         self.protocols = []
         self.kitty_frames = []
         self.live_ids = set()
+        self.live_placements = set()
         self.deleted_ids = []
         self.placements = []
         self.placement_positions = []
@@ -62,11 +63,17 @@ class GraphicsStream:
                 header, _, data = sequence[3:-2].partition(b';')
                 values = dict(field.split(b'=', 1) for field in header.split(b',') if b'=' in field)
                 if values.get(b'a') == b'd':
-                    image_id = int(values[b'i']); self.live_ids.discard(image_id); self.deleted_ids.append(image_id)
+                    image_id = int(values[b'i']); self.deleted_ids.append(image_id)
+                    if b'p' in values:
+                        self.live_placements.discard((image_id, int(values[b'p'])))
+                    else:
+                        self.live_placements = {pair for pair in self.live_placements if pair[0] != image_id}
+                    if not any(pair[0] == image_id for pair in self.live_placements): self.live_ids.discard(image_id)
                 elif values.get(b'a') == b'p':
                     self.placements.append(values)
                     self.placement_positions.append((self.screen.cursor.y, self.screen.cursor.x))
                     self.live_ids.add(int(values[b'i']))
+                    self.live_placements.add((int(values[b'i']), int(values[b'p'])))
                 elif values.get(b'a') in (b'T', b't'):
                     self.kitty_header = values; self.kitty_parts = []
                 elif self.kitty_header is not None:
@@ -263,6 +270,67 @@ class MediaTerminal(unittest.TestCase):
                     self.assertEqual(sum('/attachments/' in r[1] for r in server.requests), 1)
                 finally: self.assertTrue(t.close())
 
+    def test_identical_embed_update_invalidates_pixels_in_history_and_account(self):
+        from realtime_mock import RealtimeMock
+        from history_mock import CHANNEL
+        with RealtimeMock(count=1) as server:
+            embed = {'id': uuid(902), 'source_type': 'custom', 'title': 'Mutable preview',
+                     'thumbnail': {'mime_type': 'image/png'}, 'fields': []}
+            server.messages[0]['embeds'] = [embed]
+            original = server.route
+            content = self.images['png']
+            calls = 0
+            def route(method, path, body):
+                nonlocal calls
+                if '/embeds/' in path:
+                    calls += 1
+                    return 200, {'id': uuid(902), 'image_data': base64.b64encode(content).decode(), 'author_image_data': None}
+                return original(method, path, body)
+            server.api_handler = route
+            t = self.open(server, protocol='kitty')
+            try:
+                self.wait_frames(t); t.resize(40, 100); t.read(.15)
+                self.assertEqual(calls, 1)
+                old_ids = {header[b'i'] for header, _ in t.stream.kitty_frames}
+                content = self.images['webp']
+                event = {'type': 'message_embeds_update', 'channel_id': CHANNEL,
+                         'message_id': server.messages[0]['id'], 'embeds': [embed]}
+                server.emit(event)
+                deadline = time.monotonic() + 5
+                while (calls < 2 or not ({header[b'i'] for header, _ in t.stream.kitty_frames} - old_ids)) and time.monotonic() < deadline:
+                    t.read(.03)
+                self.assertEqual(calls, 2)
+                self.assertTrue({header[b'i'] for header, _ in t.stream.kitty_frames} - old_ids)
+                self.assertEqual(sum('/messages' in r[1] for r in server.requests), 1)
+                t.send('Preserved draft'); t.send('\x1b[17~'); self.wait(t, '[Canais / F6]')
+                content = self.images['png']; server.emit(event); t.read(.2)
+                t.send('\x1b[17~'); self.wait(t, 'geral'); t.send('\x1bOB\x1bOB\n')
+                self.wait(t, 'Preserved draft')
+                deadline = time.monotonic() + 5
+                while calls < 3 and time.monotonic() < deadline: t.read(.03)
+                self.assertEqual(calls, 3)
+            finally: self.assertTrue(t.close())
+
+    def test_identical_images_have_one_kitty_image_and_four_positions(self):
+        for shared_id in (False, True):
+            with self.subTest(shared_resource=shared_id), self.serve(self.images['png'], 'image/png') as server:
+                original = server.messages[0]['attachments'][0]
+                server.messages[0]['attachments'] = [dict(original, id=uuid(901 if shared_id else 901 + i)) for i in range(4)]
+                t = self.open(server, protocol='kitty')
+                try:
+                    t.resize(64, 80)
+                    deadline = time.monotonic() + 10
+                    while len(t.stream.live_placements) < 4 and time.monotonic() < deadline: t.read(.03)
+                    self.assertEqual(len(t.stream.live_placements), 4)
+                    self.assertEqual(len(t.stream.live_ids), 1)
+                    self.assertEqual(len({p[b'p'] for p in t.stream.placements}), 4)
+                    self.assertEqual(sum('/attachments/' in r[1] for r in server.requests), 1 if shared_id else 4)
+                    self.assertEqual(len({header[b'i'] for header, _ in t.stream.kitty_frames}), 1)
+                    t.send('Shared pixels'); self.assertEqual(len(t.stream.live_placements), 4)
+                    t.click(8, 4); self.wait(t, 'Conteúdo do outro canal'); t.read(.1)
+                    self.assertFalse(t.stream.live_ids)
+                finally: self.assertTrue(t.close())
+
     def test_kitty_scrolling_repositions_and_crops_without_retransmission(self):
         with self.serve(self.tall_image, 'image/png') as server:
             server.messages[0]['content'] = '\n'.join('Line %d' % n for n in range(30))
@@ -281,7 +349,7 @@ class MediaTerminal(unittest.TestCase):
                 self.assertEqual(len(t.stream.frames), frames)
                 self.assertEqual(len(t.stream.deleted_ids), deletes)
                 self.assertEqual({p[b'i'] for p in t.stream.placements[initial:]}, {image_id})
-                self.assertTrue(all(p[b'p'] == b'1' for p in t.stream.placements))
+                self.assertEqual(len({p[b'p'] for p in t.stream.placements}), 1)
                 self.assertTrue(any(int(p[b'h']) < 96 for p in t.stream.placements))
                 self.assertEqual(sum('/attachments/' in r[1] for r in server.requests), 1)
             finally: self.assertTrue(t.close())
@@ -321,7 +389,7 @@ class MediaTerminal(unittest.TestCase):
             t = self.open(server, protocol='kitty')
             try:
                 self.wait_frames(t); t.send('\x1b[18~'); self.wait(t, '[Info]')
-                self.wait_frames(t, 2); t.read(.15)
+                self.wait(t, "Imagem"); t.read(.15)
                 # 80x24: viewer keeps channels at x<26, with outer margins
                 # at (30,3). The image area spans x=33..72 and y=6..16.
                 self.assertEqual(t.stream.placement_positions[-1], (11, 52))

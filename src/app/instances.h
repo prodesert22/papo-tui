@@ -7,6 +7,10 @@ typedef struct send_editor send_editor;
 typedef struct session_store session_store;
 typedef struct {
     auth_client *auth;
+    void *media; /* Owned presentation cache; callbacks avoid a UI dependency. */
+    void (*media_destroy)(void *);
+    void (*media_idle)(void *);
+    void (*media_update)(void *, const json_t *);
     send_editor *editor;
     char name[129], url[2049];
 } instance_connection;
@@ -28,5 +32,6 @@ size_t instances_index(const instance_connections *connections, const auth_clien
 /* Borrowed editor, owned by its connection and destroyed before auth. */
 send_editor *instances_editor(const instance_connections *connections, const auth_client *auth);
 /* Polls inactive sessions/WS, discarding events; never requests history. */
+void instances_media_event(instance_connections *connections, auth_client *auth, const json_t *event);
 bool instances_poll(instance_connections *connections, auth_client *active);
 #endif

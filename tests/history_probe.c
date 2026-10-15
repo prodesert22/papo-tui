@@ -95,6 +95,30 @@ int main(int argc, char **argv)
         json_object_set_new(out, "confirmed", snapshot(h));
         json_decref(message);
     }
+    if (!strcmp(argv[2], "cache") && history_message_count(h) >= 2) {
+        uint64_t first_revision = history_message_revision(h, 0), second_revision = history_message_revision(h, 1);
+        for (int i = 0; i < 20; ++i) tick(auth, h);
+        bool stable = first_revision == history_message_revision(h, 0) && second_revision == history_message_revision(h, 1);
+        json_t *first_message = history_message(h, 0);
+        json_t *edit = json_pack("{s:s,s:O,s:O,s:s,s:s}", "type", "message_edit", "id", json_object_get(first_message, "id"),
+            "channel_id", json_object_get(first_message, "channel_id"), "content", "Changed once", "edited_at", "2026-10-14T00:00:00Z");
+        bool changed = history_event(h, edit, auth_context_generation(auth)); json_decref(edit);
+        changed &= first_revision != history_message_revision(h, 0) && second_revision == history_message_revision(h, 1);
+        const char *ephemeral = "00000000-0000-4000-8000-000000000999";
+        json_t *presence = json_pack("{s:s,s:s,s:s,s:s}", "type", "presence_update", "user_id", ephemeral,
+            "status", "online", "nickname", "EA -* NA");
+        bool cached = history_event(h, presence, auth_context_generation(auth)); json_decref(presence);
+        cached &= history_mention_name(h, ephemeral) != NULL;
+        uint64_t now = 0; net_now_ms(&now);
+        history_users_active(h, true); history_maintain(h, now + 301000);
+        bool pinned = history_mention_name(h, ephemeral) != NULL;
+        history_users_active(h, false); history_maintain(h, now + 302001);
+        bool expired = history_mention_name(h, ephemeral) == NULL;
+        const char *author = json_string_value(json_object_get(history_message(h, 0), "author_id"));
+        bool retained = history_mention_name(h, author) != NULL;
+        json_object_set_new(out, "cache_checks", json_pack("{s:b,s:b,s:b,s:b,s:b,s:b}", "stable", stable,
+            "only_changed_message", changed, "cached", cached, "popup_pinned", pinned, "expired", expired, "author_retained", retained));
+    }
     if (!strcmp(argv[2], "recent")) { history_recent(h); settle(auth, h); json_object_set_new(out, "recent", snapshot(h)); }
     if (!strcmp(argv[2], "voice")) { history_select(h, history_channel_count(h) - 1); settle(auth, h); json_object_set_new(out, "voice", snapshot(h)); }
     if (!strcmp(argv[2], "context")) {

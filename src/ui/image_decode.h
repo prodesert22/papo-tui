@@ -20,6 +20,7 @@ typedef struct {
     graphics_terminal terminal;
     uint32_t image_id;
     bool preview, native;
+    bool decode_only, retain_static, static_only;
     animation *animation;
     size_t frame;
     int top, bottom;

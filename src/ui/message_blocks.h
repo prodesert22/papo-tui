@@ -16,6 +16,7 @@ typedef struct {
     char original_file_name[MESSAGE_MEDIA_LABEL];
     char moderation[32], created_at[64], thumbnail_id[37];
     uint64_t version;
+    unsigned position; /* Position within the message, independent of resource identity. */
 } message_media;
 typedef struct {
     char key[128];

@@ -15,6 +15,24 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         return json.loads(result.stdout)
 
+    def test_message_revisions_and_unreferenced_user_expiry(self):
+        with HistoryMock(count=3) as server:
+            result = self.run_probe(server, 'cache')
+            self.assertTrue(all(result['cache_checks'].values()), result['cache_checks'])
+            self.assertEqual(sum('/messages' in r[1] for r in server.requests), 1)
+
+    def test_webhook_history_allows_unreferenced_user_expiry(self):
+        for author in (None, '', 'missing'):
+            with self.subTest(author=author), HistoryMock(count=3) as server:
+                message = server.messages[-1]
+                if author == 'missing':
+                    message.pop('author_id')
+                else:
+                    message['author_id'] = author
+                message['webhook_id'] = uuid(900)
+                result = self.run_probe(server, 'cache')
+                self.assertTrue(all(result['cache_checks'].values()), result['cache_checks'])
+
     def test_three_pages_equal_timestamps_authors_and_no_prefetch(self):
         with HistoryMock() as server:
             result = self.run_probe(server)

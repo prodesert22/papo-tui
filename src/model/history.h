@@ -14,6 +14,8 @@ typedef enum { HISTORY_NOTICE_READ, HISTORY_NOTICE_EVENT, HISTORY_NOTICE_COUNT }
  * event, confirmation, selection, reload or destroy. Callers retain anchors
  * by UUID, not pointer. */
 history *history_create(auth_client *auth);
+/* Valid live embed updates also invalidate media in inactive conversations. */
+void history_set_media_updates(history *h, void (*update)(void *, const json_t *), void *context);
 void history_destroy(history *h);
 bool history_poll(history *h);
 /* Copies a confirmed Message. Merges only the active channel/current
@@ -38,9 +40,13 @@ size_t history_selected(const history *h);
 size_t history_message_count(const history *h);
 json_t *history_message(const history *h, size_t index);
 /* Changes when the loaded active conversation is cleared or updated. */
+uint64_t history_message_revision(history *h, size_t index);
 uint64_t history_messages_revision(const history *h);
 /* Borrowed instance-scoped summaries. Directory reads are dispatched by the
  * history owner through the same REST queue, never by the popup. */
+/* Owned GLib string; caller g_free(). Comparison only, never wire identity. */
+char *history_search_normalize(const char *text);
+bool history_maintain(history *h, uint64_t now);
 void history_users_active(history *h, bool active);
 void history_users_retry(history *h);
 size_t history_user_count(const history *h);

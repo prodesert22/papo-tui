@@ -207,7 +207,7 @@ static int add_media(message_blocks *b, json_t *message, json_t *entry, const ch
     snprintf(m->moderation, sizeof(m->moderation), "%s", str(entry, "moderation_status"));
     snprintf(m->created_at, sizeof(m->created_at), "%s", str(entry, "created_at"));
     snprintf(m->thumbnail_id, sizeof(m->thumbnail_id), "%s", str(entry, "thumbnail_id"));
-    m->version = message_media_version(entry);
+    m->version = message_media_version(entry); m->position = (unsigned)n;
     m->kind = kind; m->video = video; ++b->media_count;
     return (int)n;
 }

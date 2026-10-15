@@ -13,6 +13,7 @@
 #include "ui/status_bar.h"
 #include "ui/clipboard.h"
 #include <wctype.h>
+#include <glib.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,9 +23,23 @@
 #define CONTENT_Y 5
 
 enum { SERVER_TABS, CHANNEL_LIST, HISTORY_PANEL, MESSAGE_INPUT };
-typedef enum { DRAW_ALL, DRAW_CONVERSATION, DRAW_NAVIGATION } draw_scope;
+typedef enum { DRAW_ALL, DRAW_CONVERSATION, DRAW_NAVIGATION, DRAW_EDITOR, DRAW_MEDIA } draw_scope;
+#define LAYOUT_BYTES (8U * 1024U * 1024U)
 typedef struct { int x, width; } click_range;
 typedef struct {
+    char id[37];
+    uint64_t revision, names, dimensions, used;
+    int width, height;
+    bool graphics, tail_gap;
+    uint64_t reply_revision;
+    size_t bytes;
+    message_blocks blocks;
+} cached_layout;
+typedef struct {
+    GHashTable *layout_index;
+    cached_layout layouts[HISTORY_MESSAGE_LIMIT];
+    size_t layout_bytes;
+    uint64_t layout_sequence;
     history *model;
     mention_popup *mentions;
     media_view *media;
@@ -151,6 +166,60 @@ static void draw_tabs(view *ui, auth_client *auth)
         text_label(ui->tabs, 1, ui->conversation_hit.x, 10, "[Conversa]");
     } else text_label(ui->tabs, 1, 0, width, summary);
 }
+static void release_layout(view *ui, cached_layout *c)
+{
+    ui->layout_bytes -= c->bytes; c->bytes = 0; message_blocks_free(&c->blocks);
+}
+static cached_layout *find_layout(view *ui, size_t index, int width)
+{
+    json_t *m = history_message(ui->model, index);
+    const char *id = str(m, "id");
+    cached_layout *c = g_hash_table_lookup(ui->layout_index, id);
+    if (!c) {
+        cached_layout *oldest = &ui->layouts[0];
+        for (size_t i = 0; i < HISTORY_MESSAGE_LIMIT; ++i) {
+            cached_layout *entry = &ui->layouts[i];
+            if (!*entry->id) { oldest = entry; break; }
+            if (entry->used < oldest->used) oldest = entry;
+        }
+        c = oldest;
+        if (*c->id) g_hash_table_remove(ui->layout_index, c->id);
+        release_layout(ui, c); memset(c, 0, sizeof(*c)); snprintf(c->id, sizeof(c->id), "%s", id);
+        g_hash_table_insert(ui->layout_index, c->id, c);
+    }
+    uint64_t revision = history_message_revision(ui->model, index), names = history_users_revision(ui->model);
+    bool has_media = json_array_size(json_object_get(m, "attachments")) || json_array_size(json_object_get(m, "embeds"));
+    uint64_t dimensions = has_media ? media_view_dimensions_revision(ui->media) : 0;
+    uint64_t reply_revision = *str(m, "reply_to") ? history_messages_revision(ui->model) : 0;
+    bool graphics = graphics_terminal_get().supported && ui->media;
+    if (c->revision != revision || c->names != names || c->dimensions != dimensions || c->width != width || c->graphics != graphics || c->reply_revision != reply_revision) {
+        release_layout(ui, c); c->height = 0;
+        c->revision = revision; c->names = names; c->dimensions = dimensions; c->width = width; c->graphics = graphics; c->reply_revision = reply_revision;
+    }
+    c->used = ++ui->layout_sequence;
+    return c;
+}
+static void account_layout(view *ui, cached_layout *c)
+{
+    message_blocks *b = &c->blocks;
+    c->height = (int)b->count;
+    c->tail_gap = b->count && !b->rows[b->count - 1].count && !b->rows[b->count - 1].media_count && !b->rows[b->count - 1].card;
+    c->bytes = b->capacity * sizeof(*b->rows) + b->media_count * sizeof(*b->media);
+    for (size_t i = 0; i < b->count; ++i) for (int k = 0; k < b->rows[i].count; ++k) {
+        message_segment *s = &b->rows[i].segments[k];
+        c->bytes += (s->text ? strlen(s->text) + 1 : 0) + s->highlight_length + 1;
+    }
+    ui->layout_bytes += c->bytes;
+    while (ui->layout_bytes > LAYOUT_BYTES) {
+        cached_layout *oldest = NULL;
+        for (size_t i = 0; i < HISTORY_MESSAGE_LIMIT; ++i) {
+            cached_layout *entry = &ui->layouts[i];
+            if (entry != c && entry->bytes && (!oldest || entry->used < oldest->used)) oldest = entry;
+        }
+        if (!oldest) break;
+        release_layout(ui, oldest);
+    }
+}
 /* Walk segments with a stable UUID/section/Unicode-offset anchor. Reflow after
  * resize maps the offset back to its new row; prepending pages adds no drift. */
 static int walk(view *ui, int first, bool paint, bool save, int *anchor)
@@ -159,30 +228,39 @@ static int walk(view *ui, int first, bool paint, bool save, int *anchor)
     *anchor = 0;
     for (size_t i = 0; i < history_message_count(ui->model); ++i) {
         json_t *m = history_message(ui->model, i);
+        cached_layout *cached = find_layout(ui, i, width);
+        bool anchored = !strcmp(ui->anchor, str(m, "id"));
+        int measured_rows = cached->height;
+        if (ui->visible == 1 && i + 1 == history_message_count(ui->model) && measured_rows && cached->tail_gap) --measured_rows;
+        if (cached->height && !anchored &&
+            (!paint || total + measured_rows <= first || total >= first + ui->visible) &&
+            (!save || first < total || first >= total + measured_rows)) {
+            total += measured_rows; continue;
+        }
         const char *reply = "mensagem não disponível";
         if (*str(m, "reply_to")) for (size_t j = 0; j < history_message_count(ui->model); ++j)
             if (!strcmp(str(m, "reply_to"), str(history_message(ui->model, j), "id"))) { reply = str(m, "reply_to"); break; }
-        message_blocks blocks;
-        if (!message_blocks_build_sized_mentions(&blocks, m, history_author(ui->model, str(m, "author_id")), reply, width,
+        message_blocks *blocks = &cached->blocks;
+        if (!blocks->rows && !message_blocks_build_sized_mentions(blocks, m, history_author(ui->model, str(m, "author_id")), reply, width,
                                   graphics_terminal_get().supported && ui->media, media_view_measure, ui->media,
                                   history_mention_name, ui->model,
                                   auth_user_id(ui->connections->items[ui->active_tab].auth))) continue;
-        bool anchored = !strcmp(ui->anchor, str(m, "id"));
+        if (!cached->bytes) account_layout(ui, cached);
         if (anchored) *anchor = total;
-        bool *offered = paint && ui->media ? calloc(blocks.media_count + 1, sizeof(*offered)) : NULL;
-        size_t rows = blocks.count;
+        bool *offered = paint && ui->media ? calloc(blocks->media_count + 1, sizeof(*offered)) : NULL;
+        size_t rows = blocks->count;
         /* At minimum height, retain the final message instead of its spacing. */
         if (ui->visible == 1 && i + 1 == history_message_count(ui->model) && rows &&
-            !blocks.rows[rows - 1].count && !blocks.rows[rows - 1].media_count &&
-            !blocks.rows[rows - 1].card) --rows;
+            !blocks->rows[rows - 1].count && !blocks->rows[rows - 1].media_count &&
+            !blocks->rows[rows - 1].card) --rows;
         for (size_t row = 0; row < rows; ++row) {
-            const message_row *r = &blocks.rows[row];
+            const message_row *r = &blocks->rows[row];
             char key[128]; size_t offset = 0;
             if (r->count) { snprintf(key, sizeof(key), "%s", r->segments[0].key); offset = r->segments[0].offset; }
             else if (r->media_count) {
                 const message_media_region *region = &r->media[0];
-                const message_media *item = &blocks.media[region->index];
-                snprintf(key, sizeof(key), "media:%s:%s", item->id, item->role);
+                const message_media *item = &blocks->media[region->index];
+                snprintf(key, sizeof(key), "media:%s:%s:%u", item->id, item->role, item->position);
                 offset = (size_t)(region->row < 0 ? 0 : region->row);
             } else snprintf(key, sizeof(key), "gap:%zu", row);
             if (anchored && !strcmp(key, ui->block) && offset <= ui->offset) *anchor = total + (int)row;
@@ -196,7 +274,7 @@ static int walk(view *ui, int first, bool paint, bool save, int *anchor)
                 int accent = ui->focus == HISTORY_PANEL ? HISTORY_ACCENT : PANEL_ACCENT;
                 if (r->count && !strcmp(r->segments[0].key, "header")) pair = accent;
                 message_row_draw(ui->body, r, y, 2, width, pair, accent);
-                if (blocks.self_mention && row + 1 < blocks.count) {
+                if (blocks->self_mention && row + 1 < blocks->count) {
                     wattrset(ui->body, COLOR_PAIR(accent) | A_BOLD);
                     mvwaddch(ui->body, y, 0, ACS_VLINE);
                 }
@@ -210,13 +288,13 @@ static int walk(view *ui, int first, bool paint, bool save, int *anchor)
                     if (bottom > region->height) bottom = region->height;
                     int graphics_y = getbegy(ui->body) + ui->history_top + (start > first ? start - first : 0);
                     if (!region->height) graphics_y = getbegy(ui->body) + y;
-                    media_view_offer(ui->media, &blocks.media[region->index], graphics_y,
+                    media_view_offer(ui->media, &blocks->media[region->index], graphics_y,
                                      getbegx(ui->body) + 2 + region->x,
                                      region->width, region->height, top, bottom);
                 }
             }
         }
-        total += (int)rows; free(offered); message_blocks_free(&blocks);
+        total += (int)rows; free(offered); if (ui->layout_bytes > LAYOUT_BYTES) release_layout(ui, cached);
     }
     return total;
 }
@@ -406,12 +484,16 @@ static void draw_confirmation(view *ui)
 }
 static void draw(view *ui, auth_client *auth, draw_scope scope)
 {
+    bool paint_history = scope == DRAW_ALL || scope == DRAW_CONVERSATION;
+    bool paint_media = paint_history || scope == DRAW_MEDIA;
+    bool paint_navigation = scope == DRAW_ALL || scope == DRAW_NAVIGATION;
     graphics_update_begin();
     curs_set(0);
-    if (scope != DRAW_NAVIGATION) {
+    if (paint_history) {
         media_view_begin(ui->media);
         message_colors_begin();
     }
+    if (scope == DRAW_MEDIA) media_view_frame(ui->media);
     if (!ui->frame) {
         erase(); text_label(stdscr, 0, 0, COLS, "Amplie o terminal para 44×14. F6: conta."); refresh(); graphics_frame_prepare(); graphics_frame_flush(); graphics_update_end(); return;
     }
@@ -423,9 +505,9 @@ static void draw(view *ui, auth_client *auth, draw_scope scope)
         mvwhline(ui->frame, LINES - 4, 1, ACS_HLINE, COLS - 2);
         if (COLS >= 80) mvwvline(ui->frame, CONTENT_Y, ui->side + 1, ACS_VLINE, LINES - CONTENT_Y - 3);
     }
-    if (scope != DRAW_CONVERSATION) draw_tabs(ui, auth);
+    if (paint_navigation) draw_tabs(ui, auth);
     draw_footer(ui);
-    if (ui->list && scope != DRAW_CONVERSATION) {
+    if (ui->list && paint_navigation) {
         wbkgd(ui->list, COLOR_PAIR(ui->focus == CHANNEL_LIST ? FOCUS_AREA : PANEL)); werase(ui->list);
         wattrset(ui->list, COLOR_PAIR(ui->focus == CHANNEL_LIST ? FOCUS_MUTED : PANEL_MUTED) | A_BOLD);
         text_label(ui->list, 0, 1, ui->side - 2, "Canais");
@@ -448,14 +530,15 @@ static void draw(view *ui, auth_client *auth, draw_scope scope)
             text_label(ui->list, row + 1, 1, ui->side - 2, label);
         }
     }
-    if (ui->body && scope != DRAW_NAVIGATION) {
+    if (ui->body && (paint_history || scope == DRAW_EDITOR)) {
+        json_t *c = history_channel(ui->model, history_selected(ui->model));
+        if (paint_history) {
         wbkgd(ui->body, COLOR_PAIR(PANEL)); werase(ui->body);
         if (ui->focus == HISTORY_PANEL) {
             wattrset(ui->body, COLOR_PAIR(HISTORY_AREA));
             for (int row = 0; row < ui->editor_border; ++row)
                 mvwhline(ui->body, row, 0, ' ', getmaxx(ui->body));
         }
-        json_t *c = history_channel(ui->model, history_selected(ui->model));
         char title[2200]; snprintf(title, sizeof(title), "%s%s · Histórico", c ? "# " : "", c ? str(c, "name") : "Conversa");
         wattrset(ui->body, COLOR_PAIR(ui->focus == HISTORY_PANEL ? HISTORY_MUTED : PANEL_MUTED) | A_BOLD);
         text_label(ui->body, 0, 2, getmaxx(ui->body) - 4, title);
@@ -472,7 +555,13 @@ static void draw(view *ui, auth_client *auth, draw_scope scope)
         } else {
             text_label(ui->body, ui->history_top, 2, getmaxx(ui->body) - 4, history_status(ui->model));
         }
+        }
         text_buffer *editor = input(ui);
+        if (scope == DRAW_EDITOR) {
+            wattrset(ui->body, COLOR_PAIR(PANEL));
+            for (int row = ui->editor_border; row < getmaxy(ui->body); ++row)
+                mvwhline(ui->body, row, 0, ' ', getmaxx(ui->body));
+        }
         bool editing = ui->focus == MESSAGE_INPUT && !ui->duplicate_modal;
         wattrset(ui->body, COLOR_PAIR(editing ? FOCUS_BORDER : BORDER));
         mvwhline(ui->body, ui->editor_border, 0, ACS_HLINE, getmaxx(ui->body));
@@ -520,11 +609,11 @@ static void draw(view *ui, auth_client *auth, draw_scope scope)
         }
     }
     if (scope == DRAW_ALL) { touchwin(ui->frame); wnoutrefresh(ui->frame); }
-    if (scope != DRAW_CONVERSATION) {
+    if (paint_navigation) {
         wnoutrefresh(ui->tabs);
         if (ui->list) wnoutrefresh(ui->list);
     }
-    if (ui->body && scope != DRAW_NAVIGATION) {
+    if (ui->body && paint_history) {
         /* Force cell updates in the history viewport rather than allowing the
          * terminal's full-width scrolling region to move adjacent channels. */
         wredrawln(ui->body, ui->history_top, ui->visible);
@@ -533,7 +622,7 @@ static void draw(view *ui, auth_client *auth, draw_scope scope)
     wnoutrefresh(ui->footer);
     if (ui->focus == MESSAGE_INPUT && input(ui) && ui->body && !ui->duplicate_modal) wnoutrefresh(ui->body);
     draw_confirmation(ui);
-    if (scope != DRAW_NAVIGATION) media_view_draw(ui->media);
+    if (paint_media) media_view_draw(ui->media);
     if (mention_popup_open(ui->mentions) && ui->body && input(ui)) {
         text_layout measured; text_measure(input(ui), getmaxx(ui->body) - 6, &measured);
         mention_popup_draw(ui->mentions, getbegy(ui->body) + input_top(ui) + measured.cursor_row - input(ui)->first_row,
@@ -548,12 +637,12 @@ static void draw(view *ui, auth_client *auth, draw_scope scope)
                           getbegx(ui->body) + 3 + measured.cursor_column);
     }
     if (!caret) setsyx(-1, -1);
-    if (scope != DRAW_NAVIGATION) {
+    if (paint_media) {
         if (!ui->duplicate_modal && !mention_popup_open(ui->mentions)) media_view_prepare(ui->media);
         graphics_frame_prepare();
     }
     doupdate();
-    if (scope != DRAW_NAVIGATION) graphics_frame_flush();
+    if (paint_media) graphics_frame_flush();
     graphics_update_end();
     /* doupdate may visit every message while painting. Expose only the final
      * caret, after curses and direct graphics output have completed. */
@@ -581,7 +670,7 @@ static void open_channel(view *ui)
     if (history_select(ui->model, ui->highlighted)) {
         for (int context = STATUS_HISTORY; context < STATUS_CONTEXT_COUNT; ++context)
             status_bar_set(&ui->status, (status_context)context, NULL);
-        media_view_reset(ui->media);
+        media_view_suspend(ui->media);
         snprintf(ui->editor_channel, sizeof(ui->editor_channel), "%s", text ? str(channel, "id") : "");
         ui->feedback = NULL;
         ui->unseen = 0;
@@ -627,7 +716,7 @@ static bool poll_editor(view *ui, auth_client *auth)
             if (!history_confirm(ui->model, message, operation.generation))
                 ui->feedback = "Envio confirmado; Ctrl+R para consultar o histórico.";
         }
-        json_decref(message); changed = true;
+        json_decref(message); outbox_reconciled(send_editor_outbox(ui->editor), operation.id); changed = true;
     }
     if (!auth_has_session(auth) && ui->duplicate_modal) { close_confirmation(ui); changed = true; }
     return changed;
@@ -683,19 +772,29 @@ static bool edit(view *ui, int type, wint_t key)
     }
     return handled;
 }
+static void dispose_media(void *v) { media_view_destroy(v); }
+static void update_media(void *v, const json_t *event) { media_view_update(v, event); }
+static void idle_media(void *v) { media_view_idle(v); }
 int history_run(auth_client *auth, instance_connections *connections, size_t *selected,
                 bool focus_tabs, volatile sig_atomic_t *interrupted)
 {
     text_input_init();
     view *ui = calloc(1, sizeof(*ui));
     if (!ui) return HISTORY_ACCOUNT;
+    ui->layout_index = g_hash_table_new(g_str_hash, g_str_equal);
     ui->connections = connections; ui->active_tab = ui->tab_cursor = instances_index(connections, auth);
     ui->editor = instances_editor(connections, auth);
-    ui->media = media_view_create(auth);
+    if (ui->active_tab < connections->count) {
+        instance_connection *connection = &connections->items[ui->active_tab];
+        if (!connection->media) connection->media = media_view_create(auth);
+        connection->media_destroy = dispose_media; connection->media_idle = idle_media; connection->media_update = update_media;
+        ui->media = connection->media;
+    }
     ui->model = history_create(auth);
+    history_set_media_updates(ui->model, update_media, ui->media);
     ui->mentions = ui->model ? mention_popup_create(ui->model) : NULL;
     ui->at_end = ui->show_channels = true; ui->focus = focus_tabs ? SERVER_TABS : CHANNEL_LIST;
-    if (!ui->model || !ui->mentions || !ui->editor || ui->active_tab == SIZE_MAX || !layout(ui)) { mention_popup_destroy(ui->mentions); media_view_destroy(ui->media); history_destroy(ui->model); destroy_layout(ui); free(ui); return HISTORY_ACCOUNT; }
+    if (!ui->model || !ui->mentions || !ui->editor || ui->active_tab == SIZE_MAX || !layout(ui)) { mention_popup_destroy(ui->mentions); media_view_suspend(ui->media); history_destroy(ui->model); destroy_layout(ui); g_hash_table_destroy(ui->layout_index); free(ui); return HISTORY_ACCOUNT; }
     mmask_t previous_mouse;
     /* A separately delivered release must reach getmouse(). If it is filtered
      * out, ncurses can wait for another gesture inside get_wch(), stalling HTTP
@@ -709,9 +808,12 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         if (session_store_poll(connections->sessions, auth)) { redraw = true; scope = DRAW_ALL; }
         if (instances_poll(connections, auth)) { redraw = true; scope = DRAW_ALL; }
         if (poll_model(ui, auth) || before != auth_get_state(auth)) { redraw = true; scope = DRAW_ALL; }
+        uint64_t dimensions = media_view_dimensions_revision(ui->media);
         if (media_view_poll(ui->media, ui->model)) {
-            if (!redraw) scope = DRAW_CONVERSATION;
+            bool reflow = dimensions != media_view_dimensions_revision(ui->media);
+            if (!redraw) scope = reflow ? DRAW_CONVERSATION : DRAW_MEDIA;
             else if (scope == DRAW_NAVIGATION) scope = DRAW_ALL;
+            else if (scope == DRAW_EDITOR) scope = DRAW_CONVERSATION;
             redraw = true;
         }
         if (clipboard_poll()) redraw = true;
@@ -915,11 +1017,12 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         }
         if (ui->focus != SERVER_TABS && input(ui) && type == OK && iswprint(key)) {
             if (ui->focus != MESSAGE_INPUT) set_focus(ui, MESSAGE_INPUT);
+            else if (!mention_popup_open(ui->mentions)) scope = DRAW_EDITOR;
             edit(ui, type, key); continue;
         }
         if (ui->focus == MESSAGE_INPUT) {
             if (enter) submit(ui, 0, false);
-            else edit(ui, type, key);
+            else { if (!mention_popup_open(ui->mentions)) scope = DRAW_EDITOR; edit(ui, type, key); }
             continue;
         }
         if (ui->focus == SERVER_TABS) {
@@ -970,5 +1073,6 @@ finished:
     mention_popup_destroy(ui->mentions);
     text_buffer *draft = send_editor_input(ui->editor);
     if (draft) text_mentions(draft, NULL, NULL);
-    media_view_destroy(ui->media); destroy_layout(ui); history_destroy(ui->model); free(ui); touchwin(stdscr); return result;
+    for (size_t i = 0; i < HISTORY_MESSAGE_LIMIT; ++i) release_layout(ui, &ui->layouts[i]);
+    media_view_suspend(ui->media); destroy_layout(ui); history_destroy(ui->model); g_hash_table_destroy(ui->layout_index); free(ui); touchwin(stdscr); return result;
 }

@@ -47,6 +47,8 @@ def main():
         for name in names:
             phase = name + ' image startup'
             with helper.serve(MediaTerminal.images['png'], 'image/png') as server:
+                original_image = server.messages[0]['attachments'][0]
+                server.messages[0]['attachments'] = [dict(original_image, id=uuid(901 + i)) for i in range(2)]
                 server.messages[0]['embeds'] = [{'title': 'Papo · Mídia', 'description': 'Imagens e embeds no terminal', 'color': '#ffb347',
                     'author': {'name': 'Autor do embed'}, 'fields': [{'name': 'Primeiro', 'value': 'Campo A', 'inline': True},
                     {'name': 'Segundo', 'value': 'Campo B', 'inline': True}], 'footer': {'text': 'Rodapé do Papo'}}]
@@ -61,18 +63,19 @@ def main():
                     wait_for(lambda: 'Mensagem 0001' in emulator.screen()); time.sleep(1)
                     calls = sum('/attachments/' in r[1] for r in server.requests)
                     checks[name.lower() + '_cards'] = True
-                    checks[name.lower() + '_authenticated_image_download'] = calls == 1
+                    checks[name.lower() + '_authenticated_image_download'] = calls == 2
                     checks[name.lower() + '_native_image_pixels'] = colored_pixels(emulator, work / (name.lower() + '-media.png'), 'red') > 100
+                    checks[name.lower() + '_shared_image_in_two_positions'] = colored_pixels(emulator, work / (name.lower() + '-shared.png'), 'red') >= 300
                     phase = name + ' retained image pixels'
                     for key in ('draft', '\x1b', '\n', '\x1b'):
                         emulator.send(key); time.sleep(.12)
                         wait_for(lambda: colored_pixels(emulator, work / (name.lower() + '-retained.png'), 'red') > 100)
                     checks[name.lower() + '_focus_preserves_image_pixels'] = True
                     phase = name + ' image modal'
-                    emulator.send('\x1b[18~'); time.sleep(.6)
+                    emulator.send('\x1b[18~'); wait_for(lambda: 'Escolha uma mídia' in emulator.screen()); emulator.send('\n'); time.sleep(.6)
                     checks[name.lower() + '_media_modal'] = 'Esc: voltar' in emulator.screen()
                     checks[name.lower() + '_native_modal_image_pixels'] = colored_pixels(emulator, work / (name.lower() + '-modal.png'), 'red') > 100
-                    emulator.send('\x1b'); emulator.resize_narrow(); time.sleep(.3); emulator.resize(False)
+                    emulator.send('\x1b'); emulator.send('\n\x03\x1b'); emulator.resize_narrow(); time.sleep(.3); emulator.resize(False)
                     wait_for(lambda: 'Conversar em #' in emulator.screen() and 'Canais' in emulator.screen() and
                              emulator.state().get('rows', 0) >= 25 and emulator.state().get('columns', 0) >= 80)
                     emulator.send('Rascunho preservado'); wait_for(lambda: 'Rascunho preservado' in emulator.screen())

@@ -9,9 +9,14 @@ typedef struct media_view media_view;
  * cookies or HTTP. Main thread owns every terminal write. */
 media_view *media_view_create(auth_client *auth);
 void media_view_destroy(media_view *v);
+uint64_t media_view_dimensions_revision(const media_view *v);
+void media_view_update(media_view *v, const json_t *event);
+void media_view_idle(media_view *v);
+void media_view_suspend(media_view *v);
 void media_view_reset(media_view *v);
 bool media_view_poll(media_view *v, history *h);
 void media_view_measure(void *context, const message_media *item, int available_width, int *width, int *height);
+void media_view_frame(media_view *v);
 void media_view_begin(media_view *v);
 /* y/x are absolute cells; top/bottom clipping is measured in image rows. */
 void media_view_offer(media_view *v, const message_media *item, int y, int x,

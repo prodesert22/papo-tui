@@ -6,6 +6,7 @@
 #include <string.h>
 #include <strings.h>
 #include <wctype.h>
+#include <glib.h>
 typedef struct {
     size_t index, recent;
     const char *name;
@@ -24,34 +25,6 @@ static const char *str(json_t *u, const char *key)
 {
     const char *s = json_string_value(json_object_get(u, key));
     return s ? s : "";
-}
-static bool contains_folded(const text_buffer *name, const text_buffer *query)
-{
-    for (size_t i = 0; i + query->length <= name->length; ++i) {
-        size_t j = 0;
-        while (j < query->length && towlower(name->data[i + j]) == towlower(query->data[j]))
-            ++j;
-        if (j == query->length) return true;
-    }
-    return false;
-}
-static void remove_separators(text_buffer *text)
-{
-    size_t length = 0;
-    for (size_t i = 0; i < text->length; ++i)
-        if (iswalnum(text->data[i])) text->data[length++] = text->data[i];
-    text->length = length;
-    text->data[length] = 0;
-}
-static bool contains(const char *name, const char *query)
-{
-    text_buffer a, b;
-    if (!text_decode(&a, name) || !text_decode(&b, query)) return false;
-    if (contains_folded(&a, &b)) return true;
-    /* Normalize only the comparison; names and wire identities stay intact. */
-    remove_separators(&a);
-    remove_separators(&b);
-    return b.length && contains_folded(&a, &b);
 }
 static int compare(const void *a, const void *b)
 {
@@ -180,12 +153,16 @@ bool mention_popup_update(mention_popup *p, text_buffer *b, bool enabled)
     p->messages_revision = messages_revision;
     p->users_revision = revision;
     p->count = 0;
+    char *folded = g_utf8_casefold(q, -1), *normalized = history_search_normalize(q);
+    if (!folded || !normalized) { g_free(folded); g_free(normalized); return true; }
     for (size_t i = 0; i < history_user_count(p->h) && p->count < 10000; ++i) {
         json_t *u = history_user(p->h, i);
-        if (contains(str(u, "username"), q) || contains(str(u, "nickname"), q))
+        if (strstr(str(u, "_fold_name"), folded) || strstr(str(u, "_fold_nick"), folded) ||
+            (*normalized && (strstr(str(u, "_normal_name"), normalized) || strstr(str(u, "_normal_nick"), normalized))))
             p->matches[p->count++] = (candidate){.index = i, .name = str(u, "username"),
                 .recent = (size_t)json_integer_value(json_object_get(p->recent, str(u, "id")))};
     }
+    g_free(folded); g_free(normalized);
     qsort(p->matches, p->count, sizeof(p->matches[0]), compare);
     for (size_t i = 0; i < p->count; ++i)
         if (!strcmp(str(history_user(p->h, p->matches[i].index), "id"), p->selected_id)) p->selected = i;

@@ -422,6 +422,7 @@ auth_client *auth_create(void)
     client->cookies = curl_share_init();
     if (!client->easy || !client->multi || !client->cookies ||
         curl_share_setopt(client->cookies, CURLSHOPT_SHARE, CURL_LOCK_DATA_COOKIE) != CURLSHE_OK ||
+        curl_share_setopt(client->cookies, CURLSHOPT_SHARE, CURL_LOCK_DATA_CONNECT) != CURLSHE_OK ||
         curl_easy_setopt(client->easy, CURLOPT_SHARE, client->cookies) != CURLE_OK ||
         !(client->websocket = ws_create(client->cookies))) {
         if (client->easy) curl_easy_cleanup(client->easy);
@@ -859,6 +860,7 @@ static void complete_send(auth_client *client, CURLcode result, long status, boo
     if (result == CURLE_OK && status == 401) recover_session(client); /* Never resubmit the POST. */
     else if (result == CURLE_OK && status == 403 && problem_is(client, "banned"))
         fail(client, "O servidor bloqueou esta conta. Entre novamente após resolver o acesso.");
+    if (!client->attached && !client->queued) { free(client->response); client->response = NULL; client->response_length = 0; }
 }
 
 static void complete_api(auth_client *client, CURLcode result, long status)
@@ -890,6 +892,7 @@ static void complete_api(auth_client *client, CURLcode result, long status)
     json_decref(client->api_body);
     client->api_body = NULL;
     client->api_retried = false;
+    free(client->response); client->response = NULL; client->response_length = 0;
     client->api_response = body;
     client->api_status = status;
     client->response_generation = client->generation;
@@ -1288,8 +1291,6 @@ CURL *auth_media_easy(auth_client *client, auth_media_kind kind, const char *id)
     MEDIA_SET(CURLOPT_SHARE, client->cookies);
     MEDIA_SET(CURLOPT_COOKIEFILE, "");
     MEDIA_SET(CURLOPT_FOLLOWLOCATION, 0L);
-    MEDIA_SET(CURLOPT_FRESH_CONNECT, 1L);
-    MEDIA_SET(CURLOPT_FORBID_REUSE, 1L);
     MEDIA_SET(CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
     MEDIA_SET(CURLOPT_PROTOCOLS_STR, "http,https");
     MEDIA_SET(CURLOPT_SSL_VERIFYPEER, 1L);

@@ -6,12 +6,12 @@ O aplicativo oferece login, cadastro de conta, renovação de sessão, perfis lo
 
 ## Compilar e executar
 
-Pré-requisitos: compilador C17, CMake 3.21+, pkg-config, ncursesw/formw 6.1+, libcurl 7.86+, Jansson 2.14+, libunibreak 6.1+, libsixel 1.8+, libchafa 1.16+, libmpv (API 2.0+) e bibliotecas de desenvolvimento do FFmpeg (libavformat/libavcodec 58+, libavutil 56+, libswscale 5+). A libcurl precisa oferecer WS/WSS, TLS e DNS assíncrono; o CMake verifica essas capacidades. Para os testes, Python 3.10+, FFmpeg CLI, OpenSSL CLI e as dependências de `requirements-dev.txt`.
+Pré-requisitos: compilador C17, CMake 3.21+, pkg-config, ncursesw/formw 6.1+, libcurl 7.86+, Jansson 2.14+, libunibreak 6.1+, libsixel 1.8+, libchafa 1.16+, GLib 2.66+, libmpv (API 2.0+) e bibliotecas de desenvolvimento do FFmpeg (libavformat/libavcodec 58+, libavutil 56+, libswscale 5+). A libcurl precisa oferecer WS/WSS, TLS e DNS assíncrono; o CMake verifica essas capacidades. Para os testes, Python 3.10+, FFmpeg CLI, OpenSSL CLI e as dependências de `requirements-dev.txt`.
 
 No Arch Linux:
 
 ```sh
-sudo pacman -S --needed base-devel cmake pkgconf ncurses curl jansson libunibreak libsixel chafa mpv ffmpeg python
+sudo pacman -S --needed base-devel cmake pkgconf ncurses curl jansson libunibreak libsixel chafa glib2 mpv ffmpeg python
 ```
 
 ```sh
@@ -115,7 +115,7 @@ Consulte [instalação e uso](docs/uso.md) para os requisitos, execução, conex
 - libunibreak para delimitar grafemas no editor de mensagens e na apresentação de texto.
 - libcurl multi para HTTP e handshake WS assíncronos, TLS, URLs e cookies; APIs WS para leitura/escrita sem bloquear a interface.
 - Jansson para JSON.
-- libsixel para saída Sixel e libchafa para os protocolos gráficos Kitty/iTerm2; FFmpeg para imagens e libmpv para vídeo/áudio. Um worker faz a conversão sem operar o terminal ou a rede.
+- libsixel para saída Sixel e libchafa para os protocolos gráficos Kitty/iTerm2; FFmpeg para imagens e libmpv para vídeo/áudio. Um pool de dois workers da GLib processa imagens; um worker separado cuida do vídeo. O terminal e a rede permanecem na thread principal.
 
 ```text
 src/main.c       Entrada e ciclo de vida
@@ -276,7 +276,7 @@ para que uma atualização não altere sua escolha.
 
 A lista reúne usuários da instância e é carregada em páginas, sem consulta de
 históricos inativos. Durante o carregamento, os resultados são parciais. O
-cache fica somente em memória, limitado a 10.000 usuários ou 16 MiB. Se houver
+cache fica somente em memória, limitado a 10.000 usuários ou 16 MiB, incluindo os índices de pesquisa. Usuários sem referência no histórico, na digitação ou no seletor expiram após cinco minutos; abrir novamente o seletor recarrega as páginas necessárias. Se houver
 falha, Ctrl+R no cartão tenta novamente. Uma única opção também exige
 confirmação; textos colados, e-mails e URLs não abrem o seletor automaticamente.
 
@@ -309,14 +309,25 @@ automaticamente. URLs externas permanecem texto.
 
 As imagens são carregadas somente no trecho visível da conversa aberta. Vídeos
 MP4, WebM e Ogg carregam por completo antes do player, sem autoplay. O limite é
-16 MiB/16 megapixels por imagem, 128 MiB por vídeo e 64 MiB de cache de imagens;
-a saída gráfica do player é limitada a 640×360 pixels e 15 frames/s. A qualidade
+16 MiB/16 megapixels por imagem e 128 MiB por vídeo. O cache de imagens em
+memória tem orçamento global de **256 MiB**, compartilhado pelas sessões desta
+execução, incluindo frames e variantes gráficas; a saída gráfica do player é limitada a 640×360 pixels e 15 frames/s. A qualidade
 final também depende do terminal. Mídia inválida, codec ausente, falta de
 permissão e limites aparecem na tela; F7/Enter no erro permite tentar novamente.
 
 Os arquivos ficam em diretório temporário privado (`700`), com arquivos `600`,
-sem cookies. Trocar de canal/servidor, voltar à conta ou encerrar a sessão libera
-o cache; fechar o modal cancela seu download e remove o vídeo temporário.
+sem cookies. Imagens recentes podem ser reutilizadas ao trocar de canal/servidor
+ou voltar à conta, dentro da mesma sessão; sair da conta limpa seu contexto.
+Há até quatro downloads simultâneos, com prioridade para o modal. Imagens com
+os mesmos bytes compartilham o objeto e suas variantes dentro da sessão;
+instâncias e contas permanecem isoladas. As representações fora da tela expiram
+após um minuto, e os arquivos sem uso, após cinco minutos. Os arquivos de imagem
+concluídos têm limite separado de 128 MiB. Sob pressão, o cache libera as
+representações menos recentes e GIFs podem passar ao primeiro frame. Itens
+adiados por falta de orçamento voltam ao processamento quando há espaço.
+Fechar o modal cancela seu carregamento e remove o vídeo temporário. O orçamento
+de imagens cobre também os buffers gráficos reservados ao player; ele não é um
+limite absoluto para o RSS do processo.
 Requisições usam os cookies da própria instância, a verificação TLS e o mesmo
 limite global de requisições do restante do cliente. HTTP 429 exige nova
 tentativa manual após a espera.
@@ -411,11 +422,24 @@ build/test-env/bin/python -m tools.check_r7 --backend-binary /caminho/papo-serve
 
 O roteiro simula indisponibilidade no proxy de desenvolvimento e produz mensagens, edições e exclusões enquanto os clientes estão desconectados. Recursos temporários são removidos ao terminar; evidências sem credenciais ficam em `build/r7/validation/summary.json`.
 
-As suítes `media-layout-sixel`, `media-integration` e `media-terminal` verificam
+As suítes `media-cache`, `media-layout-sixel`, `media-integration` e `media-terminal` verificam
 cards, fields inline, sanitização, pixels Sixel/Kitty/iTerm2, imagens JPEG/PNG/WebP/GIF,
 player com áudio, pausa/seek/resize, arquivos privados, cancelamento e falhas
 HTTP e remoção de imagens ao trocar de canal ou fechar o modal. A PTY responde às consultas gráficas de forma sintética; essa evidência é
 separada das capturas de emuladores reais.
+
+`media-cache` usa barreiras HTTP, falhas de alocação e relógio controlado para
+verificar concorrência, identidade compartilhada, fila, cancelamento e pressão
+sobre 256 MiB. No Linux, para comparar carregamento, codificações, latência de teclado e
+pico de RSS com um binário anterior, após compilar com testes habilitados:
+
+```sh
+build/test-env/bin/python -m tools.check_media_performance --baseline /caminho/papo-tui-anterior
+```
+
+As métricas ficam em `build/performance/comparison.json`. Esse cenário usa
+backend simulado e um respondedor Kitty em PTY; as capturas em emulador real e a
+integração com o backend são verificações separadas.
 
 Para validar os downloads HTTPS e a apresentação contra o backend real em
 banco temporário:

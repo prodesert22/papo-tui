@@ -2,12 +2,12 @@
 
 ## Requisitos
 
-Compilador C17, CMake 3.21+, pkg-config, ncursesw/formw 6.1+, libcurl 7.86+ com WS/WSS, TLS e DNS assíncrono, Jansson 2.14+, libunibreak 6.1+, libsixel 1.8+, libchafa 1.16+, libmpv (API 2.0+) e FFmpeg (libavformat/libavcodec 58+, libavutil 56+, libswscale 5+). Use um terminal UTF-8 com pelo menos 44 colunas e 22 linhas disponíveis ao aplicativo. No tmux, reserve também as linhas da barra de status.
+Compilador C17, CMake 3.21+, pkg-config, ncursesw/formw 6.1+, libcurl 7.86+ com WS/WSS, TLS e DNS assíncrono, Jansson 2.14+, libunibreak 6.1+, libsixel 1.8+, libchafa 1.16+, GLib 2.66+, libmpv (API 2.0+) e FFmpeg (libavformat/libavcodec 58+, libavutil 56+, libswscale 5+). Use um terminal UTF-8 com pelo menos 44 colunas e 22 linhas disponíveis ao aplicativo. No tmux, reserve também as linhas da barra de status.
 
 No Arch Linux:
 
 ```sh
-sudo pacman -S --needed base-devel cmake pkgconf ncurses curl jansson libunibreak libsixel chafa mpv ffmpeg
+sudo pacman -S --needed base-devel cmake pkgconf ncurses curl jansson libunibreak libsixel chafa glib2 mpv ffmpeg
 ```
 
 ## Compilar e executar
@@ -326,7 +326,7 @@ para que uma atualização não altere sua escolha.
 
 A lista reúne usuários da instância e é carregada em páginas, sem consulta de
 históricos inativos. Durante o carregamento, os resultados são parciais. O
-cache fica somente em memória, limitado a 10.000 usuários ou 16 MiB. Se houver
+cache fica somente em memória, limitado a 10.000 usuários ou 16 MiB, incluindo os índices de pesquisa. Usuários sem referência no histórico, na digitação ou no seletor expiram após cinco minutos; abrir novamente o seletor recarrega as páginas necessárias. Se houver
 falha, Ctrl+R no cartão tenta novamente. Uma única opção também exige
 confirmação; textos colados, e-mails e URLs não abrem o seletor automaticamente.
 
@@ -391,10 +391,22 @@ Redimensionar preserva o vídeo. O áudio usa o dispositivo disponível; quando
 nenhum dispositivo pode ser aberto, o player informa isso e continua com o
 vídeo. A renderização é limitada a 640×360 pixels e 15 frames/s.
 
-Imagens aceitam até 16 MiB e 16 megapixels, vídeos até 128 MiB e o cache de
-imagens até 64 MiB. Arquivos temporários são privados e não incluem cookies;
-fechar o modal remove seu vídeo. Trocar de conversa/servidor, voltar à conta ou
-sair libera as imagens. Downloads respeitam TLS, a sessão da instância e o
+Imagens aceitam até 16 MiB e 16 megapixels, e vídeos até 128 MiB. O cache de
+imagens em memória tem limite global de **256 MiB** para todas as sessões desta
+execução, incluindo frames e variantes gráficas. Arquivos de imagem concluídos
+têm limite separado de 128 MiB. Esse orçamento não limita o RSS total do processo.
+Até quatro downloads podem ocorrer simultaneamente, com prioridade para o modal;
+a interface continua respondendo durante o processamento de imagens.
+
+Imagens recentes ficam disponíveis para reutilização entre conversas da mesma
+sessão, inclusive ao voltar à conta ou trocar de aba. Bytes iguais compartilham
+o objeto e as variantes de mesmo tamanho/protocolo; contas e instâncias ficam
+isoladas. Representações fora da tela expiram após um minuto, e arquivos sem uso,
+após cinco minutos. Sob pressão, o cache libera as representações menos recentes
+e GIFs podem passar ao primeiro frame; itens adiados são processados quando há
+espaço. Sair da conta limpa o contexto. Arquivos temporários são privados e não
+incluem cookies; fechar o modal cancela o carregamento e remove seu vídeo.
+Downloads respeitam TLS, a sessão da instância e o
 limite global de requisições. Erros preservam a navegação; após HTTP 429, aguarde
 antes da tentativa manual.
 

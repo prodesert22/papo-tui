@@ -270,7 +270,7 @@ bool outbox_cancel(outbox *box, uint64_t id)
 static void view(const operation *item, outbox_operation *value)
 {
     *value = (outbox_operation){.id = item->id, .generation = item->generation, .draft_revision = item->revision,
-        .state = item->state, .status = item->status, .channel_id = item->channel, .content = item->text,
+        .state = item->state, .status = item->status, .channel_id = item->channel, .content = item->text ? item->text : "",
         .transmitted = item->transmitted, .cancelled = item->cancelled};
 }
 
@@ -306,6 +306,12 @@ json_t *outbox_take_confirmed(outbox *box, outbox_operation *value)
     view(oldest, value);
     json_t *message = oldest->confirmed; oldest->confirmed = NULL;
     return message;
+}
+
+void outbox_reconciled(outbox *box, uint64_t id)
+{
+    operation *item = box ? find_operation(box, id) : NULL;
+    if (item && item->state == OUTBOX_CONFIRMED && !item->confirmed) { free(item->text); item->text = NULL; }
 }
 
 bool outbox_forget(outbox *box, uint64_t id)

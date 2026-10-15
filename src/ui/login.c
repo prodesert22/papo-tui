@@ -749,7 +749,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         if (before != AUTH_ERROR && auth_get_state(client) == AUTH_ERROR) apply_input_error(&ui, client);
         if (ws_before != auth_ws_state(client)) redraw = true;
         json_t *event;
-        while ((event = auth_next_event(client))) json_decref(event);
+        while ((event = auth_next_event(client))) { instances_media_event(connections, client, event); json_decref(event); }
         if (auth_response_ready(client)) json_decref(auth_take_response(client, NULL, NULL));
         if (!before_session && auth_has_session(client)) {
             /* Only a new login opens channels. Returning with F6 or verifying

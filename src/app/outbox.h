@@ -45,6 +45,8 @@ bool outbox_latest(outbox *box, const char *channel_id, outbox_operation *operat
 /* Transfers one confirmed Message reference to the caller for merge by ID.
  * Channel and generation are returned in operation. Caller json_decref(). */
 json_t *outbox_take_confirmed(outbox *box, outbox_operation *operation);
+/* Release the confirmed text after the caller merges/discards its Message. */
+void outbox_reconciled(outbox *box, uint64_t operation_id);
 bool outbox_forget(outbox *box, uint64_t operation_id);
 const char *outbox_operation_notice(const outbox_operation *operation);
 

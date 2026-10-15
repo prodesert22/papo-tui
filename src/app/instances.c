@@ -11,6 +11,7 @@ void instances_destroy(instance_connections *connections)
     if (!connections) return;
     for (size_t i = 0; i < connections->count; ++i) {
         session_store_unwatch(connections->sessions, connections->items[i].auth);
+        if (connections->items[i].media_destroy) connections->items[i].media_destroy(connections->items[i].media);
         send_editor_destroy(connections->items[i].editor);
         auth_destroy(connections->items[i].auth);
     }
@@ -46,6 +47,8 @@ bool instances_attach(instance_connections *connections, auth_client *auth)
             index = connections->count++;
         } else {
             session_store_unwatch(connections->sessions, connections->items[index].auth);
+            if (connections->items[index].media_destroy) connections->items[index].media_destroy(connections->items[index].media);
+            connections->items[index].media = NULL;
             send_editor_destroy(connections->items[index].editor);
             auth_destroy(connections->items[index].auth);
         }
@@ -62,11 +65,18 @@ void instances_detach(instance_connections *connections, auth_client *auth)
     size_t index = instances_index(connections, auth);
     if (index == SIZE_MAX) return;
     session_store_unwatch(connections->sessions, auth);
+    if (connections->items[index].media_destroy) connections->items[index].media_destroy(connections->items[index].media);
     send_editor_destroy(connections->items[index].editor);
     memmove(connections->items + index, connections->items + index + 1,
             (connections->count - index - 1) * sizeof(connections->items[0]));
     --connections->count;
     memset(&connections->items[connections->count], 0, sizeof(connections->items[0]));
+}
+void instances_media_event(instance_connections *connections, auth_client *auth, const json_t *event)
+{
+    size_t i = instances_index(connections, auth);
+    if (i != SIZE_MAX && connections->items[i].media_update)
+        connections->items[i].media_update(connections->items[i].media, event);
 }
 bool instances_poll(instance_connections *connections, auth_client *active)
 {
@@ -74,14 +84,23 @@ bool instances_poll(instance_connections *connections, auth_client *active)
     for (size_t i = 0; i < connections->count; ++i) {
         auth_client *auth = connections->items[i].auth;
         auth_realtime_active(auth, auth == active);
-        if (auth == active) continue;
+        if (auth == active) {
+            if (connections->items[i].media_idle) connections->items[i].media_idle(connections->items[i].media);
+            continue;
+        }
         auth_state before = auth_get_state(auth);
         bool session = auth_has_session(auth);
         auth_poll(auth);
+        if (connections->items[i].media_idle) connections->items[i].media_idle(connections->items[i].media);
         send_editor_poll(connections->items[i].editor);
+        outbox *box = send_editor_outbox(connections->items[i].editor);
+        outbox_operation operation; json_t *confirmed;
+        while ((confirmed = outbox_take_confirmed(box, &operation))) {
+            json_decref(confirmed); outbox_reconciled(box, operation.id);
+        }
         changed |= before != auth_get_state(auth) || session != auth_has_session(auth);
         json_t *event;
-        while ((event = auth_next_event(auth))) json_decref(event);
+        while ((event = auth_next_event(auth))) { instances_media_event(connections, auth, event); json_decref(event); }
         if (auth_response_ready(auth)) json_decref(auth_take_response(auth, NULL, NULL));
     }
     return changed;

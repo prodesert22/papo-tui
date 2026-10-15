@@ -5,6 +5,7 @@
 #include "net/clock.h"
 #include "net/retry.h"
 #include <curl/curl.h>
+#include <glib.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,7 +14,12 @@ enum request_kind { NONE, CHANNELS, MESSAGES, AUTHORS, USERS };
 #define TYPING_LIMIT 128U
 #define TYPING_TIMEOUT_MS 6000U
 #define TYPING_SEND_MS 2000U
+typedef struct { json_t *message; size_t bytes; uint64_t revision, seen; } message_cost;
 struct history {
+    GHashTable *costs;
+    uint64_t cost_sequence, cost_sweep, maintenance, directory_used;
+    void (*media_update)(void *, const json_t *);
+    void *media_context;
     auth_client *auth;
     json_t *users, *directory, *queried, *summary_ids;
     size_t user_bytes;
@@ -59,6 +65,30 @@ static bool string_field(json_t *obj, const char *key, size_t limit, bool option
     const char *s = json_string_value(v);
     return s && json_string_length(v) <= limit && strlen(s) == json_string_length(v);
 }
+static void cost_free(gpointer p)
+{
+    message_cost *cost = p; json_decref(cost->message); free(cost);
+}
+static message_cost *measure_message(history *h, json_t *m, bool changed)
+{
+    message_cost *cost = g_hash_table_lookup(h->costs, m);
+    if (cost && !changed) return cost;
+    size_t bytes = json_dumpb(m, NULL, 0, JSON_COMPACT);
+    if (!bytes) return NULL;
+    if (!cost) {
+        cost = calloc(1, sizeof(*cost));
+        if (!cost) return NULL;
+        cost->message = json_incref(m); g_hash_table_insert(h->costs, m, cost);
+    }
+    cost->bytes = bytes; cost->revision = ++h->cost_sequence;
+    return cost;
+}
+uint64_t history_message_revision(history *h, size_t index)
+{
+    json_t *m = history_message(h, index);
+    message_cost *cost = m ? measure_message(h, m, false) : NULL;
+    return cost ? cost->revision : 0;
+}
 static bool remember(history *h, const json_t *event);
 static void notice(history *h, history_notice_kind kind, const char *value)
 {
@@ -87,6 +117,7 @@ static void clear_messages(history *h)
     json_decref(h->boundary); h->boundary = NULL;
     h->recovering = h->ascending = false; h->retry_at = 0; h->failures = 0;
     json_decref(h->messages); h->messages = NULL;
+    if (h->costs) g_hash_table_remove_all(h->costs);
     h->bytes = 0; h->more = h->evicted = false;
     h->failed = NONE;
     h->cursor_id[0] = h->cursor_time[0] = '\0';
@@ -98,6 +129,7 @@ history *history_create(auth_client *auth)
 {
     history *h = calloc(1, sizeof(*h));
     if (!h) return NULL;
+    h->costs = g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL, cost_free);
     h->auth = auth; h->selected = SIZE_MAX;
     h->context = auth_context_generation(auth); h->want_channels = true;
     h->users = json_object(); h->directory = json_array(); h->queried = json_object();
@@ -106,11 +138,13 @@ history *history_create(auth_client *auth)
     status(h, "Carregando canais…");
     return h;
 }
+void history_set_media_updates(history *h, void (*update)(void *, const json_t *), void *context)
+{ if (h) { h->media_update = update; h->media_context = context; } }
 void history_destroy(history *h)
 {
     if (!h) return;
     if (h->pending != NONE) auth_cancel_read(h->auth);
-    clear_messages(h); json_decref(h->channels); json_decref(h->users); json_decref(h->directory); json_decref(h->queried); json_decref(h->summary_ids); free(h);
+    clear_messages(h); json_decref(h->channels); json_decref(h->users); json_decref(h->directory); json_decref(h->queried); json_decref(h->summary_ids); g_hash_table_destroy(h->costs); free(h);
 }
 size_t history_channel_count(const history *h) { return json_array_size(h->channels); }
 json_t *history_channel(const history *h, size_t i) { return json_array_get(h->channels, i); }
@@ -166,6 +200,17 @@ const char *history_mention_name(void *context, const char *id)
     if (name && *name) return name;
     return !strcmp(id, auth_user_id(h->auth)) ? auth_username(h->auth) : NULL;
 }
+char *history_search_normalize(const char *text)
+{
+    char *fold = g_utf8_casefold(text ? text : "", -1);
+    if (!fold) return NULL;
+    GString *result = g_string_new(NULL);
+    for (const char *p = fold; *p; p = g_utf8_next_char(p)) {
+        gunichar c = g_utf8_get_char(p);
+        if (g_unichar_isalnum(c)) g_string_append_unichar(result, c);
+    }
+    g_free(fold); return g_string_free(result, false);
+}
 static bool user_resolved(const history *h, const char *id)
 {
     if (!h || !id || !*id) return false;
@@ -182,21 +227,32 @@ static bool cache_user(history *h, json_t *u, bool presence)
     bool live = presence || json_is_true(json_object_get(prior, "_presence"));
     json_t *metadata = presence ? u : live ? prior : u;
     const char *nickname = str(metadata, "nickname"), *phrase = str(metadata, "typing");
-    size_t old = prior ? strlen(str(prior, "username")) +
-                             (str(prior, "nickname") ? strlen(str(prior, "nickname")) : 0) +
-                             (str(prior, "typing") ? strlen(str(prior, "typing")) : 0) + 512
-                       : 0;
-    size_t cost = strlen(name) + (nickname ? strlen(nickname) : 0) + (phrase ? strlen(phrase) : 0) + 512;
+    size_t old = prior ? (size_t)json_integer_value(json_object_get(prior, "_cost")) : 0;
+    char *fold_name = g_utf8_casefold(name, -1), *fold_nick = g_utf8_casefold(nickname ? nickname : "", -1);
+    if (!fold_name || !fold_nick) { g_free(fold_name); g_free(fold_nick); return false; }
+    char *normal_name = history_search_normalize(fold_name), *normal_nick = history_search_normalize(fold_nick);
+    if (!normal_name || !normal_nick) { g_free(fold_name); g_free(fold_nick); g_free(normal_name); g_free(normal_nick); return false; }
+    size_t cost = strlen(name) + (nickname ? strlen(nickname) : 0) + (phrase ? strlen(phrase) : 0) + 4096 +
+        strlen(fold_name) + strlen(fold_nick) + strlen(normal_name) + strlen(normal_nick);
     if ((!prior && json_object_size(h->users) >= 10000) ||
-        cost > 16U * 1024U * 1024U - (h->user_bytes - old)) {
+        cost > 14U * 1024U * 1024U - (h->user_bytes - old)) {
         h->users_partial = h->users_complete = true;
+        g_free(fold_name); g_free(fold_nick); g_free(normal_name); g_free(normal_nick);
         return true;
     }
     json_t *copy = json_pack("{s:s,s:s,s:O,s:O,s:b}", "id", id, "username", name, "nickname",
                              json_object_get(metadata, "nickname") ? json_object_get(metadata, "nickname") : json_null(),
                              "typing", json_object_get(metadata, "typing") ? json_object_get(metadata, "typing") : json_null(),
                              "_presence", live);
-    if (!copy) return false;
+    uint64_t now = 0; net_now_ms(&now);
+    bool prepared = copy && !json_object_set_new(copy, "_cost", json_integer((json_int_t)cost)) &&
+        !json_object_set_new(copy, "_used", json_integer((json_int_t)now)) &&
+        !json_object_set_new(copy, "_fold_name", json_string(fold_name)) &&
+        !json_object_set_new(copy, "_fold_nick", json_string(fold_nick)) &&
+        !json_object_set_new(copy, "_normal_name", json_string(normal_name)) &&
+        !json_object_set_new(copy, "_normal_nick", json_string(normal_nick));
+    g_free(fold_name); g_free(fold_nick); g_free(normal_name); g_free(normal_nick);
+    if (!prepared) { json_decref(copy); return false; }
     bool ok = json_object_set_new(h->users, id, copy) == 0;
     if (ok) {
         h->user_bytes = h->user_bytes - old + cost;
@@ -493,17 +549,30 @@ static bool trim(history *h, json_t *array, bool oldest)
     if (array == h->messages) ++h->messages_revision;
     size_t bytes = 0, i; json_t *m;
     json_array_foreach(array, i, m) {
-        size_t n = encoded_size(m);
+        message_cost *cost = measure_message(h, m, false);
+        size_t n = cost ? cost->bytes : SIZE_MAX;
         if (n == SIZE_MAX || n > SIZE_MAX - bytes) return false;
         bytes += n;
     }
     while (json_array_size(array) > HISTORY_MESSAGE_LIMIT || bytes > HISTORY_BYTE_LIMIT) {
         size_t index = oldest ? 0 : json_array_size(array) - 1;
-        size_t n = encoded_size(json_array_get(array, index));
+        message_cost *cost = measure_message(h, json_array_get(array, index), false);
+        size_t n = cost ? cost->bytes : SIZE_MAX;
         if (n == SIZE_MAX || json_array_remove(array, index)) return false;
         bytes -= n; h->evicted = true;
     }
     if (array == h->messages) h->bytes = bytes;
+    /* Metadata retains JSON only for the live/recovering windows. */
+    ++h->cost_sweep;
+    json_t *windows[] = {array, h->messages, h->fresh};
+    for (size_t w = 0; w < 3; ++w) json_array_foreach(windows[w], i, m) {
+        message_cost *cost = g_hash_table_lookup(h->costs, m);
+        if (cost) cost->seen = h->cost_sweep;
+    }
+    GHashTableIter it; gpointer p;
+    g_hash_table_iter_init(&it, h->costs);
+    while (g_hash_table_iter_next(&it, NULL, &p))
+        if (((message_cost *)p)->seen != h->cost_sweep) g_hash_table_iter_remove(&it);
     return true;
 }
 static bool upsert(history *h, json_t **array, json_t *value, bool oldest, bool protect_edit)
@@ -535,6 +604,7 @@ static bool upsert(history *h, json_t **array, json_t *value, bool oldest, bool 
         while (at < count && message_compare(json_array_get(next, at), merged) < 0) ++at;
         ok = json_array_insert(next, at, merged) == 0;
     }
+    if (ok && !measure_message(h, merged, true)) ok = false;
     json_decref(merged);
     if (!ok || !trim(h, next, oldest)) { json_decref(next); return false; }
     json_decref(*array); *array = next;
@@ -542,7 +612,7 @@ static bool upsert(history *h, json_t **array, json_t *value, bool oldest, bool 
 }
 /* Embed snapshots have no edit timestamp. Apply them independently so an old
  * text edit cannot suppress a newer embed event (or regress newer REST text). */
-static bool apply_patch(json_t *message, json_t *patch)
+static bool apply_patch(history *h, json_t *message, json_t *patch)
 {
     if (!message || !json_is_object(patch)) return true;
     if (json_object_get(patch, "edited_at") && (!str(message, "edited_at") ||
@@ -551,7 +621,8 @@ static bool apply_patch(json_t *message, json_t *patch)
             json_object_set(message, "edited_at", json_object_get(patch, "edited_at"))) return false;
     }
     json_t *embeds = json_object_get(patch, "embeds");
-    return !embeds || json_object_set(message, "embeds", embeds) == 0;
+    if (embeds && json_object_set(message, "embeds", embeds)) return false;
+    return measure_message(h, message, true) != NULL;
 }
 static bool patched(history *h, json_t *message)
 {
@@ -560,7 +631,7 @@ static bool patched(history *h, json_t *message)
     if (!upsert(h, &h->messages, message, true, true)) return false;
     if (patch) {
         json_t *m = json_array_get(h->messages, find(h->messages, str(message, "id")));
-        if (!apply_patch(m, patch)) return false;
+        if (!apply_patch(h, m, patch)) return false;
     }
     if (h->evicted && json_array_size(h->messages)) {
         json_t *first = json_array_get(h->messages, 0);
@@ -655,7 +726,7 @@ static bool messages_response(history *h, json_t *body)
         if (!upsert(h, &next, m, false, true)) goto fail;
         json_t *patch = json_object_get(h->patches, str(m, "id"));
         json_t *merged = json_array_get(next, find(next, str(m, "id")));
-        if (!apply_patch(merged, patch)) goto fail;
+        if (!apply_patch(h, merged, patch)) goto fail;
     }
     json_decref(h->messages); h->messages = next;
     if (!trim(h, h->messages, false)) return false;
@@ -736,6 +807,7 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
         size_t i; json_t *item;
         json_array_foreach(list, i, item) if (!json_is_object(item)) goto invalid;
     }
+    if (embeds && !h->replaying && h->media_update) h->media_update(h->media_context, event);
     if (message && !message_valid((json_t *)event, channel)) goto invalid;
     uint64_t timestamp;
     if (edit && (!json_object_get(event, "content") || !string_field((json_t *)event, "content", 32768, true) ||
@@ -833,7 +905,7 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
         size_t index = find(h->messages, id);
         if (index != SIZE_MAX) {
             if (del) { if (json_array_remove(h->messages, index)) goto allocation; }
-            else if (!apply_patch(json_array_get(h->messages, index), json_object_get(h->patches, id))) goto allocation;
+            else if (!apply_patch(h, json_array_get(h->messages, index), json_object_get(h->patches, id))) goto allocation;
             if (!trim(h, h->messages, true)) goto allocation;
         }
     } else if (message) {
@@ -989,9 +1061,61 @@ static bool request_authors(history *h)
     return ok;
 }
 
+typedef struct { json_t *ids; bool ok; } protected_users;
+static void protect_mention(void *context, const mention_range *range)
+{
+    protected_users *protected = context;
+    if (json_object_set_new(protected->ids, range->id, json_true())) protected->ok = false;
+}
+bool history_maintain(history *h, uint64_t now)
+{
+    if (!h || now < h->maintenance || now - h->maintenance < 1000) return false;
+    h->maintenance = now;
+    if (h->users_active) return false; /* A popup borrows directory indices. */
+    json_t *protected = json_object();
+    if (!protected) return false;
+    protected_users pins = {protected, true};
+    for (size_t i = 0; i < history_message_count(h); ++i) {
+        json_t *m = history_message(h, i);
+        const char *author = str(m, "author_id");
+        if (author && *author && json_object_set_new(protected, author, json_true())) pins.ok = false;
+        mention_visit_message(m, protect_mention, &pins);
+    }
+    for (size_t i = 0; i < h->typing_count; ++i)
+        if (json_object_set_new(protected, h->typing[i].id, json_true())) pins.ok = false;
+    if (!pins.ok) { json_decref(protected); return false; }
+    bool changed = false;
+    const char *id; json_t *u; void *iter = json_object_iter(h->users);
+    while (iter) {
+        id = json_object_iter_key(iter); u = json_object_iter_value(iter);
+        void *next = json_object_iter_next(h->users, iter);
+        uint64_t used = (uint64_t)json_integer_value(json_object_get(u, "_used"));
+        if (json_object_get(protected, id)) json_object_set_new(u, "_used", json_integer((json_int_t)now));
+        else if (now >= used && now - used >= 300000) {
+            h->user_bytes -= (size_t)json_integer_value(json_object_get(u, "_cost"));
+            json_object_del(h->queried, id); json_object_del(h->users, id); changed = true;
+        }
+        iter = next;
+    }
+    if (changed) {
+        for (size_t i = json_array_size(h->directory); i > 0; --i)
+            if (!json_object_get(h->users, json_string_value(json_array_get(h->directory, i - 1)))) json_array_remove(h->directory, i - 1);
+        h->users_complete = h->users_partial = false; h->users_id[0] = h->users_time[0] = 0; ++h->users_revision;
+    }
+    iter = json_object_iter(h->queried);
+    while (iter) {
+        id = json_object_iter_key(iter);
+        uint64_t used = (uint64_t)json_integer_value(json_object_iter_value(iter));
+        void *next = json_object_iter_next(h->queried, iter);
+        if (!json_object_get(protected, id) && now >= used && now - used >= 300000) json_object_del(h->queried, id);
+        iter = next;
+    }
+    json_decref(protected); return changed;
+}
 bool history_poll(history *h)
 {
-    bool changed = false;
+    uint64_t maintenance_now = 0; net_now_ms(&maintenance_now);
+    bool changed = history_maintain(h, maintenance_now);
     if (h->context != auth_context_generation(h->auth)) {
         h->context = auth_context_generation(h->auth);
         json_object_clear(h->users); json_array_clear(h->directory); json_object_clear(h->queried);
@@ -1009,7 +1133,8 @@ bool history_poll(history *h)
         const char *id; json_t *user;
         json_object_foreach(h->users, id, user) {
             const char *phrase = str(user, "typing");
-            if (phrase) h->user_bytes -= strlen(phrase);
+            if (phrase) { size_t n = strlen(phrase); h->user_bytes -= n;
+                json_object_set_new(user, "_cost", json_integer(json_integer_value(json_object_get(user, "_cost")) - (json_int_t)n)); }
             json_object_del(user, "typing"); json_object_del(user, "_presence");
         }
         changed = true;
@@ -1052,7 +1177,7 @@ bool history_poll(history *h)
                     notice(h, HISTORY_NOTICE_READ, "");
                     size_t i; json_t *id;
                     json_array_foreach(h->summary_ids, i, id)
-                        if (json_object_set_new(h->queried, json_string_value(id), json_true())) ok = false;
+                        if (json_object_set_new(h->queried, json_string_value(id), json_integer((json_int_t)maintenance_now))) ok = false;
                     /* Resolve another batch when a message contains more than
                      * 1000 distinct names. Omitted IDs are cached only after a
                      * successful response; cancellation and failures can retry. */

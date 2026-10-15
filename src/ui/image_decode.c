@@ -4,6 +4,7 @@
 #include <libavformat/avformat.h>
 #include <libswscale/swscale.h>
 #include <math.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 #define IMAGE_PIXELS (16U * 1024U * 1024U)
@@ -94,7 +95,10 @@ bool image_decode_file(const image_decode_request *j, graphics_image *out, anima
         int64_t duration = av_rescale_q(packet->duration, format->streams[stream]->time_base, (AVRational){1, 1000});
         if (avcodec_send_packet(decoder, packet) < 0) goto done;
         av_packet_unref(packet);
-        if (avcodec_receive_frame(decoder, frame) < 0) goto done;
+        int decoded = avcodec_receive_frame(decoder, frame);
+        /* GIF extensions can form packets without producing an image. */
+        if (decoded == AVERROR(EAGAIN)) continue;
+        if (decoded < 0) goto done;
         if (frame->width < 1 || frame->height < 1 ||
             (size_t)frame->width > IMAGE_PIXELS / (size_t)frame->height) goto done;
         if (!frames->count) {
@@ -140,13 +144,13 @@ bool image_decode_file(const image_decode_request *j, graphics_image *out, anima
         uint32_t delay = duration > 0 && duration <= 60000 ? (uint32_t)duration : 100;
         if (delay < 10) delay = 10;
         frames->delay[frames->count++] = delay; frames->duration += delay; frames->bytes += bytes;
-        if (!gif) break;
+        if (!gif || j->static_only) break;
     }
-    if (!frames->count || (gif && read_status != AVERROR_EOF) || decode_interrupt(&guard)) goto done;
+    if (!frames->count || (gif && !j->static_only && read_status != AVERROR_EOF) || decode_interrupt(&guard)) goto done;
     image_decode_request encoding = *j; encoding.animation = frames;
-    ok = encode_pixels(&encoding, frames->pixels[0], frames->width, frames->height,
+    ok = j->decode_only || encode_pixels(&encoding, frames->pixels[0], frames->width, frames->height,
                        frames->source_width, frames->source_height, out);
-    if (ok && frames->count > 1) { *animated = frames; frames = NULL; }
+    if (ok && (j->retain_static || frames->count > 1)) { *animated = frames; frames = NULL; }
  done:
     animation_free(frames); av_dict_free(&options); sws_freeContext(scale); free(rgba);
     av_packet_free(&packet); av_frame_free(&frame); avcodec_free_context(&decoder);
@@ -156,6 +160,28 @@ bool image_encode_frame(const image_decode_request *request, graphics_image *out
 {
     animation *a = request->animation;
     if (!a || request->frame >= a->count) return false;
-    return encode_pixels(request, a->pixels[request->frame], a->width, a->height,
-                         a->source_width, a->source_height, out);
+    int w = request->width, h = request->height;
+    if (w < 1 || h < 1 || w > 640 || h > 360) return false;
+    double ratio = fmin((double)w / a->source_width, (double)h / a->source_height);
+    if (request->native && ratio > 1) ratio = 1;
+    int sw = (int)(a->source_width * ratio), sh = (int)(a->source_height * ratio);
+    if (sw < 1) sw = 1;
+    if (sh < 1) sh = 1;
+    if (request->native) { w = sw; h = sh; }
+    if (w == a->width && h == a->height)
+        return encode_pixels(request, a->pixels[request->frame], w, h, a->source_width, a->source_height, out);
+    unsigned char *pixels = malloc((size_t)w * (size_t)h * 3);
+    if (!pixels) return false;
+    for (int y = 0; y < h; ++y) for (int x = 0; x < w; ++x) {
+        unsigned char *at = pixels + ((size_t)y * (size_t)w + (size_t)x) * 3;
+        at[0] = 0x15; at[1] = 0x18; at[2] = 0x1e;
+    }
+    struct SwsContext *scale = sws_getContext(a->width, a->height, AV_PIX_FMT_RGB24,
+        sw, sh, AV_PIX_FMT_RGB24, SWS_BILINEAR, NULL, NULL, NULL);
+    const uint8_t *src[] = {a->pixels[request->frame], NULL, NULL, NULL};
+    uint8_t *dst[] = {pixels, NULL, NULL, NULL};
+    int strides[] = {a->width * 3, 0, 0, 0}, dest_strides[] = {w * 3, 0, 0, 0};
+    bool ok = scale && sws_scale(scale, src, strides, 0, a->height, dst, dest_strides) == sh;
+    if (ok) ok = encode_pixels(request, pixels, w, h, a->source_width, a->source_height, out);
+    sws_freeContext(scale); free(pixels); return ok;
 }

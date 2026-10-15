@@ -3,13 +3,12 @@
 #include "ui/graphics.h"
 #include "ui/image_decode.h"
 #include "ui/media_layout.h"
+#include "ui/media_cache.h"
 #include "ui/button.h"
 #include "ui/text.h"
 #include "ui/theme.h"
 #include "net/media.h"
 #include "net/clock.h"
-#include <libavutil/log.h>
-#include <libavutil/base64.h>
 #include <mpv/client.h>
 #include <mpv/render.h>
 #include <pthread.h>
@@ -24,22 +23,22 @@
 #include <sys/stat.h>
 #define CACHE_COUNT 64
 #define VISIBLE_COUNT 32
-#define CACHE_BYTES (64U * 1024U * 1024U)
-typedef enum { ENTRY_NEW, ENTRY_FETCH, ENTRY_FILE, ENTRY_JOB, ENTRY_READY, ENTRY_ERROR } entry_state;
+#define VIDEO_RESERVATION (12U * 1024U * 1024U)
+typedef enum { ENTRY_NEW, ENTRY_READY, ENTRY_ERROR } entry_state;
 typedef struct {
     message_media item;
     entry_state state;
-    char *path;
-    graphics_image image;
-    uint64_t token, used;
-    int width, height;
-    animation *animation;
-    uint64_t epoch, presented;
-    size_t frame, requested_frame;
-    bool encoding;
+    media_resource *resource;
+    graphics_image image; /* Borrowed snapshot; cache owns its buffers. */
+    uint64_t used;
+    uint32_t placement_id;
     const char *error;
 } cache_entry;
-typedef struct { int entry, y, x, width, height, top, bottom; } placement;
+typedef struct {
+    int entry, y, x, width, height, top, bottom;
+    graphics_image image; /* Borrowed raster protected by resource + a cache pin. */
+    media_resource *resource; /* Owned position reference. */
+} placement;
 typedef struct {
     char *path;
     uint64_t token;
@@ -47,30 +46,25 @@ typedef struct {
     bool video;
     graphics_terminal terminal;
     uint32_t image_id;
-    bool preview, native;
-    animation *animation;
-    size_t frame;
-    int top, bottom;
 } job;
 struct media_view {
     auth_client *auth;
-    media_download *download;
+    media_cache *store;
     cache_entry cache[CACHE_COUNT];
     placement visible[VISIBLE_COUNT];
-    int visible_count, fetching;
-    uint64_t serial, tick, generation;
+    int visible_count;
+    uint64_t serial, tick, generation, history_revision, dimensions_revision;
     graphics_terminal terminal;
     pthread_t thread;
     pthread_mutex_t lock;
     pthread_cond_t wake;
     bool started, stopping, pending, result_ready;
     atomic_uint_fast64_t active;
+    atomic_bool player_idle;
+    bool video_reserved;
     job task;
     graphics_image result;
-    animation *result_animation, *modal_animation;
-    uint64_t modal_epoch, modal_presented;
-    size_t modal_frame, modal_requested_frame;
-    bool modal_encoding;
+    bool modal_shared, modal_animated;
     uint64_t result_token;
     const char *result_error;
     int pause_commands, mute_commands, seek_commands, volume_commands;
@@ -89,21 +83,19 @@ struct media_view {
 };
 static void delete_entry(cache_entry *e)
 {
-    if (e->path) { unlink(e->path); free(e->path); }
-    animation_free(e->animation); graphics_image_free(&e->image); memset(e, 0, sizeof(*e));
+    media_resource_release(e->resource); memset(e, 0, sizeof(*e));
 }
-static void free_job(job *j) { animation_free(j->animation); free(j->path); memset(j, 0, sizeof(*j)); }
-typedef struct { media_view *view; uint64_t token; } image_guard;
-static bool image_interrupt(void *context)
+static bool ensure_resource(media_view *v, cache_entry *e)
 {
-    image_guard *guard = context;
-    return atomic_load(&guard->view->active) != guard->token;
+    if (!e->resource) e->resource = media_cache_acquire(v->store, e->item.kind, e->item.id, e->item.version, e->item.video);
+    return e->resource != NULL;
 }
-static image_decode_request decode_request(const job *j)
+static void free_job(job *j) { free(j->path); memset(j, 0, sizeof(*j)); }
+static void clear_modal_image(media_view *v)
 {
-    return (image_decode_request){.path = j->path, .width = j->width, .height = j->height,
-        .terminal = j->terminal, .image_id = j->image_id, .preview = j->preview,
-        .native = j->native, .animation = j->animation, .frame = j->frame, .top = j->top, .bottom = j->bottom};
+    if (!v->modal_shared) graphics_image_free(&v->modal_image);
+    else memset(&v->modal_image, 0, sizeof(v->modal_image));
+    v->modal_shared = false;
 }
 static mpv_handle *player_create(mpv_render_context **render)
 {
@@ -126,7 +118,7 @@ static mpv_handle *player_create(mpv_render_context **render)
 static void publish(media_view *v, uint64_t token, graphics_image *image, animation *animated, const char *error)
 {
     pthread_mutex_lock(&v->lock);
-    animation_free(v->result_animation); v->result_animation = animated;
+    (void)animated;
     graphics_image_free(&v->result); v->result = *image; memset(image, 0, sizeof(*image));
     v->result_token = token; v->result_error = error; v->result_ready = true;
     pthread_mutex_unlock(&v->lock);
@@ -152,21 +144,11 @@ static void *worker(void *context)
         bool reuse = player && pending && next.video && !strcmp(current.path, next.path);
         if (player && !reuse && (pending || atomic_load(&v->active) != current.token)) {
             mpv_render_context_free(render); mpv_terminate_destroy(player); player = NULL; render = NULL;
-            free_job(&current);
+            free_job(&current); atomic_store(&v->player_idle, true);
         }
         if (pending) {
             if (atomic_load(&v->active) != next.token) { free_job(&next); continue; }
-            if (!next.video) {
-                graphics_image image = {0};
-                animation *animated = NULL;
-                bool ok;
-                image_decode_request request = decode_request(&next);
-                image_guard guard = {v, next.token};
-                if (next.animation) ok = image_encode_frame(&request, &image);
-                else ok = image_decode_file(&request, &image, &animated, image_interrupt, &guard);
-                publish(v, next.token, &image, animated, ok ? NULL : "Imagem inválida, grande demais ou não suportada.");
-                free_job(&next); continue;
-            }
+            atomic_store(&v->player_idle, false);
             if (reuse) { free_job(&current); current = next; last_frame = 0; force_frame = true; }
             else {
             current = next;
@@ -177,7 +159,7 @@ static void *worker(void *context)
                 graphics_image empty = {0}; publish(v, current.token, &empty, NULL, "Não foi possível iniciar o player.");
                 if (render) mpv_render_context_free(render);
                 if (player) mpv_terminate_destroy(player);
-                render = NULL; player = NULL; free_job(&current); continue;
+                render = NULL; player = NULL; free_job(&current); atomic_store(&v->player_idle, true); continue;
             }
             }
         }
@@ -242,18 +224,21 @@ static void *worker(void *context)
     }
     if (render) mpv_render_context_free(render);
     if (player) mpv_terminate_destroy(player);
-    free_job(&current); return NULL;
+    free_job(&current); atomic_store(&v->player_idle, true); return NULL;
 }
 static bool submit_job(media_view *v, const job *request)
 {
     char *copy = strdup(request->path);
     if (!copy) return false;
+    if (!v->started) {
+        if (pthread_create(&v->thread, NULL, worker, v)) { free(copy); return false; }
+        v->started = true;
+    }
     pthread_mutex_lock(&v->lock);
     free_job(&v->task);
     v->task = *request; v->task.path = copy;
     v->task.terminal = graphics_terminal_get();
     if (!v->task.image_id) v->task.image_id = graphics_image_next_id();
-    animation_ref(v->task.animation);
     v->pending = true; atomic_store(&v->active, request->token); pthread_cond_signal(&v->wake);
     pthread_mutex_unlock(&v->lock); return true;
 }
@@ -266,53 +251,62 @@ media_view *media_view_create(auth_client *auth)
 {
     media_view *v = calloc(1, sizeof(*v));
     if (!v) return NULL;
-    v->auth = auth; v->fetching = v->modal_entry = -1;
+    v->auth = auth; v->modal_entry = -1;
     v->generation = auth_context_generation(auth);
-    v->download = media_download_create(auth);
-    if (!v->download) { free(v); return NULL; }
-    if (pthread_mutex_init(&v->lock, NULL)) { media_download_destroy(v->download); free(v); return NULL; }
-    if (pthread_cond_init(&v->wake, NULL)) { pthread_mutex_destroy(&v->lock); media_download_destroy(v->download); free(v); return NULL; }
-    atomic_init(&v->active, 0);
-    av_log_set_level(AV_LOG_QUIET);
-    if (pthread_create(&v->thread, NULL, worker, v)) {
-        pthread_cond_destroy(&v->wake); pthread_mutex_destroy(&v->lock);
-        media_download_destroy(v->download); free(v); return NULL;
-    }
-    v->started = true; return v;
+    v->store = media_cache_create(auth);
+    if (!v->store) { free(v); return NULL; }
+    if (pthread_mutex_init(&v->lock, NULL)) { media_cache_destroy(v->store); free(v); return NULL; }
+    if (pthread_cond_init(&v->wake, NULL)) { pthread_mutex_destroy(&v->lock); media_cache_destroy(v->store); free(v); return NULL; }
+    atomic_init(&v->active, 0); atomic_init(&v->player_idle, true);
+    return v;
 }
 static void close_modal(media_view *v)
 {
     if (!v) return;
     atomic_store(&v->active, 0);
-    if (v->fetching >= 0 && v->fetching == v->modal_entry) {
-        media_download_cancel(v->download); v->cache[v->fetching].state = ENTRY_NEW; v->fetching = -1;
-    }
-    if (v->modal_entry >= 0 && v->cache[v->modal_entry].item.video) {
-        cache_entry *e = &v->cache[v->modal_entry];
-        if (e->path) { unlink(e->path); free(e->path); e->path = NULL; }
-        e->state = ENTRY_NEW;
-    }
-    for (int i = 0; i < CACHE_COUNT; ++i) {
-        cache_entry *e = &v->cache[i];
-        if (e->encoding || e->state == ENTRY_JOB) { e->encoding = false; e->token = 0; if (e->state == ENTRY_JOB) e->state = ENTRY_FILE; }
-    }
     pthread_mutex_lock(&v->lock);
     v->playing = false; v->pause_commands = v->seek_commands = v->volume_commands = v->mute_commands = 0;
     pthread_cond_signal(&v->wake); pthread_mutex_unlock(&v->lock);
     if (v->window) { delwin(v->window); v->window = NULL; }
-    animation_free(v->modal_animation); v->modal_animation = NULL; v->modal_encoding = false;
-    graphics_image_free(&v->modal_image); v->modal = MODAL_NONE; v->modal_entry = -1;
+    v->modal_animated = false; clear_modal_image(v); v->modal = MODAL_NONE; v->modal_entry = -1;
     v->modal_token = 0; v->modal_error = NULL;
     v->info_open = v->info_focused = false; v->info_scroll = v->info_rows = 0;
     v->modal_width = v->modal_height = 0;
 }
+static void clear_positions(media_view *v)
+{
+    for (int i = 0; i < v->visible_count; ++i) media_resource_release(v->visible[i].resource);
+    v->visible_count = 0;
+}
 void media_view_reset(media_view *v)
 {
     if (!v) return;
-    graphics_images_clear();
-    close_modal(v); media_download_cancel(v->download); v->fetching = -1;
+    if (v->visible_count || v->modal != MODAL_NONE) graphics_images_clear();
+    close_modal(v); clear_positions(v);
     for (int i = 0; i < CACHE_COUNT; ++i) delete_entry(&v->cache[i]);
+    media_cache_reset(v->store);
     v->visible_count = 0; v->generation = auth_context_generation(v->auth);
+}
+void media_view_suspend(media_view *v)
+{
+    if (!v) return;
+    graphics_images_clear(); close_modal(v); clear_positions(v);
+    for (int i = 0; i < CACHE_COUNT; ++i) delete_entry(&v->cache[i]);
+    v->visible_count = 0;
+    media_cache_begin(v->store);
+    uint64_t now = 0; net_now_ms(&now); media_cache_poll(v->store, now);
+}
+uint64_t media_view_dimensions_revision(const media_view *v) { return v ? v->dimensions_revision : 0; }
+void media_view_idle(media_view *v)
+{
+    if (!v || v->visible_count || v->modal != MODAL_NONE) return;
+    uint64_t now = 0; net_now_ms(&now); media_cache_poll(v->store, now);
+    pthread_mutex_lock(&v->lock);
+    if (!atomic_load(&v->active) && atomic_load(&v->player_idle)) {
+        graphics_image_free(&v->result); v->result_ready = false;
+        if (v->video_reserved) { media_cache_unreserve(VIDEO_RESERVATION); v->video_reserved = false; }
+    }
+    pthread_mutex_unlock(&v->lock);
 }
 void media_view_destroy(media_view *v)
 {
@@ -320,25 +314,53 @@ void media_view_destroy(media_view *v)
     pthread_mutex_lock(&v->lock); v->stopping = true; atomic_store(&v->active, 0);
     pthread_cond_signal(&v->wake); pthread_mutex_unlock(&v->lock);
     if (v->started) pthread_join(v->thread, NULL);
-    media_view_reset(v); free_job(&v->task); graphics_image_free(&v->result); animation_free(v->result_animation);
+    media_view_reset(v); free_job(&v->task); graphics_image_free(&v->result);
     pthread_cond_destroy(&v->wake); pthread_mutex_destroy(&v->lock);
-    media_download_destroy(v->download); free(v);
+    if (v->video_reserved) media_cache_unreserve(VIDEO_RESERVATION);
+    media_cache_destroy(v->store); free(v);
+}
+void media_view_update(media_view *v, const json_t *event)
+{
+    if (!v || v->generation != auth_context_generation(v->auth)) return;
+    const char *type = json_string_value(json_object_get(event, "type"));
+    const char *message = json_string_value(json_object_get(event, "message_id"));
+    json_t *embeds = json_object_get(event, "embeds");
+    if (!type || strcmp(type, "message_embeds_update") || !history_uuid(message) ||
+        (!json_is_null(embeds) && !json_is_array(embeds)) || json_array_size(embeds) > 10) return;
+    for (size_t i = 0; i < json_array_size(embeds); ++i) {
+        const char *id = json_string_value(json_object_get(json_array_get(embeds, i), "id"));
+        if (!history_uuid(id)) continue;
+        media_cache_invalidate(v->store, AUTH_MEDIA_EMBED, id); media_cache_invalidate(v->store, AUTH_MEDIA_VIDEO, id);
+    }
+    for (int i = 0; i < CACHE_COUNT; ++i) {
+        cache_entry *e = &v->cache[i];
+        if (e->item.kind != AUTH_MEDIA_EMBED && e->item.kind != AUTH_MEDIA_VIDEO) continue;
+        bool affected = !strcmp(e->item.message, message);
+        for (size_t j = 0; !affected && j < json_array_size(embeds); ++j) {
+            const char *id = json_string_value(json_object_get(json_array_get(embeds, j), "id"));
+            affected = id && !strcmp(e->item.id, id);
+        }
+        if (!affected) continue;
+        if (v->modal_entry == i) close_modal(v);
+        media_cache_invalidate(v->store, e->item.kind, e->item.id); delete_entry(e);
+    }
+    ++v->dimensions_revision;
 }
 static bool same(const message_media *a, const message_media *b)
 {
-    return a->kind == b->kind && !strcmp(a->id, b->id) && !strcmp(a->role, b->role) && !strcmp(a->message, b->message) && a->version == b->version;
+    return a->kind == b->kind && !strcmp(a->id, b->id) && !strcmp(a->role, b->role) && !strcmp(a->message, b->message) && a->version == b->version && a->position == b->position;
 }
 static int cache_find(media_view *v, const message_media *item)
 {
     int oldest = -1;
     for (int i = 0; i < CACHE_COUNT; ++i) {
         if (*v->cache[i].item.id && same(&v->cache[i].item, item)) return i;
-        if (i == v->fetching || i == v->modal_entry || v->cache[i].state == ENTRY_JOB) continue;
+        if (i == v->modal_entry) continue;
         bool visible = false;
         for (int j = 0; j < v->visible_count; ++j) visible |= v->visible[j].entry == i;
         if (!visible && (oldest < 0 || v->cache[i].used < v->cache[oldest].used)) oldest = i;
     }
-    if (oldest >= 0) { delete_entry(&v->cache[oldest]); v->cache[oldest].item = *item; }
+    if (oldest >= 0) { delete_entry(&v->cache[oldest]); v->cache[oldest].item = *item; v->cache[oldest].placement_id = graphics_image_next_id(); }
     return oldest;
 }
 void media_view_measure(void *context, const message_media *item, int available_width, int *width, int *height)
@@ -361,14 +383,31 @@ void media_view_measure(void *context, const message_media *item, int available_
         return;
     }
 }
-void media_view_begin(media_view *v) { if (v) { graphics_frame_begin(); v->visible_count = 0; ++v->tick; } }
+void media_view_frame(media_view *v) { if (v) graphics_frame_begin(); }
+void media_view_begin(media_view *v) { if (v) { graphics_frame_begin(); clear_positions(v); ++v->tick; } }
 void media_view_offer(media_view *v, const message_media *item, int y, int x, int width, int height, int top, int bottom)
 {
     if (!v || v->visible_count == VISIBLE_COUNT) return;
     int index = cache_find(v, item);
     if (index < 0) return;
     cache_entry *e = &v->cache[index]; e->used = v->tick;
-    v->visible[v->visible_count++] = (placement){index, y, x, width, height, top, bottom};
+    placement *p = &v->visible[v->visible_count++];
+    *p = (placement){.entry = index, .y = y, .x = x, .width = width, .height = height, .top = top, .bottom = bottom};
+    p->resource = e->resource; media_resource_ref(p->resource);
+    graphics_terminal t = graphics_terminal_get();
+    if (e->resource && !e->item.video && t.supported && height > 0) {
+        int w = width * t.cell_width, h = height * t.cell_height;
+        if (w > 640) w = 640;
+        if (h > 360 || native_media(item)) h = 360;
+        uint64_t now = 0; net_now_ms(&now);
+        image_decode_request request = {.width = w, .height = h, .native = native_media(item), .terminal = t,
+            .top = top * t.cell_height, .bottom = bottom * t.cell_height};
+        const graphics_image *image = media_resource_image(e->resource, !strcmp(item->role, "author"), request, now);
+        if (image) {
+            if (e->image.source_width != image->source_width || e->image.source_height != image->source_height) ++v->dimensions_revision;
+            p->image = *image; e->image = *image; e->state = ENTRY_READY;
+        }
+    }
 }
 static bool live(history *h, const message_media *item)
 {
@@ -385,58 +424,6 @@ static bool live(history *h, const message_media *item)
         return false;
     }
     return false;
-}
-static bool blob_file(media_view *v, json_t *data, char **path)
-{
-    if (!json_is_string(data) || json_string_length(data) != strlen(json_string_value(data))) return false;
-    size_t size = json_string_length(data);
-    if (!size || size > (MEDIA_IMAGE_LIMIT + 2U) / 3U * 4U || size % 4) return false;
-    unsigned char *bytes = malloc(size / 4 * 3 + 1);
-    if (!bytes) return false;
-    int length = av_base64_decode(bytes, json_string_value(data), (int)(size / 4 * 3 + 1));
-    if (length <= 0 || (unsigned)length > MEDIA_IMAGE_LIMIT) { free(bytes); return false; }
-    int fd = media_download_temp(v->download, path);
-    FILE *file = fd >= 0 ? fdopen(fd, "wb") : NULL;
-    bool ok = false;
-    if (file) { ok = fwrite(bytes, 1, (size_t)length, file) == (size_t)length; if (fclose(file)) ok = false; }
-    else if (fd >= 0) close(fd);
-    free(bytes);
-    if (!ok && *path) { unlink(*path); free(*path); *path = NULL; }
-    return ok;
-}
-static void take_download(media_view *v)
-{
-    int index = v->fetching;
-    if (index < 0) return;
-    cache_entry *e = &v->cache[index];
-    media_state state = media_download_state(v->download);
-    if (state == MEDIA_FAILED) { e->error = media_download_error(v->download); e->state = ENTRY_ERROR; v->fetching = -1; return; }
-    if (state != MEDIA_READY) return;
-    char *path = media_download_take_file(v->download);
-    if (e->item.kind != AUTH_MEDIA_EMBED) { e->path = path; e->state = ENTRY_FILE; }
-    else {
-        json_error_t error;
-        json_t *body = json_load_file(path, JSON_REJECT_DUPLICATES, &error);
-        const char *id = json_string_value(json_object_get(body, "id"));
-        bool valid = id && !strcmp(id, e->item.id);
-        for (int i = 0; i < CACHE_COUNT; ++i) {
-            cache_entry *other = &v->cache[i];
-            if (other->item.kind != AUTH_MEDIA_EMBED || strcmp(e->item.id, other->item.id) || other->path) continue;
-            json_t *data = json_object_get(body, !strcmp(other->item.role, "author") ? "author_image_data" : "image_data");
-            if (valid && blob_file(v, data, &other->path)) other->state = ENTRY_FILE;
-            else { other->state = ENTRY_ERROR; other->error = "Imagem do embed indisponível."; }
-        }
-        json_decref(body); unlink(path); free(path);
-    }
-    v->fetching = -1;
-}
-static bool request_entry(media_view *v, int index)
-{
-    cache_entry *e = &v->cache[index];
-    if (!media_download_request(v->download, e->item.kind, e->item.id, e->item.video)) {
-        e->state = ENTRY_ERROR; e->error = "Não foi possível preparar o download."; return false;
-    }
-    v->fetching = index; e->state = ENTRY_FETCH; return true;
 }
 static void geometry(int columns, int rows, int *w, int *h)
 {
@@ -465,9 +452,7 @@ static bool modal_layout_update(media_view *v)
             } else reload = v->modal_image.width > width || v->modal_image.height > height;
         }
         if (reload) {
-            v->modal_token = 0; v->modal_encoding = false;
-            animation_free(v->modal_animation); v->modal_animation = NULL;
-            graphics_image_free(&v->modal_image);
+            v->modal_token = 0; clear_modal_image(v);
             if (v->modal == MODAL_PLAYING) v->modal = MODAL_LOADING;
         }
     }
@@ -482,131 +467,115 @@ bool media_view_poll(media_view *v, history *h)
 {
     if (!v) return false;
     if (v->generation != auth_context_generation(v->auth) || !auth_has_session(v->auth)) {
-        bool changed = v->visible_count || v->modal != MODAL_NONE || v->fetching >= 0;
+        bool changed = v->visible_count || v->modal != MODAL_NONE;
         media_view_reset(v); return changed;
     }
+    uint64_t now = 0; net_now_ms(&now);
     graphics_terminal terminal = graphics_terminal_get();
     bool changed = terminal.protocol != v->terminal.protocol || terminal.cell_width != v->terminal.cell_width ||
                    terminal.cell_height != v->terminal.cell_height || terminal.supported != v->terminal.supported;
-    if (changed && v->modal_token) {
-        v->modal_token = 0; animation_free(v->modal_animation); v->modal_animation = NULL; v->modal_encoding = false; graphics_image_free(&v->modal_image);
-        if (v->modal == MODAL_PLAYING) v->modal = MODAL_LOADING;
-    }
+    if (changed) ++v->dimensions_revision;
+    if (changed && v->modal_token) { v->modal_token = 0; clear_modal_image(v); }
     v->terminal = terminal;
-    changed |= media_download_poll(v->download);
-    for (int i = 0; i < CACHE_COUNT; ++i) if (*v->cache[i].item.id && !live(h, &v->cache[i].item)) {
-        if (v->modal_entry == i) close_modal(v);
-        if (v->fetching == i) { media_download_cancel(v->download); v->fetching = -1; }
-        if (v->cache[i].state == ENTRY_JOB) atomic_store(&v->active, 0);
-        delete_entry(&v->cache[i]); changed = true;
-    }
-    int visible = 0;
-    for (int i = 0; i < v->visible_count; ++i)
-        if (*v->cache[v->visible[i].entry].item.id) v->visible[visible++] = v->visible[i];
-    v->visible_count = visible;
-    if (v->modal == MODAL_LIST && v->selected >= visible) v->selected = visible ? visible - 1 : 0;
-    take_download(v);
-    pthread_mutex_lock(&v->lock);
-    uint64_t now = 0; net_now_ms(&now);
-    if (v->result_ready) {
-        changed = true;
-        if (v->modal_token && v->result_token == v->modal_token) {
-            v->modal_encoding = false; v->modal_frame = v->modal_requested_frame; v->modal_presented = now;
-            if (v->result_animation) { animation_free(v->modal_animation); v->modal_animation = v->result_animation; v->result_animation = NULL; v->modal_epoch = now; }
-            if (v->result_error) { v->modal_error = v->result_error; v->modal = MODAL_ERROR; }
-            else { graphics_image_free(&v->modal_image); v->modal_image = v->result; memset(&v->result, 0, sizeof(v->result)); v->modal = MODAL_PLAYING; }
-        } else for (int i = 0; i < CACHE_COUNT; ++i) if (v->cache[i].token && v->cache[i].token == v->result_token) {
-            cache_entry *e = &v->cache[i];
-            e->encoding = false; e->frame = e->requested_frame; e->presented = now;
-            if (v->result_animation) { animation_free(e->animation); e->animation = v->result_animation; v->result_animation = NULL; e->epoch = now; }
-            if (v->result_error) { e->error = v->result_error; e->state = ENTRY_ERROR; }
-            else { graphics_image_free(&e->image); e->image = v->result; memset(&v->result, 0, sizeof(v->result)); e->state = ENTRY_READY; }
-            break;
+    /* Validate associations only after model changes, not on every keystroke. */
+    uint64_t revision = history_messages_revision(h);
+    if (revision != v->history_revision) {
+        v->history_revision = revision;
+        for (int i = 0; i < CACHE_COUNT; ++i) if (*v->cache[i].item.id && !live(h, &v->cache[i].item)) {
+            if (v->modal_entry == i) close_modal(v);
+            delete_entry(&v->cache[i]); changed = true;
         }
-        animation_free(v->result_animation); v->result_animation = NULL;
+    }
+    int count = 0;
+    for (int i = 0; i < v->visible_count; ++i)
+        if (*v->cache[v->visible[i].entry].item.id) v->visible[count++] = v->visible[i];
+        else media_resource_release(v->visible[i].resource);
+    v->visible_count = count;
+    if (v->modal == MODAL_LIST && v->selected >= count) v->selected = count ? count - 1 : 0;
+    media_cache_begin(v->store);
+    bool modal = v->modal != MODAL_NONE && v->modal != MODAL_LIST && v->modal_entry >= 0;
+    if (modal) {
+        cache_entry *e = &v->cache[v->modal_entry];
+        ensure_resource(v, e); media_resource_use_image(e->resource, !strcmp(e->item.role, "author"), true);
+        media_resource_keep_image(e->resource, !strcmp(e->item.role, "author"), &v->modal_image);
+    }
+    if (terminal.supported) for (int i = 0; i < v->visible_count; ++i) {
+        cache_entry *e = &v->cache[v->visible[i].entry];
+        if (!e->item.video) {
+            ensure_resource(v, e); media_resource_use_image(e->resource, !strcmp(e->item.role, "author"), false);
+            placement *p = &v->visible[i];
+            if (p->resource != e->resource) {
+                media_resource_release(p->resource); p->resource = e->resource; media_resource_ref(p->resource);
+            }
+            media_resource_keep_image(e->resource, !strcmp(e->item.role, "author"), &p->image);
+        }
+    }
+    changed |= media_cache_poll(v->store, now);
+    pthread_mutex_lock(&v->lock);
+    if (v->result_ready) {
+        if (v->modal_token && v->result_token == v->modal_token) {
+            if (v->result_error) { v->modal_error = v->result_error; v->modal = MODAL_ERROR; }
+            else { clear_modal_image(v); v->modal_image = v->result; memset(&v->result, 0, sizeof(v->result)); v->modal = MODAL_PLAYING; }
+            changed = true;
+        }
         graphics_image_free(&v->result); v->result_ready = false;
     }
     changed |= v->status_changed; v->status_changed = false;
-    bool idle = !v->pending;
+    if (!atomic_load(&v->active) && atomic_load(&v->player_idle) && v->video_reserved) {
+        media_cache_unreserve(VIDEO_RESERVATION); v->video_reserved = false;
+    }
     pthread_mutex_unlock(&v->lock);
-    size_t bytes = 0;
-    for (int i = 0; i < CACHE_COUNT; ++i) if (!v->cache[i].item.video) {
-        struct stat st;
-        bytes += graphics_image_bytes(&v->cache[i].image) + (v->cache[i].animation ? v->cache[i].animation->bytes : 0);
-        if (v->cache[i].path && !stat(v->cache[i].path, &st)) bytes += (size_t)st.st_size;
-    }
-    while (bytes > CACHE_BYTES) {
-        int oldest = -1;
-        for (int i = 0; i < CACHE_COUNT; ++i) {
-            cache_entry *e = &v->cache[i];
-            if (i == v->fetching || i == v->modal_entry || e->item.video || (e->state == ENTRY_JOB || e->encoding) || (!e->path && !e->image.length)) continue;
-            if (oldest < 0 || e->used < v->cache[oldest].used) oldest = i;
-        }
-        if (oldest < 0) break;
-        cache_entry *e = &v->cache[oldest]; struct stat st;
-        bytes -= graphics_image_bytes(&e->image) + (e->animation ? e->animation->bytes : 0);
-        animation_free(e->animation); e->animation = NULL;
-        if (e->path && !stat(e->path, &st)) bytes -= (size_t)st.st_size;
-        if (e->path) { unlink(e->path); free(e->path); e->path = NULL; }
-        graphics_image_free(&e->image); e->state = ENTRY_ERROR; e->error = "Limite do cache atingido. F7: tentar novamente.";
-        changed = true;
-    }
-    if (v->modal != MODAL_NONE && v->modal != MODAL_LIST && v->modal != MODAL_ERROR && v->modal_entry >= 0) {
-        if (!modal_layout_update(v)) return changed;
+    if (modal && v->modal != MODAL_ERROR && modal_layout_update(v)) {
         cache_entry *e = &v->cache[v->modal_entry];
-        if (e->state == ENTRY_ERROR) { v->modal_error = e->error; v->modal = MODAL_ERROR; changed = true; }
-        else if (!e->path && v->fetching < 0) changed |= request_entry(v, v->modal_entry);
-        else if (e->path && (!v->modal_token || (v->modal_animation && !v->modal_encoding && now - v->modal_presented >= 67 && animation_frame_at(v->modal_animation, v->modal_epoch, now) != v->modal_frame))) {
-            int w = v->modal_width, height = v->modal_height;
-            if (w > 0 && height > 0) {
+        bool author = !strcmp(e->item.role, "author");
+        const char *error = media_resource_error(e->resource, author);
+        if (error) { v->modal_error = error; v->modal = MODAL_ERROR; return true; }
+        if (e->item.video) {
+            const char *path = media_resource_path(e->resource);
+            if (path && !v->modal_token && v->modal_width > 0 && v->modal_height > 0) {
+                if (!v->video_reserved) {
+                    if (!media_cache_reserve(VIDEO_RESERVATION)) return changed;
+                    v->video_reserved = true;
+                }
                 v->modal_token = ++v->serial;
-                v->modal_requested_frame = v->modal_animation ? animation_frame_at(v->modal_animation, v->modal_epoch, now) : 0;
-                job task = {.path = e->path, .token = v->modal_token, .width = w, .height = height,
-                    .video = e->item.video, .native = !e->item.video, .animation = v->modal_animation,
-                    .frame = v->modal_requested_frame, .image_id = v->modal_image.id};
-                v->modal_encoding = true;
-                if (!submit_job(v, &task)) { v->modal_error = "Não foi possível preparar o player."; v->modal = MODAL_ERROR; }
+                job request = {.path = (char *)path, .token = v->modal_token, .width = v->modal_width,
+                    .height = v->modal_height, .video = true, .image_id = v->modal_image.id};
+                if (!submit_job(v, &request)) { v->modal_error = "Não foi possível preparar o player."; v->modal = MODAL_ERROR; }
                 changed = true;
+            }
+        } else {
+            image_decode_request request = {.width = v->modal_width, .height = v->modal_height, .native = true, .terminal = terminal};
+            const graphics_image *image = media_resource_image(e->resource, author, request, now);
+            if (image) {
+                changed |= v->modal_image.revision != image->revision;
+                clear_modal_image(v); v->modal_image = *image; v->modal_shared = true;
+                v->modal_animated = media_resource_animated(e->resource, author); v->modal = MODAL_PLAYING;
             }
         }
         return changed;
     }
-    if (v->modal != MODAL_NONE || !graphics_terminal_get().supported) return changed;
-    bool in_worker = !idle;
-    for (int i = 0; i < CACHE_COUNT; ++i) in_worker |= v->cache[i].state == ENTRY_JOB || v->cache[i].encoding;
+    if (v->modal != MODAL_NONE || !terminal.supported) return changed;
     for (int i = 0; i < v->visible_count; ++i) {
         placement *p = &v->visible[i]; cache_entry *e = &v->cache[p->entry];
-        if (!*e->item.id || e->item.video || p->height < 1) continue;
-        if (e->state == ENTRY_NEW && v->fetching < 0) { changed |= request_entry(v, p->entry); break; }
-        int w, height; geometry(p->width, native_media(&e->item) ? 360 : p->height, &w, &height);
-        if (native_media(&e->item)) height = 360;
-        graphics_terminal term = graphics_terminal_get();
-        int top = p->top * term.cell_height, bottom = p->bottom * term.cell_height;
-        if (w < 1 || height < 1 || top + bottom >= height) continue;
-        bool geometry_changed = e->width != w || e->height != height;
-        if (native_media(&e->item) && e->image.source_width && e->image.source_height) {
-            double ratio = fmin(1, fmin((double)w / e->image.source_width, (double)height / e->image.source_height));
-            int desired_w = (int)(e->image.source_width * ratio), desired_h = (int)(e->image.source_height * ratio);
-            if (desired_w < 1) desired_w = 1;
-            if (desired_h < 1) desired_h = 1;
-            geometry_changed = e->image.width != desired_w ||
-                e->image.height + e->image.crop_top + e->image.crop_bottom != desired_h;
+        if (e->item.video || p->height < 1) continue;
+        int source_w = 0, source_h = 0;
+        if (media_resource_dimensions(e->resource, !strcmp(e->item.role, "author"), &source_w, &source_h) &&
+            (source_w != e->image.source_width || source_h != e->image.source_height)) {
+            e->image.source_width = source_w; e->image.source_height = source_h; ++v->dimensions_revision; changed = true;
         }
-        bool resize = geometry_changed || e->image.protocol != term.protocol ||
-                      e->image.cell_width != term.cell_width || e->image.cell_height != term.cell_height;
-        size_t frame = e->animation ? animation_frame_at(e->animation, e->epoch, now) : 0;
-        bool crop = term.protocol != GRAPHICS_KITTY && e->state == ENTRY_READY && !graphics_image_crop(&e->image, top, bottom);
-        bool animate = e->animation && frame != e->frame && now - e->presented >= 67;
-        if (!in_worker && e->path && (e->state == ENTRY_FILE || (e->state == ENTRY_READY && (resize || crop || animate)))) {
-            e->token = ++v->serial; e->width = w; e->height = height;
-            e->requested_frame = resize ? 0 : frame;
-            job task = {.path = e->path, .token = e->token, .width = w, .height = height,
-                .preview = true, .native = native_media(&e->item), .animation = resize ? NULL : e->animation,
-                .frame = frame, .top = e->image.data ? top : 0, .bottom = e->image.data ? bottom : 0,
-                .image_id = resize ? 0 : e->image.id};
-            if (submit_job(v, &task)) { e->encoding = true; if (!e->image.data) e->state = ENTRY_JOB; }
-            else { e->state = ENTRY_ERROR; e->error = "Memória insuficiente para exibir a imagem."; }
-            break;
+        int w, height; geometry(p->width, p->height, &w, &height);
+        if (native_media(&e->item)) height = 360;
+        image_decode_request request = {.width = w, .height = height, .native = native_media(&e->item), .terminal = terminal,
+            .top = p->top * terminal.cell_height, .bottom = p->bottom * terminal.cell_height};
+        const graphics_image *image = media_resource_image(e->resource, !strcmp(e->item.role, "author"), request, now);
+        const char *error = media_resource_error(e->resource, !strcmp(e->item.role, "author"));
+        entry_state state = error ? ENTRY_ERROR : image ? ENTRY_READY : ENTRY_NEW;
+        changed |= e->state != state || p->image.revision != (image ? image->revision : 0);
+        e->state = state; e->error = error;
+        p->image = image ? *image : (graphics_image){0};
+        if (image) {
+            if (e->image.source_width != image->source_width || e->image.source_height != image->source_height) ++v->dimensions_revision;
+            e->image = *image;
         }
     }
     return changed;
@@ -616,17 +585,12 @@ static void select_item(media_view *v, int index)
     if (index < 0 || index >= v->visible_count) return;
     message_media item = v->cache[v->visible[index].entry].item;
     close_modal(v);
-    if (v->fetching >= 0) { v->cache[v->fetching].state = ENTRY_NEW; media_download_cancel(v->download); v->fetching = -1; }
-    for (int i = 0; i < CACHE_COUNT; ++i) {
-        cache_entry *e = &v->cache[i];
-        if (e->encoding || e->state == ENTRY_JOB) { e->encoding = false; e->token = 0; if (e->state == ENTRY_JOB) e->state = ENTRY_FILE; }
-    }
     if (item.kind == AUTH_MEDIA_THUMBNAIL) item.kind = AUTH_MEDIA_ATTACHMENT;
     v->selected_item = item;
     v->modal_entry = cache_find(v, &item);
     v->modal = MODAL_LOADING;
     if (v->modal_entry < 0 || !graphics_terminal_get().supported) { v->modal_error = "Este terminal não oferece um protocolo gráfico compatível."; v->modal = MODAL_ERROR; }
-    else if (v->cache[v->modal_entry].state == ENTRY_ERROR) { delete_entry(&v->cache[v->modal_entry]); v->cache[v->modal_entry].item = v->selected_item; }
+    else if (v->cache[v->modal_entry].state == ENTRY_ERROR) { media_resource_retry(v->cache[v->modal_entry].resource); delete_entry(&v->cache[v->modal_entry]); v->cache[v->modal_entry].item = v->selected_item; }
 }
 bool media_view_modal(const media_view *v) { return v && v->modal != MODAL_NONE; }
 bool media_view_key(media_view *v, int type, wint_t key)
@@ -666,6 +630,7 @@ bool media_view_key(media_view *v, int type, wint_t key)
     if (v->modal == MODAL_ERROR && ((type == OK && (key == '\r' || key == '\n')) ||
                                   (type == KEY_CODE_YES && key == KEY_ENTER)) &&
         v->modal_entry >= 0 && graphics_terminal_get().supported) {
+        media_resource_retry(v->cache[v->modal_entry].resource);
         delete_entry(&v->cache[v->modal_entry]); v->cache[v->modal_entry].item = v->selected_item;
         v->modal = MODAL_LOADING; v->modal_token = 0; return true;
     }
@@ -804,8 +769,7 @@ void media_view_draw(media_view *v)
                     v->layout.button_width, "[Info]",
                     v->info_focused ? BUTTON_FOCUSED : v->info_open ? BUTTON_SELECTED : BUTTON_NORMAL, BUTTON_PANEL);
         if (v->modal == MODAL_LOADING) {
-            char notice[128]; snprintf(notice, sizeof(notice), "Carregando mídia… %zu KiB", media_download_bytes(v->download) / 1024);
-            text_label(w, 3, 3, image_width, notice);
+            text_label(w, 3, 3, image_width, "Carregando mídia…");
         } else if (v->modal == MODAL_ERROR) {
             text_label(w, 3, 3, image_width, v->modal_error ? v->modal_error : "Mídia indisponível.");
             text_label(w, height - 3, 3, image_width, "Enter: tentar novamente");
@@ -814,7 +778,7 @@ void media_view_draw(media_view *v)
             pthread_mutex_lock(&v->lock);
             snprintf(status, sizeof(status), "%s · %.0f / %.0f s · Volume %.0f%%%s", v->paused ? "Pausado" : "Reproduzindo", v->position, v->duration, v->volume, v->audio_missing ? " · Sem dispositivo de áudio" : v->muted ? " · Mudo" : "");
             pthread_mutex_unlock(&v->lock);
-            text_label(w, height - 3, 3, image_width, v->selected_item.video ? status : v->modal_animation ? "GIF animado" : "Imagem");
+            text_label(w, height - 3, 3, image_width, v->selected_item.video ? status : v->modal_animated ? "GIF animado" : "Imagem");
         }
         text_label(w, height - 2, 3, image_width, v->selected_item.video ?
                    "Espaço pausa · ←→ 5s · ↑↓ volume · m" : "i: informações · Esc: voltar");
@@ -836,9 +800,8 @@ void media_view_prepare(media_view *v)
         placement *p = &v->visible[i]; cache_entry *e = &v->cache[p->entry];
         graphics_terminal t = graphics_terminal_get();
         if (e->state != ENTRY_READY || e->image.protocol != t.protocol) continue;
-        const graphics_image *image = t.protocol == GRAPHICS_KITTY ? &e->image :
-            graphics_image_crop(&e->image, p->top * t.cell_height, p->bottom * t.cell_height);
-        graphics_image_place(image, p->y, p->x,
+        const graphics_image *image = &p->image;
+        graphics_image_place_id(image, e->placement_id, p->y, p->x,
             t.protocol == GRAPHICS_KITTY ? p->top * t.cell_height : 0,
             t.protocol == GRAPHICS_KITTY ? p->bottom * t.cell_height : 0);
     }
