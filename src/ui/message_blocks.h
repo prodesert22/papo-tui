@@ -31,6 +31,8 @@ typedef struct {
     int index, row, height, x, width;
 } message_media_region;
 typedef struct {
+    int x, y; /* Position in the message; neighboring tiles can share y. */
+    int tile_width, tile_rows; /* Nonzero only on the first row of a tile. */
     message_segment segments[MESSAGE_COLUMNS];
     int count;
     bool card, top, bottom;
@@ -43,6 +45,7 @@ typedef void (*message_media_measure)(void *context, const message_media *item, 
 typedef struct {
     message_row *rows;
     size_t count, capacity;
+    int height; /* Physical rows after wrapping image tiles. */
     message_media *media;
     size_t media_count;
     message_media_measure measure;

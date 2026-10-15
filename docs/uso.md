@@ -361,7 +361,11 @@ e reduz proporcionalmente quando necessário para caber na área disponível, co
 altura máxima de **720 pixels**. No modal, esse teto não se aplica: a imagem usa
 a área disponível, com ampliação ou redução proporcional, sem deformação.
 O tamanho acompanha o redimensionamento da janela e as dimensões das células do
-terminal. GIFs animados se repetem enquanto estiverem visíveis,
+terminal. Imagens da mesma mensagem ficam lado a lado enquanto houver largura,
+com duas colunas de intervalo. Quando não cabem, passam para baixo, com uma linha
+de intervalo entre os grupos. Prévias de links preservam seus textos junto à imagem.
+O agrupamento é recalculado ao redimensionar a janela.
+GIFs animados se repetem enquanto estiverem visíveis,
 respeitando os intervalos dos frames; ao rolar para fora ou trocar de canal,
 deixam de atualizar a tela. A animação aceita até 256 frames e 32 MiB de pixels
 decodificados por arquivo; quando a resolução excede o orçamento da animação,

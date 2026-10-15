@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#define IMAGE_GAP_COLUMNS 2
 static const char *str(json_t *obj, const char *key)
 {
     const char *s = json_string_value(json_object_get(obj, key));
@@ -226,7 +227,86 @@ static bool media(message_blocks *b, json_t *message, json_t *entry, const char 
     int media_width = width - (card ? 4 : 0);
     if (height && b->measure) b->measure(b->measure_context, &b->media[n], media_width, &media_width, &height);
     for (int i = 0; i < height; ++i) if (!blank(b, card, false, false, color)) return false;
+    if (height > 0 && !card) {
+        b->rows[start].tile_width = media_width;
+        b->rows[start].tile_rows = (int)(b->count - start);
+    }
     return region(b, n, start, b->count, image_start, card ? 2 : 0, media_width, height);
+}
+/* Keep each tile's rows, strings and hit regions owned by the message. Position
+ * them without merging rows or imposing a fixed number of images per line. */
+static bool wrap_images(message_blocks *b, int width)
+{
+    size_t count = b->count;
+    size_t tiles = 0;
+    for (size_t i = 0; i < count; ++i) tiles += b->rows[i].tile_rows > 0;
+    if (tiles > 1) for (size_t i = 0; i < count;) {
+        int rows = b->rows[i].tile_rows;
+        if (!rows) { ++i; continue; }
+        if (b->rows[i].card) {
+            /* Preserve each preview's text and padding, but don't reserve
+             * unused card width between neighboring images. */
+            int used = 8;
+            for (int j = 0; j < rows; ++j) {
+                message_row *r = &b->rows[i + j];
+                for (int k = 0; k < r->count; ++k) {
+                    message_segment *s = &r->segments[k];
+                    int end = s->x + text_label(NULL, 0, 0, s->width, s->text) + 2;
+                    if (end > used) used = end;
+                }
+                for (int k = 0; k < r->media_count; ++k) {
+                    int end = r->media[k].x + r->media[k].width + 2;
+                    if (end > used) used = end;
+                }
+            }
+            if (used < b->rows[i].tile_width) {
+                b->rows[i].tile_width = used;
+                for (int j = 0; j < rows; ++j) {
+                    message_row *r = &b->rows[i + j]; r->card_width = used;
+                    for (int k = 0; k < r->count; ++k)
+                        if (r->segments[k].width > used - r->segments[k].x - 2)
+                            r->segments[k].width = used - r->segments[k].x - 2;
+                }
+            }
+        }
+        i += (size_t)rows;
+    }
+    int y = 0, line_y = 0, right = 0, line_height = 0;
+    bool line = false;
+    for (size_t i = 0; i < count;) {
+        int tile_width = b->rows[i].tile_width, tile_rows = b->rows[i].tile_rows;
+        if (!tile_rows) {
+            if (line) { y = line_y + line_height; line = false; }
+            b->rows[i].y = y++; ++i; continue;
+        }
+        if (tile_width < 1 || tile_width > width || tile_rows < 1 || (size_t)tile_rows > count - i) return false;
+        int x = 0;
+        if (line) {
+            int remaining = width - right;
+            if (remaining < IMAGE_GAP_COLUMNS || tile_width > remaining - IMAGE_GAP_COLUMNS) {
+                y = line_y + line_height;
+                size_t gap = b->count;
+                if (!blank(b, false, false, false, 0)) return false;
+                b->rows[gap].y = y++;
+                line = false;
+            } else x = right + IMAGE_GAP_COLUMNS;
+        }
+        if (!line) { line_y = y; line_height = 0; line = true; }
+        for (int j = 0; j < tile_rows; ++j) {
+            b->rows[i + j].x = x; b->rows[i + j].y = line_y + j;
+        }
+        right = x + tile_width;
+        if (tile_rows > line_height) line_height = tile_rows;
+        i += (size_t)tile_rows;
+    }
+    b->height = line ? line_y + line_height : y;
+    /* Preserve the final message separator as the last logical row. */
+    if (b->count > count) {
+        message_row separator = b->rows[count - 1];
+        memmove(b->rows + count - 1, b->rows + count, (b->count - count) * sizeof(*b->rows));
+        b->rows[b->count - 1] = separator;
+    }
+    return true;
 }
 bool message_blocks_build_mentions(message_blocks *b, json_t *m, const char *author,
                           const char *reply, int width, bool graphics,
@@ -381,8 +461,13 @@ bool message_blocks_build_sized_mentions(message_blocks *b, json_t *m, const cha
         }
         if (!blank(b, true, false, true, color)) goto error;
         for (size_t r = card_start; r < b->count; ++r) b->rows[r].card_width = card_width;
+        if (graphics && json_is_object(json_object_get(item, "thumbnail")) && strlen(str(item, "id")) == 36) {
+            b->rows[card_start].tile_width = card_width;
+            b->rows[card_start].tile_rows = (int)(b->count - card_start);
+        }
     }
     if (!blank(b, false, false, false, 0)) goto error;
+    if (!wrap_images(b, width)) goto error;
     return true;
 error:
     message_blocks_free(b); return false;

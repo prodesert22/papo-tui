@@ -203,7 +203,7 @@ static cached_layout *find_layout(view *ui, size_t index, int width)
 static void account_layout(view *ui, cached_layout *c)
 {
     message_blocks *b = &c->blocks;
-    c->height = (int)b->count;
+    c->height = b->height;
     c->tail_gap = b->count && !b->rows[b->count - 1].count && !b->rows[b->count - 1].media_count && !b->rows[b->count - 1].card;
     c->bytes = b->capacity * sizeof(*b->rows) + b->media_count * sizeof(*b->media);
     for (size_t i = 0; i < b->count; ++i) for (int k = 0; k < b->rows[i].count; ++k) {
@@ -226,6 +226,7 @@ static void account_layout(view *ui, cached_layout *c)
 static int walk(view *ui, int first, bool paint, bool save, int *anchor)
 {
     int total = 0, width = ui->body ? getmaxx(ui->body) - 4 : ui->width - 4;
+    bool saved = false;
     *anchor = 0;
     for (size_t i = 0; i < history_message_count(ui->model); ++i) {
         json_t *m = history_message(ui->model, i);
@@ -250,10 +251,11 @@ static int walk(view *ui, int first, bool paint, bool save, int *anchor)
         if (anchored) *anchor = total;
         bool *offered = paint && ui->media ? calloc(blocks->media_count + 1, sizeof(*offered)) : NULL;
         size_t rows = blocks->count;
+        int height = blocks->height;
         /* At minimum height, retain the final message instead of its spacing. */
         if (ui->visible == 1 && i + 1 == history_message_count(ui->model) && rows &&
             !blocks->rows[rows - 1].count && !blocks->rows[rows - 1].media_count &&
-            !blocks->rows[rows - 1].card) --rows;
+            !blocks->rows[rows - 1].card) { --rows; --height; }
         for (size_t row = 0; row < rows; ++row) {
             const message_row *r = &blocks->rows[row];
             char key[128]; size_t offset = 0;
@@ -264,18 +266,19 @@ static int walk(view *ui, int first, bool paint, bool save, int *anchor)
                 snprintf(key, sizeof(key), "media:%s:%s:%u", item->id, item->role, item->position);
                 offset = (size_t)(region->row < 0 ? 0 : region->row);
             } else snprintf(key, sizeof(key), "gap:%zu", row);
-            if (anchored && !strcmp(key, ui->block) && offset <= ui->offset) *anchor = total + (int)row;
-            if (save && first == total + (int)row) {
+            if (anchored && !strcmp(key, ui->block) && offset <= ui->offset) *anchor = total + r->y;
+            if (save && !saved && first == total + r->y) {
                 snprintf(ui->anchor, sizeof(ui->anchor), "%s", str(m, "id"));
                 snprintf(ui->block, sizeof(ui->block), "%s", key); ui->offset = offset;
+                saved = true;
             }
-            if (paint && total + (int)row >= first && total + (int)row < first + ui->visible) {
-                int y = ui->history_top + total + (int)row - first;
+            if (paint && total + r->y >= first && total + r->y < first + ui->visible) {
+                int y = ui->history_top + total + r->y - first;
                 int pair = ui->focus == HISTORY_PANEL ? HISTORY_AREA : PANEL;
                 int accent = ui->focus == HISTORY_PANEL ? HISTORY_ACCENT : PANEL_ACCENT;
                 if (r->count && !strcmp(r->segments[0].key, "header")) pair = accent;
-                message_row_draw(ui->body, r, y, 2, width, pair, accent);
-                if (blocks->self_mention && row + 1 < blocks->count) {
+                message_row_draw(ui->body, r, y, 2 + r->x, width - r->x, pair, accent);
+                if (blocks->self_mention && r->y + 1 < height) {
                     wattrset(ui->body, COLOR_PAIR(accent) | A_BOLD);
                     mvwaddch(ui->body, y, 0, ACS_VLINE);
                 }
@@ -283,19 +286,19 @@ static int walk(view *ui, int first, bool paint, bool save, int *anchor)
                     const message_media_region *region = &r->media[k];
                     if (offered[region->index]) continue;
                     offered[region->index] = true;
-                    int start = total + (int)row - region->row;
+                    int start = total + r->y - region->row;
                     int top = first > start ? first - start : 0;
                     int bottom = start + region->height > first + ui->visible ? start + region->height - first - ui->visible : 0;
                     if (bottom > region->height) bottom = region->height;
                     int graphics_y = getbegy(ui->body) + ui->history_top + (start > first ? start - first : 0);
                     if (!region->height) graphics_y = getbegy(ui->body) + y;
                     media_view_offer(ui->media, &blocks->media[region->index], graphics_y,
-                                     getbegx(ui->body) + 2 + region->x,
+                                     getbegx(ui->body) + 2 + r->x + region->x,
                                      region->width, region->height, top, bottom);
                 }
             }
         }
-        total += (int)rows; free(offered); if (ui->layout_bytes > LAYOUT_BYTES) release_layout(ui, cached);
+        total += height; free(offered); if (ui->layout_bytes > LAYOUT_BYTES) release_layout(ui, cached);
     }
     return total;
 }

@@ -220,6 +220,89 @@ static void attachment_layout(void)
     assert(metadata);
     message_blocks_free(&b); json_decref(m);
 }
+static void gallery_measure(void *context, const message_media *item, int available_width, int *width, int *height)
+{
+    const int (*sizes)[2] = context;
+    assert(item->position < 4);
+    int w = sizes[item->position][0], h = sizes[item->position][1];
+    *width = w < available_width ? w : available_width;
+    *height = h * *width / w;
+    if (*height < 1) *height = 1;
+}
+static void gallery_regions(const message_blocks *b, int positions[4][4])
+{
+    int found = 0;
+    for (size_t r = 0; r < b->count; ++r) {
+        const message_row *row = &b->rows[r];
+        assert(row->y >= 0 && row->y < b->height);
+        for (int k = 0; k < row->media_count; ++k) {
+            const message_media_region *region = &row->media[k];
+            if (region->row) continue;
+            assert(region->index >= 0 && region->index < 4);
+            int *p = positions[region->index];
+            p[0] = row->x + region->x; p[1] = row->y; p[2] = region->width; p[3] = region->height;
+            ++found;
+        }
+    }
+    assert(found == 4);
+    assert(b->rows[b->count - 1].y == b->height - 1);
+}
+static void image_gallery(void)
+{
+    json_t *m = json_pack("{s:s,s:[]}", "id", "00000000-0000-4000-8000-000000000001", "attachments");
+    assert(m);
+    for (int i = 0; i < 4; ++i) {
+        char id[37]; snprintf(id, sizeof(id), "00000000-0000-4000-8000-%012d", i + 10);
+        assert(!json_array_append_new(json_object_get(m, "attachments"),
+            json_pack("{s:s,s:s}", "id", id, "mime_type", "image/png")));
+    }
+    const int sizes[4][2] = {{8, 4}, {12, 2}, {10, 6}, {20, 3}};
+    const int widths[] = {34, 33, 12}, heights[] = {12, 13, 18};
+    const int expected[3][4][2] = {{{0, 1}, {10, 1}, {24, 1}, {0, 8}},
+        {{0, 1}, {10, 1}, {0, 6}, {12, 6}}, {{0, 1}, {0, 6}, {0, 9}, {0, 16}}};
+    for (size_t w = 0; w < sizeof(widths) / sizeof(*widths); ++w) {
+        message_blocks b; int positions[4][4] = {{0}};
+        assert(message_blocks_build_sized(&b, m, "Sender", "", widths[w], true, gallery_measure, (void *)sizes));
+        assert(b.height == heights[w]); gallery_regions(&b, positions);
+        for (int i = 0; i < 4; ++i) {
+            assert(positions[i][0] == expected[w][i][0] && positions[i][1] == expected[w][i][1]);
+            assert(positions[i][0] + positions[i][2] <= widths[w]);
+        }
+        message_blocks_free(&b);
+    }
+    message_blocks b;
+    assert(message_blocks_build(&b, m, "Sender", "", 34, false));
+    assert(b.height == (int)b.count);
+    for (size_t r = 0; r < b.count; ++r) assert(b.rows[r].x == 0 && b.rows[r].y == (int)r);
+    message_blocks_free(&b); json_decref(m);
+}
+static void embed_gallery(void)
+{
+    json_t *m = json_pack("{s:s,s:[]}", "id", "00000000-0000-4000-8000-000000000001", "embeds");
+    assert(m);
+    for (int i = 0; i < 4; ++i) {
+        char id[37]; snprintf(id, sizeof(id), "00000000-0000-4000-8000-%012d", i + 10);
+        assert(!json_array_append_new(json_object_get(m, "embeds"), json_pack("{s:s,s:s,s:s,s:{s:s}}",
+            "id", id, "source_type", "link", "title", "Prévia 界", "thumbnail", "mime_type", "image/png")));
+    }
+    const int sizes[4][2] = {{8, 4}, {8, 4}, {8, 4}, {8, 4}};
+    message_blocks b; int positions[4][4] = {{0}};
+    assert(message_blocks_build_sized(&b, m, "Sender", "", 43, true, gallery_measure, (void *)sizes));
+    gallery_regions(&b, positions);
+    assert(positions[0][1] == positions[1][1] && positions[1][1] == positions[2][1]);
+    assert(positions[1][0] - positions[0][0] == 15 && positions[2][0] - positions[1][0] == 15);
+    assert(positions[3][0] == positions[0][0] && positions[3][1] == positions[0][1] + 9);
+    int titles = 0;
+    for (size_t r = 0; r < b.count; ++r)
+        for (int s = 0; s < b.rows[r].count; ++s) {
+            const message_segment *segment = &b.rows[r].segments[s];
+            if (!strcmp(segment->text, "Prévia 界")) {
+                assert(segment->bold && b.rows[r].x + segment->x < 43); ++titles;
+            }
+        }
+    assert(titles == 4 && b.height < (int)b.count);
+    message_blocks_free(&b); json_decref(m);
+}
 static void embed_author_unique(void)
 {
     const char *fixtures[] = {
@@ -249,6 +332,6 @@ static void embed_author_unique(void)
 int main(void)
 {
     assert(setlocale(LC_ALL, "C.UTF-8")); init_graphemebreak(); cards(); embed_layout(); protocol(); graphics_protocols();
-    preview_crops(); embed_author_unique(); attachment_layout(); modal_geometry();
+    preview_crops(); embed_author_unique(); attachment_layout(); image_gallery(); embed_gallery(); modal_geometry();
     puts("cards, terminal negotiation and Sixel/Kitty/iTerm2 pixels verified"); return 0;
 }

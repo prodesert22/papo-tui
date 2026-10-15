@@ -418,6 +418,57 @@ class MediaTerminal(unittest.TestCase):
                     t.click(8, 4); self.wait(t, 'Conteúdo do outro canal'); t.read(.1)
                     self.assertFalse(t.stream.live_ids)
                 finally: self.assertTrue(t.close())
+    def test_image_gallery_wraps_with_gaps_and_keeps_click_targets(self):
+        for embed in (False, True):
+            with self.subTest(embed=embed), self.serve(self.images['png'], 'image/png', embed=embed) as server:
+                if embed:
+                    server.messages[0]['embeds'] = [{'id': uuid(901 + i), 'source_type': 'link',
+                        'title': 'Preview ' + str(i + 1), 'thumbnail': {'mime_type': 'image/png'}} for i in range(4)]
+                    parent = server.api_handler
+                    def route(method, path, body):
+                        if '/embeds/' in path:
+                            return 200, {'id': path.rsplit('/', 1)[1],
+                                'image_data': base64.b64encode(self.images['png']).decode(), 'author_image_data': None}
+                        return parent(method, path, body)
+                    server.api_handler = route
+                else:
+                    original = server.messages[0]['attachments'][0]
+                    server.messages[0]['attachments'] = [dict(original, id=uuid(901 + i)) for i in range(4)]
+                t = self.open(server, protocol='kitty')
+                try:
+                    t.resize(50, 150); t.send('\x1b[6;4;1t')
+                    def slots():
+                        live = {}
+                        for position, p in zip(t.stream.placement_positions, t.stream.placements):
+                            key = int(p[b'i']), int(p[b'p'])
+                            if key in t.stream.live_placements: live[key] = (*position, int(p[b'w']), int(p[b'h']))
+                        return sorted(live.values())
+                    def wait_rows(rows):
+                        deadline = time.monotonic() + 10
+                        while time.monotonic() < deadline:
+                            found = slots()
+                            if len(found) == 4 and len({p[0] for p in found}) == rows and all(p[2:] == (16, 12) for p in found):
+                                return found
+                            t.read(.03)
+                        self.fail('Gallery placements did not settle: ' + repr(slots()))
+                    wide = wait_rows(1)
+                    gap = 6 if embed else 2  # Cards retain two padding columns on either side.
+                    self.assertTrue(all(wide[i + 1][1] - wide[i][1] == 16 + gap for i in range(3)))
+                    t.resize(50, 80); narrow = wait_rows(2)
+                    self.assertEqual(narrow[0][0], narrow[1][0])
+                    self.assertEqual(narrow[2][0], narrow[3][0])
+                    self.assertEqual(narrow[0][1], narrow[2][1])
+                    self.assertEqual(narrow[2][0] - narrow[0][0], 8 if embed else 4)
+                    self.assertEqual(len(t.stream.live_ids), 1)
+                    endpoint = '/embeds/' if embed else '/attachments/'
+                    self.assertEqual(sum(endpoint in r[1] for r in server.requests), 4)
+                    t.click(narrow[0][0] + 1, narrow[0][1] + 16)
+                    self.assertNotIn('[Info]', '\n'.join(t.screen.display))
+                    t.click(narrow[1][0] + 1, narrow[1][1] + 8); self.wait(t, '[Info]')
+                    t.send('i'); self.wait(t, 'Propriedades'); self.wait(t, uuid(902)[-6:])
+                    t.send('\x1b'); self.wait(t, 'Conversar em #')
+                    self.assertEqual(sum(endpoint in r[1] for r in server.requests), 4)
+                finally: self.assertTrue(t.close())
 
     def test_kitty_scrolling_repositions_and_crops_without_retransmission(self):
         with self.serve(self.tall_image, 'image/png') as server:
