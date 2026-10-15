@@ -1,5 +1,7 @@
 """Full R8 UI with synthetic HTTP/WS fixtures."""
 import json
+from pathlib import Path
+import tempfile
 import time
 import unittest
 from r8_mock import R8Mock, DM, AUTHOR, uuid
@@ -32,7 +34,7 @@ class R8Terminal(unittest.TestCase):
             t.send('\x1bOA'); self.wait(t,'Foco: Abas')
             self.assertEqual(t.screen.buffer[10][23].bg,resting)
 
-    def test_open_channel_clears_old_notification_badge_and_new_activity_relights_it(self):
+    def test_backend_cursor_clears_badge_and_new_activity_relights_it(self):
         with R8Mock(count=3) as server:
             t=self.login(server)
             def badge(present):
@@ -42,7 +44,7 @@ class R8Terminal(unittest.TestCase):
             badge(True)
             t.click(7,4); self.wait(t,'Mensagem 0003'); badge(False)
             # Old notification IDs point outside the current history page.
-            # Acknowledging the channel does not mark those unseen messages.
+            # Reading the conversation does not mark unrelated notifications.
             self.assertEqual(server.marked,[])
             self.assertTrue(all(not n['read'] for n in server.notifications))
             t.click(8,4)
@@ -50,17 +52,21 @@ class R8Terminal(unittest.TestCase):
             server.emit(dict(fresh,type='message')); badge(True)
             t.click(7,4); self.wait(t,'Mensagem 0004'); badge(False)
 
-    def test_empty_and_header_only_history_clear_stale_badges_but_failed_reads_do_not(self):
+    def test_history_read_clears_even_if_backend_cursor_lags_but_failed_get_does_not(self):
         from history_mock import CHANNEL
-        for case in ('empty','header-only','denied'):
+        for case in ('empty','header-only','denied','cursor-write-failed'):
             with self.subTest(case=case),R8Mock(count=3) as server:
                 for channel in server.channels:
-                    if channel['id']==CHANNEL: channel['last_message']={'id':uuid(999)}
+                    if channel['id']==CHANNEL: channel['last_message']=server.summary(server.message(3))
                 original=server.api_handler
                 def route(method,path,body):
                     if '/channels/'+CHANNEL+'/messages' in path:
                         if case=='denied': return 403,None
                         rows=[] if case=='empty' else [dict(server.message(3),content=None,embeds=None,attachments=[])]
+                        if case!='cursor-write-failed':
+                            channel=next(c for c in server.channels if c['id']==CHANNEL)
+                            channel['last_message']=server.summary(rows[0]) if rows else None
+                            server.touch_read(CHANNEL,rows)
                         return 200,dict(channel_id=CHANNEL,messages=rows,has_more=False)
                     return original(method,path,body)
                 server.api_handler=route
@@ -72,14 +78,19 @@ class R8Terminal(unittest.TestCase):
                     if case!='denied' and t.screen.buffer[7][23].data!='●': break
                 self.assertEqual(t.screen.buffer[7][23].data=='●',case=='denied')
                 self.assertEqual(server.marked,[])
+                if case=='cursor-write-failed':
+                    t.read(.5)
+                    self.assertNotEqual(t.screen.buffer[7][23].data,'●')
+                    self.assertEqual(sum('/channels/'+CHANNEL+'/messages' in r[1] for r in server.requests),1)
 
-    def test_notification_dots_overlay_buttons_and_long_names_then_clear_on_view(self):
+    def test_cursor_dots_overlay_buttons_and_long_names_and_ignore_notification_read(self):
         from history_mock import CHANNEL
         with R8Mock() as server:
             for channel in server.channels:
-                channel['last_message']=None; channel['last_read_message']=None
+                channel['last_read_message']=None
                 if channel['id']==CHANNEL: channel['name']='Um canal com nome longo demais 界'
             server.dms[0]['unread_count']=0
+            server.dms[0]['last_message']=None
             server.dms[0]['user']['nickname']='Destinatário com nome muito longo 界'
             t=self.login(server,environment={'KITTY_WINDOW_ID':'r8-theme-fixture'})
             def dot(row,column,present=True):
@@ -89,8 +100,8 @@ class R8Terminal(unittest.TestCase):
                 self.assertEqual(cell.data=='●',present)
                 if present: self.assertEqual(cell.fg,'ff0000')
                 return cell
-            # An unread persisted notification lights its channel and group,
-            # even without a last_message snapshot or inactive history reads.
+            # The backend cursor lights both the channel and its group without
+            # fetching any inactive histories.
             dot(5,10); dot(7,23); dot(5,19,False)
             self.assertFalse(any('/messages' in r[1] for r in server.requests))
             t.click(5,4); group=dot(5,10); self.assertEqual(group.bg,t.screen.buffer[5][3].bg)
@@ -105,24 +116,57 @@ class R8Terminal(unittest.TestCase):
             self.assertEqual(t.screen.buffer[5][12].data,'[')
             self.assertFalse(any('/messages' in r[1] for r in server.requests))
             t.resize(18,60); dot(5,10); dot(5,19); dot(6,57)
-            # Viewing only the channel's details clears its badge; the DM
-            # indicator is independent and remains on its button.
+            # Reading a central notification does not advance the conversation
+            # cursor. Both conversation badges remain on.
             t.send('\x1b[20~'); self.wait(t,'Aviso 0001'); t.send('\n')
             self.wait(t,'Detalhes da notificação'); t.send('\x1b\x1b')
-            dot(5,10,False); dot(5,19); dot(6,57)
+            dot(5,10); dot(5,19); dot(6,57)
             self.assertEqual(server.marked,[[uuid(4001)]])
-            # Refreshing the DM snapshot removes its local message marker only
-            # after that exact message is actually displayed.
-            server.messages=[message]
-            original=server.api_handler
-            def route(method,path,body):
-                if '/channels/'+DM+'/messages' in path:
-                    return 200,dict(channel_id=DM,messages=[message],has_more=False)
-                return original(method,path,body)
-            server.api_handler=route
+            # GET history persists the read cursor; a metadata refresh confirms
+            # it and clears the DM indicators, independently of the channel.
+            server.dm_messages=[message]
             t.send('\x1bOB\n'); self.wait(t,'Mensagem 0050'); t.read(.3)
             t.send('\x1bOD'); self.wait(t,'Foco: DMs')
             dot(5,19,False); dot(6,57,False)
+            dot(5,10)
+
+    def test_new_process_uses_persisted_channel_and_dm_cursors(self):
+        with R8Mock(count=3) as server:
+            t=self.login(server)
+            t.click(7,4); self.wait(t,'Mensagem 0003')
+            t.click(5,13); self.wait(t,'Bia ·')
+            t.send('\x1bOB\n'); self.wait(t,'Mensagem direta'); t.read(.5)
+            self.assertTrue(all(not n['read'] for n in server.notifications))
+            before=sum('/messages' in r[1] for r in server.requests)
+            restarted=self.login(server); restarted.read(.5)
+            for row,column in ((5,10),(5,19),(7,23)):
+                self.assertNotEqual(restarted.screen.buffer[row][column].data,'●')
+            restarted.click(5,13); self.wait(restarted,'Bia ·')
+            self.assertNotEqual(restarted.screen.buffer[6][23].data,'●')
+            self.assertEqual(sum('/messages' in r[1] for r in server.requests),before)
+
+    def test_restart_preserves_reading_when_remote_cursor_stays_old(self):
+        with R8Mock(count=3) as server,tempfile.TemporaryDirectory(prefix='r8-reading-') as state:
+            server.touch_read=lambda _channel,_messages: None
+            environment={'XDG_STATE_HOME':state}
+            t=self.login(server,environment=environment)
+            t.click(7,4); self.wait(t,'Mensagem 0003')
+            t.click(5,13); self.wait(t,'Bia ·')
+            t.send('\x1bOB\n'); self.wait(t,'Mensagem direta')
+            until=time.monotonic()+5
+            while time.monotonic()<until:
+                t.read(.03)
+                path=Path(state)/'papo-tui/read-cursors.json'
+                if path.exists() and len(json.loads(path.read_text())['contexts'][0]['messages'])==2: break
+            self.assertTrue(path.exists())
+            before=sum('/messages' in r[1] for r in server.requests)
+            restarted=self.login(server,environment=environment); restarted.read(.3)
+            self.assertNotEqual(restarted.screen.buffer[5][10].data,'●')
+            self.assertNotEqual(restarted.screen.buffer[5][19].data,'●')
+            self.assertNotEqual(restarted.screen.buffer[7][23].data,'●')
+            restarted.click(5,13); self.wait(restarted,'Bia ·')
+            self.assertNotEqual(restarted.screen.buffer[6][23].data,'●')
+            self.assertEqual(sum('/messages' in r[1] for r in server.requests),before)
     def test_adjacent_buttons_keyboard_mouse_and_no_history_on_switch(self):
         with R8Mock() as server:
             t=self.login(server)

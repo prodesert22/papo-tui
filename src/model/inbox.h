@@ -33,11 +33,6 @@ void inbox_view(inbox *box, const char *notification_id, bool event);
 void inbox_view_message(inbox *box, const char *message_id);
 void inbox_read_conversation(inbox *box, const char *channel_id);
 bool inbox_conversation_unseen(const inbox *box, const char *channel_id);
-bool inbox_conversation_notified(const inbox *box, const char *channel_id);
-/* Acknowledge only the local conversation badge, never unread REST records.
- * snapshot_last is the current list's last_message ID (or empty). */
-void inbox_acknowledge_conversation(inbox *box, const char *channel_id, const char *snapshot_last);
-bool inbox_conversation_acknowledged(const inbox *box, const char *channel_id, const char *snapshot_last);
 bool inbox_message_viewed(const inbox *box, const char *message_id);
 size_t inbox_unseen_conversations(const inbox *box);
 const char *inbox_notice(const inbox *box);

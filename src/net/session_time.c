@@ -51,6 +51,21 @@ bool session_time_parse(const char *value, uint64_t *epoch_ms)
     return true;
 }
 
+bool session_time_compare(const char *left, const char *right, int *ordering)
+{
+    uint64_t a,b;
+    if (!ordering || !session_time_parse(left,&a) || !session_time_parse(right,&b)) return false;
+    if (a/1000!=b/1000) { *ordering=a>b ? 1 : -1; return true; }
+    const char *af=left+19,*bf=right+19;
+    if (*af=='.') ++af;
+    if (*bf=='.') ++bf;
+    while (isdigit((unsigned char)*af) || isdigit((unsigned char)*bf)) {
+        char ac=isdigit((unsigned char)*af) ? *af++ : '0',bc=isdigit((unsigned char)*bf) ? *bf++ : '0';
+        if (ac!=bc) { *ordering=ac>bc ? 1 : -1; return true; }
+    }
+    *ordering=0; return true;
+}
+
 bool session_time_deadline(uint64_t expires_ms, uint64_t wall_ms, uint64_t monotonic_ms,
                            uint64_t *deadline_ms)
 {

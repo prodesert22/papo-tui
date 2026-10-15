@@ -19,6 +19,13 @@ int main(void)
         "2024-02-29T12:00:00+00:60", "2024-02-29T12:00:00Zjunk", "2024-02-29T12:00:00", "1969-12-31T23:59:59Z"};
     for (unsigned i = 0; i < sizeof(invalid)/sizeof(*invalid); ++i) CHECK(!session_time_parse(invalid[i], &b));
     CHECK(!session_time_parse(NULL, &b));
+    int order;
+    CHECK(session_time_compare("2024-02-29T12:00:00.123456Z", "2024-02-29T08:00:00.123457-04:00", &order) && order < 0);
+    CHECK(session_time_compare("2024-02-29T12:00:00.1Z", "2024-02-29T15:30:00.100000+03:30", &order) && order == 0);
+    CHECK(session_time_compare("2024-02-29T12:00:01Z", "2024-02-29T12:00:00.999999Z", &order) && order > 0);
+    CHECK(!session_time_compare("invalid", "2024-02-29T12:00:00Z", &order));
+    CHECK(!session_time_compare(NULL, "2024-02-29T12:00:00Z", &order));
+    CHECK(!session_time_compare("2024-02-29T12:00:00Z", "2024-02-29T12:00:00Z", NULL));
     CHECK(session_time_deadline(121000, 1000, 500, &deadline) && deadline == 60500);
     CHECK(session_time_deadline(61000, 1000, 500, &deadline) && deadline == 30500);
     CHECK(session_time_deadline(62000, 1000, 500, &deadline) && deadline == 31000);

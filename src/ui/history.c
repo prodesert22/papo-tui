@@ -54,7 +54,7 @@ typedef struct {
     uint64_t retry_id;
     uint64_t unseen;
     size_t section, offset;
-    bool at_end, paste, show_channels, layout_failed, duplicate_modal, reenviar, conversation_requested;
+    bool at_end, paste, show_channels, layout_failed, duplicate_modal, reenviar;
     bool dragging, editor_scrolling;
     text_paste paste_data;
 } view;
@@ -80,21 +80,11 @@ static size_t list_count(view *ui)
     return n;
 }
 static json_t *list_channel(view *ui,size_t row) { return history_channel(ui->model,list_index(ui,row)); }
-static bool conversation_notified(view *ui, json_t *channel)
-{
-    inbox *box=history_inbox(ui->model);
-    const char *id=str(channel,"id"),*last=str(json_object_get(channel,"last_message"),"id");
-    if (inbox_conversation_acknowledged(box,id,last)) return false;
-    return strcmp(str(channel,"type"),"category") &&
-        (inbox_conversation_unseen(box,id) || inbox_conversation_notified(box,id) ||
-         (json_is_true(json_object_get(channel,"_dm")) && json_integer_value(json_object_get(channel,"unread_count"))>0) ||
-         (*last && strcmp(last,str(channel,"last_read_message")) && !inbox_message_viewed(box,last)));
-}
 static bool list_notified(view *ui, bool dms)
 {
     for (size_t i=0;i<history_channel_count(ui->model);++i) {
         json_t *channel=history_channel(ui->model,i);
-        if (json_is_true(json_object_get(channel,"_dm"))==dms && conversation_notified(ui,channel)) return true;
+        if (json_is_true(json_object_get(channel,"_dm"))==dms && history_channel_unread(ui->model,channel)) return true;
     }
     return false;
 }
@@ -271,9 +261,11 @@ static int walk(view *ui, int first, bool paint, bool save, int *anchor)
                 int accent = ui->focus == HISTORY_PANEL ? HISTORY_ACCENT : PANEL_ACCENT;
                 if (r->count && !strcmp(r->segments[0].key, "header")) pair = accent;
                 message_row_draw(ui->body, r, y, 2, width, pair, accent);
-                if (observed && !r8_modal_is_open(ui->r8) && !media_view_modal(ui->media) &&
-                    ((r->count && strcmp(r->segments[0].key,"header")) || r->media_count))
-                    inbox_view_message(history_inbox(ui->model),str(m,"id"));
+                if (observed && !r8_modal_is_open(ui->r8) && !media_view_modal(ui->media)) {
+                    if ((r->count && strcmp(r->segments[0].key,"header")) || r->media_count)
+                        inbox_view_message(history_inbox(ui->model),str(m,"id"));
+                    if (ui->at_end && (r->count || r->media_count)) history_read_visible(ui->model,str(m,"id"));
+                }
                 if (blocks.self_mention && row + 1 < blocks.count) {
                     wattrset(ui->body, COLOR_PAIR(accent) | A_BOLD);
                     mvwaddch(ui->body, y, 0, ACS_VLINE);
@@ -535,20 +527,19 @@ static void draw(view *ui, auth_client *auth, draw_scope scope)
             size_t index = (size_t)(ui->first_channel + row);
             json_t *c = list_channel(ui, index);
             if (!c) break;
-            const char *type = str(c, "type"), *last = str(json_object_get(c, "last_message"), "id");
-            bool unread = inbox_conversation_unseen(history_inbox(ui->model),str(c,"id")) ||
-                (*last && strcmp(last,str(c,"last_read_message")) && !inbox_message_viewed(history_inbox(ui->model),last));
+            const char *type = str(c, "type");
+            bool unread = history_channel_unread(ui->model,c);
             char label[2200];
             snprintf(label, sizeof(label), "%c %s%s%s", list_index(ui,index) == history_selected(ui->model) ? '>' : index == ui->highlighted ? '*' : ' ',
                      !strcmp(type, "category") ? "── " : !strcmp(type, "voice") ? "♪ " : "# ", unread ? "* " : "", str(c, "name"));
             if (ui->list_dms) {
                 json_t *user=json_object_get(c,"user");
-                snprintf(label,sizeof(label),"%s%s · %s (%lld)",inbox_conversation_unseen(history_inbox(ui->model),str(c,"id")) ? "* " : "",
+                snprintf(label,sizeof(label),"%s%s · %s (%lld)",unread ? "* " : "",
                     str(c,"name"),r8_presence_label(inbox_presence(history_inbox(ui->model),str(user,"id"))),
                     (long long)json_integer_value(json_object_get(c,"unread_count")));
             }
             bool selected = index == ui->highlighted;
-            bool notified=conversation_notified(ui,c);
+            bool notified=unread;
             wattrset(ui->list, COLOR_PAIR(selected && focused ? FOCUSED : selected ? PANEL_ACTIVE : focused ? FOCUS_AREA : PANEL));
             text_label(ui->list, row + 1, 1, ui->side - 2 - (notified ? 1 : 0), label);
             if (notified) notification_dot(ui->list,row+1,ui->side-2,
@@ -626,16 +617,6 @@ static void draw(view *ui, auth_client *auth, draw_scope scope)
                 wmove(ui->body, input_top(ui) + measured.cursor_row - editor->first_row, 3 + measured.cursor_column);
         }
     }
-    if (ui->body && scope!=DRAW_NAVIGATION && ui->at_end && history_recent_ready(ui->model) &&
-        !r8_modal_is_open(ui->r8) && !ui->duplicate_modal && !mention_popup_open(ui->mentions) && !media_view_modal(ui->media)) {
-        uint64_t now=0; net_now_ms(&now);
-        if (text_terminal_focused() || (text_terminal_focus_unknown() &&
-            (now<ui->view_requested_until || ui->conversation_requested))) {
-            json_t *channel=history_channel(ui->model,history_selected(ui->model));
-            inbox_acknowledge_conversation(history_inbox(ui->model),str(channel,"id"),str(json_object_get(channel,"last_message"),"id"));
-            ui->conversation_requested=false;
-        }
-    }
     if (scope == DRAW_ALL) { touchwin(ui->frame); wnoutrefresh(ui->frame); }
     if (scope != DRAW_CONVERSATION) {
         wnoutrefresh(ui->tabs);
@@ -691,14 +672,13 @@ static void open_channel(view *ui)
 {
     /* Selecting the displayed channel only changes focus. Preserve pending
      * reads, the reading anchor, the draft and the current message window. */
-    if (history_selected(ui->model) == list_index(ui,ui->highlighted)) { ui->conversation_requested=true; set_focus(ui, HISTORY_PANEL); return; }
+    if (history_selected(ui->model) == list_index(ui,ui->highlighted)) { set_focus(ui, HISTORY_PANEL); return; }
     json_t *channel = list_channel(ui, ui->highlighted);
     bool text = !strcmp(str(channel, "type"), "text");
     if (text && !send_editor_select(ui->editor, str(channel, "id"))) {
         ui->feedback = "Não foi possível trocar o editor; rascunho preservado."; return;
     }
     if (history_select(ui->model, list_index(ui,ui->highlighted))) {
-        ui->conversation_requested=true;
         for (int context = STATUS_HISTORY; context <= STATUS_CLIPBOARD; ++context)
             status_bar_set(&ui->status, (status_context)context, NULL);
         media_view_reset(ui->media);
@@ -827,6 +807,11 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
     bool redraw = true; draw_scope scope = DRAW_ALL; int result = HISTORY_ACCOUNT;
     while (!*interrupted) {
         if (ui->layout_failed) break;
+        uint64_t visible_now=0; net_now_ms(&visible_now);
+        if (!ui->body || !ui->at_end || r8_modal_is_open(ui->r8) || ui->duplicate_modal ||
+            mention_popup_open(ui->mentions) || media_view_modal(ui->media) ||
+            !(text_terminal_focused() || (text_terminal_focus_unknown() && visible_now<ui->view_requested_until)))
+            history_read_visible(ui->model,NULL);
         auth_state before = auth_get_state(auth);
         if (session_store_poll(connections->sessions, auth)) { redraw = true; scope = DRAW_ALL; }
         if (poll_model(ui, auth) || before != auth_get_state(auth)) { redraw = true; scope = DRAW_ALL; }
@@ -867,7 +852,6 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         if (type == ERR) continue;
         if (type==KEY_CODE_YES && (key==TEXT_FOCUS_IN || key==TEXT_FOCUS_OUT)) {
             ui->view_requested_until=0;
-            if (key==TEXT_FOCUS_OUT) ui->conversation_requested=false;
             redraw=true; scope=DRAW_ALL; continue;
         }
         if (!(type==KEY_CODE_YES && (key==PASTE_START || key==PASTE_END || key==KEY_RESIZE || key==TEXT_IGNORED)) && !ui->paste) {
