@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import signal
 import re
 import struct
+import subprocess
 import termios
 import threading
 import time
@@ -15,6 +16,41 @@ import test_media_terminal as media_tests
 from history_mock import HistoryMock, CHANNEL, STAMP, uuid
 from realtime_mock import RealtimeMock
 from test_terminal import editor_region
+
+
+def encode_emoji_animation(gif, format):
+    encoder, container = {
+        "GIF": ("gif", "gif"),
+        "WEBP": ("libwebp_anim", "webp"),
+        "PNG": ("apng", "apng"),
+    }[format]
+    if format == "WEBP":
+        decoders = subprocess.run(
+            [media_tests.FFMPEG, "-hide_banner", "-decoders"], capture_output=True, check=True
+        ).stdout.split()
+        if b"webp_anim" not in decoders:
+            raise unittest.SkipTest("Installed FFmpeg does not provide webp_anim")
+    return subprocess.run(
+        [
+            media_tests.FFMPEG,
+            "-v",
+            "error",
+            "-i",
+            "pipe:0",
+            "-c:v",
+            encoder,
+            "-frames:v",
+            "2",
+            "-threads",
+            "1",
+            "-f",
+            container,
+            "pipe:1",
+        ],
+        input=gif,
+        capture_output=True,
+        check=True,
+    ).stdout
 
 
 class EmojiTerminal(unittest.TestCase):
@@ -54,7 +90,8 @@ class EmojiTerminal(unittest.TestCase):
             m.update(content=content, created_at=datetime.now(timezone.utc).isoformat())
         parent = s.route
         blob = base64.b64encode(
-            self.gif if animated else self.png + (b"x" * 120000 if large else b"")
+            (self.gif if animated else self.png)
+            + (b"x" * (600000 if animated else 120000) if large else b"")
         ).decode()
         s.emojis = [
             {
@@ -474,6 +511,186 @@ class EmojiTerminal(unittest.TestCase):
                 )
             finally:
                 self.assertTrue(t.close())
+
+    def test_custom_gifs_animate_in_messages_and_picker_across_graphics_protocols(self):
+        for protocol in ("kitty", "sixel", "iterm2"):
+            with (
+                self.subTest(protocol=protocol),
+                self.server(content="Emoji :gato 界: fim", animated=True) as server,
+            ):
+                t = self.open(server, protocol=protocol, size=(48, 100))
+                try:
+                    self.until(t, lambda: sum("/emojis?" in r[1] for r in server.requests) == 1)
+
+                    def pixels(size):
+                        if protocol == "kitty":
+                            return {
+                                data
+                                for header, data in t.stream.kitty_frames
+                                if media_tests.raster_dimensions(protocol, header) == size
+                            }
+                        return {
+                            frame
+                            if protocol == "sixel"
+                            else base64.b64decode(frame.split(b":", 1)[1][:-1])
+                            for frame in t.stream.frames
+                            if media_tests.raster_dimensions(protocol, frame) == size
+                        }
+
+                    self.until(t, lambda: len(pixels((16, 16))) >= 2)
+                    t.send("\x1bOS\t\x1bOC")
+                    self.wait(t, "1 emojis do servidor")
+                    self.until(t, lambda: len(pixels((32, 32))) >= 2)
+                    t.resize(44, 110)
+                    self.wait(t, "1 emojis do servidor")
+                    t.send("\x1b")
+                    self.until(t, lambda: "Emojis · Esc voltar" not in "\n".join(t.screen.display))
+                    before = len(t.stream.frames)
+                    self.until(t, lambda: len(t.stream.frames) > before + 2)
+                    self.assertEqual(sum("/emojis?" in r[1] for r in server.requests), 1)
+                    self.assertEqual(server.message_count, 0)
+                finally:
+                    self.assertTrue(t.close())
+
+    def test_animated_emoji_larger_than_old_blob_and_page_limits(self):
+        self.gif = subprocess.run(
+            [
+                media_tests.FFMPEG,
+                "-v",
+                "error",
+                "-i",
+                "pipe:0",
+                "-vf",
+                "scale=640:640:flags=neighbor",
+                "-frames:v",
+                "2",
+                "-threads",
+                "1",
+                "-f",
+                "gif",
+                "pipe:1",
+            ],
+            input=self.gif,
+            capture_output=True,
+            check=True,
+        ).stdout
+        with self.server(content="Grande :gato25: fim", animated=True, large=True) as server:
+            t = self.open(server, protocol="kitty")
+            try:
+                self.until(
+                    t, lambda: sum("/emojis?" in r[1] for r in server.requests) == 2, timeout=30
+                )
+                self.until(t, lambda: ":gato25:" not in "\n".join(t.screen.display), timeout=30)
+
+                def pixels():
+                    row = next(i for i, line in enumerate(t.screen.display) if "Grande " in line)
+                    column = t.screen.display[row].index("Grande ") + len("Grande ")
+                    images = {
+                        int(placement[b"i"])
+                        for placement, position in zip(
+                            t.stream.placements, t.stream.placement_positions
+                        )
+                        if position == (row, column)
+                    }
+                    return {
+                        data
+                        for header, data in t.stream.kitty_frames
+                        if int(header[b"i"]) in images
+                    }
+
+                self.until(t, lambda: len(pixels()) >= 2)
+                self.assertEqual(sum("/emojis?" in r[1] for r in server.requests), 2)
+                self.assertNotIn(":gato25:", "\n".join(t.screen.display))
+            finally:
+                self.assertTrue(t.close())
+
+    def test_animated_server_formats_render_at_message_and_reaction_positions(self):
+        for declared in ("GIF", "WEBP", "PNG"):
+            with self.subTest(format=declared):
+                self.gif = encode_emoji_animation(type(self).gif, declared)
+                with self.server(content="Texto :gato 界: fim", animated=True) as server:
+                    server.emojis[0]["format"] = declared
+                    server.messages[0]["reactions"] = [
+                        dict(emoji_id=server.emojis[0]["id"], unicode=None, count=2)
+                    ]
+                    t = self.open(server, protocol="kitty", size=(40, 100))
+                    try:
+                        self.wait(t, "Texto ")
+                        self.until(t, lambda: any(" 2]" in line for line in t.screen.display))
+
+                        def actual_pixels(reaction):
+                            marker = " 2]" if reaction else "Texto "
+                            row = next(
+                                i for i, line in enumerate(t.screen.display) if marker in line
+                            )
+                            column = (
+                                t.screen.display[row].index("[") + 1
+                                if reaction
+                                else t.screen.display[row].index(marker) + len(marker)
+                            )
+                            images = {
+                                int(placement[b"i"])
+                                for placement, position in zip(
+                                    t.stream.placements, t.stream.placement_positions
+                                )
+                                if position == (row, column)
+                            }
+                            return {
+                                pixels
+                                for header, pixels in t.stream.kitty_frames
+                                if int(header[b"i"]) in images
+                            }
+
+                        self.until(t, lambda: len(actual_pixels(False)) > 1)
+                        self.until(t, lambda: len(actual_pixels(True)) > 1)
+                        self.assertNotIn(":gato 界:", "\n".join(t.screen.display))
+                        t.send("\x1bOS\t\x1bOC")
+                        self.wait(t, "1 emojis do servidor")
+                        self.until(t, lambda: ":emoji:" not in "\n".join(t.screen.display))
+                        self.until(
+                            t,
+                            lambda: any(
+                                len(
+                                    {
+                                        pixels
+                                        for header, pixels in t.stream.kitty_frames
+                                        if header[b"i"] == image
+                                    }
+                                )
+                                > 1
+                                for image in {
+                                    header[b"i"]
+                                    for header, _ in t.stream.kitty_frames
+                                    if header.get(b"s") == b"32" and header.get(b"v") == b"32"
+                                }
+                            ),
+                        )
+                        t.send("\t\n")
+                        self.until(
+                            t, lambda: "Emojis · Esc voltar" not in "\n".join(t.screen.display)
+                        )
+
+                        def editor_pixels():
+                            row, _ = editor_region(t)
+                            column = t.screen.display[row].index(">") + 2
+                            images = {
+                                int(placement[b"i"])
+                                for placement, position in zip(
+                                    t.stream.placements, t.stream.placement_positions
+                                )
+                                if position == (row, column)
+                            }
+                            return {
+                                pixels
+                                for header, pixels in t.stream.kitty_frames
+                                if int(header[b"i"]) in images
+                            }
+
+                        self.until(t, lambda: len(editor_pixels()) > 1)
+                        self.assertEqual(server.message_count, 0)
+                        self.assertEqual(sum("/emojis?" in r[1] for r in server.requests), 1)
+                    finally:
+                        self.assertTrue(t.close())
 
     def test_search_resize_cancel_limit_and_error(self):
         with self.server(status=429) as s:

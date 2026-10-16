@@ -15,6 +15,7 @@ BINARY, FFMPEG = map(Path, sys.argv[1:3])
 sys.argv = [sys.argv[0], str(BINARY), str(FFMPEG), *sys.argv[3:]]
 import test_media_terminal as media  # noqa: E402 - prepare test arguments before import
 import test_terminal  # noqa: E402
+import test_emojis_terminal as emoji_tests  # noqa: E402
 from history_mock import uuid  # noqa: E402
 from interaction_mock import InteractionMock  # noqa: E402
 
@@ -195,6 +196,109 @@ class AppModes(unittest.TestCase):
                         self.helper.wait(t, "rascunho")
                     finally:
                         self.assertTrue(t.close())
+
+    def test_custom_emoji_freezes_in_light_while_identical_attachment_keeps_animating(self):
+        for format in ("GIF", "WEBP", "PNG"):
+            with self.subTest(format=format):
+                self.check_custom_emoji_mode_transitions(format)
+
+    def check_custom_emoji_mode_transitions(self, format):
+        self.seed("normal")
+        emojis = emoji_tests.EmojiTerminal()
+        emojis.png = media.MediaTerminal.images["png"]
+        emojis.gif = emoji_tests.encode_emoji_animation(media.MediaTerminal.animated_gif, format)
+        with emojis.server(content="Emoji :gato 界: fim", animated=True) as server:
+            server.emojis[0]["format"] = format
+            server.messages[0]["attachments"] = [
+                dict(
+                    id=uuid(901),
+                    mime_type={"GIF": "image/gif", "WEBP": "image/webp", "PNG": "image/png"}[
+                        format
+                    ],
+                    original_file_name="same." + format.lower(),
+                    size_bytes=len(emojis.gif),
+                    moderation_status="clean",
+                )
+            ]
+            parent = server.api_handler
+
+            def route(method, path, body):
+                if "/attachments/" in path:
+                    return (
+                        200,
+                        emojis.gif,
+                        None,
+                        None,
+                        server.messages[0]["attachments"][0]["mime_type"],
+                    )
+                return parent(method, path, body)
+
+            server.api_handler = route
+            t = self.open(server, size=(40, 100))
+            try:
+                for mode in ("normal", "light", "normal", "ultralight"):
+                    with self.subTest(mode=mode):
+                        if json.loads(self.config.read_text())["app_mode"] != mode:
+                            self.choose(t, mode)
+                        self.helper.wait(t, "Emoji ")
+                        if mode == "ultralight":
+                            self.helper.wait(t, ":gato 界:")
+                            self.wait(t, lambda: not self.children(t))
+                            continue
+
+                        def emoji_cells():
+                            row = next(
+                                i for i, line in enumerate(t.screen.display) if "Emoji " in line
+                            )
+                            column = t.screen.display[row].index("Emoji ") + len("Emoji ")
+                            return row, [t.screen.buffer[row][x] for x in (column, column + 1)]
+
+                        def tone(color):
+                            if len(color) != 6:
+                                return None
+                            try:
+                                red, green, blue = bytes.fromhex(color)
+                            except ValueError:
+                                return None
+                            if red > 150 and green < 30 and blue < 30:
+                                return "red"
+                            if blue > 150 and red < 30 and green < 30:
+                                return "blue"
+                            return None
+
+                        self.wait(
+                            t,
+                            lambda: any(
+                                tone(color) is not None
+                                for cell in emoji_cells()[1]
+                                for color in (cell.fg, cell.bg)
+                            ),
+                        )
+                        emoji_frames, attachment_colors = set(), set()
+                        deadline = time.monotonic() + 1.2
+                        while time.monotonic() < deadline:
+                            t.read(0.05)
+                            row, cells = emoji_cells()
+                            emoji_frames.add(tuple((cell.data, cell.fg, cell.bg) for cell in cells))
+                            attachment_colors.update(
+                                tone(color)
+                                for y in range(row + 1, min(row + 8, t.screen.lines - 8))
+                                for x in range(34, 75)
+                                for color in (t.screen.buffer[y][x].fg, t.screen.buffer[y][x].bg)
+                            )
+                        self.assertTrue({"red", "blue"} <= attachment_colors)
+                        if mode == "light":
+                            self.assertEqual(len(emoji_frames), 1)
+                            self.assertNotIn(
+                                "blue",
+                                {tone(color) for cell in cells for color in (cell.fg, cell.bg)},
+                            )
+                        else:
+                            self.assertGreaterEqual(len(emoji_frames), 2)
+                        self.assertEqual(t.stream.frames, [])
+                self.assertEqual(server.message_count, 0)
+            finally:
+                self.assertTrue(t.close())
 
     def test_chafa_preserves_image_colors_on_indexed_and_direct_terminals(self):
         colors = ("ff5f00", "00d7af", "875fff")

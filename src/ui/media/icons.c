@@ -378,14 +378,15 @@ static bool paint(icon_view *v, WINDOW *w, uint32_t icon, int y, int x, int pair
             return false;
         resource = media_cache_acquire_unicode(v->store, e->text);
     }
-    image_decode_request request = {.width = pixels ? pixels : terminal.cell_width * 2,
-                                    .height = pixels ? pixels : terminal.cell_height,
-                                    .terminal = terminal,
-                                    .matte = true,
-                                    .center = true,
-                                    .background =
-                                        background(selected ? THEME_TEXT_SELECTION : pair),
-                                    .max_side = 512};
+    image_decode_request request = {
+        .width = pixels ? pixels : terminal.cell_width * 2,
+        .height = pixels ? pixels : terminal.cell_height,
+        .terminal = terminal,
+        .matte = true,
+        .center = true,
+        .first_frame = (icon & ICON_CUSTOM) && app_mode_get() == APP_MODE_LIGHT,
+        .background = background(selected ? THEME_TEXT_SELECTION : pair),
+        .max_side = icon & ICON_CUSTOM ? 2048 : 512};
     return offer(v, resource, request, getbegy(w) + y, getbegx(w) + x, 0, 0, offset);
 }
 bool icons_paint(void *context, WINDOW *w, uint32_t icon, int y, int x, int pair, bool selected,

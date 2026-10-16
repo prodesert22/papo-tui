@@ -90,9 +90,15 @@ static bool decode_file(const image_decode_request *j, graphics_image *out, anim
     if (stream < 0)
         goto done;
     AVCodecParameters *parameters = format->streams[stream]->codecpar;
+    /* Resolve the newer WebP animation codec at runtime so builds against
+     * older FFmpeg headers keep working without allowing arbitrary codecs. */
+    const AVCodec *webp_animation = avcodec_find_decoder_by_name("webp_anim");
+    bool animated_image = parameters->codec_id == AV_CODEC_ID_GIF ||
+                          parameters->codec_id == AV_CODEC_ID_APNG ||
+                          (webp_animation && parameters->codec_id == webp_animation->id);
     if (!j->video_poster && parameters->codec_id != AV_CODEC_ID_MJPEG &&
         parameters->codec_id != AV_CODEC_ID_PNG && parameters->codec_id != AV_CODEC_ID_WEBP &&
-        parameters->codec_id != AV_CODEC_ID_GIF)
+        !animated_image)
         goto done;
     if (parameters->width < 1 || parameters->height < 1 ||
         (size_t)parameters->width > IMAGE_PIXELS / (size_t)parameters->height)
@@ -114,8 +120,7 @@ static bool decode_file(const image_decode_request *j, graphics_image *out, anim
         atomic_init(&frames->references, 1);
     if (!frame || !packet || !frames)
         goto done;
-    bool gif = parameters->codec_id == AV_CODEC_ID_GIF,
-         static_only = j->static_only || j->first_frame || j->video_poster;
+    bool static_only = j->static_only || j->first_frame || j->video_poster;
     int read_status = 0;
     for (unsigned n = 0; n < 4096; ++n) {
         read_status = av_read_frame(format, packet);
@@ -251,10 +256,10 @@ static bool decode_file(const image_decode_request *j, graphics_image *out, anim
         frames->delay[frames->count++] = delay;
         frames->duration += delay;
         frames->bytes += bytes;
-        if (!gif || static_only)
+        if (!animated_image || static_only)
             break;
     }
-    if (!frames->count || (gif && !static_only && read_status != AVERROR_EOF) ||
+    if (!frames->count || (animated_image && !static_only && read_status != AVERROR_EOF) ||
         decode_interrupt(&guard))
         goto done;
     image_decode_request encoding = *j;

@@ -1197,8 +1197,8 @@ static bool equal_request(const image_decode_request *a, const image_decode_requ
     return a->width == b->width && a->height == b->height && a->native == b->native &&
            a->notification_badge == b->notification_badge && a->cover == b->cover &&
            a->center == b->center && a->matte == b->matte && a->background == b->background &&
-           a->top == b->top && a->bottom == b->bottom && a->left == b->left &&
-           a->right == b->right && a->region == b->region &&
+           a->first_frame == b->first_frame && a->top == b->top && a->bottom == b->bottom &&
+           a->left == b->left && a->right == b->right && a->region == b->region &&
            a->terminal.protocol == b->terminal.protocol &&
            a->terminal.cell_width == b->terminal.cell_width &&
            a->terminal.cell_height == b->terminal.cell_height;
@@ -1331,7 +1331,7 @@ const graphics_image *media_resource_image(media_resource *r, bool author,
         else
             g_thread_pool_move_to_front(shared.pool, v->job);
     }
-    size_t frame = animation_frame_at(o->frames, o->epoch, now);
+    size_t frame = request.first_frame ? 0 : animation_frame_at(o->frames, o->epoch, now);
     if (!o->job && !enlarge && !v->job && !v->failed &&
         (!v->image.data || (frame != v->frame && now - v->presented >= 67))) {
         size_t workspace = (size_t)request.width * request.height * 7 + IMAGE_PIXEL_PADDING * 2;
@@ -1365,7 +1365,7 @@ const graphics_image *media_resource_image(media_resource *r, bool author,
             animation_ref(t->frames);
             t->request = v->request;
             t->request.animation = t->frames;
-            t->request.frame = animation_frame_at(t->frames, o->epoch, now);
+            t->request.frame = frame;
             v->job = t;
             task_push(t);
             ++shared.stats.encodes;

@@ -114,6 +114,15 @@ wire version 3. Raster packing and emoji rasterization run only in the helper.
 Light keeps native Unicode emojis and skips video covers and playback;
 Ultralight keeps message actions available without starting the media helper.
 
+Animated server emojis reuse FFmpeg's GIF/APNG decoders and its `webp_anim`
+decoder when available, along with the bounded shared frame/variant cache, with
+no new dependency or endpoint. Light emoji placements
+request the first frame; that flag participates in variant identity so a static
+emoji cannot freeze an attached GIF with identical bytes. Normal keeps the
+existing animation clock. The emoji catalog accepts up to 2 MiB blobs
+and 2048-pixel dimensions, and its HTTP response budget accommodates a full
+25-item base64 page. Existing per-instance temporary-file budgets still apply.
+
 The notification center reuses the mention projector, libc sorting and session
 timestamp comparison for local search, conversation filters and date ordering.
 Search and counters cover loaded pages; the API exposes no global unread total.

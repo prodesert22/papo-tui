@@ -61,7 +61,8 @@ bool auth_internal_request(auth_client *client, auth_state state, const char *pa
     client->response = NULL;
     client->response_length = 0;
     client->response_limit =
-        state == AUTH_API_GET && !strncmp(path, "/emojis?", 8)           ? 12U * 1024U * 1024U
+        /* A page can contain 25 base64-encoded emojis of up to 2 MiB each. */
+        state == AUTH_API_GET && !strncmp(path, "/emojis?", 8)           ? 72U * 1024U * 1024U
         : state == AUTH_API_GET && !strcmp(path, "/users/profile_batch") ? 16U * 1024U * 1024U
                                                                          : RESPONSE_LIMIT;
     client->overflow = false;

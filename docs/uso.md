@@ -161,6 +161,11 @@ to enter the grid. From its first row, ↑ returns to the buttons; ↑ again ret
 to search. Use ←/→ to switch emoji sources while the buttons have focus.
 Tab and Shift+Tab also move between these areas.
 
+Animated server emojis (GIF, animated WebP and PNG) play in Normal mode, including
+messages, reactions, the editor and emoji selectors. Light shows their first frame
+as a static image; attached animations can still play. Ultralight keeps emojis as text.
+Animated WebP requires an FFmpeg build with the `webp_anim` decoder.
+
 ## Messages, editing, replies and reactions
 
 Press **F7** to select a message with a highlighted border. Use ↑/↓ to move

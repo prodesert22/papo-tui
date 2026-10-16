@@ -46,8 +46,8 @@ void animation_free(animation *frames);
 size_t animation_frame_at(const animation *frames, uint64_t epoch, uint64_t now);
 bool image_encode_frame(const image_decode_request *request, graphics_image *image);
 /* decode_only preserves alpha in canonical frames for shared variants.
- * Return owned graphics and, for multi-frame GIFs, an owned frame reference.
- * FFmpeg performs GIF composition/disposal and supplies presentation delays. */
+ * Return owned graphics and, for animations, an owned frame reference.
+ * FFmpeg performs composition/disposal and supplies presentation delays. */
 bool image_decode_file(const image_decode_request *request, graphics_image *image,
                        animation **frames, bool (*cancelled)(void *context), void *context);
 #endif
