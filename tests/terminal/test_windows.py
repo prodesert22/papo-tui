@@ -13,9 +13,15 @@ from test_terminal import Terminal
 class WindowsTerminalTests(unittest.TestCase):
     def wait(self, terminal, text):
         deadline = time.monotonic() + 10
-        while text not in "\n".join(terminal.screen.display) and time.monotonic() < deadline:
+        while (
+            text not in "\n".join(terminal.screen.display)
+            and terminal.process.poll() is None
+            and time.monotonic() < deadline
+        ):
             terminal.read(0.03)
-        self.assertIn(text, "\n".join(terminal.screen.display))
+        self.assertIn(
+            text, "\n".join(terminal.screen.display), f"Process exit: {terminal.process.poll()}"
+        )
 
     def login(self, terminal, server):
         terminal.send(server.url)
@@ -42,8 +48,10 @@ class WindowsTerminalTests(unittest.TestCase):
                 self.assertTrue(server.sent_messages)
                 self.assertEqual(server.sent_messages[-1]["content"], "Olá 😀")
                 self.assertNotIn(b"Synthetic!123", terminal.output)
+                self.assertIsNone(terminal.process.poll())
             finally:
                 self.assertTrue(terminal.close())
+            self.assertEqual(terminal.process.poll(), 0)
 
     def test_native_credentials_restore_logout_and_instance_scope(self):
         # Only a newly generated temporary config can select this target.

@@ -505,10 +505,10 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                 }
             wattrset(ui->body, COLOR_PAIR(editing ? THEME_FOCUS_AREA : THEME_PANEL));
             text_label(ui->body, conversation_input_top(ui), 1, 1, ">");
-            text_layout measured;
-            text_measure(editor, width, &measured);
+            text_layout *measured = &ui->measured;
+            text_measure(editor, width, measured);
             if (!ui->editor_scrolling)
-                text_keep_cursor(editor, &measured, height);
+                text_keep_cursor(editor, measured, height);
             if (!editor->length) {
                 char placeholder[2200];
                 snprintf(placeholder, sizeof(placeholder),
@@ -521,33 +521,33 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                 char icon_scope[96];
                 snprintf(icon_scope, sizeof(icon_scope), "editor:%s", ui->editor_channel);
                 icons_scope(ui->icons, icon_scope, 0);
-                text_draw(ui->body, editor, &measured, editor->first_row, height,
+                text_draw(ui->body, editor, measured, editor->first_row, height,
                           conversation_input_top(ui), 3);
+            }
+            wattrset(ui->body, COLOR_PAIR(editing ? THEME_FOCUS_MUTED : THEME_PANEL_MUTED));
+            if (editor->first_row)
+                text_label(ui->body, conversation_input_top(ui), getmaxx(ui->body) - 2, 1, "↑");
+            if (editor->first_row + height < measured->rows)
+                text_label(ui->body, conversation_input_top(ui) + height - 1, getmaxx(ui->body) - 2,
+                           1, "↓");
+            if (editing && measured->cursor_row >= editor->first_row &&
+                measured->cursor_row < editor->first_row + height) {
+                wmove(ui->body,
+                      conversation_input_top(ui) + measured->cursor_row - editor->first_row,
+                      3 + measured->cursor_column);
             }
             wattrset(ui->body, COLOR_PAIR(editing ? THEME_FOCUS_MUTED : THEME_PANEL_MUTED));
             wattrset(ui->body, COLOR_PAIR(ui->focus == EMOJI_BUTTON ? THEME_PROFILE_BUTTON_FOCUS
                                                                     : THEME_PANEL_ACCENT) |
                                    A_BOLD);
             text_buffer smile;
-            text_layout smile_layout;
             text_decode(&smile, "[😄]");
             text_icons(&smile, icons_resolve, icons_paint, ui->icons);
-            text_measure(&smile, 5, &smile_layout);
+            text_measure(&smile, 5, measured);
             icons_scope(ui->icons, "emoji-button", 0);
-            text_draw(ui->body, &smile, &smile_layout, 0, 1, conversation_input_top(ui),
+            text_draw(ui->body, &smile, measured, 0, 1, conversation_input_top(ui),
                       getmaxx(ui->body) - 7);
             wattrset(ui->body, COLOR_PAIR(editing ? THEME_FOCUS_MUTED : THEME_PANEL_MUTED));
-            if (editor->first_row)
-                text_label(ui->body, conversation_input_top(ui), getmaxx(ui->body) - 2, 1, "↑");
-            if (editor->first_row + height < measured.rows)
-                text_label(ui->body, conversation_input_top(ui) + height - 1, getmaxx(ui->body) - 2,
-                           1, "↓");
-            if (editing && measured.cursor_row >= editor->first_row &&
-                measured.cursor_row < editor->first_row + height) {
-                wmove(ui->body,
-                      conversation_input_top(ui) + measured.cursor_row - editor->first_row,
-                      3 + measured.cursor_column);
-            }
         } else {
             wattrset(ui->body, COLOR_PAIR(THEME_PANEL_MUTED));
             text_label(ui->body, conversation_input_top(ui), 3, conversation_input_width(ui),
@@ -563,13 +563,13 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
             text_label(ui->body, getmaxy(ui->body) - 1, 3, conversation_input_width(ui), typing);
         }
         if (editing && editor) {
-            text_layout measured;
-            text_measure(editor, conversation_input_width(ui), &measured);
-            if (measured.cursor_row >= editor->first_row &&
-                measured.cursor_row < editor->first_row + conversation_input_height(ui))
+            text_layout *measured = &ui->measured;
+            text_measure(editor, conversation_input_width(ui), measured);
+            if (measured->cursor_row >= editor->first_row &&
+                measured->cursor_row < editor->first_row + conversation_input_height(ui))
                 wmove(ui->body,
-                      conversation_input_top(ui) + measured.cursor_row - editor->first_row,
-                      3 + measured.cursor_column);
+                      conversation_input_top(ui) + measured->cursor_row - editor->first_row,
+                      3 + measured->cursor_column);
         }
     }
     if (scope == DRAW_ALL) {
@@ -594,22 +594,22 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
     if (paint_media)
         media_view_draw(ui->media);
     if (mention_popup_open(ui->mentions) && ui->body && conversation_input(ui)) {
-        text_layout measured;
-        text_measure(conversation_input(ui), conversation_input_width(ui), &measured);
+        text_layout *measured = &ui->measured;
+        text_measure(conversation_input(ui), conversation_input_width(ui), measured);
         mention_popup_draw(ui->mentions,
-                           getbegy(ui->body) + conversation_input_top(ui) + measured.cursor_row -
+                           getbegy(ui->body) + conversation_input_top(ui) + measured->cursor_row -
                                conversation_input(ui)->first_row,
-                           getbegx(ui->body) + 3 + measured.cursor_column, getbegx(ui->body) + 1,
+                           getbegx(ui->body) + 3 + measured->cursor_column, getbegx(ui->body) + 1,
                            getmaxx(ui->body) - 2);
     }
     if (emoji_picker_suggesting(ui->emojis) && ui->body && conversation_input(ui)) {
-        text_layout measured;
+        text_layout *measured = &ui->measured;
         text_buffer *editor = conversation_input(ui);
-        text_measure(editor, conversation_input_width(ui), &measured);
+        text_measure(editor, conversation_input_width(ui), measured);
         emoji_picker_draw_suggestions(ui->emojis,
                                       getbegy(ui->body) + conversation_input_top(ui) +
-                                          measured.cursor_row - editor->first_row,
-                                      getbegx(ui->body) + 3 + measured.cursor_column,
+                                          measured->cursor_row - editor->first_row,
+                                      getbegx(ui->body) + 3 + measured->cursor_column,
                                       getbegx(ui->body) + 1, getmaxx(ui->body) - 2);
     }
     bool caret = false;
@@ -617,14 +617,14 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         !(r8_modal_is_open(ui->r8) || ui->settings.open) && !media_view_modal(ui->media) &&
         !emoji_picker_open(ui->emojis)) {
         text_buffer *editor = conversation_input(ui);
-        text_layout measured;
-        text_measure(editor, conversation_input_width(ui), &measured);
-        caret = measured.cursor_row >= editor->first_row &&
-                measured.cursor_row < editor->first_row + conversation_input_height(ui);
+        text_layout *measured = &ui->measured;
+        text_measure(editor, conversation_input_width(ui), measured);
+        caret = measured->cursor_row >= editor->first_row &&
+                measured->cursor_row < editor->first_row + conversation_input_height(ui);
         if (caret)
-            setsyx(getbegy(ui->body) + conversation_input_top(ui) + measured.cursor_row -
+            setsyx(getbegy(ui->body) + conversation_input_top(ui) + measured->cursor_row -
                        editor->first_row,
-                   getbegx(ui->body) + 3 + measured.cursor_column);
+                   getbegx(ui->body) + 3 + measured->cursor_column);
     }
     if (!caret)
         setsyx(-1, -1);

@@ -562,12 +562,12 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                     text_buffer *buffer = conversation_input(ui);
                     int row = e.y - getbegy(ui->body) - conversation_input_top(ui);
                     int column = e.x - getbegx(ui->body) - 3;
-                    text_layout measured;
-                    text_measure(buffer, conversation_input_width(ui), &measured);
+                    text_layout *measured = &ui->measured;
+                    text_measure(buffer, conversation_input_width(ui), measured);
                     if (row < 0 && buffer->first_row > 0)
                         --buffer->first_row;
                     if (row >= conversation_input_height(ui) &&
-                        buffer->first_row + conversation_input_height(ui) < measured.rows)
+                        buffer->first_row + conversation_input_height(ui) < measured->rows)
                         ++buffer->first_row;
                     if (row < 0)
                         row = 0;
@@ -614,9 +614,9 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                              e.x < getbegx(ui->body) + getmaxx(ui->body) &&
                              conversation_input_row(ui, e.y - getbegy(ui->body))) {
                         text_buffer *buffer = conversation_input(ui);
-                        text_layout measured;
-                        text_measure(buffer, conversation_input_width(ui), &measured);
-                        int last = measured.rows - conversation_input_height(ui);
+                        text_layout *measured = &ui->measured;
+                        text_measure(buffer, conversation_input_width(ui), measured);
+                        int last = measured->rows - conversation_input_height(ui);
                         if (last < 0)
                             last = 0;
                         buffer->first_row += e.bstate & BUTTON4_PRESSED ? -3 : 3;

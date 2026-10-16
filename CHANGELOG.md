@@ -7,6 +7,8 @@ full details are available in `releases/`.
 
 - Fix Windows Unicode input with a private ncurses console compatibility patch,
   preserving accented text, characters that overlap function-key codes and emojis.
+- Reuse conversation measurement storage to prevent stack exhaustion when
+  opening message history on Windows and other terminals with a small stack.
 - Wait for editor text before asserting soft wraps and dragging selections in
   terminal tests, including slower sanitizer builds.
 

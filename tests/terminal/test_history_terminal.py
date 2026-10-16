@@ -1,5 +1,6 @@
 """R5 through ncurses in a pseudoterminal, using synthetic HTTP data."""
 
+import resource
 import threading
 import time
 import unittest
@@ -80,6 +81,28 @@ class HistoryTerminal(unittest.TestCase):
         t.send("\x1bOB\x1bOB\n")  # tabs -> category -> first text channel -> open
         self.wait(t, "Conversar em #geral")
         return t
+
+    def test_history_resize_and_unicode_send_with_one_megabyte_stack(self):
+        # Reproduce the Windows executable's default stack limit on Linux.
+        with HistoryMock() as server:
+            terminal = Terminal()
+            try:
+                _, hard = resource.prlimit(terminal.process.pid, resource.RLIMIT_STACK)
+                resource.prlimit(terminal.process.pid, resource.RLIMIT_STACK, (1024 * 1024, hard))
+                terminal.send(server.url + "\tjosé\tSynthetic!123\r")
+                self.wait(terminal, "geral")
+                terminal.send("\x1bOB\x1bOB\r")
+                self.wait(terminal, "Mensagem 0250")
+                terminal.resize(28, 100)
+                terminal.send("Olá 😀\r")
+                deadline = time.monotonic() + 8
+                while not server.sent_messages and time.monotonic() < deadline:
+                    terminal.read(0.03)
+                self.assertTrue(server.sent_messages)
+                self.assertEqual(server.sent_messages[-1]["content"], "Olá 😀")
+            finally:
+                self.assertTrue(terminal.close())
+            self.assertEqual(terminal.process.returncode, 0)
 
     def test_channel_navigation_keeps_chat_and_reopening_current_does_not_reload(self):
         with HistoryMock("slow") as server:

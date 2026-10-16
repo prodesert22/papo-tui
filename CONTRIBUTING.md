@@ -120,6 +120,12 @@ budget; `--test-jobs` sets the total CTest concurrency across variants (default:
 two I/O tests per active variant). All variant results are checked; failures are
 never retried automatically. Logs are written to `build/ci-logs/`.
 
+Run these checks locally before pushing. The history terminal suite also limits
+the application's stack to 1 MiB, reproducing Windows stack exhaustion on Linux
+while exercising login, history, resizing and Unicode message sending. Windows
+cross builds and Wine can check compilation and native CMake metadata; ConPTY
+interaction and native credential tests still require Windows.
+
 For releases, each Linux runner uses `dist/ci_linux.py --prepare` before cache
 restore, then `dist/ci_linux.py --arch x86_64 --version 0.2.0` (or `aarch64`).
 This requires Docker and Flatpak/Builder. Ubuntu, Debian, Fedora and Flatpak

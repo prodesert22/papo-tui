@@ -365,9 +365,9 @@ bool conversation_editor_geometry(view *ui)
     int rows = 1;
     text_buffer *buffer = conversation_input(ui);
     if (buffer) {
-        text_layout measured;
-        text_measure(buffer, conversation_input_width(ui), &measured);
-        rows = measured.rows;
+        text_layout *measured = &ui->measured;
+        text_measure(buffer, conversation_input_width(ui), measured);
+        rows = measured->rows;
     }
     int maximum = getmaxy(ui->body) - ui->history_top - 2 * ui->editor_padding - 4;
     if (maximum > 5)

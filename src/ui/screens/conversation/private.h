@@ -73,6 +73,8 @@ typedef struct {
 typedef struct {
     GHashTable *layout_index;
     cached_layout layouts[HISTORY_MESSAGE_LIMIT];
+    /* Reused on the UI thread; the view owns this large measurement buffer. */
+    text_layout measured;
     size_t layout_bytes;
     uint64_t layout_sequence;
     history *model;
