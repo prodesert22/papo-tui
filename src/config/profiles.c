@@ -114,24 +114,27 @@ static const char *json_text(json_t *value, size_t limit)
 
 static bool decode(profile_config *config, json_t *root)
 {
+    config->mode = APP_MODE_NORMAL;
     if (!json_is_object(root) || !json_is_integer(json_object_get(root, "version")))
         return false;
     json_int_t version = json_integer_value(json_object_get(root, "version"));
     if (version == 1) {
         if (json_object_size(root) != 3)
             return false;
-    } else if (version == 2 || version == 3) {
+    } else if (version == 2 || version == 3 || version == 4) {
         json_t *rate = json_object_get(root, "requests_per_second");
         json_t *burst = json_object_get(root, "request_burst");
-        if (json_object_size(root) != (version == 2 ? 5U : 7U) || !json_is_number(rate) ||
-            !json_is_integer(burst) || json_integer_value(burst) <= 0 ||
+        if (json_object_size(root) != (version == 2   ? 5U
+                                       : version == 3 ? 7U
+                                                      : 8U) ||
+            !json_is_number(rate) || !json_is_integer(burst) || json_integer_value(burst) <= 0 ||
             json_integer_value(burst) > UINT_MAX ||
             !net_rate_parameters_valid(json_number_value(rate),
                                        (unsigned)json_integer_value(burst)))
             return false;
         config->requests_per_second = json_number_value(rate);
         config->request_burst = (unsigned)json_integer_value(burst);
-        if (version == 3) {
+        if (version >= 3) {
             json_t *desktop = json_object_get(root, "desktop_notifications"),
                    *preview = json_object_get(root, "notification_preview");
             if (!json_is_boolean(desktop) || !json_is_boolean(preview))
@@ -140,6 +143,9 @@ static bool decode(profile_config *config, json_t *root)
             config->notification_preview = json_is_true(preview);
         }
     } else
+        return false;
+    if (version == 4 &&
+        !app_mode_parse(json_text(json_object_get(root, "app_mode"), 16), &config->mode))
         return false;
     json_t *array = json_object_get(root, "profiles");
     json_t *selected = json_object_get(root, "selected_profile");
@@ -249,13 +255,14 @@ static bool save_locked(profile_config *config)
         }
     }
     json_t *selection = *config->selected ? json_string(config->selected) : json_null();
-    json_t *root = selection ? json_pack("{s:i,s:O,s:O,s:f,s:I,s:b,s:b}", "version", 3, "profiles",
-                                         array, "selected_profile", selection,
-                                         "requests_per_second", config->requests_per_second,
-                                         "request_burst", (json_int_t)config->request_burst,
-                                         "desktop_notifications", config->desktop_notifications,
-                                         "notification_preview", config->notification_preview)
-                             : NULL;
+    json_t *root =
+        selection ? json_pack("{s:i,s:O,s:O,s:f,s:I,s:b,s:b,s:s}", "version", 4, "profiles", array,
+                              "selected_profile", selection, "requests_per_second",
+                              config->requests_per_second, "request_burst",
+                              (json_int_t)config->request_burst, "desktop_notifications",
+                              config->desktop_notifications, "notification_preview",
+                              config->notification_preview, "app_mode", app_mode_name(config->mode))
+                  : NULL;
     json_decref(selection);
     json_decref(array);
     char *serialized = root ? json_dumps(root, JSON_INDENT(2) | JSON_SORT_KEYS) : NULL;
@@ -406,5 +413,16 @@ bool profiles_set_notifications(profile_config *config, bool desktop, bool previ
         return false;
     copy->desktop_notifications = desktop;
     copy->notification_preview = preview;
+    return commit(config, copy);
+}
+
+bool profiles_set_mode(profile_config *config, app_mode mode)
+{
+    if (mode < APP_MODE_NORMAL || mode > APP_MODE_ULTRALIGHT)
+        return error(config, "Modo inválido.");
+    profile_config *copy = candidate(config);
+    if (!copy)
+        return false;
+    copy->mode = mode;
     return commit(config, copy);
 }

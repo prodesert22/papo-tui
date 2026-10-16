@@ -5,6 +5,18 @@ full details are available in `releases/`.
 
 ## Unreleased
 
+## [0.2.0]
+
+- Add Normal, Light and Ultralight application modes in the F2 settings modal.
+  Light renders images and animated GIFs with colored Chafa characters and
+  disables video; Ultralight shows media as text and skips media downloads.
+- Use Chafa when a terminal has no supported graphics protocol, and preserve
+  media colors in both direct-color and indexed-color terminals.
+- Move media decoding and rendering to an on-demand helper process. The helper
+  exits after idle time in Light mode; Ultralight avoids starting it entirely.
+
+See the [full 0.2.0 release notes](releases/v0.2.0.md).
+
 ## [0.1.2]
 
 - Insert new lines with Shift+Enter in supported terminals; Enter still sends

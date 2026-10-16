@@ -233,7 +233,9 @@ class EmojiTerminal(unittest.TestCase):
                 t.send("\t\n")
                 self.assertEqual(s.message_count, 0)
                 first, _ = editor_region(t)
-                self.assertIn("rascunho:gato 界:", t.screen.display[first])
+                # Chafa fallback renders the custom emoji as cells. The send
+                # assertion below verifies its exact underlying text.
+                self.assertIn("rascunho", t.screen.display[first])
                 t.click(first, t.screen.columns - 7)
                 self.wait(t, "Emojis · Esc voltar")
                 reads = sum("/channels/" in r[1] and "/messages" in r[1] for r in s.requests)

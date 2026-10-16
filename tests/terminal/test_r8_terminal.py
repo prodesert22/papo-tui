@@ -32,6 +32,9 @@ class R8Terminal(unittest.TestCase):
             # glyphs after the channel frame is complete, independently of BCE.
             self.wait(t, "geral")
             self.assertIn(b"\x1b[48;5;16m\x1b[H\x1b[2J", t.output)
+            deadline = time.monotonic() + 2
+            while t.screen.buffer[7][4].bg == "default" and time.monotonic() < deadline:
+                t.read(0.03)
             resting = t.screen.buffer[7][4].bg
             self.assertEqual(resting, "000000")
             self.assertEqual(t.screen.buffer[5][30].bg, resting)
@@ -318,7 +321,7 @@ class R8Terminal(unittest.TestCase):
             path = t.configuration.name + "/papo-tui/config.json"
             with open(path) as f:
                 config = json.load(f)
-            self.assertEqual(config["version"], 3)
+            self.assertEqual(config["version"], 4)
             self.assertFalse(config["desktop_notifications"])
             self.assertFalse(config["notification_preview"])
             t.resize(14, 44)

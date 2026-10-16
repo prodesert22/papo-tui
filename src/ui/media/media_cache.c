@@ -6,7 +6,8 @@
 #include "platform/runtime.h"
 #include "ui/media/emoji_image.h"
 #include "ui/media/media_backend.h"
-#include <chafa.h>
+#include "ui/media/media_process.h"
+#include "ui/media/media_service.h"
 #include <glib.h>
 #include <math.h>
 #include <stdatomic.h>
@@ -333,8 +334,11 @@ static void worker(gpointer data, gpointer unused)
         } else if (t->kind == TASK_DECODE) {
             if (!media_image_backend())
                 t->error = "Módulo de imagens ausente ou incompatível. Reinstale o aplicativo.";
-            else
+            else {
                 t->ok = image_decode_file(&t->request, &t->image, &t->output_frames, cancelled, t);
+                if (!t->ok)
+                    t->error = media_service_error();
+            }
         } else if (t->kind == TASK_TRIM) {
 #ifdef __GLIBC__
             t->trim_attempted = true;
@@ -456,9 +460,35 @@ static bool make_room(size_t memory, size_t files)
     }
     return true;
 }
+static bool ensure_pool(void)
+{
+    if (shared.pool)
+        return true;
+    GError *error = NULL;
+    shared.pool = g_thread_pool_new(worker, NULL, MEDIA_CACHE_WORKERS, true, &error);
+    if (error) {
+        g_error_free(error);
+        if (shared.pool)
+            g_thread_pool_free(shared.pool, true, true);
+        shared.pool = NULL;
+    }
+    if (shared.pool)
+        g_thread_pool_set_sort_function(shared.pool, priority, NULL);
+    return shared.pool != NULL;
+}
+static bool ensure_downloads(media_cache *c)
+{
+    for (int i = 0; i < MEDIA_CACHE_DOWNLOADS; ++i) {
+        if (!c->downloads[i])
+            c->downloads[i] = media_download_create(c->auth);
+        if (!c->downloads[i])
+            return false;
+    }
+    return true;
+}
 static unsigned queued_tasks(void)
 {
-    unsigned pending = g_thread_pool_unprocessed(shared.pool);
+    unsigned pending = shared.pool ? g_thread_pool_unprocessed(shared.pool) : 0;
     for (media_cache *c = shared.caches; c; c = c->next)
         for (GList *l = c->tasks; l; l = l->next)
             pending += !((task *)l->data)->submitted;
@@ -466,6 +496,13 @@ static unsigned queued_tasks(void)
 }
 static task *task_new(media_cache *c, size_t reservation)
 {
+    /* Serialized requests/results and the auxiliary working copy share the
+     * existing process budget. Admission still happens only on the UI thread. */
+    if (!ensure_pool())
+        return NULL;
+    if (reservation > MEDIA_CACHE_MEMORY / 3)
+        return NULL;
+    reservation *= 3;
     if (queued_tasks() >= MEDIA_CACHE_QUEUE ||
         shared.stats.jobs >= MEDIA_CACHE_QUEUE + MEDIA_CACHE_WORKERS || !make_room(reservation, 0))
         return NULL;
@@ -662,36 +699,12 @@ media_cache *media_cache_create(auth_client *auth)
     media_cache *c = calloc(1, sizeof(*c));
     if (!c)
         return NULL;
-    if (!shared.pool) {
-        /* Set library globals before image workers can run. */
-        chafa_set_n_threads(1);
-        GError *error = NULL;
-        shared.pool = g_thread_pool_new(worker, NULL, MEDIA_CACHE_WORKERS, true, &error);
-        if (error) {
-            g_error_free(error);
-            if (shared.pool)
-                g_thread_pool_free(shared.pool, true, true);
-            shared.pool = NULL;
-        }
-        if (!shared.pool) {
-            free(c);
-            return NULL;
-        }
-        g_thread_pool_set_sort_function(shared.pool, priority, NULL);
-    }
     c->auth = auth;
     c->generation = auth_context_generation(auth);
     c->objects = g_hash_table_new_full(g_str_hash, g_str_equal, NULL, object_destroy);
     c->resources = g_hash_table_new_full(g_str_hash, g_str_equal, NULL, resource_destroy);
     c->next = shared.caches;
     shared.caches = c;
-    for (int i = 0; i < MEDIA_CACHE_DOWNLOADS; ++i) {
-        c->downloads[i] = media_download_create(auth);
-        if (!c->downloads[i]) {
-            media_cache_destroy(c);
-            return NULL;
-        }
-    }
     return c;
 }
 void media_cache_invalidate(media_cache *c, auth_media_kind kind, const char *id)
@@ -758,7 +771,7 @@ void media_cache_destroy(media_cache *c)
     if (*link)
         *link = c->next;
     free(c);
-    if (!shared.caches) {
+    if (!shared.caches && shared.pool) {
         g_thread_pool_free(shared.pool, false, true);
         shared.pool = NULL;
     }
@@ -767,6 +780,8 @@ static media_resource *acquire(media_cache *c, const char *key, auth_media_kind 
                                const char *id, uint64_t revision, bool video, int type,
                                const char *source)
 {
+    if (!ensure_downloads(c))
+        return NULL;
     media_resource *r = g_hash_table_lookup(c->resources, key);
     if (r) {
         media_resource_ref(r);
@@ -993,6 +1008,7 @@ static bool maintain(uint64_t now)
 }
 bool media_cache_poll(media_cache *c, uint64_t now)
 {
+    note_released(media_process_released_bytes());
     if (!c)
         return false;
     c->now = now;

@@ -121,6 +121,8 @@ int main(int argc, char **argv)
     release_frames(frames);
     for (size_t i = 0; i < G_N_ELEMENTS(regions); ++i)
         assert(!regions[i].data);
+    /* Match the production helper: dependency globals live until process exit. */
+    g_module_make_resident(module);
     g_module_close(module);
     puts("Unaligned RGB scaling respects protected allocation boundaries");
     return 0;

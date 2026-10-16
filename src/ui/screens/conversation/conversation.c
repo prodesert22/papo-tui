@@ -1,5 +1,16 @@
 #include "ui/screens/conversation/private.h"
 
+static void open_settings(view *ui, const profile_config *config)
+{
+    media_view_suspend(ui->media);
+    mention_popup_close(ui->mentions);
+    emoji_picker_close(ui->emojis);
+    conversation_interactions_close(ui);
+    ui->reaction_picker = false;
+    r8_modal_close(ui->r8);
+    settings_open(&ui->settings, config);
+}
+
 bool conversation_poll_editor(view *ui, auth_client *auth)
 {
     const char *notice = send_editor_notice(ui->editor);
@@ -156,9 +167,10 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             break;
         uint64_t visible_now = 0;
         net_now_ms(&visible_now);
-        if (!ui->body || !ui->at_end || r8_modal_is_open(ui->r8) || ui->duplicate_modal ||
-            mention_popup_open(ui->mentions) || emoji_picker_open(ui->emojis) ||
-            media_view_modal(ui->media) || ui->context_open || ui->reactors_open ||
+        if (!ui->body || !ui->at_end || r8_modal_is_open(ui->r8) || ui->settings.open ||
+            ui->duplicate_modal || mention_popup_open(ui->mentions) ||
+            emoji_picker_open(ui->emojis) || media_view_modal(ui->media) || ui->context_open ||
+            ui->reactors_open ||
             !(text_terminal_focused() ||
               (text_terminal_focus_unknown() && visible_now < ui->view_requested_until)))
             history_read_visible(ui->model, NULL);
@@ -221,10 +233,11 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             redraw = true;
             scope = DRAW_ALL;
         }
-        if (!r8_modal_is_open(ui->r8) &&
+        if (!(r8_modal_is_open(ui->r8) || ui->settings.open) &&
             mention_popup_update(ui->mentions, conversation_input(ui),
                                  ui->focus == MESSAGE_INPUT && !ui->paste && !ui->duplicate_modal &&
-                                     !r8_modal_is_open(ui->r8) && !media_view_modal(ui->media) &&
+                                     !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
+                                     !media_view_modal(ui->media) &&
                                      !emoji_picker_open(ui->emojis) && !ui->context_open &&
                                      !ui->reactors_open)) {
             redraw = true;
@@ -232,7 +245,8 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         }
         if (emoji_picker_suggest(ui->emojis, conversation_input(ui),
                                  ui->focus == MESSAGE_INPUT && !ui->paste && !ui->duplicate_modal &&
-                                     !r8_modal_is_open(ui->r8) && !media_view_modal(ui->media) &&
+                                     !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
+                                     !media_view_modal(ui->media) &&
                                      !mention_popup_open(ui->mentions) && !ui->context_open &&
                                      !ui->reactors_open)) {
             redraw = true;
@@ -269,8 +283,9 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         conversation_interactions_sync(ui);
         instances_visible(
             connections, auth,
-            ui->body && ui->at_end && !r8_modal_is_open(ui->r8) && !emoji_picker_open(ui->emojis) &&
-                    !media_view_modal(ui->media) && !ui->context_open && !ui->reactors_open
+            ui->body && ui->at_end && !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
+                    !emoji_picker_open(ui->emojis) && !media_view_modal(ui->media) &&
+                    !ui->context_open && !ui->reactors_open
                 ? conversation_str(history_channel(ui->model, history_selected(ui->model)), "id")
                 : "");
         if (conversation_collect_notices(ui, auth)) {
@@ -309,9 +324,10 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             ui->paste = true;
             text_paste_begin(&ui->paste_data);
             ui->dragging = false;
-            if (!ui->duplicate_modal && !r8_modal_is_open(ui->r8) && !media_view_modal(ui->media) &&
-                !emoji_picker_open(ui->emojis) && !ui->context_open && !ui->reactors_open &&
-                conversation_input(ui) && ui->focus != SERVER_TABS) {
+            if (!ui->duplicate_modal && !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
+                !media_view_modal(ui->media) && !emoji_picker_open(ui->emojis) &&
+                !ui->context_open && !ui->reactors_open && conversation_input(ui) &&
+                ui->focus != SERVER_TABS) {
                 ui->navigating = false;
                 conversation_set_focus(ui, MESSAGE_INPUT);
                 redraw = true;
@@ -320,9 +336,10 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         }
         if (type == KEY_CODE_YES && key == PASTE_END) {
             ui->paste = false;
-            if (!ui->duplicate_modal && !r8_modal_is_open(ui->r8) && !media_view_modal(ui->media) &&
-                !emoji_picker_open(ui->emojis) && !ui->context_open && !ui->reactors_open &&
-                ui->focus == MESSAGE_INPUT && conversation_input(ui)) {
+            if (!ui->duplicate_modal && !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
+                !media_view_modal(ui->media) && !emoji_picker_open(ui->emojis) &&
+                !ui->context_open && !ui->reactors_open && ui->focus == MESSAGE_INPUT &&
+                conversation_input(ui)) {
                 if (!text_paste_commit(&ui->paste_data, conversation_input(ui)))
                     ui->feedback = "Colagem excede o limite; rascunho preservado.";
                 else {
@@ -356,15 +373,47 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         redraw = true;
         if (type == KEY_CODE_YES && key == TEXT_COPY) {
             if (ui->focus == MESSAGE_INPUT && conversation_input(ui) && !ui->duplicate_modal &&
-                !r8_modal_is_open(ui->r8) && !media_view_modal(ui->media))
+                !(r8_modal_is_open(ui->r8) || ui->settings.open) && !media_view_modal(ui->media))
                 clipboard_copy(conversation_input(ui));
             continue;
         }
-        if (type == OK && (key == 17 || (key == 3 && !r8_modal_is_open(ui->r8) &&
-                                         (ui->focus != MESSAGE_INPUT || ui->duplicate_modal ||
-                                          media_view_modal(ui->media))))) {
+        if (type == OK &&
+            (key == 17 || (key == 3 && !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
+                           (ui->focus != MESSAGE_INPUT || ui->duplicate_modal ||
+                            media_view_modal(ui->media))))) {
             result = HISTORY_EXIT;
             break;
+        }
+        if (ui->settings.open) {
+            settings_key(&ui->settings, connections->config, type, key);
+            if (ui->settings.applied) {
+                ui->settings.applied = false;
+                app_mode_set(connections->config->mode);
+                media_service_stop();
+                icons_begin(ui->icons);
+                for (size_t i = 0; i < connections->count; ++i) {
+                    if (connections->items[i].media)
+                        media_view_reset(connections->items[i].media);
+                    if (app_mode_get() == APP_MODE_ULTRALIGHT)
+                        chat_assets_clear_media(history_assets(connections->items[i].model));
+                }
+                g_hash_table_remove_all(ui->layout_index);
+                for (size_t i = 0; i < HISTORY_MESSAGE_LIMIT; ++i) {
+                    message_blocks_free(&ui->layouts[i].blocks);
+                    memset(&ui->layouts[i], 0, sizeof(ui->layouts[i]));
+                }
+                ui->layout_bytes = 0;
+                ui->layout_sequence = 0;
+                if (app_mode_get() == APP_MODE_NORMAL)
+                    graphics_terminal_probe();
+            }
+            scope = DRAW_ALL;
+            continue;
+        }
+        if (type == KEY_CODE_YES && key == KEY_F(2) && !ui->duplicate_modal) {
+            open_settings(ui, connections->config);
+            scope = DRAW_ALL;
+            continue;
         }
         bool accepted = false;
         if (emoji_picker_open(ui->emojis)) {
@@ -396,8 +445,8 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         if (type == KEY_CODE_YES && key == KEY_F(4) &&
             (ui->focus == HISTORY_PANEL || ui->focus == MESSAGE_INPUT ||
              ui->focus == EMOJI_BUTTON) &&
-            !ui->duplicate_modal && !r8_modal_is_open(ui->r8) && !media_view_modal(ui->media) &&
-            !ui->context_open && !ui->reactors_open) {
+            !ui->duplicate_modal && !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
+            !media_view_modal(ui->media) && !ui->context_open && !ui->reactors_open) {
             conversation_open_emojis(ui);
             scope = DRAW_ALL;
             continue;
@@ -504,9 +553,9 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             continue;
         }
         if ((type == OK && key == '\t') || (type == KEY_CODE_YES && key == KEY_BTAB)) {
-            int order[] = {SERVER_TABS,   LIST_BUTTONS,  CHANNEL_LIST,
+            int order[] = {SERVER_TABS,   LIST_BUTTONS,  CHANNEL_LIST, SETTINGS_BUTTON,
                            HISTORY_PANEL, MESSAGE_INPUT, EMOJI_BUTTON};
-            int count = conversation_input(ui) ? 6 : 4, at = 0;
+            int count = conversation_input(ui) ? 7 : 5, at = 0;
             while (at < count && order[at] != ui->focus)
                 ++at;
             conversation_set_focus(ui, order[(at + (type == OK ? 1 : count - 1)) % count]);
@@ -666,12 +715,19 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 y = e.y;
                 x = e.x;
                 if (ui->list && wmouse_trafo(ui->list, &y, &x, false)) {
+                    if (y >= getmaxy(ui->list) - 3) {
+                        if (y == getmaxy(ui->list) - 2 && x >= getmaxx(ui->list) - 6) {
+                            open_settings(ui, connections->config);
+                            scope = DRAW_ALL;
+                        }
+                        continue;
+                    }
                     size_t index = y >= 1 ? (size_t)(ui->first_channel + y - 1) : SIZE_MAX;
                     if (y == 0 && x >= 1 && x < 19) {
                         conversation_switch_list(ui, x >= 11);
                         conversation_set_focus(ui, LIST_BUTTONS);
                         scope = DRAW_ALL;
-                    } else if (y < getmaxy(ui->list) - 1 && index < conversation_list_count(ui)) {
+                    } else if (y < getmaxy(ui->list) - 3 && index < conversation_list_count(ui)) {
                         ui->highlighted = index;
                         conversation_open_channel(ui, false);
                     } else {
@@ -697,6 +753,15 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                     }
                 }
             }
+            continue;
+        }
+        if (ui->focus == SETTINGS_BUTTON) {
+            if (enter || (type == OK && key == ' '))
+                open_settings(ui, connections->config);
+            else if (type == KEY_CODE_YES && key == KEY_UP)
+                conversation_set_focus(ui, CHANNEL_LIST);
+            else if (type == KEY_CODE_YES && key == KEY_DOWN)
+                conversation_set_focus(ui, HISTORY_PANEL);
             continue;
         }
         if (ui->focus == EMOJI_BUTTON) {
@@ -831,6 +896,7 @@ finished:
     }
     for (size_t i = 0; i < HISTORY_MESSAGE_LIMIT; ++i)
         conversation_release_layout(ui, &ui->layouts[i]);
+    settings_close(&ui->settings);
     media_view_suspend(ui->media);
     conversation_destroy_layout(ui);
     if (ui->model)

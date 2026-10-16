@@ -5,10 +5,12 @@ import importlib.util
 import io
 import json
 from pathlib import Path
+import re
 import sys
 import tarfile
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "dist"))
@@ -41,6 +43,73 @@ class DistributionTests(unittest.TestCase):
         ffmpeg = next(x for x in manifest["modules"] if x["name"] == "ffmpeg")
         self.assertIn("--disable-gpl", ffmpeg["config-opts"])
         self.assertIn("--disable-nonfree", ffmpeg["config-opts"])
+        libplacebo = next(x for x in manifest["modules"] if x["name"] == "libplacebo")
+        self.assertEqual(
+            libplacebo["build-options"]["env"]["PYTHONPATH"],
+            "/app/lib/python3/site-packages",
+        )
+        python_tools = [
+            x for x in manifest["modules"] if x["name"] in ("python-markupsafe", "python-jinja2")
+        ]
+        self.assertEqual([x["name"] for x in python_tools], ["python-markupsafe", "python-jinja2"])
+        self.assertLess(
+            [x["name"] for x in manifest["modules"]].index("python-jinja2"),
+            [x["name"] for x in manifest["modules"]].index("libplacebo"),
+        )
+        self.assertIn("/lib/python3/site-packages/jinja2", manifest["cleanup"])
+        locked = json.loads((ROOT / "dist/dependencies.json").read_text())["sources"]
+        modules = {x["name"]: x for x in manifest["modules"]}
+        for entry in locked:
+            self.assertEqual(
+                modules[entry["name"]]["sources"][0]["dest-filename"], entry["archive"]
+            )
+        flatpak_tools = json.loads((ROOT / "dist/flatpak/build-dependencies.json").read_text())[
+            "sources"
+        ]
+        for entry in flatpak_tools:
+            self.assertRegex(entry["sha256"], r"^[a-f0-9]{64}$")
+            self.assertEqual(
+                modules[entry["name"]]["sources"][0]["dest-filename"], entry["archive"]
+            )
+
+    def test_windows_libsixel_patch_is_repeatable_and_uses_native_timer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory)
+            (source / "src").mkdir()
+            encoder = source / "src/encoder.c"
+            encoder.write_text('#include "rgblookup.h"\nvoid encode(void) { nanosleep(0, 0); }\n')
+            bootstrap.patch_windows_libsixel(source)
+            first = encoder.read_text()
+            bootstrap.patch_windows_libsixel(source)
+            self.assertEqual(encoder.read_text(), first)
+            self.assertIn("CreateWaitableTimer", first)
+            self.assertIn("#define nanosleep sixel_windows_nanosleep", first)
+
+    def test_windows_mpv_uses_native_threading(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, work, prefix = (root / name for name in ("source", "work", "prefix"))
+            source.mkdir()
+            calls = []
+
+            def capture(args, **kwargs):
+                calls.append((args, kwargs))
+                return bootstrap.subprocess.CompletedProcess(args=args, returncode=0)
+
+            with (
+                patch.object(bootstrap.os, "name", "nt"),
+                patch.object(bootstrap.subprocess, "run", side_effect=capture),
+            ):
+                bootstrap.build(
+                    {"name": "mpv", "buildsystem": "meson"},
+                    source,
+                    work,
+                    prefix,
+                    4,
+                    {"PATH": ""},
+                )
+            setup = next(args for args, _ in calls if args[:2] == ["meson", "setup"])
+            self.assertIn("-Dwin32-threads=enabled", setup)
 
     def test_archive_rejects_traversal_and_external_symlinks(self):
         for name, link in [
@@ -73,19 +142,42 @@ class DistributionTests(unittest.TestCase):
             self.assertEqual(target.read_bytes(), b"existing")
             self.assertFalse((root / "target.part").exists())
 
+    def test_source_archive_marks_container_checkout_safe(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            completed = package.subprocess.CompletedProcess(
+                args=["git"], returncode=0, stdout=b"tar"
+            )
+            with (
+                patch.dict(package.os.environ, {"GITHUB_ACTIONS": "true"}),
+                patch.object(package.subprocess, "run", return_value=completed) as run,
+            ):
+                package.source_archive(output, "0.2.0")
+            args = run.call_args.args[0]
+            self.assertEqual(args[:3], ["git", "-c", f"safe.directory={ROOT}"])
+            self.assertIn("dist/flatpak/build-dependencies.json", args)
+
     def test_semver_and_incomplete_assets_fail_closed(self):
-        self.assertEqual(release.validate_tag("v0.1.2"), "0.1.2")
-        for tag in ("0.1.2", "v01.1.0", "v0.1", "v0.1.0-beta", "v0.1.1", "v0.1.3"):
+        match = re.search(
+            r"project\(\s*papo_tui\s+VERSION\s+([^\s)]+)",
+            (ROOT / "CMakeLists.txt").read_text(),
+        )
+        self.assertIsNotNone(match)
+        version = match.group(1)
+        self.assertEqual(release.validate_tag("v" + version), version)
+        major, minor, patch = (int(part) for part in version.split("."))
+        wrong_version = f"v{major + 1}.{minor}.{patch}"
+        for tag in ("0.1.2", "v01.1.0", "v0.1", "v0.1.0-beta", wrong_version):
             with self.subTest(tag=tag), self.assertRaises(ValueError):
                 release.validate_tag(tag)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             with self.assertRaises(ValueError):
-                release.check_assets(root, "0.1.2")
+                release.check_assets(root, version)
             self.assertFalse((root / "SHA256SUMS").exists())
-            for name in release.assets("0.1.2"):
+            for name in release.assets(version):
                 (root / name).write_bytes(name.encode())
-            release.check_assets(root, "0.1.2")
+            release.check_assets(root, version)
             for line in (root / "SHA256SUMS").read_text().splitlines():
                 digest, name = line.split("  ", 1)
                 self.assertEqual(digest, hashlib.sha256((root / name).read_bytes()).hexdigest())
@@ -102,6 +194,36 @@ class DistributionTests(unittest.TestCase):
             self.assertEqual(package.binary_arch(path), "aarch64")
             path.write_bytes(b"not a binary")
             self.assertIsNone(package.binary_arch(path))
+
+    def test_package_requires_matching_media_helper(self):
+        import struct
+
+        with tempfile.TemporaryDirectory() as directory:
+            stage = Path(directory)
+            modules = stage / "bin/papo-backends"
+            modules.mkdir(parents=True)
+            (stage / "share/terminfo").mkdir(parents=True)
+            (stage / "etc/fonts").mkdir(parents=True)
+            (stage / "etc/fonts/fonts.conf").touch()
+            header = bytearray(64)
+            header[:6] = b"\x7fELF\x02\x01"
+            struct.pack_into("<H", header, 18, 62)
+            for path in (stage / "bin/papo-tui", modules / "image.so", modules / "video.so"):
+                path.write_bytes(header)
+            with (
+                patch.object(package.subprocess, "check_output", return_value="papo-tui test\n"),
+                patch.object(package.subprocess, "run"),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "missing the media helper"):
+                    package.smoke(stage, "test", "x86_64")
+                worker = modules / "papo-media-worker"
+                struct.pack_into("<H", header, 18, 183)
+                worker.write_bytes(header)
+                with self.assertRaisesRegex(RuntimeError, "Media helper architecture mismatch"):
+                    package.smoke(stage, "test", "x86_64")
+                struct.pack_into("<H", header, 18, 62)
+                worker.write_bytes(header)
+                package.smoke(stage, "test", "x86_64")
 
 
 if __name__ == "__main__":

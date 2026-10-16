@@ -129,7 +129,10 @@ int main(int argc, char **argv)
     }
     bool ok = true;
     char id[PROFILE_ID_BYTES] = "";
-    if (strcmp(mode, "add") == 0 && argc == 5)
+    if (strcmp(mode, "mode") == 0 && argc == 3) {
+        app_mode selected;
+        ok = app_mode_parse(argv[2], &selected) && profiles_set_mode(config, selected);
+    } else if (strcmp(mode, "add") == 0 && argc == 5)
         ok = profiles_update(config, "", argv[2], argv[3], strcmp(argv[4], "allow") == 0, id);
     else if (strcmp(mode, "edit") == 0 && argc == 6)
         ok = profiles_update(config, argv[2], argv[3], argv[4], strcmp(argv[5], "allow") == 0, id);
@@ -194,6 +197,8 @@ int main(int argc, char **argv)
                           "desktop_notifications", config->desktop_notifications,
                           "notification_preview", config->notification_preview)
               : NULL;
+    if (result)
+        json_object_set_new(result, "app_mode", json_string(app_mode_name(config->mode)));
     json_decref(items);
     profiles_destroy(config);
     int status = emit(result);

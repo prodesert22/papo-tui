@@ -565,7 +565,7 @@ class HistoryTerminal(unittest.TestCase):
                 self.wait(t, "Sem permissão")
                 t.resize(14, 44)
                 self.wait(t, "Sem permissão")
-                t.send("\x1b[Z")
+                t.send("\x1b[Z\x1b[Z")
                 self.wait(t, "Categoria")
                 t.send("\x1bOB\n")
                 self.wait(t, "Conteúdo do outro canal")

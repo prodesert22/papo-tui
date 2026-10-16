@@ -1,6 +1,9 @@
 """Message selection, replies and reactions through the actual TUI."""
 
+import json
+from pathlib import Path
 import re
+import tempfile
 import time
 import unittest
 from wcwidth import wcswidth
@@ -12,9 +15,32 @@ import test_send_product as product
 class MessageInteractions(unittest.TestCase):
     screen = product.SendProduct.screen
     wait = product.SendProduct.wait
-    open = product.SendProduct.open
     editor_text = product.SendProduct.editor_text
     click = product.SendProduct.click
+
+    def open(self, server):
+        # Keep Unicode labels observable for text interaction assertions. The
+        # graphics suites cover rendered icons; mode tests exercise all modes.
+        config = tempfile.TemporaryDirectory(prefix="papo-interactions-")
+        self.addCleanup(config.cleanup)
+        path = Path(config.name, "papo-tui", "config.json")
+        path.parent.mkdir(mode=0o700)
+        path.write_text(
+            json.dumps(
+                dict(
+                    version=4,
+                    profiles=[],
+                    selected_profile=None,
+                    app_mode="light",
+                    requests_per_second=10,
+                    request_burst=25,
+                    desktop_notifications=False,
+                    notification_preview=False,
+                )
+            )
+        )
+        path.chmod(0o600)
+        return product.SendProduct.open(self, server, environment={"XDG_CONFIG_HOME": config.name})
 
     def right_click(self, terminal, text):
         self.wait(terminal, text)

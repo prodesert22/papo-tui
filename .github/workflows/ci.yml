@@ -142,6 +142,7 @@ jobs:
             ${{ matrix.package }}-pango ${{ matrix.package }}-fontconfig
             ${{ matrix.package }}-libass ${{ matrix.package }}-libplacebo
             ${{ matrix.package }}-ffmpeg ${{ matrix.package }}-libgcrypt
+            ${{ matrix.package }}-vulkan-headers
       - name: Python test environment
         run: |
           native_python="$(cygpath -u "$pythonLocation")/python.exe"

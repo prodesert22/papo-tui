@@ -2,6 +2,7 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 #include "model/assets/catalog.h"
+#include "config/app_mode.h"
 #include "model/conversation/history.h"
 #include "net/auth/session_time.h"
 #include "net/clock.h"
@@ -156,6 +157,8 @@ void chat_assets_emojis_request(chat_assets *a, bool refresh)
 {
     uint64_t now = 0;
     net_now_ms(&now);
+    if (app_mode_get() == APP_MODE_ULTRALIGHT)
+        return;
     if (!a || a->wanted || (!refresh && (a->failed || (a->loaded && now - a->refreshed < 300000))))
         return;
     a->wanted = true;
@@ -188,6 +191,8 @@ static void emoji_drop(chat_assets *a, size_t i)
 }
 bool chat_assets_emojis_response(chat_assets *a, json_t *response, long status)
 {
+    if (app_mode_get() == APP_MODE_ULTRALIGHT)
+        return false;
     if (!a)
         return false;
     json_t *items = json_object_get(response, "emojis"),
@@ -362,6 +367,8 @@ void chat_assets_avatar_invalidate(chat_assets *a, const char *id)
 }
 bool chat_assets_profiles_wanted(const chat_assets *a)
 {
+    if (app_mode_get() == APP_MODE_ULTRALIGHT)
+        return false;
     for (size_t i = 0; a && i < a->visible_avatars->len; ++i) {
         author_avatar *p = g_ptr_array_index(a->visible_avatars, i);
         if (p->dirty && !p->requested)
@@ -393,6 +400,10 @@ json_t *chat_assets_profiles_request(chat_assets *a)
 }
 bool chat_assets_profiles_response(chat_assets *a, json_t *response, long status)
 {
+    if (app_mode_get() == APP_MODE_ULTRALIGHT) {
+        chat_assets_cancel(a);
+        return false;
+    }
     if (!a)
         return false;
     json_t *profiles = json_object_get(response, "profiles");
@@ -520,4 +531,30 @@ void chat_assets_profiles_retry(chat_assets *a)
         if ((!p->path || p->failed) && !p->requested)
             p->dirty = true;
     }
+}
+
+void chat_assets_clear_media(chat_assets *a)
+{
+    if (!a)
+        return;
+    chat_assets_cancel(a);
+    g_ptr_array_set_size(a->visible_avatars, 0);
+    GHashTableIter it;
+    gpointer value;
+    g_hash_table_iter_init(&it, a->avatars);
+    while (g_hash_table_iter_next(&it, NULL, &value)) {
+        author_avatar *p = value;
+        remove_file(a, &p->path, &p->bytes);
+    }
+    g_hash_table_remove_all(a->avatars);
+    for (size_t i = 0; i < a->count; ++i)
+        remove_file(a, &a->emojis[i].path, &a->emojis[i].bytes);
+    for (size_t i = 0; i < APP_AVATAR_COUNT; ++i) {
+        remove_file(a, &a->apps[i].image.path, &a->apps[i].image.bytes);
+        memset(&a->apps[i], 0, sizeof(a->apps[i]));
+    }
+    a->wanted = a->loaded = a->failed = a->refreshing = false;
+    ++a->revision;
+    ++a->emoji_revision;
+    snprintf(a->notice, sizeof(a->notice), "Emojis gráficos desativados no modo ultralight.");
 }

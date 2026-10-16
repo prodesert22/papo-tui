@@ -93,9 +93,11 @@ void conversation_draw_tabs(view *ui, auth_client *auth)
     button_draw(ui->tabs, 0, ui->add_hit.x, ui->add_hit.width,
                 adding ? ">+ Adicionar<" : "[+ Adicionar]", adding ? BUTTON_FOCUSED : BUTTON_NORMAL,
                 BUTTON_PANEL);
-    const char *areas[] = {"Abas", "Canais", "Histórico", "Mensagem", "Emojis", "Canais/DMs"};
+    const char *areas[] = {"Abas",   "Canais",     "Histórico",    "Mensagem",
+                           "Emojis", "Canais/DMs", "Configurações"};
     char summary[1200];
-    snprintf(summary, sizeof(summary), "%s · Foco: %s · F6: conta", auth_username(auth),
+    snprintf(summary, sizeof(summary), "%s · Foco: %s · F2: ajustes · F6: conta",
+             auth_username(auth),
              ui->focus == CHANNEL_LIST ? ui->list_dms ? "DMs" : "Canais" : areas[ui->focus]);
     wattrset(ui->tabs, COLOR_PAIR(focused ? THEME_FOCUS_MUTED : THEME_PANEL_MUTED));
     if (COLS < 80) {
@@ -222,7 +224,7 @@ bool conversation_collect_notices(view *ui, auth_client *auth)
 void conversation_draw_footer(view *ui)
 {
     const char *full, *shorter, *minimal;
-    if (r8_modal_is_open(ui->r8)) {
+    if (r8_modal_is_open(ui->r8) || ui->settings.open) {
         full = shorter = "↑↓ escolher · Enter abrir · Tab ações · Esc voltar";
         minimal = "Enter · Esc";
     } else if (ui->duplicate_modal) {
@@ -383,7 +385,9 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         wattrset(ui->list, COLOR_PAIR(focused ? THEME_FOCUS_MUTED : THEME_PANEL_MUTED) | A_BOLD);
         conversation_list_button(ui, 0, 1, 9, "[Canais]");
         conversation_list_button(ui, 1, 11, 8, "[DMs]");
-        int rows = getmaxy(ui->list) - 2;
+        int rows = getmaxy(ui->list) - 4;
+        if (rows < 1)
+            rows = 1;
         size_t count = conversation_list_count(ui);
         if (!count)
             text_label(ui->list, 1, 1, ui->side - 2,
@@ -432,6 +436,22 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                                                   : selected ? THEME_NOTIFICATION_SELECTED
                                                              : THEME_NOTIFICATION);
             }
+    }
+    if (ui->list && paint_navigation) {
+        int y = getmaxy(ui->list) - 3, w = getmaxx(ui->list);
+        wattrset(ui->list, COLOR_PAIR(THEME_BORDER));
+        mvwaddch(ui->list, y, 0, ACS_ULCORNER);
+        mvwhline(ui->list, y, 1, ACS_HLINE, w - 2);
+        mvwaddch(ui->list, y, w - 1, ACS_URCORNER);
+        mvwaddch(ui->list, y + 1, 0, ACS_VLINE);
+        mvwaddch(ui->list, y + 1, w - 1, ACS_VLINE);
+        mvwaddch(ui->list, y + 2, 0, ACS_LLCORNER);
+        mvwhline(ui->list, y + 2, 1, ACS_HLINE, w - 2);
+        mvwaddch(ui->list, y + 2, w - 1, ACS_LRCORNER);
+        wattrset(ui->list, COLOR_PAIR(THEME_PANEL));
+        text_label(ui->list, y + 1, 2, w - 9, auth_username(auth));
+        button_draw(ui->list, y + 1, w - 6, 5, papo_unicode_width(0x2699) == 1 ? "[⚙]" : "[*]",
+                    ui->focus == SETTINGS_BUTTON ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     }
     if (ui->body && (paint_history || scope == DRAW_EDITOR)) {
         json_t *c = history_channel(ui->model, history_selected(ui->model));
@@ -620,7 +640,7 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
     }
     bool caret = false;
     if (ui->focus == MESSAGE_INPUT && conversation_input(ui) && ui->body && !ui->duplicate_modal &&
-        !r8_modal_is_open(ui->r8) && !media_view_modal(ui->media) &&
+        !(r8_modal_is_open(ui->r8) || ui->settings.open) && !media_view_modal(ui->media) &&
         !emoji_picker_open(ui->emojis)) {
         text_buffer *editor = conversation_input(ui);
         text_layout measured;
@@ -634,8 +654,9 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
     }
     if (!caret)
         setsyx(-1, -1);
-    if (paint_media && (r8_modal_is_open(ui->r8) || media_view_modal(ui->media) ||
-                        ui->duplicate_modal || mention_popup_open(ui->mentions)))
+    if (paint_media &&
+        (r8_modal_is_open(ui->r8) || ui->settings.open || media_view_modal(ui->media) ||
+         ui->duplicate_modal || mention_popup_open(ui->mentions)))
         icons_begin(ui->icons);
     if (emoji_picker_open(ui->emojis)) {
         emoji_picker_draw(ui->emojis);
@@ -643,13 +664,15 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
     }
     conversation_interactions_draw(ui);
     if (paint_media) {
-        if (!ui->duplicate_modal && !r8_modal_is_open(ui->r8) && !mention_popup_open(ui->mentions))
+        if (!ui->duplicate_modal && !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
+            !mention_popup_open(ui->mentions))
             media_view_prepare(ui->media);
         icons_prepare(ui->icons);
         graphics_frame_prepare();
     }
     r8_modal_draw(ui->r8);
-    if (r8_modal_is_open(ui->r8)) {
+    settings_draw(&ui->settings);
+    if (r8_modal_is_open(ui->r8) || ui->settings.open) {
         caret = false;
         setsyx(-1, -1);
     }

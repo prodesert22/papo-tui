@@ -3,6 +3,8 @@ find_program(FFMPEG_CLI ffmpeg REQUIRED)
 foreach(
     spec IN
     ITEMS
+        "media-wire-test|tests/unit/test_media_wire.c|papo_media|media-wire-boundaries"
+        "media-service-test|tests/integration/test_media_service.c|papo_media|media-service-integration"
         "rate-limit-test|tests/unit/test_rate_limit.c|papo_auth|request-rate-limit"
         "session-time-test|tests/unit/test_session_time.c|papo_auth|session-expiry"
         "status-bar-test|tests/unit/test_status_bar.c|papo_send_editor|status-bar-unit"

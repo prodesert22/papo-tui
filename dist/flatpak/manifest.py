@@ -17,9 +17,22 @@ def module(entry):
     name = entry["name"]
     result = {
         "name": name,
-        "sources": [{"type": "archive", "url": entry["url"], "sha256": entry["sha256"]}],
+        "sources": [
+            {
+                "type": "archive",
+                "url": entry["url"],
+                "sha256": entry["sha256"],
+                "dest-filename": entry["archive"],
+            }
+        ],
     }
-    if entry["buildsystem"] == "cmake":
+    if entry["buildsystem"] == "python-package":
+        result["buildsystem"] = "simple"
+        result["build-commands"] = [
+            "install -d /app/lib/python3/site-packages",
+            f"cp -R src/{entry['package']} /app/lib/python3/site-packages/",
+        ]
+    elif entry["buildsystem"] == "cmake":
         result["buildsystem"] = "cmake-ninja"
         result["config-opts"] = [
             "-DBUILD_SHARED_LIBS=ON",
@@ -93,6 +106,7 @@ def module(entry):
                 "-Dtest_setup=disabled",
             ]
         elif name == "libplacebo":
+            result["build-options"] = {"env": {"PYTHONPATH": "/app/lib/python3/site-packages"}}
             result["config-opts"] += [
                 "-Dvulkan=disabled",
                 "-Dopengl=disabled",
@@ -112,7 +126,14 @@ def module(entry):
 
 def manifest(source, digest):
     entries = json.loads((ROOT / "dist/dependencies.json").read_text())["sources"]
-    modules = [module(e) for e in entries]
+    build_dependencies = json.loads((ROOT / "dist/flatpak/build-dependencies.json").read_text())[
+        "sources"
+    ]
+    modules = []
+    for entry in entries:
+        if entry["name"] == "libplacebo":
+            modules.extend(module(e) for e in build_dependencies)
+        modules.append(module(entry))
     resources = json.loads((ROOT / "dist/resources.json").read_text())["files"]
     fonts = {
         "name": "emoji-font",
@@ -158,7 +179,14 @@ def manifest(source, digest):
             "--talk-name=org.kde.kwalletd5",
             "--talk-name=org.kde.kwalletd6",
         ],
-        "cleanup": ["/include", "/lib/pkgconfig", "/lib/*.la", "/share/man"],
+        "cleanup": [
+            "/include",
+            "/lib/pkgconfig",
+            "/lib/*.la",
+            "/lib/python3/site-packages/jinja2",
+            "/lib/python3/site-packages/markupsafe",
+            "/share/man",
+        ],
         "modules": modules + [fonts, app],
     }
 

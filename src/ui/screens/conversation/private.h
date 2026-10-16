@@ -10,9 +10,11 @@
 #include "net/clock.h"
 #include "platform/clipboard.h"
 #include "platform/runtime.h"
+#include "platform/unicode.h"
 #include "ui/components/button.h"
 #include "ui/components/emoji_picker.h"
 #include "ui/components/mention_popup.h"
+#include "ui/components/settings.h"
 #include "ui/components/status_bar.h"
 #include "ui/components/theme.h"
 #include "ui/input/editor.h"
@@ -21,6 +23,7 @@
 #include "ui/media/graphics.h"
 #include "ui/media/icons.h"
 #include "ui/media/media.h"
+#include "ui/media/media_service.h"
 #include "ui/screens/conversation.h"
 #include "ui/screens/inbox.h"
 #include <glib.h>
@@ -35,7 +38,15 @@
 #define PASTE_END (KEY_MAX + 2)
 #define CONTENT_Y 5
 
-enum { SERVER_TABS, CHANNEL_LIST, HISTORY_PANEL, MESSAGE_INPUT, EMOJI_BUTTON, LIST_BUTTONS };
+enum {
+    SERVER_TABS,
+    CHANNEL_LIST,
+    HISTORY_PANEL,
+    MESSAGE_INPUT,
+    EMOJI_BUTTON,
+    LIST_BUTTONS,
+    SETTINGS_BUTTON
+};
 typedef enum {
     DRAW_ALL,
     DRAW_CONVERSATION,
@@ -84,6 +95,7 @@ typedef struct {
     uint64_t layout_sequence;
     history *model;
     r8_modal *r8;
+    app_settings settings;
     bool list_dms;
     int list_button;
     size_t highlights[2];

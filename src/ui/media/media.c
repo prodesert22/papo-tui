@@ -2,6 +2,7 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 #include "ui/media/media.h"
+#include "config/app_mode.h"
 #include "net/clock.h"
 #include "net/http/download.h"
 #include "ui/components/button.h"
@@ -12,6 +13,7 @@
 #include "ui/media/media_backend.h"
 #include "ui/media/media_cache.h"
 #include "ui/media/media_layout.h"
+#include "ui/media/media_service.h"
 #include <glib.h>
 #include <inttypes.h>
 #include <math.h>
@@ -195,8 +197,9 @@ static void *worker(void *context)
                     graphics_image empty = {0};
                     publish(
                         v, current.token, &empty, NULL,
-                        api ? "Não foi possível iniciar o player."
-                            : "Módulo de vídeo ausente ou incompatível. Reinstale o aplicativo.");
+                        media_service_error() ? media_service_error()
+                        : api ? "Não foi possível iniciar o player."
+                              : "Módulo de vídeo ausente ou incompatível. Reinstale o aplicativo.");
                     free_job(&current);
                     atomic_store(&v->player_idle, true);
                     continue;
@@ -381,6 +384,7 @@ void media_view_reset(media_view *v)
 {
     if (!v)
         return;
+    ++v->dimensions_revision;
     if (v->visible_count || v->modal != MODAL_NONE)
         graphics_images_clear();
     close_modal(v);
@@ -758,7 +762,8 @@ bool media_view_poll(media_view *v, history *h)
     if (terminal.supported)
         for (int i = 0; i < v->visible_count; ++i) {
             cache_entry *e = &v->cache[v->visible[i].entry];
-            if (!e->item.video || e->item.kind == AUTH_MEDIA_ATTACHMENT) {
+            if (!e->item.video ||
+                (e->item.kind == AUTH_MEDIA_ATTACHMENT && app_mode_get() == APP_MODE_NORMAL)) {
                 ensure_resource(v, e);
                 media_resource_use_image(e->resource, !strcmp(e->item.role, "author"), false);
                 placement *p = &v->visible[i];
@@ -909,7 +914,10 @@ bool media_view_open(media_view *v, const message_media *source)
     v->selected_item = item;
     v->modal_entry = cache_find(v, &item);
     v->modal = MODAL_LOADING;
-    if (v->modal_entry < 0 || !graphics_terminal_get().supported) {
+    if (v->modal_entry >= 0 && v->selected_item.video && app_mode_get() != APP_MODE_NORMAL) {
+        v->modal_error = "Vídeos desativados neste modo.";
+        v->modal = MODAL_ERROR;
+    } else if (v->modal_entry < 0 || !graphics_terminal_get().supported) {
         v->modal_error = "Este terminal não oferece um protocolo gráfico compatível.";
         v->modal = MODAL_ERROR;
     } else if (v->cache[v->modal_entry].state == ENTRY_ERROR) {
@@ -984,7 +992,8 @@ bool media_view_key(media_view *v, int type, uint32_t key)
     if (v->modal == MODAL_ERROR &&
         ((type == OK && (key == '\r' || key == '\n')) ||
          (type == KEY_CODE_YES && key == KEY_ENTER)) &&
-        v->modal_entry >= 0 && graphics_terminal_get().supported) {
+        v->modal_entry >= 0 && graphics_terminal_get().supported &&
+        (!v->selected_item.video || app_mode_get() == APP_MODE_NORMAL)) {
         media_resource_retry(v->cache[v->modal_entry].resource);
         delete_entry(&v->cache[v->modal_entry]);
         v->cache[v->modal_entry].item = v->selected_item;

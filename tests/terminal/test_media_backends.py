@@ -3,7 +3,6 @@
 import locale
 from pathlib import Path
 import shutil
-import signal
 import sys
 import tempfile
 import unittest
@@ -36,7 +35,15 @@ class MediaBackends(unittest.TestCase):
         test_terminal.BINARY = self.previous
 
     def maps(self, terminal):
-        return Path(f"/proc/{terminal.process.pid}/maps").read_text()
+        maps = Path(f"/proc/{terminal.process.pid}/maps").read_text()
+        for task in Path(f"/proc/{terminal.process.pid}/task").iterdir():
+            for pid in (task / "children").read_text().split():
+                try:
+                    if b"papo-media-worker" in Path(f"/proc/{pid}/cmdline").read_bytes():
+                        maps += Path(f"/proc/{pid}/maps").read_text()
+                except FileNotFoundError:
+                    pass
+        return maps
 
     def assert_text_only(self, terminal):
         maps = self.maps(terminal)
@@ -55,6 +62,10 @@ class MediaBackends(unittest.TestCase):
         executable = root / "papo-tui"
         shutil.copy2(BINARY, executable)
         (root / "papo-backends").mkdir()
+        shutil.copy2(
+            BINARY.parent / "papo-backends" / "papo-media-worker",
+            root / "papo-backends" / "papo-media-worker",
+        )
         for source, name in ((image, IMAGE.name), (video, VIDEO.name)):
             if source:
                 shutil.copy2(source, root / "papo-backends" / name)
@@ -99,16 +110,14 @@ class MediaBackends(unittest.TestCase):
             terminal = self.helper.open(
                 server, protocol="kitty", environment={"PAPO_TEST_BACKEND_CRASH_GATE": str(gate)}
             )
-            # This child is expected to abort; the ordinary helper requires a
-            # zero status and remains active for all other media tests.
-            self.helper.terminals.remove(terminal)
             try:
                 gate.touch()
-                terminal.process.wait(timeout=10)
-                self.assertEqual(terminal.process.returncode, -signal.SIGABRT)
+                terminal.send("Draft survives backend failure")
+                self.helper.wait(terminal, "Draft survives backend failure")
+                self.assertIsNone(terminal.process.poll())
             finally:
                 self.assertTrue(terminal.close())
-            for reset in (b"\x1b[?2026l", b"\x1b[?1006l", b"\x1b[?2004l", b"\x1b[?1049l"):
+            for reset in (b"\x1b[?2026l", b"\x1b[?1006;1000l", b"\x1b[?2004l", b"\x1b[?1049l"):
                 self.assertIn(reset, terminal.output)
 
     def test_first_video_loads_player_and_copied_bundle_works(self):

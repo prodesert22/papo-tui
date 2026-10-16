@@ -24,8 +24,8 @@ class SendProduct(unittest.TestCase):
                 return
         self.fail("Missing control: " + text)
 
-    def open(self, server):
-        terminal = Terminal()
+    def open(self, server, *, environment=None):
+        terminal = Terminal(environment=environment)
         terminal.send(server.url + "\tjosé\tSynthetic!123\n")
         self.wait(terminal, "geral")
         terminal.send("\x1bOB\x1bOB\n")
