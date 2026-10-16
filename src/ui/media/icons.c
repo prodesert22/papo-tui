@@ -361,7 +361,7 @@ bool icons_notification(icon_view *v, WINDOW *w, int y, int x, int columns, size
                  getbegx(w) + x, 0, 0, 0);
 }
 static bool paint(icon_view *v, WINDOW *w, uint32_t icon, int y, int x, int pair, bool selected,
-                  size_t offset, int pixels)
+                  size_t offset, int pixels, int top, int bottom)
 {
     graphics_terminal terminal = graphics_terminal_get();
     if (!v || !v->store || !terminal.supported || terminal.cell_width <= 0 ||
@@ -387,17 +387,23 @@ static bool paint(icon_view *v, WINDOW *w, uint32_t icon, int y, int x, int pair
         .first_frame = (icon & ICON_CUSTOM) && app_mode_get() == APP_MODE_LIGHT,
         .background = background(selected ? THEME_TEXT_SELECTION : pair),
         .max_side = icon & ICON_CUSTOM ? 2048 : 512};
-    return offer(v, resource, request, getbegy(w) + y, getbegx(w) + x, 0, 0, offset);
+    return offer(v, resource, request, getbegy(w) + y, getbegx(w) + x, top, bottom, offset);
 }
 bool icons_paint(void *context, WINDOW *w, uint32_t icon, int y, int x, int pair, bool selected,
                  size_t offset)
 {
-    return paint(context, w, icon, y, x, pair, selected, offset, 0);
+    return paint(context, w, icon, y, x, pair, selected, offset, 0, 0, 0);
 }
 bool icons_paint_size(icon_view *v, WINDOW *w, uint32_t icon, int y, int x, int pair, size_t offset,
                       int pixels)
 {
-    return pixels > 0 && pixels <= 512 && paint(v, w, icon, y, x, pair, false, offset, pixels);
+    return icons_paint_clipped(v, w, icon, y, x, pair, offset, pixels, 0, 0);
+}
+bool icons_paint_clipped(icon_view *v, WINDOW *w, uint32_t icon, int y, int x, int pair,
+                         size_t offset, int pixels, int top, int bottom)
+{
+    return pixels > 0 && pixels <= 512 && top >= 0 && bottom >= 0 && top + bottom < pixels &&
+           paint(v, w, icon, y, x, pair, false, offset, pixels, top, bottom);
 }
 static bool avatar_image(icon_view *v, const author_avatar *avatar, const char *message, int y,
                          int x, int top, int bottom, int pair)

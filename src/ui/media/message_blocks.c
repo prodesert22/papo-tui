@@ -230,6 +230,7 @@ static bool column(message_blocks *b, size_t start, const char *key, const char 
                         return false;
                     r->icons = icons;
                     message_icon_region *icon = &r->icons[r->icon_count++];
+                    memset(icon, 0, sizeof(*icon));
                     icon->id = layout.cells[k].icon;
                     icon->x = x + layout.cells[k].column;
                     icon->offset = base + layout.cells[k].start;
@@ -254,6 +255,103 @@ static bool text(message_blocks *b, const char *key, const char *value, int widt
     size_t end;
     return column(b, b->count, key, value, card ? 2 : 0, width - (card ? 4 : 0), bold, card, color,
                   &end);
+}
+static bool emoji_content(message_blocks *b, const char *value, int width, bool graphics,
+                          bool *rendered)
+{
+    *rendered = false;
+    graphics_terminal terminal = graphics_terminal_get();
+    if (!graphics || !b->icon_resolver || !b->icon_painter || terminal.cell_width < 1 ||
+        terminal.cell_height < 1)
+        return true;
+    glong length = 0;
+    gunichar *points = g_utf8_to_ucs4(value, -1, NULL, &length, NULL);
+    if (!points)
+        return true;
+    bool any = false;
+    for (size_t at = 0; at < (size_t)length;) {
+        if (g_unichar_isspace(points[at])) {
+            ++at;
+            continue;
+        }
+        uint32_t icon;
+        size_t consumed =
+            b->icon_resolver(b->icon_context, points + at, (size_t)length - at, 0, &icon);
+        if (!consumed || consumed > (size_t)length - at) {
+            g_free(points);
+            return true;
+        }
+        any = true;
+        at += consumed;
+    }
+    if (!any) {
+        g_free(points);
+        return true;
+    }
+    int pixels = MESSAGE_EMOJI_PIXELS;
+    int columns = (pixels + terminal.cell_width - 1) / terminal.cell_width;
+    if (columns > width) {
+        pixels = width * terminal.cell_width;
+        columns = width;
+    }
+    int rows = (pixels + terminal.cell_height - 1) / terminal.cell_height;
+    size_t line = b->count;
+    int x = 0;
+    bool new_line = true;
+    for (size_t at = 0; at < (size_t)length;) {
+        if (g_unichar_isspace(points[at])) {
+            if (points[at] == '\n' && x) {
+                new_line = true;
+                x = 0;
+            }
+            ++at;
+            continue;
+        }
+        uint32_t id;
+        size_t consumed =
+            b->icon_resolver(b->icon_context, points + at, (size_t)length - at, 0, &id);
+        if (!consumed || consumed > (size_t)length - at)
+            goto error;
+        if (x && x + columns > width) {
+            new_line = true;
+            x = 0;
+        }
+        if (new_line) {
+            line = b->count;
+            for (int sub = 0; sub < rows; ++sub) {
+                if (!blank(b, false, false, false, 0))
+                    goto error;
+                message_row *r = &b->rows[line + (size_t)sub];
+                message_segment *s = &r->segments[r->count++];
+                snprintf(s->key, sizeof(s->key), "content:emoji:%d", sub);
+                s->offset = at;
+                s->width = width;
+                s->text = strdup("");
+                if (!s->text)
+                    goto error;
+            }
+            new_line = false;
+        }
+        for (int sub = 0; sub < rows; ++sub) {
+            message_row *r = &b->rows[line + (size_t)sub];
+            message_icon_region *icons = realloc(r->icons, (r->icon_count + 1) * sizeof(*icons));
+            if (!icons)
+                goto error;
+            r->icons = icons;
+            message_icon_region *icon = &r->icons[r->icon_count++];
+            *icon =
+                (message_icon_region){.id = id, .x = x, .pixels = pixels, .row = sub, .offset = at};
+            snprintf(icon->key, sizeof(icon->key), "content");
+        }
+        x += columns + 1;
+        at += consumed;
+    }
+    g_free(points);
+    *rendered = true;
+    return true;
+error:
+    g_free(points);
+    return false;
 }
 static bool labeled(message_blocks *b, const char *key, const char *prefix, const char *value,
                     int width, bool bold, bool card, unsigned color)
@@ -657,8 +755,12 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
             goto error;
         style(b, first_reply, true, false);
     }
-    if (*str(m, "content") && !text(b, "content", str(m, "content"), width, false, false, 0))
-        goto error;
+    if (*str(m, "content")) {
+        bool enlarged;
+        if (!emoji_content(b, str(m, "content"), width, graphics, &enlarged) ||
+            (!enlarged && !text(b, "content", str(m, "content"), width, false, false, 0)))
+            goto error;
+    }
     size_t index;
     json_t *item;
     json_array_foreach(json_object_get(m, "attachments"), index, item)

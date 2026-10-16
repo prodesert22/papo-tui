@@ -123,6 +123,12 @@ existing animation clock. The emoji catalog accepts up to 2 MiB blobs
 and 2048-pixel dimensions, and its HTTP response budget accommodates a full
 25-item base64 page. Existing per-instance temporary-file budgets still apply.
 
+Emoji-only message bodies reuse the icon resolver and shared cache at 48 pixels.
+Their rows retain source offsets for reading anchors and repeat icon regions so
+the viewport can crop partially visible emojis through the existing image path.
+No dependency or backend request is added. Mixed text, reactions and native
+Unicode rendering in Light/Ultralight keep their ordinary layout.
+
 The notification center reuses the mention projector, libc sorting and session
 timestamp comparison for local search, conversation filters and date ordering.
 Search and counters cover loaded pages; the API exposes no global unread total.

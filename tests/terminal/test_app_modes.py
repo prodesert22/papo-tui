@@ -300,6 +300,59 @@ class AppModes(unittest.TestCase):
             finally:
                 self.assertTrue(t.close())
 
+    def test_emoji_only_messages_enlarge_in_chafa_and_light_and_remain_text_in_ultralight(self):
+        for mode in ("normal", "light", "ultralight"):
+            with self.subTest(mode=mode):
+                self.seed(mode)
+                emojis = emoji_tests.EmojiTerminal()
+                emojis.png = media.MediaTerminal.images["png"]
+                emojis.gif = media.MediaTerminal.animated_gif
+                with emojis.server(content=":gato 界:", count=2, animated=True) as server:
+                    for message in server.messages:
+                        message["author_id"] = uuid(21)
+                    server.messages[1]["content"] = "Depois"
+                    t = self.open(server, size=(40, 100))
+                    try:
+                        self.helper.wait(t, "Depois")
+                        if mode == "ultralight":
+                            self.helper.wait(t, ":gato 界:")
+                            self.assertFalse(any("/emojis?" in r[1] for r in server.requests))
+                            self.assertFalse(self.children(t))
+                            continue
+
+                        def cells():
+                            end = next(
+                                (i for i, line in enumerate(t.screen.display) if "Depois" in line),
+                                -1,
+                            )
+                            if end < 3:
+                                return []
+                            return [
+                                t.screen.buffer[y][x]
+                                for y in range(end - 3, end)
+                                for x in range(34, 40)
+                            ]
+
+                        def colored():
+                            return sum(
+                                cell.bg not in ("default", "121212", "1c1c1c", "000000")
+                                for cell in cells()
+                            )
+
+                        self.wait(t, lambda: colored() >= 12)
+                        frames = set()
+                        deadline = time.monotonic() + 0.9
+                        while time.monotonic() < deadline:
+                            t.read(0.05)
+                            frames.add(tuple((cell.data, cell.fg, cell.bg) for cell in cells()))
+                        if mode == "light":
+                            self.assertEqual(len(frames), 1)
+                        else:
+                            self.assertGreater(len(frames), 1)
+                        self.assertEqual(t.stream.frames, [])
+                    finally:
+                        self.assertTrue(t.close())
+
     def test_chafa_preserves_image_colors_on_indexed_and_direct_terminals(self):
         colors = ("ff5f00", "00d7af", "875fff")
         pixels = b"".join(bytes.fromhex(color) * 32 for color in colors) * 32

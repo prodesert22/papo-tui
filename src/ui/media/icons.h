@@ -24,6 +24,8 @@ bool icons_paint(void *context, WINDOW *w, uint32_t icon, int y, int x, int pair
                  size_t offset);
 bool icons_paint_size(icon_view *v, WINDOW *w, uint32_t icon, int y, int x, int pair, size_t offset,
                       int pixels);
+bool icons_paint_clipped(icon_view *v, WINDOW *w, uint32_t icon, int y, int x, int pair,
+                         size_t offset, int pixels, int top, int bottom);
 bool icons_literal(const uint32_t *text, size_t at);
 bool icons_avatar(icon_view *v, const char *id, const char *message, int y, int x, int top,
                   int bottom, int pair);

@@ -362,8 +362,20 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
                         for (size_t n = 0; n < blocks->reaction_count; ++n)
                             if (blocks->reactions[n].row == (int)row && blocks->reactions[n].mine)
                                 icon_pair = THEME_PANEL_ACTIVE;
-                        icons_paint(ui->icons, ui->body, icon->id, y,
-                                    2 + r->x + r->indent + icon->x, icon_pair, false, icon->offset);
+                        int x = 2 + r->x + r->indent + icon->x;
+                        if (icon->pixels) {
+                            if (icon->row && total + r->y != first)
+                                continue;
+                            int cell_height = graphics_terminal_get().cell_height;
+                            int start = total + r->y - icon->row;
+                            int top = icon->row * cell_height;
+                            int bottom =
+                                MAX(0, icon->pixels - (first + ui->visible - start) * cell_height);
+                            icons_paint_clipped(ui->icons, ui->body, icon->id, y, x, icon_pair,
+                                                icon->offset, icon->pixels, top, bottom);
+                        } else
+                            icons_paint(ui->icons, ui->body, icon->id, y, x, icon_pair, false,
+                                        icon->offset);
                     }
                 }
                 if (observed && !emoji_picker_open(ui->emojis) &&

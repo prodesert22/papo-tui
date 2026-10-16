@@ -8,6 +8,7 @@
 #define MESSAGE_MEDIA_LABEL 512
 #define MESSAGE_COLUMNS 3
 #define MESSAGE_AVATAR_PIXELS 48
+#define MESSAGE_EMOJI_PIXELS 48
 /* Owned presentation, borrowed input JSON only during construction. Stable
  * block keys and Unicode offsets survive reflow and inserts in other blocks. */
 typedef struct {
@@ -36,6 +37,7 @@ typedef struct {
 typedef struct {
     uint32_t id;
     int x;
+    int pixels, row; /* Nonzero pixels: enlarged icon, repeated for each occupied row. */
     size_t offset;
     char key[128];
 } message_icon_region;

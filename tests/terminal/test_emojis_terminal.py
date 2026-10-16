@@ -143,11 +143,16 @@ class EmojiTerminal(unittest.TestCase):
             for h, p in t.stream.kitty_frames
             if h.get(b"s") == b"48" and h.get(b"v") == b"48"
         }
-        return {pair for pair in t.stream.live_placements if pair[0] in images}
+        # Enlarged body emojis are also 48 pixels; avatars occupy the gutter.
+        return {
+            (int(placement[b"i"]), int(placement[b"p"]))
+            for placement, position in zip(t.stream.placements, t.stream.placement_positions)
+            if int(placement[b"i"]) in images and position[1] in (3, 28)
+        } & t.stream.live_placements
 
     def test_mention_and_notification_panels_retain_avatars_and_inline_emoji(self):
         for key, title in (("@", "Menções"), ("\x1b[20~", "Notificações")):
-            with self.subTest(panel=title), self.server(content="😀") as server:
+            with self.subTest(panel=title), self.server(content="Emoji 😀") as server:
                 t = self.open(server, protocol="kitty", size=(48, 160))
                 try:
                     t.send("draft ")
@@ -252,7 +257,7 @@ class EmojiTerminal(unittest.TestCase):
 
     def test_picker_has_32_pixel_previews_labels_and_retains_uncovered_images(self):
         for protocol in ("kitty", "sixel", "iterm2"):
-            with self.subTest(protocol=protocol), self.server(content="😀 :gato 界:") as s:
+            with self.subTest(protocol=protocol), self.server(content="Emoji 😀 :gato 界:") as s:
                 t = self.open(s, protocol=protocol, size=(48, 100))
                 try:
                     self.until(t, lambda: bool(t.stream.frames))
@@ -448,7 +453,8 @@ class EmojiTerminal(unittest.TestCase):
 
     def test_repeated_unicode_shares_uploads_and_does_not_flash(self):
         with self.server(content="😄 " * 90) as s:
-            t = self.open(s, protocol="kitty")
+            # Keep enough enlarged emojis visible to exercise shared uploads.
+            t = self.open(s, protocol="kitty", size=(48, 100))
             try:
                 # Focus the composer before measuring repeated input redraws;
                 # changing focus can create a new avatar background variant.
@@ -468,13 +474,7 @@ class EmojiTerminal(unittest.TestCase):
                     ),
                     "Unicode icon must contain color pixels",
                 )
-                self.until(
-                    t,
-                    lambda: any(
-                        h.get(b"s") == b"48" and h.get(b"v") == b"48"
-                        for h, p in t.stream.kitty_frames
-                    ),
-                )
+                self.until(t, lambda: bool(self.avatar_positions(t)))
                 t.read(0.3)
                 uploads = len(t.stream.frames)
                 t.send("a")
@@ -485,7 +485,7 @@ class EmojiTerminal(unittest.TestCase):
                 self.assertTrue(t.close())
 
     def test_custom_and_avatar_gifs_animate_only_while_visible(self):
-        with self.server(content=":gato 界:", animated=True) as s:
+        with self.server(content="Emoji :gato 界:", animated=True) as s:
             t = self.open(s, protocol="kitty")
             try:
                 self.until(t, lambda: len(t.stream.frames) > 5)
@@ -548,6 +548,128 @@ class EmojiTerminal(unittest.TestCase):
                     before = len(t.stream.frames)
                     self.until(t, lambda: len(t.stream.frames) > before + 2)
                     self.assertEqual(sum("/emojis?" in r[1] for r in server.requests), 1)
+                    self.assertEqual(server.message_count, 0)
+                finally:
+                    self.assertTrue(t.close())
+
+    def image_positions(self, t, protocol, size, start=0):
+        if protocol == "kitty":
+            images = {
+                int(h[b"i"])
+                for h, _ in t.stream.kitty_frames
+                if media_tests.raster_dimensions(protocol, h) == size
+            }
+            return {
+                position
+                for placement, position in zip(
+                    t.stream.placements[start:], t.stream.placement_positions[start:]
+                )
+                if int(placement[b"i"]) in images and position[1] >= 34
+            }
+        return {
+            position
+            for frame, position in zip(t.stream.frames[start:], t.stream.frame_positions[start:])
+            if media_tests.raster_dimensions(protocol, frame) == size and position[1] >= 34
+        }
+
+    def test_emoji_only_messages_use_large_icons_and_keep_text_and_reactions_inline(self):
+        for protocol in ("kitty", "sixel", "iterm2"):
+            with self.subTest(protocol=protocol), self.server(count=5, animated=True) as server:
+                for message in server.messages:
+                    message["author_id"] = uuid(21)
+                server.messages[0]["content"] = "😀 :gato 界: 👨‍👩‍👧‍👦"
+                server.messages[0]["reactions"] = [
+                    dict(emoji_id=server.emojis[0]["id"], unicode=None, count=2)
+                ]
+                server.messages[1]["content"] = "Texto 😀 :gato 界:"
+                server.messages[2]["content"] = "`😀` :not_loaded:"
+                server.messages[3]["content"] = "123 #"
+                server.messages[4]["content"] = "Depois"
+                t = self.open(server, protocol=protocol, size=(48, 160))
+                try:
+                    self.wait(t, "Depois")
+                    self.wait(t, ":not_loaded:")
+                    self.wait(t, "123 #")
+                    self.until(t, lambda: len(self.image_positions(t, protocol, (48, 48))) >= 3)
+                    reaction_row = next(
+                        i for i, line in enumerate(t.screen.display) if " 2]" in line
+                    )
+                    text_row = next(
+                        i for i, line in enumerate(t.screen.display) if "Texto " in line
+                    )
+                    expected = {(reaction_row - 3, x) for x in (34, 41, 48)}
+                    self.assertTrue(expected <= self.image_positions(t, protocol, (48, 48)))
+                    self.until(
+                        t, lambda: (reaction_row, 35) in self.image_positions(t, protocol, (16, 16))
+                    )
+                    self.until(
+                        t, lambda: (text_row, 40) in self.image_positions(t, protocol, (16, 16))
+                    )
+                    if protocol == "kitty":
+                        images = {
+                            int(p[b"i"])
+                            for p, pos in zip(t.stream.placements, t.stream.placement_positions)
+                            if pos in expected
+                        }
+                        self.until(t, lambda: images <= t.stream.live_ids)
+                    t.send("\x1bOS\t\x1bOC")
+                    self.wait(t, "1 emojis do servidor")
+                    if protocol == "kitty":
+                        self.until(t, lambda: images <= t.stream.live_ids)
+                    t.send("\x1b")
+                    self.until(t, lambda: "Emojis · Esc voltar" not in "\n".join(t.screen.display))
+                    self.wait(t, "Depois")
+                    self.assertEqual(server.message_count, 0)
+                finally:
+                    self.assertTrue(t.close())
+
+    def test_large_emojis_wrap_on_resize_and_crop_at_history_edges(self):
+        for protocol in ("kitty", "sixel", "iterm2"):
+            with self.subTest(protocol=protocol), self.server(count=2, animated=True) as server:
+                for message in server.messages:
+                    message["author_id"] = uuid(21)
+                server.messages[0]["content"] = ":gato 界:" * 18 + "\n" + ":gato 界:" * 2
+                server.messages[1]["content"] = "Depois"
+                t = self.open(server, protocol=protocol, size=(48, 100))
+                try:
+                    self.wait(t, "Depois")
+                    self.until(t, lambda: len(self.image_positions(t, protocol, (48, 48))) >= 20)
+                    before_row = next(
+                        i for i, line in enumerate(t.screen.display) if "Depois" in line
+                    )
+                    t.resize(48, 80)
+                    self.wait(t, "Depois")
+                    after_row = next(
+                        i for i, line in enumerate(t.screen.display) if "Depois" in line
+                    )
+                    self.assertGreater(after_row, before_row)
+                    t.resize(22, 80)
+                    t.send("\x1bOH")
+                    t.read(0.3)
+                    start = len(t.stream.placements if protocol == "kitty" else t.stream.frames)
+                    t.send("\x1bOB\x1bOB")
+                    if protocol == "kitty":
+                        self.until(
+                            t,
+                            lambda: any(
+                                p.get(b"y") == b"16"
+                                and p.get(b"h") == b"32"
+                                and pos[0] == 8
+                                and pos[1] >= 34
+                                for p, pos in zip(
+                                    t.stream.placements[start:],
+                                    t.stream.placement_positions[start:],
+                                )
+                            ),
+                        )
+                    else:
+                        self.until(
+                            t,
+                            lambda: any(
+                                y == 8
+                                for y, _ in self.image_positions(t, protocol, (48, 32), start)
+                            ),
+                        )
                     self.assertEqual(server.message_count, 0)
                 finally:
                     self.assertTrue(t.close())
