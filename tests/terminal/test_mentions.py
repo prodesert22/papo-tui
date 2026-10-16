@@ -507,6 +507,16 @@ class Mentions(unittest.TestCase):
                     self.wait(t, f"chegada {n}")
                     t.read(0.3)
                 self.assertIn("@usuário indisponível", "\n".join(t.screen.display))
+                deadline = time.monotonic() + 5
+                while (
+                    not any(
+                        missing in request[3]["ids"]
+                        for request in s.requests
+                        if "summary_batch" in request[1]
+                    )
+                    and time.monotonic() < deadline
+                ):
+                    t.read(0.03)
                 batches = [
                     request[3]["ids"] for request in s.requests if "summary_batch" in request[1]
                 ]

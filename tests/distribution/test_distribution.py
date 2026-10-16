@@ -9,6 +9,7 @@ import sys
 import tarfile
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "dist"))
@@ -102,6 +103,36 @@ class DistributionTests(unittest.TestCase):
             self.assertEqual(package.binary_arch(path), "aarch64")
             path.write_bytes(b"not a binary")
             self.assertIsNone(package.binary_arch(path))
+
+    def test_package_requires_matching_media_helper(self):
+        import struct
+
+        with tempfile.TemporaryDirectory() as directory:
+            stage = Path(directory)
+            modules = stage / "bin/papo-backends"
+            modules.mkdir(parents=True)
+            (stage / "share/terminfo").mkdir(parents=True)
+            (stage / "etc/fonts").mkdir(parents=True)
+            (stage / "etc/fonts/fonts.conf").touch()
+            header = bytearray(64)
+            header[:6] = b"\x7fELF\x02\x01"
+            struct.pack_into("<H", header, 18, 62)
+            for path in (stage / "bin/papo-tui", modules / "image.so", modules / "video.so"):
+                path.write_bytes(header)
+            with (
+                patch.object(package.subprocess, "check_output", return_value="papo-tui test\n"),
+                patch.object(package.subprocess, "run"),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "missing the media helper"):
+                    package.smoke(stage, "test", "x86_64")
+                worker = modules / "papo-media-worker"
+                struct.pack_into("<H", header, 18, 183)
+                worker.write_bytes(header)
+                with self.assertRaisesRegex(RuntimeError, "Media helper architecture mismatch"):
+                    package.smoke(stage, "test", "x86_64")
+                struct.pack_into("<H", header, 18, 62)
+                worker.write_bytes(header)
+                package.smoke(stage, "test", "x86_64")
 
 
 if __name__ == "__main__":

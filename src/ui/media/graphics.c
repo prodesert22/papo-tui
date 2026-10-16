@@ -2,11 +2,15 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 #include "ui/media/graphics.h"
+#include "config/app_mode.h"
 #include "net/clock.h"
 #include "platform/runtime.h"
+#include "ui/components/theme.h"
 #include "ui/input/text.h"
+#include "ui/media/media_service.h"
 #include "ui/media/sixel.h"
-#include <chafa.h>
+#include <glib.h>
+#include <limits.h>
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -14,10 +18,113 @@
 #include <string.h>
 #include <unistd.h>
 
+#define MEDIA_PAIR_START (THEME_PAIR_END + 32)
+#define MEDIA_PAIR_LIMIT 8192
+typedef struct {
+    int foreground, background;
+} media_pair;
+static media_pair media_pairs[MEDIA_PAIR_LIMIT];
+static size_t media_pair_count;
+static GHashTable *media_frame_pairs;
+static uint64_t media_pair_keys[MEDIA_PAIR_LIMIT];
+
+static int color_distance(int a, int b)
+{
+    int r = ((a >> 16) & 255) - ((b >> 16) & 255);
+    int g = ((a >> 8) & 255) - ((b >> 8) & 255);
+    int blue = (a & 255) - (b & 255);
+    return r * r + g * g + blue * blue;
+}
+
+/* Resolve RGB against the terminal palette, excluding theme overrides. Direct
+ * color terminfo uses packed RGB as the ncurses color number. */
+static int media_color(int rgb, const int *palette, int count)
+{
+    if (COLORS >= 0x1000000)
+        return rgb;
+    if (COLORS >= 256) {
+        /* Squared RGB distance is separable on the xterm color cube. This
+         * finds exactly the same minimum as scanning all 216 cube entries. */
+        static const int level[] = {0, 95, 135, 175, 215, 255};
+        int rgb_components[] = {(rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255}, indices[3];
+        for (int channel = 0; channel < 3; ++channel) {
+            int best = 0, distance = INT_MAX;
+            for (int i = 0; i < 6; ++i) {
+                int delta = rgb_components[channel] - level[i], next = delta * delta;
+                if (next < distance) {
+                    best = i;
+                    distance = next;
+                }
+            }
+            indices[channel] = best;
+        }
+        int best = 16 + indices[0] * 36 + indices[1] * 6 + indices[2];
+        int cube = (level[indices[0]] << 16) | (level[indices[1]] << 8) | level[indices[2]];
+        int distance = color_distance(rgb, cube);
+        for (int i = 232; i < 256; ++i) {
+            if (i >= 240 && i <= 253)
+                continue; /* Theme-owned slots. */
+            int gray = (8 + (i - 232) * 10) * 0x10101, next = color_distance(rgb, gray);
+            if (next < distance) {
+                best = i;
+                distance = next;
+            }
+        }
+        return best;
+    }
+    int best = 0, distance = INT_MAX;
+    /* The first 16 slots may be recolored by the user. Prefer the stable
+     * xterm cube/grays when the terminal offers 256 colors. */
+    for (int i = COLORS >= 256 ? 16 : 0; i < count; ++i) {
+        if (palette[i] < 0)
+            continue;
+        int next = color_distance(rgb, palette[i]);
+        if (next < distance) {
+            best = i;
+            distance = next;
+        }
+    }
+    return best;
+}
+
+static int media_color_pair(GHashTable *frame, int fg, int bg, int limit)
+{
+    uint64_t key = ((uint64_t)(uint32_t)fg << 32) | (uint32_t)bg;
+    gpointer found = g_hash_table_lookup(frame, &key);
+    if (found)
+        return GPOINTER_TO_INT(found);
+    /* A frame owns its pair assignments: never recycle a pair between
+     * two visible cells. Later frames may redefine unused assignments. */
+    int used = (int)g_hash_table_size(frame);
+    if (used >= limit) {
+        /* Very small pair tables: retain the closest allocated pair rather
+         * than redefining one already used by another cell in this frame. */
+        int best = THEME_PANEL, distance = INT_MAX;
+        for (int i = 0; i < used; ++i) {
+            int next = abs(fg - media_pairs[i].foreground) + abs(bg - media_pairs[i].background);
+            if (next < distance) {
+                distance = next;
+                best = MEDIA_PAIR_START + i;
+            }
+        }
+        return best;
+    }
+    int pair = MEDIA_PAIR_START + used;
+    if ((size_t)used >= media_pair_count || media_pairs[used].foreground != fg ||
+        media_pairs[used].background != bg) {
+        if (init_extended_pair(pair, fg, bg) == ERR)
+            return THEME_PANEL;
+        media_pairs[used] = (media_pair){fg, bg};
+        if ((size_t)used >= media_pair_count)
+            media_pair_count = (size_t)used + 1;
+    }
+    media_pair_keys[used] = key;
+    g_hash_table_insert(frame, &media_pair_keys[used], GINT_TO_POINTER(pair));
+    return pair;
+}
+
 static graphics_terminal terminal;
 static bool probed;
-static atomic_uint_fast32_t next_id = 0x50510000U;
-static atomic_uint_fast64_t next_revision = 1;
 typedef struct {
     graphics_protocol protocol;
     uint32_t id, placement_id;
@@ -32,11 +139,6 @@ static size_t displayed_count, desired_count;
 static WINDOW *physical_snapshot;
 static bool synchronized;
 
-uint32_t graphics_image_next_id(void)
-{
-    uint32_t id = (uint32_t)atomic_fetch_add(&next_id, 1);
-    return id ? id : (uint32_t)atomic_fetch_add(&next_id, 1);
-}
 void graphics_update_begin(void)
 {
     graphics_terminal t = graphics_terminal_get();
@@ -89,25 +191,16 @@ bool graphics_terminal_reply(graphics_terminal *t, const char *reply)
 
 void graphics_terminal_probe(void)
 {
+    if (app_mode_get() != APP_MODE_NORMAL)
+        return;
     if (probed || !isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO))
         return;
     probed = true;
     const char *term = getenv("TERM");
     if (!term || !strcmp(term, "dumb"))
         return;
-    chafa_set_n_threads(1);
-    gchar **environment = g_get_environ();
-    ChafaTermInfo *info = chafa_term_db_detect(chafa_term_db_get_default(), environment);
-    /* Kitty and Sixel require replies. iTerm2 has no image support query;
-     * use the library's known terminal signatures, excluding multiplexers. */
-    const char *tmux = getenv("TMUX"), *screen = getenv("STY");
-    if (info && chafa_term_info_get_best_pixel_mode(info) == CHAFA_PIXEL_MODE_ITERM2 &&
-        chafa_term_info_get_passthrough_type(info) == CHAFA_PASSTHROUGH_NONE && (!tmux || !*tmux) &&
-        (!screen || !*screen))
+    if (media_service_iterm2())
         terminal.protocol = GRAPHICS_ITERM2;
-    if (info)
-        chafa_term_info_unref(info);
-    g_strfreev(environment);
     fprintf(stdout, "\033_Gi=%u,s=1,v=1,a=q,t=d,f=24;AAAA\033\\", GRAPHICS_PROBE_ID);
     fputs("\033[c\033[16t\033[14t\033[?2026$p", stdout);
     fflush(stdout);
@@ -193,6 +286,8 @@ int graphics_terminal_input(uint32_t *key)
 graphics_terminal graphics_terminal_get(void)
 {
     graphics_terminal t = terminal;
+    if (app_mode_get() == APP_MODE_NORMAL && media_service_iterm2())
+        t.protocol = GRAPHICS_ITERM2;
     unsigned rows, columns, pixels_x, pixels_y;
     if (papo_terminal_size(&rows, &columns, &pixels_x, &pixels_y) && pixels_x && pixels_y) {
         t.cell_width = pixels_x / columns;
@@ -200,170 +295,19 @@ graphics_terminal graphics_terminal_get(void)
     }
     t.supported = t.protocol != GRAPHICS_TEXT && t.cell_width > 0 && t.cell_width <= 128 &&
                   t.cell_height > 0 && t.cell_height <= 128;
+    if (app_mode_get() == APP_MODE_ULTRALIGHT) {
+        t.protocol = GRAPHICS_TEXT;
+        t.supported = false;
+    } else if (app_mode_get() == APP_MODE_LIGHT || !t.supported) {
+        t.protocol = GRAPHICS_CHAFA;
+        t.supported = true;
+        t.synchronized = false;
+        if (t.cell_width < 1 || t.cell_width > 128)
+            t.cell_width = 8;
+        if (t.cell_height < 1 || t.cell_height > 128)
+            t.cell_height = 16;
+    }
     return t;
-}
-
-bool graphics_image_encode(const unsigned char *pixels, int width, int height, graphics_terminal t,
-                           graphics_image *out)
-{
-    return graphics_image_encode_id(pixels, width, height, t, graphics_image_next_id(), out);
-}
-
-bool graphics_image_encode_id(const unsigned char *pixels, int width, int height,
-                              graphics_terminal t, uint32_t id, graphics_image *out)
-{
-    memset(out, 0, sizeof(*out));
-    if (!pixels || !graphics_image_capacity(width, height) || t.protocol == GRAPHICS_TEXT ||
-        t.cell_width < 1 || t.cell_width > 128 || t.cell_height < 1 || t.cell_height > 128)
-        return false;
-    out->protocol = t.protocol;
-    out->id = id;
-    out->revision = atomic_fetch_add(&next_revision, 1);
-    out->width = width;
-    out->height = height;
-    out->cell_width = t.cell_width;
-    out->cell_height = t.cell_height;
-    out->columns = (width + t.cell_width - 1) / t.cell_width;
-    out->rows = (height + t.cell_height - 1) / t.cell_height;
-    if (t.protocol == GRAPHICS_SIXEL) {
-        sixel_image image;
-        if (!sixel_image_encode(pixels, width, height, &image))
-            return false;
-        out->data = image.data;
-        out->length = image.length;
-        return true;
-    }
-    ChafaCanvasConfig *config = chafa_canvas_config_new();
-    ChafaTermInfo *info = chafa_term_db_get_fallback_info(chafa_term_db_get_default());
-    ChafaCanvas *canvas = NULL;
-    GString *printed = NULL;
-    ChafaFrame *frame = NULL;
-    ChafaImage *source = NULL;
-    ChafaPlacement *placement = NULL;
-    bool ok = false;
-    if (!config || !info)
-        goto done;
-    chafa_canvas_config_set_pixel_mode(
-        config, t.protocol == GRAPHICS_KITTY ? CHAFA_PIXEL_MODE_KITTY : CHAFA_PIXEL_MODE_ITERM2);
-    chafa_canvas_config_set_geometry(config, out->columns, out->rows);
-    chafa_canvas_config_set_cell_geometry(config, t.cell_width, t.cell_height);
-    if (t.protocol == GRAPHICS_KITTY) {
-        char header[160];
-        snprintf(header, sizeof(header),
-                 "\033_Ga=t,f=%%1,s=%%2,v=%%3,c=%%4,r=%%5,i=%u,m=1,q=2,C=1\033\\", out->id);
-        if (!chafa_term_info_set_seq(info, CHAFA_TERM_SEQ_BEGIN_KITTY_IMMEDIATE_IMAGE_V1, header,
-                                     NULL))
-            goto done;
-    }
-    canvas = chafa_canvas_new(config);
-    if (!canvas)
-        goto done;
-    frame = chafa_frame_new_borrow(pixels, CHAFA_PIXEL_RGB8, width, height, width * 3);
-    source = chafa_image_new();
-    if (!frame || !source)
-        goto done;
-    chafa_image_set_frame(source, frame);
-    placement = chafa_placement_new(source, 1);
-    if (!placement)
-        goto done;
-    chafa_placement_set_tuck(placement, CHAFA_TUCK_SHRINK_TO_FIT);
-    chafa_placement_set_halign(placement, CHAFA_ALIGN_START);
-    chafa_placement_set_valign(placement, CHAFA_ALIGN_START);
-    chafa_canvas_set_placement(canvas, placement);
-    printed = chafa_canvas_print(canvas, info);
-    if (!printed || !printed->len || printed->len > graphics_image_capacity(width, height))
-        goto done;
-    out->data = malloc(printed->len);
-    if (!out->data)
-        goto done;
-    memcpy(out->data, printed->str, printed->len);
-    out->length = printed->len;
-    ok = true;
-done:
-    if (printed)
-        g_string_free(printed, true);
-    if (canvas)
-        chafa_canvas_unref(canvas);
-    if (placement)
-        chafa_placement_unref(placement);
-    if (source)
-        chafa_image_unref(source);
-    if (frame)
-        chafa_frame_unref(frame);
-    if (config)
-        chafa_canvas_config_unref(config);
-    if (info)
-        chafa_term_info_unref(info);
-    if (!ok)
-        graphics_image_free(out);
-    return ok;
-}
-
-bool graphics_image_encode_preview(const unsigned char *pixels, int width, int height,
-                                   graphics_terminal t, uint32_t id, graphics_image *out)
-{
-    if (!graphics_image_encode_id(pixels, width, height, t, id, out))
-        return false;
-    if (t.protocol == GRAPHICS_KITTY)
-        return true;
-    int rows = (height + t.cell_height - 1) / t.cell_height;
-    if (rows > 6)
-        return true;
-    size_t count = (size_t)rows * (size_t)(rows + 1) / 2 - 1;
-    if (!count)
-        return true;
-    out->crops = calloc(count, sizeof(*out->crops));
-    if (!out->crops) {
-        graphics_image_free(out);
-        return false;
-    }
-    out->crop_count = count;
-    size_t at = 0;
-    for (int top = 0; top < rows; ++top)
-        for (int bottom = 0; bottom < rows - top; ++bottom) {
-            if (!top && !bottom)
-                continue;
-            int crop_bottom = bottom ? height - (rows - bottom) * t.cell_height : 0;
-            int h = height - top * t.cell_height - crop_bottom;
-            if (h < 1)
-                continue;
-            graphics_image *crop = &out->crops[at++];
-            if (!graphics_image_encode_id(pixels + (size_t)top * (size_t)t.cell_height *
-                                                       (size_t)width * 3,
-                                          width, h, t, id, crop)) {
-                graphics_image_free(out);
-                return false;
-            }
-            crop->crop_top = top * t.cell_height;
-            crop->crop_bottom = crop_bottom;
-        }
-    return true;
-}
-const graphics_image *graphics_image_crop(const graphics_image *image, int top, int bottom)
-{
-    if (top == image->crop_top && bottom == image->crop_bottom)
-        return image;
-    for (size_t i = 0; i < image->crop_count; ++i)
-        if (image->crops[i].crop_top == top && image->crops[i].crop_bottom == bottom)
-            return &image->crops[i];
-    return NULL;
-}
-size_t graphics_image_bytes(const graphics_image *image)
-{
-    size_t bytes = image->length + image->crop_count * sizeof(*image->crops);
-    for (size_t i = 0; i < image->crop_count; ++i)
-        bytes += image->crops[i].length;
-    return bytes;
-}
-void graphics_image_free(graphics_image *image)
-{
-    if (!image)
-        return;
-    for (size_t i = 0; i < image->crop_count; ++i)
-        graphics_image_free(&image->crops[i]);
-    free(image->crops);
-    free(image->data);
-    memset(image, 0, sizeof(*image));
 }
 
 static bool same_placement(const displayed_image *a, const displayed_image *b)
@@ -381,6 +325,8 @@ static displayed_image *find_image(displayed_image *images, size_t count, uint32
 }
 static void erase_image(const displayed_image *d)
 {
+    if (d->protocol == GRAPHICS_CHAFA)
+        return;
     if (d->protocol == GRAPHICS_KITTY)
         fprintf(stdout, "\033_Ga=d,d=i,i=%u,p=%u,q=2\033\\", d->id, d->placement_id);
     else {
@@ -399,7 +345,11 @@ void graphics_frame_begin(void)
     desired_count = 0;
     if (physical_snapshot)
         delwin(physical_snapshot);
-    physical_snapshot = displayed_count && curscr ? dupwin(curscr) : NULL;
+    bool pixels = false;
+    for (size_t i = 0; i < displayed_count; ++i)
+        pixels |=
+            displayed[i].protocol == GRAPHICS_SIXEL || displayed[i].protocol == GRAPHICS_ITERM2;
+    physical_snapshot = pixels && curscr ? dupwin(curscr) : NULL;
 }
 void graphics_frame_invalidate(void)
 {
@@ -459,6 +409,8 @@ void graphics_image_place_scaled(const graphics_image *image, int y, int x)
 
 void graphics_frame_prepare(void)
 {
+    if (!displayed_count && !desired_count)
+        return;
     fputs("\0337", stdout);
     for (size_t i = 0; i < displayed_count; ++i) {
         displayed_image *old = &displayed[i],
@@ -482,8 +434,8 @@ void graphics_frame_prepare(void)
         for (size_t i = 0; i < desired_count; ++i) {
             displayed_image *next = &desired[i],
                             *old = find_image(displayed, displayed_count, next->placement_id);
-            if (next->protocol == GRAPHICS_KITTY || !old || !same_placement(old, next) ||
-                old->revision != next->revision)
+            if (next->protocol == GRAPHICS_CHAFA || next->protocol == GRAPHICS_KITTY || !old ||
+                !same_placement(old, next) || old->revision != next->revision)
                 continue;
             int bottom = next->y + next->rows - 1, right = next->x + next->columns - 1;
             if (bottom >= getmaxy(physical_snapshot) || right >= getmaxx(physical_snapshot))
@@ -497,9 +449,63 @@ void graphics_frame_prepare(void)
         delwin(physical_snapshot);
         physical_snapshot = NULL;
     }
+    bool chafa = false;
+    for (size_t i = 0; i < desired_count; ++i)
+        chafa |= desired[i].protocol == GRAPHICS_CHAFA;
+    if (!chafa)
+        return;
+    int saved_y, saved_x;
+    getsyx(saved_y, saved_x);
+    int palette[16], palette_size = COLORS < 16 ? COLORS : 16;
+    if (COLORS < 256)
+        for (int i = 0; i < palette_size; ++i) {
+            short r, g, b;
+            palette[i] = color_content((short)i, &r, &g, &b) == OK
+                             ? (((r * 255 + 500) / 1000) << 16) | (((g * 255 + 500) / 1000) << 8) |
+                                   ((b * 255 + 500) / 1000)
+                             : -1;
+        }
+    if (!media_frame_pairs)
+        media_frame_pairs = g_hash_table_new(g_int64_hash, g_int64_equal);
+    else
+        g_hash_table_remove_all(media_frame_pairs);
+    GHashTable *frame_pairs = media_frame_pairs;
+    int pair_limit = COLOR_PAIRS - MEDIA_PAIR_START;
+    if (pair_limit > MEDIA_PAIR_LIMIT)
+        pair_limit = MEDIA_PAIR_LIMIT;
+    for (size_t n = 0; n < desired_count; ++n) {
+        const displayed_image *d = &desired[n];
+        if (d->protocol != GRAPHICS_CHAFA)
+            continue;
+        const graphics_image *image = d->image;
+        const graphics_cell *cells = (const graphics_cell *)image->data;
+        int first = d->top / image->cell_height;
+        for (int row = 0; row < d->rows && first + row < image->rows; ++row)
+            for (int col = 0; col < image->columns; ++col) {
+                const graphics_cell *cell =
+                    &cells[(size_t)(first + row) * (size_t)image->columns + (size_t)col];
+                int pair = THEME_PANEL;
+                if (has_colors() && palette_size > 0 && pair_limit > 0) {
+                    int fg = media_color(cell->foreground < 0 ? 0xffffff : cell->foreground,
+                                         palette, palette_size);
+                    int bg = media_color(cell->background < 0 ? 0 : cell->background, palette,
+                                         palette_size);
+                    pair = media_color_pair(frame_pairs, fg, bg, pair_limit);
+                }
+                wchar_t value[2] = {(wchar_t)cell->character, 0};
+                cchar_t c;
+                if (cell->character < 32 || (cell->character >= 127 && cell->character < 160))
+                    value[0] = ' ';
+                if (setcchar(&c, value, 0, (short)pair, NULL) == OK)
+                    mvwadd_wch(newscr, d->y + row, d->x + col, &c);
+            }
+    }
+    setsyx(saved_y, saved_x);
 }
 void graphics_frame_flush(void)
 {
+    if (!displayed_count && !desired_count)
+        return;
     fputs("\0337", stdout);
     for (size_t i = 0; i < desired_count; ++i) {
         displayed_image *next = &desired[i],
@@ -507,6 +513,8 @@ void graphics_frame_flush(void)
         bool pixels_changed = !old || old->revision != next->revision;
         bool moved = !old || !same_placement(old, next);
         if (!pixels_changed && !moved)
+            continue;
+        if (next->protocol == GRAPHICS_CHAFA)
             continue;
         fprintf(stdout, "\033[%d;%dH", next->y + 1, next->x + 1);
         if (next->protocol == GRAPHICS_KITTY) {
@@ -547,6 +555,11 @@ void graphics_frame_flush(void)
 }
 void graphics_images_clear(void)
 {
+    if (media_frame_pairs) {
+        g_hash_table_destroy(media_frame_pairs);
+        media_frame_pairs = NULL;
+    }
+    media_pair_count = 0;
     if (physical_snapshot) {
         delwin(physical_snapshot);
         physical_snapshot = NULL;

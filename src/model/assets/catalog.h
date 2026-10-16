@@ -23,6 +23,8 @@ typedef struct {
 } author_avatar;
 chat_assets *chat_assets_create(void);
 void chat_assets_destroy(chat_assets *a);
+/* Drop raster files; keep public emoji names for textual presentation. */
+void chat_assets_clear_media(chat_assets *a);
 void chat_assets_emojis_request(chat_assets *a, bool refresh);
 bool chat_assets_emojis_wanted(const chat_assets *a);
 const char *chat_assets_emojis_path(chat_assets *a);

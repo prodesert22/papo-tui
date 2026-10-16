@@ -64,6 +64,7 @@ Voice calls are not available yet.
 | Ctrl+R | Refresh or retry a request/connection |
 | Ctrl+T | Retry the last failed send |
 | F6 | Open the account screen |
+| F2 | Open application settings |
 | Ctrl+L in a conversation | Sign out of the current account |
 | F10 | Start a DM |
 | F9 | Open the notification center and preferences |
@@ -89,6 +90,30 @@ to search. Use ←/→ to switch emoji sources while the buttons have focus.
 Tab and Shift+Tab also move between these areas.
 
 ## Images and video
+
+### Application modes
+
+Press **F2**, or click the gear beside your name in the box below the channel
+list, to open **Configurações** (Settings). In **Geral** (General), use ↓ to
+reach the modes, ↑/↓ to select one and Space or Enter to mark it. Select
+**Salvar e aplicar** (Save and apply) to apply and remember your choice.
+**Cancelar** (Cancel), Esc or F2 closes the window without applying changes.
+From either bottom button, ↑ returns to the mode list. Use ←/→ on the section
+selector to browse the other sections; these are placeholders for future
+settings and currently change nothing.
+
+| Mode | Behavior |
+| --- | --- |
+| Normal | Uses Kitty, Sixel or iTerm2 graphics when available, with Chafa character rendering as a fallback. Animated GIFs and video playback are enabled. |
+| Light | Draws images and animated GIFs as colored Chafa characters. Uses the terminal's native Unicode emojis and disables video playback. |
+| Ultralight | Text only, with no media downloads or previews. Attachments appear one per line with their type, name and size. Releases the media helper and removes the space reserved for images and avatars. |
+
+In Light, the media helper exits after three seconds without work. Cached
+images remain visible; the helper starts again when needed.
+Chafa colors depend on the terminal palette: truecolor terminals preserve RGB
+colors, while other terminals use the nearest available colors.
+
+### Open media
 
 Press F7 with the history focused, or click a media preview, to open it.
 If several items are visible, choose one with ↑/↓ and Enter or click it.
@@ -130,9 +155,9 @@ Use PageUp/PageDown or the mouse wheel over the properties panel to scroll it.
   HTTP only on `localhost`, `127.0.0.1` and `[::1]`.
 - **Request limit:** wait for the indicated period and try again.
   Sends are not retried automatically.
-- **Images do not appear:** check that the terminal supports Kitty graphics,
-  Sixel or iTerm2 images. Without a
-  supported protocol, chat remains text-only.
+- **Images do not appear:** check the application mode in F2. Ultralight shows
+  attachment descriptions only. Normal falls back to Chafa when the terminal
+  has no supported graphics protocol; Light always uses Chafa.
 - **Emoji pictures are missing:** install the Noto Color Emoji font and restart
   the application.
 - **Video is still loading:** playback starts after the download finishes.
@@ -141,8 +166,8 @@ Use PageUp/PageDown or the mouse wheel over the properties panel to scroll it.
 - **Video plays without sound:** press `m` to unmute, raise the volume in the
   player and check the system's audio output. If no audio device is available,
   playback can continue without sound.
-- **Missing media module:** reinstall the complete package. For the ZIP, keep
-  the DLLs and the `papo-backends` folder alongside the program.
+- **Missing media helper or module:** reinstall the complete package. For the
+  ZIP, keep the DLLs and the `papo-backends` folder alongside the program.
 - **Session is not remembered:** unlock the system credential store. Without an
   available store, you must sign in at the next start; cookies are not saved as
   plain text.

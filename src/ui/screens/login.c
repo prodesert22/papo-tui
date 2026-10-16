@@ -3,12 +3,14 @@
 #endif
 #include "ui/screens/login.h"
 #include "app/session_store.h"
+#include "config/app_mode.h"
 #include "net/auth/client.h"
 #include "platform/unicode.h"
 #include "ui/components/button.h"
 #include "ui/components/theme.h"
 #include "ui/input/mouse.h"
 #include "ui/media/graphics.h"
+#include "ui/media/media_service.h"
 #include "ui/screens/profiles.h"
 #include <stdint.h>
 
@@ -856,6 +858,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         fputs("Não foi possível carregar os perfis locais.\n", stderr);
         return 1;
     }
+    app_mode_set(config->mode);
     connections->sessions = session_store_create(config, !open_profiles);
     connections->config = config;
     interrupted = 0;
@@ -1163,6 +1166,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         session_store_unwatch(connections->sessions, client);
         auth_destroy(client);
     }
+    media_service_stop();
     instances_destroy(connections);
     connections = NULL;
     profiles_destroy(config);

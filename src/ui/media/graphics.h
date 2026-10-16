@@ -15,13 +15,25 @@ static inline size_t graphics_image_capacity(int width, int height)
     return (size_t)width * (size_t)height * 8U + 64U * 1024U;
 }
 
-typedef enum { GRAPHICS_TEXT, GRAPHICS_SIXEL, GRAPHICS_KITTY, GRAPHICS_ITERM2 } graphics_protocol;
+typedef enum {
+    GRAPHICS_TEXT,
+    GRAPHICS_SIXEL,
+    GRAPHICS_KITTY,
+    GRAPHICS_ITERM2,
+    GRAPHICS_CHAFA
+} graphics_protocol;
 typedef struct {
     graphics_protocol protocol;
     bool supported;
     int cell_width, cell_height;
     bool synchronized;
 } graphics_terminal;
+/* Chafa cells carry packed RGB (0xRRGGBB), or -1 for transparency.
+ * Terminal palette indices never cross the media IPC boundary. */
+typedef struct {
+    uint32_t character;
+    int32_t foreground, background;
+} graphics_cell;
 typedef struct graphics_image {
     char *data;
     size_t length;

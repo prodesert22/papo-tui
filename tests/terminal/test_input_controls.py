@@ -148,7 +148,7 @@ class InputControls(unittest.TestCase):
                 self.assertFalse(server.requests)
                 self.assertIn("Senha (password)", self.screen(t))
             t.send("\n")
-            self.wait(t, "[Canais / F6]")
+            self.wait(t, "[Canais]")
 
     @unittest.skipIf(os.name == "nt", "POSIX signal shutdown")
     def test_negotiated_keyboard_mode_is_popped_once_on_sigterm(self):

@@ -13,6 +13,23 @@ or custom password storage is needed. pywinpty is used only by Windows tests
 with ConPTY. gcovr and Ruff are development tools. Recipes record sources,
 versions and hashes.
 
+Application modes reuse the existing profile configuration, ncurses controls,
+media cache, downloads and Chafa dependency. Configuration schema 4 adds
+`app_mode`; versions 1–3 migrate with Normal as the default. Settings are saved
+atomically before the selected mode is applied to all connected instances.
+Appearance, audio, accessibility and shortcut sections are placeholders.
+
+The media libraries run in `papo-backends/papo-media-worker`, using GIO's
+subprocess and asynchronous stream APIs on Linux and Windows. Private pipes
+carry bounded, versioned GVariant messages; existing codec modules, graphics
+encoders, font resources and player controls are reused inside the helper.
+Ultralight stops the helper and skips media work. Light uses Chafa's truecolor
+cells, preserves cached frames and retires an idle helper after three seconds.
+The host maps RGB cells to ncurses color pairs with a bounded reusable table.
+Cache reservations include IPC working copies, and cancellation keeps those
+reservations until pending replies drain. Emoji search, occurrence storage,
+download clients and cache threads are allocated on demand.
+
 Emoji completion and the F4 picker share the existing catalog, media cache and
 ncurses controls. GLib supplies normalized search, user configuration paths and
 atomic file replacement; Jansson stores bounded usage counts. Counts record
@@ -56,6 +73,11 @@ There is no minimum coverage percentage. New tests should verify observable
 behavior and relevant failures rather than repeat the implementation.
 Count test suites and scenarios separately: each CTest entry may run many
 unittest cases. Never use personal credentials, keyrings or clipboard data in tests.
+
+On Linux, `tools/check_light_performance.py --binary build/papo-tui
+--output build/light-performance.json` measures host/helper RSS and PSS, CPU
+and input latency against synthetic local HTTP and PTY data. Its results are
+diagnostics for that machine, not guarantees for a remote instance.
 
 Keep commits small and write their messages in English. Keep mechanical
 formatting separate from behavior changes. Do not format generated code;

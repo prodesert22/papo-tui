@@ -1,6 +1,8 @@
 #include "ui/media/resources.h"
 #include "platform/runtime.h"
+#ifdef PAPO_MEDIA_RESOURCES_WORKER
 #include <fontconfig/fontconfig.h>
+#endif
 #include <glib.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,6 +12,13 @@ void media_resources_init(void)
     if (!executable)
         return;
     char *directory = g_path_get_dirname(executable);
+    char *base = g_path_get_basename(directory);
+    if (!strcmp(base, "papo-backends")) {
+        char *parent = g_path_get_dirname(directory);
+        g_free(directory);
+        directory = parent;
+    }
+    g_free(base);
 #ifdef _WIN32
     char *prefix = g_strdup(directory);
 #else
@@ -27,10 +36,12 @@ void media_resources_init(void)
     g_free(fontconfig);
     g_free(terminfo);
 #endif
+#ifdef PAPO_MEDIA_RESOURCES_WORKER
     char *font = g_build_filename(prefix, "share", "fonts", "papo-tui", "NotoColorEmoji.ttf", NULL);
     if (g_file_test(font, G_FILE_TEST_IS_REGULAR))
         FcConfigAppFontAddFile(NULL, (const FcChar8 *)font);
     g_free(font);
+#endif
     g_free(prefix);
     g_free(directory);
     free(executable);

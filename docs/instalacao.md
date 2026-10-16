@@ -49,7 +49,8 @@ Installation for the current user does not need to modify other users' directori
 
 To use the portable ZIP, extract **all** its contents and run `papo-tui.exe`
 from the terminal. Do not move only the executable: it uses the included DLLs,
-resources and modules. MSYS2 is not required to run the package.
+resources and the media helper in `papo-backends`. MSYS2 is not required to run
+the package.
 
 ## Build from source
 
@@ -63,9 +64,9 @@ install the development packages for the libraries below.
 | Jansson | 2.14 | JSON |
 | libunibreak | 6.1 | Unicode graphemes and words |
 | GLib and GModule | 2.66 | Data structures, tasks and modules |
-| GIO | 2.66 on Linux; 2.88 on Windows | Credential stores and notifications |
+| GIO | 2.66 on Linux; 2.88 on Windows | Media helper, credential stores and notifications |
 | libsixel | 1.8 | Sixel output |
-| Chafa | 1.16 | Kitty/iTerm2 graphics output |
+| Chafa | 1.16 | Character rendering and Kitty/iTerm2 graphics output |
 | PangoCairo | 1.50 | Text and color emojis |
 | Fontconfig | 2.13 | Font discovery |
 | libmpv | API 2.0 | Video and audio |

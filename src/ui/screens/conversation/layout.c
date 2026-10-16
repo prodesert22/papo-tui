@@ -219,7 +219,7 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
         }
         if (!followed && !compact_end && total + height < group_start + avatar_rows)
             height = group_start + avatar_rows - total;
-        if (paint && avatar_visible && !r8_modal_is_open(ui->r8) &&
+        if (paint && avatar_visible && !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
             !emoji_picker_open(ui->emojis) && !media_view_modal(ui->media)) {
             int top = first > total ? first - total : 0;
             int bottom = total + avatar_rows > first + ui->visible
@@ -260,8 +260,8 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
                 if (r->count && !strcmp(r->segments[0].key, "header"))
                     pair = accent;
                 message_row_draw(ui->body, r, y, 2 + r->x, width - r->x, pair, accent);
-                if (!r8_modal_is_open(ui->r8) && !emoji_picker_open(ui->emojis) &&
-                    !media_view_modal(ui->media)) {
+                if (!(r8_modal_is_open(ui->r8) || ui->settings.open) &&
+                    !emoji_picker_open(ui->emojis) && !media_view_modal(ui->media)) {
                     for (size_t k = 0; k < r->icon_count; ++k) {
                         const message_icon_region *icon = &r->icons[k];
                         char scope[180];
@@ -273,7 +273,8 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
                                     2 + r->x + r->indent + icon->x, icon_pair, false, icon->offset);
                     }
                 }
-                if (observed && !emoji_picker_open(ui->emojis) && !r8_modal_is_open(ui->r8) &&
+                if (observed && !emoji_picker_open(ui->emojis) &&
+                    !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
                     !media_view_modal(ui->media)) {
                     if ((r->count && strcmp(r->segments[0].key, "header")) || r->media_count)
                         inbox_view_message(history_inbox(ui->model), conversation_str(m, "id"));

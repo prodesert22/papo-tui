@@ -12,7 +12,12 @@ static GModule *open_backend(const char *name)
     /* Never search the working directory, PATH or a remotely supplied path. */
     char *executable = papo_executable_path();
     char *directory = executable ? g_path_get_dirname(executable) : NULL;
-    char *local = directory ? g_build_filename(directory, "papo-backends", name, NULL) : NULL;
+    char *base = directory ? g_path_get_basename(directory) : NULL;
+    char *local = directory ? (!g_strcmp0(base, "papo-backends")
+                                   ? g_build_filename(directory, name, NULL)
+                                   : g_build_filename(directory, "papo-backends", name, NULL))
+                            : NULL;
+    g_free(base);
     GModule *module = local ? g_module_open(local, G_MODULE_BIND_LOCAL) : NULL;
     if (!local) {
         char *installed = g_build_filename(PAPO_BACKEND_INSTALL_DIR, name, NULL);

@@ -85,8 +85,36 @@ static int compare_matches(const void *a, const void *b)
         return x->quality < y->quality ? -1 : 1;
     return x->order < y->order ? -1 : x->order != y->order;
 }
+static bool prepare_search(emoji_picker *p)
+{
+    if (p->unicode_search)
+        return true;
+    size_t count = emoji_catalog_count();
+    char **index = calloc(count, sizeof(*index));
+    if (!index)
+        return false;
+    for (size_t i = 0; i < count; ++i) {
+        const unicode_emoji *e = emoji_catalog_get(i);
+        char *words = g_strdup_printf("%s %s %s %s", e->name, e->english, e->keywords, e->text);
+        index[i] = words ? fold(words) : NULL;
+        g_free(words);
+        if (!index[i]) {
+            for (size_t j = 0; j < i; ++j)
+                g_free(index[j]);
+            free(index);
+            return false;
+        }
+    }
+    p->unicode_search = index;
+    return true;
+}
 static void update_matches(emoji_picker *p)
 {
+    if ((p->suggesting || !p->server) && !prepare_search(p)) {
+        p->count = 0;
+        snprintf(p->error, sizeof(p->error), "Não foi possível carregar a busca de emojis.");
+        return;
+    }
     char query[TEXT_UTF8_BYTES];
     text_encode(&p->search, query);
     char *normalized = fold(query);
@@ -147,19 +175,6 @@ emoji_picker *emoji_picker_create(chat_assets *assets, icon_view *icons, const c
         free(p);
         return NULL;
     }
-    p->unicode_search = calloc(emoji_catalog_count(), sizeof(*p->unicode_search));
-    if (!p->unicode_search) {
-        free(p->matches);
-        free(p);
-        return NULL;
-    }
-    for (size_t i = 0; i < emoji_catalog_count(); ++i) {
-        const unicode_emoji *e = emoji_catalog_get(i);
-        char *words = g_strdup_printf("%s %s %s %s", e->name, e->english, e->keywords, e->text);
-        if (words)
-            p->unicode_search[i] = fold(words);
-        g_free(words);
-    }
     p->assets = assets;
     p->icons = icons;
     p->usage = emoji_usage_create(instance, user);
@@ -171,8 +186,9 @@ void emoji_picker_destroy(emoji_picker *p)
     if (p) {
         if (p->window)
             delwin(p->window);
-        for (size_t i = 0; i < emoji_catalog_count(); ++i)
-            g_free(p->unicode_search[i]);
+        if (p->unicode_search)
+            for (size_t i = 0; i < emoji_catalog_count(); ++i)
+                g_free(p->unicode_search[i]);
         free(p->unicode_search);
         free(p->matches);
         emoji_usage_destroy(p->usage);

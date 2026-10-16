@@ -16,7 +16,7 @@ if(IS_DIRECTORY "${PAPO_DEPENDENCY_LICENSE_DIR}")
 endif()
 install(TARGETS papo-tui RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(
-    TARGETS papo_image_codec papo_video_player
+    TARGETS papo_image_codec papo_video_player papo-media-worker
     LIBRARY DESTINATION ${CMAKE_INSTALL_BINDIR}/papo-backends
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}/papo-backends)
 install(FILES LICENSE THIRD_PARTY_NOTICES.md DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/papo-tui)
