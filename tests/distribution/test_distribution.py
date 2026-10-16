@@ -43,9 +43,31 @@ class DistributionTests(unittest.TestCase):
         ffmpeg = next(x for x in manifest["modules"] if x["name"] == "ffmpeg")
         self.assertIn("--disable-gpl", ffmpeg["config-opts"])
         self.assertIn("--disable-nonfree", ffmpeg["config-opts"])
+        libplacebo = next(x for x in manifest["modules"] if x["name"] == "libplacebo")
+        self.assertEqual(
+            libplacebo["build-options"]["env"]["PYTHONPATH"],
+            "/app/lib/python3/site-packages",
+        )
+        python_tools = [
+            x for x in manifest["modules"] if x["name"] in ("python-markupsafe", "python-jinja2")
+        ]
+        self.assertEqual([x["name"] for x in python_tools], ["python-markupsafe", "python-jinja2"])
+        self.assertLess(
+            [x["name"] for x in manifest["modules"]].index("python-jinja2"),
+            [x["name"] for x in manifest["modules"]].index("libplacebo"),
+        )
+        self.assertIn("/lib/python3/site-packages/jinja2", manifest["cleanup"])
         locked = json.loads((ROOT / "dist/dependencies.json").read_text())["sources"]
         modules = {x["name"]: x for x in manifest["modules"]}
         for entry in locked:
+            self.assertEqual(
+                modules[entry["name"]]["sources"][0]["dest-filename"], entry["archive"]
+            )
+        flatpak_tools = json.loads((ROOT / "dist/flatpak/build-dependencies.json").read_text())[
+            "sources"
+        ]
+        for entry in flatpak_tools:
+            self.assertRegex(entry["sha256"], r"^[a-f0-9]{64}$")
             self.assertEqual(
                 modules[entry["name"]]["sources"][0]["dest-filename"], entry["archive"]
             )
