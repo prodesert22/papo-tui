@@ -237,7 +237,10 @@ class MockServer:
                 elif self.path.endswith("/auth/refresh"):
                     outer.refresh_count += 1
                     if outer.scenario == "refresh-slow":
-                        time.sleep(0.4)
+                        # Windows can oversleep 1ms g_usleep() calls by a full
+                        # scheduler quantum, so leave enough time for the probe
+                        # to switch channels while this refresh is outstanding.
+                        time.sleep(1.5)
                     if cookie != "Auth=" + outer.session_cookie or outer.scenario in (
                         "refresh-revoked",
                         "ws-revoked",

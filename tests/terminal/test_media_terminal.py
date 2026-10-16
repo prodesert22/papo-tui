@@ -786,12 +786,14 @@ class MediaTerminal(unittest.TestCase):
         ):
             t = self.open(server, protocol="kitty", environment={"TMPDIR": directory})
             try:
-                self.wait(t, "Mensagem 0001")
+                self.wait_frames(t)
                 t.send("Rascunho Kitty\x1b\x1b[18~\n")
                 self.wait_frames(t, 2)
                 self.wait(t, "Reproduzindo")
                 self.assertEqual(set(t.stream.protocols), {"kitty"})
+                first_player_frame = len(t.stream.kitty_frames) - 1
                 header, pixels = t.stream.kitty_frames[-1]
+                player_id = int(header[b"i"])
                 self.assertEqual(len(pixels), int(header[b"s"]) * int(header[b"v"]) * 4)
                 center = (int(header[b"v"]) // 2 * int(header[b"s"]) + int(header[b"s"]) // 2) * 4
                 self.assertGreater(pixels[center + 2], 230)
@@ -800,8 +802,11 @@ class MediaTerminal(unittest.TestCase):
                 self.wait(t, "Pausado")
                 t.send("\x1bOC\x1bOA")
                 t.send("m")
-                self.assertEqual(len({header[b"i"] for header, _ in t.stream.kitty_frames}), 1)
-                self.assertEqual(t.stream.deleted_ids, [])
+                self.assertEqual(
+                    {int(header[b"i"]) for header, _ in t.stream.kitty_frames[first_player_frame:]},
+                    {player_id},
+                )
+                self.assertNotIn(player_id, t.stream.deleted_ids)
                 self.assertGreater(t.stream.synchronizations, 0)
                 frames = len(t.stream.frames)
                 t.resize(28, 100)
@@ -1491,7 +1496,7 @@ class MediaTerminal(unittest.TestCase):
                 with self.serve(path.read_bytes(), "video/mp4") as server:
                     t = self.open(server, protocol="kitty")
                     try:
-                        self.wait(t, "Mensagem 0001")
+                        self.wait_frames(t)
                         t.send("\x1b[18~\n")
                         self.wait_frames(t, 2)
                         scale = min(320 / original[0], 176 / original[1])

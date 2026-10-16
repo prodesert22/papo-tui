@@ -20,6 +20,7 @@ class Sending(unittest.TestCase):
             text=True,
             env=dict(os.environ, LC_ALL="C.UTF-8", **settings),
             timeout=25,
+            encoding="utf-8",
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn("Synthetic!123", result.stdout + result.stderr)

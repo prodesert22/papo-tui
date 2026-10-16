@@ -28,6 +28,7 @@ class InteractionIntegration(unittest.TestCase):
                 ),
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
                 timeout=60,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
