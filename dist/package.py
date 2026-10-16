@@ -164,6 +164,8 @@ def source_archive(output, version):
             completed = subprocess.run(
                 [
                     "git",
+                    "-c",
+                    f"safe.directory={ROOT}",
                     "archive",
                     "--format=tar",
                     "--prefix=" + f"papo-tui-{version}/",

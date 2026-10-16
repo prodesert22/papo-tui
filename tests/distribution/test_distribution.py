@@ -116,6 +116,21 @@ class DistributionTests(unittest.TestCase):
             self.assertEqual(target.read_bytes(), b"existing")
             self.assertFalse((root / "target.part").exists())
 
+    def test_source_archive_marks_container_checkout_safe(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            completed = package.subprocess.CompletedProcess(
+                args=["git"], returncode=0, stdout=b"tar"
+            )
+            with (
+                patch.dict(package.os.environ, {"GITHUB_ACTIONS": "true"}),
+                patch.object(package.subprocess, "run", return_value=completed) as run,
+            ):
+                package.source_archive(output, "0.2.0")
+            args = run.call_args.args[0]
+            self.assertEqual(args[:3], ["git", "-c", f"safe.directory={ROOT}"])
+            self.assertIn("dist/flatpak/build-dependencies.json", args)
+
     def test_semver_and_incomplete_assets_fail_closed(self):
         match = re.search(
             r"project\(\s*papo_tui\s+VERSION\s+([^\s)]+)",

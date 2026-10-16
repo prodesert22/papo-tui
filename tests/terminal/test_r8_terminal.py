@@ -29,8 +29,12 @@ class R8Terminal(unittest.TestCase):
         with R8Mock(count=0) as server:
             t = self.login(server, environment={"KITTY_WINDOW_ID": "r8-theme-fixture"})
             # pyte leaves untouched cells at "default" after clearing an empty
-            # row. Verify the black erase sequence and sample a painted row.
+            # row. Wait for the painted row because ARM runners may flush the
+            # initial draw after the last visible login marker.
             self.assertIn(b"\x1b[48;5;16m\x1b[H\x1b[2J", t.output)
+            deadline = time.monotonic() + 2
+            while t.screen.buffer[7][23].bg == "default" and time.monotonic() < deadline:
+                t.read(0.03)
             resting = t.screen.buffer[7][23].bg
             self.assertEqual(resting, "000000")
             self.assertEqual(t.screen.buffer[10][40].bg, resting)

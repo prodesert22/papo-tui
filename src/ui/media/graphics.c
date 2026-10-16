@@ -72,6 +72,8 @@ static int media_color(int rgb, const int *palette, int count)
         }
         return best;
     }
+    if (count > 16)
+        count = 16;
     int best = 0, distance = INT_MAX;
     /* The first 16 slots may be recolored by the user. Prefer the stable
      * xterm cube/grays when the terminal offers 256 colors. */
@@ -457,6 +459,8 @@ void graphics_frame_prepare(void)
     int saved_y = -1, saved_x = -1;
     getsyx(saved_y, saved_x);
     int palette[16], palette_size = COLORS < 16 ? COLORS : 16;
+    for (int i = 0; i < 16; ++i)
+        palette[i] = -1;
     if (COLORS < 256)
         for (int i = 0; i < palette_size; ++i) {
             short r, g, b;

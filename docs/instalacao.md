@@ -96,7 +96,11 @@ To use dependencies installed under another prefix, pass
 `-DCMAKE_PREFIX_PATH=/path/to/dependencies`.
 
 On Windows, build in the MSYS2 **CLANG64** or **CLANGARM64** environment with
-CMake, Ninja and libraries for the same architecture. See the build recipes.
+CMake, Ninja and libraries for the same architecture. Install
+`mingw-w64-clang-x86_64-vulkan-headers` or
+`mingw-w64-clang-aarch64-vulkan-headers` as appropriate; libplacebo compiles its
+Vulkan stubs with these headers even when Vulkan itself is disabled. See the
+build recipes.
 
 ## Data and removal
 

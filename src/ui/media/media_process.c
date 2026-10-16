@@ -341,7 +341,7 @@ GVariant *media_process_call(unsigned operation, GVariant *payload, bool (*cance
         g_variant_unref(payload);
         return NULL;
     }
-    atomic_init(&job->refs, 2);
+    atomic_init(&job->refs, 1);
     atomic_init(&job->cancelled, false);
     g_mutex_init(&job->lock);
     g_cond_init(&job->wake);
@@ -354,9 +354,9 @@ GVariant *media_process_call(unsigned operation, GVariant *payload, bool (*cance
     if (g_variant_get_size(job->request) > MEDIA_WIRE_LIMIT ||
         app_mode_get() == APP_MODE_ULTRALIGHT) {
         job_unref(job);
-        job_unref(job);
         return NULL;
     }
+    atomic_fetch_add(&job->refs, 1);
     g_async_queue_push(requests, job);
     g_mutex_lock(&job->lock);
     while (!job->done) {
