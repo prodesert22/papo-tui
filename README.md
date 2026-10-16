@@ -351,9 +351,16 @@ As imagens são carregadas somente no trecho visível da conversa aberta. Vídeo
 MP4, WebM e Ogg carregam por completo antes do player, sem autoplay. O limite é
 16 MiB/16 megapixels por imagem e 128 MiB por vídeo. O cache de imagens em
 memória tem orçamento global de **256 MiB**, compartilhado pelas sessões desta
-execução, incluindo frames e variantes gráficas; a saída gráfica do player se ajusta proporcionalmente à área do modal, com limite de 15 frames/s e resolução limitada pelo orçamento de memória. A qualidade
+execução, incluindo frames e variantes gráficas; a saída gráfica do player se ajusta proporcionalmente à área do modal, com limite de 30 frames/s e resolução limitada pelo orçamento de memória. A qualidade
 final também depende do terminal. Mídia inválida, codec ausente, falta de
 permissão e limites aparecem na tela; F7/Enter no erro permite tentar novamente.
+
+Os controles do player usam ncursesw e libmpv, sem novas dependências ou chamadas
+ao backend: botões clicáveis de pausa, linha do tempo e volume, além de `,`/`.`
+(ou `<`/`>`) para passos de um segundo. As setas mantêm passos de cinco segundos.
+Comandos assíncronos e propriedades observadas mantêm o worker responsivo; Kitty
+escala os frames no terminal e a decodificação usa `hwdec=auto-copy`, com fallback
+para software.
 
 Os arquivos ficam em diretório temporário privado (`700`), com arquivos `600`,
 sem cookies. Imagens recentes podem ser reutilizadas ao trocar de canal/servidor

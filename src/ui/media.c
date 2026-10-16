@@ -1,25 +1,25 @@
 #define _POSIX_C_SOURCE 200809L
-#include "ui/media.h"
+#include "net/clock.h"
+#include "net/media.h"
+#include "ui/button.h"
 #include "ui/graphics.h"
 #include "ui/image_decode.h"
-#include "ui/media_layout.h"
+#include "ui/media.h"
+#include "ui/media_backend.h"
 #include "ui/media_cache.h"
-#include "ui/button.h"
+#include "ui/media_layout.h"
 #include "ui/text.h"
 #include "ui/theme.h"
-#include "net/media.h"
-#include "net/clock.h"
-#include "ui/media_backend.h"
 #include <pthread.h>
-#include <math.h>
 #include <inttypes.h>
+#include <math.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
-#include <sys/stat.h>
 #define CACHE_COUNT 64
 #define VISIBLE_COUNT 32
 #define HISTORY_IMAGE_HEIGHT 720
@@ -58,7 +58,7 @@ struct media_view {
     pthread_t thread;
     pthread_mutex_t lock;
     pthread_cond_t wake;
-    bool started, stopping, pending, result_ready;
+    bool started, stopping, pending, result_ready, player_wakeup;
     atomic_uint_fast64_t active;
     atomic_bool player_idle;
     size_t video_reserved;
@@ -68,6 +68,8 @@ struct media_view {
     uint64_t result_token;
     const char *result_error;
     int pause_commands, mute_commands, seek_commands, volume_commands;
+    bool seek_absolute, volume_absolute;
+    double seek_position, volume_level;
     bool playing, paused, muted, audio_missing, status_changed;
     double position, duration, volume;
     enum { MODAL_NONE, MODAL_LIST, MODAL_LOADING, MODAL_PLAYING, MODAL_ERROR } modal;
@@ -105,6 +107,14 @@ static void publish(media_view *v, uint64_t token, graphics_image *image, animat
     v->result_token = token; v->result_error = error; v->result_ready = true;
     pthread_mutex_unlock(&v->lock);
 }
+static void player_wakeup(void *context)
+{
+    media_view *v = context;
+    pthread_mutex_lock(&v->lock);
+    v->player_wakeup = true;
+    pthread_cond_signal(&v->wake);
+    pthread_mutex_unlock(&v->lock);
+}
 static void *worker(void *context)
 {
     media_view *v = context;
@@ -119,8 +129,17 @@ static void *worker(void *context)
         bool pending = v->pending;
         job next = {0};
         if (pending) { next = v->task; memset(&v->task, 0, sizeof(v->task)); v->pending = false; }
-        int pause = v->pause_commands, mute = v->mute_commands, seek = v->seek_commands, volume = v->volume_commands;
+        video_controls controls = {.pause = v->pause_commands,
+                                   .mute = v->mute_commands,
+                                   .seek = v->seek_commands,
+                                   .volume = v->volume_commands,
+                                   .seek_absolute = v->seek_absolute,
+                                   .volume_absolute = v->volume_absolute,
+                                   .position = v->seek_position,
+                                   .volume_level = v->volume_level};
         v->pause_commands = v->mute_commands = v->seek_commands = v->volume_commands = 0;
+        v->seek_absolute = v->volume_absolute = false;
+        v->player_wakeup = false;
         pthread_mutex_unlock(&v->lock);
         if (stop) { free_job(&next); break; }
         bool reuse = player && pending && next.video && !strcmp(current.path, next.path);
@@ -143,14 +162,21 @@ static void *worker(void *context)
                     "Módulo de vídeo ausente ou incompatível. Reinstale o aplicativo.");
                 free_job(&current); atomic_store(&v->player_idle, true); continue;
             }
+            api->set_wakeup(player, player_wakeup, v);
             }
         }
         if (player) {
-            video_controls controls = {pause, mute, seek, volume};
             video_info info;
             api->update(player, &controls, &info);
             if (info.invalid) {
-                graphics_image empty = {0}; publish(v, current.token, &empty, NULL, "Vídeo inválido ou codec indisponível.");
+                uint64_t token = current.token;
+                api->close(player);
+                player = NULL;
+                free_job(&current);
+                atomic_store(&v->player_idle, true);
+                graphics_image empty = {0};
+                publish(v, token, &empty, NULL, "Vídeo inválido ou codec indisponível.");
+                continue;
             }
             pthread_mutex_lock(&v->lock);
             v->status_changed |= v->paused != info.paused || v->muted != info.muted ||
@@ -160,7 +186,7 @@ static void *worker(void *context)
             v->position = info.position; v->duration = info.duration; v->volume = info.volume;
             pthread_mutex_unlock(&v->lock);
             uint64_t now = 0;
-            if (info.width > 0 && info.height > 0 && net_now_ms(&now) && now - last_frame >= 67 &&
+            if (info.width > 0 && info.height > 0 && net_now_ms(&now) && now - last_frame >= 33 &&
                 (force_frame || api->changed(player))) {
                 last_frame = now;
                 force_frame = false;
@@ -169,6 +195,16 @@ static void *worker(void *context)
                     fmin((double)current.width / info.width, (double)current.height / info.height);
                 int width = (int)fmax(1, info.width * scale);
                 int height = (int)fmax(1, info.height * scale);
+                int display_width = width, display_height = height;
+                if (current.terminal.protocol == GRAPHICS_KITTY) {
+                    /* Send at most the native frame (bounded for video), then
+                     * let Kitty enlarge it. Scaling to a large modal on the CPU
+                     * only increases transfer traffic without adding detail. */
+                    scale = fmin(1, fmin(scale, sqrt(VIDEO_KITTY_FRAME_PIXELS /
+                                                     ((double)info.width * info.height))));
+                    width = (int)fmax(1, info.width * scale);
+                    height = (int)fmax(1, info.height * scale);
+                }
                 size_t pixels = (size_t)width * (size_t)height;
                 unsigned char *rgba = malloc(pixels * 4), *rgb = malloc(pixels * 3);
                 graphics_image image = {0};
@@ -180,6 +216,12 @@ static void *worker(void *context)
                                                      current.image_id, &image)) {
                             image.source_width = info.width;
                             image.source_height = info.height;
+                            if (current.terminal.protocol == GRAPHICS_KITTY) {
+                                image.columns =
+                                    (display_width + image.cell_width - 1) / image.cell_width;
+                                image.rows =
+                                    (display_height + image.cell_height - 1) / image.cell_height;
+                            }
                             publish(v, current.token, &image, NULL, NULL);
                         }
                     }
@@ -189,11 +231,17 @@ static void *worker(void *context)
             }
         }
         pthread_mutex_lock(&v->lock);
-        if (!v->pending && !v->stopping) {
+        if (!v->pending && !v->stopping && !v->player_wakeup && !v->pause_commands &&
+            !v->mute_commands && !v->seek_commands && !v->volume_commands && !v->seek_absolute &&
+            !v->volume_absolute) {
             if (!player) pthread_cond_wait(&v->wake, &v->lock);
             else {
+                uint64_t now = 0;
+                int64_t delay = 50000;
+                if (net_now_ms(&now) && now - last_frame < 33)
+                    delay = (int64_t)(33 - (now - last_frame)) * 1000;
                 struct timespec deadline; clock_gettime(CLOCK_REALTIME, &deadline);
-                deadline.tv_nsec += 67000000;
+                deadline.tv_nsec += delay * 1000;
                 if (deadline.tv_nsec >= 1000000000) { deadline.tv_nsec -= 1000000000; ++deadline.tv_sec; }
                 pthread_cond_timedwait(&v->wake, &v->lock, &deadline);
             }
@@ -243,6 +291,7 @@ static void close_modal(media_view *v)
     atomic_store(&v->active, 0);
     pthread_mutex_lock(&v->lock);
     v->playing = false; v->pause_commands = v->seek_commands = v->volume_commands = v->mute_commands = 0;
+    v->seek_absolute = v->volume_absolute = false;
     pthread_cond_signal(&v->wake); pthread_mutex_unlock(&v->lock);
     if (v->window) { delwin(v->window); v->window = NULL; }
     v->modal_animated = false; clear_modal_image(v); v->modal = MODAL_NONE; v->modal_entry = -1;
@@ -532,8 +581,10 @@ bool media_view_poll(media_view *v, history *h)
                 /* Cover RGB/RGBA working buffers and three encoded frames (the
                  * displayed frame, pending result and next publication). Keep the
                  * largest reservation until the worker stops using its surfaces. */
-                size_t reservation =
-                    VIDEO_WORKSPACE_BYTES + (size_t)v->modal_width * (size_t)v->modal_height * 32U;
+                size_t pixels = (size_t)v->modal_width * (size_t)v->modal_height;
+                if (terminal.protocol == GRAPHICS_KITTY && pixels > VIDEO_KITTY_FRAME_PIXELS)
+                    pixels = VIDEO_KITTY_FRAME_PIXELS;
+                size_t reservation = VIDEO_WORKSPACE_BYTES + pixels * 32U;
                 if (reservation > v->video_reserved) {
                     if (!media_cache_reserve(reservation - v->video_reserved))
                         return changed;
@@ -647,6 +698,10 @@ bool media_view_key(media_view *v, int type, wint_t key)
     if (type == OK && key == 'm') ++v->mute_commands;
     if (type == KEY_CODE_YES && key == KEY_LEFT && v->seek_commands > -3600) v->seek_commands -= 5;
     if (type == KEY_CODE_YES && key == KEY_RIGHT && v->seek_commands < 3600) v->seek_commands += 5;
+    if (type == OK && (key == '<' || key == ',') && v->seek_commands > -3600)
+        --v->seek_commands;
+    if (type == OK && (key == '>' || key == '.') && v->seek_commands < 3600)
+        ++v->seek_commands;
     if (type == KEY_CODE_YES && key == KEY_UP && v->volume_commands < 100) v->volume_commands += 5;
     if (type == KEY_CODE_YES && key == KEY_DOWN && v->volume_commands > -100) v->volume_commands -= 5;
     pthread_cond_signal(&v->wake); pthread_mutex_unlock(&v->lock);
@@ -676,6 +731,27 @@ bool media_view_click(media_view *v, int y, int x)
         } else if (y == v->layout.button_y && x >= v->layout.button_x &&
                    x < v->layout.button_x + v->layout.button_width) {
             v->info_open = !v->info_open; v->info_scroll = 0; v->info_focused = true;
+        } else if (v->selected_item.video && v->modal == MODAL_PLAYING) {
+            media_controls_layout controls;
+            if (media_controls_geometry(v->layout.height - 3, 3, v->layout.area_width, &controls)) {
+                double fraction;
+                media_control action =
+                    media_controls_hit(&controls, y - v->layout.y, x - v->layout.x, &fraction);
+                pthread_mutex_lock(&v->lock);
+                if (action == MEDIA_CONTROL_PLAY)
+                    ++v->pause_commands;
+                else if (action == MEDIA_CONTROL_SEEK && isfinite(v->duration) && v->duration > 0) {
+                    v->seek_absolute = true;
+                    v->seek_position = fraction * v->duration;
+                    v->seek_commands = 0;
+                } else if (action == MEDIA_CONTROL_VOLUME) {
+                    v->volume_absolute = true;
+                    v->volume_level = fraction * 100;
+                    v->volume_commands = 0;
+                }
+                pthread_cond_signal(&v->wake);
+                pthread_mutex_unlock(&v->lock);
+            }
         }
         return true;
     }
@@ -736,6 +812,75 @@ static void draw_properties(media_view *v, WINDOW *w)
     text_label(w, g->height - 2, left, g->info_width, "PgUp/PgDn: rolar");
 }
 
+static double control_fraction(double value)
+{
+    return isfinite(value) ? fmin(1, fmax(0, value)) : 0;
+}
+
+static void draw_control_track(WINDOW *w, int row, int x, int width, double fraction, bool timeline,
+                               bool muted, bool known)
+{
+    wattrset(w, COLOR_PAIR(PANEL_MUTED));
+    mvwaddch(w, row, x - 1, '[');
+    mvwaddch(w, row, x + width, ']');
+    int marker = (int)(fraction * (width - 1));
+    int filled = (int)ceil(fraction * width);
+    for (int i = 0; i < width; ++i) {
+        int percent = width > 1 ? i * 100 / (width - 1) : 100;
+        if (!timeline && percent > (int)lround(fraction * 100))
+            percent = (int)lround(fraction * 100);
+        bool active = known && (timeline ? i <= marker : i < filled);
+        int pair = !active ? PANEL_MUTED : timeline ? PANEL_ACCENT : theme_volume_pair(percent);
+        wattrset(w, COLOR_PAIR(pair) | (muted ? A_DIM : 0));
+        const wchar_t *cell = !active ? L"─" : timeline ? (i == marker ? L"●" : L"━") : L"█";
+        mvwaddnwstr(w, row, x + i, cell, 1);
+    }
+}
+
+static void draw_video_controls(media_view *v, WINDOW *w)
+{
+    video_info info;
+    pthread_mutex_lock(&v->lock);
+    info = (video_info){.paused = v->paused,
+                        .muted = v->muted,
+                        .audio_missing = v->audio_missing,
+                        .position = v->position,
+                        .duration = v->duration,
+                        .volume = v->volume};
+    pthread_mutex_unlock(&v->lock);
+    media_controls_layout controls;
+    if (media_controls_geometry(v->layout.height - 3, 3, v->layout.area_width, &controls)) {
+        const char *label =
+            controls.play_width == 1 ? (info.paused ? "▶" : "⏸") : (info.paused ? "[▶]" : "[⏸]");
+        button_draw(w, controls.row, controls.play_x, controls.play_width, label, BUTTON_NORMAL,
+                    BUTTON_PANEL);
+        bool known = isfinite(info.duration) && info.duration > 0;
+        double position = known ? control_fraction(info.position / info.duration) : 0;
+        double volume = control_fraction(info.volume / 100);
+        draw_control_track(w, controls.row, controls.timeline_x, controls.timeline_width, position,
+                           true, false, known);
+        if (controls.volume_label_x >= 0) {
+            wattrset(w, COLOR_PAIR(PANEL_MUTED));
+            mvwaddch(w, controls.row, controls.volume_label_x, 'V');
+        }
+        draw_control_track(w, controls.row, controls.volume_x, controls.volume_width, volume, false,
+                           info.muted, true);
+        if (controls.percent_x >= 0) {
+            char percent[8];
+            snprintf(percent, sizeof(percent), "%3d%%", (int)lround(volume * 100));
+            wattrset(w, COLOR_PAIR(PANEL));
+            text_label(w, controls.row, controls.percent_x, 4, percent);
+        }
+    }
+    char status[256];
+    snprintf(status, sizeof(status),
+             "%s · %.0f / %.0f s%s%s · Espaço pausa · ←→ 5s · ,/. 1s · ↑↓ volume · m",
+             info.paused ? "Pausado" : "Reproduzindo", info.position, info.duration,
+             info.muted ? " · Mudo" : "", info.audio_missing ? " · Sem dispositivo de áudio" : "");
+    wattrset(w, COLOR_PAIR(PANEL_MUTED));
+    text_label(w, v->layout.height - 2, 3, v->layout.area_width, status);
+}
+
 void media_view_draw(media_view *v)
 {
     if (!v) return;
@@ -781,15 +926,14 @@ void media_view_draw(media_view *v)
         } else if (v->modal == MODAL_ERROR) {
             text_label(w, 3, 3, image_width, v->modal_error ? v->modal_error : "Mídia indisponível.");
             text_label(w, height - 3, 3, image_width, "Enter: tentar novamente");
-        } else {
-            char status[160];
-            pthread_mutex_lock(&v->lock);
-            snprintf(status, sizeof(status), "%s · %.0f / %.0f s · Volume %.0f%%%s", v->paused ? "Pausado" : "Reproduzindo", v->position, v->duration, v->volume, v->audio_missing ? " · Sem dispositivo de áudio" : v->muted ? " · Mudo" : "");
-            pthread_mutex_unlock(&v->lock);
-            text_label(w, height - 3, 3, image_width, v->selected_item.video ? status : v->modal_animated ? "GIF animado" : "Imagem");
-        }
-        text_label(w, height - 2, 3, image_width, v->selected_item.video ?
-                   "Espaço pausa · ←→ 5s · ↑↓ volume · m" : "i: informações · Esc: voltar");
+        } else if (v->selected_item.video)
+            draw_video_controls(v, w);
+        else
+            text_label(w, height - 3, 3, image_width, v->modal_animated ? "GIF animado" : "Imagem");
+        if (!v->selected_item.video || v->modal != MODAL_PLAYING)
+            text_label(w, height - 2, 3, image_width,
+                       v->selected_item.video ? "Espaço pausa · ←→ 5s · ,/. 1s · ↑↓ volume · m"
+                                              : "i: informações · Esc: voltar");
         draw_properties(v, w);
     }
     touchwin(w); wnoutrefresh(w);
@@ -800,7 +944,10 @@ void media_view_prepare(media_view *v)
     if (media_view_modal(v)) {
         if (v->window && v->modal == MODAL_PLAYING && modal_layout_update(v)) {
             /* Recalculate after a decode result changes the raster dimensions. */
-            graphics_image_place(&v->modal_image, v->layout.image_y, v->layout.image_x, 0, 0);
+            if (v->selected_item.video && v->modal_image.protocol == GRAPHICS_KITTY)
+                graphics_image_place_scaled(&v->modal_image, v->layout.image_y, v->layout.image_x);
+            else
+                graphics_image_place(&v->modal_image, v->layout.image_y, v->layout.image_x, 0, 0);
         }
         return;
     }

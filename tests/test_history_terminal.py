@@ -128,10 +128,8 @@ class HistoryTerminal(unittest.TestCase):
             finally: self.assertTrue(terminal.close())
 
     def test_single_click_after_keyboard_change_with_pending_response(self):
-        for term, press, release in (
-            ('xterm-256color', '\x1b[<0;5;8M', '\x1b[<0;5;8m'),
-            ('xterm-kitty', '\x1b[M %(', '\x1b[M#%('),
-        ):
+        # Kitty mouse initialization enables SGR even with legacy X10 terminfo.
+        for term in ('xterm-256color', 'xterm-kitty'):
             with self.subTest(term=term), HistoryMock('slow', count=1) as server:
                 parent = server.api_handler
                 pending = threading.Event()
@@ -149,9 +147,9 @@ class HistoryTerminal(unittest.TestCase):
                     # Real clicks deliver a press and a later release, with a
                     # frame/network poll between them. No subsequent input may
                     # be needed to complete the new channel's HTTP response.
-                    terminal.send(press)
+                    terminal.send('\x1b[<0;5;8M')
                     self.wait(terminal, '# geral · Histórico')
-                    terminal.send(release)
+                    terminal.send('\x1b[<0;5;8m')
                     self.wait(terminal, 'Mensagem 0001')
                     self.assertNotIn('Conteúdo do outro canal', '\n'.join(terminal.screen.display))
                 finally: self.assertTrue(terminal.close())

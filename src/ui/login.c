@@ -698,7 +698,8 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
     noecho();
     keypad(stdscr, true);
     mouseinterval(0); /* Act on presses, without a delayed second click event. */
-    mousemask(BUTTON1_PRESSED | BUTTON1_RELEASED | BUTTON1_CLICKED | BUTTON3_PRESSED | BUTTON3_CLICKED | REPORT_MOUSE_POSITION, NULL);
+    ui_mouse_initialize(BUTTON1_PRESSED | BUTTON1_RELEASED | BUTTON1_CLICKED | BUTTON3_PRESSED |
+                        BUTTON3_CLICKED | REPORT_MOUSE_POSITION);
     ui_mouse_drag_tracking(true);
     text_input_init();
     timeout(30);
@@ -906,6 +907,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
     ui_mouse_drag_tracking(false);
     theme_restore(&theme);
     endwin();
+    ui_mouse_shutdown();
     terminal_recovery_end();
     sigaction(SIGINT, &previous_int, NULL);
     sigaction(SIGTERM, &previous_term, NULL);

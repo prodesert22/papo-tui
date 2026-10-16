@@ -40,3 +40,57 @@ bool media_modal_contains(const media_modal_layout *layout, int y, int x)
     return x >= layout->x && x < layout->x + layout->width &&
            y >= layout->y && y < layout->y + layout->height;
 }
+bool media_controls_geometry(int row, int x, int width, media_controls_layout *out)
+{
+    memset(out, 0, sizeof(*out));
+    out->volume_label_x = out->percent_x = -1;
+    if (row < 0 || x < 0 || width < 9)
+        return false;
+    out->row = row;
+    out->play_x = x;
+    out->play_width = width >= 20 ? 3 : 1;
+    bool label = width >= 20, percent = width >= 28;
+    int tracks = width - out->play_width - 6 - (label ? 1 : 0) - (percent ? 5 : 0);
+    out->volume_width = tracks / 3;
+    if (out->volume_width < 1)
+        out->volume_width = 1;
+    out->timeline_width = tracks - out->volume_width;
+    out->timeline_x = x + out->play_width + 2;
+    int next = out->timeline_x + out->timeline_width + 2;
+    if (label)
+        out->volume_label_x = next++;
+    out->volume_x = next + 1;
+    if (percent)
+        out->percent_x = out->volume_x + out->volume_width + 2;
+    return true;
+}
+
+static double track_fraction(int x, int left, int width)
+{
+    if (x <= left)
+        return 0;
+    if (x >= left + width - 1)
+        return 1;
+    return (double)(x - left) / (width - 1);
+}
+
+media_control media_controls_hit(const media_controls_layout *layout, int y, int x,
+                                 double *fraction)
+{
+    if (!layout || !fraction || layout->timeline_width < 1 || layout->volume_width < 1)
+        return MEDIA_CONTROL_NONE;
+    *fraction = 0;
+    if (y != layout->row)
+        return MEDIA_CONTROL_NONE;
+    if (x >= layout->play_x && x < layout->play_x + layout->play_width)
+        return MEDIA_CONTROL_PLAY;
+    if (x >= layout->timeline_x - 1 && x <= layout->timeline_x + layout->timeline_width) {
+        *fraction = track_fraction(x, layout->timeline_x, layout->timeline_width);
+        return MEDIA_CONTROL_SEEK;
+    }
+    if (x >= layout->volume_x - 1 && x <= layout->volume_x + layout->volume_width) {
+        *fraction = track_fraction(x, layout->volume_x, layout->volume_width);
+        return MEDIA_CONTROL_VOLUME;
+    }
+    return MEDIA_CONTROL_NONE;
+}

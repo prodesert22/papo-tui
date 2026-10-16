@@ -54,7 +54,9 @@ static gpointer load_video(gpointer unused)
     const video_player_api *api = entry(PAPO_MEDIA_BACKEND_ABI, sizeof(video_player_api));
     if (!api || api->abi != PAPO_MEDIA_BACKEND_ABI || api->size != sizeof(*api) ||
         api->controls_size != sizeof(video_controls) || api->info_size != sizeof(video_info) ||
-        !api->open || !api->close || !api->update || !api->changed || !api->render) goto failed;
+        !api->open || !api->close || !api->update || !api->changed || !api->render ||
+        !api->set_wakeup)
+        goto failed;
     g_module_make_resident(module); g_module_close(module);
     return (gpointer)api;
  failed:

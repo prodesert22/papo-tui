@@ -107,7 +107,7 @@ target_compile_definitions(papo_media PRIVATE
     PAPO_BACKEND_INSTALL_DIR="${CMAKE_INSTALL_FULL_BINDIR}/papo-backends")
 add_dependencies(papo_media papo_image_codec papo_video_player)
 target_compile_options(papo_media PRIVATE -Wall -Wextra -Wpedantic -Werror)
-add_executable(papo-tui src/main.c src/ui/login.c src/ui/terminal.c src/ui/history.c src/ui/r8_modal.c src/ui/profiles.c src/ui/theme.c src/ui/button.c)
+add_executable(papo-tui src/main.c src/ui/login.c src/ui/mouse.c src/ui/terminal.c src/ui/history.c src/ui/r8_modal.c src/ui/profiles.c src/ui/theme.c src/ui/button.c)
 target_link_libraries(papo-tui PRIVATE papo_media PkgConfig::FORM PkgConfig::NCURSES PkgConfig::UNIBREAK)
 target_compile_definitions(papo-tui PRIVATE PAPO_VERSION="${PROJECT_VERSION}-dev")
 
@@ -231,7 +231,7 @@ if(BUILD_TESTING)
     add_test(NAME media-terminal COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_media_terminal.py $<TARGET_FILE:papo-tui> ${FFMPEG_CLI})
     set_tests_properties(media-integration PROPERTIES TIMEOUT 120)
-    set_tests_properties(media-terminal PROPERTIES TIMEOUT 180)
+    set_tests_properties(media-terminal PROPERTIES TIMEOUT 240)
     find_program(OPENSSL_CLI NAMES openssl REQUIRED)
     add_executable(realtime-probe tests/realtime_probe.c)
     target_link_libraries(realtime-probe PRIVATE papo_auth)

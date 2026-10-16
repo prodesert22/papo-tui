@@ -1,8 +1,8 @@
 #define _POSIX_C_SOURCE 200809L
+#include "net/clock.h"
 #include "ui/graphics.h"
 #include "ui/sixel.h"
 #include "ui/text.h"
-#include "net/clock.h"
 #include <chafa.h>
 #include <stdatomic.h>
 #include <stdio.h>
@@ -20,6 +20,7 @@ typedef struct {
     uint32_t id, placement_id;
     uint64_t revision;
     int y, x, rows, columns, top, bottom;
+    bool scaled;
     const graphics_image *image; /* Borrowed only until this frame is flushed. */
 } displayed_image;
 static displayed_image *displayed, *desired;
@@ -266,8 +267,9 @@ void graphics_image_free(graphics_image *image)
 
 static bool same_placement(const displayed_image *a, const displayed_image *b)
 {
-    return a->id == b->id && a->placement_id == b->placement_id && a->protocol == b->protocol && a->y == b->y && a->x == b->x &&
-           a->rows == b->rows && a->columns == b->columns && a->top == b->top && a->bottom == b->bottom;
+    return a->id == b->id && a->placement_id == b->placement_id && a->protocol == b->protocol &&
+           a->y == b->y && a->x == b->x && a->rows == b->rows && a->columns == b->columns &&
+           a->top == b->top && a->bottom == b->bottom && a->scaled == b->scaled;
 }
 static displayed_image *find_image(displayed_image *images, size_t count, uint32_t id)
 {
@@ -300,7 +302,8 @@ void graphics_image_place(const graphics_image *image, int y, int x, int top, in
 {
     graphics_image_place_id(image, image ? image->id : 0, y, x, top, bottom);
 }
-void graphics_image_place_id(const graphics_image *image, uint32_t placement_id, int y, int x, int top, int bottom)
+static void place_image(const graphics_image *image, uint32_t placement_id, int y, int x, int top,
+                        int bottom, bool scaled)
 {
     if (!image || !image->data || image->protocol != graphics_terminal_get().protocol ||
         top < 0 || bottom < 0 || top + bottom >= image->height ||
@@ -311,10 +314,23 @@ void graphics_image_place_id(const graphics_image *image, uint32_t placement_id,
         if (!next) return;
         desired = next; desired_capacity = capacity;
     }
-    int rows = (image->height - top - bottom + image->cell_height - 1) / image->cell_height;
+    int rows = scaled
+                   ? image->rows
+                   : (image->height - top - bottom + image->cell_height - 1) / image->cell_height;
     if (y + rows > LINES || x + image->columns > COLS) return;
-    desired[desired_count++] = (displayed_image){image->protocol, image->id, placement_id, image->revision,
-        y, x, rows, image->columns, top, bottom, image};
+    desired[desired_count++] =
+        (displayed_image){image->protocol, image->id, placement_id, image->revision, y,    x, rows,
+                          image->columns,  top,       bottom,       scaled,          image};
+}
+void graphics_image_place_id(const graphics_image *image, uint32_t placement_id, int y, int x,
+                             int top, int bottom)
+{
+    place_image(image, placement_id, y, x, top, bottom, false);
+}
+void graphics_image_place_scaled(const graphics_image *image, int y, int x)
+{
+    if (image && image->protocol == GRAPHICS_KITTY)
+        place_image(image, image->id, y, x, 0, 0, true);
 }
 
 void graphics_frame_prepare(void)
@@ -361,9 +377,10 @@ void graphics_frame_flush(void)
                 uploaded |= desired[j].id == next->id && desired[j].revision == next->revision;
             if (!uploaded) fwrite(next->image->data, 1, next->image->length, stdout);
             /* Reusing the placement ID moves/crops the existing image atomically. */
-            fprintf(stdout, "\033_Ga=p,i=%u,p=%u,q=2,C=1,x=0,y=%d,w=%d,h=%d,c=0,r=0\033\\",
-                next->id, next->placement_id, next->top, next->image->width,
-                next->image->height - next->top - next->bottom);
+            fprintf(stdout, "\033_Ga=p,i=%u,p=%u,q=2,C=1,x=0,y=%d,w=%d,h=%d,c=%d,r=%d\033\\",
+                    next->id, next->placement_id, next->top, next->image->width,
+                    next->image->height - next->top - next->bottom,
+                    next->scaled ? next->columns : 0, next->scaled ? next->rows : 0);
         } else fwrite(next->image->data, 1, next->image->length, stdout);
     }
     if (displayed_capacity < desired_count) {

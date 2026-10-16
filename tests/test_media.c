@@ -340,9 +340,48 @@ static void embed_author_unique(void)
         json_decref(m);
     }
 }
+static void player_controls(void)
+{
+    int widths[] = {9, 11, 19, 20, 21, 27, 28, 40, 80, 120};
+    for (size_t i = 0; i < sizeof(widths) / sizeof(*widths); ++i) {
+        media_controls_layout g;
+        assert(media_controls_geometry(2, 3, widths[i], &g));
+        assert(g.play_x == 3 && g.play_width >= 1);
+        assert(g.timeline_x - 1 > g.play_x + g.play_width);
+        assert(g.timeline_width >= 1 && g.volume_width >= 1);
+        assert(g.volume_x - 1 > g.timeline_x + g.timeline_width);
+        assert(g.volume_x + g.volume_width < 3 + widths[i]);
+        if (g.percent_x >= 0)
+            assert(g.percent_x > g.volume_x + g.volume_width && g.percent_x + 4 <= 3 + widths[i]);
+        double fraction;
+        assert(media_controls_hit(&g, 1, g.play_x, &fraction) == MEDIA_CONTROL_NONE);
+        assert(media_controls_hit(&g, 2, g.play_x - 1, &fraction) == MEDIA_CONTROL_NONE);
+        assert(media_controls_hit(&g, 2, g.play_x, &fraction) == MEDIA_CONTROL_PLAY);
+        assert(media_controls_hit(&g, 2, g.timeline_x - 1, &fraction) == MEDIA_CONTROL_SEEK &&
+               fraction == 0);
+        assert(media_controls_hit(&g, 2, g.timeline_x + g.timeline_width, &fraction) ==
+                   MEDIA_CONTROL_SEEK &&
+               fraction == 1);
+        assert(media_controls_hit(&g, 2, g.volume_x - 1, &fraction) == MEDIA_CONTROL_VOLUME &&
+               fraction == 0);
+        assert(media_controls_hit(&g, 2, g.volume_x + g.volume_width, &fraction) ==
+                   MEDIA_CONTROL_VOLUME &&
+               fraction == 1);
+    }
+    media_controls_layout g;
+    assert(!media_controls_geometry(2, 3, 8, &g));
+    assert(!media_controls_geometry(-1, 3, 40, &g));
+}
+
 int main(void)
 {
     assert(setlocale(LC_ALL, "C.UTF-8")); init_graphemebreak(); cards(); embed_layout(); protocol(); graphics_protocols();
-    preview_crops(); embed_author_unique(); attachment_layout(); image_gallery(); embed_gallery(); modal_geometry();
+    preview_crops();
+    embed_author_unique();
+    attachment_layout();
+    image_gallery();
+    embed_gallery();
+    modal_geometry();
+    player_controls();
     puts("cards, terminal negotiation and Sixel/Kitty/iTerm2 pixels verified"); return 0;
 }

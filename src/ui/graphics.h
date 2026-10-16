@@ -1,9 +1,9 @@
 #ifndef PAPO_GRAPHICS_H
 #define PAPO_GRAPHICS_H
+#include <ncurses.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <ncurses.h>
 
 /* Bound raster area and encoded payloads, independently of screen geometry.
  * The cache reserves this capacity before dispatching a graphics worker. */
@@ -59,6 +59,8 @@ void graphics_frame_begin(void);
 void graphics_frame_invalidate(void);
 void graphics_image_place_id(const graphics_image *image, uint32_t placement_id, int y, int x, int top, int bottom);
 void graphics_image_place(const graphics_image *image, int y, int x, int top, int bottom);
+/* Kitty scales the source raster to its display cell rectangle. */
+void graphics_image_place_scaled(const graphics_image *image, int y, int x);
 /* Prepare after window composition, before doupdate; flush afterwards. */
 /* Stable occurrence ID allows one encoded image at multiple locations. */
 void graphics_frame_prepare(void);

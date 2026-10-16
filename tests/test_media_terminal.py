@@ -177,8 +177,11 @@ class MediaTerminal(unittest.TestCase):
         return s
     def wait_frames(self, terminal, count=1):
         deadline = time.monotonic() + 10
-        while len(terminal.stream.frames) < count and time.monotonic() < deadline: terminal.read(.03)
-        self.assertGreaterEqual(len(terminal.stream.frames), count)
+        while len(terminal.stream.frames) < count and time.monotonic() < deadline:
+            terminal.read(0.03)
+        self.assertGreaterEqual(
+            len(terminal.stream.frames), count, "\n".join(terminal.screen.display)
+        )
     def raster_size(self, terminal):
         stream = terminal.stream
         if not stream.frames: return 0, 0
@@ -727,8 +730,14 @@ class MediaTerminal(unittest.TestCase):
         columns = [i % width for i in blue]
         rows = [i // width for i in blue]
         content = (max(columns) - min(columns) + 1, max(rows) - min(rows) + 1)
-        for actual, wanted in zip(content, expected):
-            self.assertAlmostEqual(actual, wanted, delta=1)
+        placement = next(p for p in reversed(terminal.stream.placements) if p[b"i"] == header[b"i"])
+        if int(placement.get(b"c", 0)) and int(placement.get(b"r", 0)):
+            content = (
+                content[0] * int(placement[b"c"]) * 8 / int(placement[b"w"]),
+                content[1] * int(placement[b"r"]) * 16 / int(placement[b"h"]),
+            )
+        for actual, wanted, cell in zip(content, expected, (8, 16)):
+            self.assertAlmostEqual(actual, wanted, delta=cell)
 
     def test_small_video_enlarges_to_fit_modal(self):
         for protocol in ("sixel", "kitty", "iterm2"):
@@ -742,22 +751,30 @@ class MediaTerminal(unittest.TestCase):
                     self.wait_frames(t, 2)
                     # Fit the 4:3 video; Kitty/iTerm2 pad the final terminal cell.
                     expected = (234 if protocol == "sixel" else 240, 176)
-                    self.assertEqual(self.raster_size(t), expected)
                     if protocol == "kitty":
+                        self.wait_video_size(t, expected)
+                        self.assertEqual(self.raster_size(t), (32, 32))
                         self.assert_blue_video_size(t, (234, 176))
+                    else:
+                        self.assertEqual(self.raster_size(t), expected)
                     self.wait(t, "Reproduzindo")
                     t.send(" ")
                     self.wait(t, "Pausado")
                     t.resize(70, 220)
                     expected = (1130 if protocol == "sixel" else 1136, 848)
-                    self.wait_raster(t, lambda w, h: (w, h) == expected)
                     if protocol == "kitty":
+                        self.wait_video_size(t, expected)
                         self.assert_blue_video_size(t, (1130, 848))
+                    else:
+                        self.wait_raster(t, lambda w, h: (w, h) == expected)
                     t.send("i")
                     self.wait(t, "Propriedades")
                     self.wait(t, "32 × 24 px")
                     expected = (1128, 846 if protocol == "sixel" else 848)
-                    self.wait_raster(t, lambda w, h: (w, h) == expected)
+                    if protocol == "kitty":
+                        self.wait_video_size(t, expected)
+                    else:
+                        self.wait_raster(t, lambda w, h: (w, h) == expected)
                     t.send("\x1b")
                     self.wait(t, "Rascunho")
                     self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), 1)
@@ -799,6 +816,9 @@ class MediaTerminal(unittest.TestCase):
                         self.wait_frames(t, 2)
                         scale = min(320 / original[0], 176 / original[1])
                         expected = tuple(max(1, int(n * scale)) for n in original)
+                        self.wait_video_size(
+                            t, ((expected[0] + 7) // 8 * 8, (expected[1] + 15) // 16 * 16)
+                        )
                         self.assert_blue_video_size(t, expected)
                         t.send(" ")
                         self.wait(t, "Pausado")
@@ -806,7 +826,7 @@ class MediaTerminal(unittest.TestCase):
                         scale = min(1376 / original[0], 848 / original[1])
                         expected = tuple(max(1, int(n * scale)) for n in original)
                         raster = ((expected[0] + 7) // 8 * 8, (expected[1] + 15) // 16 * 16)
-                        self.wait_raster(t, lambda w, h: (w, h) == raster)
+                        self.wait_video_size(t, raster)
                         self.assert_blue_video_size(t, expected)
                         self.wait(t, "Pausado")
                         self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), 1)
@@ -868,4 +888,315 @@ class MediaTerminal(unittest.TestCase):
                 self.wait(t, 'Footer')
                 self.assertNotIn('Rodapé:', '\n'.join(t.screen.display))
             finally: self.assertTrue(t.close())
+
+
+    def wait_video_size(self, terminal, expected):
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            for placement in reversed(terminal.stream.placements[-5:]):
+                if (int(placement.get(b"c", 0)) * 8, int(placement.get(b"r", 0)) * 16) == expected:
+                    return
+            terminal.read(0.02)
+        self.fail(f"Video display did not reach {expected}: {terminal.stream.placements[-1:]}")
+
+
+    def player_controls(self, terminal):
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            for row, line in enumerate(terminal.screen.display):
+                if "[⏸]" in line or "[▶]" in line:
+                    controls = list(re.finditer(r"\[([^]]*)\]", line))
+                    if len(controls) >= 3:
+                        return row, controls[:3]
+            terminal.read(0.03)
+        self.fail(
+            "Play/pause, timeline and volume controls are missing\n"
+            + "\n".join(terminal.screen.display)
+        )
+
+
+    def test_player_bars_mouse_seek_volume_gradient_and_resize(self):
+        with self.serve(self.video, "video/mp4") as server:
+            t = self.open(server, protocol="kitty", environment={"KITTY_WINDOW_ID": "papo-test"})
+            try:
+                t.send("Rascunho controles\x1b\x1b[18~")
+                self.wait_frames(t, 2)
+                row, controls = self.player_controls(t)
+                t.click(row, controls[0].start() + 1)
+                self.wait(t, "Pausado")
+                row, controls = self.player_controls(t)
+                t.click(row, controls[1].end() - 1)
+                self.wait(t, "3 / 3 s")
+                t.click(row, controls[1].start())
+                self.wait(t, "0 / 3 s")
+                t.click(row, controls[0].start() + 1)
+                self.wait(t, "Reproduzindo")
+                row, controls = self.player_controls(t)
+                t.click(row, controls[0].start() + 1)
+                self.wait(t, "Pausado")
+
+                t.resize(34, 140)
+                row, controls = self.player_controls(t)
+                volume = controls[2]
+                t.click(row, volume.end() - 1)
+                self.wait(t, "100%")
+                row, controls = self.player_controls(t)
+                volume = controls[2]
+                cells = [
+                    t.screen.buffer[row][x] for x in range(volume.start() + 1, volume.end() - 1)
+                ]
+                self.assertTrue(all(cell.data == "█" for cell in cells))
+                colors = []
+                for fraction in (0.25, 0.75, 0.95):
+                    color = cells[int((len(cells) - 1) * fraction)].fg
+                    colors.append(tuple(int(color[i : i + 2], 16) for i in (0, 2, 4)))
+                green, yellow, red = colors
+                self.assertGreater(green[1], green[0])
+                self.assertGreater(green[1], green[2])
+                self.assertGreaterEqual(yellow[0], 200)
+                self.assertGreaterEqual(yellow[1], 180)
+                self.assertLess(yellow[2], 100)
+                self.assertGreater(red[0], 200)
+                self.assertLess(red[1], 150)
+                t.send("\x1bOA")
+                self.wait(t, "100%")
+                t.click(row, volume.start())
+                self.wait(t, "  0%")
+                t.send("\x1bOB")
+                self.wait(t, "  0%")
+                row, controls = self.player_controls(t)
+                self.assertNotIn("█", controls[2].group(1))
+                volume = controls[2]
+                t.click(row, volume.start() + 1 + (len(volume.group(1)) - 1) * 3 // 4)
+                self.wait(t, " 75%")
+                t.send("\x1bOA" * 2)
+                self.wait(t, " 85%")
+                row, controls = self.player_controls(t)
+                for x in range(controls[2].start() + 1, controls[2].end() - 1):
+                    cell = t.screen.buffer[row][x]
+                    if cell.data == "█":
+                        red = int(cell.fg[:2], 16)
+                        green = int(cell.fg[2:4], 16)
+                        self.assertFalse(red > 200 and green < 150)
+                t.send("\x1bOB" * 5)
+                self.wait(t, " 60%")
+                row, controls = self.player_controls(t)
+                for x in range(controls[2].start() + 1, controls[2].end() - 1):
+                    cell = t.screen.buffer[row][x]
+                    if cell.data == "█":
+                        self.assertGreater(int(cell.fg[2:4], 16), int(cell.fg[:2], 16))
+                t.send("\x1bOA" * 3)
+                self.wait(t, " 75%")
+                t.send("m")
+                self.wait(t, "Mudo")
+                self.assertIn(" 75%", "\n".join(t.screen.display))
+                t.send("m")
+
+                t.send("i")
+                self.wait(t, "Propriedades")
+                row, controls = self.player_controls(t)
+                t.click(row, controls[2].end() - 1)
+                self.wait(t, "100%")
+                t.resize(22, 44)
+                status_row = next(i for i, line in enumerate(t.screen.display) if "Pausado" in line)
+                row = status_row - 1
+                tracks = list(re.finditer(r"\[([^]]*)\]", t.screen.display[row]))
+                self.assertGreaterEqual(len(tracks), 2)
+                t.click(row, tracks[1].start())
+                t.resize(34, 140)
+                self.wait(t, "  0%")
+                t.send("\x1b")
+                self.wait(t, "Rascunho controles")
+                self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), 1)
+            finally:
+                self.assertTrue(t.close())
+
+
+    def test_kitty_large_video_mouse_release_keyboard_and_frame_cadence(self):
+        path = Path(self.assets.name) / "fast-video.mp4"
+        subprocess.run(
+            [
+                FFMPEG,
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=s=160x90:r=30",
+                "-t",
+                "8",
+                "-c:v",
+                "mpeg4",
+                "-threads",
+                "1",
+                "-y",
+                str(path),
+            ],
+            check=True,
+            capture_output=True,
+        )
+        with self.serve(path.read_bytes(), "video/mp4") as server:
+            t = self.open(
+                server, protocol="kitty", environment={"TERM": "xterm-kitty"}, size=(90, 340)
+            )
+            try:
+                self.assertIn(b"\x1b[?1006", bytes(t.output))
+                self.wait(t, "Vídeo")
+                t.send("\x1b[18~")
+                self.wait_frames(t, 2)
+                row, controls = self.player_controls(t)
+                # Release is a distinct packet, as with a real held click. Input
+                # must remain live even before it arrives, including beyond X10.
+                volume = controls[2]
+                self.assertGreater(volume.start(), 223)
+                t.send(f"\x1b[<0;{volume.end()};{row + 1}M")
+                self.wait(t, "100%")
+                t.send("\x1bOB")
+                self.wait(t, " 95%")
+                t.send(f"\x1b[<0;{volume.end()};{row + 1}m")
+                t.send("\x1b[B")
+                self.wait(t, " 90%")
+                t.click(row, controls[0].start() + 1)
+                self.wait(t, "Pausado")
+                row, controls = self.player_controls(t)
+                self.assertEqual(controls[0].group(), "[▶]")
+                t.click(row, controls[1].start())
+                self.wait(t, "0 / 8 s")
+                t.click(row, controls[0].start() + 1)
+                self.wait(t, "Reproduzindo")
+                row, controls = self.player_controls(t)
+                self.assertEqual(controls[0].group(), "[⏸]")
+                start = len(t.stream.frames)
+                deadline = time.monotonic() + 3
+                while time.monotonic() < deadline:
+                    t.read(0.01)
+                frames = len(t.stream.frames) - start
+                self.assertGreaterEqual(frames, 60, f"Only {frames} frames in three seconds")
+                for header, _ in t.stream.kitty_frames:
+                    self.assertLessEqual(int(header[b"s"]), 160)
+                    self.assertLessEqual(int(header[b"v"]), 96)
+                t.click(row, controls[2].start())
+                self.wait(t, "  0%")
+                t.send("\x1bOA")
+                self.wait(t, "  5%")
+            finally:
+                self.assertTrue(t.close())
+
+
+    def test_video_keyboard_seek_steps_and_limits_while_paused(self):
+        path = Path(self.assets.name) / "seek-video.mp4"
+        subprocess.run(
+            [
+                FFMPEG,
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=s=32x24:r=10",
+                "-t",
+                "20",
+                "-c:v",
+                "mpeg4",
+                "-g",
+                "100",
+                "-threads",
+                "1",
+                "-y",
+                str(path),
+            ],
+            check=True,
+            capture_output=True,
+        )
+        with self.serve(path.read_bytes(), "video/mp4") as server:
+            t = self.open(server, protocol="kitty")
+            try:
+                t.resize(34, 140)
+                t.send("\x1b[18~")
+                self.wait_frames(t, 2)
+                t.send(" ")
+                self.wait(t, "Pausado")
+                row, controls = self.player_controls(t)
+                t.click(row, controls[1].start())
+                self.wait(t, "0 / 20 s")
+                # One-second steps must work between keyframes too. Both
+                # cursor-key encodings retain their five-second steps.
+                for keys, position in (
+                    (",", 0),
+                    (".", 1),
+                    ("...", 4),
+                    (",", 3),
+                    (",,,", 0),
+                    ("<", 0),
+                    (">", 1),
+                    (">>>", 4),
+                    ("<", 3),
+                    ("<<<", 0),
+                    ("\x1bOD", 0),
+                    ("\x1bOC", 5),
+                    ("\x1b[C\x1b[C", 15),
+                    ("\x1b[D", 10),
+                    ("\x1bOD\x1bOD\x1bOD", 0),
+                    ("\x1bOC" * 5, 20),
+                    (".", 20),
+                    (",", 19),
+                    (".", 20),
+                    (">", 20),
+                    ("<", 19),
+                    (">", 20),
+                    ("\x1b[D", 15),
+                ):
+                    with self.subTest(position=position, keys=repr(keys)):
+                        t.send(keys)
+                        self.wait(t, f"Pausado · {position} / 20 s")
+                        _, controls = self.player_controls(t)
+                        self.assertEqual(controls[0].group(), "[▶]")
+                t.click(row, controls[1].start())
+                self.wait(t, "Pausado · 0 / 20 s")
+                t.send(" ")
+                self.wait(t, "Reproduzindo")
+                t.send("...")
+                self.wait(t, "Reproduzindo · 3 / 20 s")
+                t.send(",,")
+                self.wait(t, "Reproduzindo · 1 / 20 s")
+                self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), 1)
+            finally:
+                self.assertTrue(t.close())
+
+
+    def test_invalid_video_retry_restores_controls_and_preserves_draft(self):
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            self.serve(b"not a video", "video/mp4") as server,
+        ):
+            t = self.open(server, protocol="kitty", environment={"TMPDIR": directory})
+            try:
+                t.resize(34, 140)
+                t.send("Rascunho retry\x1b\x1b[18~")
+                self.wait(t, "Vídeo inválido ou codec indisponível")
+                self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), 1)
+                parent = server.api_handler
+
+                def route(method, path, body):
+                    if "/attachments/" in path:
+                        return 200, self.video, None, None, "video/mp4"
+                    return parent(method, path, body)
+
+                server.api_handler = route
+                t.send("\n")
+                self.wait_frames(t, 2)
+                self.wait(t, "Reproduzindo")
+                row, controls = self.player_controls(t)
+                t.click(row, controls[0].start() + 1)
+                self.wait(t, "Pausado")
+                t.click(row, controls[2].end() - 1)
+                self.wait(t, "100%")
+                t.send("m")
+                self.wait(t, "Mudo")
+                t.send("\x1b")
+                self.wait(t, "Rascunho retry")
+                self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), 2)
+            finally:
+                self.assertTrue(t.close())
+            self.assertEqual(list(Path(directory).iterdir()), [])
 if __name__ == '__main__': unittest.main()

@@ -99,7 +99,35 @@ void theme_init(ui_theme *theme)
     init_extended_pair(NOTIFICATION_FOCUS, colors[NOTIFICATION_RED], colors[RAISED]);
     init_extended_pair(NOTIFICATION_SELECTED, colors[NOTIFICATION_RED], colors[WARM]);
     init_extended_pair(NOTIFICATION_BUTTON_FOCUS, colors[NOTIFICATION_RED], colors[PROFILE_HIGHLIGHT]);
+    /* Do not redefine palette entries: Kitty/Konsole can reload them at runtime. */
+    static const int ramp[] = {22,  28,  34,  40,  46,  46,  82,  82,  118, 118, 154,
+                               154, 154, 226, 226, 220, 220, 220, 203, 196, 196};
+    static const int levels[] = {0, 95, 135, 175, 215, 255};
+    for (int i = 0; i <= 20 && THEME_VOLUME_FIRST + i < COLOR_PAIRS; ++i) {
+        int color = ramp[i];
+        if (COLORS >= 0x1000000) {
+            int cube = color - 16;
+            color = levels[cube / 36] * 0x10000 + levels[cube / 6 % 6] * 0x100 + levels[cube % 6];
+        } else if (COLORS < 256)
+            color = i <= 12 ? COLOR_GREEN : i <= 17 ? COLOR_YELLOW : COLOR_RED;
+        init_extended_pair(THEME_VOLUME_FIRST + i, color, colors[SURFACE]);
+    }
     wbkgd(stdscr, COLOR_PAIR(NORMAL));
+}
+
+int theme_volume_pair(int percent)
+{
+    if (percent < 0)
+        percent = 0;
+    if (percent > 100)
+        percent = 100;
+    int step = percent / 5;
+    if (percent > 60 && step == 12)
+        step = 13;
+    if (percent > 85 && step == 17)
+        step = 18;
+    int pair = THEME_VOLUME_FIRST + step;
+    return has_colors() && pair < COLOR_PAIRS ? pair : PANEL;
 }
 
 void theme_restore(ui_theme *theme)

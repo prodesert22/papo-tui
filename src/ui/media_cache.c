@@ -144,7 +144,13 @@ void media_resource_release(media_resource *r)
 void media_resource_retry(media_resource *r)
 {
     if (!r) return;
-    if (r->state == RESOURCE_ERROR) { r->state = RESOURCE_NEW; r->error = NULL; }
+    if (r->state == RESOURCE_ERROR || (r->video && r->state == RESOURCE_READY)) {
+        /* A downloaded video can fail later in the player. Explicit retry
+         * must fetch fresh bytes instead of reopening the invalid file. */
+        unlink_path(&r->video_path);
+        r->state = RESOURCE_NEW;
+        r->error = NULL;
+    }
     for (int i = 0; i < 2; ++i) if (r->objects[i]) {
         r->objects[i]->failed = false;
         for (variant *v = r->objects[i]->variants; v; v = v->next) v->failed = false;

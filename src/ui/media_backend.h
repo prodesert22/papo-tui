@@ -2,9 +2,10 @@
 #define PAPO_MEDIA_BACKEND_H
 #include "ui/image_decode.h"
 
-#define PAPO_MEDIA_BACKEND_ABI 4U
+#define PAPO_MEDIA_BACKEND_ABI 6U
 /* Bound larger modal surfaces while keeping their buffers within the cache budget. */
 #define VIDEO_FRAME_PIXELS (7U * 1024U * 1024U)
+#define VIDEO_KITTY_FRAME_PIXELS (960U * 540U)
 /* Private, versioned module boundary. No curses, auth or mutable models cross it.
  * Pixel buffers use the process allocator. Modules remain resident after use;
  * every player/context and frame must still be released by its owner. */
@@ -26,7 +27,11 @@ typedef struct {
 } image_codec_api;
 typedef const image_codec_api *(*image_codec_entry)(const image_codec_host *);
 
-typedef struct { int pause, mute, seek, volume; } video_controls;
+typedef struct {
+    int pause, mute, seek, volume;
+    bool seek_absolute, volume_absolute;
+    double position, volume_level;
+} video_controls;
 typedef struct {
     bool paused, muted, audio_missing, invalid;
     double position, duration, volume;
@@ -40,6 +45,8 @@ typedef struct {
     void (*update)(void *, const video_controls *, video_info *);
     bool (*changed)(void *);
     bool (*render)(void *, unsigned char *, int, int);
+    /* Callbacks only wake the worker; they must not call back into libmpv. */
+    void (*set_wakeup)(void *, void (*)(void *), void *);
 } video_player_api;
 typedef const video_player_api *(*video_player_entry)(unsigned, size_t);
 

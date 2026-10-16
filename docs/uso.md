@@ -506,6 +506,7 @@ que se ajusta proporcionalmente ao espaço restante.
 | --- | --- |
 | Espaço | Pausar ou continuar |
 | ← / → | Recuar ou avançar 5 segundos |
+| `,` / `.` (ou `<` / `>`) | Retroceder ou avançar 1 segundo |
 | ↑ / ↓ | Aumentar ou diminuir o volume |
 | m | Silenciar ou restaurar o áudio |
 | Esc | Fechar ou cancelar o carregamento |
@@ -513,6 +514,13 @@ que se ajusta proporcionalmente ao espaço restante.
 | Botão [Info], i ou F8 | Alternar painel de propriedades |
 | PageUp / PageDown no modal com propriedades | Rolar as propriedades |
 | Enter na mensagem de erro | Tentar novamente |
+
+Na barra do player, clique no botão à esquerda para pausar ou continuar,
+na linha do tempo para buscar uma posição e na barra à direita para ajustar o
+volume de 0 a 100%. O gradiente é verde até 60%, amarelo até 85% e vermelho
+acima disso. O botão mostra `[▶]` para continuar e `[⏸]` para pausar.
+A decodificação tenta aceleração de hardware quando disponível, com fallback
+para software.
 
 Redimensionar preserva o vídeo. O áudio usa o dispositivo disponível; quando
 nenhum dispositivo pode ser aberto, o player informa isso e continua com o

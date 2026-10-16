@@ -4,6 +4,10 @@
 #include <ncurses.h>
 #include <stdio.h>
 
+/* Initialize once before other mousemask calls; release after disabling it. */
+void ui_mouse_initialize(mmask_t mask);
+void ui_mouse_shutdown(void);
+
 /* XM commonly requests only 1000 (press/release), even with ncurses' motion
  * mask. Request button motion explicitly, without idle pointer reports. */
 static inline void ui_mouse_drag_tracking(bool enabled)
