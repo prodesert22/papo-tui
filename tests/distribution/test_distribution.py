@@ -85,6 +85,32 @@ class DistributionTests(unittest.TestCase):
             self.assertIn("CreateWaitableTimer", first)
             self.assertIn("#define nanosleep sixel_windows_nanosleep", first)
 
+    def test_windows_mpv_uses_native_threading(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, work, prefix = (root / name for name in ("source", "work", "prefix"))
+            source.mkdir()
+            calls = []
+
+            def capture(args, **kwargs):
+                calls.append((args, kwargs))
+                return bootstrap.subprocess.CompletedProcess(args=args, returncode=0)
+
+            with (
+                patch.object(bootstrap.os, "name", "nt"),
+                patch.object(bootstrap.subprocess, "run", side_effect=capture),
+            ):
+                bootstrap.build(
+                    {"name": "mpv", "buildsystem": "meson"},
+                    source,
+                    work,
+                    prefix,
+                    4,
+                    {"PATH": ""},
+                )
+            setup = next(args for args, _ in calls if args[:2] == ["meson", "setup"])
+            self.assertIn("-Dwin32-threads=enabled", setup)
+
     def test_archive_rejects_traversal_and_external_symlinks(self):
         for name, link in [
             ("../escaped", None),

@@ -225,9 +225,10 @@ def build(entry, source, work, prefix, jobs, env):
                 "-Dgl=disabled",
                 "-Dbuild-date=false",
             ]
-            options += (
-                ["-Dwasapi=enabled"] if os.name == "nt" else ["-Dpulse=enabled", "-Dalsa=enabled"]
-            )
+            if os.name == "nt":
+                options += ["-Dwasapi=enabled", "-Dwin32-threads=enabled"]
+            else:
+                options += ["-Dpulse=enabled", "-Dalsa=enabled"]
         elif name == "libsixel":
             options += ["-Dimg2sixel=disabled", "-Dsixel2png=disabled", "-Dtests=disabled"]
         elif name == "libsecret":
@@ -298,7 +299,11 @@ def main():
         identity = {
             "source": entry,
             "compatibility_patch": (
-                "windows-nanosleep-v1" if os.name == "nt" and entry["name"] == "libsixel" else None
+                "windows-nanosleep-v1"
+                if os.name == "nt" and entry["name"] == "libsixel"
+                else "windows-native-threads-v1"
+                if os.name == "nt" and entry["name"] == "mpv"
+                else None
             ),
             "system": os.name,
             "architecture": os.environ.get(
