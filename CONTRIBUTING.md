@@ -113,6 +113,7 @@ executables directory on PATH. On Windows, use native CPython inside the MSYS2
 CLANG64/CLANGARM64 shell, as shown in the workflow.
 
 CI uses one build matrix for the four native OS/architecture combinations.
+Automatic CI runs only for pushes to `main` and pull requests targeting `main`.
 On Linux, `dist/build.py --build build --prefix build/release-deps
 --variants release,sanitizers,coverage --jobs 4` prepares dependencies once and
 runs independent CMake trees concurrently. `--jobs` is the shared compiler CPU
