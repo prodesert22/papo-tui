@@ -15,6 +15,7 @@ class HistoryTests(unittest.TestCase):
             env=dict(os.environ, LC_ALL="C.UTF-8", NO_PROXY="*"),
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=30,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -306,6 +307,7 @@ class HistoryTests(unittest.TestCase):
                 env=dict(os.environ, LC_ALL="C.UTF-8", NO_PROXY="*"),
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
                 timeout=30,
             )
             self.assertEqual(output.returncode, 0, output.stderr)

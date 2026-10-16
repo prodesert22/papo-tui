@@ -33,6 +33,15 @@ int main(void)
     assert(!strchr(bar.notices[STATUS_EDITOR].text, '\n'));
     assert(!status_bar_set(&bar, (status_context)-1, "bad"));
     assert(!status_bar_set(&bar, STATUS_CONTEXT_COUNT, "bad"));
+#ifdef _WIN32
+    /* The Windows ncurses backend cannot create a screen from tmpfile streams.
+     * Cover state here; rendering is exercised through ConPTY instead. */
+    assert(status_bar_set_compact(&bar, STATUS_CONNECTION, "Desconectado · Reconectando…",
+                                  "Desconectado"));
+    bar.connection_critical = true;
+    assert(status_bar_set(&bar, STATUS_EDITOR, "Aviso mais recente do editor"));
+    return 0;
+#endif
     FILE *input = tmpfile(), *output = tmpfile();
     assert(input && output);
     SCREEN *screen = newterm("xterm-256color", output, input);

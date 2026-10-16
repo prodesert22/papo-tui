@@ -11,7 +11,12 @@ PROBE = sys.argv.pop(1)
 class AuthTests(unittest.TestCase):
     def run_probe(self, url, mode="", env=None):
         return subprocess.run(
-            [PROBE, url, mode], capture_output=True, text=True, timeout=20, env=env
+            [PROBE, url, mode],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=20,
+            env=env,
         )
 
     def test_oversized_inputs_are_rejected_before_network(self):
