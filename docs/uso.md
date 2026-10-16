@@ -68,7 +68,15 @@ Voice calls are not available yet.
 | F10 | Start a DM |
 | F9 | Open the notification center and preferences |
 | F4 in the editor | Choose an emoji |
-| F7 in history | Open media |
+| F7 in a conversation | Enter or leave message navigation |
+| ↑ / ↓ during message navigation | Select the previous / next message |
+| ← / → during message navigation | Select media within the message |
+| Enter during message navigation | Open selected media |
+| `m` during message navigation | Open or close the selected message's context menu |
+| `r` or `R` during message navigation | Reply to the selected message and focus the editor |
+| `e` during message navigation | Open the reaction picker |
+| Shift+E during message navigation | Show who reacted |
+| Right-click a message | Open its context menu directly |
 | Shift+Enter in the editor | Insert a new line |
 
 Type `@` in the editor to choose a person to mention; confirm with Tab or Enter.
@@ -88,10 +96,61 @@ to enter the grid. From its first row, ↑ returns to the buttons; ↑ again ret
 to search. Use ←/→ to switch emoji sources while the buttons have focus.
 Tab and Shift+Tab also move between these areas.
 
+## Messages, replies and reactions
+
+Press **F7** to select a message with a highlighted border. Use ↑/↓ to move
+between messages; older or newer pages load as needed. Use ←/→ to select
+media within the message, then Enter to open it. The border shows the selected
+media number. Press Esc or F7 to return to your previous focus. Closing the
+media viewer returns to the selected message.
+
+Right-click any visible message to open its context menu immediately, or
+press **m** while navigating messages to open the menu next to the selected
+message. Enter only opens media during message navigation. Press **m** again or
+Esc to close the menu. Use the mouse or ↑/↓ and Enter inside the menu to choose:
+
+- **Ver quem reagiu** (See who reacted): show participants grouped by emoji.
+  The left column shows rendered emojis and their total counts. Use ↑/↓ to
+  highlight an emoji; Enter or → selects it and moves to its participants in
+  the right column. Clicking an emoji also selects it. Use ← to return to the
+  emoji column and → to move to the people column. Each column has its own
+  scroll position: use ↑/↓, PageUp/PageDown, or the mouse wheel over that column.
+  More participants load as needed. Esc closes the modal; Ctrl+R retries a
+  failed participant request. In message navigation, Shift+E opens this modal
+  directly, `e` opens the reaction picker, and `r` focuses the reply editor.
+- **Adicionar reação** (Add reaction): choose a Unicode or server emoji without
+  changing your draft.
+- **Responder** (Reply): prepare a reply in the editor. The strip above the
+  editor identifies the original; click **[x]** to cancel the reply.
+  The original message stays highlighted while you compose the reply. Press Esc
+  once in the editor to cancel the reply while keeping your text and editor focus.
+- **Ir para mensagem original** (Go to original message): available on replies.
+
+Replies show a gray **↰ Author: excerpt** above their content. Click it to
+scroll to and highlight the original. Older originals are looked up automatically
+in the active conversation, without changing your scroll position. This may
+require several history requests. A loading or error label differs from an
+unavailable original. Switching conversations cancels pending lookups.
+
+Reactions appear below messages as emoji/count buttons, aligned with the message
+text. They wrap onto another line when necessary. Click one to add your reaction;
+click it again to remove it. Your reactions are highlighted. Wait for a pending
+reaction to finish before making another change. If an operation cannot be
+confirmed, the client refreshes the history before you try again.
+
+Reply targets are preserved with each conversation's draft during the current
+run, including manual send retries. Confirmed sends clear their reply target.
+
 ## Images and video
 
-Press F7 with the history focused, or click a media preview, to open it.
-If several items are visible, choose one with ↑/↓ and Enter or click it.
+Image previews remain visible outside the emoji and reaction dialogs.
+
+Click a media preview to open it, or use F7, select the message and media, then
+press Enter. Visible video attachments download automatically in the background
+to generate a static cover; they do not play or produce sound in the history.
+This consumes bandwidth even before you open the player. The player reuses the
+download while it remains cached.
+
 Videos finish downloading before playback starts. Press Esc or click outside
 the media window to close it or cancel loading.
 

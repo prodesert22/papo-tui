@@ -46,7 +46,7 @@ struct image_object {
     char *path, *glyph;
     size_t bytes, refs;
     uint64_t used, epoch;
-    bool pinned, failed, keep_cached;
+    bool pinned, failed, keep_cached, video;
     const char *error;
     animation *frames;
     task *job;
@@ -64,7 +64,6 @@ struct media_resource {
     unsigned expired;
     enum { RESOURCE_NEW, RESOURCE_FETCH, RESOURCE_INGEST, RESOURCE_READY, RESOURCE_ERROR } state;
     const char *error;
-    char *video_path;
     image_object *objects[2];
     task *job;
 };
@@ -76,6 +75,7 @@ struct media_cache {
     GList *tasks;
     media_download *downloads[MEDIA_CACHE_DOWNLOADS];
     media_resource *fetching[MEDIA_CACHE_DOWNLOADS];
+    int overlay_y, overlay_x, overlay_rows, overlay_columns;
 };
 struct task {
     media_cache *cache;
@@ -174,7 +174,6 @@ void media_resource_release(media_resource *r)
         return;
     object_unref(r->objects[0]);
     object_unref(r->objects[1]);
-    unlink_path(&r->video_path);
     free(r->source);
     free(r);
 }
@@ -185,7 +184,6 @@ void media_resource_retry(media_resource *r)
     if (r->state == RESOURCE_ERROR || (r->video && r->state == RESOURCE_READY)) {
         /* A downloaded video can fail later in the player. Explicit retry
          * must fetch fresh bytes instead of reopening the invalid file. */
-        unlink_path(&r->video_path);
         r->state = RESOURCE_NEW;
         r->error = NULL;
     }
@@ -223,7 +221,8 @@ static bool hash_blob(task *t, blob *b)
     size_t n;
     bool ok = true;
     while ((n = fread(buffer, 1, sizeof(buffer), f))) {
-        if (cancelled(t) || n > MEDIA_IMAGE_LIMIT - b->bytes) {
+        size_t limit = t->resource && t->resource->video ? MEDIA_VIDEO_LIMIT : MEDIA_IMAGE_LIMIT;
+        if (cancelled(t) || n > limit - b->bytes) {
             ok = false;
             break;
         }
@@ -342,9 +341,11 @@ static void worker(gpointer data, gpointer unused)
             t->ok = malloc_trim(0) != 0;
 #endif
         } else if (t->glyph) {
-            t->ok = emoji_image_encode(t->glyph, t->request.width, t->request.height,
-                                       t->request.background, t->request.terminal,
-                                       t->request.image_id, &t->image);
+            t->ok = emoji_image_encode_region(
+                t->glyph, t->request.width, t->request.height, t->request.background,
+                t->request.terminal, t->request.image_id, &t->image,
+                t->request.region ? t->request.top : 0, t->request.region ? t->request.bottom : 0,
+                t->request.region ? t->request.left : 0, t->request.region ? t->request.right : 0);
         } else {
             t->ok = image_encode_frame(&t->request, &t->image);
         }
@@ -546,11 +547,13 @@ static void task_free(task *t)
     --shared.stats.jobs;
     free(t);
 }
-static image_object *intern(media_cache *c, blob *b)
+static image_object *intern(media_cache *c, blob *b, bool video)
 {
     if (!b->path || !*b->hash)
         return NULL;
-    image_object *o = g_hash_table_lookup(c->objects, b->hash);
+    char key[72];
+    snprintf(key, sizeof(key), "%s%s", video ? "video:" : "", b->hash);
+    image_object *o = g_hash_table_lookup(c->objects, key);
     if (o) {
         ++shared.stats.deduplicated;
         object_ref(o);
@@ -562,7 +565,8 @@ static image_object *intern(media_cache *c, blob *b)
     if (!o)
         return NULL;
     o->cache = c;
-    snprintf(o->hash, sizeof(o->hash), "%s", b->hash);
+    o->video = video;
+    snprintf(o->hash, sizeof(o->hash), "%s", key);
     o->path = b->path;
     b->path = NULL;
     o->bytes = b->bytes;
@@ -592,7 +596,7 @@ static bool collect(media_cache *c)
                 if (ok)
                     for (int i = 0; i < 2; ++i) {
                         object_unref(r->objects[i]);
-                        r->objects[i] = intern(c, &t->blobs[i]);
+                        r->objects[i] = intern(c, &t->blobs[i], r->video);
                         if (r->objects[i] && r->keep_cached)
                             r->objects[i]->keep_cached = true;
                     }
@@ -947,7 +951,6 @@ static bool maintain(uint64_t now)
                 object_unref(r->objects[0]);
                 object_unref(r->objects[1]);
                 r->objects[0] = r->objects[1] = NULL;
-                unlink_path(&r->video_path);
                 r->state = RESOURCE_NEW;
                 if (r->refs == 1)
                     g_hash_table_iter_remove(&it);
@@ -1003,16 +1006,6 @@ bool media_cache_poll(media_cache *c, uint64_t now)
             atomic_store(&t->cancelled, true);
     }
     bool changed = collect(c);
-    GHashTableIter videos;
-    gpointer value;
-    g_hash_table_iter_init(&videos, c->resources);
-    while (g_hash_table_iter_next(&videos, NULL, &value)) {
-        media_resource *r = value;
-        if (r->video && !r->wanted && r->video_path) {
-            unlink_path(&r->video_path);
-            r->state = RESOURCE_NEW;
-        }
-    }
     changed |= maintain(now);
     for (int i = 0; i < MEDIA_CACHE_DOWNLOADS; ++i) {
         media_resource *r = c->fetching[i];
@@ -1028,10 +1021,7 @@ bool media_cache_poll(media_cache *c, uint64_t now)
                 r->state = RESOURCE_ERROR;
                 r->error = media_download_error(d);
             } else if (media_download_state(d) == MEDIA_READY) {
-                if (r->video) {
-                    r->video_path = media_download_take_file(d);
-                    r->state = RESOURCE_READY;
-                } else {
+                {
                     size_t file_reserve = media_download_bytes(d);
                     if (r->kind == AUTH_MEDIA_EMBED) {
                         file_reserve = (file_reserve / 4 + 1) * 3;
@@ -1195,6 +1185,7 @@ static bool equal_request(const image_decode_request *a, const image_decode_requ
     return a->width == b->width && a->height == b->height && a->native == b->native &&
            a->cover == b->cover && a->center == b->center && a->matte == b->matte &&
            a->background == b->background && a->top == b->top && a->bottom == b->bottom &&
+           a->left == b->left && a->right == b->right && a->region == b->region &&
            a->terminal.protocol == b->terminal.protocol &&
            a->terminal.cell_width == b->terminal.cell_width &&
            a->terminal.cell_height == b->terminal.cell_height;
@@ -1202,7 +1193,7 @@ static bool equal_request(const image_decode_request *a, const image_decode_requ
 const graphics_image *media_resource_image(media_resource *r, bool author,
                                            image_decode_request request, uint64_t now)
 {
-    if (!r || r->video || !graphics_image_capacity(request.width, request.height))
+    if (!r || !graphics_image_capacity(request.width, request.height))
         return NULL;
     image_object *o = r->objects[author ? 1 : 0];
     if (!o || o->failed)
@@ -1259,7 +1250,7 @@ const graphics_image *media_resource_image(media_resource *r, bool author,
             size_t reserve = (raster > ANIMATION_BYTES ? raster : ANIMATION_BYTES) +
                              sizeof(animation) + workspace;
             task *t = task_new(r->cache, reserve);
-            bool static_only = false;
+            bool static_only = o->video;
             if (!t) {
                 reserve = raster + sizeof(animation) + workspace;
                 t = task_new(r->cache, reserve);
@@ -1277,7 +1268,8 @@ const graphics_image *media_resource_image(media_resource *r, bool author,
                                                     .native = true,
                                                     .decode_only = true,
                                                     .retain_static = true,
-                                                    .static_only = static_only};
+                                                    .static_only = static_only,
+                                                    .video_poster = o->video};
                 if (!t->path) {
                     object_unref(o);
                     free(t);
@@ -1295,7 +1287,7 @@ const graphics_image *media_resource_image(media_resource *r, bool author,
         request.width = needed_width;
         request.height = needed_height;
     }
-    if (request.terminal.protocol == GRAPHICS_KITTY)
+    if (request.terminal.protocol == GRAPHICS_KITTY && !request.region)
         request.top = request.bottom = 0;
     variant *v;
     for (v = o->variants; v; v = v->next)
@@ -1330,6 +1322,8 @@ const graphics_image *media_resource_image(media_resource *r, bool author,
     if (!o->job && !enlarge && !v->job && !v->failed &&
         (!v->image.data || (frame != v->frame && now - v->presented >= 67))) {
         size_t workspace = (size_t)request.width * request.height * 7 + IMAGE_PIXEL_PADDING * 2;
+        if (request.region && (request.left || request.right))
+            workspace += (size_t)request.width * request.height * 3 + IMAGE_PIXEL_PADDING;
         if (o->frames && request.cover) {
             double scale = fmax((double)request.width / o->frames->source_width,
                                 (double)request.height / o->frames->source_height);
@@ -1374,7 +1368,7 @@ const graphics_image *media_resource_fallback_image(media_resource *r, image_dec
     if (o->frames && request.max_side > 0 &&
         (o->frames->source_width > request.max_side || o->frames->source_height > request.max_side))
         return NULL;
-    if (request.terminal.protocol == GRAPHICS_KITTY)
+    if (request.terminal.protocol == GRAPHICS_KITTY && !request.region)
         request.top = request.bottom = 0;
     for (variant *v = o->variants; v; v = v->next) {
         image_decode_request candidate = request;
@@ -1389,9 +1383,70 @@ const graphics_image *media_resource_fallback_image(media_resource *r, image_dec
     }
     return NULL;
 }
+void media_cache_overlay(media_cache *c, int y, int x, int rows, int columns)
+{
+    if (!c)
+        return;
+    c->overlay_y = y;
+    c->overlay_x = x;
+    c->overlay_rows = rows;
+    c->overlay_columns = columns;
+}
+void media_resource_place_image(media_resource *r, bool author, image_decode_request request,
+                                const graphics_image *image, uint32_t id, uint32_t fragments[4],
+                                int y, int x, int top, int bottom, bool overlay)
+{
+    if (!r || !image || !image->data || top < 0 || bottom < 0 || top + bottom >= image->height ||
+        image->cell_width < 1 || image->cell_height < 1)
+        return;
+    media_cache *c = r->cache;
+    int rows = (image->height - top - bottom + image->cell_height - 1) / image->cell_height;
+    int columns = image->columns;
+    if (overlay || c->overlay_rows < 1 || c->overlay_columns < 1 ||
+        y >= c->overlay_y + c->overlay_rows || y + rows <= c->overlay_y ||
+        x >= c->overlay_x + c->overlay_columns || x + columns <= c->overlay_x) {
+        graphics_image_place_id(image, id, y, x, top, bottom);
+        return;
+    }
+    int left = MAX(0, c->overlay_x - x),
+        right = MIN(columns, c->overlay_x + c->overlay_columns - x);
+    int upper = MAX(0, c->overlay_y - y), lower = MIN(rows, c->overlay_y + c->overlay_rows - y);
+    struct {
+        int x, y, width, height;
+    } pieces[4] = {{0, 0, columns, upper},
+                   {0, lower, columns, rows - lower},
+                   {0, upper, left, lower - upper},
+                   {right, upper, columns - right, lower - upper}};
+    int base_top = top + image->crop_top;
+    int end = base_top + image->height - top - bottom;
+    request.width = image->width;
+    request.height = image->height + image->crop_top + image->crop_bottom;
+    request.native = false;
+    request.region = true;
+    request.preview = false;
+    for (size_t i = 0; i < 4; ++i) {
+        if (pieces[i].width < 1 || pieces[i].height < 1)
+            continue;
+        request.left = pieces[i].x * image->cell_width;
+        request.right =
+            request.width - MIN(request.width, (pieces[i].x + pieces[i].width) * image->cell_width);
+        request.top = base_top + pieces[i].y * image->cell_height;
+        request.bottom = request.height -
+                         MIN(end, base_top + (pieces[i].y + pieces[i].height) * image->cell_height);
+        if (request.left + request.right >= request.width ||
+            request.top + request.bottom >= request.height)
+            continue;
+        if (!fragments[i])
+            fragments[i] = graphics_image_next_id();
+        const graphics_image *part = media_resource_image(r, author, request, c->now);
+        if (part)
+            graphics_image_place_id(part, fragments[i], y + pieces[i].y, x + pieces[i].x, 0, 0);
+    }
+}
 const char *media_resource_path(const media_resource *r)
 {
-    return r ? r->video_path : NULL;
+    return r && r->state == RESOURCE_READY && r->video && r->objects[0] ? r->objects[0]->path
+                                                                        : NULL;
 }
 const char *media_resource_error(const media_resource *r, bool author)
 {
@@ -1399,7 +1454,7 @@ const char *media_resource_error(const media_resource *r, bool author)
         return "Memória insuficiente para carregar a mídia.";
     if (r->state == RESOURCE_ERROR)
         return r->error;
-    if (r->state != RESOURCE_READY || r->video)
+    if (r->state != RESOURCE_READY)
         return NULL;
     image_object *o = r->objects[author ? 1 : 0];
     if (o)

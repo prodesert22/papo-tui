@@ -33,6 +33,7 @@ add_library(
     src/model/conversation/directory.c
     src/model/conversation/events.c
     src/model/conversation/history.c
+    src/model/conversation/interactions.c
     src/model/conversation/pagination.c
     src/model/notifications/inbox.c)
 target_include_directories(papo_auth PUBLIC src)
@@ -160,6 +161,8 @@ add_executable(
     src/ui/screens/conversation/conversation.c
     src/ui/screens/conversation/drawing.c
     src/ui/screens/conversation/input.c
+    src/ui/screens/conversation/interactions.c
+    src/ui/screens/conversation/reactions.c
     src/ui/screens/conversation/layout.c
     src/ui/screens/inbox.c
     src/ui/screens/profiles.c

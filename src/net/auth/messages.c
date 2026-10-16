@@ -15,6 +15,23 @@ bool auth_internal_send_transmitted(auth_client *client)
 bool auth_send_text(auth_client *client, uint64_t operation_id, const char *channel_id,
                     const char *content)
 {
+    return auth_send_reply(client, operation_id, channel_id, content, NULL);
+}
+
+bool auth_send_reply(auth_client *client, uint64_t operation_id, const char *channel_id,
+                     const char *content, const char *reply_to)
+{
+    if (reply_to && *reply_to) {
+        if (strlen(reply_to) != 36)
+            return false;
+        for (size_t i = 0; i < 36; ++i)
+            if (i == 8 || i == 13 || i == 18 || i == 23
+                    ? reply_to[i] != '-'
+                    : !((reply_to[i] >= '0' && reply_to[i] <= '9') ||
+                        (reply_to[i] >= 'a' && reply_to[i] <= 'f') ||
+                        (reply_to[i] >= 'A' && reply_to[i] <= 'F')))
+                return false;
+    }
     if (!auth_has_session(client) || client->state != AUTH_READY || client->queued ||
         client->attached || client->api_path || client->response_ready || client->send_ready ||
         !operation_id || !channel_id || !*channel_id ||
@@ -43,6 +60,12 @@ bool auth_send_text(auth_client *client, uint64_t operation_id, const char *chan
         curl_mime_data(text, content, CURL_ZERO_TERMINATED) != CURLE_OK ||
         curl_easy_setopt(client->easy, CURLOPT_MIMEPOST, client->mime) != CURLE_OK)
         goto error;
+    if (reply_to && *reply_to) {
+        curl_mimepart *reply = curl_mime_addpart(client->mime);
+        if (!reply || curl_mime_name(reply, "reply_to") != CURLE_OK ||
+            curl_mime_data(reply, reply_to, CURL_ZERO_TERMINATED) != CURLE_OK)
+            goto error;
+    }
     return true;
 error:
     auth_internal_detach(client);

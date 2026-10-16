@@ -126,6 +126,9 @@ typedef struct {
  * A 401 may renew identity once to permit a subsequent manual attempt. */
 bool auth_send_text(auth_client *client, uint64_t operation_id, const char *channel_id,
                     const char *content);
+/* Optional reply target copied into the multipart; no mention-control field exists. */
+bool auth_send_reply(auth_client *client, uint64_t operation_id, const char *channel_id,
+                     const char *content, const char *reply_to);
 bool auth_send_result_ready(const auth_client *client);
 /* Transfers one owned Message JSON reference only for confirmed sends.
  * Even NULL results must be consumed to release the response slot. */

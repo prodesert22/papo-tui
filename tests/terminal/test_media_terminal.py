@@ -12,6 +12,7 @@ import sys
 import tempfile
 import time
 import unittest
+from wcwidth import wcswidth
 
 FFMPEG = sys.argv.pop(2)
 from history_mock import HistoryMock, uuid  # noqa: E402 - path and test arguments are prepared above
@@ -27,6 +28,7 @@ class GraphicsStream:
         self.stream = TerminalStream(screen)
         self.pending = b""
         self.frames = []
+        self.frame_positions = []
         self.protocols = []
         self.kitty_frames = []
         self.live_ids = set()
@@ -118,12 +120,14 @@ class GraphicsStream:
                         if self.kitty_header[b"a"] == b"T":
                             self.live_ids.add(int(self.kitty_header[b"i"]))
                         self.frames.append(pixels)
+                        self.frame_positions.append((self.screen.cursor.y, self.screen.cursor.x))
                         self.protocols.append("kitty")
                         self.kitty_header = None
             else:
                 if not self.include_icons and self.screen.cursor.x == self.screen.columns - 7:
                     continue
                 self.frames.append(sequence)
+                self.frame_positions.append((self.screen.cursor.y, self.screen.cursor.x))
                 self.protocols.append("iterm2" if iterm else "sixel")
 
 
@@ -350,18 +354,18 @@ class MediaTerminal(unittest.TestCase):
             len(terminal.stream.frames), count, "\n".join(terminal.screen.display)
         )
 
-    def raster_size(self, terminal):
+    def raster_size(self, terminal, index=-1):
         stream = terminal.stream
         if not stream.frames:
             return 0, 0
-        if stream.protocols[-1] == "kitty":
-            header = stream.kitty_frames[-1][0]
+        if stream.protocols[index] == "kitty":
+            header = stream.kitty_frames[index][0]
             return int(header[b"s"]), int(header[b"v"])
-        if stream.protocols[-1] == "sixel":
-            raster = re.search(rb'"\d+;\d+;(\d+);(\d+)', stream.frames[-1])
+        if stream.protocols[index] == "sixel":
+            raster = re.search(rb'"\d+;\d+;(\d+);(\d+)', stream.frames[index])
             self.assertIsNotNone(raster)
             return int(raster[1]), int(raster[2])
-        payload = base64.b64decode(stream.frames[-1].split(b":", 1)[1][:-1], validate=True)
+        payload = base64.b64decode(stream.frames[index].split(b":", 1)[1][:-1], validate=True)
         offset = int.from_bytes(payload[4:8], "little")
         count = int.from_bytes(payload[offset : offset + 2], "little")
         tags = {
@@ -419,7 +423,7 @@ class MediaTerminal(unittest.TestCase):
                             )
                         count = len(t.stream.frames)
                         placements = len(t.stream.placements)
-                        t.send("\x1b[18~")
+                        t.send("\x1b[18~\n")
                         self.wait(t, "[Info]")
                         if protocol == "kitty":
                             deadline = time.monotonic() + 10
@@ -572,7 +576,7 @@ class MediaTerminal(unittest.TestCase):
                 self.wait(t, "Fixture")
                 t.read(0.2)
                 self.assertFalse(any("/attachments/" in r[1] for r in server.requests))
-                t.send("\x1b[18~")
+                t.send("\x1b[18~\n")
                 self.wait(t, "Este terminal não oferece")
                 t.send("\x1b")
                 self.wait(t, "Conversar em #")
@@ -608,6 +612,170 @@ class MediaTerminal(unittest.TestCase):
                 finally:
                     self.assertTrue(t.close())
 
+    def test_f7_selects_attachment_with_arrows_and_right_click_occludes_media(self):
+        with self.serve(self.images["png"], "image/png") as server:
+            item = dict(
+                server.messages[0]["attachments"][0],
+                id=uuid(903),
+                original_file_name="Second image",
+            )
+            server.messages[0]["attachments"].append(item)
+            t = self.open(server, protocol="kitty")
+            try:
+                self.wait_frames(
+                    t
+                )  # Identical bytes share one encoded image across two placements.
+                t.send("Draft preserved\x1b[18~")
+                self.wait(t, "Mídia 1/2")
+                self.assertNotIn("Escolha uma mídia", "\n".join(t.screen.display))
+                t.send("\x1bOC")
+                self.wait(t, "Mídia 2/2")
+                t.send("\n")
+                self.wait(t, "[Info]")
+                self.wait(t, "Second image")
+                t.send("\x1b")
+                self.wait(t, "Mídia 2/2")
+                t.send("\x1b")
+                self.wait(t, "Draft preserved")
+                y, x = t.stream.placement_positions[-1]
+                visible = t.stream.live_placements.copy()
+                t.send(f"\x1b[<2;{x + 1};{y + 1}M\x1b[<2;{x + 1};{y + 1}m")
+                self.wait(t, "Responder")
+                self.assertTrue(
+                    visible - t.stream.live_placements, "Menu must cover overlapping images"
+                )
+                t.send("\x1b")
+                self.wait(t, "Draft preserved")
+                self.assertEqual(server.message_count, 0)
+            finally:
+                self.assertTrue(t.close())
+
+    def test_emoji_and_reaction_modals_preserve_uncovered_attachment_pixels(self):
+        for protocol in ("kitty", "sixel", "iterm2"):
+            for key, title in (("\x1bOS", "Emojis · Esc voltar"), ("\x1b[18~E", "Quem reagiu")):
+                with (
+                    self.subTest(protocol=protocol, modal=title),
+                    self.serve(self.large_images["landscape"], "image/png") as server,
+                ):
+                    parent = server.api_handler
+
+                    def route(method, path, body):
+                        if method == "GET" and path.split("?")[0].endswith("/reactions"):
+                            return 200, {
+                                "message_id": server.messages[0]["id"],
+                                "reactions": [],
+                                "has_more": False,
+                            }
+                        return parent(method, path, body)
+
+                    server.api_handler = route
+                    t = self.open(server, protocol=protocol, size=(48, 160))
+                    try:
+                        self.wait_raster(t, lambda w, h: w > 600 and h > 300)
+                        first_frame = len(t.stream.frames)
+                        first_placement = len(t.stream.placements)
+                        t.send(key)
+                        self.wait(t, title)
+                        display = t.screen.display
+                        top = next(i for i, line in enumerate(display) if title in line)
+                        title_x = wcswidth(display[top][: display[top].index(title)])
+                        left = next(
+                            x
+                            for x in range(title_x, -1, -1)
+                            if t.screen.buffer[top][x].data in ("l", "┌")
+                        )
+                        right = (
+                            next(
+                                x
+                                for x in range(title_x, t.screen.columns)
+                                if t.screen.buffer[top][x].data in ("k", "┐")
+                            )
+                            + 1
+                        )
+                        bottom = (
+                            next(
+                                y
+                                for y in range(top + 1, t.screen.lines)
+                                if t.screen.buffer[y][left].data in ("m", "└")
+                                and t.screen.buffer[y][right - 1].data in ("j", "┘")
+                            )
+                            + 1
+                        )
+
+                        def background_parts():
+                            if protocol == "kitty":
+                                dimensions = {
+                                    int(h[b"i"]): (int(h[b"s"]), int(h[b"v"]))
+                                    for h, _ in t.stream.kitty_frames
+                                }
+                                images = [
+                                    (dimensions.get(int(p[b"i"]), (0, 0)), position)
+                                    for p, position in zip(
+                                        t.stream.placements[first_placement:],
+                                        t.stream.placement_positions[first_placement:],
+                                    )
+                                    if (int(p[b"i"]), int(p[b"p"])) in t.stream.live_placements
+                                ]
+                            else:
+                                images = [
+                                    (self.raster_size(t, i), t.stream.frame_positions[i])
+                                    for i in range(first_frame, len(t.stream.frames))
+                                ]
+                            return [
+                                (size, point)
+                                for size, point in images
+                                if max(size) > 64 and not (size[0] > 600 and size[1] > 300)
+                            ]
+
+                        deadline = time.monotonic() + 10
+                        while not background_parts() and time.monotonic() < deadline:
+                            t.read(0.03)
+                        parts = background_parts()
+                        self.assertTrue(
+                            parts, "Uncovered attachment pixels disappeared behind the modal"
+                        )
+                        for (w, h), (y, x) in parts:
+                            rows, columns = (h + 15) // 16, (w + 7) // 8
+                            self.assertTrue(
+                                y + rows <= top or y >= bottom or x + columns <= left or x >= right,
+                                (
+                                    protocol,
+                                    title,
+                                    (y, x, rows, columns),
+                                    (top, left, bottom, right),
+                                ),
+                            )
+                        t.send("\x1b")
+                        self.wait_raster(t, lambda w, h: w > 600 and h > 300)
+                        self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), 1)
+                    finally:
+                        self.assertTrue(t.close())
+
+    def test_visible_video_has_automatic_static_poster_and_reuses_download(self):
+        for protocol in ("kitty", "sixel", "iterm2"):
+            with self.subTest(protocol=protocol), self.serve(self.video, "video/mp4") as server:
+                t = self.open(server, protocol=protocol)
+                try:
+                    self.wait_frames(t)
+                    self.wait(t, "▶ Fixture")
+                    display = "\n".join(t.screen.display)
+                    self.assertNotIn("Anexo:", display)
+                    self.assertNotIn("Tipo:", display)
+                    self.assertNotIn("Reproduzindo", display)
+                    count = len(t.stream.frames)
+                    t.read(0.3)
+                    self.assertEqual(len(t.stream.frames), count, "Poster must remain static")
+                    t.send("\x1b[18~")
+                    self.wait(t, "Mídia 1/1")
+                    self.assertNotIn("[Info]", "\n".join(t.screen.display))
+                    t.send("\n")
+                    self.wait(t, "Reproduzindo")
+                    self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), 1)
+                    t.send("\x1b")
+                    self.wait(t, "↑↓ mensagens")
+                finally:
+                    self.assertTrue(t.close())
+
     def test_kitty_video_pause_seek_resize_and_cleanup(self):
         with (
             tempfile.TemporaryDirectory() as directory,
@@ -615,7 +783,7 @@ class MediaTerminal(unittest.TestCase):
         ):
             t = self.open(server, protocol="kitty", environment={"TMPDIR": directory})
             try:
-                t.send("Rascunho Kitty\x1b\x1b[18~")
+                t.send("Rascunho Kitty\x1b\x1b[18~\n")
                 self.wait_frames(t, 2)
                 self.wait(t, "Reproduzindo")
                 self.assertEqual(set(t.stream.protocols), {"kitty"})
@@ -636,9 +804,11 @@ class MediaTerminal(unittest.TestCase):
                 self.wait_frames(t, frames + 1)
                 self.wait(t, "Pausado")
                 self.assertLessEqual(len(t.stream.live_ids), 1)
+                player_id = int(t.stream.kitty_frames[-1][0][b"i"])
                 t.send("\x1b")
                 self.wait(t, "Rascunho Kitty")
-                self.assertFalse(t.stream.live_ids)
+                self.assertNotIn(player_id, t.stream.live_ids)
+                self.assertLessEqual(len(t.stream.live_ids), 1)  # Static inline poster remains.
                 self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), 1)
             finally:
                 self.assertTrue(t.close())
@@ -946,7 +1116,7 @@ class MediaTerminal(unittest.TestCase):
             t = self.open(server, protocol="kitty")
             try:
                 self.wait_frames(t)
-                t.send("\x1b[18~")
+                t.send("\x1b[18~\n")
                 self.wait(t, "[Info]")
                 self.wait(t, "Imagem")
                 self.wait_raster(t, lambda w, h: w >= 232 and h >= 176)
@@ -1043,7 +1213,7 @@ class MediaTerminal(unittest.TestCase):
                 self.assertLessEqual(tags[256], 640)
                 self.assertLessEqual(tags[257], 360)
                 self.assertGreater(payload[tags[273]], 230)
-                t.send("\x1b[18~")
+                t.send("\x1b[18~\n")
                 self.wait_frames(t, 2)
                 t.send("\x1b")
                 self.wait(t, "Conversar em #")
@@ -1052,7 +1222,7 @@ class MediaTerminal(unittest.TestCase):
         with self.serve(self.video, "video/mp4") as server:
             t = self.open(server, protocol="iterm2")
             try:
-                t.send("\x1b[18~")
+                t.send("\x1b[18~\n")
                 self.wait_frames(t, 2)
                 self.wait(t, "Reproduzindo")
                 t.send(" ")
@@ -1084,7 +1254,7 @@ class MediaTerminal(unittest.TestCase):
                     self.assertEqual(len(t.stream.frames), frames, "Navigation redrew the image")
                 t.send("\x1bOH\x1bOB\n")
                 self.wait(t, "Rascunho com imagem")
-                t.send("\x1b[18~")
+                t.send("\x1b[18~\n")
                 self.wait(t, "Imagem")
                 self.wait_frames(t, frames + 1)
                 self.assertEqual(
@@ -1186,8 +1356,8 @@ class MediaTerminal(unittest.TestCase):
         ):
             t = self.open(server, environment={"TMPDIR": directory})
             try:
-                self.wait(t, "Vídeo")
-                t.send("\x1b[18~")
+                self.wait(t, "▶ Fixture")
+                t.send("\x1b[18~\n")
                 self.wait(t, "Carregando mídia")
                 t.send("\x1b")
                 self.wait(t, "Conversar em #geral")
@@ -1248,7 +1418,7 @@ class MediaTerminal(unittest.TestCase):
             ):
                 t = self.open(server, protocol=protocol)
                 try:
-                    t.send("Rascunho\x1b\x1b[18~")
+                    t.send("Rascunho\x1b\x1b[18~\n")
                     self.wait_frames(t, 2)
                     # Fit the 4:3 video; Kitty/iTerm2 pad the final terminal cell.
                     expected = (234 if protocol == "sixel" else 240, 176)
@@ -1313,7 +1483,7 @@ class MediaTerminal(unittest.TestCase):
                 with self.serve(path.read_bytes(), "video/mp4") as server:
                     t = self.open(server, protocol="kitty")
                     try:
-                        t.send("\x1b[18~")
+                        t.send("\x1b[18~\n")
                         self.wait_frames(t, 2)
                         scale = min(320 / original[0], 176 / original[1])
                         expected = tuple(max(1, int(n * scale)) for n in original)
@@ -1352,7 +1522,7 @@ class MediaTerminal(unittest.TestCase):
         with self.serve(self.video, "video/mp4") as server:
             t = self.open(server, protocol="kitty", environment={"KITTY_WINDOW_ID": "papo-test"})
             try:
-                t.send("Rascunho controles\x1b\x1b[18~")
+                t.send("Rascunho controles\x1b\x1b[18~\n")
                 self.wait_frames(t, 2)
                 row, controls = self.player_controls(t)
                 t.click(row, controls[0].start() + 1)
@@ -1473,8 +1643,8 @@ class MediaTerminal(unittest.TestCase):
             )
             try:
                 self.assertIn(b"\x1b[?1006", bytes(t.output))
-                self.wait(t, "Vídeo")
-                t.send("\x1b[18~")
+                self.wait(t, "▶ Fixture")
+                t.send("\x1b[18~\n")
                 self.wait_frames(t, 2)
                 row, controls = self.player_controls(t)
                 # Release is a distinct packet, as with a real held click. Input
@@ -1521,10 +1691,10 @@ class MediaTerminal(unittest.TestCase):
         ):
             t = self.open(server, environment={"TMPDIR": directory})
             try:
-                self.wait(t, "Vídeo")
+                self.wait(t, "▶ Fixture")
                 t.send("Rascunho")
                 t.send("\x1b")
-                t.send("\x1b[18~")
+                t.send("\x1b[18~\n")
                 self.wait_frames(t, 2)
                 self.wait(t, "Reproduzindo")
                 t.send(" ")
@@ -1573,7 +1743,7 @@ class MediaTerminal(unittest.TestCase):
             t = self.open(server, protocol="kitty")
             try:
                 t.resize(34, 140)
-                t.send("\x1b[18~")
+                t.send("\x1b[18~\n")
                 self.wait_frames(t, 2)
                 t.send(" ")
                 self.wait(t, "Pausado")
@@ -1632,7 +1802,7 @@ class MediaTerminal(unittest.TestCase):
             t = self.open(server, protocol="kitty", environment={"TMPDIR": directory})
             try:
                 t.resize(34, 140)
-                t.send("Rascunho retry\x1b\x1b[18~")
+                t.send("Rascunho retry\x1b\x1b[18~\n")
                 self.wait(t, "Vídeo inválido ou codec indisponível")
                 self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), 1)
                 parent = server.api_handler
@@ -1664,7 +1834,7 @@ class MediaTerminal(unittest.TestCase):
         with self.serve(self.video, "video/mp4") as server:
             t = self.open(server)
             try:
-                t.send("\x1b[18~")
+                t.send("\x1b[18~\n")
                 self.wait_frames(t, 2)
                 self.wait(t, "Pausado")
                 self.assertIn("3 / 3 s", "\n".join(t.screen.display))

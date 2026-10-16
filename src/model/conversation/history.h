@@ -40,6 +40,23 @@ bool history_confirm(history *h, json_t *message, uint64_t generation);
  * Never reads an inactive channel's history. */
 bool history_event(history *h, const json_t *event, uint64_t generation);
 void history_recover(history *h);
+/* Instance-scoped message references and interaction requests. Borrowed JSON. */
+json_t *history_find_message(history *h, const char *id);
+void history_reference_request(history *h, const char *id);
+const char *history_reference_notice(history *h);
+uint64_t history_reference_revision(history *h);
+bool history_jump(history *h, const char *id);
+bool history_take_jump(history *h, char id[37]);
+bool history_reaction_valid(const json_t *emoji);
+bool history_reaction_equal(const json_t *a, const json_t *b);
+bool history_reaction_mine(const json_t *message, const json_t *emoji);
+bool history_react(history *h, const char *message, const json_t *emoji, bool remove);
+void history_reactors_open(history *h, const char *message);
+void history_reactors_close(history *h);
+void history_reactors_more(history *h);
+json_t *history_reactors(history *h);
+const char *history_reactors_notice(history *h);
+bool history_interactions_retry(history *h);
 bool history_recovering(const history *h);
 uint64_t history_insertions(const history *h);
 void history_reload_channels(history *h);

@@ -2,7 +2,7 @@
 #define PAPO_MEDIA_BACKEND_H
 #include "ui/media/image_decode.h"
 
-#define PAPO_MEDIA_BACKEND_ABI 6U
+#define PAPO_MEDIA_BACKEND_ABI 8U
 /* Bound larger modal surfaces while keeping their buffers within the cache budget. */
 #define VIDEO_FRAME_PIXELS (7U * 1024U * 1024U)
 #define VIDEO_KITTY_FRAME_PIXELS (960U * 540U)
@@ -14,6 +14,8 @@ typedef struct {
     size_t size, request_size, animation_size, graphics_size;
     bool (*encode)(const unsigned char *, int, int, graphics_terminal, uint32_t, graphics_image *);
     bool (*preview)(const unsigned char *, int, int, graphics_terminal, uint32_t, graphics_image *);
+    bool (*region)(const unsigned char *, int, int, int, int, int, int, graphics_terminal, uint32_t,
+                   graphics_image *);
     void (*release_frames)(animation *);
     void *(*allocate)(size_t);
     void *(*allocate_zero)(size_t, size_t);

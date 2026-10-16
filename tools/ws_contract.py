@@ -78,6 +78,16 @@ def schemas():
             },
             ["id", "user_id", "message_id", "message_content"],
         ),
+        "react_update": shape(
+            "react_update",
+            {
+                "message_id": uuid(),
+                "emoji_id": {"type": "string", "format": "uuid", "nullable": True},
+                "unicode": {"type": "string", "nullable": True},
+                "count": {"type": "integer", "minimum": 0},
+            },
+            ["message_id", "emoji_id", "unicode", "count"],
+        ),
         "typing": shape(
             "typing",
             {"channel_id": uuid(), "user_id": uuid(), "is_typing": {"type": "boolean"}},

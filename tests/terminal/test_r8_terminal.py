@@ -28,29 +28,30 @@ class R8Terminal(unittest.TestCase):
     def test_black_background_and_sidebar_focus_include_both_buttons(self):
         with R8Mock(count=0) as server:
             t = self.login(server, environment={"KITTY_WINDOW_ID": "r8-theme-fixture"})
-            # pyte leaves untouched cells at "default" after clearing an empty
-            # row. Verify the black erase sequence and sample a painted row.
+            # pyte leaves erase-only cells at "default". Sample actual label
+            # glyphs after the channel frame is complete, independently of BCE.
+            self.wait(t, "geral")
             self.assertIn(b"\x1b[48;5;16m\x1b[H\x1b[2J", t.output)
-            resting = t.screen.buffer[7][23].bg
+            resting = t.screen.buffer[7][4].bg
             self.assertEqual(resting, "000000")
-            self.assertEqual(t.screen.buffer[10][40].bg, resting)
+            self.assertEqual(t.screen.buffer[5][30].bg, resting)
             t.send("\t")
             self.wait(t, "Foco: Canais/DMs")
-            focused = t.screen.buffer[10][23].bg
+            focused = t.screen.buffer[7][4].bg
             self.assertNotEqual(focused, resting)
             t.send("\x1bOC")
-            self.assertEqual(t.screen.buffer[10][23].bg, focused)
+            self.assertEqual(t.screen.buffer[7][4].bg, focused)
             t.send("\n\x1bOB")
             self.wait(t, "Foco: DMs")
-            self.assertEqual(t.screen.buffer[10][23].bg, focused)
+            self.assertEqual(t.screen.buffer[7][4].bg, focused)
             t.send("\x1bOA")
             self.wait(t, "Foco: Canais/DMs")
-            self.assertEqual(t.screen.buffer[10][23].bg, focused)
+            self.assertEqual(t.screen.buffer[7][4].bg, focused)
             t.click(5, 4)
-            self.assertEqual(t.screen.buffer[10][23].bg, focused)
+            self.assertEqual(t.screen.buffer[7][4].bg, focused)
             t.send("\x1bOA")
             self.wait(t, "Foco: Abas")
-            self.assertEqual(t.screen.buffer[10][23].bg, resting)
+            self.assertEqual(t.screen.buffer[7][4].bg, resting)
 
     def test_backend_cursor_clears_badge_and_new_activity_relights_it(self):
         with R8Mock(count=3) as server:

@@ -37,7 +37,7 @@ class FooterTerminal(unittest.TestCase):
                 terminal.send("\x1bOB\n")
                 self.wait(terminal, "Nenhuma mensagem neste canal")
                 self.assertIn("↑↓ rolar", self.footer(terminal))
-                self.assertIn("F7 mídia", self.footer(terminal))
+                self.assertIn("F7 mensagens", self.footer(terminal))
                 self.assertNotIn("↑↓ canais", self.footer(terminal))
                 terminal.send("Mensagem pelo rodapé\n")
                 self.wait(terminal, "Mensagem confirmada")

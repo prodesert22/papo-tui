@@ -249,6 +249,72 @@ class EmojiTerminal(unittest.TestCase):
             finally:
                 self.assertTrue(t.close())
 
+    def test_participants_render_custom_emoji_above_the_modal_background(self):
+        for protocol in ("kitty", "sixel", "iterm2"):
+            with self.subTest(protocol=protocol), self.server() as s:
+                emoji = dict(emoji_id=s.emojis[0]["id"], unicode=None, count=2)
+                s.messages[0]["reactions"] = [emoji]
+                parent = s.api_handler
+
+                def route(method, path, body):
+                    if method == "GET" and urlsplit(path).path.endswith("/reactions"):
+                        return 200, {
+                            "message_id": s.messages[0]["id"],
+                            "reactions": [
+                                dict(
+                                    emoji,
+                                    users=[
+                                        dict(
+                                            id=uuid(1200 + i),
+                                            user_id=uuid(30 + i),
+                                            created_at=STAMP,
+                                        )
+                                        for i in range(2)
+                                    ],
+                                )
+                            ],
+                            "has_more": False,
+                        }
+                    return parent(method, path, body)
+
+                s.api_handler = route
+                t = self.open(s, protocol=protocol, size=(32, 100))
+                try:
+                    self.wait(t, "Mensagem 0001")
+                    t.send("\x1b[18~E")
+                    self.wait(t, "Quem reagiu")
+                    self.wait(t, "Fim da lista")
+                    header = next(
+                        i
+                        for i, line in enumerate(t.screen.display)
+                        if "Reações" in line and "Pessoas" in line
+                    )
+                    position = (header + 2, t.screen.display[header].index("Reações") + 1)
+
+                    def placements():
+                        return {
+                            (int(p[b"i"]), int(p[b"p"]))
+                            for p, point in zip(t.stream.placements, t.stream.placement_positions)
+                            if point == position
+                        } & t.stream.live_placements
+
+                    if protocol == "kitty":
+                        self.until(t, lambda: bool(placements()))
+                        panel_icons = placements()
+                    else:
+                        self.until(t, lambda: position in t.stream.frame_positions)
+                    row = t.screen.display[position[0]]
+                    self.assertNotIn(":gato 界:", row)
+                    self.assertNotIn(":emoji:", row)
+                    self.assertIn(" 2", row)
+                    t.send("\x1b")
+                    self.until(t, lambda: "Quem reagiu" not in "\n".join(t.screen.display))
+                    if protocol == "kitty":
+                        self.assertFalse(panel_icons & t.stream.live_placements)
+                    self.assertEqual(s.message_count, 0)
+                finally:
+                    self.assertTrue(t.close())
+
     def test_paging_large_base64_responses_and_no_repeat_reads(self):
         with self.server(content=":gato25:", large=True) as s:
             t = self.open(s, protocol="kitty")

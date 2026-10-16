@@ -299,6 +299,29 @@ done:
     return ok;
 }
 
+bool graphics_image_encode_region_id(const unsigned char *pixels, int width, int height, int top,
+                                     int bottom, int left, int right, graphics_terminal t,
+                                     uint32_t id, graphics_image *out)
+{
+    memset(out, 0, sizeof(*out));
+    if (!pixels || !graphics_image_capacity(width, height) || top < 0 || bottom < 0 || left < 0 ||
+        right < 0 || top >= height || bottom >= height - top || left >= width ||
+        right >= width - left)
+        return false;
+    int w = width - left - right, h = height - top - bottom;
+    if (!left && !right)
+        return graphics_image_encode_id(pixels + (size_t)top * width * 3, w, h, t, id, out);
+    unsigned char *packed = calloc(1, (size_t)w * h * 3 + 64);
+    if (!packed)
+        return false;
+    for (int row = 0; row < h; ++row)
+        memcpy(packed + (size_t)row * w * 3, pixels + ((size_t)(row + top) * width + left) * 3,
+               (size_t)w * 3);
+    bool ok = graphics_image_encode_id(packed, w, h, t, id, out);
+    free(packed);
+    return ok;
+}
+
 bool graphics_image_encode_preview(const unsigned char *pixels, int width, int height,
                                    graphics_terminal t, uint32_t id, graphics_image *out)
 {

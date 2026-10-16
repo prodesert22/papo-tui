@@ -29,7 +29,7 @@ typedef struct {
     uint64_t id, generation, draft_revision;
     outbox_state state;
     long status;
-    const char *channel_id, *content; /* Borrowed until update/removal/destruction. */
+    const char *channel_id, *content, *reply_to; /* Borrowed until update/removal/destruction. */
     bool transmitted, cancelled;
 } outbox_operation;
 
@@ -44,6 +44,9 @@ void outbox_reset(outbox *box);
  * only the same verified instance/account may restore them in memory. */
 const char *outbox_draft(outbox *box, const char *channel_id, uint64_t *revision);
 bool outbox_set_draft(outbox *box, const char *channel_id, const char *content);
+/* Reply metadata is owned by the per-conversation draft, independently of text. */
+bool outbox_set_reply(outbox *box, const char *channel_id, const char *reply_to);
+const char *outbox_reply(outbox *box, const char *channel_id);
 outbox_submit_result outbox_submit(outbox *box, const char *channel_id,
                                    bool accept_possible_duplicate, uint64_t *operation_id);
 /* Retries the captured text, preserving the current editor. An uncertain

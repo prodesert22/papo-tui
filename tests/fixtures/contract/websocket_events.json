@@ -89,6 +89,13 @@
     "is_typing": true
   },
   {
+    "type": "react_update",
+    "message_id": "00000000-0000-0000-0000-0000000003e9",
+    "emoji_id": null,
+    "unicode": "👍",
+    "count": 2
+  },
+  {
     "type": "presence_activity"
   },
   {

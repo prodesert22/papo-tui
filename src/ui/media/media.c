@@ -35,12 +35,14 @@ typedef struct {
     graphics_image image; /* Borrowed snapshot; cache owns its buffers. */
     uint64_t used;
     uint32_t placement_id;
+    uint32_t fragments[4];
     const char *error;
 } cache_entry;
 typedef struct {
     int entry, y, x, width, height, top, bottom;
     graphics_image image;     /* Borrowed raster protected by resource + a cache pin. */
     media_resource *resource; /* Owned position reference. */
+    image_decode_request request;
 } placement;
 typedef struct {
     char *path;
@@ -613,7 +615,7 @@ void media_view_offer(media_view *v, const message_media *item, int y, int x, in
     p->resource = e->resource;
     media_resource_ref(p->resource);
     graphics_terminal t = graphics_terminal_get();
-    if (e->resource && !e->item.video && t.supported && height > 0) {
+    if (e->resource && t.supported && height > 0) {
         int w, h;
         history_geometry(v, item, width, height, &w, &h);
         uint64_t now = 0;
@@ -624,6 +626,7 @@ void media_view_offer(media_view *v, const message_media *item, int y, int x, in
                                         .terminal = t,
                                         .top = top * t.cell_height,
                                         .bottom = bottom * t.cell_height};
+        p->request = request;
         const graphics_image *image =
             media_resource_image(e->resource, !strcmp(item->role, "author"), request, now);
         if (image) {
@@ -755,7 +758,7 @@ bool media_view_poll(media_view *v, history *h)
     if (terminal.supported)
         for (int i = 0; i < v->visible_count; ++i) {
             cache_entry *e = &v->cache[v->visible[i].entry];
-            if (!e->item.video) {
+            if (!e->item.video || e->item.kind == AUTH_MEDIA_ATTACHMENT) {
                 ensure_resource(v, e);
                 media_resource_use_image(e->resource, !strcmp(e->item.role, "author"), false);
                 placement *p = &v->visible[i];
@@ -796,7 +799,7 @@ bool media_view_poll(media_view *v, history *h)
         cache_entry *e = &v->cache[v->modal_entry];
         bool author = !strcmp(e->item.role, "author");
         const char *error = media_resource_error(e->resource, author);
-        if (error) {
+        if (error && !(e->item.video && media_resource_path(e->resource))) {
             v->modal_error = error;
             v->modal = MODAL_ERROR;
             return true;
@@ -858,7 +861,7 @@ bool media_view_poll(media_view *v, history *h)
     for (int i = 0; i < v->visible_count; ++i) {
         placement *p = &v->visible[i];
         cache_entry *e = &v->cache[p->entry];
-        if (e->item.video || p->height < 1)
+        if ((e->item.video && e->item.kind != AUTH_MEDIA_ATTACHMENT) || p->height < 1)
             continue;
         int source_w = 0, source_h = 0;
         if (media_resource_dimensions(e->resource, !strcmp(e->item.role, "author"), &source_w,
@@ -877,6 +880,7 @@ bool media_view_poll(media_view *v, history *h)
                                         .terminal = terminal,
                                         .top = p->top * terminal.cell_height,
                                         .bottom = p->bottom * terminal.cell_height};
+        p->request = request;
         const graphics_image *image =
             media_resource_image(e->resource, !strcmp(e->item.role, "author"), request, now);
         const char *error = media_resource_error(e->resource, !strcmp(e->item.role, "author"));
@@ -894,11 +898,11 @@ bool media_view_poll(media_view *v, history *h)
     }
     return changed;
 }
-static void select_item(media_view *v, int index)
+bool media_view_open(media_view *v, const message_media *source)
 {
-    if (index < 0 || index >= v->visible_count)
-        return;
-    message_media item = v->cache[v->visible[index].entry].item;
+    if (!v || !source)
+        return false;
+    message_media item = *source;
     close_modal(v);
     if (item.kind == AUTH_MEDIA_THUMBNAIL)
         item.kind = AUTH_MEDIA_ATTACHMENT;
@@ -913,6 +917,12 @@ static void select_item(media_view *v, int index)
         delete_entry(&v->cache[v->modal_entry]);
         v->cache[v->modal_entry].item = v->selected_item;
     }
+    return true;
+}
+static void select_item(media_view *v, int index)
+{
+    if (index >= 0 && index < v->visible_count)
+        media_view_open(v, &v->cache[v->visible[index].entry].item);
 }
 bool media_view_modal(const media_view *v)
 {
@@ -1220,14 +1230,16 @@ void media_view_draw(media_view *v)
         for (int i = 0; i < v->visible_count; ++i) {
             placement *p = &v->visible[i];
             cache_entry *e = &v->cache[p->entry];
-            if (p->height - p->top - p->bottom < 1 || e->state == ENTRY_READY || e->item.video ||
-                p->y >= LINES || p->x >= COLS)
+            if (p->height - p->top - p->bottom < 1 || e->state == ENTRY_READY || p->y >= LINES ||
+                p->x >= COLS)
                 continue;
             WINDOW *notice = newwin(1, p->width, p->y, p->x);
             if (notice) {
                 wbkgd(notice, COLOR_PAIR(THEME_PANEL_MUTED));
                 text_label(notice, 0, 0, p->width,
-                           e->state == ENTRY_ERROR ? e->error : "Carregando imagem…");
+                           e->state == ENTRY_ERROR ? e->error
+                           : e->item.video         ? "Carregando prévia do vídeo…"
+                                                   : "Carregando imagem…");
                 wnoutrefresh(notice);
                 delwin(notice);
             }
@@ -1308,8 +1320,9 @@ void media_view_prepare(media_view *v)
         if (e->state != ENTRY_READY || e->image.protocol != t.protocol)
             continue;
         const graphics_image *image = &p->image;
-        graphics_image_place_id(image, e->placement_id, p->y, p->x,
-                                t.protocol == GRAPHICS_KITTY ? p->top * t.cell_height : 0,
-                                t.protocol == GRAPHICS_KITTY ? p->bottom * t.cell_height : 0);
+        media_resource_place_image(
+            e->resource, !strcmp(e->item.role, "author"), p->request, image, e->placement_id,
+            e->fragments, p->y, p->x, t.protocol == GRAPHICS_KITTY ? p->top * t.cell_height : 0,
+            t.protocol == GRAPHICS_KITTY ? p->bottom * t.cell_height : 0, false);
     }
 }

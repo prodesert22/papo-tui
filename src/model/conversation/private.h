@@ -16,7 +16,7 @@
 #include <string.h>
 #include <strings.h>
 
-enum request_kind { NONE, CHANNELS, MESSAGES, AUTHORS, USERS, EMOJIS, PROFILES, INBOX };
+enum request_kind { NONE, CHANNELS, MESSAGES, AUTHORS, USERS, EMOJIS, PROFILES, INBOX, ACTIONS };
 #define TYPING_LIMIT 128U
 #define TYPING_TIMEOUT_MS 6000U
 #define TYPING_SEND_MS 2000U
@@ -35,6 +35,7 @@ typedef struct {
     bool ok;
 } protected_users;
 struct history {
+    struct history_actions *actions;
     GHashTable *costs;
     uint64_t cost_sequence, cost_sweep, maintenance, directory_used;
     void (*media_update)(void *, const json_t *);
@@ -115,4 +116,12 @@ bool history_internal_authors_response(history *h, json_t *body);
 bool history_internal_request_messages(history *h);
 bool history_internal_request_authors(history *h);
 
+bool history_internal_actions_mutating(history *h);
+void history_internal_actions_reset(history *h);
+void history_internal_actions_destroy(history *h);
+bool history_internal_actions_dispatch(history *h, bool foreground);
+void history_internal_actions_response(history *h, json_t *body, long code, bool uncertain);
+void history_internal_actions_users(history *h, json_t *ids, json_t *seen);
+void history_internal_reference_event(history *h, const json_t *event);
+bool history_internal_react_event(history *h, const json_t *event);
 #endif

@@ -1,5 +1,6 @@
 #ifndef PAPO_MESSAGE_BLOCKS_H
 #define PAPO_MESSAGE_BLOCKS_H
+#include "model/assets/catalog.h"
 #include "model/text/mentions.h"
 #include "net/auth/client.h"
 #include "ui/input/text.h"
@@ -52,12 +53,19 @@ typedef struct {
     size_t icon_count;
     text_icon_painter icon_painter;
     void *icon_context;
-    bool header;
+    bool header, reaction;
     int indent;
 } message_row;
 typedef void (*message_media_measure)(void *context, const message_media *item, int available_width,
                                       int *width, int *height);
 typedef struct {
+    int row, x, width;
+    size_t index;
+    bool mine;
+} message_reaction_region;
+typedef struct {
+    message_reaction_region reactions[20];
+    size_t reaction_count;
     message_row *rows;
     size_t count, capacity;
     int height; /* Physical rows after wrapping image tiles. */
@@ -72,6 +80,7 @@ typedef struct {
     text_icon_painter icon_painter;
     void *icon_context;
 } message_blocks;
+void message_reaction_label(chat_assets *assets, const json_t *emoji, char *label, size_t capacity);
 uint64_t message_media_version(const json_t *entry);
 /* Adjacent messages can share a header only within the same channel and
  * author identity. Webhook display overrides remain distinct. */

@@ -4,7 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 static bool render_unicode(PangoFontMap *map, const char *text, int width, int height, uint32_t bg,
-                           graphics_terminal terminal, uint32_t id, graphics_image *image)
+                           graphics_terminal terminal, uint32_t id, graphics_image *image, int top,
+                           int bottom, int left, int right)
 {
     if (!text || width < 1 || height < 1 || width > 640 || height > 360)
         return false;
@@ -44,7 +45,8 @@ static bool render_unicode(PangoFontMap *map, const char *text, int width, int h
                     rgb[at + 1] = (unsigned char)(pixel >> 8);
                     rgb[at + 2] = (unsigned char)pixel;
                 }
-            ok = graphics_image_encode_id(rgb, width, height, terminal, id, image);
+            ok = graphics_image_encode_region_id(rgb, width, height, top, bottom, left, right,
+                                                 terminal, id, image);
             free(rgb);
         }
     }
@@ -58,13 +60,20 @@ static bool render_unicode(PangoFontMap *map, const char *text, int width, int h
 bool emoji_image_encode(const char *text, int width, int height, uint32_t bg,
                         graphics_terminal terminal, uint32_t id, graphics_image *image)
 {
+    return emoji_image_encode_region(text, width, height, bg, terminal, id, image, 0, 0, 0, 0);
+}
+bool emoji_image_encode_region(const char *text, int width, int height, uint32_t bg,
+                               graphics_terminal terminal, uint32_t id, graphics_image *image,
+                               int top, int bottom, int left, int right)
+{
     static GPrivate font_map = G_PRIVATE_INIT(g_object_unref);
     PangoFontMap *map = g_private_get(&font_map);
     if (!map) {
         map = pango_cairo_font_map_new();
         g_private_set(&font_map, map);
     }
-    return render_unicode(map, text, width, height, bg, terminal, id, image);
+    return render_unicode(map, text, width, height, bg, terminal, id, image, top, bottom, left,
+                          right);
 }
 bool emoji_image_available(void)
 {

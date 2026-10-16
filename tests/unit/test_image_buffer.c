@@ -69,6 +69,15 @@ static bool encode(const unsigned char *pixels, int width, int height, graphics_
     image->height = height;
     return true;
 }
+static bool region(const unsigned char *pixels, int width, int height, int top, int bottom,
+                   int left, int right, graphics_terminal terminal, uint32_t id,
+                   graphics_image *image)
+{
+    assert(top >= 0 && bottom >= 0 && top + bottom < height);
+    assert(left >= 0 && right >= 0 && left + right < width);
+    return encode(pixels + ((size_t)top * width + left) * 3, width - left - right,
+                  height - top - bottom, terminal, id, image);
+}
 int main(int argc, char **argv)
 {
     assert(argc == 3);
@@ -85,6 +94,7 @@ int main(int argc, char **argv)
                              sizeof(graphics_image),
                              encode,
                              encode,
+                             region,
                              release_frames,
                              allocate,
                              allocate_zero,

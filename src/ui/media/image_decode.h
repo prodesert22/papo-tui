@@ -28,11 +28,12 @@ typedef struct {
     int width, height;
     graphics_terminal terminal;
     uint32_t image_id;
-    bool preview, native;
+    bool preview, native, video_poster;
     bool decode_only, retain_static, static_only;
     animation *animation;
     size_t frame;
-    int top, bottom;
+    int top, bottom, left, right;
+    bool region; /* Crop the encoded raster on every protocol, including Kitty. */
     bool matte, center, first_frame;
     uint32_t background;
     int max_side;

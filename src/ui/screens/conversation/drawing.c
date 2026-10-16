@@ -229,6 +229,13 @@ void conversation_draw_footer(view *ui)
         full = "←→ escolher · Enter confirmar · Esc cancelar";
         shorter = "Enter confirmar · Esc cancelar";
         minimal = "Enter · Esc";
+    } else if (ui->reactors_open) {
+        full = "↑↓ rolar · ←→ colunas · Enter selecionar · Esc fechar";
+        shorter = "↑↓ rolar · ←→ colunas · Enter · Esc";
+        minimal = "↑↓ · ←→ · Enter · Esc";
+    } else if (ui->context_open) {
+        full = shorter = "↑↓ escolher · Enter confirmar · m/Esc fechar";
+        minimal = "↑↓ · Enter · m/Esc";
     } else if (media_view_modal(ui->media)) {
         full = shorter = minimal = "Esc: voltar da mídia";
     } else if (emoji_picker_open(ui->emojis)) {
@@ -242,6 +249,11 @@ void conversation_draw_footer(view *ui)
         full = "↑↓ escolher · Tab/Enter mencionar · Roda: rolar · Esc fechar";
         shorter = "↑↓ escolher · Tab mencionar · Esc fechar";
         minimal = "↑↓ · Tab";
+    } else if (ui->navigating) {
+        full = "↑↓ mensagens · ←→ mídia · Enter mídia · m menu · r responder · e reagir · E "
+               "reações · Esc";
+        shorter = "↑↓ mensagens · m menu · r responder · e/E reações";
+        minimal = "↑↓ mensagens · m menu · r/e/E";
     } else if (ui->focus == SERVER_TABS) {
         bool adding = ui->tab_cursor == ui->connections->count;
         full = adding ? "←→ servidores · Enter adicionar · ↓ canais · Ctrl+Q sair"
@@ -260,6 +272,10 @@ void conversation_draw_footer(view *ui)
                      : "↑↓ canais · Enter/→ abrir · ↑ topo · Ctrl+R atualizar";
         shorter = voice ? "↑↓ canais · F4 histórico · ↑ topo" : "↑↓ canais · Enter abrir · ↑ topo";
         minimal = voice ? "F4 histórico" : "↑↓ · Enter";
+    } else if (ui->focus == MESSAGE_INPUT && *conversation_reply_target(ui)) {
+        full = "Enter enviar · Shift+Enter linha · F4 emojis · Esc cancelar resposta";
+        shorter = "Enter enviar · Esc cancelar resposta";
+        minimal = "Esc cancelar resposta";
     } else if (ui->focus == EMOJI_BUTTON) {
         full = shorter = "Enter/F4 emojis · Shift+Tab editor · Esc voltar";
         minimal = "Enter emojis";
@@ -271,10 +287,10 @@ void conversation_draw_footer(view *ui)
         minimal = "Enter";
     } else {
         full = conversation_input(ui)
-                   ? "↑↓ rolar · PgUp/PgDn páginas · F7 mídia · Digite: conversar · ← canais "
+                   ? "↑↓ rolar · PgUp/PgDn páginas · F7 mensagens · Digite: conversar · ← canais "
                      "· Ctrl+R atualizar"
                    : "↑↓ rolar · ← canais · Ctrl+R atualizar";
-        shorter = "↑↓ rolar · F7 mídia · Ctrl+R atualizar";
+        shorter = "↑↓ rolar · F7 mensagens · Ctrl+R atualizar";
         minimal = "↑↓ · F7";
     }
     wbkgd(ui->footer, COLOR_PAIR(THEME_PANEL));
@@ -320,7 +336,8 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
 {
     bool paint_history = scope == DRAW_ALL || scope == DRAW_CONVERSATION;
     bool paint_media = paint_history || scope == DRAW_MEDIA || scope == DRAW_EDITOR ||
-                       emoji_picker_open(ui->emojis) || emoji_picker_suggesting(ui->emojis);
+                       emoji_picker_open(ui->emojis) || emoji_picker_suggesting(ui->emojis) ||
+                       ui->reactors_open;
     bool paint_navigation = scope == DRAW_ALL || scope == DRAW_NAVIGATION;
     graphics_update_begin();
     curs_set(0);
@@ -476,6 +493,15 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         mvwhline(ui->body, ui->editor_border, 0, ACS_HLINE, getmaxx(ui->body));
         wattrset(ui->body, COLOR_PAIR(editing ? THEME_FOCUS_MUTED : THEME_PANEL_MUTED));
 
+        if (*conversation_reply_target(ui)) {
+            char reply[TEXT_UTF8_BYTES], label[TEXT_UTF8_BYTES + 64];
+            conversation_reply_label(ui, conversation_reply_target(ui), getmaxx(ui->body) - 25,
+                                     reply, sizeof(reply));
+            snprintf(label, sizeof(label), "↰ Respondendo a %s", reply);
+            wattrset(ui->body, COLOR_PAIR(THEME_PANEL_MUTED));
+            text_label(ui->body, ui->editor_border, 2, getmaxx(ui->body) - 8, label);
+            text_label(ui->body, ui->editor_border, getmaxx(ui->body) - 5, 3, "[x]");
+        }
         if (editor) {
             int height = conversation_input_height(ui), width = conversation_input_width(ui);
             if (editing)
@@ -615,6 +641,7 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         emoji_picker_draw(ui->emojis);
         caret = emoji_picker_cursor(ui->emojis);
     }
+    conversation_interactions_draw(ui);
     if (paint_media) {
         if (!ui->duplicate_modal && !r8_modal_is_open(ui->r8) && !mention_popup_open(ui->mentions))
             media_view_prepare(ui->media);
@@ -623,6 +650,10 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
     }
     r8_modal_draw(ui->r8);
     if (r8_modal_is_open(ui->r8)) {
+        caret = false;
+        setsyx(-1, -1);
+    }
+    if (ui->context_open || ui->reactors_open) {
         caret = false;
         setsyx(-1, -1);
     }

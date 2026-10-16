@@ -416,6 +416,7 @@ bool history_internal_request_authors(history *h)
                   !json_object_set_new(seen, id, json_true());
         }
     }
+    history_internal_actions_users(h, ids, seen);
     json_array_foreach(h->messages, i, m)
     {
         const char *id = history_internal_str(m, "author_id");

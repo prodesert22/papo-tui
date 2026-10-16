@@ -34,6 +34,11 @@ add_test(NAME windows-terminal
          COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/terminal/test_windows.py
                  $<TARGET_FILE:papo-tui>)
 set_tests_properties(windows-terminal PROPERTIES TIMEOUT 180)
+add_test(
+    NAME message-interactions-terminal
+    COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/terminal/test_message_interactions.py
+            $<TARGET_FILE:papo-tui>)
+set_tests_properties(message-interactions-terminal PROPERTIES TIMEOUT 180)
 get_property(
     names
     DIRECTORY

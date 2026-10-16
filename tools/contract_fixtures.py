@@ -213,6 +213,61 @@ def build_cases():
         media="multipart/form-data",
     )
     add("message_created", "/messages", "post", data[0], 201)
+    add(
+        "message_reply_request",
+        "/messages",
+        "post",
+        {"channel_id": CHANNEL, "content": "Synthetic reply", "reply_to": data[0]["id"]},
+        request=True,
+        media="multipart/form-data",
+    )
+    add("message_reply_created", "/messages", "post", dict(data[1], reply_to=data[0]["id"]), 201)
+    reaction_path = "/channels/{channel_id}/messages/{message_id}/reactions"
+    for label, emoji in (
+        ("unicode", {"unicode": "👍"}),
+        ("custom", {"emoji_id": str(UUID(int=50))}),
+    ):
+        add(f"reaction_{label}_request", reaction_path, "post", emoji, request=True)
+        add(
+            f"reaction_{label}_created",
+            reaction_path,
+            "post",
+            dict(emoji, message_id=data[0]["id"], user_id=USER, created_at=DATE),
+            201,
+        )
+        add(f"reaction_{label}_remove_request", reaction_path, "delete", emoji, request=True)
+    add("reaction_removed", reaction_path, "delete", None, 204)
+    add(
+        "reaction_users",
+        reaction_path,
+        "get",
+        {
+            "message_id": data[0]["id"],
+            "has_more": False,
+            "reactions": [
+                {
+                    "emoji_id": None,
+                    "unicode": "👍",
+                    "count": 2,
+                    "users": [
+                        {"id": str(UUID(int=60)), "user_id": USER, "created_at": DATE},
+                        {"id": str(UUID(int=59)), "user_id": PEER, "created_at": DATE},
+                    ],
+                }
+            ],
+        },
+    )
+    add(
+        "message_with_reactions",
+        "/messages",
+        "post",
+        dict(
+            data[0],
+            reactions=[{"emoji_id": None, "unicode": "👍", "count": 2}],
+            user_reactions=[{"id": str(UUID(int=60)), "emoji_id": None, "unicode": "👍"}],
+        ),
+        201,
+    )
     add("message_null_content", "/messages", "post", dict(data[0], content=None), 201)
     add(
         "message_documented_null_reactions",
@@ -370,6 +425,13 @@ def build_events():
         },
         {"type": "typing", "channel_id": CHANNEL},
         {"type": "typing", "channel_id": CHANNEL, "user_id": PEER, "is_typing": True},
+        {
+            "type": "react_update",
+            "message_id": data[0]["id"],
+            "emoji_id": None,
+            "unicode": "👍",
+            "count": 2,
+        },
         {"type": "presence_activity"},
         {"type": "heartbeat"},
         {"type": "heartbeat_ack"},
@@ -391,7 +453,7 @@ def main():
     (folder / "websocket_events.json").write_text(
         json.dumps(build_events(), ensure_ascii=False, indent=2) + "\n"
     )
-    print(f"{len(manifest)} fixtures REST e 17 eventos sintéticos gerados.")
+    print(f"{len(manifest)} fixtures REST e {len(build_events())} eventos sintéticos gerados.")
 
 
 if __name__ == "__main__":

@@ -49,6 +49,9 @@ bool graphics_image_encode(const unsigned char *pixels, int width, int height,
 uint32_t graphics_image_next_id(void);
 bool graphics_image_encode_id(const unsigned char *pixels, int width, int height,
                               graphics_terminal terminal, uint32_t id, graphics_image *image);
+bool graphics_image_encode_region_id(const unsigned char *pixels, int width, int height, int top,
+                                     int bottom, int left, int right, graphics_terminal terminal,
+                                     uint32_t id, graphics_image *image);
 /* Pre-encode the small inline preview crops in the worker. */
 bool graphics_image_encode_preview(const unsigned char *pixels, int width, int height,
                                    graphics_terminal terminal, uint32_t id, graphics_image *image);

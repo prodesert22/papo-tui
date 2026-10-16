@@ -39,6 +39,51 @@ This lets Kitty distinguish Shift+Enter from Enter. The previous keyboard mode
 is restored through the terminal's push/pop stack on exit. Terminals that do
 not answer keep their existing keyboard mode and can use Ctrl+N for new lines.
 
+Message navigation and context menus share UUID-based history layouts and hit
+regions. Reply targets belong to per-conversation outbox drafts and immutable
+send snapshots; retries preserve the captured target. The multipart transport
+adds only the documented `reply_to` field. There is no mention-control parameter
+in the current contract or inspected backend, so no toggle is exposed.
+
+Replies use a bounded, active-conversation reference cache and sequential cursor
+lookups, separate from the displayed history window. There is no documented
+single-message GET endpoint. Background lookups therefore use the history
+endpoint, whose reads mark remote read state; inactive histories are never
+queried. Failed lookups do not imply deletion. Context changes cancel reads;
+already transmitted mutations retain their response owner until consumed.
+
+Reactions use the existing authenticated dispatcher and global request budget.
+The `react_update` event has an absolute total and no channel or actor. It can
+update matching messages in this instance, but cannot establish own membership.
+Confirmed mutations and uncertain outcomes reconcile through REST history;
+mutations are never replayed automatically. Participant cursors use the oldest
+`(created_at, id)` across all groups in a descending page, independently of group
+order. Page group counts are not message totals.
+
+The two-column participant panel keeps emoji and user scroll positions separate.
+Its emoji totals come from message summaries; the existing paginated reaction
+owner supplies users for the selected emoji. It reuses the inline icon renderer
+on the overlay layer. Navigation shortcuts (`r`, `e`, `Shift+E`) share the same
+reply and reaction actions as the context menu. No dependency or endpoint is added.
+
+Video covers reuse the existing FFmpeg image module in an explicit first-frame
+mode, including containers with audio. Normal image decoding retains its codec
+allowlist. The module ABI is 8. Files, decoded covers and variants share the
+bounded media cache; libmpv opens the same cached file for playback. Workers
+perform decoding and never access auth, HTTP or curses. No new dependency or
+backend endpoint is required.
+
+Floating emoji/reaction panels split intersecting history images into at most
+four visible rectangles. Cropped variants reuse the existing bounded worker
+cache and FFmpeg/Chafa encoders, including Unicode icon rasters. The main thread
+only queues variants and places them; no decoding or encoding runs in curses.
+
+`python -m tools.check_message_interactions --url http://127.0.0.1:8080`
+validates the C interaction owner against an isolated DM between synthetic
+accounts, including an uploaded video. It keeps test credentials private under
+build/, removes this run's messages and closes its DM views and sessions.
+The sanitized report distinguishes functional checks from contract divergences.
+
 ## Validation
 
 ```sh

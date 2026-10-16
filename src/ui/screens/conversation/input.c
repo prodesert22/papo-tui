@@ -1,6 +1,6 @@
 #include "ui/screens/conversation/private.h"
 
-const char *conversation_str(json_t *obj, const char *key)
+const char *conversation_str(const json_t *obj, const char *key)
 {
     const char *s = json_string_value(json_object_get(obj, key));
     return s ? s : "";

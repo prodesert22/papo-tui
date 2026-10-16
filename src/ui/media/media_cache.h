@@ -55,6 +55,13 @@ const graphics_image *media_resource_image(media_resource *resource, bool author
  * replacement is prepared. The returned variant is pinned for this frame. */
 const graphics_image *media_resource_fallback_image(media_resource *resource,
                                                     image_decode_request request);
+/* One floating panel per composed frame. Background occurrences retain their
+ * uncovered rectangles; panel icons bypass the crop. Worker/cache ownership
+ * and budgets are identical to ordinary variants. Fragment IDs belong to the caller. */
+void media_cache_overlay(media_cache *cache, int y, int x, int rows, int columns);
+void media_resource_place_image(media_resource *resource, bool author, image_decode_request request,
+                                const graphics_image *image, uint32_t id, uint32_t fragments[4],
+                                int y, int x, int top, int bottom, bool overlay);
 const char *media_resource_path(const media_resource *resource);
 const char *media_resource_error(const media_resource *resource, bool author);
 bool media_resource_dimensions(const media_resource *resource, bool author, int *width,

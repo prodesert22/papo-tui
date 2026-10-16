@@ -16,11 +16,13 @@
 typedef struct {
     uint64_t key, used;
     uint32_t id;
+    uint32_t fragments[4];
 } occurrence;
 typedef struct {
     media_resource *resource;
     image_decode_request request;
     uint32_t occurrence;
+    uint32_t fragments[4];
     uint64_t revision;
     int y, x, top, bottom;
     bool editor, overlay;
@@ -91,6 +93,7 @@ void icons_begin(icon_view *v)
         release_placement(&v->placements[i]);
     v->placement_count = 0;
     v->overlay_rows = 0;
+    media_cache_overlay(v->store, 0, 0, 0, 0);
     ++v->tick;
 }
 void icons_begin_editor(icon_view *v)
@@ -108,6 +111,7 @@ void icons_begin_editor(icon_view *v)
     }
     v->placement_count = count;
     v->overlay_rows = 0;
+    media_cache_overlay(v->store, 0, 0, 0, 0);
 }
 void icons_begin_overlay(icon_view *v)
 {
@@ -123,6 +127,7 @@ void icons_begin_overlay(icon_view *v)
     }
     v->placement_count = count;
     v->overlay_rows = 0;
+    media_cache_overlay(v->store, 0, 0, 0, 0);
 }
 void icons_overlay(icon_view *v, int y, int x, int rows, int columns)
 {
@@ -131,6 +136,7 @@ void icons_overlay(icon_view *v, int y, int x, int rows, int columns)
         v->overlay_x = x;
         v->overlay_rows = rows;
         v->overlay_columns = columns;
+        media_cache_overlay(v->store, y, x, rows, columns);
     }
 }
 void icons_destroy(icon_view *v)
@@ -219,14 +225,14 @@ size_t icons_resolve(void *context, const uint32_t *text, size_t length, size_t 
     *icon = (uint32_t)(emoji_catalog_index(e) + 1);
     return consumed;
 }
-static uint32_t occurrence_id(icon_view *v, uint64_t key)
+static occurrence *occurrence_slot(icon_view *v, uint64_t key)
 {
     occurrence *slot = NULL;
     for (size_t i = 0; i < ICON_ENTRIES; ++i) {
         occurrence *o = &v->occurrences[i];
         if (o->id && o->key == key) {
             o->used = v->tick;
-            return o->id;
+            return o;
         }
         if (!o->id && !slot)
             slot = o;
@@ -238,9 +244,11 @@ static uint32_t occurrence_id(icon_view *v, uint64_t key)
                 slot = o;
         }
     if (!slot)
-        return 0;
-    *slot = (occurrence){key, v->tick, graphics_image_next_id()};
-    return slot->id;
+        return NULL;
+    *slot = (occurrence){.key = key, .used = v->tick, .id = graphics_image_next_id()};
+    for (size_t i = 0; i < 4; ++i)
+        slot->fragments[i] = graphics_image_next_id();
+    return slot;
 }
 static bool offer(icon_view *v, media_resource *resource, image_decode_request request, int y,
                   int x, int top, int bottom, size_t offset)
@@ -263,8 +271,8 @@ static bool offer(icon_view *v, media_resource *resource, image_decode_request r
         v->placement_capacity = capacity;
     }
     uint64_t key = hash(v->scope) ^ ((uint64_t)(v->offset + offset) * UINT64_C(1099511628211));
-    uint32_t id = occurrence_id(v, key);
-    if (!id) {
+    occurrence *slot = occurrence_slot(v, key);
+    if (!slot) {
         media_resource_release(resource);
         return false;
     }
@@ -276,13 +284,15 @@ static bool offer(icon_view *v, media_resource *resource, image_decode_request r
     *p = (icon_placement){
         .resource = resource,
         .request = request,
-        .occurrence = id,
+        .occurrence = slot->id,
         .y = y,
         .x = x,
         .top = top,
         .bottom = bottom,
         .editor = !strncmp(v->scope, "editor:", 7) || !strcmp(v->scope, "emoji-button"),
-        .overlay = !strcmp(v->scope, "emoji-picker") || !strcmp(v->scope, "emoji-popup")};
+        .overlay = !strcmp(v->scope, "emoji-picker") || !strcmp(v->scope, "emoji-popup") ||
+                   !strcmp(v->scope, "reaction-users")};
+    memcpy(p->fragments, slot->fragments, sizeof(p->fragments));
     uint64_t now = 0;
     net_now_ms(&now);
     return media_resource_image(resource, false, request, now) != NULL;
@@ -408,9 +418,10 @@ void icons_prepare(icon_view *v)
             if (!image)
                 continue;
             p->revision = image->revision;
-            graphics_image_place_id(image, p->occurrence, p->y, p->x,
-                                    image->protocol == GRAPHICS_KITTY ? p->top : 0,
-                                    image->protocol == GRAPHICS_KITTY ? p->bottom : 0);
+            media_resource_place_image(
+                p->resource, false, p->request, image, p->occurrence, p->fragments, p->y, p->x,
+                image->protocol == GRAPHICS_KITTY ? p->top : 0,
+                image->protocol == GRAPHICS_KITTY ? p->bottom : 0, p->overlay);
         }
     }
 }
