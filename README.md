@@ -48,7 +48,7 @@ The service contract is in [openapi.yml](openapi.yml).
 
 ## Releases and license
 
-[Changelog](CHANGELOG.md) · [Full release notes](releases/v0.1.2.md)
+[Changelog](CHANGELOG.md) · [Full release notes](releases/v0.2.0.md)
 
 Original code is licensed under [MIT](LICENSE). Bundled libraries and data
 retain their [upstream licenses](THIRD_PARTY_NOTICES.md).
