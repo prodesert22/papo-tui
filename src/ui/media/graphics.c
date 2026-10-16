@@ -406,6 +406,18 @@ void graphics_frame_invalidate(void)
     for (size_t i = 0; i < displayed_count; ++i)
         displayed[i].revision = 0;
 }
+void graphics_frame_occlude(int y, int x, int rows, int columns)
+{
+    size_t count = 0;
+    for (size_t i = 0; i < desired_count; ++i) {
+        displayed_image image = desired[i];
+        if (image.y < y + rows && image.y + image.rows > y && image.x < x + columns &&
+            image.x + image.columns > x)
+            continue;
+        desired[count++] = image;
+    }
+    desired_count = count;
+}
 void graphics_image_place(const graphics_image *image, int y, int x, int top, int bottom)
 {
     graphics_image_place_id(image, image ? image->id : 0, y, x, top, bottom);

@@ -121,6 +121,7 @@ endforeach()
 
 add_library(
     papo_media
+    src/model/text/emoji_usage.c
     src/ui/media/resources.c
     src/ui/media/media.c
     src/ui/media/media_cache.c

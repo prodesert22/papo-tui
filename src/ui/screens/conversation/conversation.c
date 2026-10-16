@@ -120,7 +120,9 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
     ui->mentions = ui->model ? mention_popup_create(ui->model) : NULL;
     ui->icons =
         ui->model ? icons_create(history_assets(ui->model), media_view_cache(ui->media)) : NULL;
-    ui->emojis = ui->icons ? emoji_picker_create(history_assets(ui->model), ui->icons) : NULL;
+    ui->emojis = ui->icons ? emoji_picker_create(history_assets(ui->model), ui->icons,
+                                                 auth_instance_url(auth), auth_user_id(auth))
+                           : NULL;
     ui->at_end = ui->show_channels = true;
     ui->focus = focus_tabs ? SERVER_TABS : CHANNEL_LIST;
     if (!ui->model || !ui->r8 || !ui->mentions || !ui->icons || !ui->emojis || !ui->editor ||
@@ -226,6 +228,13 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             redraw = true;
             scope = DRAW_ALL;
         }
+        if (emoji_picker_suggest(ui->emojis, conversation_input(ui),
+                                 ui->focus == MESSAGE_INPUT && !ui->paste && !ui->duplicate_modal &&
+                                     !r8_modal_is_open(ui->r8) && !media_view_modal(ui->media) &&
+                                     !mention_popup_open(ui->mentions))) {
+            redraw = true;
+            scope = DRAW_ALL;
+        }
         inbox *box = history_inbox(ui->model);
         if (ui->inbox_revision != inbox_revision(box)) {
             ui->inbox_revision = inbox_revision(box);
@@ -328,6 +337,8 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 text_paste_cancel(&ui->paste_data);
             mention_popup_update(ui->mentions, conversation_input(ui), ui->focus == MESSAGE_INPUT);
             mention_popup_close(ui->mentions);
+            emoji_picker_suggest(ui->emojis, conversation_input(ui), ui->focus == MESSAGE_INPUT);
+            emoji_picker_dismiss(ui->emojis);
             continue;
         }
         if (type == KEY_CODE_YES && key == KEY_RESIZE) {
@@ -364,8 +375,12 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 history_typing_activity(ui->model);
                 ui->editor_scrolling = false;
                 conversation_set_focus(ui, MESSAGE_INPUT);
-            } else if (!emoji_picker_open(ui->emojis))
+            } else if (!emoji_picker_open(ui->emojis)) {
                 conversation_set_focus(ui, ui->emoji_return_focus);
+                emoji_picker_suggest(ui->emojis, conversation_input(ui),
+                                     ui->focus == MESSAGE_INPUT);
+                emoji_picker_dismiss(ui->emojis);
+            }
             scope = DRAW_ALL;
             continue;
         }
@@ -378,7 +393,8 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             continue;
         }
 
-        if (mention_popup_key(ui->mentions, conversation_input(ui), type, key, &accepted)) {
+        if (emoji_picker_key(ui->emojis, conversation_input(ui), type, key, &accepted) ||
+            mention_popup_key(ui->mentions, conversation_input(ui), type, key, &accepted)) {
             if (accepted) {
                 send_editor_changed(ui->editor);
                 history_typing_activity(ui->model);
@@ -534,7 +550,8 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 }
                 if (e.bstate & REPORT_MOUSE_POSITION)
                     continue;
-                if (mention_popup_mouse(ui->mentions, conversation_input(ui), &e, &accepted)) {
+                if (emoji_picker_mouse(ui->emojis, conversation_input(ui), &e, &accepted) ||
+                    mention_popup_mouse(ui->mentions, conversation_input(ui), &e, &accepted)) {
                     if (accepted) {
                         send_editor_changed(ui->editor);
                         history_typing_activity(ui->model);

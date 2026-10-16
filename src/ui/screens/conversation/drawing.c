@@ -235,6 +235,9 @@ void conversation_draw_footer(view *ui)
         full = "Tab áreas · ↑↓←→ escolher · Enter inserir · F5 atualizar · Esc fechar";
         shorter = "↑↓←→ escolher · Enter inserir · Esc fechar";
         minimal = "Enter inserir · Esc";
+    } else if (emoji_picker_suggesting(ui->emojis)) {
+        full = shorter = "↑↓ escolher · Tab/Enter inserir emoji · Esc fechar";
+        minimal = "↑↓ · Tab/Enter";
     } else if (mention_popup_open(ui->mentions)) {
         full = "↑↓ escolher · Tab/Enter mencionar · Roda: rolar · Esc fechar";
         shorter = "↑↓ escolher · Tab mencionar · Esc fechar";
@@ -315,7 +318,8 @@ void conversation_draw_confirmation(view *ui)
 void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
 {
     bool paint_history = scope == DRAW_ALL || scope == DRAW_CONVERSATION;
-    bool paint_media = paint_history || scope == DRAW_MEDIA || scope == DRAW_EDITOR;
+    bool paint_media = paint_history || scope == DRAW_MEDIA || scope == DRAW_EDITOR ||
+                       emoji_picker_open(ui->emojis) || emoji_picker_suggesting(ui->emojis);
     bool paint_navigation = scope == DRAW_ALL || scope == DRAW_NAVIGATION;
     graphics_update_begin();
     curs_set(0);
@@ -325,8 +329,10 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         chat_assets_visible_begin(history_assets(ui->model));
         message_colors_begin();
     }
-    if (scope == DRAW_MEDIA || scope == DRAW_EDITOR)
+    if (!paint_history && paint_media) {
         media_view_frame(ui->media);
+        icons_begin_overlay(ui->icons);
+    }
     if (scope == DRAW_EDITOR)
         icons_begin_editor(ui->icons);
     if (!ui->frame) {
@@ -575,6 +581,16 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                            getbegx(ui->body) + 3 + measured.cursor_column, getbegx(ui->body) + 1,
                            getmaxx(ui->body) - 2);
     }
+    if (emoji_picker_suggesting(ui->emojis) && ui->body && conversation_input(ui)) {
+        text_layout measured;
+        text_buffer *editor = conversation_input(ui);
+        text_measure(editor, conversation_input_width(ui), &measured);
+        emoji_picker_draw_suggestions(ui->emojis,
+                                      getbegy(ui->body) + conversation_input_top(ui) +
+                                          measured.cursor_row - editor->first_row,
+                                      getbegx(ui->body) + 3 + measured.cursor_column,
+                                      getbegx(ui->body) + 1, getmaxx(ui->body) - 2);
+    }
     bool caret = false;
     if (ui->focus == MESSAGE_INPUT && conversation_input(ui) && ui->body && !ui->duplicate_modal &&
         !r8_modal_is_open(ui->r8) && !media_view_modal(ui->media) &&
@@ -591,17 +607,15 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
     }
     if (!caret)
         setsyx(-1, -1);
-    if (paint_media &&
-        (r8_modal_is_open(ui->r8) || emoji_picker_open(ui->emojis) || media_view_modal(ui->media) ||
-         ui->duplicate_modal || mention_popup_open(ui->mentions)))
+    if (paint_media && (r8_modal_is_open(ui->r8) || media_view_modal(ui->media) ||
+                        ui->duplicate_modal || mention_popup_open(ui->mentions)))
         icons_begin(ui->icons);
     if (emoji_picker_open(ui->emojis)) {
         emoji_picker_draw(ui->emojis);
         caret = emoji_picker_cursor(ui->emojis);
     }
     if (paint_media) {
-        if (!ui->duplicate_modal && !r8_modal_is_open(ui->r8) &&
-            !mention_popup_open(ui->mentions) && !emoji_picker_open(ui->emojis))
+        if (!ui->duplicate_modal && !r8_modal_is_open(ui->r8) && !mention_popup_open(ui->mentions))
             media_view_prepare(ui->media);
         icons_prepare(ui->icons);
         graphics_frame_prepare();

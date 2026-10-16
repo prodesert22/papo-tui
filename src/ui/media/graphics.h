@@ -58,6 +58,8 @@ void graphics_frame_begin(void);
 /* A terminal resize/full layout rebuild can discard graphics independently
  * of curses' cell cache. Retain ownership, but force one fresh presentation. */
 void graphics_frame_invalidate(void);
+/* Suppress existing placements intersecting a floating window, before its icons. */
+void graphics_frame_occlude(int y, int x, int rows, int columns);
 void graphics_image_place_id(const graphics_image *image, uint32_t placement_id, int y, int x,
                              int top, int bottom);
 void graphics_image_place(const graphics_image *image, int y, int x, int top, int bottom);

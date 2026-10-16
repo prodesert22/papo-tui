@@ -15,6 +15,10 @@ if(BUILD_TESTING)
     target_link_libraries(emoji-test PRIVATE papo_media)
     target_compile_options(emoji-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
     add_test(NAME emojis-unit COMMAND emoji-test)
+    add_executable(emoji-completion-test tests/unit/test_emoji_completion.c)
+    target_link_libraries(emoji-completion-test PRIVATE papo_media)
+    target_compile_options(emoji-completion-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_test(NAME emoji-completion COMMAND emoji-completion-test)
     add_test(NAME emojis-catalogue
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/emoji_catalog.py
                      --check)

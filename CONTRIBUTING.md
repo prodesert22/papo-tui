@@ -13,6 +13,13 @@ or custom password storage is needed. pywinpty is used only by Windows tests
 with ConPTY. gcovr and Ruff are development tools. Recipes record sources,
 versions and hashes.
 
+Emoji completion and the F4 picker share the existing catalog, media cache and
+ncurses controls. GLib supplies normalized search, user configuration paths and
+atomic file replacement; Jansson stores bounded usage counts. Counts record
+explicit insertions, scoped by instance URL and account ID, with Unicode text
+and custom emoji UUIDs as stable keys. No new dependencies or backend APIs are
+needed. Menus retain graphics outside their bounds and request 32×32 previews.
+
 Player controls use ncursesw for bars, colors and clicks, and the libmpv API
 for pause, position and volume. They add no dependencies or backend calls;
 operations remain in the media worker. The `,`/`.` keys (and `<`/`>`) seek by one second

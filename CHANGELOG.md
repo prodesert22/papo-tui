@@ -7,6 +7,10 @@ full details are available in `releases/`.
 
 ## [0.1.0]
 
+- Emoji completion on `:` with filtered Unicode and server suggestions, saved
+  usage ranking, labeled 32×32 picker previews and complete keyboard navigation.
+- Keep uncovered chat images visible while the emoji picker is open.
+
 - Registration, sign-in, multiple instances and recovery of the last session
   through the system credential store.
 - Channels, DMs and text conversations in voice channels, with real-time messages,

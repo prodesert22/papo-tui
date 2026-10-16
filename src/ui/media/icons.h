@@ -12,12 +12,17 @@ void icons_assets(icon_view *v, chat_assets *assets, media_cache *store, uint64_
 void icons_begin(icon_view *v);
 /* Keep chat placements while replacing only composer icons. */
 void icons_begin_editor(icon_view *v);
+void icons_begin_overlay(icon_view *v);
+void icons_overlay(icon_view *v, int y, int x, int rows, int columns);
 bool icons_poll(icon_view *v);
 void icons_prepare(icon_view *v);
 void icons_scope(icon_view *v, const char *scope, size_t offset);
 size_t icons_resolve(void *context, const uint32_t *text, size_t length, size_t at, uint32_t *icon);
 bool icons_paint(void *context, WINDOW *w, uint32_t icon, int y, int x, int pair, bool selected,
                  size_t offset);
+bool icons_paint_size(icon_view *v, WINDOW *w, uint32_t icon, int y, int x, int pair, size_t offset,
+                      int pixels);
+bool icons_literal(const uint32_t *text, size_t at);
 bool icons_avatar(icon_view *v, const char *id, const char *message, int y, int x, int top,
                   int bottom, int pair);
 bool icons_message_avatar(icon_view *v, const json_t *message, int y, int x, int top, int bottom,

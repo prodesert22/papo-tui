@@ -126,6 +126,100 @@ class EmojiTerminal(unittest.TestCase):
             finally:
                 self.assertTrue(t.close())
 
+    def test_colon_completion_filters_custom_and_unicode_without_sending(self):
+        with self.server() as s:
+            t = self.open(s, protocol="kitty")
+            try:
+                t.send(":")
+                self.wait(t, "Emojis · mais usados")
+                t.send("gato_界")
+                self.wait(t, "gato 界")
+                t.send("\t")
+                self.until(t, lambda: "Emojis · mais usados" not in "\n".join(t.screen.display))
+                self.assertEqual(s.message_count, 0)
+                t.send(" :rocket")
+                self.wait(t, "Emojis · mais usados")
+                t.send("\n")
+                self.until(t, lambda: "Emojis · mais usados" not in "\n".join(t.screen.display))
+                self.assertEqual(s.message_count, 0)
+                t.send("\n")
+                self.until(t, lambda: s.message_count == 1)
+                self.assertEqual(s.sent_messages[0]["content"], ":gato 界: 🚀")
+            finally:
+                self.assertTrue(t.close())
+
+    def test_picker_arrows_visit_search_tabs_and_first_grid_row(self):
+        with self.server() as s:
+            t = self.open(s, sixel=False)
+            try:
+                t.send("\x1bOS\x1bOB\x1bOC")
+                self.wait(t, "1 emojis do servidor")
+                # Search -> tabs -> first tile -> tabs -> search.
+                t.send("\x1bOB\x1bOA\x1bOD\x1bOArocket\n")
+                self.until(t, lambda: "Emojis · Esc voltar" not in "\n".join(t.screen.display))
+                self.assertEqual(s.message_count, 0)
+                t.send("\n")
+                self.until(t, lambda: s.message_count == 1)
+                self.assertEqual(s.sent_messages[0]["content"], "🚀")
+            finally:
+                self.assertTrue(t.close())
+
+    def test_modal_cancel_and_paste_do_not_reopen_completion(self):
+        with self.server() as s:
+            t = self.open(s, sixel=False)
+            try:
+                t.send(":rocket")
+                self.wait(t, "Emojis · mais usados")
+                t.send("\x1bOS")
+                self.wait(t, "Emojis · Esc voltar")
+                t.send("\x1b")
+                t.read(0.3)
+                self.assertNotIn("Emojis ·", "\n".join(t.screen.display))
+                t.send("\x03\x1b[200~:rocket\x1b[201~")
+                t.read(0.3)
+                self.assertNotIn("Emojis ·", "\n".join(t.screen.display))
+                self.assertEqual(s.message_count, 0)
+                t.send("\n")
+                self.until(t, lambda: s.message_count == 1)
+                self.assertEqual(s.sent_messages[0]["content"], ":rocket")
+            finally:
+                self.assertTrue(t.close())
+
+    def test_picker_has_32_pixel_previews_labels_and_retains_uncovered_images(self):
+        for protocol in ("kitty", "sixel", "iterm2"):
+            with self.subTest(protocol=protocol), self.server(content="😀 :gato 界:") as s:
+                t = self.open(s, protocol=protocol, size=(48, 100))
+                try:
+                    self.until(t, lambda: bool(t.stream.frames))
+                    avatars = self.avatar_positions(t) if protocol == "kitty" else set()
+                    t.send("\x1bOS\t\x1bOC")
+                    self.wait(t, "1 emojis do servidor")
+                    if protocol == "kitty":
+                        self.until(
+                            t,
+                            lambda: any(
+                                h.get(b"s") == b"32" and h.get(b"v") == b"32"
+                                for h, _ in t.stream.kitty_frames
+                            ),
+                        )
+                        self.assertTrue(avatars <= self.avatar_positions(t))
+                        top = next(
+                            i
+                            for i, row in enumerate(t.screen.display)
+                            if "Emojis · Esc voltar" in row
+                        )
+                        self.assertIn("gato 界", t.screen.display[top + 6])
+                        before = len(t.stream.kitty_frames)
+                        t.send("\t\x1bOC\x1bOD")
+                        t.read(0.3)
+                        self.assertEqual(len(t.stream.kitty_frames), before)
+                    t.send("\x1b")
+                    self.until(t, lambda: "Emojis · Esc voltar" not in "\n".join(t.screen.display))
+                    if protocol == "kitty":
+                        self.assertTrue(avatars <= self.avatar_positions(t))
+                finally:
+                    self.assertTrue(t.close())
+
     def test_button_focus_custom_emoji_and_outside_click(self):
         with self.server() as s:
             t = self.open(s, sixel=False)

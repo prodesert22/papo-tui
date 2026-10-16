@@ -23,7 +23,7 @@ typedef struct {
     uint32_t occurrence;
     uint64_t revision;
     int y, x, top, bottom;
-    bool editor;
+    bool editor, overlay;
 } icon_placement;
 struct icon_view {
     chat_assets *assets;
@@ -35,6 +35,7 @@ struct icon_view {
     char scope[160];
     size_t offset;
     bool font;
+    int overlay_y, overlay_x, overlay_rows, overlay_columns;
 };
 static uint64_t hash(const char *s)
 {
@@ -89,6 +90,7 @@ void icons_begin(icon_view *v)
     for (size_t i = 0; i < v->placement_count; ++i)
         release_placement(&v->placements[i]);
     v->placement_count = 0;
+    v->overlay_rows = 0;
     ++v->tick;
 }
 void icons_begin_editor(icon_view *v)
@@ -99,12 +101,37 @@ void icons_begin_editor(icon_view *v)
     size_t count = 0;
     for (size_t i = 0; i < v->placement_count; ++i) {
         icon_placement p = v->placements[i];
-        if (p.editor)
+        if (p.editor || p.overlay)
             release_placement(&p);
         else
             v->placements[count++] = p;
     }
     v->placement_count = count;
+    v->overlay_rows = 0;
+}
+void icons_begin_overlay(icon_view *v)
+{
+    if (!v)
+        return;
+    size_t count = 0;
+    for (size_t i = 0; i < v->placement_count; ++i) {
+        icon_placement p = v->placements[i];
+        if (p.overlay)
+            release_placement(&p);
+        else
+            v->placements[count++] = p;
+    }
+    v->placement_count = count;
+    v->overlay_rows = 0;
+}
+void icons_overlay(icon_view *v, int y, int x, int rows, int columns)
+{
+    if (v) {
+        v->overlay_y = y;
+        v->overlay_x = x;
+        v->overlay_rows = rows;
+        v->overlay_columns = columns;
+    }
 }
 void icons_destroy(icon_view *v)
 {
@@ -131,7 +158,7 @@ void icons_scope(icon_view *v, const char *scope, size_t offset)
         v->offset = offset;
     }
 }
-static bool literal(const uint32_t *text, size_t at)
+bool icons_literal(const uint32_t *text, size_t at)
 {
     size_t delimiter = 0;
     for (size_t i = 0; i < at;) {
@@ -164,7 +191,7 @@ size_t icons_resolve(void *context, const uint32_t *text, size_t length, size_t 
     icon_view *v = context;
     if (!v || at >= length)
         return 0;
-    if (text[at] == ':' && !literal(text, at)) {
+    if (text[at] == ':' && !icons_literal(text, at)) {
         chat_assets_emojis_request(v->assets, false);
         size_t longest = 0;
         for (size_t i = 0; i < chat_assets_emoji_count(v->assets); ++i) {
@@ -186,7 +213,7 @@ size_t icons_resolve(void *context, const uint32_t *text, size_t length, size_t 
         return 0;
     size_t consumed;
     const unicode_emoji *e = emoji_catalog_match(text + at, length - at, &consumed);
-    if (!e || literal(text, at))
+    if (!e || icons_literal(text, at))
         return 0;
     /* Catalogue pointers are stable; avoid exposing a second sequence table. */
     *icon = (uint32_t)(emoji_catalog_index(e) + 1);
@@ -246,23 +273,23 @@ static bool offer(icon_view *v, media_resource *resource, image_decode_request r
     media_resource_hold(resource, true);
     media_resource_use_image(resource, false, false);
     icon_placement *p = &v->placements[v->placement_count++];
-    *p = (icon_placement){.resource = resource,
-                          .request = request,
-                          .occurrence = id,
-                          .y = y,
-                          .x = x,
-                          .top = top,
-                          .bottom = bottom,
-                          .editor = !strncmp(v->scope, "editor:", 7) ||
-                                    !strcmp(v->scope, "emoji-button")};
+    *p = (icon_placement){
+        .resource = resource,
+        .request = request,
+        .occurrence = id,
+        .y = y,
+        .x = x,
+        .top = top,
+        .bottom = bottom,
+        .editor = !strncmp(v->scope, "editor:", 7) || !strcmp(v->scope, "emoji-button"),
+        .overlay = !strcmp(v->scope, "emoji-picker") || !strcmp(v->scope, "emoji-popup")};
     uint64_t now = 0;
     net_now_ms(&now);
     return media_resource_image(resource, false, request, now) != NULL;
 }
-bool icons_paint(void *context, WINDOW *w, uint32_t icon, int y, int x, int pair, bool selected,
-                 size_t offset)
+static bool paint(icon_view *v, WINDOW *w, uint32_t icon, int y, int x, int pair, bool selected,
+                  size_t offset, int pixels)
 {
-    icon_view *v = context;
     graphics_terminal terminal = graphics_terminal_get();
     if (!v || !v->store || !terminal.supported || terminal.cell_width <= 0 ||
         terminal.cell_height <= 0)
@@ -278,8 +305,8 @@ bool icons_paint(void *context, WINDOW *w, uint32_t icon, int y, int x, int pair
             return false;
         resource = media_cache_acquire_unicode(v->store, e->text);
     }
-    image_decode_request request = {.width = terminal.cell_width * 2,
-                                    .height = terminal.cell_height,
+    image_decode_request request = {.width = pixels ? pixels : terminal.cell_width * 2,
+                                    .height = pixels ? pixels : terminal.cell_height,
                                     .terminal = terminal,
                                     .matte = true,
                                     .center = true,
@@ -287,6 +314,16 @@ bool icons_paint(void *context, WINDOW *w, uint32_t icon, int y, int x, int pair
                                         background(selected ? THEME_TEXT_SELECTION : pair),
                                     .max_side = 512};
     return offer(v, resource, request, getbegy(w) + y, getbegx(w) + x, 0, 0, offset);
+}
+bool icons_paint(void *context, WINDOW *w, uint32_t icon, int y, int x, int pair, bool selected,
+                 size_t offset)
+{
+    return paint(context, w, icon, y, x, pair, selected, offset, 0);
+}
+bool icons_paint_size(icon_view *v, WINDOW *w, uint32_t icon, int y, int x, int pair, size_t offset,
+                      int pixels)
+{
+    return pixels > 0 && pixels <= 512 && paint(v, w, icon, y, x, pair, false, offset, pixels);
 }
 static bool avatar_image(icon_view *v, const author_avatar *avatar, const char *message, int y,
                          int x, int top, int bottom, int pair)
@@ -360,14 +397,20 @@ void icons_prepare(icon_view *v)
         return;
     uint64_t now = 0;
     net_now_ms(&now);
-    for (size_t i = 0; i < v->placement_count; ++i) {
-        icon_placement *p = &v->placements[i];
-        const graphics_image *image = placement_image(p, now);
-        if (!image)
-            continue;
-        p->revision = image->revision;
-        graphics_image_place_id(image, p->occurrence, p->y, p->x,
-                                image->protocol == GRAPHICS_KITTY ? p->top : 0,
-                                image->protocol == GRAPHICS_KITTY ? p->bottom : 0);
+    for (int layer = 0; layer < 2; ++layer) {
+        if (layer == 1 && v->overlay_rows > 0)
+            graphics_frame_occlude(v->overlay_y, v->overlay_x, v->overlay_rows, v->overlay_columns);
+        for (size_t i = 0; i < v->placement_count; ++i) {
+            icon_placement *p = &v->placements[i];
+            if (p->overlay != (layer == 1))
+                continue;
+            const graphics_image *image = placement_image(p, now);
+            if (!image)
+                continue;
+            p->revision = image->revision;
+            graphics_image_place_id(image, p->occurrence, p->y, p->x,
+                                    image->protocol == GRAPHICS_KITTY ? p->top : 0,
+                                    image->protocol == GRAPHICS_KITTY ? p->bottom : 0);
+        }
     }
 }

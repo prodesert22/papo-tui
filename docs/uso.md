@@ -73,6 +73,20 @@ Voice calls are not available yet.
 Type `@` in the editor to choose a person to mention; confirm with Tab or Enter.
 After closing the chooser, Enter sends the message.
 
+Type `:` to open emoji suggestions, then keep typing to filter Unicode and
+server emojis by name or keyword. Use ↑/↓ to choose, Tab or Enter to insert,
+and Esc to dismiss. Confirming a suggestion inserts it without sending the
+message. Suggestions place your most frequently inserted emojis first.
+Counts are saved per account and instance in the user configuration directory,
+under `papo-tui/emoji-usage/`; if it cannot be written, ranking lasts for the
+current run.
+
+F4 opens the full emoji picker. Each tile shows a 32×32 preview with its name
+below. Use ↓ to move from search to the Unicode/Servidor buttons, then ↓ again
+to enter the grid. From its first row, ↑ returns to the buttons; ↑ again returns
+to search. Use ←/→ to switch emoji sources while the buttons have focus.
+Tab and Shift+Tab also move between these areas.
+
 ## Images and video
 
 Press F7 with the history focused, or click a media preview, to open it.
