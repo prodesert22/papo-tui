@@ -108,6 +108,34 @@ class EmojiTerminal(unittest.TestCase):
         }
         return {pair for pair in t.stream.live_placements if pair[0] in images}
 
+    def test_mention_and_notification_panels_retain_avatars_and_inline_emoji(self):
+        for key, title in (("@", "Menções"), ("\x1b[20~", "Notificações")):
+            with self.subTest(panel=title), self.server(content="😀") as server:
+                t = self.open(server, protocol="kitty", size=(48, 160))
+                try:
+                    t.send("draft ")
+                    self.until(t, lambda: bool(self.avatar_positions(t)))
+                    self.until(
+                        t, lambda: any(h.get(b"s") == b"16" for h, _ in t.stream.kitty_frames)
+                    )
+                    images = {
+                        int(p[b"i"])
+                        for p, (y, _) in zip(t.stream.placements, t.stream.placement_positions)
+                        if y < 20 and int(p[b"i"]) in t.stream.live_ids
+                    }
+                    self.assertGreaterEqual(len(images), 2)
+                    t.send(key)
+                    self.wait(t, title)
+                    self.until(t, lambda: images <= t.stream.live_ids)
+                    t.send("\x12")
+                    self.wait(t, title)
+                    self.until(t, lambda: images <= t.stream.live_ids)
+                    t.send("\x1b")
+                    self.until(t, lambda: title not in "\n".join(t.screen.display))
+                    self.until(t, lambda: images <= t.stream.live_ids)
+                finally:
+                    self.assertTrue(t.close())
+
     def test_keyboard_unicode_inserts_at_cursor_without_sending(self):
         with self.server() as s:
             t = self.open(s, protocol="kitty")

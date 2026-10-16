@@ -103,14 +103,40 @@ bounded media cache; libmpv opens the same cached file for playback. Workers
 perform decoding and never access auth, HTTP or curses. No new dependency or
 backend endpoint is required.
 
-Floating emoji/reaction panels split intersecting history images into at most
+Floating menus and dialogs split intersecting history images into at most
 four visible rectangles. Cropped variants reuse the existing bounded worker
 cache and FFmpeg/Chafa encoders, including Unicode icon rasters. The main thread
 only queues variants and places them; no decoding or encoding runs in curses.
+Mention and notification panels return their borrowed ncurses windows so the
+conversation registers their bounds before composing image and icon placements.
 The media service transports crop bounds and the explicit video-cover flag in
 wire version 3. Raster packing and emoji rasterization run only in the helper.
 Light keeps native Unicode emojis and skips video covers and playback;
 Ultralight keeps message actions available without starting the media helper.
+
+The notification center reuses the mention projector, libc sorting and session
+timestamp comparison for local search, conversation filters and date ordering.
+Search and counters cover loaded pages; the API exposes no global unread total.
+Mention badges count explicit user/everyone mentions in available content;
+truncated previews can omit a mention. General unread messages retain a separate
+dot. Notification payloads lack webhook names and event timestamps/channels;
+bounded metadata from WS and already loaded active-history messages supplies these
+when known, including mention flags beyond the truncated preview.
+Missing metadata stays explicit, without fetching inactive histories or inventing
+an individual-message endpoint. No new dependency is needed.
+Notification arrows distinguish text editing from list/filter actions: horizontal
+list keys change the filter, vertical keys traverse search, controls and results.
+Server badges share tab measurement and drawing, reserve the closing delimiter
+and use plain red counters when the effective renderer is text/Chafa.
+Channel/DM filter selection uses a searchable subview in the same borrowed modal
+window. It reuses bounded text editing/name matching and already loaded directory
+metadata, with UUID selection anchors across updates; no history reads or new
+dependencies are required.
+Category arrows/clicks only cycle the filter; Enter or the separate Name button
+explicitly opens the selector, avoiding focus changes while cycling categories.
+The Name button follows the rendered filter label by one cell; drawing and mouse
+hit testing use the same Unicode cell measurement while the date action retains
+its reserved column.
 
 `python -m tools.check_message_interactions --url http://127.0.0.1:8080`
 validates the C interaction owner against an isolated DM between synthetic

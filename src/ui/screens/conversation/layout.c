@@ -255,8 +255,7 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
         }
         if (!followed && !compact_end && total + height < group_start + avatar_rows)
             height = group_start + avatar_rows - total;
-        if (paint && avatar_visible && !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
-            !media_view_modal(ui->media)) {
+        if (paint && avatar_visible && !ui->settings.open && !media_view_modal(ui->media)) {
             int top = first > total ? first - total : 0;
             int bottom = total + avatar_rows > first + ui->visible
                              ? total + avatar_rows - first - ui->visible
@@ -352,8 +351,7 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
                                              getbegy(ui->body) + y, getbegx(ui->body) + x, 1,
                                              reaction->width, reaction->index);
                 }
-                if (!(r8_modal_is_open(ui->r8) || ui->settings.open) &&
-                    !media_view_modal(ui->media)) {
+                if (!ui->settings.open && !media_view_modal(ui->media)) {
                     for (size_t k = 0; k < r->icon_count; ++k) {
                         const message_icon_region *icon = &r->icons[k];
                         char scope[180];

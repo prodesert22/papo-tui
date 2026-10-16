@@ -12,7 +12,10 @@ void r8_modal_open(r8_modal *m, r8_modal_kind kind);
 bool r8_modal_is_open(const r8_modal *m);
 void r8_modal_close(r8_modal *m);
 bool r8_modal_key(r8_modal *m, int type, uint32_t key);
-void r8_modal_draw(r8_modal *m);
+/* Returned window is borrowed until the next draw or close. */
+WINDOW *r8_modal_draw(r8_modal *m);
+/* Position the virtual cursor for notification/conversation-selector search. */
+bool r8_modal_cursor(r8_modal *m);
 /* Destination selected explicitly in the central; returned UUID is borrowed. */
 const char *r8_modal_destination(const r8_modal *m);
 void r8_modal_destination_clear(r8_modal *m);

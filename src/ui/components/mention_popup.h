@@ -13,5 +13,6 @@ void mention_popup_close(mention_popup *p);
 /* Consumes chooser controls only. accepted signals an atomic draft edit. */
 bool mention_popup_key(mention_popup *p, text_buffer *b, int type, uint32_t key, bool *accepted);
 bool mention_popup_mouse(mention_popup *p, text_buffer *b, const MEVENT *e, bool *accepted);
-void mention_popup_draw(mention_popup *p, int cursor_y, int cursor_x, int left, int width);
+/* Returned window is borrowed until the next draw or close. */
+WINDOW *mention_popup_draw(mention_popup *p, int cursor_y, int cursor_x, int left, int width);
 #endif

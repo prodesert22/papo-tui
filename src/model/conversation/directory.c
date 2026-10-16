@@ -440,6 +440,14 @@ bool history_internal_request_authors(history *h)
             json_t *n =
                 event ? inbox_notification_event(h->inbox, j - inbox_notification_count(h->inbox))
                       : inbox_notification(h->inbox, j);
+            mention_batch batch = {h, ids, seen, ok};
+            mention_range range;
+            size_t from = 0;
+            while (mention_next(history_internal_str(n, "message_content"), from, &range)) {
+                collect_mention(&batch, &range);
+                from = range.end;
+            }
+            ok = batch.ok;
             const char *id = history_internal_str(n, event ? "user_id" : "author_id");
             if (!history_uuid(id) || user_resolved(h, id) || json_object_get(h->queried, id) ||
                 json_object_get(seen, id))
@@ -487,6 +495,19 @@ bool history_maintain(history *h, uint64_t now)
     for (size_t i = 0; i < h->typing_count; ++i)
         if (json_object_set_new(protected, h->typing[i].id, json_true()))
             pins.ok = false;
+    if (h->r8) {
+        size_t persisted = inbox_notification_count(h->inbox);
+        for (size_t i = 0; i < persisted + inbox_event_count(h->inbox); ++i) {
+            json_t *n = i < persisted ? inbox_notification(h->inbox, i)
+                                      : inbox_notification_event(h->inbox, i - persisted);
+            mention_range range;
+            size_t from = 0;
+            while (mention_next(history_internal_str(n, "message_content"), from, &range)) {
+                protect_mention(&pins, &range);
+                from = range.end;
+            }
+        }
+    }
     if (!pins.ok) {
         json_decref(protected);
         return false;

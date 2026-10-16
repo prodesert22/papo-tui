@@ -15,7 +15,7 @@ import unittest
 from wcwidth import wcswidth
 
 FFMPEG = sys.argv.pop(2)
-from history_mock import HistoryMock, uuid  # noqa: E402 - path and test arguments are prepared above
+from history_mock import HistoryMock, STAMP, uuid  # noqa: E402 - path and test arguments are prepared above
 from test_terminal import Terminal, TerminalStream  # noqa: E402 - path and test arguments are prepared above
 import test_history_terminal as history_tests  # noqa: E402 - path and test arguments are prepared above
 
@@ -653,9 +653,52 @@ class MediaTerminal(unittest.TestCase):
             finally:
                 self.assertTrue(t.close())
 
-    def test_emoji_and_reaction_modals_preserve_uncovered_attachment_pixels(self):
+    def test_graphical_server_badge_is_inside_tab_delimiters(self):
+        from history_mock import CHANNEL
+
         for protocol in ("kitty", "sixel", "iterm2"):
-            for key, title in (("\x1bOS", "Emojis · Esc voltar"), ("\x1b[18~E", "Quem reagiu")):
+            with (
+                self.subTest(protocol=protocol),
+                self.serve(self.images["png"], "image/png") as server,
+            ):
+                original = server.api_handler
+
+                def route(method, path, body):
+                    if method == "GET" and path.split("?")[0].endswith("/notifications"):
+                        return 200, dict(
+                            notifications=[
+                                dict(
+                                    id=uuid(8000),
+                                    message_id=uuid(9999),
+                                    channel_id=CHANNEL,
+                                    author_id=uuid(21),
+                                    message_content="@mention(<@" + uuid(1) + ">)",
+                                    read=False,
+                                    created_at=STAMP,
+                                )
+                            ],
+                            has_more=False,
+                        )
+                    return original(method, path, body)
+
+                server.api_handler = route
+                t = self.open(server, protocol=protocol)
+                try:
+                    self.wait_frames(t)
+                    self.wait(t, "[Comunidade ❶]")
+                    t.resize(40, 120)
+                    self.wait(t, "[Comunidade ❶]")
+                finally:
+                    self.assertTrue(t.close())
+
+    def test_floating_panels_preserve_uncovered_attachment_pixels(self):
+        for protocol in ("kitty", "sixel", "iterm2"):
+            for key, title in (
+                ("\x1bOS", "Emojis · Esc voltar"),
+                ("\x1b[18~E", "Quem reagiu"),
+                ("@", "Menções"),
+                ("\x1b[20~", "Notificações"),
+            ):
                 with (
                     self.subTest(protocol=protocol, modal=title),
                     self.serve(self.large_images["landscape"], "image/png") as server,
@@ -669,6 +712,19 @@ class MediaTerminal(unittest.TestCase):
                                 "reactions": [],
                                 "has_more": False,
                             }
+                        if method == "GET" and path.split("?")[0].endswith("/users"):
+                            return 200, dict(
+                                users=[
+                                    dict(
+                                        id=uuid(21 + i),
+                                        username=f"member{i}",
+                                        nickname=None,
+                                        created_at=STAMP,
+                                    )
+                                    for i in range(8)
+                                ],
+                                has_more=False,
+                            )
                         return parent(method, path, body)
 
                     server.api_handler = route
@@ -679,9 +735,15 @@ class MediaTerminal(unittest.TestCase):
                         first_placement = len(t.stream.placements)
                         t.send(key)
                         self.wait(t, title)
+                        if title == "Menções":
+                            self.wait(t, "@member7")
                         display = t.screen.display
                         top = next(i for i, line in enumerate(display) if title in line)
-                        title_x = wcswidth(display[top][: display[top].index(title)])
+                        if title == "Notificações":
+                            top -= 1  # Its title is inside the frame.
+                        title_x = wcswidth(
+                            next(line for line in display if title in line).split(title)[0]
+                        )
                         left = next(
                             x
                             for x in range(title_x, -1, -1)
@@ -748,6 +810,41 @@ class MediaTerminal(unittest.TestCase):
                                     (top, left, bottom, right),
                                 ),
                             )
+                        if title in ("Menções", "Notificações"):
+                            active_title = title
+                            if title == "Notificações":
+                                # Search, keyboard filter/date controls and clearing
+                                # the query must preserve the same exposed pixels.
+                                t.send("sem resultado\t\x1bOC\n")
+                                self.wait(t, "Selecionar canal")
+                                t.send("geral")
+                                self.wait(t, "# geral")
+                                if protocol == "kitty":
+                                    self.assertTrue(background_parts())
+                                t.send("\x1b\x1bOC\n")
+                                self.wait(t, "Selecionar DM")
+                                if protocol == "kitty":
+                                    self.assertTrue(background_parts())
+                                t.send("\x1b\x1bOA\x03\t\n")
+                                active_title = "Selecionar DM"
+                                self.wait(t, active_title)
+                                if protocol == "kitty":
+                                    self.assertTrue(background_parts())
+                            t.send("\x12")
+                            self.wait(t, active_title)
+                            if protocol == "kitty":
+                                self.assertTrue(background_parts())
+                            first_frame = len(t.stream.frames)
+                            first_placement = len(t.stream.placements)
+                            t.resize(44, 144)
+                            self.wait(t, active_title)
+                            deadline = time.monotonic() + 10
+                            while not background_parts() and time.monotonic() < deadline:
+                                t.read(0.03)
+                            self.assertTrue(background_parts(), "Image disappeared after resize")
+                            if title == "Notificações":
+                                t.send("\x1b")
+                                self.wait(t, title)
                         t.send("\x1b")
                         self.wait_raster(t, lambda w, h: w > 600 and h > 300)
                         self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), 1)
@@ -757,7 +854,7 @@ class MediaTerminal(unittest.TestCase):
     def test_visible_video_has_automatic_static_poster_and_reuses_download(self):
         for protocol in ("kitty", "sixel", "iterm2"):
             with self.subTest(protocol=protocol), self.serve(self.video, "video/mp4") as server:
-                t = self.open(server, protocol=protocol)
+                t = self.open(server, protocol=protocol, size=(64, 160))
                 try:
                     self.wait_frames(t)
                     self.wait(t, "▶ Fixture")
@@ -768,6 +865,15 @@ class MediaTerminal(unittest.TestCase):
                     count = len(t.stream.frames)
                     t.read(0.3)
                     self.assertEqual(len(t.stream.frames), count, "Poster must remain static")
+                    poster_ids = t.stream.live_ids.copy()
+                    for key, title in (("@", "Menções"), ("\x1b[20~", "Notificações")):
+                        t.send(key)
+                        self.wait(t, title)
+                        if protocol == "kitty":
+                            self.assertTrue(poster_ids <= t.stream.live_ids)
+                        self.assertEqual(len(t.stream.frames), count)
+                        t.send("\x1b")
+                        self.assertNotIn(title, "\n".join(t.screen.display))
                     t.send("\x1b[18~")
                     self.wait(t, "Mídia 1/1")
                     self.assertNotIn("[Info]", "\n".join(t.screen.display))

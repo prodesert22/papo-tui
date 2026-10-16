@@ -10,6 +10,362 @@ from test_terminal import Terminal
 
 
 class R8Terminal(unittest.TestCase):
+    def test_conversation_selector_search_scroll_empty_and_mouse_selection(self):
+        from history_mock import OTHER
+
+        with R8Mock(count=3) as server:
+            server.notifications[1]["channel_id"] = OTHER
+            server.notifications[2]["channel_id"] = DM
+            server.channels += [
+                dict(
+                    id=uuid(7000 + i),
+                    name=f"Canal {i:02d}",
+                    type="text",
+                    position=10 + i,
+                    topic=None,
+                )
+                for i in range(30)
+            ]
+            t = self.login(server)
+            t.resize(32, 140)
+            t.send("\x1b[20~Aviso\t\x1bOC\n")
+            self.wait(t, "Selecionar canal")
+            t.send("\x1bOB\x1bOC")
+            self.wait(t, "Selecionar DM")
+            t.send("\x1bOB\x1bOD")
+            self.wait(t, "Selecionar canal")
+            t.send("\x1bOB\x1bOF")
+            self.wait(t, "Canal 29")
+            t.send("outro\n")
+            self.wait(t, "Filtro: # outro")
+            self.assertIn("Buscar: Aviso", "\n".join(t.screen.display))
+            self.assertIn("Aviso 0002", "\n".join(t.screen.display))
+            self.assertNotIn("Aviso 0001", "\n".join(t.screen.display))
+            self.assertNotIn("Aviso 0003", "\n".join(t.screen.display))
+            t.click(6, t.screen.display[6].index("[Nome]") + 2)
+            self.wait(t, "Selecionar canal")
+            t.send("inexistente\n")
+            self.wait(t, "Nenhum canal encontrado")
+            self.assertIn("Selecionar canal", "\n".join(t.screen.display))
+            t.send("\x03geral")
+            self.wait(t, "1 canal encontrado")
+            t.click(7, 31)
+            self.wait(t, "Filtro: # geral")
+            self.assertIn("Aviso 0001", "\n".join(t.screen.display))
+            self.assertNotIn("Aviso 0002", "\n".join(t.screen.display))
+            t.click(6, t.screen.display[6].index("[Nome]") + 2)
+            self.wait(t, "Selecionar canal")
+            t.click(6, 85)
+            self.wait(t, "Selecionar DM")
+            t.send("@bob")
+            self.wait(t, "Bia (@bob)")
+            t.resize(14, 44)
+            self.wait(t, "Selecionar DM")
+            self.wait(t, "Bia (@bob)")
+            t.send("\n")
+            self.wait(t, "Filtro: DM: Bia")
+            self.wait(t, "Aviso 0003")
+            self.assertEqual(server.marked, [])
+            self.assertFalse(any("/messages" in r[1] for r in server.requests))
+
+    def test_notification_arrows_reach_filters_without_editing_search(self):
+        with R8Mock(count=3) as server:
+            server.notifications[1]["channel_id"] = DM
+            t = self.login(server)
+            t.send("\x1b[20~\x1bOC")
+            self.wait(t, "Filtro: Canais")
+            self.assertIn("Filtro: Canais [Nome]", "\n".join(t.screen.display))
+            self.assertNotIn("Selecionar", "\n".join(t.screen.display))
+            self.assertTrue(t.screen.cursor.hidden)
+            t.send("\x1bOC")
+            self.wait(t, "Filtro: DMs")
+            self.assertNotIn("Selecionar", "\n".join(t.screen.display))
+            t.send("\x1bOD\n")
+            self.wait(t, "Selecionar canal")
+            self.assertFalse(t.screen.cursor.hidden)
+            t.send("geral\n")
+            self.wait(t, "Filtro: # geral")
+            self.assertNotIn("Aviso 0002", "\n".join(t.screen.display))
+            t.send("\x1b[<64;20;7M\t\n")
+            self.wait(t, "Preferências")
+            t.send("\x1b\x1bOA\x1bOC\n")
+            self.wait(t, "Selecionar DM")
+            t.send("@bob\n")
+            self.wait(t, "Filtro: DM: Bia")
+            self.wait(t, "Aviso 0002")
+            self.assertNotIn("Aviso 0003", "\n".join(t.screen.display))
+            t.send("\x1bOA\n")
+            self.wait(t, "Selecionar DM")
+            t.send("\x1b")
+            self.wait(t, "Filtro: DM: Bia")
+            t.send("\x1bOD")
+            self.wait(t, "Filtro: Canais")
+            self.assertIn("Filtro: Canais [Nome]", "\n".join(t.screen.display))
+            self.assertNotIn("Selecionar", "\n".join(t.screen.display))
+            t.send("\x1bOA")
+            self.assertFalse(t.screen.cursor.hidden)
+            t.send("\x1bOB\t\t\x1bOD")
+            self.wait(t, "Data: antigas")
+            self.assertTrue(t.screen.cursor.hidden)
+            t.send("\x1bOB\x1bOC\n")
+            self.wait(t, "Selecionar DM")
+            t.send("\t\t\n")
+            self.wait(t, "Filtro: DMs")
+            t.send("\n")
+            self.wait(t, "Detalhes da notificação")
+            self.wait(t, "Aviso 0002")
+            self.assertEqual(server.marked, [[uuid(4002)]])
+
+    def test_notification_search_mentions_conversation_filters_and_precise_date_order(self):
+        with R8Mock(count=3) as server:
+            server.notifications[0].update(
+                message_content="Mais recente @mention(<@" + uuid(21) + ">)",
+                created_at="2026-10-15T12:00:00.123457Z",
+            )
+            server.notifications[1].update(
+                channel_id=DM,
+                message_content="Antiga direta",
+                created_at="2026-10-15T08:00:00.123456-04:00",
+            )
+            server.notifications[2].update(
+                message_content="Outra no canal", created_at="2026-10-15T12:00:00.123456Z"
+            )
+            t = self.login(server)
+            t.resize(32, 140)
+            t.send("\x1b[20~")
+            self.wait(t, "@Apelido")
+            top, left = 3, 25
+            self.assertIn("Filtro: Todos [Nome]", t.screen.display[top + 3])
+            self.assertIn("Mais recente", t.screen.display[top + 4])
+            self.assertNotIn("@mention(", "\n".join(t.screen.display))
+            self.assertEqual(server.marked, [])
+            t.click(top + 3, left + 60)
+            self.wait(t, "Data: antigas")
+            self.assertIn("Antiga direta", t.screen.display[top + 4])
+            t.click(top + 3, left + 6)
+            self.wait(t, "Filtro: Canais")
+            self.assertIn("Filtro: Canais [Nome]", "\n".join(t.screen.display))
+            self.assertNotIn("Selecionar", "\n".join(t.screen.display))
+            t.click(top + 3, left + 6)
+            self.wait(t, "Filtro: DMs")
+            self.assertNotIn("Selecionar", "\n".join(t.screen.display))
+            t.click(top + 3, left + 6)
+            self.wait(t, "Filtro: Todos")
+            t.click(top + 3, left + 6)
+            self.wait(t, "Filtro: Canais")
+            t.click(top + 3, t.screen.display[top + 3].index("[Nome]") + 2)
+            self.wait(t, "Selecionar canal")
+            t.send("\t\t\n")
+            self.wait(t, "Filtro: Canais")
+            self.assertNotIn("Antiga direta", "\n".join(t.screen.display))
+            t.send("\x1bOC\n")
+            self.wait(t, "Selecionar DM")
+            t.send("\t\t\n")
+            self.wait(t, "Antiga direta")
+            self.assertNotIn("Mais recente", "\n".join(t.screen.display))
+            self.assertNotIn("Outra no canal", "\n".join(t.screen.display))
+            t.send("\x1bOD\n")
+            self.wait(t, "Selecionar canal")
+            t.send("geral\n")
+            self.wait(t, "Filtro: # geral")
+            self.wait(t, "Mais recente")
+            self.assertNotIn("Antiga direta", "\n".join(t.screen.display))
+            t.send("\x1bOA\t\t\x1bOD")
+            self.wait(t, "Data: recentes")
+            self.assertIn("Mais recente", t.screen.display[top + 4])
+            t.send("apelido")
+            self.wait(t, "1 resultados")
+            self.assertFalse(t.screen.cursor.hidden)
+            self.assertEqual(t.screen.cursor.y, top + 2)
+            self.assertNotIn("Outra no canal", "\n".join(t.screen.display))
+            self.assertEqual(server.marked, [])
+            self.assertFalse(any("/messages" in r[1] for r in server.requests))
+            t.send("\n\n")
+            self.wait(t, "Detalhes da notificação")
+            self.wait(t, "@Apelido")
+            self.assertNotIn("@mention(", "\n".join(t.screen.display))
+            end = time.monotonic() + 4
+            while not server.marked and time.monotonic() < end:
+                t.read(0.03)
+            self.assertEqual(server.marked, [[uuid(4001)]])
+            t.send("\x1b")
+            t.resize(14, 44)
+            self.wait(t, "Buscar:")
+            self.wait(t, "@Apelido")
+            t.send("\x03inexistente")
+            self.wait(t, "Nenhuma notificação")
+            t.send("\x03" + "x" * 70 + "\x1bOHinicio")
+            self.assertEqual(t.screen.cursor.x, 18)
+            self.assertIn("Buscar: inicio", "\n".join(t.screen.display))
+            t.send("\x1bOF")
+            t.click(3, 14)
+            self.assertEqual(t.screen.cursor.x, 14)
+
+    def test_webhook_notification_uses_cached_author_and_red_mention_badges(self):
+        with R8Mock(count=0) as server:
+            t = self.login(server, environment={"KITTY_WINDOW_ID": "badge-fixture"})
+            self.assertIn("F9 avisos", t.screen.display[-2])
+            content = "Olá @mention(<@" + uuid(1) + ">)"
+            webhook = dict(
+                server.message(50),
+                author_id=None,
+                content=content,
+                webhook_id=uuid(700),
+                external_author=dict(name="Bot de avisos"),
+            )
+            server.emit(dict(webhook, type="message"))
+            server.emit(
+                dict(
+                    type="new_notification",
+                    id=uuid(9050),
+                    user_id=None,
+                    message_id=webhook["id"],
+                    message_content=content,
+                )
+            )
+            self.wait(t, "❶")
+            self.assertIn("[Comunidade 1]", t.screen.display[1])
+            self.assertEqual(t.screen.buffer[7][23].data, "❶")
+            self.assertEqual(t.screen.buffer[7][23].fg, "ff0000")
+            t.send("\x1b[20~")
+            self.wait(t, "Bot de avisos")
+            self.assertNotIn("Autor indisponível", "\n".join(t.screen.display))
+            self.assertFalse(any("/messages" in r[1] for r in server.requests))
+            t.send("\n")
+            self.wait(t, "Detalhes da notificação")
+            self.wait(t, "Bot de avisos")
+            t.send("\x1b\x1b")
+            self.wait(t, "[Canais]")
+            self.assertEqual(t.screen.buffer[7][23].data, "●")
+            self.assertIn("[Comunidade 0]", t.screen.display[1])
+            self.assertNotIn("❶", t.screen.display[1])
+            self.assertEqual(server.marked, [])  # Ephemeral events have no readable row.
+
+    def test_loaded_webhook_author_survives_conversation_change_and_missing_metadata_is_explicit(
+        self,
+    ):
+        from history_mock import OTHER
+
+        with R8Mock(count=2) as server:
+            server.messages[0].update(
+                author_id=None, webhook_id=uuid(701), external_author=dict(name="Webhook histórico")
+            )
+            server.notifications[0].update(
+                author_id=None,
+                message_id=server.messages[0]["id"],
+                message_content="Aviso do webhook",
+            )
+            server.notifications[1].update(author_id=None, message_content="Sem metadados")
+            original = server.api_handler
+
+            def route(method, path, body):
+                if path.split("?")[0].endswith("/channels/" + OTHER + "/messages"):
+                    # Real message UUIDs are unique within an instance. The
+                    # generic fixture reuses message(1) in both channels.
+                    return 200, dict(
+                        channel_id=OTHER,
+                        has_more=False,
+                        messages=[
+                            dict(
+                                server.message(99),
+                                channel_id=OTHER,
+                                content="Conteúdo do outro canal",
+                            )
+                        ],
+                    )
+                return original(method, path, body)
+
+            server.api_handler = route
+            t = self.login(server)
+            t.click(7, 4)
+            self.wait(t, "Mensagem 0003")
+            t.click(8, 4)
+            self.wait(t, "Conteúdo do outro canal")
+            t.send("\x1b[20~")
+            self.wait(t, "Webhook histórico")
+            self.wait(t, "Webhook / autor removido")
+            self.assertNotIn("Autor indisponível", "\n".join(t.screen.display))
+
+    def test_multiple_unread_mentions_are_counted_on_server_and_channel(self):
+        with R8Mock(count=12) as server:
+            for n in server.notifications:
+                n["message_content"] = "Aviso @mention(<@" + uuid(1) + ">)"
+            t = self.login(server, environment={"KITTY_WINDOW_ID": "badge-fixture"})
+            self.wait(t, "(12)")
+            self.assertIn("[Comunidade 12]", t.screen.display[1])
+            self.assertIn("(12)", t.screen.display[7])
+            self.assertEqual(t.screen.buffer[7][20].fg, "ff0000")
+            self.assertFalse(any("/messages" in r[1] for r in server.requests))
+            t.resize(32, 140)
+            t.send("\x1b[20~\n")
+            self.wait(t, "Detalhes da notificação")
+            self.wait(t, "(11)")
+            self.assertIn("[Comunidade 11]", t.screen.display[1])
+            t.send("\x1b\x1b")
+            self.assertIn("(11)", t.screen.display[7])
+
+    def test_notification_without_message_metadata_still_lights_server_dot(self):
+        with R8Mock(count=0) as server:
+            for channel in server.channels:
+                channel["last_read_message"] = channel.get("last_message", {}).get("id")
+            server.dms[0].update(last_message=None, unread_count=0)
+            t = self.login(server)
+            self.assertIn("[Comunidade]", t.screen.display[1])
+            server.emit(
+                dict(
+                    type="new_notification",
+                    id=uuid(9090),
+                    user_id=AUTHOR,
+                    message_id=uuid(9091),
+                    message_content="Aviso sem metadados",
+                )
+            )
+            self.wait(t, "1 avisos")
+            self.assertIn("[Comunidade 0]", t.screen.display[1])
+            self.assertFalse(any("/messages" in r[1] for r in server.requests))
+
+    def test_text_server_counter_is_red_and_inside_delimiters(self):
+        for mode in ("normal", "light", "ultralight"):
+            with self.subTest(mode=mode), R8Mock(count=12) as server:
+                root = tempfile.TemporaryDirectory(prefix="papo-badge-mode-")
+                self.addCleanup(root.cleanup)
+                config = Path(root.name, "papo-tui", "config.json")
+                config.parent.mkdir()
+                config.write_text(
+                    json.dumps(
+                        dict(
+                            version=4,
+                            profiles=[],
+                            selected_profile=None,
+                            app_mode=mode,
+                            requests_per_second=10,
+                            request_burst=25,
+                            desktop_notifications=False,
+                            notification_preview=False,
+                        )
+                    )
+                )
+                config.chmod(0o600)
+                for n in server.notifications:
+                    n["message_content"] = "@mention(<@" + uuid(1) + ">)"
+                t = self.login(
+                    server,
+                    environment={
+                        "XDG_CONFIG_HOME": root.name,
+                        "KITTY_WINDOW_ID": "badge-fixture",
+                        "TERM_PROGRAM": "",
+                        "TERM": "xterm-256color",
+                    },
+                )
+                self.wait(t, "[Comunidade 12]")
+                line = t.screen.display[1]
+                start = line.index("12]")
+                self.assertEqual(t.screen.buffer[1][start].fg, "ff0000")
+                self.assertEqual(t.screen.buffer[1][start + 1].fg, "ff0000")
+                self.assertNotEqual(t.screen.buffer[1][start + 2].fg, "ff0000")
+                t.resize(14, 44)
+                self.wait(t, "[Comunidade 12]")
+
     def wait(self, t, text):
         end = time.monotonic() + 7
         while text not in "\n".join(t.screen.display) and time.monotonic() < end:
@@ -397,18 +753,24 @@ class R8Terminal(unittest.TestCase):
             first.name = "Primeiro"
             second.name = "Segundo"
             second.session_cookie = "other-instance-fixture"
-            first.notifications[0]["message_content"] = "Aviso primeiro servidor"
-            second.notifications[0]["message_content"] = "Aviso segundo servidor"
-            t = self.login(first)
+            first.notifications[0]["message_content"] = (
+                "Aviso primeiro servidor @mention(<@" + uuid(1) + ">)"
+            )
+            second.notifications[0]["message_content"] = (
+                "Aviso segundo servidor @mention(<@" + AUTHOR + ">)"
+            )
+            t = self.login(first, environment={"KITTY_WINDOW_ID": "badge-fixture"})
             t.click(1, 70)
             self.wait(t, "URL do servidor")
             t.send(second.url + "\tjosé\tSynthetic!123\n")
             self.wait(t, "Segundo")
             self.wait(t, "Categoria")
+            self.assertIn("Primeiro 1", t.screen.display[1])
+            self.assertIn("Segundo 0", t.screen.display[1])
             from r8_mock import notification
 
             newest = notification(2)
-            newest["message_content"] = "Novidade no servidor inativo"
+            newest["message_content"] = "Novidade no servidor inativo @mention(<@" + uuid(1) + ">)"
             first.notifications.append(newest)
             first.emit(
                 dict(
@@ -420,6 +782,8 @@ class R8Terminal(unittest.TestCase):
                 )
             )
             t.read(0.5)
+            self.assertIn("Primeiro 2", t.screen.display[1])
+            self.assertIn("Segundo 0", t.screen.display[1])
             t.send("\x1b[20~")
             self.wait(t, "Aviso segundo servidor")
             self.assertNotIn("Aviso primeiro servidor", "\n".join(t.screen.display))
@@ -429,6 +793,7 @@ class R8Terminal(unittest.TestCase):
             self.assertEqual(second.marked, [[uuid(4001)]])
             self.assertEqual(first.marked, [])
             t.send("\x1b\x1b")
+            self.assertIn("Primeiro 2", t.screen.display[1])
             t.click(1, 4)
             self.wait(t, "Foco: Abas")
             t.send("\x1b[20~")

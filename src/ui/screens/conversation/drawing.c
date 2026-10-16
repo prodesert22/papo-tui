@@ -7,6 +7,51 @@ void conversation_notification_dot(WINDOW *window, int row, int column, int pair
     mvwaddstr(window, row, column, "●");
     wattrset(window, previous);
 }
+static int notification_badge(WINDOW *window, int row, int column, size_t count, bool more,
+                              int pair)
+{
+    char label[32];
+    if (!count)
+        snprintf(label, sizeof(label), "●");
+    else if (count <= 10) {
+        int bytes = g_unichar_to_utf8((gunichar)(0x2775 + count), label);
+        label[bytes] = 0;
+    } else
+        snprintf(label, sizeof(label), "(%zu)", count);
+    if (more && count)
+        strncat(label, "+", sizeof(label) - strlen(label) - 1);
+    attr_t previous = window ? getattrs(window) : 0;
+    if (window)
+        wattrset(window, (has_colors() ? COLOR_PAIR(pair) : 0) | A_BOLD);
+    int width = text_label(window, row, column, 24, label);
+    if (window)
+        wattrset(window, previous);
+    return width;
+}
+static bool instance_unread(history *h)
+{
+    if (inbox_unseen_conversations(history_inbox(h)))
+        return true;
+    for (size_t i = 0; i < history_channel_count(h); ++i)
+        if (history_channel_unread(h, history_channel(h, i)))
+            return true;
+    return false;
+}
+static int server_badge(WINDOW *window, int row, int column, size_t count, bool more, int pair)
+{
+    graphics_protocol protocol = graphics_terminal_get().protocol;
+    if (protocol != GRAPHICS_TEXT && protocol != GRAPHICS_CHAFA)
+        return notification_badge(window, row, column, count, more, pair);
+    char label[32];
+    snprintf(label, sizeof(label), "%zu%s", count, more && count ? "+" : "");
+    attr_t previous = window ? getattrs(window) : 0;
+    if (window)
+        wattrset(window, (has_colors() ? COLOR_PAIR(pair) : 0) | A_BOLD);
+    int width = text_label(window, row, column, 24, label);
+    if (window)
+        wattrset(window, previous);
+    return width;
+}
 
 void conversation_list_button(view *ui, int button, int column, int width, const char *label)
 {
@@ -25,10 +70,9 @@ int conversation_tab_width(view *ui, size_t index, int available)
 {
     int width = text_label(NULL, 0, 0, 128, ui->connections->items[index].name) + 4;
     inbox *box = history_inbox(ui->connections->items[index].model);
-    if (inbox_unread(box) || inbox_has_more(box))
-        width += 8;
-    if (inbox_unseen_conversations(box))
-        width += 2;
+    size_t mentions = inbox_unread_mentions(box, NULL);
+    if (inbox_unread(box) || instance_unread(ui->connections->items[index].model))
+        width += 1 + server_badge(NULL, 0, 0, mentions, inbox_has_more(box), 0);
     return width > available ? available : width;
 }
 
@@ -74,19 +118,24 @@ void conversation_draw_tabs(view *ui, auth_client *auth)
                                (selected || active ? A_BOLD : A_NORMAL));
         char label[192];
         inbox *box = history_inbox(ui->connections->items[i].model);
-        char badge[32] = "";
-        if (inbox_unread(box) || inbox_has_more(box))
-            snprintf(badge, sizeof(badge), " · %zu%s", inbox_unread(box),
-                     inbox_has_more(box) ? "+" : "");
-        snprintf(label, sizeof(label), "%c%s%s%s%c",
+        size_t mentions = inbox_unread_mentions(box, NULL);
+        bool notified = inbox_unread(box) || instance_unread(ui->connections->items[i].model);
+        int badge_width = notified ? server_badge(NULL, 0, 0, mentions, inbox_has_more(box), 0) : 0;
+        snprintf(label, sizeof(label), "%c%s",
                  selected ? '['
                  : active ? '>'
                           : ' ',
-                 ui->connections->items[i].name, badge, inbox_unseen_conversations(box) ? " *" : "",
-                 selected ? ']'
-                 : active ? '<'
-                          : ' ');
-        ui->tab_hits[i] = (click_range){x, text_label(ui->tabs, 0, x, size, label)};
+                 ui->connections->items[i].name);
+        int used = text_label(ui->tabs, 0, x, size - 3 - badge_width - (notified ? 1 : 0), label);
+        if (notified) {
+            mvwaddch(ui->tabs, 0, x + used++, ' ');
+            used += server_badge(ui->tabs, 0, x + used, mentions, inbox_has_more(box),
+                                 active     ? THEME_NOTIFICATION_BUTTON_FOCUS
+                                 : selected ? THEME_NOTIFICATION_SELECTED
+                                            : THEME_NOTIFICATION);
+        }
+        mvwaddch(ui->tabs, 0, x + used, selected ? ']' : active ? '<' : ' ');
+        ui->tab_hits[i] = (click_range){x, size};
         x += size;
     }
     bool adding = focused && ui->tab_cursor == ui->connections->count;
@@ -304,7 +353,18 @@ void conversation_draw_footer(view *ui)
     werase(ui->footer);
     wattrset(ui->footer, COLOR_PAIR(THEME_BORDER));
     mvwhline(ui->footer, 0, 0, ACS_HLINE, getmaxx(ui->footer));
-    status_bar_draw(&ui->status, ui->footer, 1, full, shorter, minimal);
+    char full_hints[768], short_hints[512], minimal_hints[256];
+    bool normal = !r8_modal_is_open(ui->r8) && !ui->settings.open && !ui->duplicate_modal &&
+                  !ui->reactors_open && !ui->context_open && !media_view_modal(ui->media) &&
+                  !emoji_picker_open(ui->emojis) && !emoji_picker_suggesting(ui->emojis) &&
+                  !mention_popup_open(ui->mentions);
+    snprintf(full_hints, sizeof(full_hints), "%s%s", full,
+             normal && !strstr(full, "F9") ? " · F9 avisos" : "");
+    snprintf(short_hints, sizeof(short_hints), "%s%s", shorter,
+             normal && !strstr(shorter, "F9") ? " · F9 avisos" : "");
+    snprintf(minimal_hints, sizeof(minimal_hints), "%s%s", minimal,
+             normal ? (getmaxx(ui->footer) >= 60 ? " · F9 avisos" : " · F9") : "");
+    status_bar_draw(&ui->status, ui->footer, 1, full_hints, short_hints, minimal_hints);
 }
 
 void conversation_draw_confirmation(view *ui)
@@ -344,7 +404,8 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
     bool paint_history = scope == DRAW_ALL || scope == DRAW_CONVERSATION;
     bool paint_media = paint_history || scope == DRAW_MEDIA || scope == DRAW_EDITOR ||
                        emoji_picker_open(ui->emojis) || emoji_picker_suggesting(ui->emojis) ||
-                       ui->reactors_open;
+                       ui->reactors_open || mention_popup_open(ui->mentions) ||
+                       r8_modal_is_open(ui->r8);
     bool paint_navigation = scope == DRAW_ALL || scope == DRAW_NAVIGATION;
     graphics_update_begin();
     curs_set(0);
@@ -429,17 +490,21 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                              (long long)json_integer_value(json_object_get(c, "unread_count")));
                 }
                 bool selected = index == ui->highlighted;
-                bool notified = unread;
+                size_t mentions =
+                    inbox_unread_mentions(history_inbox(ui->model), conversation_str(c, "id"));
+                bool notified = unread || mentions;
+                int badge_width = notified ? notification_badge(NULL, 0, 0, mentions, false, 0) : 0;
                 wattrset(ui->list, COLOR_PAIR(selected && focused ? THEME_FOCUSED
                                               : selected          ? THEME_PANEL_ACTIVE
                                               : focused           ? THEME_FOCUS_AREA
                                                                   : THEME_PANEL));
-                text_label(ui->list, row + 1, 1, ui->side - 2 - (notified ? 1 : 0), label);
+                text_label(ui->list, row + 1, 1, ui->side - 2 - badge_width, label);
                 if (notified)
-                    conversation_notification_dot(ui->list, row + 1, ui->side - 2,
-                                                  focused    ? THEME_NOTIFICATION_FOCUS
-                                                  : selected ? THEME_NOTIFICATION_SELECTED
-                                                             : THEME_NOTIFICATION);
+                    notification_badge(ui->list, row + 1, ui->side - 1 - badge_width, mentions,
+                                       false,
+                                       focused    ? THEME_NOTIFICATION_FOCUS
+                                       : selected ? THEME_NOTIFICATION_SELECTED
+                                                  : THEME_NOTIFICATION);
             }
     }
     if (ui->list && paint_navigation) {
@@ -636,11 +701,15 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
     if (mention_popup_open(ui->mentions) && ui->body && conversation_input(ui)) {
         text_layout measured;
         text_measure(conversation_input(ui), conversation_input_width(ui), &measured);
-        mention_popup_draw(ui->mentions,
-                           getbegy(ui->body) + conversation_input_top(ui) + measured.cursor_row -
-                               conversation_input(ui)->first_row,
-                           getbegx(ui->body) + 3 + measured.cursor_column, getbegx(ui->body) + 1,
-                           getmaxx(ui->body) - 2);
+        WINDOW *overlay =
+            mention_popup_draw(ui->mentions,
+                               getbegy(ui->body) + conversation_input_top(ui) +
+                                   measured.cursor_row - conversation_input(ui)->first_row,
+                               getbegx(ui->body) + 3 + measured.cursor_column,
+                               getbegx(ui->body) + 1, getmaxx(ui->body) - 2);
+        if (overlay)
+            icons_overlay(ui->icons, getbegy(overlay), getbegx(overlay), getmaxy(overlay),
+                          getmaxx(overlay));
     }
     if (emoji_picker_suggesting(ui->emojis) && ui->body && conversation_input(ui)) {
         text_layout measured;
@@ -668,27 +737,28 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
     }
     if (!caret)
         setsyx(-1, -1);
-    if (paint_media &&
-        (r8_modal_is_open(ui->r8) || ui->settings.open || media_view_modal(ui->media) ||
-         ui->duplicate_modal || mention_popup_open(ui->mentions)))
+    if (paint_media && (ui->settings.open || media_view_modal(ui->media) || ui->duplicate_modal))
         icons_begin(ui->icons);
     if (emoji_picker_open(ui->emojis)) {
         emoji_picker_draw(ui->emojis);
         caret = emoji_picker_cursor(ui->emojis);
     }
     conversation_interactions_draw(ui);
+    WINDOW *overlay = r8_modal_draw(ui->r8);
+    if (overlay)
+        icons_overlay(ui->icons, getbegy(overlay), getbegx(overlay), getmaxy(overlay),
+                      getmaxx(overlay));
     if (paint_media) {
-        if (!ui->duplicate_modal && !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
-            !mention_popup_open(ui->mentions))
+        if (!ui->duplicate_modal && !ui->settings.open)
             media_view_prepare(ui->media);
         icons_prepare(ui->icons);
         graphics_frame_prepare();
     }
-    r8_modal_draw(ui->r8);
     settings_draw(&ui->settings);
     if (r8_modal_is_open(ui->r8) || ui->settings.open) {
-        caret = false;
-        setsyx(-1, -1);
+        caret = !ui->settings.open && r8_modal_cursor(ui->r8);
+        if (!caret)
+            setsyx(-1, -1);
     }
     if (ui->context_open || ui->reactors_open) {
         caret = false;

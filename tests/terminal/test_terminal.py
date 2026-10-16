@@ -187,7 +187,12 @@ class PosixTerminal:
             else:
                 self.send(exit_key)
             try:
-                self.process.wait(timeout=5)
+                # Keep acting as the terminal while the client finishes a
+                # pending image transfer; an unread PTY can block its exit.
+                deadline = time.monotonic() + 5
+                while self.process.poll() is None and time.monotonic() < deadline:
+                    self.read(0.03)
+                self.process.wait(timeout=max(0.01, deadline - time.monotonic()))
             except subprocess.TimeoutExpired:
                 self.process.kill()
                 self.process.wait(timeout=5)

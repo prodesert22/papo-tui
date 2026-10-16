@@ -336,7 +336,7 @@ class AppModes(unittest.TestCase):
                     finally:
                         self.assertTrue(t.close())
 
-    def test_chafa_keeps_uncovered_chat_pixels_behind_emoji_and_reaction_panels(self):
+    def test_chafa_keeps_uncovered_chat_pixels_behind_floating_panels(self):
         image = subprocess.run(
             [
                 str(FFMPEG),
@@ -360,7 +360,12 @@ class AppModes(unittest.TestCase):
             capture_output=True,
         ).stdout
         for mode in ("normal", "light"):
-            for key, title in (("\x1bOS", "Emojis · Esc voltar"), ("E", "Quem reagiu")):
+            for key, title in (
+                ("\x1bOS", "Emojis · Esc voltar"),
+                ("E", "Quem reagiu"),
+                ("@", "Menções"),
+                ("\x1b[20~", "Notificações"),
+            ):
                 with self.subTest(mode=mode, modal=title):
                     self.seed(mode)
                     with self.helper.serve(image, "image/png") as server:
@@ -395,12 +400,61 @@ class AppModes(unittest.TestCase):
                             before = red_cells()
                             t.send(key)
                             self.helper.wait(t, title)
-                            row = next(line for line in t.screen.display if title in line)
-                            left = row.index(title) - 3
-                            exposed = {position for position in before if position[1] < left}
+                            top = next(
+                                i for i, line in enumerate(t.screen.display) if title in line
+                            )
+                            title_x = t.screen.display[top].index(title)
+                            if title == "Notificações":
+                                top -= 1
+                            left = next(
+                                x
+                                for x in range(title_x, -1, -1)
+                                if t.screen.buffer[top][x].data in ("l", "┌")
+                            )
+                            right = (
+                                next(
+                                    x
+                                    for x in range(title_x, t.screen.columns)
+                                    if t.screen.buffer[top][x].data in ("k", "┐")
+                                )
+                                + 1
+                            )
+                            bottom = (
+                                next(
+                                    y
+                                    for y in range(top + 1, t.screen.lines)
+                                    if t.screen.buffer[y][left].data in ("m", "└")
+                                    and t.screen.buffer[y][right - 1].data in ("j", "┘")
+                                )
+                                + 1
+                            )
+                            exposed = {
+                                (y, x)
+                                for y, x in before
+                                if y < top or y >= bottom or x < left or x >= right
+                            }
                             self.assertGreater(len(exposed), 8)
                             self.wait(t, lambda: exposed <= red_cells())
                             self.assertEqual(t.stream.frames, [])
+                            if title in ("Menções", "Notificações"):
+                                active_title = title
+                                if title == "Notificações":
+                                    t.send("\x1bOC\ngeral")
+                                    active_title = "Selecionar canal"
+                                    self.helper.wait(t, active_title)
+                                    self.wait(t, lambda: exposed <= red_cells())
+                                t.send("\x12")
+                                self.helper.wait(t, active_title)
+                                self.wait(t, lambda: exposed <= red_cells())
+                                t.resize(44, 144)
+                                self.helper.wait(t, active_title)
+                                self.wait(t, lambda: len(red_cells()) > 200)
+                                t.send("\x1b")
+                                self.assertNotIn(active_title, "\n".join(t.screen.display))
+                                if title == "Notificações":
+                                    self.helper.wait(t, title)
+                                    t.send("\x1b")
+                                self.wait(t, lambda: len(red_cells()) > 200)
                         finally:
                             self.assertTrue(t.close())
 

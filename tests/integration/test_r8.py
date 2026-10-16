@@ -53,6 +53,54 @@ class Observer:
 
 
 class R8Tests(unittest.TestCase):
+    def test_mention_counts_promote_events_without_mixing_conversations_or_read_cursors(self):
+        from history_mock import CHANNEL
+
+        with R8Mock(count=0) as server:
+            c = self.observer(server)
+            content = "Olá @mention(<@" + uuid(1) + ">)"
+            message = dict(server.message(20), content=content)
+            c.command("event " + json.dumps(dict(message, type="message")))
+            event = dict(
+                type="new_notification",
+                id=uuid(4020),
+                message_id=message["id"],
+                user_id=AUTHOR,
+                message_content=content,
+            )
+            c.command("event " + json.dumps(event))
+            c.command("event " + json.dumps(event))
+            r = c.wait(lambda r: r["mentions"] == 1)
+            self.assertEqual(r["channel_mentions"][CHANNEL], 1)
+            self.assertEqual(r["channel_mentions"][DM], 0)
+            row = dict(notification(20), message_id=message["id"], message_content=content)
+            server.notifications = [row]
+            c.command("refresh")
+            r = c.wait(lambda r: len(r["notifications"]) == 1 and not r["events"])
+            self.assertEqual(r["mentions"], 1)
+            c.command("detail " + row["id"])
+            r = c.wait(lambda r: r["mentions"] == 0)
+            self.assertTrue(r["channel_unread"][CHANNEL])
+            other = dict(server.message(21), channel_id=DM, content="@everyone DM")
+            c.command("event " + json.dumps(dict(other, type="message")))
+            event.update(id=uuid(9021), message_id=other["id"], message_content=other["content"])
+            c.command("event " + json.dumps(event))
+            r = c.wait(lambda r: r["mentions"] == 1)
+            self.assertEqual(r["channel_mentions"][DM], 1)
+            self.assertEqual(r["channel_mentions"][CHANNEL], 0)
+            c.command(
+                "event "
+                + json.dumps(
+                    dict(
+                        event,
+                        id=uuid(9022),
+                        message_id=uuid(9999),
+                        message_content="@mention(<@" + AUTHOR + ">)",
+                    )
+                )
+            )
+            self.assertEqual(c.command()["mentions"], 1)
+
     def observer(self, server):
         client = Observer(server.url)
         self.addCleanup(client.close)
@@ -72,6 +120,29 @@ class R8Tests(unittest.TestCase):
             self.assertFalse(r["more"])
             self.assertEqual(len({n["id"] for n in r["notifications"]}), 205)
             self.assertEqual(server.marked, [])
+
+    def test_mention_beyond_notification_preview_and_duplicate_message_ids(self):
+        from history_mock import CHANNEL
+
+        with R8Mock(count=0) as server:
+            c = self.observer(server)
+            content = "x" * 600 + " @mention(<@" + uuid(1) + ">)"
+            message = dict(server.message(40), content=content)
+            c.command("event " + json.dumps(dict(message, type="message")))
+            event = dict(
+                type="new_notification",
+                id=uuid(9040),
+                user_id=AUTHOR,
+                message_id=message["id"],
+                message_content=content[:512],
+            )
+            c.command("event " + json.dumps(event))
+            c.command("event " + json.dumps(dict(event, id=uuid(9041))))
+            r = c.wait(lambda r: len(r["events"]) == 2)
+            self.assertEqual(r["mentions"], 1)
+            self.assertEqual(r["channel_mentions"][CHANNEL], 1)
+            c.command("view " + message["id"])
+            self.assertEqual(c.command()["mentions"], 0)
 
     def test_only_viewed_persisted_id_uses_own_user_endpoint(self):
         with R8Mock(count=3) as server:
@@ -160,10 +231,12 @@ class R8Tests(unittest.TestCase):
             self.assertTrue(r["session"])
             self.assertEqual(server.opens, 1)
         with R8Mock(case="read-429") as server:
+            server.notifications[0]["message_content"] = "@mention(<@" + uuid(1) + ">)"
             c = self.observer(server)
             c.wait(lambda r: len(r["notifications"]) == 1)
             c.command("detail " + uuid(4001))
-            c.wait(lambda r: "Limite" in r["notice"])
+            r = c.wait(lambda r: "Limite" in r["notice"])
+            self.assertEqual(r["mentions"], 1)
             time.sleep(0.2)
             self.assertEqual(server.read_calls, 1)
 

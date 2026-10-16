@@ -41,6 +41,8 @@ Para testes Python, instale `requirements-dev.txt` em um ambiente virtual e indi
 
 Execute os testes apropriados às mudanças antes de afirmar que estão validadas. Para mudanças na integração com o backend, inclua cenários de falha e valide contra a instância de desenvolvimento quando disponível. Não coloque credenciais reais em fixtures.
 
+Ao alterar menus, modais ou composição de tela, verifique que imagens, avatares, emojis e capas de vídeo do histórico continuam renderizados fora da área coberta pelo painel. Inclua abertura, atualização, redimensionamento e fechamento dos seletores de menções/emojis, menus de contexto e modais de notificações/reações afetados pela mudança. Reutilize o recorte e o cache de mídia existentes; não oculte todo o histórico ao abrir um painel. Valide nos protocolos gráficos afetados e no fallback Chafa/Light, preservando a ausência de mídia no Ultralight. Registre evidências em `build/` e diferencie testes de PTY/protocolo de inspeção visual em um emulador real.
+
 ## Organização pretendida
 
 `src/app/` contém ciclo e estado do aplicativo; `src/ui/` separa telas, componentes, entrada e mídia; `src/net/` separa autenticação/API, HTTP e tempo real. Modelos e configuração ficam em `src/model/` e `src/config/`; `src/platform/` adapta recursos nativos de Linux e Windows. `tests/` separa testes unitários, integração, terminal, contrato, distribuição e suporte; `docs/` documenta instalação e uso. Só criar módulos e diretórios quando houver código que os utilize.

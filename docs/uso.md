@@ -86,6 +86,50 @@ Voice calls are not available yet.
 Type `@` in the editor to choose a person to mention; confirm with Tab or Enter.
 After closing the chooser, Enter sends the message.
 
+Press F9 to open notifications. Type in **Buscar** (Search) to match message text,
+displayed mentions, authors or conversation names. Click the filter on the next
+row, or use ←/→ from the results, to choose **Todos** (All), **Canais** (Channels)
+or **DMs**. Changing the category keeps you in the notification list. Press Enter
+on Canais or DMs to open a selector with its own **Nome** (Name)
+field. Type a channel name or the DM recipient's name/@username; use ↑/↓ to
+navigate matches and Enter or a mouse click to apply that conversation.
+Use ←/→ in the selector's results or click its **Canais**/**DMs** buttons to
+switch categories.
+Tab reaches **Todos os canais** (All channels) or **Todas as DMs** (All DMs)
+when you want the whole category. Esc returns without selecting a conversation.
+Click the filter to cycle categories. Click **[Nome]** (Name), immediately beside
+the filter on the same row, or press Enter with the filter focused to open its
+selector and choose a name. Changing the filter
+with a click or arrow never opens the name field automatically.
+These selectors use available channel/DM metadata and keep your notification
+search text. Click **Data** (Date) to switch between newest and oldest first.
+Events without a known date appear after dated results. Tab reaches search,
+filter and date controls after **Preferências** (Preferences) and **Mais antigas**
+(Older). From the result list, ←/→ changes the conversation filter directly.
+Press ↑ on the first result to focus the filter controls, ↑ again for search,
+and ↓ to return through the controls to the list. On the filter or date control,
+←/→ changes its value; Tab switches between these controls. In search, ←/→ moves
+the text cursor. Use ↑/↓ within the results to select a notification.
+Enter opens the selected notification; Esc returns to the list or closes the
+panel. Search, filters and
+ordering apply to loaded notifications. Use **Mais antigas** to load another page
+or Ctrl+R to refresh. Merely searching or filtering does not mark notifications read.
+
+Red dots beside server and channel names indicate unread messages. A red circled
+number shows known unread mentions of you or `@everyone`; larger counts use
+parentheses. A `+` on the server badge means more notification pages are available.
+Server badges sit inside the tab delimiters, separated from the name by one
+space, for example `[Server ❶]`. With text rendering (Chafa, Light or Ultralight),
+the badge is a plain red mention counter, such as `[Server 1]`; zero indicates
+unread activity without a confirmed mention.
+Counts cover loaded previews, which can be truncated, rather than a server-wide
+total. Opening a notification clears its mention badge after confirmation.
+The server dot also covers notifications with missing mention metadata.
+The unread-message dot remains until the conversation is read. Webhook names
+are shown when their message is available locally. Otherwise an unidentified
+author is labeled **Webhook / autor removido** because notification payloads
+do not distinguish webhooks from deleted users.
+
 Type `:` to open emoji suggestions, then keep typing to filter Unicode and
 server emojis by name or keyword. Use ↑/↓ to choose, Tab or Enter to insert,
 and Esc to dismiss. Confirming a suggestion inserts it without sending the
@@ -196,7 +240,8 @@ colors, while other terminals use the nearest available colors.
 
 ### Open media
 
-Image previews remain visible outside the emoji and reaction dialogs.
+Image previews remain visible outside floating panels, including mention/emoji
+choosers, message context menus, notifications and reaction dialogs.
 
 Click a media preview to open it, or use F7, select the message and media, then
 press Enter. In Normal mode, visible video attachments download automatically in the background
