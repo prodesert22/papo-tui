@@ -169,8 +169,10 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
         json_t *m = history_message(ui->model, i);
         bool selected = (ui->navigating || ui->context_open || ui->reactors_open) &&
                         !strcmp(ui->selected_message, conversation_str(m, "id"));
-        bool replying = !strcmp(conversation_reply_target(ui), conversation_str(m, "id"));
-        bool bordered = selected || replying;
+        bool editing = !strcmp(ui->edit_message, conversation_str(m, "id"));
+        bool replying =
+            !*ui->edit_message && !strcmp(conversation_reply_target(ui), conversation_str(m, "id"));
+        bool bordered = selected || replying || editing;
         int border_pair = selected ? THEME_PANEL_ACCENT : THEME_FOCUS_BORDER;
         int border_start = total;
         if (bordered) {
@@ -290,14 +292,17 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
                     }
                 }
                 if (border_start >= first && border_start < first + ui->visible &&
-                    (replying || (selected && blocks->media_count))) {
+                    (editing || replying || (selected && blocks->media_count))) {
                     char label[96];
+                    const char *action = editing    ? " ✎ Editando "
+                                         : replying ? " ↰ Respondendo "
+                                                    : " ";
                     if (selected && blocks->media_count)
-                        snprintf(label, sizeof(label), "%sMídia %zu/%zu ",
-                                 replying ? " ↰ Respondendo · " : " ", ui->selected_media + 1,
+                        snprintf(label, sizeof(label), "%s%sMídia %zu/%zu ", action,
+                                 editing || replying ? "· " : "", ui->selected_media + 1,
                                  blocks->media_count);
                     else
-                        snprintf(label, sizeof(label), " ↰ Respondendo ");
+                        snprintf(label, sizeof(label), "%s", action);
                     text_label(ui->body, ui->history_top + border_start - first, 3, width - 2,
                                label);
                 }

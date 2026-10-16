@@ -35,7 +35,12 @@ class InteractionIntegration(unittest.TestCase):
             report = json.loads(result.stdout)
             self.assertTrue(all(value for key, value in report.items() if key != "reply_id"))
             self.assertEqual([r[0] for r in server.reaction_calls], ["POST", "DELETE"])
-            self.assertEqual(server.sent_messages[0]["reply_to"], message)
+            self.assertEqual([r[0] for r in server.mutation_calls], ["PUT", "DELETE"])
+            reply_request = next(
+                r for r in server.requests if r[0] == "POST" and r[1].endswith("/messages")
+            )
+            self.assertEqual(reply_request[3]["reply_to"], message)
+            self.assertEqual(server.sent_messages, [])
             original = server.messages[0]
             self.assertEqual(original["reactions"][0]["count"], 1)
             self.assertEqual(original["user_reactions"], [])

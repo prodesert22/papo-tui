@@ -78,6 +78,9 @@ Voice calls are not available yet.
 | `e` during message navigation | Open the reaction picker |
 | Shift+E during message navigation | Show who reacted |
 | Right-click a message | Open its context menu directly |
+| ↑ in the focused, empty editor | Edit your newest message in loaded history |
+| Enter while editing a message | Save the edit |
+| Esc while editing a message | Cancel editing and restore the send draft |
 | Shift+Enter in the editor | Insert a new line |
 
 Type `@` in the editor to choose a person to mention; confirm with Tab or Enter.
@@ -97,7 +100,7 @@ to enter the grid. From its first row, ↑ returns to the buttons; ↑ again ret
 to search. Use ←/→ to switch emoji sources while the buttons have focus.
 Tab and Shift+Tab also move between these areas.
 
-## Messages, replies and reactions
+## Messages, editing, replies and reactions
 
 Press **F7** to select a message with a highlighted border. Use ↑/↓ to move
 between messages; older or newer pages load as needed. Use ←/→ to select
@@ -126,6 +129,31 @@ Esc to close the menu. Use the mouse or ↑/↓ and Enter inside the menu to cho
   The original message stays highlighted while you compose the reply. Press Esc
   once in the editor to cancel the reply while keeping your text and editor focus.
 - **Ir para mensagem original** (Go to original message): available on replies.
+- **Editar mensagem** (Edit message): available on your own messages. The editor
+  shows **Editando mensagem** (Editing message). The message scrolls into view
+  and stays highlighted with an **✎ Editando** border until editing ends.
+  Change the text and press Enter to save, or Esc / **[x]** to cancel.
+  Shift+Enter still inserts a new line.
+  Your send draft and reply target return when editing ends.
+- **Excluir mensagem** (Delete message): opens a confirmation with **Cancelar**
+  (Cancel) selected initially. **Excluir mensagem** uses white text on a red
+  background only while focused. Choose it and press Enter, or click that option,
+  to delete. Esc cancels. The server permits deletion of your
+  own messages or messages covered by your `delete_messages` permission.
+
+With the editor focused and empty, press ↑ to edit your newest own message in
+loaded history. This shortcut does not search unloaded pages. With text in the
+editor, ↑ keeps its usual cursor behavior. Messages exceeding the editor's
+2,048-character limit cannot be loaded for editing.
+
+Editing changes message text and keeps attachments and custom embeds. Empty
+edits are refused. Failed edits keep your text for an explicit retry with Enter;
+429 responses are never retried automatically. If confirmation is uncertain,
+check the refreshed history before retrying. Text typed while an edit is pending
+stays in editing mode after confirmation. Esc after submission closes the editor;
+an already submitted request may still finish. Changing conversation or server
+closes editing; the send draft stays with its conversation. Changing account or
+session also closes editing.
 
 Replies show a gray **↰ Author: excerpt** above their content. Click it to
 scroll to and highlight the original. Older originals are looked up automatically

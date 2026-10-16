@@ -267,6 +267,13 @@ if(BUILD_TESTING)
             $<TARGET_FILE:papo-tui>)
     set_tests_properties(message-interactions-terminal PROPERTIES TIMEOUT 180)
     add_test(
+        NAME message-mutations-terminal
+        COMMAND
+            ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_message_mutations.py
+            $<TARGET_FILE:papo-tui>)
+    set_tests_properties(message-mutations-terminal PROPERTIES TIMEOUT 180)
+    add_test(
         NAME history-terminal
         COMMAND
             ${Python3_EXECUTABLE}

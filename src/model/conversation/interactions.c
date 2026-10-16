@@ -2,15 +2,25 @@
 
 /* One auxiliary owner shares history's REST dispatcher. All JSON is owned here;
  * public accessors borrow until the next event/poll/context change. */
-enum action_kind { ACTION_IDLE, ACTION_SCAN, ACTION_JUMP, ACTION_REACT, ACTION_USERS };
+enum action_kind {
+    ACTION_IDLE,
+    ACTION_SCAN,
+    ACTION_JUMP,
+    ACTION_REACT,
+    ACTION_USERS,
+    ACTION_EDIT,
+    ACTION_DELETE
+};
 struct history_actions {
-    json_t *references, *users, *reaction;
+    json_t *references, *users, *payload;
     char scan_id[37], scan_time[65], page_id[37], page_time[65];
     char jump[37], ready[37], reactors[37], user_id[37], user_time[65];
-    char reaction_message[37], reaction_channel[37], requested_message[37];
+    char mutation_message[37], mutation_channel[37], requested_message[37];
     bool end, failed, want_users, users_more, users_failed, queued, remove, restart_scan,
         yield_scan;
-    enum action_kind request;
+    enum action_kind request, mutation;
+    char edited_message[37];
+    bool edit_ready, edit_success;
     uint64_t revision, selection;
     size_t bytes;
 };
@@ -34,7 +44,9 @@ static struct history_actions *actions(history *h)
 }
 bool history_internal_actions_mutating(history *h)
 {
-    return h->pending == ACTIONS && h->actions && h->actions->request == ACTION_REACT;
+    return h->pending == ACTIONS && h->actions &&
+           (h->actions->request == ACTION_REACT || h->actions->request == ACTION_EDIT ||
+            h->actions->request == ACTION_DELETE);
 }
 void history_internal_actions_reset(history *h)
 {
@@ -46,10 +58,18 @@ void history_internal_actions_reset(history *h)
     a->bytes = 0;
     a->scan_id[0] = a->scan_time[0] = a->jump[0] = a->ready[0] = a->reactors[0] = 0;
     a->end = a->failed = a->want_users = a->users_more = a->users_failed = false;
-    a->restart_scan = a->yield_scan = false;
+    a->restart_scan = a->yield_scan = a->edit_ready = false;
+    history_internal_notice(h, HISTORY_NOTICE_MUTATION, "");
     if (!history_internal_actions_mutating(h)) {
-        json_decref(a->reaction);
-        a->reaction = NULL;
+        /* A queued edit can be canceled by a refresh before dispatch. Release
+         * the editor's pending state even when no HTTP receipt will arrive. */
+        if (a->queued && a->mutation == ACTION_EDIT) {
+            snprintf(a->edited_message, sizeof(a->edited_message), "%s", a->mutation_message);
+            a->edit_ready = true;
+            a->edit_success = false;
+        }
+        json_decref(a->payload);
+        a->payload = NULL;
         a->queued = false;
         a->request = ACTION_IDLE;
     }
@@ -61,7 +81,7 @@ void history_internal_actions_destroy(history *h)
         return;
     json_decref(h->actions->references);
     json_decref(h->actions->users);
-    json_decref(h->actions->reaction);
+    json_decref(h->actions->payload);
     free(h->actions);
     h->actions = NULL;
 }
@@ -247,18 +267,66 @@ bool history_react(history *h, const char *message, const json_t *emoji, bool re
         !history_reaction_valid(emoji) || history_internal_find(h->messages, message) == SIZE_MAX)
         return false;
     struct history_actions *a = actions(h);
-    if (!a || a->queued || a->request == ACTION_REACT)
+    if (!a || a->queued || a->request == ACTION_REACT || a->request == ACTION_EDIT ||
+        a->request == ACTION_DELETE)
         return false;
-    a->reaction = json_pack("{s:s}", *s(emoji, "emoji_id") ? "emoji_id" : "unicode",
-                            *s(emoji, "emoji_id") ? s(emoji, "emoji_id") : s(emoji, "unicode"));
-    if (!a->reaction)
+    a->payload = json_pack("{s:s}", *s(emoji, "emoji_id") ? "emoji_id" : "unicode",
+                           *s(emoji, "emoji_id") ? s(emoji, "emoji_id") : s(emoji, "unicode"));
+    if (!a->payload)
         return false;
-    snprintf(a->reaction_message, sizeof(a->reaction_message), "%s", message);
-    snprintf(a->reaction_channel, sizeof(a->reaction_channel), "%s",
+    snprintf(a->mutation_message, sizeof(a->mutation_message), "%s", message);
+    snprintf(a->mutation_channel, sizeof(a->mutation_channel), "%s",
              s(history_channel(h, h->selected), "id"));
     a->remove = remove;
+    a->mutation = ACTION_REACT;
     a->queued = true;
     history_internal_status(h, "Reação aguardando envio…");
+    return true;
+}
+static bool queue_message_mutation(history *h, const char *message, const char *content,
+                                   enum action_kind kind)
+{
+    if (!h || !h->active || h->recovering || !auth_has_session(h->auth) || !history_uuid(message) ||
+        history_internal_find(h->messages, message) == SIZE_MAX)
+        return false;
+    json_t *m = history_find_message(h, message);
+    if (kind == ACTION_EDIT && (strcmp(s(m, "author_id"), auth_user_id(h->auth)) || !content ||
+                                !*content || strlen(content) > 8192))
+        return false;
+    struct history_actions *a = actions(h);
+    if (!a || a->queued || history_internal_actions_mutating(h) || a->edit_ready)
+        return false;
+    json_t *payload = kind == ACTION_EDIT ? json_pack("{s:s}", "content", content) : NULL;
+    if (kind == ACTION_EDIT && !payload)
+        return false;
+    json_decref(a->payload);
+    a->payload = payload;
+    snprintf(a->mutation_message, sizeof(a->mutation_message), "%s", message);
+    snprintf(a->mutation_channel, sizeof(a->mutation_channel), "%s",
+             s(history_channel(h, h->selected), "id"));
+    a->mutation = kind;
+    a->queued = true;
+    history_internal_notice(h, HISTORY_NOTICE_MUTATION,
+                            kind == ACTION_EDIT ? "Edição aguardando envio…"
+                                                : "Exclusão aguardando envio…");
+    return true;
+}
+bool history_edit_message(history *h, const char *message, const char *content)
+{
+    return queue_message_mutation(h, message, content, ACTION_EDIT);
+}
+bool history_delete_message(history *h, const char *message)
+{
+    return queue_message_mutation(h, message, NULL, ACTION_DELETE);
+}
+bool history_take_edit_result(history *h, char message[37], bool *success)
+{
+    if (!h || !h->actions || !h->actions->edit_ready)
+        return false;
+    struct history_actions *a = h->actions;
+    memcpy(message, a->edited_message, sizeof(a->edited_message));
+    *success = a->edit_success;
+    a->edit_ready = false;
     return true;
 }
 void history_reactors_open(history *h, const char *message)
@@ -322,11 +390,18 @@ bool history_internal_actions_dispatch(history *h, bool foreground)
         return false;
     enum action_kind kind = ACTION_IDLE;
     if (a->queued) {
-        snprintf(path, sizeof(path), "/channels/%s/messages/%s/reactions", a->reaction_channel,
-                 a->reaction_message);
-        if (!auth_mutate_json(h->auth, a->remove ? "DELETE" : "POST", path, a->reaction))
+        const char *method;
+        if (a->mutation == ACTION_REACT) {
+            snprintf(path, sizeof(path), "/channels/%s/messages/%s/reactions", a->mutation_channel,
+                     a->mutation_message);
+            method = a->remove ? "DELETE" : "POST";
+        } else {
+            snprintf(path, sizeof(path), "/messages/%s", a->mutation_message);
+            method = a->mutation == ACTION_EDIT ? "PUT" : "DELETE";
+        }
+        if (!auth_mutate_json(h->auth, method, path, a->payload))
             return false;
-        kind = ACTION_REACT;
+        kind = a->mutation;
         a->queued = false;
     } else if (*a->reactors && a->want_users && a->users_more &&
                json_array_size(a->users) < HISTORY_MESSAGE_LIMIT) {
@@ -383,7 +458,7 @@ bool history_internal_actions_dispatch(history *h, bool foreground)
 static bool own_reaction(history *h, struct history_actions *a)
 {
     json_t *m =
-        json_array_get(h->messages, history_internal_find(h->messages, a->reaction_message));
+        json_array_get(h->messages, history_internal_find(h->messages, a->mutation_message));
     if (!m)
         return true;
     json_t *mine = json_object_get(m, "user_reactions");
@@ -392,13 +467,13 @@ static bool own_reaction(history *h, struct history_actions *a)
         return false;
     size_t i;
     json_t *item;
-    json_array_foreach(copy, i, item) if (history_reaction_equal(item, a->reaction))
+    json_array_foreach(copy, i, item) if (history_reaction_equal(item, a->payload))
     {
         if (a->remove)
             json_array_remove(copy, i);
         break;
     }
-    if (!a->remove && i == json_array_size(copy) && json_array_append(copy, a->reaction)) {
+    if (!a->remove && i == json_array_size(copy) && json_array_append(copy, a->payload)) {
         json_decref(copy);
         return false;
     }
@@ -496,13 +571,63 @@ void history_internal_actions_response(history *h, json_t *body, long code, bool
     enum action_kind kind = a->request;
     a->request = ACTION_IDLE;
     bool current = a->selection == h->selection;
+    if (kind == ACTION_EDIT || kind == ACTION_DELETE) {
+        current = !strcmp(a->mutation_channel, s(history_channel(h, h->selected), "id"));
+        bool edit = kind == ACTION_EDIT;
+        bool ok = !uncertain && code == (edit ? 200 : 204);
+        uint64_t edited_at;
+        if (ok && edit &&
+            (!history_internal_message_valid(body, a->mutation_channel) ||
+             strcmp(s(body, "id"), a->mutation_message) ||
+             strcmp(s(body, "author_id"), auth_user_id(h->auth)) ||
+             strcmp(s(body, "content"), s(a->payload, "content")) ||
+             !session_time_parse(s(body, "edited_at"), &edited_at))) {
+            ok = false;
+            uncertain = true;
+        }
+        if (current) {
+            if (ok || code == 404) {
+                json_t *event =
+                    edit && ok ? json_pack("{s:s,s:s,s:s,s:O,s:O}", "type", "message_edit", "id",
+                                           a->mutation_message, "channel_id", a->mutation_channel,
+                                           "content", json_object_get(body, "content"), "edited_at",
+                                           json_object_get(body, "edited_at"))
+                               : json_pack("{s:s,s:s,s:s}", "type", "message_delete", "id",
+                                           a->mutation_message, "channel_id", a->mutation_channel);
+                if (!event || !history_event(h, event, h->context))
+                    uncertain = true;
+                json_decref(event);
+            }
+            /* Reconcile embeds and races through the active conversation only.
+             * Recovery resets auxiliary state, so publish the receipt afterward. */
+            if (ok || uncertain)
+                history_recover(h);
+            if (edit) {
+                snprintf(a->edited_message, sizeof(a->edited_message), "%s", a->mutation_message);
+                a->edit_ready = true;
+                a->edit_success = ok;
+            }
+            history_internal_notice(
+                h, HISTORY_NOTICE_MUTATION,
+                ok            ? edit ? "Mensagem editada." : "Mensagem excluída."
+                : code == 429 ? "Limite de requisições. Aguarde antes de tentar novamente."
+                : code == 403 ? "Sem permissão para alterar esta mensagem."
+                : code == 404 ? "Mensagem não disponível."
+                : uncertain
+                    ? "Alteração sem confirmação. Confira o histórico antes de tentar novamente."
+                    : "Não foi possível alterar a mensagem.");
+        }
+        json_decref(a->payload);
+        a->payload = NULL;
+        return;
+    }
     if (kind == ACTION_REACT) {
         bool ok = !uncertain && (a->remove ? code == 204 : code == 200 || code == 201);
         uint64_t created;
         if (ok && !a->remove &&
-            (strcmp(s(body, "message_id"), a->reaction_message) ||
+            (strcmp(s(body, "message_id"), a->mutation_message) ||
              strcmp(s(body, "user_id"), auth_user_id(h->auth)) || !history_reaction_valid(body) ||
-             !history_reaction_equal(body, a->reaction) ||
+             !history_reaction_equal(body, a->payload) ||
              !session_time_parse(s(body, "created_at"), &created))) {
             ok = false;
             uncertain = true;
@@ -519,8 +644,8 @@ void history_internal_actions_response(history *h, json_t *body, long code, bool
                        ? "Reação sem confirmação. Atualizando histórico antes de nova tentativa."
                        : "Não foi possível alterar a reação.");
         }
-        json_decref(a->reaction);
-        a->reaction = NULL;
+        json_decref(a->payload);
+        a->payload = NULL;
         /* Refresh the displayed window, not a guessed increment. The WS event
          * has an absolute total but contains no actor/membership information. */
         if (current && (ok || uncertain))

@@ -69,6 +69,19 @@ endpoint, whose reads mark remote read state; inactive histories are never
 queried. Failed lookups do not imply deletion. Context changes cancel reads;
 already transmitted mutations retain their response owner until consumed.
 
+Message editing and deletion reuse ncurses, the bounded text editor, Jansson
+and the authenticated REST dispatcher; no dependency is added. Editing uses
+`PUT /messages/{message_id}` with only `content`, preserving attachments and
+custom embeds. Deletion uses the documented DELETE and server authorization.
+The empty-editor Up shortcut searches loaded messages for the newest own
+message; it does not fetch inactive histories or promise a server-wide search.
+Edit buffers are separate from send drafts and are discarded on context changes.
+The editing highlight reuses the existing ncurses message border and UUID-based
+scroll positioning, without new dependencies or requests.
+Both mutations share the global rate budget and retain their response owner
+across conversation changes. Failures require an explicit retry; uncertain
+outcomes refresh the active history without replaying the mutation.
+
 Reactions use the existing authenticated dispatcher and global request budget.
 The `react_update` event has an absolute total and no channel or actor. It can
 update matching messages in this instance, but cannot establish own membership.
@@ -101,7 +114,8 @@ Ultralight keeps message actions available without starting the media helper.
 
 `python -m tools.check_message_interactions --url http://127.0.0.1:8080`
 validates the C interaction owner against an isolated DM between synthetic
-accounts, including an uploaded video. It keeps test credentials private under
+accounts, including queued-edit cancellation, editing, deletion and an uploaded
+video. It keeps test credentials private under
 build/, removes this run's messages and closes its DM views and sessions.
 The sanitized report distinguishes functional checks from contract divergences.
 

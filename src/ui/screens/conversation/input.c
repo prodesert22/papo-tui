@@ -60,12 +60,13 @@ bool conversation_hit(click_range range, int x)
 text_buffer *conversation_input(view *ui)
 {
     json_t *channel = history_channel(ui->model, history_selected(ui->model));
-    return channel &&
-                   (!strcmp(conversation_str(channel, "type"), "text") ||
-                    !strcmp(conversation_str(channel, "type"), "voice")) &&
-                   !strcmp(conversation_str(channel, "id"), ui->editor_channel)
-               ? send_editor_input(ui->editor)
-               : NULL;
+    if (!channel ||
+        (strcmp(conversation_str(channel, "type"), "text") &&
+         strcmp(conversation_str(channel, "type"), "voice")) ||
+        strcmp(conversation_str(channel, "id"), ui->editor_channel))
+        return NULL;
+    text_buffer *draft = send_editor_input(ui->editor);
+    return draft && *ui->edit_message ? &ui->edit_input : draft;
 }
 
 int conversation_input_width(view *ui)
@@ -166,11 +167,40 @@ int conversation_activate_tab(view *ui, size_t index, size_t *selected)
     return -1;
 }
 
+void conversation_cancel_edit(view *ui)
+{
+    ui->edit_message[0] = ui->edit_submitted[0] = 0;
+    ui->edit_pending = false;
+    ui->feedback = NULL;
+    text_clear(&ui->edit_input);
+    mention_popup_close(ui->mentions);
+    emoji_picker_dismiss(ui->emojis);
+    ui->dragging = ui->editor_scrolling = false;
+}
+
 void conversation_submit(view *ui, uint64_t retry_id, bool duplicate)
 {
     if (!conversation_input(ui))
         return;
     ui->feedback = NULL;
+    if (*ui->edit_message) {
+        if (retry_id || ui->edit_pending) {
+            ui->feedback = "Edição em andamento; aguarde ou pressione Esc para cancelar.";
+            return;
+        }
+        char content[TEXT_UTF8_BYTES];
+        if (!text_encode(&ui->edit_input, content) || !*content) {
+            ui->feedback = "Escreva uma mensagem antes de editar; Esc cancela.";
+            return;
+        }
+        if (!history_edit_message(ui->model, ui->edit_message, content)) {
+            ui->feedback = "Não foi possível preparar a edição; aguarde ou tente novamente.";
+            return;
+        }
+        snprintf(ui->edit_submitted, sizeof(ui->edit_submitted), "%s", content);
+        ui->edit_pending = true;
+        return;
+    }
     outbox_submit_result result = retry_id ? send_editor_retry(ui->editor, retry_id, duplicate)
                                            : send_editor_submit(ui->editor, duplicate);
     if (result == OUTBOX_CONFIRM_DUPLICATION) {

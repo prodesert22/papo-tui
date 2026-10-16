@@ -77,6 +77,9 @@ typedef struct {
     size_t index;
 } message_hit;
 typedef struct {
+    bool delete_confirm, edit_pending;
+    char edit_message[37], edit_submitted[TEXT_UTF8_BYTES];
+    text_buffer edit_input;
     bool navigating, context_open, context_keyboard, reactors_open, reaction_picker,
         reactor_users_focus;
     char selected_message[37], action_channel[37], reaction_target[37];
@@ -177,6 +180,7 @@ void conversation_set_focus(view *ui, int focus);
 void conversation_open_emojis(view *ui);
 void conversation_open_channel(view *ui, bool voice_history);
 int conversation_activate_tab(view *ui, size_t index, size_t *selected);
+void conversation_cancel_edit(view *ui);
 void conversation_submit(view *ui, uint64_t retry_id, bool duplicate);
 void conversation_close_confirmation(view *ui);
 bool conversation_poll_editor(view *ui, auth_client *auth);

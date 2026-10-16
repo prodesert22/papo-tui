@@ -64,7 +64,7 @@ void conversation_interactions_close(view *ui)
         delwin(ui->context_window);
         ui->context_window = NULL;
     }
-    ui->context_open = ui->context_keyboard = ui->reactors_open = false;
+    ui->context_open = ui->context_keyboard = ui->reactors_open = ui->delete_confirm = false;
     history_reactors_close(ui->model);
 }
 static size_t selected_index(view *ui)
@@ -103,12 +103,28 @@ void conversation_interactions_sync(view *ui)
     uint64_t generation = auth_context_generation(ui->connections->items[ui->active_tab].auth);
     if (strcmp(ui->action_channel, channel) || ui->action_generation != generation) {
         conversation_interactions_close(ui);
+        conversation_cancel_edit(ui);
         ui->navigating = ui->reaction_picker = false;
         ui->selection_pending = 0;
         ui->selected_message[0] = 0;
         ui->hit_count = 0;
         snprintf(ui->action_channel, sizeof(ui->action_channel), "%s", channel);
         ui->action_generation = generation;
+    }
+    char edited[37];
+    bool success;
+    if (history_take_edit_result(ui->model, edited, &success) && ui->edit_pending &&
+        !strcmp(edited, ui->edit_message)) {
+        ui->edit_pending = false;
+        ui->feedback = NULL;
+        char content[TEXT_UTF8_BYTES];
+        if (success && text_encode(&ui->edit_input, content) &&
+            !strcmp(content, ui->edit_submitted))
+            conversation_cancel_edit(ui);
+    }
+    if (*ui->edit_message && json_is_false(history_find_message(ui->model, ui->edit_message))) {
+        conversation_cancel_edit(ui);
+        ui->feedback = "Mensagem não disponível; edição cancelada.";
     }
     if (ui->reactors_open && history_recovering(ui->model))
         conversation_interactions_close(ui);
@@ -159,32 +175,103 @@ static void open_context(view *ui, const MEVENT *event)
     emoji_picker_dismiss(ui->emojis);
     ui->dragging = false;
 }
+enum { SHOW_REACTORS, ADD_REACTION, REPLY, ORIGINAL, EDIT_MESSAGE, DELETE_MESSAGE };
+static bool message_is_own(view *ui, const json_t *m)
+{
+    const char *user = auth_user_id(ui->connections->items[ui->active_tab].auth);
+    return user && *user && !strcmp(conversation_str(m, "author_id"), user) &&
+           !history_message_webhook(m);
+}
+static bool begin_edit(view *ui, json_t *m)
+{
+    if (!message_is_own(ui, m) || !conversation_input(ui))
+        return false;
+    text_buffer next;
+    if (!text_decode(&next, conversation_str(m, "content"))) {
+        ui->feedback = "Mensagem excede o limite do editor; edição não iniciada.";
+        return false;
+    }
+    ui->edit_input = next;
+    snprintf(ui->edit_message, sizeof(ui->edit_message), "%s", conversation_str(m, "id"));
+    ui->edit_pending = false;
+    ui->edit_submitted[0] = 0;
+    ui->navigating = ui->dragging = ui->editor_scrolling = false;
+    ui->feedback = NULL;
+    mention_popup_close(ui->mentions);
+    emoji_picker_dismiss(ui->emojis);
+    conversation_set_focus(ui, MESSAGE_INPUT);
+    snprintf(ui->selected_message, sizeof(ui->selected_message), "%s", ui->edit_message);
+    ui->navigating = true;
+    reveal(ui);
+    ui->navigating = false;
+    return true;
+}
+static int menu_actions(view *ui, int items[6])
+{
+    json_t *m = history_find_message(ui->model, ui->selected_message);
+    int count = 0;
+    items[count++] = SHOW_REACTORS;
+    items[count++] = ADD_REACTION;
+    items[count++] = REPLY;
+    if (*conversation_str(m, "reply_to"))
+        items[count++] = ORIGINAL;
+    if (message_is_own(ui, m))
+        items[count++] = EDIT_MESSAGE;
+    items[count++] = DELETE_MESSAGE;
+    return count;
+}
 static int menu_count(view *ui)
 {
-    return *conversation_str(history_find_message(ui->model, ui->selected_message), "reply_to") ? 4
-                                                                                                : 3;
+    int items[6];
+    return ui->delete_confirm ? 2 : menu_actions(ui, items);
 }
 static void message_action(view *ui, int action)
 {
     json_t *m = history_find_message(ui->model, ui->selected_message);
     char original[37];
     snprintf(original, sizeof(original), "%s", conversation_str(m, "reply_to"));
+    bool keyboard = ui->context_keyboard;
     conversation_interactions_close(ui);
-    if (action == 0)
+    if (action == DELETE_MESSAGE) {
+        ui->context_open = ui->delete_confirm = true;
+        ui->context_keyboard = keyboard;
+        ui->menu_selected = 0;
+    } else if (action == EDIT_MESSAGE)
+        begin_edit(ui, m);
+    else if (action == SHOW_REACTORS)
         conversation_reactors_open(ui);
-    else if (action == 1) {
+    else if (action == ADD_REACTION) {
         snprintf(ui->reaction_target, sizeof(ui->reaction_target), "%s", ui->selected_message);
         ui->reaction_picker = true;
         ui->emoji_return_focus = ui->focus;
         emoji_picker_reaction(ui->emojis, ui->action_channel, ui->action_generation);
-    } else if (action == 2) {
+    } else if (action == REPLY) {
+        conversation_cancel_edit(ui);
         if (outbox_set_reply(send_editor_outbox(ui->editor), ui->editor_channel,
                              ui->selected_message)) {
             ui->navigating = false;
             conversation_set_focus(ui, MESSAGE_INPUT);
         }
-    } else if (*original)
+    } else if (action == ORIGINAL && *original)
         history_jump(ui->model, original);
+}
+static void menu_activate(view *ui)
+{
+    if (ui->delete_confirm) {
+        bool remove = ui->menu_selected == 1;
+        conversation_interactions_close(ui);
+        if (remove) {
+            if (!history_delete_message(ui->model, ui->selected_message))
+                ui->feedback = "Não foi possível preparar a exclusão; aguarde ou tente novamente.";
+            else if (!strcmp(ui->edit_message, ui->selected_message))
+                conversation_cancel_edit(ui);
+        }
+        return;
+    }
+    int items[6];
+    int count = menu_actions(ui, items);
+    if (ui->menu_selected >= 0 && ui->menu_selected < count)
+        message_action(ui, items[ui->menu_selected]);
 }
 bool conversation_accept_reaction(view *ui)
 {
@@ -215,9 +302,28 @@ bool conversation_interactions_key(view *ui, int type, uint32_t key)
             if (type == KEY_CODE_YES && key == KEY_DOWN && ui->menu_selected + 1 < menu_count(ui))
                 ++ui->menu_selected;
             if (enter)
-                message_action(ui, ui->menu_selected);
+                menu_activate(ui);
         } else
             conversation_reactors_key(ui, type, key);
+        return true;
+    }
+    if (type == OK && key == 27 && *ui->edit_message) {
+        conversation_cancel_edit(ui);
+        ui->navigating = false;
+        conversation_set_focus(ui, MESSAGE_INPUT);
+        return true;
+    }
+    text_buffer *input = conversation_input(ui);
+    if (!ui->navigating && ui->focus == MESSAGE_INPUT && input && !input->length &&
+        !*ui->edit_message && type == KEY_CODE_YES && key == KEY_UP) {
+        for (size_t i = history_message_count(ui->model); i > 0; --i) {
+            json_t *m = history_message(ui->model, i - 1);
+            if (message_is_own(ui, m)) {
+                begin_edit(ui, m);
+                return true;
+            }
+        }
+        ui->feedback = "Nenhuma mensagem própria no histórico carregado para editar.";
         return true;
     }
     if (type == KEY_CODE_YES && key == KEY_F(7)) {
@@ -320,7 +426,7 @@ bool conversation_interactions_mouse(view *ui, const MEVENT *event)
                 conversation_reactors_mouse(ui, event);
             else if (left && inside && ui->context_open && y >= 1 && y <= menu_count(ui)) {
                 ui->menu_selected = y - 1;
-                message_action(ui, ui->menu_selected);
+                menu_activate(ui);
             } else if ((left || right) && !inside)
                 conversation_interactions_close(ui);
         }
@@ -328,6 +434,12 @@ bool conversation_interactions_mouse(view *ui, const MEVENT *event)
     }
     if (!left && !right)
         return false;
+    if (left && ui->body && *ui->edit_message &&
+        event->y == getbegy(ui->body) + ui->editor_border) {
+        if (event->x >= getbegx(ui->body) + getmaxx(ui->body) - 5)
+            conversation_cancel_edit(ui);
+        return true;
+    }
     if (left && ui->body && *conversation_reply_target(ui) &&
         event->y == getbegy(ui->body) + ui->editor_border) {
         if (event->x >= getbegx(ui->body) + getmaxx(ui->body) - 5)
@@ -394,11 +506,24 @@ void conversation_interactions_draw(view *ui)
     wbkgd(w, COLOR_PAIR(THEME_PANEL));
     box(w, 0, 0);
     if (ui->context_open) {
-        const char *labels[] = {"Ver quem reagiu", "Adicionar reação", "Responder",
-                                "Ir para mensagem original"};
+        const char *labels[] = {"Ver quem reagiu", "Adicionar reação",
+                                "Responder",       "Ir para mensagem original",
+                                "Editar mensagem", "Excluir mensagem"};
+        int items[6];
+        menu_actions(ui, items);
+        if (ui->delete_confirm)
+            text_label(w, 0, 2, width - 4, "Excluir mensagem?");
         for (int i = 0; i < menu_count(ui); ++i) {
-            wattrset(w, COLOR_PAIR(i == ui->menu_selected ? THEME_PANEL_ACTIVE : THEME_PANEL));
-            text_label(w, i + 1, 1, width - 2, labels[i]);
+            bool destructive = ui->delete_confirm && i == 1;
+            bool selected = i == ui->menu_selected;
+            int pair = destructive && selected ? THEME_DESTRUCTIVE
+                       : selected              ? THEME_PANEL_ACTIVE
+                                               : THEME_PANEL;
+            wattrset(w, COLOR_PAIR(pair) | (destructive && selected ? A_BOLD : 0));
+            if (destructive)
+                mvwhline(w, i + 1, 1, ' ', width - 2);
+            text_label(w, i + 1, 1, width - 2,
+                       ui->delete_confirm ? i ? "Excluir mensagem" : "Cancelar" : labels[items[i]]);
         }
     } else
         conversation_reactors_draw(ui, w);

@@ -42,6 +42,7 @@ int main(int argc, char **argv)
     json_t *report = json_object(), *emoji = json_pack("{s:s}", "unicode", "👍");
     uint64_t start = 0, operation = 0;
     bool replied = false, added = false, users = false, removed = false, poster = argc < 5;
+    bool edited = false, deleted = false, queued_edit_cancelled = false;
     char reply_id[37] = "";
     if (!auth || !report || !emoji || !net_now_ms(&start) ||
         !auth_start_with_policy(auth, argv[1], username, password, "", true))
@@ -160,7 +161,53 @@ int main(int argc, char **argv)
                 break;
         }
     }
+    net_now_ms(&start);
+    while ((history_recovering(h) || history_loading(h) || auth_busy(auth)) && waiting(start))
+        tick(auth, h, box);
+    /* Refresh can cancel a mutation still queued behind an auxiliary read.
+     * The UI must receive a result instead of remaining pending forever. */
+    if (history_edit_message(h, reply_id, "Canceled before dispatch")) {
+        history_recover(h);
+        char message[37];
+        bool success = true;
+        queued_edit_cancelled = history_take_edit_result(h, message, &success) && !success &&
+                                !strcmp(message, reply_id);
+    }
+    net_now_ms(&start);
+    while ((history_recovering(h) || history_loading(h) || auth_busy(auth)) && waiting(start))
+        tick(auth, h, box);
+    if (history_edit_message(h, reply_id, "Papo TUI synthetic edited reply")) {
+        net_now_ms(&start);
+        char message[37];
+        bool success = false;
+        while (waiting(start)) {
+            tick(auth, h, box);
+            if (history_take_edit_result(h, message, &success)) {
+                edited = success && !strcmp(message, reply_id) &&
+                         !strcmp(s(history_find_message(h, reply_id), "content"),
+                                 "Papo TUI synthetic edited reply");
+                break;
+            }
+        }
+    }
+    net_now_ms(&start);
+    while ((history_recovering(h) || history_loading(h) || auth_busy(auth)) && waiting(start))
+        tick(auth, h, box);
+    if (edited && history_delete_message(h, reply_id)) {
+        net_now_ms(&start);
+        while (waiting(start)) {
+            tick(auth, h, box);
+            if (!json_is_object(history_find_message(h, reply_id)) && !history_recovering(h) &&
+                !auth_busy(auth)) {
+                deleted = true;
+                break;
+            }
+        }
+    }
 done:
+    json_object_set_new(report, "queued_edit_cancelled", json_boolean(queued_edit_cancelled));
+    json_object_set_new(report, "message_edited", json_boolean(edited));
+    json_object_set_new(report, "message_deleted", json_boolean(deleted));
     json_object_set_new(report, "reply", json_boolean(replied));
     json_object_set_new(report, "reaction_added", json_boolean(added));
     json_object_set_new(report, "participants", json_boolean(users));
@@ -182,5 +229,8 @@ done:
     json_decref(report);
     json_decref(emoji);
     curl_global_cleanup();
-    return replied && added && users && removed && poster ? 0 : 2;
+    return replied && added && users && removed && poster && edited && deleted &&
+                   queued_edit_cancelled
+               ? 0
+               : 2;
 }

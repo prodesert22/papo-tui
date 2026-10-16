@@ -187,7 +187,9 @@ bool conversation_collect_notices(view *ui, auth_client *auth)
                                                    history_event_compact(ui->model));
             changed |= replaced || status_bar_touch(&ui->status, STATUS_EVENT);
         } else
-            changed |= status_bar_set(&ui->status, STATUS_HISTORY, message);
+            changed |= status_bar_set(
+                &ui->status, next == HISTORY_NOTICE_MUTATION ? STATUS_MUTATION : STATUS_HISTORY,
+                message);
         ui->notice_revisions[next] = earliest;
     }
     int paging = history_paging_direction(ui->model);
@@ -274,6 +276,9 @@ void conversation_draw_footer(view *ui)
                      : "↑↓ canais · Enter/→ abrir · ↑ topo · Ctrl+R atualizar";
         shorter = voice ? "↑↓ canais · F4 histórico · ↑ topo" : "↑↓ canais · Enter abrir · ↑ topo";
         minimal = voice ? "F4 histórico" : "↑↓ · Enter";
+    } else if (*ui->edit_message && ui->focus == MESSAGE_INPUT) {
+        full = shorter = "Enter editar · Shift+Enter linha · Esc cancelar edição";
+        minimal = "Enter editar · Esc cancelar";
     } else if (ui->focus == MESSAGE_INPUT && *conversation_reply_target(ui)) {
         full = "Enter enviar · Shift+Enter linha · F4 emojis · Esc cancelar resposta";
         shorter = "Enter enviar · Esc cancelar resposta";
@@ -513,7 +518,13 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         mvwhline(ui->body, ui->editor_border, 0, ACS_HLINE, getmaxx(ui->body));
         wattrset(ui->body, COLOR_PAIR(editing ? THEME_FOCUS_MUTED : THEME_PANEL_MUTED));
 
-        if (*conversation_reply_target(ui)) {
+        if (*ui->edit_message) {
+            wattrset(ui->body, COLOR_PAIR(THEME_MUTED));
+            text_label(ui->body, ui->editor_border, 2, getmaxx(ui->body) - 8,
+                       ui->edit_pending ? "Editando mensagem · aguardando confirmação…"
+                                        : "Editando mensagem · Enter editar · Esc cancelar");
+            text_label(ui->body, ui->editor_border, getmaxx(ui->body) - 5, 3, "[x]");
+        } else if (*conversation_reply_target(ui)) {
             char reply[TEXT_UTF8_BYTES], label[TEXT_UTF8_BYTES + 64];
             conversation_reply_label(ui, conversation_reply_target(ui), getmaxx(ui->body) - 25,
                                      reply, sizeof(reply));
@@ -537,10 +548,13 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                 text_keep_cursor(editor, &measured, height);
             if (!editor->length) {
                 char placeholder[2200];
-                snprintf(placeholder, sizeof(placeholder),
-                         json_is_true(json_object_get(c, "_dm")) ? "Conversar com %s"
-                                                                 : "Conversar em #%s",
-                         conversation_str(c, "name"));
+                if (*ui->edit_message)
+                    snprintf(placeholder, sizeof(placeholder), "Novo texto da mensagem");
+                else
+                    snprintf(placeholder, sizeof(placeholder),
+                             json_is_true(json_object_get(c, "_dm")) ? "Conversar com %s"
+                                                                     : "Conversar em #%s",
+                             conversation_str(c, "name"));
                 wattrset(ui->body, COLOR_PAIR(editing ? THEME_FOCUS_MUTED : THEME_PANEL_MUTED));
                 text_label(ui->body, conversation_input_top(ui), 3, width, placeholder);
             } else {

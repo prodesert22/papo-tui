@@ -131,8 +131,9 @@ def run(args, probe):
                 checks = json.loads(result.stdout)
             except (ValueError, TypeError):
                 raise ProbeError("C interaction probe produced no valid sanitized result") from None
-            if checks.get("reply_id"):
-                created.append(checks.pop("reply_id"))
+            reply_id = checks.pop("reply_id", "")
+            if reply_id and not checks.get("message_deleted"):
+                created.append(reply_id)
             probe.report["checks"]["c_client"] = checks
             if result.returncode or not all(checks.values()):
                 raise ProbeError("C interaction probe reported an incomplete interaction")
