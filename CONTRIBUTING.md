@@ -1,7 +1,7 @@
 # Development
 
-The application uses C17. Read AGENTS.md before changing the code. Preparation
-for 0.1.0 includes Windows adapters, packaging and validation; it does not
+The application uses C17. Read AGENTS.md before changing the code. The project
+includes Windows adapters, packaging and validation; client releases do not
 change the OpenAPI contract or add backend features.
 
 ## Dependencies and decisions

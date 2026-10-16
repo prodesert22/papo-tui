@@ -164,7 +164,7 @@ static CURL *media_easy(auth_client *client, const char *url, bool cookies)
     MEDIA_SET(CURLOPT_LOW_SPEED_LIMIT, 1024L);
     MEDIA_SET(CURLOPT_LOW_SPEED_TIME, 15L);
     MEDIA_SET(CURLOPT_NOSIGNAL, 1L);
-    MEDIA_SET(CURLOPT_USERAGENT, "papo-tui/0.1.0-dev");
+    MEDIA_SET(CURLOPT_USERAGENT, "papo-tui/" PAPO_VERSION);
     const char *ca_bundle = net_ca_bundle();
     if (ca_bundle && *ca_bundle)
         MEDIA_SET(CURLOPT_CAINFO, ca_bundle);

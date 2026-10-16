@@ -167,12 +167,6 @@ add_executable(
     src/ui/components/button.c)
 target_link_libraries(papo-tui PRIVATE papo_media PkgConfig::FORM PkgConfig::NCURSES
                                        PkgConfig::UNIBREAK)
-if(PAPO_RELEASE_BUILD)
-    set(PAPO_DISPLAY_VERSION "${PROJECT_VERSION}")
-else()
-    set(PAPO_DISPLAY_VERSION "${PROJECT_VERSION}-dev")
-endif()
-target_compile_definitions(papo-tui PRIVATE PAPO_VERSION="${PAPO_DISPLAY_VERSION}")
 
 foreach(target papo_auth papo-tui)
     target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Werror)

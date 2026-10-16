@@ -174,7 +174,7 @@ auth_client *auth_create(void)
     SET(CURLOPT_SSL_VERIFYPEER, 1L);
     SET(CURLOPT_SSL_VERIFYHOST, 2L);
     SET(CURLOPT_PROTOCOLS_STR, "http,https");
-    SET(CURLOPT_USERAGENT, "papo-tui/0.1.0-dev");
+    SET(CURLOPT_USERAGENT, "papo-tui/" PAPO_VERSION);
     const char *ca_bundle = net_ca_bundle();
     if (ca_bundle && *ca_bundle)
         SET(CURLOPT_CAINFO, ca_bundle);

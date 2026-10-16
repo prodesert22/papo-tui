@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 project(
     papo_tui
-    VERSION 0.1.0
+    VERSION 0.1.1
     LANGUAGES C)
 include(GNUInstallDirs)
 if(UNIX)
@@ -17,6 +17,12 @@ option(PAPO_SANITIZERS "Enable address and undefined behavior sanitizers" OFF)
 
 option(PAPO_RELEASE_BUILD "Build an official version without a development suffix" OFF)
 option(PAPO_COVERAGE "Instrument application and tests for gcovr" OFF)
+if(PAPO_RELEASE_BUILD)
+    set(PAPO_DISPLAY_VERSION "${PROJECT_VERSION}")
+else()
+    set(PAPO_DISPLAY_VERSION "${PROJECT_VERSION}-dev")
+endif()
+add_compile_definitions(PAPO_VERSION="${PAPO_DISPLAY_VERSION}")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 if(PAPO_COVERAGE)
     if(NOT CMAKE_C_COMPILER_ID STREQUAL "GNU" OR WIN32)

@@ -235,7 +235,7 @@ bool ws_connect(ws_client *client, const char *base)
     SET(CURLOPT_CONNECTTIMEOUT_MS, 5000L);
     SET(CURLOPT_TIMEOUT_MS, 15000L);
     SET(CURLOPT_NOSIGNAL, 1L);
-    SET(CURLOPT_USERAGENT, "papo-tui/0.1.0-dev");
+    SET(CURLOPT_USERAGENT, "papo-tui/" PAPO_VERSION);
     SET(CURLOPT_HEADERFUNCTION, receive_header);
     SET(CURLOPT_HEADERDATA, client);
     SET(CURLOPT_WRITEFUNCTION, receive_body);

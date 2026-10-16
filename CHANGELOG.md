@@ -5,11 +5,15 @@ full details are available in `releases/`.
 
 ## Unreleased
 
-## [0.1.0]
+## [0.1.1]
 
 - Emoji completion on `:` with filtered Unicode and server suggestions, saved
   usage ranking, labeled 32×32 picker previews and complete keyboard navigation.
 - Keep uncovered chat images visible while the emoji picker is open.
+
+See the [full 0.1.1 release notes](releases/v0.1.1.md).
+
+## [0.1.0]
 
 - Registration, sign-in, multiple instances and recovery of the last session
   through the system credential store.
