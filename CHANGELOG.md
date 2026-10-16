@@ -5,6 +5,15 @@ full details are available in `releases/`.
 
 ## Unreleased
 
+## [0.1.2]
+
+- Insert new lines with Shift+Enter in supported terminals; Enter still sends
+  messages and Ctrl+N remains available as a fallback.
+- Preserve numeric keypad shortcuts and restore the terminal's previous
+  keyboard mode on exit.
+
+See the [full 0.1.2 release notes](releases/v0.1.2.md).
+
 ## [0.1.1]
 
 - Emoji completion on `:` with filtered Unicode and server suggestions, saved

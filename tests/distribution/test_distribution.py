@@ -74,18 +74,18 @@ class DistributionTests(unittest.TestCase):
             self.assertFalse((root / "target.part").exists())
 
     def test_semver_and_incomplete_assets_fail_closed(self):
-        self.assertEqual(release.validate_tag("v0.1.1"), "0.1.1")
-        for tag in ("0.1.1", "v01.1.0", "v0.1", "v0.1.0-beta", "v0.1.2"):
+        self.assertEqual(release.validate_tag("v0.1.2"), "0.1.2")
+        for tag in ("0.1.2", "v01.1.0", "v0.1", "v0.1.0-beta", "v0.1.1", "v0.1.3"):
             with self.subTest(tag=tag), self.assertRaises(ValueError):
                 release.validate_tag(tag)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             with self.assertRaises(ValueError):
-                release.check_assets(root, "0.1.1")
+                release.check_assets(root, "0.1.2")
             self.assertFalse((root / "SHA256SUMS").exists())
-            for name in release.assets("0.1.1"):
+            for name in release.assets("0.1.2"):
                 (root / name).write_bytes(name.encode())
-            release.check_assets(root, "0.1.1")
+            release.check_assets(root, "0.1.2")
             for line in (root / "SHA256SUMS").read_text().splitlines():
                 digest, name = line.split("  ", 1)
                 self.assertEqual(digest, hashlib.sha256((root / name).read_bytes()).hexdigest())
