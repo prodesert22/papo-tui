@@ -3,7 +3,7 @@
 #include "net/http/download.h"
 #include "ui/media/image_decode.h"
 #define MEDIA_CACHE_MEMORY (256U * 1024U * 1024U)
-#define MEDIA_CACHE_FILES (128U * 1024U * 1024U)
+#define MEDIA_CACHE_FILES MEDIA_VIDEO_LIMIT
 #define MEDIA_CACHE_QUEUE 32U
 #define MEDIA_CACHE_DOWNLOADS 4
 #define MEDIA_CACHE_WORKERS 4

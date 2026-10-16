@@ -2,9 +2,9 @@
 #define PAPO_MEDIA_DOWNLOAD_H
 #include "net/auth/client.h"
 
-#define MEDIA_AVATAR_LIMIT (2U * 1024U * 1024U)
-#define MEDIA_IMAGE_LIMIT (16U * 1024U * 1024U)
-#define MEDIA_VIDEO_LIMIT (128U * 1024U * 1024U)
+#define MEDIA_AVATAR_LIMIT (16U * 1024U * 1024U)
+#define MEDIA_IMAGE_LIMIT (32U * 1024U * 1024U)
+#define MEDIA_VIDEO_LIMIT (256U * 1024U * 1024U)
 #define MEDIA_EMBED_LIMIT (48U * 1024U * 1024U)
 typedef enum {
     MEDIA_IDLE,
@@ -19,7 +19,7 @@ typedef struct media_download media_download;
 media_download *media_download_create(auth_client *auth);
 void media_download_destroy(media_download *m);
 bool media_download_request(media_download *m, auth_media_kind kind, const char *id, bool video);
-/* Public avatar URL, bounded to 2 MiB; same asynchronous global rate budget. */
+/* Public avatar URL, bounded to 16 MiB; same asynchronous global rate budget. */
 bool media_download_avatar_request(media_download *m, const char *reference);
 bool media_download_poll(media_download *m);
 void media_download_cancel(media_download *m);

@@ -269,6 +269,10 @@ download while it remains cached.
 Videos finish downloading before playback starts. Press Esc or click outside
 the media window to close it or cancel loading.
 
+The client accepts downloads up to 32 MiB per attached image, 16 MiB per avatar
+and 256 MiB per video. Larger files show **Mídia excede o limite de tamanho.**
+(Media exceeds the size limit).
+
 | Player control | Action |
 | --- | --- |
 | Space | Pause or resume |
