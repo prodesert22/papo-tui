@@ -24,7 +24,8 @@ struct r8_modal {
     bool open, detail, detail_event, prefs;
     size_t selected, first, detail_scroll;
     int focus, field_first;
-    char detail_id[37], detail_message[37], destination[37], selected_id[37], notice[192];
+    char detail_id[37], detail_message[37], destination[37], destination_message[37],
+        selected_id[37], notice[192];
     size_t users[10000], count; /* Shared indices for non-overlapping directory selectors. */
     text_buffer filter;
     notification_row rows[1256]; /* 1000 persisted rows + 256 ephemeral events. */
@@ -115,12 +116,29 @@ static json_t *message(r8_modal *m, json_t *n)
 static const char *author(r8_modal *m, json_t *n, bool event)
 {
     json_t *v = message(m, n);
-    if (v && history_message_webhook(v))
+    json_t *cached = inbox_message_preview(history_inbox(m->h), s(n, "message_id"));
+    if (history_message_webhook(cached) && *s(json_object_get(cached, "external_author"), "name"))
+        return history_message_author(m->h, cached);
+    if (v && history_message_webhook(v) &&
+        json_is_object(history_find_message(m->h, s(n, "message_id"))))
         return history_message_author(m->h, v);
     const char *id = s(n, event ? "user_id" : "author_id");
+    if (!*id)
+        id = s(v, "author_id");
     if (*id)
         return history_author(m->h, id);
-    return v ? "Autor removido" : "Webhook / autor removido";
+    const char *channel =
+        event ? inbox_message_channel(history_inbox(m->h), s(n, "message_id")) : s(n, "channel_id");
+    if (history_uuid(channel) &&
+        !strcmp(channel, s(history_channel(m->h, history_selected(m->h)), "id"))) {
+        history_reference_request(m->h, s(n, "message_id"));
+        json_t *reference = history_find_message(m->h, s(n, "message_id"));
+        if (json_is_false(reference))
+            return "Mensagem não disponível";
+        if (!json_is_object(reference))
+            return history_reference_notice(m->h);
+    }
+    return history_message_webhook(v) ? "Webhook" : "Autor ainda não carregado";
 }
 static const char *channel_id(r8_modal *m, json_t *n, bool event)
 {
@@ -359,6 +377,8 @@ static void activate(r8_modal *m)
         const char *id = event ? inbox_message_channel(b, s(n, "message_id")) : s(n, "channel_id");
         if (history_uuid(id)) {
             snprintf(m->destination, sizeof(m->destination), "%s", id);
+            snprintf(m->destination_message, sizeof(m->destination_message), "%s",
+                     s(n, "message_id"));
             r8_modal_close(m);
         } else
             snprintf(m->notice, sizeof(m->notice),
@@ -912,6 +932,10 @@ const char *r8_modal_destination(const r8_modal *m)
 {
     return m->destination;
 }
+const char *r8_modal_destination_message(const r8_modal *m)
+{
+    return m->destination_message;
+}
 bool r8_modal_cursor(r8_modal *m)
 {
     if (!m || !m->open || m->kind != R8_NOTIFICATIONS || m->detail || m->prefs || !m->window ||
@@ -933,4 +957,5 @@ bool r8_modal_cursor(r8_modal *m)
 void r8_modal_destination_clear(r8_modal *m)
 {
     m->destination[0] = 0;
+    m->destination_message[0] = 0;
 }

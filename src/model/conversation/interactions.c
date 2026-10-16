@@ -213,16 +213,32 @@ bool history_jump(history *h, const char *id)
     if (!a)
         return false;
     a->failed = false;
+    a->jump[0] = a->ready[0] = 0;
     if (history_internal_find(h->messages, id) != SIZE_MAX)
         snprintf(a->ready, sizeof(a->ready), "%s", id);
     else {
         history_reference_request(h, id);
         snprintf(a->jump, sizeof(a->jump), "%s", id);
+        history_internal_status(h, "Localizando mensagem…");
     }
     return true;
 }
 bool history_take_jump(history *h, char id[37])
 {
+    /* A destination can be queued before the newly selected channel's first
+     * page arrives. It needs no scan if that page already contains the target. */
+    if (h->actions && h->actions->request == ACTION_IDLE && !h->actions->failed &&
+        *h->actions->jump && history_internal_find(h->messages, h->actions->jump) != SIZE_MAX) {
+        snprintf(h->actions->ready, sizeof(h->actions->ready), "%s", h->actions->jump);
+        h->actions->jump[0] = 0;
+    }
+    if (h->actions && h->actions->request == ACTION_IDLE && h->actions->end &&
+        !h->actions->failed && *h->actions->jump &&
+        !json_is_object(json_object_get(h->actions->references, h->actions->jump))) {
+        json_object_set_new(h->actions->references, h->actions->jump, json_false());
+        h->actions->jump[0] = 0;
+        history_internal_status(h, "Mensagem não disponível.");
+    }
     if (!h->actions || !*h->actions->ready)
         return false;
     memcpy(id, h->actions->ready, 37);
@@ -677,6 +693,7 @@ void history_internal_actions_response(history *h, json_t *body, long code, bool
             json_is_null(json_object_get(h->patches, a->jump))) {
             json_object_set_new(a->references, a->jump, json_false());
             a->jump[0] = 0;
+            history_internal_status(h, "Mensagem não disponível.");
         } else {
             json_t *old = h->messages;
             h->messages = NULL;
@@ -723,6 +740,8 @@ void history_internal_actions_response(history *h, json_t *body, long code, bool
                     }
                 }
                 json_t *copy = patched ? reference_copy(patched) : NULL;
+                if (copy && h->r8)
+                    inbox_observe_message(h->inbox, patched);
                 json_decref(patched);
                 if (!copy || json_object_set_new(copy, "_reply_page_id", json_string(a->page_id)) ||
                     json_object_set_new(copy, "_reply_page_time", json_string(a->page_time))) {
@@ -756,7 +775,9 @@ void history_internal_actions_response(history *h, json_t *body, long code, bool
     }
     if (!ok) {
         a->failed = true;
-        if (kind == ACTION_JUMP)
+        if (kind == ACTION_SCAN && *a->jump)
+            history_internal_status(h, "Falha ao localizar mensagem. Ctrl+R: tentar novamente.");
+        else if (kind == ACTION_JUMP)
             history_internal_status(
                 h, "Falha ao carregar mensagem original. Ctrl+R: tentar novamente.");
     }

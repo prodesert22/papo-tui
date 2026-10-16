@@ -18,6 +18,7 @@ json_t *inbox_dm(const inbox *box, size_t index);
 bool inbox_open_dm(inbox *box, const char *user);
 bool inbox_close_dm(inbox *box, const char *id);
 const char *inbox_opened(const inbox *box);
+bool inbox_opening(const inbox *box);
 void inbox_opened_clear(inbox *box);
 void inbox_resolve_dm(inbox *box, const char *id);
 void inbox_refresh(inbox *box);

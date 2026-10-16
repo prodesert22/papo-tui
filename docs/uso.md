@@ -115,6 +115,16 @@ panel. Search, filters and
 ordering apply to loaded notifications. Use **Mais antigas** to load another page
 or Ctrl+R to refresh. Merely searching or filtering does not mark notifications read.
 
+In notification details, click **Abrir conversa** (Open conversation) or press
+Enter to open its channel or DM and locate the original message. Older messages
+are looked up automatically in that conversation. A closed DM is reopened when
+you choose this action. The target receives a highlighted
+border and stays centered in the history viewport as messages, media and reply
+previews finish loading, when enough surrounding content is available. Scrolling
+or selecting another message releases this centering. Esc leaves message navigation.
+A missing message or a failed lookup
+shows a notice; Ctrl+R retries a failed lookup.
+
 Red dots beside server and channel names indicate unread messages. The count
 shows known unread mentions of you or `@everyone`. In graphics terminals, the
 badge is centered vertically in the row, with a white count inside the red
@@ -129,9 +139,13 @@ Counts cover loaded previews, which can be truncated, rather than a server-wide
 total. Opening a notification clears its mention badge after confirmation.
 The server dot also covers notifications with missing mention metadata.
 The unread-message dot remains until the conversation is read. Webhook names
-are shown when their message is available locally. Otherwise an unidentified
-author is labeled **Webhook / autor removido** because notification payloads
-do not distinguish webhooks from deleted users.
+come from their message and remain available when later events omit attribution.
+If an author is missing from a notification in the active conversation, its
+message is looked up to recover the name without moving your reading position.
+For other conversations, **Autor ainda não carregado** (Author not loaded yet)
+means the notification omitted attribution. Opening the conversation loads the
+message and its author. The client does not fetch inactive conversation histories
+just to fill author names, because history reads also mark conversations read.
 
 Type `:` to open emoji suggestions, then keep typing to filter Unicode and
 server emojis by name or keyword. Use ↑/↓ to choose, Tab or Enter to insert,

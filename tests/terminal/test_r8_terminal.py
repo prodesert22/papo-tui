@@ -10,6 +10,281 @@ from test_terminal import Terminal
 
 
 class R8Terminal(unittest.TestCase):
+    def notification_target(self, server, count, index):
+        server.count = count
+        server.messages = [server.message(i) for i in range(1, count + 1)]
+        target = server.messages[index - 1]
+        server.notifications[0].update(
+            message_id=target["id"],
+            channel_id=target["channel_id"],
+            message_content="Notificação de destino",
+            author_id=target["author_id"],
+        )
+        return target
+
+    def open_notification_target(self, terminal):
+        terminal.send("\x1b[20~")
+        self.wait(terminal, "Notificação de destino")
+        terminal.send("\n")
+        self.wait(terminal, "Detalhes da notificação")
+        row = next(
+            i for i, line in enumerate(terminal.screen.display) if "[Abrir conversa]" in line
+        )
+        terminal.click(row, terminal.screen.display[row].index("[Abrir conversa]") + 2)
+
+    def assert_centered_target(self, terminal, content):
+        self.wait(terminal, content)
+        self.wait(terminal, "↑↓ mensagens")
+        terminal.read(0.2)
+        row = next(i for i, line in enumerate(terminal.screen.display) if content in line)
+        # At 100x32, the history viewport is rows 8..22 and its border is x=27.
+        self.assertLessEqual(abs(row - 15), 2, "Target must be centered in history")
+        self.assertIn(terminal.screen.buffer[row][27].data, ("x", "│"))
+        text_column = terminal.screen.display[row].index(content)
+        self.assertNotEqual(
+            terminal.screen.buffer[row][27].fg, terminal.screen.buffer[row][text_column].fg
+        )
+
+    def test_notification_opens_centers_and_highlights_first_page_and_loaded_target(self):
+        for already_open in (False, True):
+            with self.subTest(already_open=already_open), R8Mock(count=1) as server:
+                target = self.notification_target(server, 60, 30)
+                terminal = self.login(server)
+                terminal.resize(32, 100)
+                if already_open:
+                    terminal.click(7, 4)
+                    self.wait(terminal, "Mensagem 0060")
+                before = sum("/messages" in path for _, path, _, _ in server.requests)
+                self.open_notification_target(terminal)
+                self.assert_centered_target(terminal, target["content"])
+                after = sum("/messages" in path for _, path, _, _ in server.requests)
+                self.assertEqual(after - before, 0 if already_open else 1)
+                self.assertEqual(server.marked, [[uuid(4001)]])
+
+    def test_notification_opens_old_webhook_target_from_another_channel(self):
+        from history_mock import CHANNEL, OTHER
+
+        with R8Mock(count=1) as server:
+            target = self.notification_target(server, 320, 40)
+            target.update(
+                author_id=None, webhook_id=uuid(701), external_author=dict(name="Bot de entregas")
+            )
+            server.notifications[0]["author_id"] = None
+            terminal = self.login(server)
+            terminal.resize(32, 100)
+            terminal.click(8, 4)
+            self.wait(terminal, "Conteúdo do outro canal")
+            terminal.send("\x1b[20~")
+            self.wait(terminal, "Autor ainda não carregado")
+            self.assertFalse(
+                any(CHANNEL + "/messages" in path for _, path, _, _ in server.requests)
+            )
+            terminal.send("\n\n")
+            self.assert_centered_target(terminal, target["content"])
+            self.wait(terminal, "Bot de entregas")
+            reads = [
+                path
+                for method, path, _, _ in server.requests
+                if method == "GET" and "/messages" in path
+            ]
+            self.assertGreaterEqual(sum(CHANNEL in path for path in reads), 4)
+            self.assertEqual(sum(OTHER in path for path in reads), 1)
+
+    def test_notification_resolves_active_webhook_name_and_keeps_it_after_partial_event(self):
+        from history_mock import CHANNEL
+
+        with R8Mock(count=1) as server:
+            target = self.notification_target(server, 220, 40)
+            target.update(
+                author_id=None, webhook_id=uuid(702), external_author=dict(name="Bot antigo")
+            )
+            server.notifications[0]["author_id"] = None
+            terminal = self.login(server)
+            terminal.resize(32, 100)
+            terminal.click(7, 4)
+            self.wait(terminal, "Mensagem 0220")
+            terminal.send("\x1b[20~")
+            self.wait(terminal, "Bot antigo")
+            self.assertNotIn("Webhook / autor removido", "\n".join(terminal.screen.display))
+            terminal.send("\x1b")
+            self.wait(terminal, "Mensagem 0220")
+            terminal.click(8, 4)
+            self.wait(terminal, "Conteúdo do outro canal")
+            before = sum(CHANNEL + "/messages" in path for _, path, _, _ in server.requests)
+            partial = dict(target, type="message")
+            partial.pop("external_author")
+            partial.pop("webhook_id")
+            server.emit(partial)
+            terminal.send("\x1b[20~")
+            self.wait(terminal, "Bot antigo")
+            terminal.read(0.3)
+            self.assertEqual(
+                before, sum(CHANNEL + "/messages" in path for _, path, _, _ in server.requests)
+            )
+
+    def test_notification_target_stays_centered_when_content_above_changes(self):
+        from history_mock import CHANNEL
+
+        with R8Mock(count=1) as server:
+            target = self.notification_target(server, 320, 40)
+            terminal = self.login(server)
+            terminal.resize(32, 100)
+            self.open_notification_target(terminal)
+            self.assert_centered_target(terminal, target["content"])
+            # A late layout change before an old target must not move the
+            # selected message down or out of the viewport.
+            server.emit(
+                dict(
+                    type="message_edit",
+                    id=server.messages[38]["id"],
+                    channel_id=CHANNEL,
+                    content="\n".join(f"Linha tardia {i}" for i in range(12)),
+                    edited_at="2026-10-16T12:00:00Z",
+                )
+            )
+            self.wait(terminal, "Linha tardia 11")
+            self.assert_centered_target(terminal, target["content"])
+            terminal.resize(40, 120)
+            self.wait(terminal, target["content"])
+            terminal.read(0.2)
+            row = next(
+                i for i, line in enumerate(terminal.screen.display) if target["content"] in line
+            )
+            self.assertLessEqual(abs(row - 19), 2)
+            # Wheel input releases centering instead of snapping back on the
+            # next footer/media redraw. Down/up continue normal message selection.
+            terminal.send("\x1b[<64;40;18M")
+            terminal.read(0.3)
+            moved = next(
+                i for i, line in enumerate(terminal.screen.display) if target["content"] in line
+            )
+            self.assertGreater(moved, row)
+            terminal.resize(40, 130)
+            terminal.read(0.5)
+            self.assertEqual(
+                moved,
+                next(
+                    i for i, line in enumerate(terminal.screen.display) if target["content"] in line
+                ),
+            )
+            terminal.send("\x1bOB\x1bOA")
+            self.wait(terminal, target["content"])
+
+    def test_notification_with_null_author_uses_the_loaded_message_author(self):
+        with R8Mock(count=1) as server:
+            target = self.notification_target(server, 3, 2)
+            target["author_id"] = AUTHOR
+            server.notifications[0]["author_id"] = None
+            terminal = self.login(server)
+            terminal.click(7, 4)
+            self.wait(terminal, "Mensagem 0003")
+            terminal.send("\x1b[20~")
+            self.wait(terminal, "Bia")
+            self.assertNotIn("Autor ainda não carregado", "\n".join(terminal.screen.display))
+
+    def test_notification_keeps_message_target_while_resolving_unlisted_dm(self):
+        from r8_mock import dm
+
+        with R8Mock(count=1) as server:
+            server.dms = []
+            server.dm_messages = [
+                dict(server.message(1000 + i), channel_id=DM, author_id=AUTHOR)
+                for i in range(1, 41)
+            ]
+            target = server.dm_messages[19]
+            server.notifications[0].update(
+                channel_id=DM, message_id=target["id"], message_content="Notificação de destino"
+            )
+            original = server.api_handler
+
+            def route(method, path, body):
+                if method == "GET" and path.split("?")[0].endswith("/dms/" + DM):
+                    return 200, dm()
+                return original(method, path, body)
+
+            server.api_handler = route
+            terminal = self.login(server)
+            terminal.resize(32, 100)
+            self.open_notification_target(terminal)
+            self.assert_centered_target(terminal, target["content"])
+            self.assertTrue(any("/dms/" + DM in request[1] for request in server.requests))
+            self.assertEqual(server.opens, 1)
+
+    def test_notification_lookup_failure_requires_retry_and_preserves_target(self):
+        with R8Mock(count=1) as server:
+            target = self.notification_target(server, 220, 40)
+            original = server.api_handler
+            unavailable = True
+
+            def route(method, path, body):
+                if method == "GET" and "/messages?" in path and "last_id=" in path and unavailable:
+                    return 503, None
+                return original(method, path, body)
+
+            server.api_handler = route
+            terminal = self.login(server)
+            terminal.resize(32, 100)
+            self.open_notification_target(terminal)
+            self.wait(terminal, "Falha ao localizar mensagem")
+            before = sum("/messages" in request[1] for request in server.requests)
+            terminal.read(0.4)
+            self.assertEqual(before, sum("/messages" in request[1] for request in server.requests))
+            unavailable = False
+            terminal.send("\x12")
+            self.assert_centered_target(terminal, target["content"])
+
+    def test_notification_hidden_dm_open_failure_is_not_retried_automatically(self):
+        from r8_mock import dm
+
+        for status, notice in ((403, "Acesso recusado"), (429, "Limite de requisições")):
+            with self.subTest(status=status), R8Mock(count=1) as server:
+                server.dms = []
+                server.notifications[0].update(
+                    channel_id=DM, message_id=uuid(101), message_content="Notificação de destino"
+                )
+                original = server.api_handler
+                fail_open = True
+
+                def route(method, path, body):
+                    if method == "GET" and path.split("?")[0].endswith("/dms/" + DM):
+                        return 200, dm()
+                    if method == "POST" and path.endswith("/dms") and fail_open:
+                        server.opens += 1
+                        return status, None
+                    return original(method, path, body)
+
+                server.api_handler = route
+                terminal = self.login(server)
+                terminal.resize(32, 100)
+                self.open_notification_target(terminal)
+                self.wait(terminal, notice)
+                terminal.read(0.4)
+                self.assertEqual(server.opens, 1)
+                self.assertFalse(any("/messages" in request[1] for request in server.requests))
+                fail_open = False
+                terminal.send("\x1b[21~")
+                self.wait(terminal, "Nova DM")
+                terminal.send("bob")
+                self.wait(terminal, "Bia (@bob)")
+                terminal.send("\n")
+                self.wait(terminal, "Mensagem direta")
+                terminal.read(0.2)
+                self.assertNotIn("↑↓ mensagens", "\n".join(terminal.screen.display))
+                self.assertEqual(server.opens, 2)
+
+    def test_notification_reports_missing_target_without_selecting_another_message(self):
+        with R8Mock(count=1) as server:
+            target = self.notification_target(server, 60, 30)
+            server.messages.remove(target)
+            terminal = self.login(server)
+            terminal.resize(32, 100)
+            self.open_notification_target(terminal)
+            self.wait(terminal, "Mensagem não disponível")
+            self.assertNotIn("↑↓ mensagens", "\n".join(terminal.screen.display))
+            before = sum("/messages" in request[1] for request in server.requests)
+            terminal.read(0.4)
+            self.assertEqual(before, sum("/messages" in request[1] for request in server.requests))
+
     def test_conversation_selector_search_scroll_empty_and_mouse_selection(self):
         from history_mock import OTHER
 
@@ -283,7 +558,7 @@ class R8Terminal(unittest.TestCase):
             self.wait(t, "Conteúdo do outro canal")
             t.send("\x1b[20~")
             self.wait(t, "Webhook histórico")
-            self.wait(t, "Webhook / autor removido")
+            self.wait(t, "Autor ainda não carregado")
             self.assertNotIn("Autor indisponível", "\n".join(t.screen.display))
 
     def test_multiple_unread_mentions_are_counted_on_server_and_channel(self):

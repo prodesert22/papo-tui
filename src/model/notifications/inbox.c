@@ -381,6 +381,18 @@ void inbox_observe_message(inbox *b, const json_t *message)
                 json_object_set_new(preview, "external_author", author);
         }
     }
+    /* REST can include attribution omitted by a later WS payload for the same
+     * message. Keep that name until richer metadata replaces it. */
+    json_t *prior = json_object_get(b->previews, s(message, "id"));
+    if (preview && !strcmp(s(prior, "channel_id"), s(message, "channel_id")) &&
+        !*s(message, "author_id") && uuid_field(prior, "webhook_id") &&
+        (!uuid_field(message, "webhook_id") ||
+         !strcmp(s(prior, "webhook_id"), s(message, "webhook_id")))) {
+        json_object_set(preview, "webhook_id", json_object_get(prior, "webhook_id"));
+        if (!*s(json_object_get(preview, "external_author"), "name") &&
+            json_object_get(prior, "external_author"))
+            json_object_set(preview, "external_author", json_object_get(prior, "external_author"));
+    }
     if (preview && bounded_key(b->previews, s(message, "id"), preview))
         ++b->revision;
     json_decref(preview);
@@ -708,8 +720,15 @@ bool inbox_response(inbox *b, json_t *body, long code, bool uncertain)
     } else if ((kind == RECENT || kind == OLDER || kind == NEWER) && code == 200)
         ok = notifications_response(b, body, kind);
     else if ((kind == OPEN || kind == RESOLVE) && (code == 200 || code == 201)) {
+        bool listed = find(b->dms, s(body, "id")) != SIZE_MAX;
         ok = dm_update(b, body);
-        if (ok)
+        /* Resolving a hidden DM supplies its participant, but GET does not
+         * reopen it in the server's list. This follows an explicit open action. */
+        if (ok && kind == RESOLVE) {
+            if (!listed)
+                json_array_remove(b->dms, find(b->dms, s(body, "id")));
+            ok = inbox_open_dm(b, s(json_object_get(body, "user"), "id"));
+        } else if (ok)
             snprintf(b->opened, sizeof(b->opened), "%s", s(body, "id"));
     } else if (kind == CLOSE && code == 204) {
         size_t i = find(b->dms, b->request_id);
@@ -779,6 +798,10 @@ json_t *inbox_dm(const inbox *b, size_t i)
 const char *inbox_opened(const inbox *b)
 {
     return b->opened;
+}
+bool inbox_opening(const inbox *b)
+{
+    return b->pending == OPEN || b->pending == RESOLVE || b->action == OPEN || b->action == RESOLVE;
 }
 void inbox_opened_clear(inbox *b)
 {

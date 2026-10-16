@@ -18,6 +18,7 @@ WINDOW *r8_modal_draw(r8_modal *m);
 bool r8_modal_cursor(r8_modal *m);
 /* Destination selected explicitly in the central; returned UUID is borrowed. */
 const char *r8_modal_destination(const r8_modal *m);
+const char *r8_modal_destination_message(const r8_modal *m);
 void r8_modal_destination_clear(r8_modal *m);
 const char *r8_presence_label(const char *state);
 #endif

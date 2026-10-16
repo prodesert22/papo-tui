@@ -419,11 +419,27 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
     return total;
 }
 
+static bool centered_selection(view *ui)
+{
+    return ui->navigating && *ui->centered_message &&
+           !strcmp(ui->centered_message, ui->selected_message);
+}
+static int centered_position(view *ui, int last)
+{
+    return CLAMP((ui->selected_start + ui->selected_end - ui->visible) / 2, 0, last);
+}
 int conversation_position(view *ui)
 {
     int anchor;
     int total = conversation_walk(ui, 0, false, false, &anchor);
     int last = total > ui->visible ? total - ui->visible : 0;
+    if (centered_selection(ui)) {
+        int first = centered_position(ui, last);
+        /* Keep the UUID centered as late media, reply excerpts, names or pages
+         * change row heights. Save a normal anchor for leaving this mode. */
+        conversation_walk(ui, first, false, true, &anchor);
+        return first;
+    }
     return ui->at_end ? last : anchor > last ? last : anchor;
 }
 
@@ -432,6 +448,7 @@ void conversation_scroll_history(view *ui, int delta, bool paginate)
     if (!ui->body)
         return;
     if (!history_message_count(ui->model) && delta < 0) {
+        ui->centered_message[0] = 0;
         ui->at_end = false;
         ui->anchor[0] = 0;
         ui->waiting_page = 0;
@@ -439,7 +456,11 @@ void conversation_scroll_history(view *ui, int delta, bool paginate)
     }
     int anchor, total = conversation_walk(ui, 0, false, false, &anchor);
     int last = total > ui->visible ? total - ui->visible : 0;
-    int first = (ui->at_end ? last : anchor) + delta;
+    int first = (centered_selection(ui) ? centered_position(ui, last)
+                 : ui->at_end           ? last
+                                        : anchor) +
+                delta;
+    ui->centered_message[0] = 0;
     if (first < 0)
         first = 0;
     if (first > last)

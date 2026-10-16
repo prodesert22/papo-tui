@@ -76,6 +76,7 @@ static size_t selected_index(view *ui)
 }
 static void select_message(view *ui, size_t index)
 {
+    ui->centered_message[0] = 0;
     json_t *m = history_message(ui->model, index);
     if (!m)
         return;
@@ -107,6 +108,7 @@ void conversation_interactions_sync(view *ui)
         ui->navigating = ui->reaction_picker = false;
         ui->selection_pending = 0;
         ui->selected_message[0] = 0;
+        ui->centered_message[0] = 0;
         ui->hit_count = 0;
         snprintf(ui->action_channel, sizeof(ui->action_channel), "%s", channel);
         ui->action_generation = generation;
@@ -157,6 +159,8 @@ void conversation_interactions_sync(view *ui)
         ui->block[0] = 0;
         ui->offset = 0;
         ui->at_end = false;
+        ui->selected_media = 0;
+        snprintf(ui->centered_message, sizeof(ui->centered_message), "%s", target);
     }
 }
 static void open_context(view *ui, const MEVENT *event)
@@ -327,6 +331,7 @@ bool conversation_interactions_key(view *ui, int type, uint32_t key)
         return true;
     }
     if (type == KEY_CODE_YES && key == KEY_F(7)) {
+        ui->centered_message[0] = 0;
         if (!ui->body)
             return true;
         if (ui->navigating) {
@@ -359,6 +364,7 @@ bool conversation_interactions_key(view *ui, int type, uint32_t key)
     if (!ui->navigating)
         return false;
     if (type == OK && key == 27) {
+        ui->centered_message[0] = 0;
         ui->navigating = false;
         conversation_set_focus(ui, ui->return_focus);
         return true;
@@ -454,6 +460,7 @@ bool conversation_interactions_mouse(view *ui, const MEVENT *event)
             event->x >= hit->x + hit->width)
             continue;
         if (right) {
+            ui->centered_message[0] = 0;
             snprintf(ui->selected_message, sizeof(ui->selected_message), "%s", hit->id);
             ui->selected_media = 0;
             open_context(ui, event);
@@ -471,6 +478,7 @@ bool conversation_interactions_mouse(view *ui, const MEVENT *event)
             return true;
         }
         if (ui->navigating) {
+            ui->centered_message[0] = 0;
             snprintf(ui->selected_message, sizeof(ui->selected_message), "%s", hit->id);
             ui->selected_media = 0;
         }

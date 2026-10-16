@@ -10,6 +10,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from wcwidth import wcswidth
@@ -767,6 +768,88 @@ class MediaTerminal(unittest.TestCase):
                     self.wait(t, "[Comunidade ❶ ]")
                 finally:
                     self.assertTrue(t.close())
+
+    def test_notification_target_stays_centered_after_delayed_media_above_it_loads(self):
+        from history_mock import CHANNEL
+
+        for protocol in ("kitty", "sixel", "iterm2"):
+            with (
+                self.subTest(protocol=protocol),
+                self.serve(self.tall_image, "image/png") as server,
+            ):
+                attachments = server.messages[0]["attachments"]
+                server.count = 60
+                server.messages = [server.message(i) for i in range(1, 61)]
+                target = server.messages[29]
+                server.messages[28]["attachments"] = attachments
+                original = server.api_handler
+                requested, release = threading.Event(), threading.Event()
+
+                def route(method, path, body):
+                    if method == "GET" and path.split("?")[0].endswith("/notifications"):
+                        return 200, dict(
+                            notifications=[
+                                dict(
+                                    id=uuid(8000),
+                                    message_id=target["id"],
+                                    channel_id=CHANNEL,
+                                    author_id=target["author_id"],
+                                    message_content="Destino com mídia tardia",
+                                    read=False,
+                                    created_at=STAMP,
+                                )
+                            ],
+                            has_more=False,
+                        )
+                    if path.split("?")[0].endswith("/read_notification"):
+                        return 200, dict(updated=1)
+                    if "/attachments/" in path:
+                        requested.set()
+                        release.wait(5)
+                    return original(method, path, body)
+
+                server.api_handler = route
+                terminal = self.open(server, protocol=protocol, size=(32, 100))
+                try:
+                    terminal.send("\x1b[20~")
+                    self.wait(terminal, "Destino com mídia tardia")
+                    terminal.send("\n")
+                    self.wait(terminal, "Detalhes da notificação")
+                    terminal.send("\n")
+                    self.wait(terminal, target["content"])
+                    deadline = time.monotonic() + 4
+                    while not requested.is_set() and time.monotonic() < deadline:
+                        terminal.read(0.03)
+                    self.assertTrue(requested.is_set())
+                    row = next(
+                        i
+                        for i, line in enumerate(terminal.screen.display)
+                        if target["content"] in line
+                    )
+                    self.assertLessEqual(abs(row - 15), 2)
+                    release.set()
+                    self.wait_frames(terminal)
+                    terminal.read(0.3)
+                    row = next(
+                        i
+                        for i, line in enumerate(terminal.screen.display)
+                        if target["content"] in line
+                    )
+                    self.assertLessEqual(
+                        abs(row - 15), 2, "Decoded media must not push the target down"
+                    )
+                    terminal.resize(40, 120)
+                    terminal.read(0.3)
+                    row = next(
+                        i
+                        for i, line in enumerate(terminal.screen.display)
+                        if target["content"] in line
+                    )
+                    self.assertLessEqual(abs(row - 19), 2)
+                    self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), 1)
+                finally:
+                    release.set()
+                    self.assertTrue(terminal.close())
 
     def test_floating_panels_preserve_uncovered_attachment_pixels(self):
         for protocol in ("kitty", "sixel", "iterm2"):

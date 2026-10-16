@@ -259,6 +259,12 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             scope = DRAW_ALL;
         }
         const char *opened = inbox_opened(box);
+        if (*r8_modal_destination(ui->r8)) {
+            snprintf(ui->notification_channel, sizeof(ui->notification_channel), "%s",
+                     r8_modal_destination(ui->r8));
+            snprintf(ui->notification_message, sizeof(ui->notification_message), "%s",
+                     r8_modal_destination_message(ui->r8));
+        }
         const char *destination = *opened ? opened : r8_modal_destination(ui->r8);
         if (*destination) {
             bool found = false;
@@ -271,6 +277,13 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                     if (conversation_list_index(ui, j) == i)
                         ui->highlighted = j;
                 conversation_open_channel(ui, true);
+                if (!strcmp(ui->notification_channel, destination) &&
+                    !strcmp(destination,
+                            conversation_str(
+                                history_channel(ui->model, history_selected(ui->model)), "id"))) {
+                    history_jump(ui->model, ui->notification_message);
+                    ui->notification_channel[0] = ui->notification_message[0] = 0;
+                }
                 found = true;
                 break;
             }
@@ -280,6 +293,8 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             r8_modal_destination_clear(ui->r8);
             redraw = true;
         }
+        if (*ui->notification_message && !inbox_opening(box))
+            ui->notification_channel[0] = ui->notification_message[0] = 0;
         conversation_interactions_sync(ui);
         instances_visible(
             connections, auth,
@@ -866,6 +881,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 scope = DRAW_CONVERSATION;
                 conversation_scroll_history(ui, key == KEY_DOWN ? 1 : ui->visible, true);
             } else if (type == KEY_CODE_YES && key == KEY_END) {
+                ui->centered_message[0] = 0;
                 scope = DRAW_CONVERSATION;
                 if (!ui->unseen || history_evicted(ui->model))
                     history_recent(ui->model);

@@ -83,6 +83,8 @@ typedef struct {
     bool navigating, context_open, context_keyboard, reactors_open, reaction_picker,
         reactor_users_focus;
     char selected_message[37], action_channel[37], reaction_target[37];
+    char centered_message[37];
+    char notification_channel[37], notification_message[37];
     char reactor_emoji[37], reactor_unicode[65];
     uint64_t action_generation;
     size_t selected_media;
