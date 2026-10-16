@@ -102,6 +102,11 @@ CMake, Ninja and libraries for the same architecture. Install
 Vulkan stubs with these headers even when Vulkan itself is disabled. See the
 build recipes.
 
+For Unicode keyboard input on Windows, use the ncurses build from the project's
+dependency recipe. Run `python dist/bootstrap.py --prefix build/release-deps --only ncurses`
+with native Windows Python in that shell, then configure CMake with
+`-DCMAKE_PREFIX_PATH=build/release-deps`.
+
 ## Data and removal
 
 On Linux, profiles are stored in `$XDG_CONFIG_HOME/papo-tui` or `~/.config/papo-tui`;

@@ -1,6 +1,9 @@
 --- a/ncurses/curses.priv.h
 +++ b/ncurses/curses.priv.h
-@@ -2732,0 +2733,3 @@
+@@ -2294,0 +2295,2 @@
++/* Keep UCRT declarations ahead of the conversion macros. */
++#include <wchar.h>
+@@ -2732,0 +2735,3 @@
 +/* Distinguish native UTF-16 input units from ncurses key codes until the
 + * public narrow/wide input wrapper selects the character representation. */
 +#define NCURSES_WIN32_WIDE 0x10000000
