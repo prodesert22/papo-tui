@@ -6,6 +6,8 @@ import io
 import json
 from pathlib import Path
 import re
+import shlex
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -113,6 +115,32 @@ class DistributionTests(unittest.TestCase):
                 )
             setup = next(args for args, _ in calls if args[:2] == ["meson", "setup"])
             self.assertIn("-Dwin32-threads=enabled", setup)
+
+    def test_ncurses_pkg_config_uses_native_relocatable_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            prefix = Path(directory) / "prefix with spaces"
+            pc = prefix / "lib/pkgconfig"
+            pc.mkdir(parents=True)
+            for name in ("ncursesw", "formw", "menuw", "panelw"):
+                (pc / (name + ".pc")).write_text(
+                    "prefix=/d/cache/deps\nlibdir=${prefix}/lib\n"
+                    f"Name: {name}\nDescription: synthetic ncurses metadata\nVersion: 6.6\n"
+                    "Cflags: -I/d/cache/deps/include\nLibs: -L/d/cache/deps/lib -lncursesw\n"
+                )
+            with patch.object(bootstrap, "unix_path", return_value="/d/cache/deps"):
+                bootstrap.relocate_ncurses_pc(prefix)
+                # Cached prefixes pass through the same normalization again.
+                bootstrap.relocate_ncurses_pc(prefix)
+            env = {"PKG_CONFIG_LIBDIR": str(pc)}
+            for name in ("ncursesw", "formw"):
+                flags = shlex.split(
+                    subprocess.check_output(
+                        ["pkg-config", "--cflags", "--libs", name], env=env, text=True
+                    )
+                )
+                self.assertIn("-I" + str(prefix / "include"), flags)
+                self.assertIn("-L" + str(prefix / "lib"), flags)
+                self.assertNotIn("/d/cache/deps", (pc / (name + ".pc")).read_text())
 
     def test_archive_rejects_traversal_and_external_symlinks(self):
         for name, link in [

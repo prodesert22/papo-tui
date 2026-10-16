@@ -33,6 +33,9 @@ def build_variant(build, prefix, mode, jobs, test_jobs, log=None):
         platform_prefix = subprocess.check_output(
             ["cygpath", "-w", os.environ["MINGW_PREFIX"]], text=True
         ).strip()
+        # The private ncurses library does not install its own terminal database.
+        # Installed packages discover their bundled data through media_resources_init.
+        env.setdefault("TERMINFO", str(Path(platform_prefix) / "share/terminfo"))
         options += ["-DPAPO_PLATFORM_DATA_PREFIX=" + platform_prefix]
     if mode == "sanitizers":
         options += ["-DPAPO_SANITIZERS=ON"]

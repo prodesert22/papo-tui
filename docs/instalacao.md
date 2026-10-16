@@ -106,6 +106,9 @@ For Unicode keyboard input on Windows, use the ncurses build from the project's
 dependency recipe. Run `python dist/bootstrap.py --prefix build/release-deps --only ncurses`
 with native Windows Python in that shell, then configure CMake with
 `-DCMAKE_PREFIX_PATH=build/release-deps`.
+Before running a local build in MSYS2, set
+`export TERMINFO="$(cygpath -m "$MINGW_PREFIX/share/terminfo")"`.
+Installed Windows packages include their own terminal database.
 
 ## Data and removal
 

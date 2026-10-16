@@ -64,6 +64,24 @@ def unix_path(path):
     return str(path)
 
 
+def relocate_ncurses_pc(prefix):
+    """Keep ncurses' MSYS install paths out of native CMake include flags."""
+    installed = unix_path(prefix)
+    for name in ("ncursesw", "formw", "menuw", "panelw"):
+        path = prefix / "lib/pkgconfig" / (name + ".pc")
+        text = path.read_text().replace(installed, "${prefix}")
+        text = text.replace("prefix=${prefix}\n", "prefix=" + prefix.as_posix() + "\n", 1)
+        for option, variable in (
+            ("-I", "includedir"),
+            ("-I", "prefix"),
+            ("-L", "libdir"),
+            ("-L", "prefix"),
+        ):
+            reference = "${" + variable + "}"
+            text = text.replace(option + reference, option + '"' + reference + '"')
+        path.write_text(text)
+
+
 def patch_windows_libsixel(source):
     """Use a Windows timer for libsixel's POSIX nanosleep calls."""
     encoder = source / "src/encoder.c"
@@ -213,6 +231,8 @@ def build(entry, source, work, prefix, jobs, env):
         run("sh", unix_path(source / "configure"), *options, cwd=binary)
         run("make", "-j", jobs, cwd=binary)
         run("make", "install", cwd=binary)
+        if name == "ncurses":
+            relocate_ncurses_pc(prefix)
     elif entry["buildsystem"] == "ffmpeg":
         binary.mkdir(exist_ok=True)
         options = [
@@ -344,6 +364,8 @@ def main():
             "prefix": str(prefix),
         }
         if stamp.exists() and json.loads(stamp.read_text()) == identity:
+            if os.name == "nt" and entry["name"] == "ncurses":
+                relocate_ncurses_pc(prefix)
             continue
         archive = download(entry["url"], entry["sha256"], cache / entry["archive"])
         work = prefix.parent / ("dependency-" + entry["name"])
