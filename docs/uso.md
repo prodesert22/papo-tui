@@ -516,7 +516,9 @@ que se ajusta proporcionalmente ao espaço restante.
 
 Redimensionar preserva o vídeo. O áudio usa o dispositivo disponível; quando
 nenhum dispositivo pode ser aberto, o player informa isso e continua com o
-vídeo. A renderização é limitada a 640×360 pixels e 15 frames/s.
+vídeo. A imagem é ampliada ou reduzida proporcionalmente à área disponível no modal,
+sem cortes, e acompanha o redimensionamento. A renderização mantém o limite de
+15 frames/s, com resolução limitada pelo orçamento de memória.
 
 Imagens aceitam até 16 MiB e 16 megapixels, e vídeos até 128 MiB. O cache de
 imagens em memória tem limite global de **256 MiB** para todas as sessões desta

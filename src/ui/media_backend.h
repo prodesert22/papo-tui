@@ -2,7 +2,9 @@
 #define PAPO_MEDIA_BACKEND_H
 #include "ui/image_decode.h"
 
-#define PAPO_MEDIA_BACKEND_ABI 3U
+#define PAPO_MEDIA_BACKEND_ABI 4U
+/* Bound larger modal surfaces while keeping their buffers within the cache budget. */
+#define VIDEO_FRAME_PIXELS (7U * 1024U * 1024U)
 /* Private, versioned module boundary. No curses, auth or mutable models cross it.
  * Pixel buffers use the process allocator. Modules remain resident after use;
  * every player/context and frame must still be released by its owner. */
@@ -28,6 +30,7 @@ typedef struct { int pause, mute, seek, volume; } video_controls;
 typedef struct {
     bool paused, muted, audio_missing, invalid;
     double position, duration, volume;
+    int width, height; /* Display dimensions reported by the player, or zero until known. */
 } video_info;
 typedef struct {
     unsigned abi;

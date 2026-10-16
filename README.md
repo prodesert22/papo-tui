@@ -351,7 +351,7 @@ As imagens são carregadas somente no trecho visível da conversa aberta. Vídeo
 MP4, WebM e Ogg carregam por completo antes do player, sem autoplay. O limite é
 16 MiB/16 megapixels por imagem e 128 MiB por vídeo. O cache de imagens em
 memória tem orçamento global de **256 MiB**, compartilhado pelas sessões desta
-execução, incluindo frames e variantes gráficas; a saída gráfica do player é limitada a 640×360 pixels e 15 frames/s. A qualidade
+execução, incluindo frames e variantes gráficas; a saída gráfica do player se ajusta proporcionalmente à área do modal, com limite de 15 frames/s e resolução limitada pelo orçamento de memória. A qualidade
 final também depende do terminal. Mídia inválida, codec ausente, falta de
 permissão e limites aparecem na tela; F7/Enter no erro permite tentar novamente.
 

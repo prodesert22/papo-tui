@@ -1,5 +1,6 @@
 #include "ui/media_backend.h"
 #include <gmodule.h>
+#include <limits.h>
 #include <mpv/client.h>
 #include <mpv/render.h>
 #include <stdio.h>
@@ -64,6 +65,13 @@ static void update_player(void *context, const video_controls *controls, video_i
     mpv_get_property(p->handle, "time-pos", MPV_FORMAT_DOUBLE, &info->position);
     mpv_get_property(p->handle, "duration", MPV_FORMAT_DOUBLE, &info->duration);
     mpv_get_property(p->handle, "volume", MPV_FORMAT_DOUBLE, &info->volume);
+    int64_t width = 0, height = 0;
+    if (mpv_get_property(p->handle, "dwidth", MPV_FORMAT_INT64, &width) >= 0 &&
+        mpv_get_property(p->handle, "dheight", MPV_FORMAT_INT64, &height) >= 0 && width > 0 &&
+        width <= INT_MAX && height > 0 && height <= INT_MAX) {
+        info->width = (int)width;
+        info->height = (int)height;
+    }
     info->paused = paused != 0; info->muted = muted != 0;
     char *ao = mpv_get_property_string(p->handle, "current-ao");
     info->audio_missing = ao && !strcmp(ao, "null"); mpv_free(ao);
@@ -74,7 +82,8 @@ static bool changed_player(void *context)
 }
 static bool render_player(void *context, unsigned char *rgba, int width, int height)
 {
-    if (!rgba || width < 1 || height < 1 || width > 640 || height > 360) return false;
+    if (!rgba || width < 1 || height < 1 || (size_t)width > VIDEO_FRAME_PIXELS / (size_t)height)
+        return false;
     int dimensions[] = {width, height}; size_t stride = (size_t)width * 4;
     mpv_render_param params[] = {{MPV_RENDER_PARAM_SW_SIZE, dimensions}, {MPV_RENDER_PARAM_SW_FORMAT, "rgb0"},
         {MPV_RENDER_PARAM_SW_STRIDE, &stride}, {MPV_RENDER_PARAM_SW_POINTER, rgba}, {MPV_RENDER_PARAM_INVALID, NULL}};

@@ -23,7 +23,7 @@
 #define CACHE_COUNT 64
 #define VISIBLE_COUNT 32
 #define HISTORY_IMAGE_HEIGHT 720
-#define VIDEO_RESERVATION (12U * 1024U * 1024U)
+#define VIDEO_WORKSPACE_BYTES (12U * 1024U * 1024U)
 typedef enum { ENTRY_NEW, ENTRY_READY, ENTRY_ERROR } entry_state;
 typedef struct {
     message_media item;
@@ -61,7 +61,7 @@ struct media_view {
     bool started, stopping, pending, result_ready;
     atomic_uint_fast64_t active;
     atomic_bool player_idle;
-    bool video_reserved;
+    size_t video_reserved;
     job task;
     graphics_image result;
     bool modal_shared, modal_animated;
@@ -160,18 +160,32 @@ static void *worker(void *context)
             v->position = info.position; v->duration = info.duration; v->volume = info.volume;
             pthread_mutex_unlock(&v->lock);
             uint64_t now = 0;
-            if (net_now_ms(&now) && now - last_frame >= 67 && (force_frame || api->changed(player))) {
-                last_frame = now; force_frame = false;
-                size_t pixels = (size_t)current.width * (size_t)current.height;
+            if (info.width > 0 && info.height > 0 && net_now_ms(&now) && now - last_frame >= 67 &&
+                (force_frame || api->changed(player))) {
+                last_frame = now;
+                force_frame = false;
+                /* Fit the available modal area, preserving the display aspect ratio. */
+                double scale =
+                    fmin((double)current.width / info.width, (double)current.height / info.height);
+                int width = (int)fmax(1, info.width * scale);
+                int height = (int)fmax(1, info.height * scale);
+                size_t pixels = (size_t)width * (size_t)height;
                 unsigned char *rgba = malloc(pixels * 4), *rgb = malloc(pixels * 3);
                 graphics_image image = {0};
                 if (rgba && rgb) {
-                    if (api->render(player, rgba, current.width, current.height)) {
-                        for (size_t i = 0; i < pixels; ++i) memcpy(rgb + i * 3, rgba + i * 4, 3);
-                        if (graphics_image_encode_id(rgb, current.width, current.height, current.terminal, current.image_id, &image)) publish(v, current.token, &image, NULL, NULL);
+                    if (api->render(player, rgba, width, height)) {
+                        for (size_t i = 0; i < pixels; ++i)
+                            memcpy(rgb + i * 3, rgba + i * 4, 3);
+                        if (graphics_image_encode_id(rgb, width, height, current.terminal,
+                                                     current.image_id, &image)) {
+                            image.source_width = info.width;
+                            image.source_height = info.height;
+                            publish(v, current.token, &image, NULL, NULL);
+                        }
                     }
                 }
-                free(rgba); free(rgb);
+                free(rgba);
+                free(rgb);
             }
         }
         pthread_mutex_lock(&v->lock);
@@ -268,7 +282,7 @@ void media_view_idle(media_view *v)
     pthread_mutex_lock(&v->lock);
     if (!atomic_load(&v->active) && atomic_load(&v->player_idle)) {
         graphics_image_free(&v->result); v->result_ready = false;
-        if (v->video_reserved) { media_cache_unreserve(VIDEO_RESERVATION); v->video_reserved = false; }
+        if (v->video_reserved) { media_cache_unreserve(v->video_reserved); v->video_reserved = 0; }
     }
     pthread_mutex_unlock(&v->lock);
 }
@@ -280,7 +294,7 @@ void media_view_destroy(media_view *v)
     if (v->started) pthread_join(v->thread, NULL);
     media_view_reset(v); free_job(&v->task); graphics_image_free(&v->result);
     pthread_cond_destroy(&v->wake); pthread_mutex_destroy(&v->lock);
-    if (v->video_reserved) media_cache_unreserve(VIDEO_RESERVATION);
+    if (v->video_reserved) media_cache_unreserve(v->video_reserved);
     media_cache_destroy(v->store); free(v);
 }
 void media_view_update(media_view *v, const json_t *event)
@@ -419,8 +433,9 @@ static bool modal_layout_update(media_view *v)
                               v->modal_image.columns, v->modal_image.rows, &layout)) return false;
     int width, height; geometry(layout.area_width, layout.area_height, &width, &height);
     if (v->selected_item.video) {
-        if (width > 640) width = 640;
-        if (height > 360) height = 360;
+        double scale = fmin(1, sqrt(VIDEO_FRAME_PIXELS / ((double)width * height)));
+        width = (int)fmax(1, width * scale);
+        height = (int)fmax(1, height * scale);
     }
     if (v->modal_token && (width != v->modal_width || height != v->modal_height)) {
         bool reload = v->selected_item.video || !v->modal_image.data;
@@ -503,7 +518,7 @@ bool media_view_poll(media_view *v, history *h)
     }
     changed |= v->status_changed; v->status_changed = false;
     if (!atomic_load(&v->active) && atomic_load(&v->player_idle) && v->video_reserved) {
-        media_cache_unreserve(VIDEO_RESERVATION); v->video_reserved = false;
+        media_cache_unreserve(v->video_reserved); v->video_reserved = 0;
     }
     pthread_mutex_unlock(&v->lock);
     if (modal && v->modal != MODAL_ERROR && modal_layout_update(v)) {
@@ -514,9 +529,15 @@ bool media_view_poll(media_view *v, history *h)
         if (e->item.video) {
             const char *path = media_resource_path(e->resource);
             if (path && !v->modal_token && v->modal_width > 0 && v->modal_height > 0) {
-                if (!v->video_reserved) {
-                    if (!media_cache_reserve(VIDEO_RESERVATION)) return changed;
-                    v->video_reserved = true;
+                /* Cover RGB/RGBA working buffers and three encoded frames (the
+                 * displayed frame, pending result and next publication). Keep the
+                 * largest reservation until the worker stops using its surfaces. */
+                size_t reservation =
+                    VIDEO_WORKSPACE_BYTES + (size_t)v->modal_width * (size_t)v->modal_height * 32U;
+                if (reservation > v->video_reserved) {
+                    if (!media_cache_reserve(reservation - v->video_reserved))
+                        return changed;
+                    v->video_reserved = reservation;
                 }
                 v->modal_token = ++v->serial;
                 job request = {.path = (char *)path, .token = v->modal_token, .width = v->modal_width,

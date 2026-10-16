@@ -719,6 +719,100 @@ class MediaTerminal(unittest.TestCase):
                 self.assertNotIn('Fixture', '\n'.join(t.screen.display))
             finally: self.assertTrue(t.close())
             self.assertEqual(list(Path(directory).iterdir()), [])
+    def assert_blue_video_size(self, terminal, expected):
+        header, pixels = terminal.stream.kitty_frames[-1]
+        width, height = int(header[b"s"]), int(header[b"v"])
+        blue = [i for i in range(width * height) if pixels[4 * i + 2] > 200 and pixels[4 * i] < 30]
+        self.assertTrue(blue, "Video frame contains no blue pixels")
+        columns = [i % width for i in blue]
+        rows = [i // width for i in blue]
+        content = (max(columns) - min(columns) + 1, max(rows) - min(rows) + 1)
+        for actual, wanted in zip(content, expected):
+            self.assertAlmostEqual(actual, wanted, delta=1)
+
+    def test_small_video_enlarges_to_fit_modal(self):
+        for protocol in ("sixel", "kitty", "iterm2"):
+            with (
+                self.subTest(protocol=protocol),
+                self.serve(self.video, "video/mp4") as server,
+            ):
+                t = self.open(server, protocol=protocol)
+                try:
+                    t.send("Rascunho\x1b\x1b[18~")
+                    self.wait_frames(t, 2)
+                    # Fit the 4:3 video; Kitty/iTerm2 pad the final terminal cell.
+                    expected = (234 if protocol == "sixel" else 240, 176)
+                    self.assertEqual(self.raster_size(t), expected)
+                    if protocol == "kitty":
+                        self.assert_blue_video_size(t, (234, 176))
+                    self.wait(t, "Reproduzindo")
+                    t.send(" ")
+                    self.wait(t, "Pausado")
+                    t.resize(70, 220)
+                    expected = (1130 if protocol == "sixel" else 1136, 848)
+                    self.wait_raster(t, lambda w, h: (w, h) == expected)
+                    if protocol == "kitty":
+                        self.assert_blue_video_size(t, (1130, 848))
+                    t.send("i")
+                    self.wait(t, "Propriedades")
+                    self.wait(t, "32 × 24 px")
+                    expected = (1128, 846 if protocol == "sixel" else 848)
+                    self.wait_raster(t, lambda w, h: (w, h) == expected)
+                    t.send("\x1b")
+                    self.wait(t, "Rascunho")
+                    self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), 1)
+                finally:
+                    self.assertTrue(t.close())
+
+    def test_video_fits_modal_proportionally_and_resizes_while_paused(self):
+        for name, filters, original in (
+            ("landscape", "scale=1280:720,setsar=1", (1280, 720)),
+            ("portrait", "scale=720:1280,setsar=1", (720, 1280)),
+            ("anamorphic", "setsar=2", (64, 24)),
+        ):
+            with self.subTest(shape=name):
+                path = Path(self.assets.name) / (name + ".mp4")
+                subprocess.run(
+                    [
+                        FFMPEG,
+                        "-v",
+                        "error",
+                        "-i",
+                        str(Path(self.assets.name) / "video.mp4"),
+                        "-an",
+                        "-vf",
+                        filters,
+                        "-c:v",
+                        "mpeg4",
+                        "-threads",
+                        "1",
+                        "-y",
+                        str(path),
+                    ],
+                    check=True,
+                    capture_output=True,
+                )
+                with self.serve(path.read_bytes(), "video/mp4") as server:
+                    t = self.open(server, protocol="kitty")
+                    try:
+                        t.send("\x1b[18~")
+                        self.wait_frames(t, 2)
+                        scale = min(320 / original[0], 176 / original[1])
+                        expected = tuple(max(1, int(n * scale)) for n in original)
+                        self.assert_blue_video_size(t, expected)
+                        t.send(" ")
+                        self.wait(t, "Pausado")
+                        t.resize(70, 220)
+                        scale = min(1376 / original[0], 848 / original[1])
+                        expected = tuple(max(1, int(n * scale)) for n in original)
+                        raster = ((expected[0] + 7) // 8 * 8, (expected[1] + 15) // 16 * 16)
+                        self.wait_raster(t, lambda w, h: (w, h) == raster)
+                        self.assert_blue_video_size(t, expected)
+                        self.wait(t, "Pausado")
+                        self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), 1)
+                    finally:
+                        self.assertTrue(t.close())
+
     def test_video_modal_frames_pause_seek_resize_and_return(self):
         with tempfile.TemporaryDirectory() as directory, self.serve(self.video, 'video/mp4') as server:
             t = self.open(server, environment={'TMPDIR': directory})
