@@ -2,8 +2,8 @@
 #define PAPO_RATE_LIMIT_H
 
 #include <stdbool.h>
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #define PAPO_REQUESTS_PER_SECOND 10U
 #define PAPO_REQUEST_BURST 25U
@@ -24,7 +24,8 @@ typedef struct {
  * The supplied monotonic clock makes boundary behavior deterministic in tests. */
 bool request_budget_take(request_budget *budget, uint64_t now);
 void request_budget_defer(request_budget *budget, uint64_t now, unsigned seconds);
-bool request_budget_configure(request_budget *budget, uint64_t now, double requests_per_second, unsigned burst);
+bool request_budget_configure(request_budget *budget, uint64_t now, double requests_per_second,
+                              unsigned burst);
 bool net_rate_parameters_valid(double requests_per_second, unsigned burst);
 /* Refill only elapsed time at the previous rate, then clamp existing credit.
  * A change never grants fresh burst tokens or clears Retry-After. */

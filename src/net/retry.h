@@ -8,7 +8,8 @@ static inline uint64_t net_retry_ms(unsigned failures, unsigned entropy)
     unsigned base = failures >= 5 ? 30000U : 1000U << failures;
     unsigned minimum = base * 4U / 5U;
     unsigned maximum = base * 6U / 5U;
-    if (maximum > 30000U) maximum = 30000U;
+    if (maximum > 30000U)
+        maximum = 30000U;
     return minimum + entropy % (maximum - minimum + 1U);
 }
 #endif

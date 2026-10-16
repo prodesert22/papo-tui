@@ -1,590 +1,138 @@
-# Instalação e uso
+# Using Papo TUI
 
-## Requisitos
+## Run the application
 
-Compilador C17, CMake 3.21+, pkg-config, ncursesw/formw 6.1+, libcurl 7.86+ com WS/WSS, TLS e DNS assíncrono, Jansson 2.14+, libunibreak 6.1+, libsixel 1.8+, libchafa 1.16+, GLib 2.66+, PangoCairo 1.50+, fonte Noto Color Emoji, libmpv (API 2.0+) e FFmpeg (libavformat/libavcodec 58+, libavutil 56+, libswscale 5+). Use um terminal UTF-8 com pelo menos 44 colunas e 22 linhas disponíveis ao aplicativo. No tmux, reserve também as linhas da barra de status.
-
-No Arch Linux:
-
-```sh
-sudo pacman -S --needed base-devel cmake pkgconf ncurses curl jansson libunibreak libsixel chafa glib2 pango cairo noto-fonts-emoji mpv ffmpeg
-```
-
-## Compilar e executar
-
-Na raiz do projeto:
+After [installing](instalacao.md), open a UTF-8 terminal with at least
+44 columns and 22 rows and run:
 
 ```sh
-cmake -S . -B build -DBUILD_TESTING=OFF
-cmake --build build
-./build/papo-tui
+papo-tui
 ```
 
-O executável fica em `build/papo-tui`. Imagens e vídeo usam os módulos de
-`build/papo-backends`, carregados somente quando necessários. Para instalar o
-conjunto, use `cmake --install build --prefix /caminho/de/instalacao`. Se mover o
-build manualmente, mantenha `papo-backends` ao lado do executável. Um módulo
-ausente ou incompatível mostra erro na mídia correspondente; reinstale o
-conjunto e reabra o programa. Conversas de texto continuam disponíveis.
+For the Windows ZIP, open PowerShell in the extracted folder and run:
 
-Para consultar as opções ou a versão:
-
-```sh
-./build/papo-tui --help
-./build/papo-tui --version
+```powershell
+.\papo-tui.exe
 ```
 
-## Conectar ao servidor
+For Flatpak, run `flatpak run io.github.prodesert22.PapoTUI`. To run a local
+Linux build from the project folder, use `./build/papo-tui`.
 
-### Servidores salvos
+The application attempts to restore the last session when the system credential
+store is available.
 
-A abertura normal tenta recuperar a última sessão salva; quando isso não for possível, apresenta a tela de login com a última URL preenchida. Clique em **Selecionar perfil**, ou foque esse botão com Tab e pressione Enter, para abrir o modal de seleção. **Ctrl+P** no login também abre esse modal. ↑/↓ percorrem a lista; Enter ou um clique no perfil selecionam-no e voltam ao login com a URL preenchida. No modal, **Gerenciar / Ctrl+P** abre o gerenciador completo; **Cancelar / Esc** volta ao login e Ctrl+Q fecha o aplicativo; Ctrl+C limpa o campo de texto focado e fecha quando o foco está fora dos campos.
+Use `papo-tui --help` to list command-line options and `papo-tui --version`
+to check the installed version.
 
-Abra **Gerenciar** no modal ou execute `./build/papo-tui --profiles` para iniciar diretamente no gerenciador. O topo contém duas opções: **Listar** e **+ Adicionar**. Em **Listar**, todos os perfis ficam numa lista vertical; a rolagem acompanha o destaque.
+## Connect and chat
 
-| Área | Controles |
+Enter the full instance URL, such as `https://chat.example.com`, your username
+and your password. Enter a server password only for private instances.
+Select **Entrar** (Sign in). To create an account, select **Cadastro** (Register)
+and then sign in.
+
+**Selecionar perfil** (Select profile) lets you save server names and URLs.
+To open the profile manager directly, run `papo-tui --profiles`.
+Passwords are not stored in the configuration.
+
+Choose a channel with the arrow keys and Enter, or with the mouse. Type in the
+editor and press Enter to send; **Ctrl+N** inserts a new line. Pasting text does
+not send the message automatically. Switching conversations preserves drafts
+during the current run.
+
+Scroll with the arrow keys, PageUp/PageDown or the mouse wheel over the history.
+The next page loads as you approach either edge. A loading indicator appears
+if you reach the edge before the messages arrive.
+
+Closing the application discards drafts. Signing out also disables session
+recovery. If a send remains unconfirmed, check the history before resending:
+the message may already have reached the server.
+
+Voice calls are not available yet.
+
+## Keyboard and mouse
+
+| Control | Action |
 | --- | --- |
-| Topo | ← vai para Listar e → para Adicionar, parando nas extremidades; ↓ ou Enter em Listar entram na lista |
-| Lista | ↑/↓ mudam o perfil destacado; PageUp/PageDown avançam uma página; Home/End vão ao início/fim |
-| Lista → ações | Enter ou → focam Selecionar, o primeiro botão do rodapé |
-| Ações | ←/→ movem entre Selecionar, Editar, Remover, Limites e Identificar, parando nas extremidades; Enter executa a ação |
-| Ações → lista | ↑ volta à lista com o mesmo perfil destacado |
-| Lista → topo | ↑ no primeiro perfil volta ao topo; ← mantém o foco na lista |
-| Tab / Shift+Tab | Percorrem topo, lista e botões disponíveis |
-| Mouse | Clique num perfil para destacá-lo ou num botão para executar a ação |
+| Tab / Shift+Tab | Move focus |
+| Esc | Close a modal, go back or cancel a connection |
+| Ctrl+Q | Quit |
+| Ctrl+C | Clear the field; quit when outside a field |
+| ↑ / ↓ or mouse wheel over history | Scroll the conversation |
+| PageUp / PageDown in history | Scroll by a page; nearby pages load automatically |
+| Home / End in history | Go to the start of loaded history / recent messages |
+| Ctrl+R | Refresh or retry a request/connection |
+| Ctrl+T | Retry the last failed send |
+| F6 | Open the account screen |
+| Ctrl+L in a conversation | Sign out of the current account |
+| F10 | Start a DM |
+| F9 | Open the notification center and preferences |
+| F4 in the editor | Choose an emoji |
+| F7 in history | Open media |
 
-Os textos principais, nomes, campos e botões são brancos; o texto dos botões e itens de lista selecionados usa laranja `#ffb347`, e dicas e comandos permanecem cinza. O controle em foco tem um fundo laranja escuro mais evidente, distinto do fundo laranja discreto do perfil quando você está nas ações. As dicas do rodapé mudam conforme a área focada. Setas horizontais nos botões dos modais também param nas extremidades. No modal de seleção aberto pelo login, ↑/↓ percorrem os perfis, → leva aos botões e ↑ nos botões volta à lista.
+Type `@` in the editor to choose a person to mention; confirm with Tab or Enter.
+After closing the chooser, Enter sends the message.
 
-Sem suporte a cores, o foco usa inversão e o perfil destacado fora do foco usa negrito. Em janelas estreitas, os atalhos do rodapé aparecem abreviados para caber na tela.
+## Images and video
 
-Em uma falha fatal, o cliente tenta restaurar a entrada, o mouse e a tela do
-terminal antes de encerrar. Se a aba permanecer desconfigurada, digite `reset`
-e pressione Enter, mesmo que os caracteres não apareçam.
+Press F7 with the history focused, or click a media preview, to open it.
+If several items are visible, choose one with ↑/↓ and Enter or click it.
+Videos finish downloading before playback starts. Press Esc or click outside
+the media window to close it or cancel loading.
 
-**+ Adicionar** aparece somente no topo: clique nela ou destaque-a e pressione Enter para cadastrar um perfil. Enquanto essa opção estiver selecionada, as ações do rodapé ficam indisponíveis e Tab/Shift+Tab e ↓ mantêm o foco no topo. Cancelar o cadastro com Esc mantém esse comportamento; volte a **Listar** para habilitar as ações de um perfil salvo. Salvar o cadastro volta à lista com o novo perfil destacado.
-
-- **+ Adicionar no topo / Ctrl+N:** informar nome e URL.
-- **Selecionar:** voltar ao login com a URL do perfil destacado.
-- **Editar / Ctrl+E:** renomear ou corrigir a URL, preservando o ID do perfil.
-- **Remover / Ctrl+D:** abrir a confirmação; **Cancelar** é a opção inicial.
-- **Limites / Ctrl+L:** editar a taxa global de requisições e o burst.
-- **Identificar / F5:** repetir a identificação da instância.
-- **Ctrl+R:** recarregar o arquivo de configuração.
-- **Esc:** cancelar a edição/remoção ou voltar ao login.
-- **Ctrl+Q:** fechar o aplicativo; **Ctrl+C** limpa um campo focado e fecha fora dos campos.
-
-Nos diálogos, Tab percorre campos e botões, ←/→ escolhem o botão, e Enter avança ou confirma. Colagem delimitada nunca salva, seleciona ou remove por conta própria. Ctrl+U limpa o campo; setas, Home/End e Backspace/Delete permitem editar. O gerenciador exige 44 colunas e 14 linhas; o login exige 44×22.
-
-Os perfis aceitam URLs HTTPS, com porta e prefixo opcionais, sem credenciais embutidas, query ou fragmento. Para HTTP de desenvolvimento em `localhost`, `127.0.0.1` ou `[::1]`, inicie com `--allow-local-http`:
-
-```sh
-./build/papo-tui --profiles --allow-local-http
-```
-
-Perfis HTTP já salvos permanecem visíveis sem essa opção, mas não podem ser selecionados. Ao abrir a seleção de perfil pelo login, a conexão atual é fechada e usuário, senhas e cookies locais são descartados. O perfil selecionado preenche a URL e deixa esse campo bloqueado; para corrigir a URL, volte a **Selecionar perfil → Gerenciar → Editar**. Cada entrada exige novo login.
-
-Os dados públicos são salvos em `$XDG_CONFIG_HOME/papo-tui/config.json`, ou em `~/.config/papo-tui/config.json` quando XDG não estiver definido com caminho absoluto. O diretório é restrito (`700`) e o arquivo usa `600`. Até 64 perfis podem ser salvos; o nome aceita 128 bytes UTF-8, e a URL, 2048. Senhas, cookies, mensagens e rascunhos não entram nesse arquivo.
-
-Um arquivo inválido ou de versão desconhecida fica preservado e bloqueia gravações. Corrija-o e use Ctrl+R para recarregar. Alterações externas também exigem recarregar antes de salvar. Falhas de gravação mantêm a configuração e os perfis anteriores.
-
-Ao destacar um perfil, o aplicativo consulta a disponibilidade e os dados públicos da instância, mostrando seu nome e a condição pública/privada. Essas consultas continuam em segundo plano enquanto você navega ou edita. Se houver falha, use F5 para tentar novamente ou **Editar** para corrigir a URL. A identificação informa disponibilidade; entrar na conta continua exigindo autenticação.
-
-### Taxa e burst
-
-No gerenciador, destaque um perfil salvo e abra **Limites** ou pressione Ctrl+L. Informe a quantidade de requisições por segundo e a capacidade de burst. A taxa deve ser positiva e finita; use ponto decimal, por exemplo `2.5`. O burst aceita inteiros de 1 a 4294967295. Enter avança pelos campos; Tab alterna o foco, e ←/→ escolhem os botões.
-
-**Padrão** preenche taxa 10 e burst 25; confirme com **Salvar** para aplicar. Valores inválidos mantêm o diálogo aberto e a configuração anterior. Esc ou **Cancelar** descarta a edição. As preferências são salvas com os perfis e carregadas ao iniciar, mesmo quando você abre diretamente o login manual. Configurações anteriores continuam compatíveis e usam 10/25 até você salvar outra preferência.
-
-O limite é compartilhado por descoberta, login, cadastro, renovação, logout, revalidação e novas conexões de tempo real. Salvar, recarregar ou trocar de perfil mantém o crédito já disponível e a espera indicada por `Retry-After`; aumentar burst não cria crédito adicional naquele instante. Diminuir burst restringe o crédito restante à nova capacidade. A interface continua aceitando teclas enquanto as requisições aguardam capacidade.
-
-### Login
-
-A tela apresenta um cabeçalho, o formulário e uma área de estado e controles. Preencha os quatro campos:
-
-| Campo | O que informar |
+| Player control | Action |
 | --- | --- |
-| URL do servidor | URL completa, como `https://chat.exemplo.com` |
-| Usuário | Seu username nessa instância |
-| Senha | A senha da sua conta |
-| Senha do servidor | Obrigatória em instâncias privadas; deixe vazia em instâncias públicas |
-
-Para um servidor local, inicie com `./build/papo-tui --allow-local-http` e use `http://127.0.0.1:8080`. HTTP também é aceito em `localhost` e `[::1]` com essa opção; servidores remotos exigem HTTPS. Prefixos de caminho são preservados, como em `https://exemplo.com/papo`.
-
-Selecione **Entrar** ou pressione Enter. O aplicativo consulta o servidor, solicita acesso à instância privada quando necessário e autentica sua conta. As senhas são ocultas e não são salvas. O cookie da última conexão ativa pode ser guardado no chaveiro do sistema.
-
-Quando a instância é privada e a senha do servidor foi esquecida, o campo **Senha do servidor** ganha uma borda vermelha, um marcador de obrigatório e recebe o foco automaticamente. Digite a senha e pressione Enter para repetir a tentativa. Se essa senha for rejeitada, o campo é limpo e focado para correção. A borda desaparece ao começar a editar; usuário e senha da conta permanecem no formulário durante essa correção.
-
-### Criar uma conta
-
-Clique em **Cadastro**, foque o botão com Tab e Enter, ou pressione **Ctrl+N**. O formulário acrescenta **Confirmar senha** logo após a senha; URL e usuário são preservados ao alternar entre login e cadastro, e as senhas são limpas.
-
-Informe um usuário com pelo menos 3 caracteres e uma senha com pelo menos 8 caracteres, incluindo uma letra maiúscula e um caractere especial. A instância pode impor outros limites. As senhas permanecem mascaradas. Instâncias privadas também exigem a senha do servidor antes de criar a conta.
-
-**Confirmar senha** é mascarado e serve somente à validação local. A senha precisa coincidir exatamente com a confirmação. Campo vazio ou senhas diferentes bloqueiam o envio e focam a confirmação; senha curta, sem maiúscula ou sem caractere especial mostra uma mensagem específica e foca a senha. O erro aparece em vermelho, em até duas linhas para permanecer legível em janelas estreitas.
-
-Confirme **Criar conta** ou pressione Enter em um campo. Erros locais focam o campo para correção; usuário já existente também recebe foco. Rejeições adicionais mostram uma mensagem da aplicação. Nenhum detalhe remoto contendo credenciais aparece na tela.
-
-Ao receber a confirmação, a tela volta ao login, mantém URL e usuário e foca a senha vazia. Digite a senha novamente e confirme **Entrar**. Criar uma conta exige esse login explícito. **Login / Ctrl+N** volta ao formulário de entrada sem enviar cadastro.
-
-Se a autorização privada expirar, o campo **Senha do servidor** é limpo, recebe borda vermelha e foco. Informe a senha e confirme novamente. A aplicação não repete o cadastro automaticamente. Se um envio for interrompido sem confirmação, tente entrar antes de reenviar: a conta pode ter sido criada.
-
-### Recuperação entre execuções
-
-Com GNOME Keyring, Secret Service ou KWallet 5/6 disponível, o programa salva somente o cookie da última conexão ativa no gerenciador de segredos. Ao reabrir, consulta a instância e confirma a conta por REST antes de mostrar os canais. Um cookie com JWT expirado pode passar por uma única renovação e nova validação. Se não puder confirmar a conta, mostra o login. As outras abas não são recuperadas.
-
-O chaveiro pode pedir desbloqueio. Esc permite continuar pelo login. Sem gerenciador compatível, quando o acesso for recusado ou se o build não tiver suporte a chaveiro, os cookies permanecem somente em memória. A URL é lembrada, mas a próxima abertura exige login; não existe fallback com cookie em arquivo ou cofre com senha mestra.
-
-O suporte opcional é compilado quando `gio-2.0` estiver disponível; Secret Service também exige `libsecret-1`. KWallet nativo usa GDBus, sem depender de Qt no cliente. No Arch, instale `glib2` e `libsecret` antes do CMake. `-DPAPO_DESKTOP_SESSIONS=OFF` desativa esses adaptadores. `--profiles` abre o gerenciador em vez de recuperar uma conta. Sessões HTTP locais continuam exigindo `--allow-local-http` em cada execução; HTTPS continua verificando certificado e hostname.
-
-Os arquivos de recuperação de sessão em `$XDG_STATE_HOME/papo-tui` (ou `~/.local/state/papo-tui`) contêm apenas URL, referência do chaveiro e marcador de recuperação. O arquivo separado `read-cursors.json` guarda os IDs e horários de leitura por servidor e conta. Usam diretório `700` e arquivos `600`; builds sem GIO guardam os dados públicos de recuperação de sessão no diretório de configuração, enquanto os cursores de leitura continuam no diretório de estado. Uma segunda janela usando a mesma configuração exige login próprio e não usa nem substitui o cookie persistido pela primeira.
-
-A cada rotação, o snapshot anterior deixa de ser recuperável antes do envio HTTP. A recuperação só é reabilitada depois de confirmar a identidade e salvar o cookie novo. Uma interrupção nesse intervalo exige login em vez de reapresentar um token substituído. Se a gravação falhar, a sessão pode continuar na execução atual, e a tela da conta informa que não foi salva.
-
-### Sessão, renovação e saída
-
-Depois de autenticar, a lista de canais abre automaticamente para ler e enviar mensagens de texto. F6 volta à tela da conta, onde você pode renovar ou sair da sessão e reabrir os canais.
-
-A sessão é revalidada por REST em intervalos de até 30 segundos. A primeira renovação ocorre até 30 segundos após o login; as seguintes são agendadas antes da expiração informada pelo servidor, com margem de 60 segundos para sessões longas. Validades curtas usam um intervalo menor. **Renovar / Ctrl+R** permite renovar imediatamente. Os campos ficam bloqueados enquanto uma operação aguarda resposta; Esc cancela a operação e encerra a sessão local.
-
-A aplicação realiza uma renovação por vez e confirma a identidade depois de receber o novo cookie. Consultas que receberem 401 podem tentar uma única renovação. Se ela falhar, ou se a sessão for revogada, a conta for bloqueada ou a identidade não puder ser confirmada, os cookies e eventos locais são descartados e a senha recebe foco para novo login. Cadastro, login e outras mutações não são repetidos automaticamente.
-
-Heartbeat/ACK de tempo real não comprova autenticação. Quando o tempo real é interrompido, a aba ativa tenta reconectar automaticamente após revalidar a sessão por REST. As esperas crescem de 1 até 30 segundos, com variação de até 20% e teto de 30 segundos. **Reconectar / Ctrl+R** antecipa uma tentativa. Abas inativas mantêm conexões já abertas, mas suspendem novas tentativas até você voltar a elas. Falhas de rede e de autenticação aparecem na área de estado.
-
-**Sair da conta** fecha a conexão de tempo real, solicita a revogação e limpa a sessão local. Durante uma renovação já enviada, aguarda sua resposta para revogar com o cookie atualizado. Se não conseguir confirmar a revogação remota, informa isso e conclui a limpeza local. Fechar normalmente mantém a sessão salva; sair da conta invalida a recuperação persistente. Senhas nunca são persistidas.
-
-O aplicativo compartilha um limite configurável entre todas as tentativas de conexão, com padrões de 10 requisições por segundo e burst 25. Ajuste esses valores em **Selecionar perfil → Gerenciar → Limites**. Ao atingir o limite, os envios aguardam e a interface continua respondendo.
-
-## Teclado e mouse
-
-O tema usa fundo preto e laranja `#ffb347` em títulos, seleções e foco, no login e nas conversas. As cores de realce são preservadas para destacar a área em foco sobre o fundo preto. Os botões usam texto branco em repouso e laranja quando selecionados ou focados. Terminais com paleta fixa usam uma aproximação do tom; em terminais sem cores, o foco dos botões é indicado por vídeo reverso.
-No Kitty e no Konsole em modo de 256 cores, o tema usa tons aproximados que
-permanecem estáveis ao recarregar a configuração do terminal. Terminais com
-entrada de cores RGB diretas usam os tons exatos.
-
-| Controle | Ação |
-| --- | --- |
-| Tab / Shift+Tab | Percorrer campos e botões na ordem visual |
-| ↑ / ↓ | Percorrer campos e linhas de botões, parando nas extremidades |
-| Enter | Confirmar login/cadastro ou executar o botão focado |
-| Ctrl+N | Alternar login/cadastro antes de autenticar |
-| Ctrl+R | Renovar a sessão ou reconectar o tempo real interrompido |
-| ← / → | Mover o cursor no campo; alternar entre os botões da mesma linha |
-| Home / End | Mover o cursor para o início/fim do campo |
-| Backspace / Delete | Apagar texto |
-| Ctrl+U | Limpar o campo atual |
-| Ctrl+P | Abrir a seleção de perfil, encerrando a conexão e limpando credenciais locais |
-| Clique esquerdo no campo | Focar e posicionar o cursor |
-| Clique esquerdo no botão | Executar login, cadastro, renovação, reconexão, logout ou seleção de perfil |
-| Esc | Cancelar uma conexão em andamento |
-| Ctrl+Q | Fechar o aplicativo |
-| Ctrl+C | Limpar o campo focado; fechar fora dos campos |
-
-No login e no cadastro, os botões de ação ficam na mesma linha: **Entrar / Cadastro** ou **Criar conta / Login**. **Selecionar perfil** fica no canto superior direito do formulário. ↓ na senha do servidor foca a ação principal; ←/→ alternam os dois botões, ↓ foca Selecionar perfil e ↑ volta à senha do servidor. ↑ em Selecionar perfil volta à ação principal, e ↓ mantém o foco nesse botão. As setas não dão a volta na tela. Tab segue campos, ação principal, ação secundária e Selecionar perfil; controles indisponíveis são pulados.
-
-Backspace no início do campo mantém o foco. Cliques fora dos controles são ignorados. Durante a conexão, os campos ficam bloqueados. O suporte a mouse depende do terminal.
-
-Redimensionar a janela preserva os campos. Se o terminal ficar menor que o mínimo, amplie-o para continuar. Colagem delimitada pelo terminal não envia o formulário ao encontrar uma quebra de linha.
-
-## Ler canais reais
-
-A tela organiza abas de servidores no topo, uma linha separadora e uma linha de margem abaixo, lista de canais à esquerda e histórico com área de edição no painel central. **+ Adicionar**, à direita das abas, abre o formulário de login/cadastro. Preencha a URL e as credenciais do outro servidor; depois do login, sua conexão ganha uma aba. Clique numa aba para voltar a uma conexão aberta, sem informar a senha novamente.
-
-Ao abrir a leitura, o foco começa nas abas. Use ←/→ para escolher o servidor ou destacar **+ Adicionar**, e Enter para abrir o formulário. O botão fica branco sem foco e laranja ao selecionar, quando aparece como **>+ Adicionar<**. ↓ entra na lista de canais.
-
-Cada conexão mantém sua própria sessão isolada; somente a última conexão ativa pode ser persistida no chaveiro. Há um limite de 64 conexões por execução; entrar novamente na mesma URL substitui a conexão anterior. Ctrl+L sai da conta atual e remove sua aba. Ao fechar o programa, as abas e rascunhos locais são descartados; a última sessão salva pode ser recuperada na próxima abertura. Os perfis locais de nome/URL continuam sendo gerenciados por **Selecionar perfil**.
-
-Esc no formulário de adição retorna ao servidor anterior, quando sua sessão ainda está válida. Se houver uma conexão em andamento, a primeira pressão de Esc cancela a tentativa; pressione novamente para voltar. Login, cadastro e renovação usam os mesmos controles do formulário inicial.
-
-Depois do login, a lista de canais abre automaticamente. F6 volta à tela da conta; use **Canais / F6**, F6 ou Tab e Enter nesse botão para reabrir a leitura. A lista é ordenada pela posição informada pelo servidor, sem inferir subcategorias. Use ↑/↓, PageUp/PageDown e Home/End para destacar um canal; Enter, → ou clique abre um canal de texto. Navegar pela lista mantém o histórico e as mensagens em tempo real do canal aberto. Confirmar esse mesmo canal preserva a posição de leitura e o rascunho, sem refazer a consulta. Os botões **Canais** e **DMs** ficam lado a lado no cabeçalho da lista. Clique no botão ou use Tab para focar o grupo, ←/→ para escolher e Enter/Espaço para ativar; ↓ ativa e entra na lista. Mudar a lista preserva a conversa e o rascunho abertos. Categorias são separadores e não abrem histórico. Na lista, **F4** abre a conversa de um canal de voz, com histórico, editor e envio de texto. **Enter** nesses canais fica reservado para chamadas futuras; Enter, → e clique apenas mostram a orientação para abrir o histórico e preservam a conversa atual.
-
-Abrir a lista não lê mensagens. Apenas o canal que você abre tem seu histórico consultado; essa consulta também marca leitura no servidor. `*` ao lado do nome indica uma última mensagem ainda não lida nos dados da lista e desaparece após carregar com sucesso a última mensagem.
-
-| Controle | Ação na leitura |
-| --- | --- |
-| Tab / Shift+Tab | Percorrer abas, botões Canais/DMs, lista, histórico, editor e botão de emojis disponíveis |
-| ← / → nos botões Canais/DMs; Enter/Espaço | Escolher e ativar a lista |
-| ↓ nos botões Canais/DMs | Ativar e entrar na lista |
-| F4 na lista, em um canal de voz | Abrir seu histórico de conversa |
-| Enter na lista, em um canal de voz | Reservado para chamadas futuras; mostrar orientação |
-| Esc no editor | Voltar ao histórico |
-| Esc nos demais painéis | Alternar canais e histórico |
-| ↑ no primeiro item da lista; ↑ nos botões Canais/DMs | Focar os botões; voltar às abas |
-| ← na lista | Manter o foco na lista |
-| ← / → nas abas | Trocar de servidor; → na última aba destaca **+ Adicionar** |
-| Enter em **+ Adicionar**; clique no botão | Abrir login/cadastro de outro servidor |
-| ↓ nas abas | Focar os canais |
-| Clique numa aba; clique em `‹` / `›` | Trocar de servidor; mostrar abas fora da faixa visível |
-| ← no histórico | Voltar à lista |
-| ↑ / ↓ no histórico | Rolar uma linha |
-| PageUp / PageDown | Rolar uma página; a consulta da próxima começa perto da borda |
-| Home no histórico | Ir ao início da janela carregada |
-| End no histórico | Voltar ao fim das novidades; sem indicador, consultar a página recente |
-| Ctrl+R | Antecipar reconexão quando desconectado; conectado, atualizar o canal aberto ou tentar novamente |
-| Digitar; Enter no histórico | Focar o editor da conversa aberta |
-| Enter no editor | Enviar o texto |
-| Ctrl+N na conversa | Focar o editor e inserir uma quebra de linha |
-| Setas, Home/End, Backspace/Delete no editor | Editar o texto por grafemas |
-| Ctrl+U no editor | Limpar o rascunho do canal |
-| Ctrl+T | Tentar novamente o último envio com falha no canal |
-| Clique no editor | Focar e posicionar o cursor |
-| Clique em Canais / Conversa | Alternar o painel |
-| Roda do mouse sobre o histórico | Rolar o texto |
-| F7 no histórico; clique na mídia | Abrir uma prévia ou selecionar entre as mídias visíveis |
-| F1 | Abrir ajuda |
-| F9 | Abrir central de notificações do servidor ativo |
-| F10 | Escolher destinatário e abrir DM |
-| Ctrl+D na lista DMs | Fechar a DM destacada para sua conta |
-| F6 | Voltar à tela da conta |
-| Ctrl+L | Sair da conta e remover sua aba |
-| Ctrl+P | Abrir seleção de perfil e encerrar a sessão local |
-| Ctrl+Q | Fechar o programa |
-| Ctrl+C | Limpar o campo focado; fechar fora dos campos |
-
-As páginas chegam em grupos de até 100 mensagens e aparecem em ordem cronológica. A roda do mouse, ↑/↓ e PageUp/PageDown antecipam a consulta quando faltam cerca de duas telas para a borda da janela carregada. Isso funciona ao buscar mensagens antigas e ao voltar a páginas mais recentes. Se alcançar a borda antes da resposta, a área de avisos mostra **Carregando próximas mensagens** com uma animação, que desaparece após o carregamento. A mensagem e o trecho que estavam no topo continuam no mesmo lugar, inclusive após redimensionar o terminal. A lista de canais permanece estável durante a rolagem. Home vai ao início da janela carregada; End volta à página recente. Falhas preservam a leitura e mostram um aviso; Ctrl+R tenta novamente.
-
-A tela mostra tópico, timestamps, autor ou **Autor indisponível**, indicação e data de edição e resposta cuja mensagem não está na janela atual. Anexos mostram nome, tipo, tamanho e moderação; imagens visíveis são carregadas em terminais Sixel/Kitty/iTerm2. Embeds aparecem em cards com seus textos, fields e mídia disponível. Os embeds recebidos ou atualizados em tempo real aparecem na mensagem sem precisar reabrir o canal, incluindo mensagens sem texto. URLs são apenas texto e não são abertas. O editor aceita mensagens nos canais de texto e de voz. Digitar a partir da conversa foca o editor e inclui o primeiro caractere. Enter envia; Ctrl+N insere uma quebra de linha. Você pode continuar editando, mudar de canal ou redimensionar durante o envio. A confirmação inclui a mensagem no histórico e remove somente o texto enviado que permaneceu intacto, preservando continuação e texto reescrito. Mensagens de outras contas chegam automaticamente; edições, exclusões e mudanças de canais também atualizam a tela. Eventos repetidos e confirmações REST/WS são reconciliados pelo ID da mensagem. Quando você está no fim, a tela acompanha novas mensagens; ao ler mensagens anteriores, mostra um indicador sem deslocar a leitura. End ou clique nesse indicador volta ao fim.
-
-A janela deslizante guarda até 1.000 mensagens ou 4 MiB de JSON serializado. Carregar páginas além desse limite libera mensagens da borda oposta; rolar de volta consulta-as novamente, sem saltar páginas. End consulta diretamente a página recente. Não há histórico salvo no disco. Trocar de canal ou servidor libera a janela anterior; voltar exige abrir um canal para uma nova consulta. F6 descarta a janela ao voltar à conta.
-
-Após uma queda, a conexão ativa recupera mensagens posteriores ao cursor conhecido e recarrega a janela de histórico que estava aberta, incluindo edições e exclusões ocorridas offline. Canais e nomes de autores também são atualizados. A tela informa reconexão e recuperação, e continua aceitando edição, resize e saída. Falhas transitórias durante essa recuperação são repetidas com espera crescente, respeitando o orçamento global e `Retry-After`.
-
-Rascunhos e posição de leitura são preservados dentro dos limites de memória. Se a mensagem usada como referência for excluída, a leitura passa à próxima sobrevivente, ou à anterior. O backend não oferece replay completo: alterações fora da janela recarregada aparecem quando você consultar aquele trecho novamente. Nenhuma mutação ou envio incerto é repetido automaticamente. Excluir remotamente o canal aberto desabilita seu editor e preserva o rascunho em memória até encerrar a sessão.
-
-Uma falha de página antiga preserva as mensagens já carregadas e o ponto de leitura. Ctrl+R tenta novamente a consulta que falhou. HTTP 429 aguarda o cooldown global e exige nova tentativa manual; nenhuma leitura fica repetindo automaticamente após erro. Canais sem mensagens, sem permissão ou removidos têm uma mensagem própria.
-
-Use ao menos 44 colunas e 14 linhas. Na altura mínima, o tópico fica oculto para preservar espaço de leitura. A partir de 80 colunas, lista e histórico aparecem juntos; em telas estreitas, os controles de foco alternam o painel visível. Ao voltar ao formulário da conta, amplie para 44×22. Colagem delimitada no editor ou conversa preserva as linhas e nunca envia automaticamente. Nas abas, sem conversa aberta ou em modais, a colagem não aciona controles.
-
-A última linha acompanha o foco: mostra à esquerda somente as dicas de abas,
-canais, histórico, editor ou do cartão/modal aberto. À direita ficam os avisos,
-separados por `|`, com o mais recente no canto direito. Conexão, histórico,
-envio, edição, eventos e mensagens não lidas têm avisos independentes; uma
-confirmação de envio não apaga o estado da conexão. Um novo aviso substitui
-apenas o anterior do mesmo contexto. Em janelas estreitas, os textos ficam
-mais curtos; `+N` indica avisos antigos que reaparecem ao ampliar a janela.
-Trocar de conversa preserva os avisos de conexão e notificações. **Desconectado** fica nessa área e permanece visível durante a queda, inclusive em telas estreitas.
-
-O campo da conversa mostra **Conversar em #nome_canal** quando está vazio e
-cresce de uma até cinco linhas conforme o texto quebra ou ocupa mais espaço.
-Depois disso, as setas acompanham o cursor e a roda do mouse sobre o campo
-rola o texto; as marcas ↑/↓ indicam conteúdo fora da área visível. Em telas
-baixas, o campo usa as linhas disponíveis preservando a leitura e o rodapé.
-O campo tem divisórias acima e abaixo, com uma linha vazia de espaço entre o
-texto e cada divisória. Em telas muito baixas, esse espaço é reduzido. O
-indicador de digitação fica abaixo da divisória inferior.
-
-Em todos os campos editáveis, **Shift+setas** estende a seleção; clique esquerdo
-e arraste também selecionam, com realce durante o movimento, inclusive entre
-linhas e em linhas quebradas pela largura do campo. A seleção tem fundo e texto contrastantes; digitar,
-apagar ou colar substitui o trecho selecionado. **Ctrl+←** vai ao começo da
-palavra; **Ctrl+→** vai ao final, antes dos espaços. A partir de um espaço,
-Ctrl+→ avança até o fim da próxima palavra.
-**Home/End** vai ao início/fim da linha, e **Ctrl+C** ou **Ctrl+U** limpa o campo.
-**Ctrl+Q** sempre fecha o aplicativo. **Ctrl+Shift+C** ou clique direito sobre
-um campo com seleção copia o texto; **Texto copiado** aparece por três segundos, preservando os
-outros avisos. A cópia usa `wl-copy` no Wayland ou `xclip` no X11 quando
-estão disponíveis; caso contrário, usa o terminal via
-[OSC 52](https://sw.kovidgoyal.net/kitty/clipboard/), que precisa permitir a cópia.
-As senhas permanecem mascaradas, inclusive durante seleção.
-
-Ctrl+Shift+C precisa chegar ao aplicativo. Terminais que reservam esse atalho
-para sua própria seleção precisam configurá-lo para enviar `ESC[99;6u`;
-clique direito também copia a seleção do campo. O cliente aceita os atalhos
-encaminhados por CSI-u e modifyOtherKeys, incluindo Num Lock/Caps Lock, e mantém
-o modo de teclado do terminal. Ctrl+C continua limpando o campo; em terminais
-que enviam o mesmo código para os dois atalhos, use o clique direito para copiar.
-
-No Kitty, adicione esta [regra condicional](https://sw.kovidgoyal.net/kitty/mapping/#conditional-mappings)
-ao `~/.config/kitty/kitty.conf` para copiar a seleção do Papo TUI com Ctrl+Shift+C:
-
-```conf
-map --when-focus-on=var:papo_tui=1 ctrl+shift+c send_text all \x1b[99;6u
-map --when-focus-on=var:papo_tui=1 ctrl+v paste_from_clipboard
-```
-
-Recarregue a configuração do Kitty com **Ctrl+Shift+F5** e reinicie o Papo TUI.
-O aplicativo define o marcador ao abrir e o remove ao sair. Nos outros
-programas, o atalho continua usando a cópia do terminal.
-A segunda regra permite **Ctrl+V** para colar em bloco dentro do Papo TUI.
-
-A colagem delimitada pelo terminal entra em bloco ao terminar, inclusive ao
-substituir uma seleção, e não aciona comandos nem envia quebras de linha.
-No login e nos campos de perfil, quebras de linha são descartadas. Uma colagem
-que excede o limite mantém o campo original e mostra o aviso correspondente.
-O atalho de colar continua sendo o configurado no terminal.
-
-Na linha abaixo do campo de texto, uma pessoa aparece como “Nome está digitando…” ou
-com sua frase personalizada de digitação cadastrada no servidor. De duas a
-quatro pessoas, aparecem os nomes separados por vírgula e “estão digitando…”;
-acima de quatro, “Várias pessoas estão digitando…”. O indicador acompanha
-somente o canal aberto, não inclui você e desaparece após seis segundos sem
-atividade, quando a pessoa envia uma mensagem ou fica offline. Ao editar,
-o aplicativo avisa pelo WebSocket no máximo uma vez a cada dois segundos.
-
-### DMs e presença
-
-**F10** abre **Nova DM**. Digite para filtrar nickname ou username, use ↑/↓ e Enter, ou clique no destinatário. A lista é carregada em páginas e exclui sua conta e usuários banidos. Ctrl+R atualiza a lista; Esc cancela. A DM aberta usa o mesmo histórico, editor, menções e envio dos canais. Na lista **DMs**, **Ctrl+D** fecha a conversa para sua conta, preservando o histórico no servidor; uma nova mensagem pode fazê-la reaparecer. Erros de bloqueio e acesso aparecem nos avisos.
-
-Um círculo vermelho **●** à direita de um canal ou DM indica que a última mensagem difere do cursor de leitura informado pelo backend (`last_read_message`). Quando não há ID no cursor, a comparação usa `last_read_at` e o horário da última mensagem. Conversas sem última mensagem ficam sem círculo. O aplicativo consulta esses dados ao abrir, mantendo a leitura entre execuções. O círculo aparece também no botão **Canais** ou **DMs** quando alguma conversa dessa lista tem mensagens não lidas. Ele fica em posição fixa à direita, visível em nomes longos e sobre o fundo de seleção. Carregar com sucesso a última mensagem apaga o círculo, mesmo se a lista remota ainda trouxer um cursor antigo. O aplicativo salva apenas o ID e o horário dessa leitura, separados por servidor e conta. Ao reiniciar, consulta o backend e concilia seu cursor com a leitura salva; mensagens posteriores continuam acendendo o círculo. Esse registro local não sincroniza outros dispositivos. Leituras anteriores a esta versão dependem do cursor informado pelo backend; o registro local passa a existir quando você lê a conversa nesta versão. Falhas ao carregar mensagens preservam o indicador. Notificações antigas da central não acendem esse círculo, e ler seus detalhes não altera o cursor da conversa.
-
-A lista de DMs mostra presença e o número de mensagens não lidas informado pelo servidor. `?` indica presença ainda desconhecida. O `*` acompanha o mesmo cursor usado pelo círculo; o contador de DMs não substitui esse cursor. Novas mensagens visíveis no fim da conversa ativa, com o terminal em foco, provocam uma consulta de leitura e a confirmação do cursor, agrupadas para evitar consultas por mensagem. Canais e DMs inativos não têm históricos consultados em segundo plano. Digitação funciona também nas DMs; a atividade enviada depende de interação real.
-
-Os cursores ficam em `$XDG_STATE_HOME/papo-tui/read-cursors.json`, ou em `~/.local/state/papo-tui/read-cursors.json`, com diretório `700` e arquivo `600`. O registro guarda até 1.000 conversas por servidor/conta, 64 contextos e 4 MiB no total; contextos mais antigos podem ser descartados ao atingir o limite. Ele não contém mensagens, senhas nem cookies. Se a gravação falhar, os avisos informam que a leitura será mantida apenas na sessão atual.
-
-### Central e avisos de notificações
-
-**F9** abre a central do servidor ativo. ↑/↓, PageUp/PageDown e Home/End navegam; Enter ou clique abre os detalhes e marca somente a notificação visualizada. Enter nos detalhes abre sua conversa quando o destino estiver disponível. Tab percorre lista, **Preferências** e **Mais antigas**; Enter aciona o botão, Ctrl+R atualiza/tenta novamente e Esc volta ou fecha. Consultar a lista não marca notificações. Uma notificação também pode ser marcada quando sua mensagem aparece no trecho visível da conversa, com foco confirmado ou interação recente em terminais sem relato de foco.
-
-A contagem mostra as não lidas conhecidas; `+` na aba e **há mais páginas** na central indicam listagem parcial. A central guarda até 1.000 registros ou 4 MiB em memória. Eventos sem registro persistido aparecem como **Aviso** e duram somente a sessão, até 256 eventos ou 1 MiB; seus IDs não são enviados para marcação. Ler o histórico da conversa e marcar uma notificação são ações distintas. Não há garantia de sincronização imediata com outros dispositivos; Ctrl+R atualiza os dados.
-
-Avisos no desktop mostram servidor, autor e prévia quando uma notificação chega fora da conversa visível ou com o terminal sem foco confirmado. Eventos próximos são agrupados por servidor em dois segundos. Os popups são informativos e não abrem conversas ao clicar. Em **F9 → Preferências**, Enter/Espaço ou clique alterna **Avisos no desktop** e **Mostrar prévia**. As duas opções são globais e persistidas na configuração local; ficam habilitadas por padrão. Configurações anteriores continuam sendo lidas e migram na próxima gravação. As preferências de prévia se aplicam aos popups.
-
-O desktop requer GIO 2.66+ e um serviço compatível com `org.freedesktop.Notifications` na sessão D-Bus; no Arch, instale `glib2` antes de configurar o CMake. Sem esse serviço, a central continua disponível e o rodapé informa a indisponibilidade após uma tentativa. Para compilar sem popups, use `-DPAPO_DESKTOP_NOTIFICATIONS=OFF`, independentemente do suporte a chaveiros. As conexões já abertas das outras abas continuam recebendo DMs e notificações.
-
-### Menções
-
-Digite `@` no editor para abrir o cartão de usuários e continue digitando para
-filtrar por nickname ou username. A busca ignora espaços e símbolos: `@eana`
-encontra, por exemplo, `EA -* NA`, preservando o nome original. ↑/↓ e
-PageUp/PageDown navegam; Tab ou Enter insere o usuário destacado. A roda do
-mouse sobre o cartão rola a lista e o
-clique esquerdo seleciona. Esc fecha sem alterar o texto. Enter com o cartão
-aberto escolhe a menção; depois de fechá-lo, Enter envia a mensagem.
-
-O editor mostra o nome, mantendo a identidade do usuário no envio. Uma menção
-confirmada é uma unidade: setas a atravessam e Backspace/Delete a removem por
-inteiro. Todas as menções aparecem em laranja, inclusive nos títulos,
-descrições, autor, rodapé e campos dos embeds, independentemente da cor do
-card. Mensagens que mencionam sua conta, também nos embeds, recebem uma
-barra vertical à esquerda. Sem cores, o destaque usa negrito.
-As mensagens continuam chegando pelo WebSocket enquanto o cartão está aberto.
-
-O cartão mostra primeiro quem enviou mensagens mais recentemente no canal
-aberto, considerando o histórico já carregado. Os demais ficam em ordem
-alfabética. A ordem acompanha as novas mensagens, mantendo o usuário destacado
-para que uma atualização não altere sua escolha.
-
-A lista reúne usuários da instância e é carregada em páginas, sem consulta de
-históricos inativos. Durante o carregamento, os resultados são parciais. O
-cache fica somente em memória, limitado a 10.000 usuários ou 16 MiB, incluindo os índices de pesquisa. Usuários sem referência no histórico, na digitação ou no seletor expiram após cinco minutos; abrir novamente o seletor recarrega as páginas necessárias. Se houver
-falha, Ctrl+R no cartão tenta novamente. Uma única opção também exige
-confirmação; textos colados, e-mails e URLs não abrem o seletor automaticamente.
-
-### Emojis e avatares
-
-Clique em **[😄]**, à direita do editor, ou pressione **F4** com foco no
-histórico, editor ou botão de emojis para abrir o seletor. Tab a partir do editor foca esse botão; Enter o abre e Shift+Tab
-retorna ao editor. O botão permanece fixo ao escrever ou redimensionar.
-
-Digite no campo **Buscar** para filtrar nomes e palavras-chave em português
-ou inglês, ignorando maiúsculas e acentos. Tab/Shift+Tab percorre busca, abas e
-grade. Nas abas, ←/→ escolhe **Unicode** ou **Servidor**; na grade, as setas
-movem o destaque e PageUp/PageDown ou a roda do mouse rolam os resultados.
-O rodapé identifica o emoji destacado. Enter ou clique insere no cursor ou
-substitui a seleção, fecha o modal e retorna ao editor. Isso não envia a
-mensagem. Se não couber no limite do editor, o rascunho é preservado e o modal
-informa o problema. Esc ou clique fora cancela sem acionar canais ao fundo.
-
-Unicode é inserido como sua sequência original. Emojis personalizados usam
-`:nome:`, preservando o nome do servidor, inclusive Unicode e capitalização.
-F5 atualiza o catálogo remoto; ao reabrir depois de cinco minutos ele também
-é atualizado. As páginas aparecem progressivamente; falhas preservam os itens
-já carregados e F5 permite tentar novamente. Não há upload, exclusão ou
-seleção de reações nessa tela.
-
-Instale **PangoCairo 1.50+** e a fonte **Noto Color Emoji** para os ícones Unicode
-coloridos. O catálogo Unicode 17.0/CLDR 48 vem com o programa e funciona sem
-internet. No histórico, editor e seletor, Kitty, Sixel e iTerm2 usam imagens
-coloridas; emojis no texto ocupam duas colunas e uma linha. Seleção, cursor,
-exclusão e cópia preservam o texto enviado. Sem suporte gráfico ou fonte,
-Unicode permanece em texto e personalizados permanecem como `:nome:`.
-
-O avatar preenche 48 × 48 pixels, sem margem adicionada. Imagens retangulares
-usam recorte central proporcional para preencher essa área, sem distorção.
-Nome, hora e **editado** ficam à direita, alinhados ao topo do avatar; o texto
-da mensagem começa na linha imediatamente abaixo, na mesma coluna do nome.
-O espaço entre avatar e nome acompanha a largura das células, sem uma coluna vazia adicional.
-Esse alinhamento também se aplica às mensagens agrupadas, anexos e embeds.
-Avatares ausentes ou
-inválidos mostram iniciais. Hoje aparece só o horário; nos outros dias, data
-e hora, seguindo `LC_TIME` e o fuso local. O indicador **editado** substitui a
-antiga linha separada de edição. Nomes longos são abreviados e metadados se
-ajustam em telas estreitas.
-
-Mensagens consecutivas do mesmo autor ou webhook compartilham um único
-cabeçalho com nome, avatar, data e hora. As seguintes mostram seu conteúdo,
-incluindo anexos, embeds e o indicador de edição quando aplicável, sem espaços
-extras entre elas. Uma mudança de autor, webhook ou identidade externa
-(origem, ID, nome ou avatar) inicia outro grupo. O agrupamento acompanha a
-ordem do histórico, sem limite de tempo entre mensagens consecutivas. A
-primeira mensagem carregada sempre mostra o cabeçalho. Mensagens editadas de
-usuários iniciam um novo grupo.
-
-Mensagens recebidas por webhook mostram o nome de exibição informado pelo
-backend, seguido de **[APP]**, e o avatar do app. A atribuição externa fornecida
-para uma mensagem é preservada. Sem nome disponível, aparece **Webhook**; sem
-avatar válido, aparecem as iniciais. Os avatares públicos do Papo e URLs HTTPS
-externas são carregados sem cookies de sessão e sem seguir redirecionamentos.
-Os avatares usam a mesma fila de imagens. Até quatro downloads são executados
-simultaneamente no cliente, respeitando o
-limite global de requisições. URLs já carregadas são reutilizadas ao voltar
-a um canal na mesma tela de conversas.
-Falhas não geram tentativas automáticas; Ctrl+R permite tentar novamente.
-
-Emojis personalizados e avatares em GIF se repetem somente enquanto visíveis,
-até 15 atualizações por segundo. Animações que excedem os limites usam o
-primeiro frame. Avatares são carregados apenas para autores visíveis, em lotes,
-com prioridade sobre a busca de nomes e as páginas de emojis. O cache por usuário
-é reutilizado ao rolar e voltar a conversas, inclusive quando o perfil não tem
-avatar. Imagens já processadas não expiram por tempo durante a sessão; continuam
-disponíveis dentro dos limites compartilhados de memória e arquivos. Quando o
-servidor informa uma troca de avatar, o cliente consulta a nova imagem mantendo
-a anterior disponível. Uma resposta idêntica reutiliza a imagem já carregada;
-falhas preservam a anterior e Ctrl+R permite tentar novamente.
-Tudo fica isolado por instância e sessão, respeitando
-TLS e o limite global de requisições. Todas as imagens — incluindo
-avatares, emojis e embeds — compartilham o cache global de 256 MiB e o pool
-de quatro workers, com processamento em lotes e deduplicação por conteúdo.
-As entradas compactadas de emojis/avatares usam arquivos temporários privados,
-limitados a 160 MiB e removidos ao sair da conta ou encerrar o aplicativo. O cache compartilhado
-pode manter imagens já processadas enquanto a sessão continuar aberta.
-
-### Imagens e player de vídeo
-
-O programa consulta suporte aos protocolos gráficos Kitty e Sixel e o tamanho
-das células. Também reconhece terminais iTerm2 pela identificação do ambiente.
-Kitty e terminais que implementam seu protocolo podem mostrar imagens e vídeo
-sem Sixel. A libchafa codifica os pixels para Kitty/iTerm2; a libsixel mantém a
-saída Sixel. Esses modos exibem pixels, sem converter imagens em caracteres.
-
-Imagens já visíveis são preservadas ao digitar ou mudar o foco. No protocolo
-Kitty, a rolagem move e recorta a imagem sem reenviar seus pixels. As atualizações
-da conversa e do vídeo são agrupadas quando o terminal oferece atualização sincronizada.
-
-Em terminal compatível, baixa e mostra as imagens JPEG, PNG, WebP e GIF visíveis
-na conversa ativa. Anexos de imagem mostram a mídia diretamente, sem linhas de
-nome, tipo, tamanho ou moderação. F7 ou clique continuam abrindo o arquivo.
-O cliente usa o anexo original. No histórico, preserva suas dimensões sem ampliar
-e reduz proporcionalmente quando necessário para caber na área disponível, com
-altura máxima de **720 pixels**. No modal, esse teto não se aplica: a imagem usa
-a área disponível, com ampliação ou redução proporcional, sem deformação.
-O tamanho acompanha o redimensionamento da janela e as dimensões das células do
-terminal. Imagens da mesma mensagem ficam lado a lado enquanto houver largura,
-com duas colunas de intervalo. Quando não cabem, passam para baixo, com uma linha
-de intervalo entre os grupos. Prévias de links preservam seus textos junto à imagem.
-O agrupamento é recalculado ao redimensionar a janela.
-GIFs animados se repetem enquanto estiverem visíveis,
-respeitando os intervalos dos frames; ao rolar para fora ou trocar de canal,
-deixam de atualizar a tela. A animação aceita até 256 frames e 32 MiB de pixels
-decodificados por arquivo; quando a resolução excede o orçamento da animação,
-é exibido o primeiro frame. O processamento de animações com mais de 256 frames
-é interrompido com erro.
-Sem protocolo compatível
-ou tamanho das células disponível, mostra cards e metadados em texto, sem baixar
-imagens automaticamente. Multiplexadores precisam encaminhar as consultas e o
-protocolo gráfico; a identificação iTerm2 é desativada dentro de tmux/screen.
-
-Pressione F7 com o histórico em foco ou clique numa mídia. Quando houver vários
-itens visíveis, escolha com ↑/↓ e Enter, ou clique na lista. Vídeos MP4, WebM e
-Ogg são baixados completamente antes da reprodução em um modal, com indicação
-do carregamento. A mídia fica centralizada em um modal com margens maiores;
-em telas largas, a coluna de canais permanece visível. Esc ou clique fora do
-modal cancela ou fecha e volta à conversa com o rascunho preservado. Esse clique
-apenas fecha o modal; para abrir um canal ao fundo, clique nele novamente.
-Nenhum vídeo inicia automaticamente.
-
-Clique no botão **[Info]**, fixo no cabeçalho do modal, para abrir ou fechar
-um painel de propriedades à direita da imagem. Ele mostra nome, MIME,
-tamanho em bytes, moderação, dimensões
-originais, IDs, miniatura e data de criação, conforme os dados disponíveis.
-Campos ausentes são identificados como não informados. `i` e F8 também alternam
-o painel. Tab/Shift+Tab foca o botão e Enter o aciona. Role os dados com
-PageUp/PageDown ou com a roda do mouse
-sobre o painel. Em telas estreitas, o painel ocupa parte da área da imagem,
-que se ajusta proporcionalmente ao espaço restante.
-
-| Controle no player | Ação |
-| --- | --- |
-| Espaço | Pausar ou continuar |
-| ← / → | Recuar ou avançar 5 segundos |
-| `,` / `.` (ou `<` / `>`) | Retroceder ou avançar 1 segundo |
-| ↑ / ↓ | Aumentar ou diminuir o volume |
-| m | Silenciar ou restaurar o áudio |
-| Esc | Fechar ou cancelar o carregamento |
-| Clique fora do modal | Fechar sem acionar o conteúdo ao fundo |
-| Botão [Info], i ou F8 | Alternar painel de propriedades |
-| PageUp / PageDown no modal com propriedades | Rolar as propriedades |
-| Enter na mensagem de erro | Tentar novamente |
-
-Na barra do player, clique no botão à esquerda para pausar ou continuar,
-na linha do tempo para buscar uma posição e na barra à direita para ajustar o
-volume de 0 a 100%. O gradiente é verde até 60%, amarelo até 85% e vermelho
-acima disso. O botão mostra `[▶]` para continuar e `[⏸]` para pausar.
-A decodificação tenta aceleração de hardware quando disponível, com fallback
-para software.
-
-Redimensionar preserva o vídeo. O áudio usa o dispositivo disponível; quando
-nenhum dispositivo pode ser aberto, o player informa isso e continua com o
-vídeo. A imagem é ampliada ou reduzida proporcionalmente à área disponível no modal,
-sem cortes, e acompanha o redimensionamento. A renderização mantém o limite de
-15 frames/s, com resolução limitada pelo orçamento de memória.
-
-Imagens aceitam até 16 MiB e 16 megapixels, e vídeos até 128 MiB. O cache de
-imagens em memória tem limite global de **256 MiB** para todas as sessões desta
-execução, incluindo frames e variantes gráficas. Arquivos de imagem concluídos
-têm limite separado de 128 MiB. Esse orçamento não limita o RSS total do processo.
-Até quatro downloads podem ocorrer simultaneamente, com prioridade para o modal;
-a interface continua respondendo durante o processamento de imagens.
-
-Imagens recentes ficam disponíveis para reutilização entre conversas da mesma
-sessão, inclusive ao voltar à conta ou trocar de aba. Bytes iguais compartilham
-o objeto e as variantes de mesmo tamanho/protocolo; contas e instâncias ficam
-isoladas. Representações de anexos, embeds e emojis fora da tela expiram após um
-minuto, e seus arquivos sem uso, após cinco minutos. Avatares são reutilizados
-durante a sessão, dentro dos mesmos limites. Sob pressão, o cache libera as representações menos recentes
-e GIFs podem passar ao primeiro frame; itens adiados são processados quando há
-espaço. Sair da conta limpa o contexto. Arquivos temporários são privados e não
-incluem cookies; fechar o modal cancela o carregamento e remove seu vídeo.
-Codecs e player permanecem carregados após seu primeiro uso, até encerrar o
-aplicativo. Em sistemas com glibc, grandes liberações do cache também devolvem
-páginas livres ao sistema em segundo plano, com frequência limitada.
-Downloads respeitam TLS, a sessão da instância e o
-limite global de requisições. Erros preservam a navegação; após HTTP 429, aguarde
-antes da tentativa manual.
-
-Embeds mostram autor, site/provedor, título, descrição, fields e rodapé sobre
-um fundo preto, com apenas uma barra à esquerda na cor
-informada pelo servidor. Não há rótulos de embed/rodapé nem texto substituto
-para mensagens sem conteúdo textual. Autor e rodapé usam um tom discreto; o
-tamanho da fonte acompanha a configuração do terminal. Fields inline ficam
-em até três colunas quando cabem e se empilham em telas estreitas. O avatar
-fica junto ao autor e a miniatura de embeds customizados fica à direita quando
-há espaço. Prévias de links e miniaturas em telas estreitas ficam abaixo dos
-fields. As imagens são renderizadas quando a API fornece seus bytes. A imagem
-adicional indica indisponibilidade; o backend atual também não fornece os
-bytes do ícone do rodapé. Vídeos de iframe, como YouTube, mostram URL e
-metadados. URLs não são abertas automaticamente e os
-textos não interpretam Markdown do Discord.
-
-### Rascunhos e falhas de envio
-
-Rascunhos, cursor e posição de edição ficam separados por sessão e canal. Trocar de servidor ou voltar à conta com F6 preserva esses dados em memória. Eles são descartados ao sair da conta, substituir a conexão da mesma URL ou fechar o programa. Texto vazio ou somente espaços não é enviado. Há limite de 2048 caracteres Unicode/8192 bytes UTF-8 por rascunho, 64 rascunhos e 32 operações por sessão.
-
-O status do editor informa **Aguardando para enviar**, **Enviando**, **Mensagem confirmada**, falha ou **Envio sem confirmação**. Uma rejeição preserva o rascunho. **Ctrl+T** tenta novamente o texto capturado do último envio com falha, preservando o rascunho atual. Enter envia o texto atual do editor.
-
-Se a resposta se perder ou houver timeout depois da transmissão, a mensagem pode já existir no servidor. O aplicativo mantém o texto e não repete o envio automaticamente. Enter ou Ctrl+T abre **Reenviar mensagem?**, com **Cancelar** selecionado. Esc ou Enter em Cancelar fecha o diálogo; → e Enter, ou clique em **Reenviar**, autorizam uma nova tentativa que pode criar duplicação. O diálogo continua respondendo durante a conexão.
-
-## Problemas ao conectar
-
-Confira a URL, a disponibilidade do servidor e as credenciais da conta nessa instância. Em servidores privados, confira também a senha do servidor. A tela informa erros de autenticação e rede.
-
-Se o servidor redireciona a URL, informe o endereço final. Para HTTPS, o certificado precisa ser válido e confiável no sistema. Você pode cancelar uma tentativa com Esc e tentar novamente.
-
-Se sua instância usa uma autoridade certificadora própria, indique seu certificado CA:
-
-```sh
-CURL_CA_BUNDLE=/caminho/ca.pem ./build/papo-tui
-```
-
-A validação do certificado e do nome do servidor permanece ativa.
-
-Se a tela informar que o limite de requisições foi atingido, aguarde e tente novamente. O aplicativo respeita a espera indicada pelo servidor em `Retry-After` (até 24 horas); quando esse valor está ausente ou inválido, aguarda 3 segundos. A tentativa anterior não é repetida automaticamente.
+| Space | Pause or resume |
+| ← / → | Seek backward / forward by 5 seconds |
+| `,` or `<` / `.` or `>` | Seek backward / forward by 1 second |
+| ↑ / ↓ | Increase / decrease the volume |
+| `m` | Mute or unmute |
+| Esc | Close the player or cancel loading |
+
+On the control bar, click the left button to pause or resume, the timeline to
+seek, and the right bar to adjust the volume from 0 to 100%. The volume gradient
+is green up to 60%, yellow up to 85% and red above that.
+The button shows `[▶]` to resume and `[⏸]` to pause.
+
+Videos scale up or down to fit the player, preserving their aspect ratio without
+cropping. Their size adjusts when you resize the terminal.
+
+Click **Info**, or press `i` or F8, to show or hide the media properties.
+Use PageUp/PageDown or the mouse wheel over the properties panel to scroll it.
+
+## Troubleshooting
+
+- **Command not found:** check that the application is installed and its folder
+  is on PATH. For a portable package, run the executable from the extracted
+  folder; see the [installation guide](instalacao.md).
+- **Cannot connect:** check the final URL, instance availability and credentials.
+  Private servers also require the server password.
+- **Untrusted certificate:** install the instance's CA or run
+  `CURL_CA_BUNDLE=/path/to/ca.pem papo-tui`. In PowerShell, set
+  `$env:CURL_CA_BUNDLE='C:\path\to\ca.pem'` before running the application.
+  TLS verification remains enabled.
+- **Local HTTP server:** run `papo-tui --allow-local-http`. This option allows
+  HTTP only on `localhost`, `127.0.0.1` and `[::1]`.
+- **Request limit:** wait for the indicated period and try again.
+  Sends are not retried automatically.
+- **Images do not appear:** check that the terminal supports Kitty graphics,
+  Sixel or iTerm2 images. Without a
+  supported protocol, chat remains text-only.
+- **Emoji pictures are missing:** install the Noto Color Emoji font and restart
+  the application.
+- **Video is still loading:** playback starts after the download finishes.
+  Check the connection if it does not progress. Press Esc to cancel; if an
+  error appears, press Enter in the media window to retry.
+- **Video plays without sound:** press `m` to unmute, raise the volume in the
+  player and check the system's audio output. If no audio device is available,
+  playback can continue without sound.
+- **Missing media module:** reinstall the complete package. For the ZIP, keep
+  the DLLs and the `papo-backends` folder alongside the program.
+- **Session is not remembered:** unlock the system credential store. Without an
+  available store, you must sign in at the next start; cookies are not saved as
+  plain text.
+- **Small screen or intercepted keys:** enlarge the window and check the
+  terminal's reserved shortcuts. Use the mouse if a shortcut does not reach
+  the application.
+- **Linux terminal settings were disrupted:** run `reset`, even if the
+  characters do not appear as you type.

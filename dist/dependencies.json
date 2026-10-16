@@ -1,0 +1,88 @@
+{
+  "format": 1,
+  "sources": [
+    {
+      "name": "curl",
+      "version": "8.23.0",
+      "url": "https://github.com/curl/curl/releases/download/curl-8_23_0/curl-8.23.0.tar.xz",
+      "sha256": "8dadd7d2536a314f982ad05a651b713f426bf7d02cc2c76cffb9796f2218e6c5",
+      "buildsystem": "cmake",
+      "archive": "curl-8.23.0.tar.xz"
+    },
+    {
+      "name": "jansson",
+      "version": "2.15.1",
+      "url": "https://github.com/akheron/jansson/releases/download/v2.15.1/jansson-2.15.1.tar.gz",
+      "sha256": "0c7114dc0b2d22a670724a1f95922029d7077c19dbf79a584cb8084d2f267f2f",
+      "buildsystem": "cmake",
+      "archive": "jansson-2.15.1.tar.gz"
+    },
+    {
+      "name": "libunibreak",
+      "version": "8.0",
+      "url": "https://github.com/adah1972/libunibreak/releases/download/libunibreak_8_0/libunibreak-8.0.tar.gz",
+      "sha256": "9c4fad6e517338a098373acc9f35579ae2c325e6446666fb9ac2666ba15ceba4",
+      "buildsystem": "autotools",
+      "archive": "libunibreak-8.0.tar.gz"
+    },
+    {
+      "name": "libsixel",
+      "version": "1.10.5",
+      "url": "https://codeload.github.com/libsixel/libsixel/tar.gz/refs/tags/v1.10.5",
+      "sha256": "b6654928bd423f92e6da39eb1f40f10000ae2cc6247247fc1882dcff6acbdfc8",
+      "buildsystem": "meson",
+      "archive": "libsixel-1.10.5.tar.gz"
+    },
+    {
+      "name": "chafa",
+      "version": "1.18.3",
+      "url": "https://github.com/hpjansson/chafa/releases/download/1.18.3/chafa-1.18.3.tar.xz",
+      "sha256": "fb995ef21dce6c73dd0dd454ba3e0f7fac08e053ea16060a2e5ce69a3746ee27",
+      "buildsystem": "autotools",
+      "archive": "chafa-1.18.3.tar.xz"
+    },
+    {
+      "name": "ffmpeg",
+      "version": "9.0.2",
+      "url": "https://codeload.github.com/FFmpeg/FFmpeg/tar.gz/refs/tags/n9.0.2",
+      "sha256": "6e374ed621e48faa40639307dff48ba6fe574a509977956d2cce9669b7cc27e9",
+      "buildsystem": "ffmpeg",
+      "archive": "ffmpeg-9.0.2.tar.gz"
+    },
+    {
+      "name": "libplacebo",
+      "version": "7.360.1",
+      "url": "https://code.videolan.org/videolan/libplacebo/-/archive/v7.360.1/libplacebo-v7.360.1.tar.gz",
+      "sha256": "14c0a99f4b01557ec9826ce6b1d52f6de21be274ba03fd5aab7307f18766dc39",
+      "buildsystem": "meson",
+      "archive": "libplacebo-7.360.1.tar.gz"
+    },
+    {
+      "name": "libass",
+      "version": "0.17.5",
+      "url": "https://github.com/libass/libass/releases/download/0.17.5/libass-0.17.5.tar.xz",
+      "sha256": "2dca25c0e0c837ddf00b52011b3f82cac1e4ddd3ad018227806b0c2288864acc",
+      "buildsystem": "meson",
+      "archive": "libass-0.17.5.tar.xz"
+    },
+    {
+      "name": "mpv",
+      "version": "0.41.0",
+      "url": "https://codeload.github.com/mpv-player/mpv/tar.gz/refs/tags/v0.41.0",
+      "sha256": "ee21092a5ee427353392360929dc64645c54479aefdb5babc5cfbb5fad626209",
+      "buildsystem": "meson",
+      "archive": "mpv-0.41.0.tar.gz"
+    },
+    {
+      "name": "libsecret",
+      "version": "0.21.8.2",
+      "url": "https://download.gnome.org/sources/libsecret/0.21/libsecret-0.21.8.2.tar.xz",
+      "sha256": "142948339c5b971d8f6a8c7099521f6fd319b6fe73d2694b4e6d3310ed28b6e6",
+      "buildsystem": "meson",
+      "archive": "libsecret-0.21.8.2.tar.xz",
+      "platforms": [
+        "posix"
+      ]
+    }
+  ]
+}

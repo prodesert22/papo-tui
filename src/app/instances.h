@@ -1,6 +1,6 @@
 #ifndef PAPO_INSTANCES_H
 #define PAPO_INSTANCES_H
-#include "net/auth.h"
+#include "net/auth/client.h"
 #define INSTANCE_LIMIT 64
 
 typedef struct send_editor send_editor;
@@ -43,7 +43,8 @@ void instances_detach(instance_connections *connections, auth_client *auth);
 size_t instances_index(const instance_connections *connections, const auth_client *auth);
 /* Borrowed editor, owned by its connection and destroyed before auth. */
 send_editor *instances_editor(const instance_connections *connections, const auth_client *auth);
-void instances_media_event(instance_connections *connections, auth_client *auth, const json_t *event);
+void instances_media_event(instance_connections *connections, auth_client *auth,
+                           const json_t *event);
 history *instances_history(const instance_connections *connections, const auth_client *auth);
 void instances_visible(instance_connections *connections, auth_client *auth, const char *channel);
 /* Polls inactive sessions/WS and metadata; never requests inactive history. */

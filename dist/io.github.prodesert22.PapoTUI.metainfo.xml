@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="console-application">
+  <id>io.github.prodesert22.PapoTUI</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Papo TUI</name>
+  <summary>Cliente de conversas para terminal</summary>
+  <description><p>Converse em canais e mensagens diretas de instâncias independentes do Papo, com notificações, emojis e mídia em terminais compatíveis.</p></description>
+  <launchable type="desktop-id">io.github.prodesert22.PapoTUI.desktop</launchable>
+  <provides><binary>papo-tui</binary></provides>
+  <content_rating type="oars-1.1"/>
+</component>

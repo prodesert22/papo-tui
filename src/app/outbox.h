@@ -1,16 +1,29 @@
 #ifndef PAPO_OUTBOX_H
 #define PAPO_OUTBOX_H
 
-#include "net/auth.h"
+#include "net/auth/client.h"
 
 #define OUTBOX_DRAFT_LIMIT 64
 #define OUTBOX_OPERATION_LIMIT 32
 #define OUTBOX_TEXT_BYTES 8193
 #define OUTBOX_TEXT_LIMIT 2048
 
-typedef enum { OUTBOX_QUEUED, OUTBOX_SENDING, OUTBOX_CONFIRMED, OUTBOX_FAILED, OUTBOX_UNCERTAIN } outbox_state;
-typedef enum { OUTBOX_ACCEPTED, OUTBOX_EMPTY, OUTBOX_BUSY, OUTBOX_CONFIRM_DUPLICATION,
-               OUTBOX_NO_SESSION, OUTBOX_FULL, OUTBOX_INVALID } outbox_submit_result;
+typedef enum {
+    OUTBOX_QUEUED,
+    OUTBOX_SENDING,
+    OUTBOX_CONFIRMED,
+    OUTBOX_FAILED,
+    OUTBOX_UNCERTAIN
+} outbox_state;
+typedef enum {
+    OUTBOX_ACCEPTED,
+    OUTBOX_EMPTY,
+    OUTBOX_BUSY,
+    OUTBOX_CONFIRM_DUPLICATION,
+    OUTBOX_NO_SESSION,
+    OUTBOX_FULL,
+    OUTBOX_INVALID
+} outbox_submit_result;
 typedef struct outbox outbox;
 typedef struct {
     uint64_t id, generation, draft_revision;
@@ -32,11 +45,11 @@ void outbox_reset(outbox *box);
 const char *outbox_draft(outbox *box, const char *channel_id, uint64_t *revision);
 bool outbox_set_draft(outbox *box, const char *channel_id, const char *content);
 outbox_submit_result outbox_submit(outbox *box, const char *channel_id,
-                                  bool accept_possible_duplicate, uint64_t *operation_id);
+                                   bool accept_possible_duplicate, uint64_t *operation_id);
 /* Retries the captured text, preserving the current editor. An uncertain
  * result requires explicit acknowledgement of possible duplication. */
 outbox_submit_result outbox_retry(outbox *box, uint64_t operation_id,
-                                 bool accept_possible_duplicate, uint64_t *new_operation_id);
+                                  bool accept_possible_duplicate, uint64_t *new_operation_id);
 /* Call after auth_poll(). Dispatches a bounded queue one request at a time. */
 void outbox_poll(outbox *box);
 bool outbox_cancel(outbox *box, uint64_t operation_id);

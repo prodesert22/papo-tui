@@ -1,0 +1,3 @@
+build/**
+.worktrees/**
+src/model/text/emoji_data.inc

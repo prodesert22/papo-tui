@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Papo TUI
+Comment=Cliente de conversas para terminal
+Exec=papo-tui
+Icon=io.github.prodesert22.PapoTUI
+Terminal=true
+Categories=Network;Chat;
+X-GNOME-UsesNotifications=true

@@ -1,0 +1,14 @@
+pkgname=papo-tui
+pkgver=@VERSION@
+pkgrel=1
+pkgdesc='Cliente de conversas para terminal'
+arch=('@ARCH@')
+license=('MIT')
+depends=('glibc' 'ncurses' 'noto-fonts-emoji')
+optdepends=('wl-clipboard: cópia no Wayland' 'xclip: cópia no X11')
+source=('payload.tar.gz')
+sha256sums=('@SHA256@')
+options=('!strip')
+package() {
+    cp -a "$srcdir/usr" "$pkgdir/usr"
+}

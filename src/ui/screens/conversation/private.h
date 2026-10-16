@@ -1,0 +1,146 @@
+#ifndef PAPO_CONVERSATION_PRIVATE_H
+#define PAPO_CONVERSATION_PRIVATE_H
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+#include "app/desktop.h"
+#include "app/session_store.h"
+#include "config/profiles.h"
+#include "model/conversation/history.h"
+#include "net/clock.h"
+#include "platform/clipboard.h"
+#include "platform/runtime.h"
+#include "ui/components/button.h"
+#include "ui/components/emoji_picker.h"
+#include "ui/components/mention_popup.h"
+#include "ui/components/status_bar.h"
+#include "ui/components/theme.h"
+#include "ui/input/editor.h"
+#include "ui/input/mouse.h"
+#include "ui/input/text.h"
+#include "ui/media/graphics.h"
+#include "ui/media/icons.h"
+#include "ui/media/media.h"
+#include "ui/screens/conversation.h"
+#include "ui/screens/inbox.h"
+#include <glib.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include <wctype.h>
+
+#define PASTE_START (KEY_MAX + 1)
+#define PASTE_END (KEY_MAX + 2)
+#define CONTENT_Y 5
+
+enum { SERVER_TABS, CHANNEL_LIST, HISTORY_PANEL, MESSAGE_INPUT, EMOJI_BUTTON, LIST_BUTTONS };
+typedef enum {
+    DRAW_ALL,
+    DRAW_CONVERSATION,
+    DRAW_NAVIGATION,
+    DRAW_EDITOR,
+    DRAW_MEDIA,
+    DRAW_FOOTER
+} draw_scope;
+#define LAYOUT_BYTES (8U * 1024U * 1024U)
+typedef struct {
+    int x, width;
+} click_range;
+typedef struct {
+    char id[37];
+    uint64_t revision, names, dimensions, used;
+    int width, height;
+    bool graphics, tail_gap, continuation;
+    int cell_width, cell_height, calendar_day;
+    uint64_t assets;
+    uint64_t reply_revision;
+    size_t bytes;
+    message_blocks blocks;
+} cached_layout;
+typedef struct {
+    GHashTable *layout_index;
+    cached_layout layouts[HISTORY_MESSAGE_LIMIT];
+    size_t layout_bytes;
+    uint64_t layout_sequence;
+    history *model;
+    r8_modal *r8;
+    bool list_dms;
+    int list_button;
+    size_t highlights[2];
+    uint64_t inbox_revision;
+    uint64_t view_requested_until;
+    mention_popup *mentions;
+    icon_view *icons;
+    emoji_picker *emojis;
+    int emoji_return_focus, calendar_day;
+    media_view *media;
+    char block[128];
+    send_editor *editor; /* Borrowed from the instance connection. */
+    instance_connections *connections;
+    WINDOW *frame, *tabs, *footer, *list, *body, *confirm;
+    int width, height, side, visible, first_channel, focus, first, editor_border, history_top,
+        editor_rows, editor_padding;
+    size_t highlighted, active_tab, tab_cursor, first_tab;
+    click_range tab_hits[INSTANCE_LIMIT], add_hit, back_hit, next_hit, channels_hit,
+        conversation_hit;
+    char anchor[37];
+    char editor_channel[64];
+    const char *feedback;
+    status_bar status;
+    uint64_t notice_revisions[HISTORY_NOTICE_COUNT];
+    uint64_t copy_revision;
+    uint64_t retry_id;
+    uint64_t unseen;
+    int waiting_page;
+    bool paging_notice;
+    size_t section, offset;
+    bool at_end, paste, show_channels, layout_failed, duplicate_modal, reenviar;
+    bool dragging, editor_scrolling;
+    text_paste paste_data;
+} view;
+const char *conversation_str(json_t *obj, const char *key);
+size_t conversation_list_index(view *ui, size_t row);
+size_t conversation_list_count(view *ui);
+json_t *conversation_list_channel(view *ui, size_t row);
+bool conversation_list_notified(view *ui, bool dms);
+void conversation_notification_dot(WINDOW *window, int row, int column, int pair);
+void conversation_list_button(view *ui, int button, int column, int width, const char *label);
+void conversation_switch_list(view *ui, bool dms);
+void conversation_destroy_layout(view *ui);
+bool conversation_layout(view *ui);
+bool conversation_hit(click_range range, int x);
+int conversation_tab_width(view *ui, size_t index, int available);
+void conversation_draw_tabs(view *ui, auth_client *auth);
+void conversation_release_layout(view *ui, cached_layout *c);
+cached_layout *conversation_find_layout(view *ui, size_t index, int width);
+void conversation_account_layout(view *ui, cached_layout *c);
+int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor);
+int conversation_position(view *ui);
+void conversation_scroll_history(view *ui, int delta, bool paginate);
+text_buffer *conversation_input(view *ui);
+int conversation_input_width(view *ui);
+int conversation_input_height(view *ui);
+int conversation_input_top(view *ui);
+bool conversation_input_row(view *ui, int row);
+bool conversation_editor_geometry(view *ui);
+bool conversation_collect_notices(view *ui, auth_client *auth);
+void conversation_draw_footer(view *ui);
+void conversation_draw_confirmation(view *ui);
+void conversation_draw(view *ui, auth_client *auth, draw_scope scope);
+void conversation_set_focus(view *ui, int focus);
+void conversation_open_emojis(view *ui);
+void conversation_open_channel(view *ui, bool voice_history);
+int conversation_activate_tab(view *ui, size_t index, size_t *selected);
+void conversation_submit(view *ui, uint64_t retry_id, bool duplicate);
+void conversation_close_confirmation(view *ui);
+bool conversation_poll_editor(view *ui, auth_client *auth);
+bool conversation_poll_model(view *ui, auth_client *auth);
+bool conversation_edit(view *ui, int type, uint32_t key);
+void conversation_dispose_media(void *v);
+void conversation_update_media(void *v, const json_t *event);
+void conversation_idle_media(void *v);
+void conversation_handle_confirmation(view *ui, int type, uint32_t key, bool enter);
+
+#endif

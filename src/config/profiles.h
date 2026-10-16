@@ -28,6 +28,10 @@ typedef struct profile_config {
     int directory;
     bool writable, existed;
     struct stat revision;
+#ifdef _WIN32
+    char *directory_path; /* Owned; candidates borrow from their original. */
+    char storage_revision[65];
+#endif
     char message[192];
 } profile_config;
 
@@ -35,8 +39,8 @@ profile_config *profiles_create(void);
 void profiles_destroy(profile_config *config);
 bool profiles_reload(profile_config *config);
 const server_profile *profiles_find(const profile_config *config, const char *id);
-bool profiles_update(profile_config *config, const char *id, const char *name,
-                     const char *url, bool allow_local_http, char output_id[PROFILE_ID_BYTES]);
+bool profiles_update(profile_config *config, const char *id, const char *name, const char *url,
+                     bool allow_local_http, char output_id[PROFILE_ID_BYTES]);
 bool profiles_remove(profile_config *config, const char *id);
 bool profiles_select(profile_config *config, const char *id, bool allow_local_http);
 bool profiles_set_rate(profile_config *config, double requests_per_second, unsigned burst);

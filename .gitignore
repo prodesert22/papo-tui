@@ -47,6 +47,7 @@ coverage/
 htmlcov/
 .cache/
 __pycache__/
+.ruff_cache/
 *.py[cod]
 
 .roadmap/

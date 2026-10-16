@@ -1,4 +1,5 @@
 """Use OpenAPI 3.0 validation, including nullable and local references."""
+
 from functools import lru_cache
 from pathlib import Path
 
@@ -42,8 +43,11 @@ class Contract:
 
     @lru_cache(maxsize=128)
     def validator(self, pointer):
-        return OAS30Validator({"$ref": SPEC_URI + pointer}, registry=self.registry,
-                              format_checker=oas30_format_checker)
+        return OAS30Validator(
+            {"$ref": SPEC_URI + pointer},
+            registry=self.registry,
+            format_checker=oas30_format_checker,
+        )
 
     def request_schema(self, path, method, media="application/json"):
         operation = self.spec["paths"][path][method.lower()]
@@ -61,7 +65,10 @@ class Contract:
         response = operation["responses"].get(str(status))
         if response is None:
             raise ValueError("Response status is not documented")
-        pointer = response.get("$ref") or f"#/paths/{escape_pointer(path)}/{method.lower()}/responses/{status}"
+        pointer = (
+            response.get("$ref")
+            or f"#/paths/{escape_pointer(path)}/{method.lower()}/responses/{status}"
+        )
         response = self.resolve(response)
         if "content" not in response:
             return None

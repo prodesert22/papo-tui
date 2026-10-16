@@ -1,11 +1,12 @@
 #ifndef PAPO_SESSION_STORE_H
 #define PAPO_SESSION_STORE_H
-#include "net/auth.h"
+#include "config/profiles.h"
+#include "net/auth/client.h"
 
 typedef struct session_store session_store;
 /* Owns private public-state descriptors and an optional asynchronous desktop
  * credential provider. config_directory is borrowed and defines the scope. */
-session_store *session_store_create(int config_directory, bool restore);
+session_store *session_store_create(const profile_config *config, bool restore);
 void session_store_destroy(session_store *store);
 /* Runs completions and watches the active borrowed client. Call before
  * auth_poll in login/history; cancellation/destruction must unwatch clients. */
