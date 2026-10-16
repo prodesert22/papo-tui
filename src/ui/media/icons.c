@@ -26,7 +26,7 @@ typedef struct {
     uint32_t fragments[4];
     uint64_t revision;
     int y, x, top, bottom;
-    bool editor, overlay;
+    bool editor, overlay, navigation;
 } icon_placement;
 struct icon_view {
     chat_assets *assets;
@@ -51,6 +51,8 @@ static uint64_t hash(const char *s)
 }
 static uint32_t background(int pair)
 {
+    if (pair == THEME_PANEL_ACTIVE)
+        return 0x302419;
     if (pair == THEME_FOCUS_AREA || pair == THEME_FOCUS_MUTED || pair == THEME_PROFILE_BUTTON_FOCUS)
         return 0x1d2026;
     if (pair == THEME_HISTORY_AREA || pair == THEME_HISTORY_ACCENT || pair == THEME_HISTORY_MUTED)
@@ -142,6 +144,20 @@ void icons_overlay(icon_view *v, int y, int x, int rows, int columns)
         v->overlay_columns = columns;
         media_cache_overlay(v->store, y, x, rows, columns);
     }
+}
+void icons_begin_navigation(icon_view *v)
+{
+    if (!v)
+        return;
+    size_t count = 0;
+    for (size_t i = 0; i < v->placement_count; ++i) {
+        icon_placement p = v->placements[i];
+        if (p.navigation)
+            release_placement(&p);
+        else
+            v->placements[count++] = p;
+    }
+    v->placement_count = count;
 }
 void icons_destroy(icon_view *v)
 {
@@ -310,6 +326,7 @@ static bool offer(icon_view *v, media_resource *resource, image_decode_request r
         .x = x,
         .top = top,
         .bottom = bottom,
+        .navigation = !strncmp(v->scope, "notification:", 13),
         .editor = !strncmp(v->scope, "editor:", 7) || !strcmp(v->scope, "emoji-button"),
         .overlay = !strcmp(v->scope, "emoji-picker") || !strcmp(v->scope, "emoji-popup") ||
                    !strcmp(v->scope, "reaction-users")};
@@ -317,6 +334,31 @@ static bool offer(icon_view *v, media_resource *resource, image_decode_request r
     uint64_t now = 0;
     net_now_ms(&now);
     return media_resource_image(resource, false, request, now) != NULL;
+}
+bool icons_notification(icon_view *v, WINDOW *w, int y, int x, int columns, size_t count, int pair)
+{
+    graphics_terminal terminal = graphics_terminal_get();
+    if (!v || !w || !v->store || terminal.protocol == GRAPHICS_TEXT ||
+        terminal.protocol == GRAPHICS_CHAFA || terminal.cell_width < 1 || terminal.cell_height < 1)
+        return false;
+    char label[32], scope[64];
+    if (count)
+        snprintf(label, sizeof(label), "%zu", count);
+    else
+        snprintf(label, sizeof(label), "●");
+    snprintf(scope, sizeof(scope), "notification:%d:%d", getbegy(w) + y, getbegx(w) + x);
+    icons_scope(v, scope, 0);
+    uint32_t bg = pair == THEME_NOTIFICATION_BUTTON_FOCUS ? 0x50381f
+                  : pair == THEME_NOTIFICATION_SELECTED   ? 0x302419
+                  : pair == THEME_NOTIFICATION_FOCUS      ? 0x1d2026
+                                                          : 0;
+    image_decode_request request = {.width = columns * terminal.cell_width,
+                                    .height = terminal.cell_height,
+                                    .terminal = terminal,
+                                    .background = bg,
+                                    .notification_badge = true};
+    return offer(v, media_cache_acquire_unicode(v->store, label), request, getbegy(w) + y,
+                 getbegx(w) + x, 0, 0, 0);
 }
 static bool paint(icon_view *v, WINDOW *w, uint32_t icon, int y, int x, int pair, bool selected,
                   size_t offset, int pixels)

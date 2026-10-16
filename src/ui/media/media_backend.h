@@ -2,7 +2,7 @@
 #define PAPO_MEDIA_BACKEND_H
 #include "ui/media/image_decode.h"
 
-#define PAPO_MEDIA_BACKEND_ABI 8U
+#define PAPO_MEDIA_BACKEND_ABI 9U
 /* Bound larger modal surfaces while keeping their buffers within the cache budget. */
 #define VIDEO_FRAME_PIXELS (7U * 1024U * 1024U)
 #define VIDEO_KITTY_FRAME_PIXELS (960U * 540U)

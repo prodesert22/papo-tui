@@ -345,11 +345,7 @@ static void worker(gpointer data, gpointer unused)
             t->ok = malloc_trim(0) != 0;
 #endif
         } else if (t->glyph) {
-            t->ok = emoji_image_encode_region(
-                t->glyph, t->request.width, t->request.height, t->request.background,
-                t->request.terminal, t->request.image_id, &t->image,
-                t->request.region ? t->request.top : 0, t->request.region ? t->request.bottom : 0,
-                t->request.region ? t->request.left : 0, t->request.region ? t->request.right : 0);
+            t->ok = emoji_image_encode_request(t->glyph, &t->request, &t->image);
         } else {
             t->ok = image_encode_frame(&t->request, &t->image);
         }
@@ -1199,9 +1195,10 @@ bool media_cache_poll(media_cache *c, uint64_t now)
 static bool equal_request(const image_decode_request *a, const image_decode_request *b)
 {
     return a->width == b->width && a->height == b->height && a->native == b->native &&
-           a->cover == b->cover && a->center == b->center && a->matte == b->matte &&
-           a->background == b->background && a->top == b->top && a->bottom == b->bottom &&
-           a->left == b->left && a->right == b->right && a->region == b->region &&
+           a->notification_badge == b->notification_badge && a->cover == b->cover &&
+           a->center == b->center && a->matte == b->matte && a->background == b->background &&
+           a->top == b->top && a->bottom == b->bottom && a->left == b->left &&
+           a->right == b->right && a->region == b->region &&
            a->terminal.protocol == b->terminal.protocol &&
            a->terminal.cell_width == b->terminal.cell_width &&
            a->terminal.cell_height == b->terminal.cell_height;

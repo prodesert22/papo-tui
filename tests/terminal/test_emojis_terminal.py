@@ -280,9 +280,20 @@ class EmojiTerminal(unittest.TestCase):
                 self.assertTrue(t.close())
 
     def test_participants_render_custom_emoji_above_the_modal_background(self):
-        for protocol in ("kitty", "sixel", "iterm2"):
-            with self.subTest(protocol=protocol), self.server() as s:
-                emoji = dict(emoji_id=s.emojis[0]["id"], unicode=None, count=2)
+        self.check_participant_images(custom=True)
+
+    def test_participants_retire_unicode_images_shared_with_history(self):
+        self.check_participant_images(custom=False)
+
+    def check_participant_images(self, *, custom):
+        content = "Mensagem 0001 :gato 界:" if custom else "Mensagem 0001 😀"
+        for protocol in ("kitty", "sixel", "iterm2", "chafa") if custom else ("kitty",):
+            with self.subTest(protocol=protocol), self.server(content=content) as s:
+                emoji = dict(
+                    emoji_id=s.emojis[0]["id"] if custom else None,
+                    unicode=None if custom else "😀",
+                    count=2,
+                )
                 s.messages[0]["reactions"] = [emoji]
                 parent = s.api_handler
 
@@ -308,10 +319,12 @@ class EmojiTerminal(unittest.TestCase):
                     return parent(method, path, body)
 
                 s.api_handler = route
-                t = self.open(s, protocol=protocol, size=(32, 100))
+                t = self.open(s, protocol=protocol, sixel=protocol != "chafa", size=(32, 100))
                 try:
                     self.wait(t, "Mensagem 0001")
-                    t.send("\x1b[18~E")
+                    t.send("\x1b[18~")
+                    t.read(0.5)
+                    t.send("E")
                     self.wait(t, "Quem reagiu")
                     self.wait(t, "Fim da lista")
                     header = next(
@@ -330,9 +343,21 @@ class EmojiTerminal(unittest.TestCase):
 
                     if protocol == "kitty":
                         self.until(t, lambda: bool(placements()))
+                        t.read(0.5)
                         panel_icons = placements()
-                    else:
+                        # A fallback and a newly encoded selection background
+                        # can use the same occurrence with different image IDs.
+                        # Include every image ever placed in the modal, so an
+                        # older shared image cannot escape the close assertion.
+                        panel_icons |= {
+                            (int(p[b"i"]), int(p[b"p"]))
+                            for p, point in zip(t.stream.placements, t.stream.placement_positions)
+                            if point == position
+                        }
+                    elif protocol != "chafa":
                         self.until(t, lambda: position in t.stream.frame_positions)
+                    else:
+                        self.until(t, lambda: ":emoji:" not in t.screen.display[position[0]])
                     row = t.screen.display[position[0]]
                     self.assertNotIn(":gato 界:", row)
                     self.assertNotIn(":emoji:", row)
@@ -341,6 +366,13 @@ class EmojiTerminal(unittest.TestCase):
                     self.until(t, lambda: "Quem reagiu" not in "\n".join(t.screen.display))
                     if protocol == "kitty":
                         self.assertFalse(panel_icons & t.stream.live_placements)
+                    self.assertTrue(
+                        all(
+                            t.screen.buffer[position[0]][column].data == " "
+                            for column in range(position[1], position[1] + 2)
+                        ),
+                        repr(t.screen.display[position[0]]),
+                    )
                     self.assertEqual(s.message_count, 0)
                 finally:
                     self.assertTrue(t.close())

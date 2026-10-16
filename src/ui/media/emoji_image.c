@@ -1,6 +1,11 @@
 #include "ui/media/emoji_image.h"
 #include "config/app_mode.h"
 #include "ui/media/media_service.h"
+bool emoji_image_encode_request(const char *text, const image_decode_request *request,
+                                graphics_image *image)
+{
+    return app_mode_get() == APP_MODE_NORMAL && media_service_glyph(text, request, image);
+}
 bool emoji_image_available(void)
 {
     return app_mode_get() == APP_MODE_NORMAL;
@@ -24,5 +29,5 @@ bool emoji_image_encode_region(const char *text, int w, int h, uint32_t bg, grap
                                     .bottom = bottom,
                                     .left = left,
                                     .right = right};
-    return app_mode_get() == APP_MODE_NORMAL && media_service_glyph(text, &request, out);
+    return emoji_image_encode_request(text, &request, out);
 }

@@ -1,14 +1,23 @@
 #include "ui/screens/conversation/private.h"
 
-void conversation_notification_dot(WINDOW *window, int row, int column, int pair)
+static bool graphical_badge(void)
+{
+    graphics_protocol protocol = graphics_terminal_get().protocol;
+    return protocol != GRAPHICS_TEXT && protocol != GRAPHICS_CHAFA;
+}
+void conversation_notification_dot(view *ui, WINDOW *window, int row, int column, int pair)
 {
     attr_t previous = getattrs(window);
     wattrset(window, (has_colors() ? COLOR_PAIR(pair) : 0) | A_BOLD);
     mvwaddstr(window, row, column, "●");
+    if (graphical_badge()) {
+        mvwaddch(window, row, column + 1, ' ');
+        icons_notification(ui->icons, window, row, column, 2, 0, pair);
+    }
     wattrset(window, previous);
 }
-static int notification_badge(WINDOW *window, int row, int column, size_t count, bool more,
-                              int pair)
+static int notification_badge(view *ui, WINDOW *window, int row, int column, size_t count,
+                              bool more, int pair)
 {
     char label[32];
     if (!count)
@@ -24,6 +33,17 @@ static int notification_badge(WINDOW *window, int row, int column, size_t count,
     if (window)
         wattrset(window, (has_colors() ? COLOR_PAIR(pair) : 0) | A_BOLD);
     int width = text_label(window, row, column, 24, label);
+    if (graphical_badge()) {
+        int columns = MAX(2, width - (more && count ? 1 : 0));
+        if (window) {
+            if (columns > width)
+                mvwaddch(window, row, column + width, ' ');
+            icons_notification(ui->icons, window, row, column, columns, count, pair);
+            if (more && count)
+                mvwaddch(window, row, column + columns, '+');
+        }
+        width = columns + (more && count ? 1 : 0);
+    }
     if (window)
         wattrset(window, previous);
     return width;
@@ -37,11 +57,12 @@ static bool instance_unread(history *h)
             return true;
     return false;
 }
-static int server_badge(WINDOW *window, int row, int column, size_t count, bool more, int pair)
+static int server_badge(view *ui, WINDOW *window, int row, int column, size_t count, bool more,
+                        int pair)
 {
     graphics_protocol protocol = graphics_terminal_get().protocol;
     if (protocol != GRAPHICS_TEXT && protocol != GRAPHICS_CHAFA)
-        return notification_badge(window, row, column, count, more, pair);
+        return notification_badge(ui, window, row, column, count, more, pair);
     char label[32];
     snprintf(label, sizeof(label), "%zu%s", count, more && count ? "+" : "");
     attr_t previous = window ? getattrs(window) : 0;
@@ -60,7 +81,7 @@ void conversation_list_button(view *ui, int button, int column, int width, const
                                                                                 : BUTTON_NORMAL;
     button_draw(ui->list, 0, column, width, label, state, BUTTON_PANEL);
     if (conversation_list_notified(ui, button != 0))
-        conversation_notification_dot(ui->list, 0, column + width - 1,
+        conversation_notification_dot(ui, ui->list, 0, column + width - (graphical_badge() ? 2 : 1),
                                       state == BUTTON_FOCUSED    ? THEME_NOTIFICATION_BUTTON_FOCUS
                                       : state == BUTTON_SELECTED ? THEME_NOTIFICATION_SELECTED
                                                                  : THEME_NOTIFICATION);
@@ -72,7 +93,7 @@ int conversation_tab_width(view *ui, size_t index, int available)
     inbox *box = history_inbox(ui->connections->items[index].model);
     size_t mentions = inbox_unread_mentions(box, NULL);
     if (inbox_unread(box) || instance_unread(ui->connections->items[index].model))
-        width += 1 + server_badge(NULL, 0, 0, mentions, inbox_has_more(box), 0);
+        width += 1 + server_badge(ui, NULL, 0, 0, mentions, inbox_has_more(box), 0);
     return width > available ? available : width;
 }
 
@@ -120,7 +141,8 @@ void conversation_draw_tabs(view *ui, auth_client *auth)
         inbox *box = history_inbox(ui->connections->items[i].model);
         size_t mentions = inbox_unread_mentions(box, NULL);
         bool notified = inbox_unread(box) || instance_unread(ui->connections->items[i].model);
-        int badge_width = notified ? server_badge(NULL, 0, 0, mentions, inbox_has_more(box), 0) : 0;
+        int badge_width =
+            notified ? server_badge(ui, NULL, 0, 0, mentions, inbox_has_more(box), 0) : 0;
         snprintf(label, sizeof(label), "%c%s",
                  selected ? '['
                  : active ? '>'
@@ -129,7 +151,7 @@ void conversation_draw_tabs(view *ui, auth_client *auth)
         int used = text_label(ui->tabs, 0, x, size - 3 - badge_width - (notified ? 1 : 0), label);
         if (notified) {
             mvwaddch(ui->tabs, 0, x + used++, ' ');
-            used += server_badge(ui->tabs, 0, x + used, mentions, inbox_has_more(box),
+            used += server_badge(ui, ui->tabs, 0, x + used, mentions, inbox_has_more(box),
                                  active     ? THEME_NOTIFICATION_BUTTON_FOCUS
                                  : selected ? THEME_NOTIFICATION_SELECTED
                                             : THEME_NOTIFICATION);
@@ -402,11 +424,11 @@ void conversation_draw_confirmation(view *ui)
 void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
 {
     bool paint_history = scope == DRAW_ALL || scope == DRAW_CONVERSATION;
-    bool paint_media = paint_history || scope == DRAW_MEDIA || scope == DRAW_EDITOR ||
-                       emoji_picker_open(ui->emojis) || emoji_picker_suggesting(ui->emojis) ||
-                       ui->reactors_open || mention_popup_open(ui->mentions) ||
-                       r8_modal_is_open(ui->r8);
-    bool paint_navigation = scope == DRAW_ALL || scope == DRAW_NAVIGATION;
+    bool paint_navigation = paint_history || scope == DRAW_NAVIGATION;
+    bool paint_media = paint_history || paint_navigation || scope == DRAW_MEDIA ||
+                       scope == DRAW_EDITOR || emoji_picker_open(ui->emojis) ||
+                       emoji_picker_suggesting(ui->emojis) || ui->reactors_open ||
+                       mention_popup_open(ui->mentions) || r8_modal_is_open(ui->r8);
     graphics_update_begin();
     curs_set(0);
     if (paint_history) {
@@ -421,6 +443,8 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
     }
     if (scope == DRAW_EDITOR)
         icons_begin_editor(ui->icons);
+    if (paint_navigation)
+        icons_begin_navigation(ui->icons);
     if (!ui->frame) {
         erase();
         text_label(stdscr, 0, 0, COLS, "Amplie o terminal para 44×14. F6: conta.");
@@ -493,14 +517,15 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                 size_t mentions =
                     inbox_unread_mentions(history_inbox(ui->model), conversation_str(c, "id"));
                 bool notified = unread || mentions;
-                int badge_width = notified ? notification_badge(NULL, 0, 0, mentions, false, 0) : 0;
+                int badge_width =
+                    notified ? notification_badge(ui, NULL, 0, 0, mentions, false, 0) : 0;
                 wattrset(ui->list, COLOR_PAIR(selected && focused ? THEME_FOCUSED
                                               : selected          ? THEME_PANEL_ACTIVE
                                               : focused           ? THEME_FOCUS_AREA
                                                                   : THEME_PANEL));
                 text_label(ui->list, row + 1, 1, ui->side - 2 - badge_width, label);
                 if (notified)
-                    notification_badge(ui->list, row + 1, ui->side - 1 - badge_width, mentions,
+                    notification_badge(ui, ui->list, row + 1, ui->side - 1 - badge_width, mentions,
                                        false,
                                        focused    ? THEME_NOTIFICATION_FOCUS
                                        : selected ? THEME_NOTIFICATION_SELECTED

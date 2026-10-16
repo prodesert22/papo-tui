@@ -20,6 +20,26 @@ from test_terminal import Terminal, TerminalStream  # noqa: E402 - path and test
 import test_history_terminal as history_tests  # noqa: E402 - path and test arguments are prepared above
 
 
+def raster_dimensions(protocol, frame):
+    if protocol == "kitty":
+        return int(frame[b"s"]), int(frame[b"v"])
+    if protocol == "sixel":
+        raster = re.search(rb'"\d+;\d+;(\d+);(\d+)', frame)
+        if raster is None:
+            raise AssertionError("Missing Sixel raster dimensions")
+        return int(raster[1]), int(raster[2])
+    payload = base64.b64decode(frame.split(b":", 1)[1][:-1], validate=True)
+    offset = int.from_bytes(payload[4:8], "little")
+    count = int.from_bytes(payload[offset : offset + 2], "little")
+    tags = {
+        int.from_bytes(payload[pos : pos + 2], "little"): int.from_bytes(
+            payload[pos + 8 : pos + 12], "little"
+        )
+        for pos in range(offset + 2, offset + 2 + count * 12, 12)
+    }
+    return tags[256], tags[257]
+
+
 class GraphicsStream:
     def __init__(self, screen, *, include_icons=True):
         self.include_icons = include_icons
@@ -40,6 +60,14 @@ class GraphicsStream:
         self.synchronizations = 0
         self.kitty_header = None
         self.kitty_parts = []
+
+    def is_control(self, width, height):
+        # The protocol responder uses 8x16 cells. Keep one-row navigation
+        # badges and the composer button out of attachment/player assertions.
+        y, x = self.screen.cursor.y, self.screen.cursor.x
+        return x == self.screen.columns - 7 or (
+            height == 16 and width <= 192 and (y == 1 or (self.screen.columns >= 80 and x < 24))
+        )
 
     def feed(self, data):
         self.synchronizations += data.count(b"\x1b[?2026h")
@@ -103,9 +131,9 @@ class GraphicsStream:
                 elif values.get(b"a") in (b"T", b"t"):
                     self.kitty_header = values
                     self.kitty_parts = []
-                    # Media regression assertions concern attachment/embed/player
-                    # pixels, rather than the newly graphical composer button.
-                    self.kitty_control = self.screen.cursor.x == self.screen.columns - 7
+                    # Media assertions concern attachment/embed/player pixels;
+                    # UI controls have separate image and placement assertions.
+                    self.kitty_control = self.is_control(*raster_dimensions("kitty", values))
                     if self.kitty_control:
                         self.control_ids.add(int(values[b"i"]))
                 elif self.kitty_header is not None:
@@ -124,11 +152,14 @@ class GraphicsStream:
                         self.protocols.append("kitty")
                         self.kitty_header = None
             else:
-                if not self.include_icons and self.screen.cursor.x == self.screen.columns - 7:
+                protocol = "iterm2" if iterm else "sixel"
+                if not self.include_icons and self.is_control(
+                    *raster_dimensions(protocol, sequence)
+                ):
                     continue
                 self.frames.append(sequence)
                 self.frame_positions.append((self.screen.cursor.y, self.screen.cursor.x))
-                self.protocols.append("iterm2" if iterm else "sixel")
+                self.protocols.append(protocol)
 
 
 class MediaTerminal(unittest.TestCase):
@@ -358,23 +389,12 @@ class MediaTerminal(unittest.TestCase):
         stream = terminal.stream
         if not stream.frames:
             return 0, 0
-        if stream.protocols[index] == "kitty":
-            header = stream.kitty_frames[index][0]
-            return int(header[b"s"]), int(header[b"v"])
-        if stream.protocols[index] == "sixel":
-            raster = re.search(rb'"\d+;\d+;(\d+);(\d+)', stream.frames[index])
-            self.assertIsNotNone(raster)
-            return int(raster[1]), int(raster[2])
-        payload = base64.b64decode(stream.frames[index].split(b":", 1)[1][:-1], validate=True)
-        offset = int.from_bytes(payload[4:8], "little")
-        count = int.from_bytes(payload[offset : offset + 2], "little")
-        tags = {
-            int.from_bytes(payload[pos : pos + 2], "little"): int.from_bytes(
-                payload[pos + 8 : pos + 12], "little"
-            )
-            for pos in range(offset + 2, offset + 2 + count * 12, 12)
-        }
-        return tags[256], tags[257]
+        frame = (
+            stream.kitty_frames[index][0]
+            if stream.protocols[index] == "kitty"
+            else stream.frames[index]
+        )
+        return raster_dimensions(stream.protocols[index], frame)
 
     def wait_raster(self, terminal, predicate):
         deadline = time.monotonic() + 10
@@ -656,6 +676,7 @@ class MediaTerminal(unittest.TestCase):
     def test_graphical_server_badge_is_inside_tab_delimiters(self):
         from history_mock import CHANNEL
 
+        self.include_icons = True
         for protocol in ("kitty", "sixel", "iterm2"):
             with (
                 self.subTest(protocol=protocol),
@@ -685,9 +706,65 @@ class MediaTerminal(unittest.TestCase):
                 t = self.open(server, protocol=protocol)
                 try:
                     self.wait_frames(t)
-                    self.wait(t, "[Comunidade ❶]")
+                    self.wait(t, "[Comunidade ❶ ]")
+                    if protocol == "kitty":
+
+                        def badges():
+                            return [
+                                (header, pixels)
+                                for (header, pixels), position in zip(
+                                    t.stream.kitty_frames, t.stream.frame_positions
+                                )
+                                if position[0] == 1
+                                and header[b"v"] == b"16"
+                                and any(
+                                    min(pixels[i : i + 3]) > 230 for i in range(0, len(pixels), 4)
+                                )
+                            ]
+
+                        deadline = time.monotonic() + 8
+                        while not badges() and time.monotonic() < deadline:
+                            t.read(0.03)
+                        self.assertTrue(badges())
+                        header, pixels = badges()[-1]
+                        width, height = int(header[b"s"]), int(header[b"v"])
+                        self.assertEqual((width, height), (16, 16))
+                        red = [
+                            (i // 4 % width, i // 4 // width)
+                            for i in range(0, len(pixels), 4)
+                            if pixels[i] > 240 and pixels[i + 1] < 16 and pixels[i + 2] < 16
+                        ]
+                        self.assertTrue(red)
+                        for axis, size in ((0, width), (1, height)):
+                            low = min(p[axis] for p in red)
+                            high = max(p[axis] for p in red)
+                            self.assertLessEqual(abs(low - (size - 1 - high)), 1)
+                        self.assertTrue(
+                            any(min(pixels[i : i + 3]) > 230 for i in range(0, len(pixels), 4)),
+                            "Badge count must be visible inside the circle",
+                        )
+                        before = len(badges())
+                        t.click(1, t.screen.display[1].index("Comunidade") + 1)
+                        self.wait(t, "Foco: Abas")
+                        deadline = time.monotonic() + 8
+                        while len(badges()) <= before and time.monotonic() < deadline:
+                            t.read(0.03)
+                        self.assertGreater(len(badges()), before)
+                        server_occurrences = {
+                            int(p[b"p"])
+                            for p, position in zip(
+                                t.stream.placements, t.stream.placement_positions
+                            )
+                            if position[0] == 1
+                        }
+                        for occurrence in server_occurrences:
+                            self.assertLessEqual(
+                                sum(p == occurrence for _, p in t.stream.live_placements),
+                                1,
+                                "Replacing a shared image must retire its previous Kitty placement",
+                            )
                     t.resize(40, 120)
-                    self.wait(t, "[Comunidade ❶]")
+                    self.wait(t, "[Comunidade ❶ ]")
                 finally:
                     self.assertTrue(t.close())
 

@@ -97,11 +97,7 @@ static GVariant *execute(unsigned op, GVariant *payload)
         const char *text;
         g_variant_get(payload, "(v&s)", &a, &text);
         if (media_wire_read_request(a, &request, &path) && strlen(text) <= 8192 &&
-            emoji_image_encode_region(
-                text, request.width, request.height, request.background, request.terminal,
-                request.image_id, &image, request.region ? request.top : 0,
-                request.region ? request.bottom : 0, request.region ? request.left : 0,
-                request.region ? request.right : 0))
+            emoji_image_encode_request(text, &request, &image))
             result = media_wire_image(&image);
     } else if (op == MEDIA_RPC_VIDEO_OPEN) {
         if (!g_variant_is_of_type(payload, G_VARIANT_TYPE_STRING))

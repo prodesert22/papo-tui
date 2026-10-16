@@ -2,7 +2,7 @@
 #define PAPO_MEDIA_WIRE_H
 #include "ui/media/media_backend.h"
 #include <glib.h>
-#define MEDIA_WIRE_VERSION 3U
+#define MEDIA_WIRE_VERSION 4U
 #define MEDIA_WIRE_LIMIT (160U * 1024U * 1024U)
 enum {
     MEDIA_RPC_DECODE,

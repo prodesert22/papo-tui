@@ -39,6 +39,7 @@ typedef struct {
     int max_side;
     /* Fill the output with a proportional center crop instead of letterboxing. */
     bool cover;
+    bool notification_badge; /* Centered red badge; glyph text is its optional count. */
 } image_decode_request;
 void animation_ref(animation *frames);
 void animation_free(animation *frames);

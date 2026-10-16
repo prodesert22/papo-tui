@@ -428,7 +428,11 @@ void graphics_frame_prepare(void)
     for (size_t i = 0; i < displayed_count; ++i) {
         displayed_image *old = &displayed[i],
                         *next = find_image(desired, desired_count, old->placement_id);
-        if (!next || (old->protocol != GRAPHICS_KITTY && !same_placement(old, next)))
+        /* Kitty placement IDs belong to an image, so changing the encoded
+         * variant needs an explicit deletion even when the occurrence ID stays
+         * the same. The old image may still be used elsewhere in the history. */
+        if (!next || old->id != next->id ||
+            (old->protocol != GRAPHICS_KITTY && !same_placement(old, next)))
             erase_image(old);
         if (old->protocol == GRAPHICS_KITTY) {
             bool retained = false;

@@ -13,6 +13,8 @@ void icons_begin(icon_view *v);
 /* Keep chat placements while replacing only composer icons. */
 void icons_begin_editor(icon_view *v);
 void icons_begin_overlay(icon_view *v);
+void icons_begin_navigation(icon_view *v);
+bool icons_notification(icon_view *v, WINDOW *w, int y, int x, int columns, size_t count, int pair);
 void icons_overlay(icon_view *v, int y, int x, int rows, int columns);
 bool icons_poll(icon_view *v);
 void icons_prepare(icon_view *v);

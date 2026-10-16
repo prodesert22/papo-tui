@@ -115,9 +115,12 @@ panel. Search, filters and
 ordering apply to loaded notifications. Use **Mais antigas** to load another page
 or Ctrl+R to refresh. Merely searching or filtering does not mark notifications read.
 
-Red dots beside server and channel names indicate unread messages. A red circled
-number shows known unread mentions of you or `@everyone`; larger counts use
-parentheses. A `+` on the server badge means more notification pages are available.
+Red dots beside server and channel names indicate unread messages. The count
+shows known unread mentions of you or `@everyone`. In graphics terminals, the
+badge is centered vertically in the row, with a white count inside the red
+circle; larger counts use a wider rounded badge. Text channel indicators use
+circled digits or parentheses. A `+` on the server badge means more notification
+pages are available.
 Server badges sit inside the tab delimiters, separated from the name by one
 space, for example `[Server ❶]`. With text rendering (Chafa, Light or Ultralight),
 the badge is a plain red mention counter, such as `[Server 1]`; zero indicates

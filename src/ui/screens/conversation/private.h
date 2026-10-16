@@ -138,7 +138,7 @@ size_t conversation_list_index(view *ui, size_t row);
 size_t conversation_list_count(view *ui);
 json_t *conversation_list_channel(view *ui, size_t row);
 bool conversation_list_notified(view *ui, bool dms);
-void conversation_notification_dot(WINDOW *window, int row, int column, int pair);
+void conversation_notification_dot(view *ui, WINDOW *window, int row, int column, int pair);
 void conversation_list_button(view *ui, int button, int column, int width, const char *label);
 void conversation_switch_list(view *ui, bool dms);
 void conversation_destroy_layout(view *ui);
