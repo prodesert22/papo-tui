@@ -16,6 +16,11 @@ void text_input_init(void)
 {
     define_key("\033[I", TEXT_FOCUS_IN);
     define_key("\033[O", TEXT_FOCUS_OUT);
+    for (int flags = 0; flags < 32; ++flags) {
+        char sequence[24];
+        snprintf(sequence, sizeof(sequence), "\033[?%du", flags);
+        define_key(sequence, TEXT_KEYBOARD_SUPPORTED);
+    }
     init_graphemebreak();
     init_wordbreak();
     define_key("\033[200~", TEXT_PASTE_START);
@@ -53,10 +58,20 @@ void text_input_init(void)
             }
         }
     }
+    for (int locks = 0; locks <= 192; locks += 64) {
+        char sequence[32];
+        snprintf(sequence, sizeof(sequence), "\033[13;%du", 2 + locks);
+        define_key(sequence, TEXT_SHIFT_ENTER);
+        snprintf(sequence, sizeof(sequence), "\033[27;%d;13~", 2 + locks);
+        define_key(sequence, TEXT_SHIFT_ENTER);
+        snprintf(sequence, sizeof(sequence), "\033[57414;%du", 2 + locks);
+        define_key(sequence, TEXT_SHIFT_ENTER);
+    }
     define_key("\033[27;2;9~", KEY_BTAB);
     const char suffix[] = "DCABHF";
     const int modifiers[] = {1, 2, 5, 6};
     const int plain_keys[] = {KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN, KEY_HOME, KEY_END};
+    const int keypad_directions[] = {57417, 57418, 57419, 57420, 57423, 57424};
     for (int locks = 0; locks <= 192; locks += 64)
         for (int group = 0; group < 4; ++group)
             for (int direction = 0; direction < 6; ++direction) {
@@ -66,6 +81,13 @@ void text_input_init(void)
                 snprintf(sequence, sizeof(sequence), "\033[1;%d%c", modifiers[group] + locks,
                          suffix[direction]);
                 define_key(sequence, key);
+                snprintf(sequence, sizeof(sequence), "\033[%d;%du", keypad_directions[direction],
+                         modifiers[group] + locks);
+                define_key(sequence, key);
+                if (!group && !locks) {
+                    snprintf(sequence, sizeof(sequence), "\033[%du", keypad_directions[direction]);
+                    define_key(sequence, key);
+                }
                 if (direction >= 4) {
                     snprintf(sequence, sizeof(sequence), "\033[%d;%d~", direction == 4 ? 1 : 4,
                              modifiers[group] + locks);
@@ -75,6 +97,18 @@ void text_input_init(void)
                     define_key(sequence, key);
                 }
             }
+    /* Disambiguation also gives non-text keypad keys their own CSI-u codes. */
+    const int keypad_codes[] = {57414, 57421, 57422, 57425, 57426};
+    const int keypad_keys[] = {KEY_ENTER, KEY_PPAGE, KEY_NPAGE, KEY_IC, KEY_DC};
+    for (size_t i = 0; i < sizeof(keypad_codes) / sizeof(keypad_codes[0]); ++i) {
+        char sequence[32];
+        snprintf(sequence, sizeof(sequence), "\033[%du", keypad_codes[i]);
+        define_key(sequence, keypad_keys[i]);
+        for (int locks = 0; locks <= 192; locks += 64) {
+            snprintf(sequence, sizeof(sequence), "\033[%d;%du", keypad_codes[i], 1 + locks);
+            define_key(sequence, keypad_keys[i]);
+        }
+    }
     const int numbers[] = {2, 3, 5, 6, 11, 12, 13, 14, 15, 17, 18, 19, 20, 21, 23, 24};
     const int keys[] = {KEY_IC,   KEY_DC,    KEY_PPAGE, KEY_NPAGE, KEY_F(1), KEY_F(2),
                         KEY_F(3), KEY_F(4),  KEY_F(5),  KEY_F(6),  KEY_F(7), KEY_F(8),
@@ -92,7 +126,7 @@ void text_input_init(void)
             define_key(sequence, KEY_F(i + 1));
         }
 }
-static bool focus_known, terminal_focused;
+static bool focus_known, terminal_focused, input_active, keyboard_active;
 bool text_terminal_focused(void)
 {
     return focus_known && terminal_focused;
@@ -126,6 +160,16 @@ int text_read_raw(uint32_t *key)
 int text_input_read(uint32_t *key)
 {
     int type = text_read_raw(key);
+    if (type == KEY_CODE_YES && *key == TEXT_KEYBOARD_SUPPORTED) {
+        if (input_active && !keyboard_active) {
+            /* Only disambiguate keys. Leave text, repeats and release events
+             * in their ordinary form; curses decodes the registered keys. */
+            fputs("\033[>1u", stdout);
+            fflush(stdout);
+            keyboard_active = true;
+        }
+        return ERR;
+    }
     if (type == KEY_CODE_YES && (*key == TEXT_FOCUS_IN || *key == TEXT_FOCUS_OUT)) {
         focus_known = true;
         terminal_focused = *key == TEXT_FOCUS_IN;
@@ -138,6 +182,13 @@ int text_input_read(uint32_t *key)
 }
 void text_input_terminal_active(bool active)
 {
+    if (active && !input_active)
+        fputs("\033[?u", stdout);
+    if (!active && keyboard_active) {
+        fputs("\033[<u", stdout);
+        keyboard_active = false;
+    }
+    input_active = active;
     fputs(active ? "\033[?1004h" : "\033[?1004l", stdout);
     fflush(stdout);
     const char *id = getenv("KITTY_WINDOW_ID"), *term = getenv("TERM");
@@ -630,6 +681,11 @@ static void text_word(text_buffer *buffer, bool right)
 }
 bool text_edit(text_buffer *buffer, int type, uint32_t key, int width, bool multiline)
 {
+    if (type == KEY_CODE_YES && key == TEXT_SHIFT_ENTER) {
+        if (multiline)
+            text_insert(buffer, '\n', true);
+        return multiline;
+    }
     if (type == OK) {
         if (key == 3 || key == 21) {
             text_clear(buffer);

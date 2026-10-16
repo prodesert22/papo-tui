@@ -36,9 +36,9 @@ To open the profile manager directly, run `papo-tui --profiles`.
 Passwords are not stored in the configuration.
 
 Choose a channel with the arrow keys and Enter, or with the mouse. Type in the
-editor and press Enter to send; **Ctrl+N** inserts a new line. Pasting text does
-not send the message automatically. Switching conversations preserves drafts
-during the current run.
+editor and press **Enter** to send; **Shift+Enter** inserts a new line. **Ctrl+N**
+also inserts a new line. Pasting text does not send the message automatically.
+Switching conversations preserves drafts during the current run.
 
 Scroll with the arrow keys, PageUp/PageDown or the mouse wheel over the history.
 The next page loads as you approach either edge. A loading indicator appears
@@ -69,6 +69,7 @@ Voice calls are not available yet.
 | F9 | Open the notification center and preferences |
 | F4 in the editor | Choose an emoji |
 | F7 in history | Open media |
+| Shift+Enter in the editor | Insert a new line |
 
 Type `@` in the editor to choose a person to mention; confirm with Tab or Enter.
 After closing the chooser, Enter sends the message.
@@ -148,5 +149,8 @@ Use PageUp/PageDown or the mouse wheel over the properties panel to scroll it.
 - **Small screen or intercepted keys:** enlarge the window and check the
   terminal's reserved shortcuts. Use the mouse if a shortcut does not reach
   the application.
+- **Shift+Enter sends instead of adding a line:** use a terminal that supports
+  reporting modified Enter, such as Kitty. If the terminal cannot distinguish
+  it from Enter, use Ctrl+N to insert a new line.
 - **Linux terminal settings were disrupted:** run `reset`, even if the
   characters do not appear as you type.

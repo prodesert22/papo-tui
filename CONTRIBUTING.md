@@ -33,6 +33,12 @@ When Kitty's terminfo still uses X10, mouse initialization reuses ncurses' SGR
 capabilities to handle clicks beyond column 223 while keeping the terminal's
 other capabilities and avoiding a separate mouse parser.
 
+Keyboard initialization queries CSI-u support and enables only key
+disambiguation after a positive reply, using ncurses `define_key` for decoding.
+This lets Kitty distinguish Shift+Enter from Enter. The previous keyboard mode
+is restored through the terminal's push/pop stack on exit. Terminals that do
+not answer keep their existing keyboard mode and can use Ctrl+N for new lines.
+
 ## Validation
 
 ```sh

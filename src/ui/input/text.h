@@ -81,13 +81,15 @@ enum {
     TEXT_IGNORED,
     TEXT_FOCUS_IN,
     TEXT_FOCUS_OUT,
+    TEXT_SHIFT_ENTER,
+    TEXT_KEYBOARD_SUPPORTED,
     TEXT_CONTROL_BASE
 }; /* Followed by the encoded ASCII key value. */
 
 void text_input_init(void);
 int text_read_raw(uint32_t *key);
 int text_input_read(uint32_t *key);
-/* Kitty's conditional shortcut mapping; fixed non-secret application marker. */
+/* Focus reporting and negotiated keyboard mode; restore the mode on shutdown. */
 void text_input_terminal_active(bool active);
 bool text_terminal_focused(void);
 bool text_terminal_focus_unknown(void);

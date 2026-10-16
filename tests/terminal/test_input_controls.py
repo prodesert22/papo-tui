@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import tempfile
 import time
 import unittest
@@ -85,6 +86,82 @@ class InputControls(unittest.TestCase):
             t.send("\x03")
             self.wait(t, "Conversar em #geral")
 
+    def test_shift_enter_inserts_a_line_without_sending(self):
+        with RealtimeMock(count=0) as server:
+            t = self.open(server)
+            self.assertIn(b"\x1b[?u", t.output)
+            self.assertNotIn(b"\x1b[>1u", t.output)
+            t.send("\x1b[?0u")
+            self.assertIn(b"\x1b[>1u", t.output)
+            t.send("primeira linha\x1b[13;2usegunda linha\x1b[27;2;13~terceira linha")
+            self.assertIn("primeira linha", self.field(t))
+            self.assertIn("segunda linha", self.field(t))
+            self.assertIn("terceira linha", self.field(t))
+            self.assertFalse(server.sent_messages)
+            t.send("\n")
+            self.wait(t, "Mensagem confirmada")
+            self.assertEqual(
+                server.sent_messages[-1]["content"],
+                "primeira linha\nsegunda linha\nterceira linha",
+            )
+
+    def test_disambiguated_keypad_keeps_editing_and_enter_shortcuts(self):
+        with RealtimeMock(count=0) as server:
+            t = self.open(server)
+            t.send("\x1b[?0uoriginal\x1b[57423u\x1b[57424;2uNovo")
+            self.assertIn("Novo", self.field(t))
+            self.assertNotIn("original", self.field(t))
+            t.send("\x1b[57414;2usegunda")
+            self.assertIn("segunda", self.field(t))
+            self.assertFalse(server.sent_messages)
+            t.send("\x1b[57414u")
+            self.wait(t, "Mensagem confirmada")
+            self.assertEqual(server.sent_messages[-1]["content"], "Novo\nsegunda")
+
+    def test_shift_enter_with_lock_modifiers_never_submits(self):
+        with RealtimeMock(count=0) as server:
+            t = self.open(server)
+            t.send("\x1b[?0ulinha0")
+            lines = ["linha0"]
+            for locks in (0, 64, 128, 192):
+                modifier = 2 + locks
+                for packet in (
+                    f"\x1b[13;{modifier}u",
+                    f"\x1b[27;{modifier};13~",
+                    f"\x1b[57414;{modifier}u",
+                ):
+                    with self.subTest(locks=locks, packet=packet):
+                        lines.append(f"linha{len(lines)}")
+                        t.send(packet + lines[-1])
+                        self.assertFalse(server.sent_messages)
+            t.send("\n")
+            self.wait(t, "Mensagem confirmada")
+            self.assertEqual(len(server.sent_messages), 1)
+            self.assertEqual(server.sent_messages[0]["content"], "\n".join(lines))
+
+    def test_shift_enter_does_not_submit_the_login_form(self):
+        with MockServer() as server:
+            t = self.terminal()
+            t.send("\x1b[?0u" + server.url + "\tjosé\tSynthetic!123")
+            for packet in ("\x1b[13;2u", "\x1b[27;130;13~", "\x1b[57414;194u"):
+                t.send(packet)
+                self.assertFalse(server.requests)
+                self.assertIn("Senha (password)", self.screen(t))
+            t.send("\n")
+            self.wait(t, "[Canais / F6]")
+
+    @unittest.skipIf(os.name == "nt", "POSIX signal shutdown")
+    def test_negotiated_keyboard_mode_is_popped_once_on_sigterm(self):
+        t = self.terminal()
+        t.send("\x1b[?17u\x1b[?31u")
+        self.assertEqual(t.output.count(b"\x1b[>1u"), 1)
+        t.process.send_signal(signal.SIGTERM)
+        t.process.wait(timeout=5)
+        t.read()
+        self.assertEqual(t.process.returncode, 0)
+        self.assertEqual(t.output.count(b"\x1b[<u"), 1)
+        self.assertLess(bytes(t.output).index(b"\x1b[<u"), bytes(t.output).rindex(b"\x1b[?1049l"))
+
     def test_shift_selection_colors_graphemes_and_word_movement(self):
         with HistoryMock(count=0) as server:
             t = self.open(server)
@@ -140,7 +217,11 @@ class InputControls(unittest.TestCase):
     def test_kitty_copy_marker_lifecycle_and_forwarded_shortcut(self):
         t = self.terminal(environment=dict(KITTY_WINDOW_ID="papo-synthetic-window"))
         self.assertIn(b"\x1b]1337;SetUserVar=papo_tui=MQ==\x07", t.output)
-        self.assertNotIn(b"\x1b[>1u", t.output)
+        self.assertIn(b"\x1b[?u", t.output)
+        t.send("\x1b[?0u")
+        self.assertEqual(t.output.count(b"\x1b[>1u"), 1)
+        t.send("\x1b[?1u")
+        self.assertEqual(t.output.count(b"\x1b[>1u"), 1)
         t.send("\ttexto selecionado\x1bOH\x1b[1;2F\x1b[99;6u")
         self.wait(t, "Texto copiado")
         self.assertEqual(self.copied(t), "texto selecionado")
@@ -149,6 +230,7 @@ class InputControls(unittest.TestCase):
         t.process.wait(timeout=5)
         t.read()
         self.assertIn(b"\x1b]1337;SetUserVar=papo_tui\x07", t.output)
+        self.assertIn(b"\x1b[<u", t.output)
 
     def test_drag_batch_copy_and_expiring_independent_notice(self):
         with RealtimeMock(count=0) as server:
@@ -372,7 +454,7 @@ class InputControls(unittest.TestCase):
             t.send("\x1b[99;5u")
             self.wait(t, "Conversar em #geral")
 
-    def test_terminal_receives_drag_mode_without_changing_keyboard_protocol(self):
+    def test_terminal_drag_mode_without_keyboard_protocol_support(self):
         with HistoryMock(count=0) as server:
             t = self.open(server)
             self.assertNotIn(b"\x1b[>1u", t.output)

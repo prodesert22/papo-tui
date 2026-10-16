@@ -264,7 +264,8 @@ void conversation_draw_footer(view *ui)
         full = shorter = "Enter/F4 emojis · Shift+Tab editor · Esc voltar";
         minimal = "Enter emojis";
     } else if (ui->focus == MESSAGE_INPUT) {
-        full = "Enter enviar · Ctrl+N linha · Shift+setas selecionar · Ctrl+Shift+C copiar · "
+        full = "Enter enviar · Shift+Enter linha · Ctrl+N linha · Shift+setas selecionar · "
+               "Ctrl+Shift+C copiar · "
                "Ctrl+C limpar · @ mencionar · F4 emojis · Tab botão · Esc histórico";
         shorter = "Enter enviar · Ctrl+Shift+C copiar · Esc histórico";
         minimal = "Enter";

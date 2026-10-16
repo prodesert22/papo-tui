@@ -898,8 +898,6 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
     define_key("\033[B", KEY_DOWN);
     define_key("\033[C", KEY_RIGHT);
     define_key("\033[D", KEY_LEFT);
-    /* Keep the terminal's keyboard protocol unchanged. Enabling CSI-u would
-     * require complete support for all keys, modifiers and event forms. */
     fputs("\033[?2004h", stdout);
     fflush(stdout);
     text_input_terminal_active(true);
