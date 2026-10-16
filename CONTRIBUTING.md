@@ -13,6 +13,23 @@ or custom password storage is needed. pywinpty is used only by Windows tests
 with ConPTY. gcovr and Ruff are development tools. Recipes record sources,
 versions and hashes.
 
+Application modes reuse the existing profile configuration, ncurses controls,
+media cache, downloads and Chafa dependency. Configuration schema 4 adds
+`app_mode`; versions 1–3 migrate with Normal as the default. Settings are saved
+atomically before the selected mode is applied to all connected instances.
+Appearance, audio, accessibility and shortcut sections are placeholders.
+
+The media libraries run in `papo-backends/papo-media-worker`, using GIO's
+subprocess and asynchronous stream APIs on Linux and Windows. Private pipes
+carry bounded, versioned GVariant messages; existing codec modules, graphics
+encoders, font resources and player controls are reused inside the helper.
+Ultralight stops the helper and skips media work. Light uses Chafa's truecolor
+cells, preserves cached frames and retires an idle helper after three seconds.
+The host maps RGB cells to ncurses color pairs with a bounded reusable table.
+Cache reservations include IPC working copies, and cancellation keeps those
+reservations until pending replies drain. Emoji search, occurrence storage,
+download clients and cache threads are allocated on demand.
+
 Emoji completion and the F4 picker share the existing catalog, media cache and
 ncurses controls. GLib supplies normalized search, user configuration paths and
 atomic file replacement; Jansson stores bounded usage counts. Counts record
@@ -57,6 +74,11 @@ behavior and relevant failures rather than repeat the implementation.
 Count test suites and scenarios separately: each CTest entry may run many
 unittest cases. Never use personal credentials, keyrings or clipboard data in tests.
 
+On Linux, `tools/check_light_performance.py --binary build/papo-tui
+--output build/light-performance.json` measures host/helper RSS and PSS, CPU
+and input latency against synthetic local HTTP and PTY data. Its results are
+diagnostics for that machine, not guarantees for a remote instance.
+
 Keep commits small and write their messages in English. Keep mechanical
 formatting separate from behavior changes. Do not format generated code;
 update the emoji catalog and fixtures through their generators.
@@ -80,6 +102,26 @@ update the emoji catalog and fixtures through their generators.
 builds and tests. Run these with the virtual environment's Python and put its
 executables directory on PATH. On Windows, use native CPython inside the MSYS2
 CLANG64/CLANGARM64 shell, as shown in the workflow.
+
+CI uses one build matrix for the four native OS/architecture combinations.
+On Linux, `dist/build.py --build build --prefix build/release-deps
+--variants release,sanitizers,coverage --jobs 4` prepares dependencies once and
+runs independent CMake trees concurrently. `--jobs` is the shared compiler CPU
+budget; `--test-jobs` sets the total CTest concurrency across variants (default:
+two I/O tests per active variant). All variant results are checked; failures are
+never retried automatically. Logs are written to `build/ci-logs/`.
+
+For releases, each Linux runner uses `dist/ci_linux.py --prepare` before cache
+restore, then `dist/ci_linux.py --arch x86_64 --version 0.2.0` (or `aarch64`).
+This requires Docker and Flatpak/Builder. Ubuntu, Debian, Fedora and Flatpak
+build in isolated copies of the committed checkout, with two concurrent tasks
+by default (`--workers` overrides this). Compiler jobs are divided between those
+tasks, and container prefixes stay at `/workspace/build/release-deps` so restored
+libraries retain their paths. Ubuntu x86_64 also runs sanitizers, coverage and
+static analysis. Every distribution runs its full CTest suite and package
+installation checks; the Ubuntu task also validates the Arch package.
+Task logs and elapsed times are in `build/release-tasks/logs/`. Only successful
+builds are assembled for publication, using the existing asset collision checks.
 
 `dist/package.py --help` lists native formats. Packaging requires the verified
 prefix and includes licenses, corresponding sources and a library inventory.

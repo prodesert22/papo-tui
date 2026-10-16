@@ -32,6 +32,9 @@ class RealtimeTerminal(unittest.TestCase):
                 # A visible new message can trigger one cursor synchronization.
                 assert_history_reads(self, server, {CHANNEL: (1, 2)})
                 terminal.send("\x1bOH\x1bOD\x1bOB")
+                # Late author summaries legitimately redraw the old messages;
+                # settle that update before asserting the new event won't scroll.
+                self.wait(terminal, "Apelido")
                 before = [row[26:] for row in terminal.screen.display[8:12]]
                 message = server.message(5)
                 message["content"] = "Recebida sem deslocar a leitura"

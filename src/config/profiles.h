@@ -1,6 +1,7 @@
 #ifndef PAPO_PROFILES_H
 #define PAPO_PROFILES_H
 
+#include "config/app_mode.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <sys/stat.h>
@@ -25,6 +26,7 @@ typedef struct profile_config {
     double requests_per_second;
     unsigned request_burst;
     bool desktop_notifications, notification_preview;
+    app_mode mode;
     int directory;
     bool writable, existed;
     struct stat revision;
@@ -35,6 +37,7 @@ typedef struct profile_config {
     char message[192];
 } profile_config;
 
+bool profiles_set_mode(profile_config *config, app_mode mode);
 profile_config *profiles_create(void);
 void profiles_destroy(profile_config *config);
 bool profiles_reload(profile_config *config);

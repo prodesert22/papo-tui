@@ -3,6 +3,10 @@ set(PAPO_PLATFORM_DATA_PREFIX
     ""
     CACHE PATH "Platform prefix containing Windows runtime data")
 if(WIN32 AND PAPO_PLATFORM_DATA_PREFIX)
+    # GIO uses these helpers to create redirected subprocess pipes on Windows.
+    install(PROGRAMS "${PAPO_PLATFORM_DATA_PREFIX}/bin/gspawn-win64-helper.exe"
+                     "${PAPO_PLATFORM_DATA_PREFIX}/bin/gspawn-win64-helper-console.exe"
+            DESTINATION ${CMAKE_INSTALL_BINDIR})
     install(DIRECTORY "${PAPO_PLATFORM_DATA_PREFIX}/share/terminfo"
             DESTINATION ${CMAKE_INSTALL_DATADIR})
     install(DIRECTORY "${PAPO_PLATFORM_DATA_PREFIX}/etc/fonts" DESTINATION etc)
@@ -16,7 +20,7 @@ if(IS_DIRECTORY "${PAPO_DEPENDENCY_LICENSE_DIR}")
 endif()
 install(TARGETS papo-tui RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(
-    TARGETS papo_image_codec papo_video_player
+    TARGETS papo_image_codec papo_video_player papo-media-worker
     LIBRARY DESTINATION ${CMAKE_INSTALL_BINDIR}/papo-backends
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}/papo-backends)
 install(FILES LICENSE THIRD_PARTY_NOTICES.md DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/papo-tui)

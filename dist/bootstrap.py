@@ -64,6 +64,71 @@ def unix_path(path):
     return str(path)
 
 
+def patch_windows_libsixel(source):
+    """Use a Windows timer for libsixel's POSIX nanosleep calls."""
+    encoder = source / "src/encoder.c"
+    code = encoder.read_text()
+    marker = '#include "rgblookup.h"'
+    if "#define nanosleep sixel_windows_nanosleep" in code:
+        return
+    if marker not in code:
+        raise RuntimeError("Cannot apply the Windows libsixel nanosleep compatibility patch")
+    compatibility = r"""
+
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#ifdef nanosleep
+#undef nanosleep
+#endif
+static int
+sixel_windows_nanosleep(const struct timespec *request, struct timespec *remaining)
+{
+    if (request == NULL || request->tv_sec < 0 || request->tv_nsec < 0 ||
+        request->tv_nsec >= 1000000000L) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    uint64_t seconds = (uint64_t)request->tv_sec;
+    uint64_t nanoseconds = (uint64_t)request->tv_nsec;
+    if (seconds > (UINT64_MAX - nanoseconds) / 1000000000ULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    HANDLE timer = CreateWaitableTimer(NULL, TRUE, NULL);
+    if (timer == NULL) {
+        errno = EFAULT;
+        return -1;
+    }
+    LARGE_INTEGER due_time;
+    due_time.QuadPart = -(LONGLONG)((seconds * 1000000000ULL + nanoseconds) / 100ULL);
+    if (!SetWaitableTimer(timer, &due_time, 0, NULL, NULL, FALSE)) {
+        CloseHandle(timer);
+        errno = EFAULT;
+        return -1;
+    }
+    DWORD result = WaitForSingleObject(timer, INFINITE);
+    CloseHandle(timer);
+    if (result != WAIT_OBJECT_0) {
+        errno = EFAULT;
+        return -1;
+    }
+    if (remaining != NULL) {
+        remaining->tv_sec = 0;
+        remaining->tv_nsec = 0;
+    }
+    return 0;
+}
+#define nanosleep sixel_windows_nanosleep
+#endif
+"""
+    encoder.write_text(code.replace(marker, marker + compatibility, 1))
+
+
 def build(entry, source, work, prefix, jobs, env):
     def run(*args, cwd=source):
         print("+", *map(str, args), flush=True)
@@ -160,9 +225,10 @@ def build(entry, source, work, prefix, jobs, env):
                 "-Dgl=disabled",
                 "-Dbuild-date=false",
             ]
-            options += (
-                ["-Dwasapi=enabled"] if os.name == "nt" else ["-Dpulse=enabled", "-Dalsa=enabled"]
-            )
+            if os.name == "nt":
+                options += ["-Dwasapi=enabled", "-Dwin32-threads=enabled"]
+            else:
+                options += ["-Dpulse=enabled", "-Dalsa=enabled"]
         elif name == "libsixel":
             options += ["-Dimg2sixel=disabled", "-Dsixel2png=disabled", "-Dtests=disabled"]
         elif name == "libsecret":
@@ -232,6 +298,13 @@ def main():
         stamp = prefix / (".papo-" + entry["name"] + ".json")
         identity = {
             "source": entry,
+            "compatibility_patch": (
+                "windows-nanosleep-v1"
+                if os.name == "nt" and entry["name"] == "libsixel"
+                else "windows-native-threads-v1"
+                if os.name == "nt" and entry["name"] == "mpv"
+                else None
+            ),
             "system": os.name,
             "architecture": os.environ.get(
                 "MSYSTEM", os.uname().machine if hasattr(os, "uname") else "windows"
@@ -245,6 +318,8 @@ def main():
         if work.exists():
             shutil.rmtree(work)
         source = unpack(archive, work / "source")
+        if os.name == "nt" and entry["name"] == "libsixel":
+            patch_windows_libsixel(source)
         build(entry, source, work, prefix, args.jobs, env)
         # Keep exact sources, build commands/options and upstream licenses available to packaging.
         licenses = prefix / "share/licenses/papo-dependencies" / entry["name"]

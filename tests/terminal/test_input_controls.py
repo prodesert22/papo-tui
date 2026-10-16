@@ -46,6 +46,19 @@ class InputControls(unittest.TestCase):
         first, end = editor_region(t)
         return "\n".join(t.screen.display[first:end])
 
+    def wait_field(self, t, text, seconds=3):
+        deadline = time.monotonic() + seconds
+        while text not in self.field(t) and time.monotonic() < deadline:
+            t.read(0.03)
+        self.assertIn(text, self.field(t))
+
+    def wait_cursor(self, t, row, column, seconds=3):
+        expected = (row, column)
+        deadline = time.monotonic() + seconds
+        while (t.screen.cursor.y, t.screen.cursor.x) != expected and time.monotonic() < deadline:
+            t.read(0.03)
+        self.assertEqual((t.screen.cursor.y, t.screen.cursor.x), expected)
+
     def mouse(self, t, row, column, code, release=False):
         t.send(f"\x1b[<{code};{column + 1};{row + 1}{'m' if release else 'M'}")
 
@@ -148,7 +161,7 @@ class InputControls(unittest.TestCase):
                 self.assertFalse(server.requests)
                 self.assertIn("Senha (password)", self.screen(t))
             t.send("\n")
-            self.wait(t, "[Canais / F6]")
+            self.wait(t, "[Canais]")
 
     @unittest.skipIf(os.name == "nt", "POSIX signal shutdown")
     def test_negotiated_keyboard_mode_is_popped_once_on_sigterm(self):
@@ -176,7 +189,7 @@ class InputControls(unittest.TestCase):
             self.wait(t, "Mensagem confirmada")
             self.assertEqual(server.sent_messages[-1]["content"], "AçãX")
             t.send("um dois três\x1b[1;5D\x1b[1;6Dnovo ")
-            self.assertIn("um novo três", self.field(t))
+            self.wait_field(t, "um novo três")
             t.send("\x1b[1;5H\x1b[1;5C\x1b[1;6Ffim\n")
             self.wait(t, "Mensagem confirmada")
             deadline = time.monotonic() + 5
@@ -190,29 +203,29 @@ class InputControls(unittest.TestCase):
             t.send("ação  duas\x0epalavras\x1b[1;5H")
             row, column = t.screen.cursor.y, t.screen.cursor.x
             t.send("\x1b[1;5C")
-            self.assertEqual((t.screen.cursor.y, t.screen.cursor.x), (row, column + 4))
+            self.wait_cursor(t, row, column + 4)
             t.send("\x1b[1;5C")
-            self.assertEqual((t.screen.cursor.y, t.screen.cursor.x), (row, column + 10))
+            self.wait_cursor(t, row, column + 10)
             t.send("\x1b[1;5C")
-            self.assertEqual((t.screen.cursor.y, t.screen.cursor.x), (row + 1, column + 8))
+            self.wait_cursor(t, row + 1, column + 8)
             t.send("\x1b[1;5D")
-            self.assertEqual((t.screen.cursor.y, t.screen.cursor.x), (row + 1, column))
+            self.wait_cursor(t, row + 1, column)
             t.send("\x1b[1;5D")
-            self.assertEqual((t.screen.cursor.y, t.screen.cursor.x), (row, column + 6))
+            self.wait_cursor(t, row, column + 6)
             t.send("\x1b[1;5D")
-            self.assertEqual((t.screen.cursor.y, t.screen.cursor.x), (row, column))
+            self.wait_cursor(t, row, column)
         for arguments, opening in (((), "\t"), (("--profiles",), "\x0e")):
             f = self.terminal(arguments=arguments)
             f.send(opening + "uma palavra\x1bOH")
             row, column = f.screen.cursor.y, f.screen.cursor.x
             f.send("\x1b[1;5C")
-            self.assertEqual((f.screen.cursor.y, f.screen.cursor.x), (row, column + 3))
+            self.wait_cursor(f, row, column + 3)
             f.send("\x1b[1;5C")
-            self.assertEqual((f.screen.cursor.y, f.screen.cursor.x), (row, column + 11))
+            self.wait_cursor(f, row, column + 11)
             f.send("\x1b[1;5D")
-            self.assertEqual((f.screen.cursor.y, f.screen.cursor.x), (row, column + 4))
+            self.wait_cursor(f, row, column + 4)
             f.send("\x1b[1;5D")
-            self.assertEqual((f.screen.cursor.y, f.screen.cursor.x), (row, column))
+            self.wait_cursor(f, row, column)
 
     def test_kitty_copy_marker_lifecycle_and_forwarded_shortcut(self):
         t = self.terminal(environment=dict(KITTY_WINDOW_ID="papo-synthetic-window"))

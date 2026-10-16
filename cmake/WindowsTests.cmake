@@ -3,6 +3,8 @@ find_program(FFMPEG_CLI ffmpeg REQUIRED)
 foreach(
     spec IN
     ITEMS
+        "media-wire-test|tests/unit/test_media_wire.c|papo_media|media-wire-boundaries"
+        "media-service-test|tests/integration/test_media_service.c|papo_media|media-service-integration"
         "rate-limit-test|tests/unit/test_rate_limit.c|papo_auth|request-rate-limit"
         "session-time-test|tests/unit/test_session_time.c|papo_auth|session-expiry"
         "status-bar-test|tests/unit/test_status_bar.c|papo_send_editor|status-bar-unit"
@@ -34,6 +36,14 @@ add_test(NAME windows-terminal
          COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/terminal/test_windows.py
                  $<TARGET_FILE:papo-tui>)
 set_tests_properties(windows-terminal PROPERTIES TIMEOUT 180)
+add_executable(windows-input-probe tests/probes/windows_input_probe.c
+                                   src/platform/windows/terminal.c)
+target_link_libraries(windows-input-probe PRIVATE papo_send_editor)
+target_compile_options(windows-input-probe PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME windows-input
+         COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/terminal/test_windows_input.py
+                 $<TARGET_FILE:windows-input-probe>)
+set_tests_properties(windows-input PROPERTIES TIMEOUT 30)
 get_property(
     names
     DIRECTORY

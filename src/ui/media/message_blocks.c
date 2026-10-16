@@ -2,6 +2,7 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 #include "ui/media/message_blocks.h"
+#include "config/app_mode.h"
 #include "model/conversation/history.h"
 #include "ui/components/theme.h"
 #include "ui/input/text.h"
@@ -334,6 +335,8 @@ static bool media(message_blocks *b, json_t *message, json_t *entry, const char 
                   const char *role, const char *label, auth_media_kind kind, bool video, int width,
                   bool graphics, bool card, unsigned color)
 {
+    if (app_mode_get() == APP_MODE_ULTRALIGHT)
+        return labeled(b, key, video ? "Vídeo: " : "Imagem: ", label, width, false, card, color);
     int n = add_media(b, message, entry, role, label, kind, video);
     if (n < 0)
         return strlen(str(entry, "id")) != 36;
@@ -500,6 +503,8 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
     int author_x = graphics && terminal.cell_width > 0
                        ? (MESSAGE_AVATAR_PIXELS + terminal.cell_width - 1) / terminal.cell_width
                        : 6;
+    if (app_mode_get() == APP_MODE_ULTRALIGHT)
+        author_x = 0;
     if (author_x > width - 8)
         author_x = width - 8;
     char label[1600];
@@ -570,6 +575,30 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
         snprintf(key, sizeof(key), "attachment:%s:%zu", str(item, "id"), index);
         const char *name =
             *str(item, "original_file_name") ? str(item, "original_file_name") : "arquivo sem nome";
+        if (app_mode_get() == APP_MODE_ULTRALIGHT) {
+            const char *mime = str(item, "mime_type");
+            const char *kind = !strcmp(mime, "image/gif")    ? "GIF"
+                               : !strncmp(mime, "image/", 6) ? "Imagem"
+                               : !strncmp(mime, "video/", 6) ? "Vídeo"
+                                                             : "Anexo";
+            json_t *size = json_object_get(item, "size_bytes");
+            size_t length = strlen(name);
+            if (length > SIZE_MAX - 128)
+                goto error;
+            char *description = malloc(length + 128);
+            if (!description)
+                goto error;
+            if (json_is_integer(size) && json_integer_value(size) >= 0)
+                snprintf(description, length + 128, "%s: %s · %lld bytes", kind, name,
+                         (long long)json_integer_value(size));
+            else
+                snprintf(description, length + 128, "%s: %s", kind, name);
+            bool ok = text(b, key, description, width, false, false, 0);
+            free(description);
+            if (!ok)
+                goto error;
+            continue;
+        }
         bool video = !strncmp(str(item, "mime_type"), "video/", 6);
         bool image = !strncmp(str(item, "mime_type"), "image/", 6);
         if (!graphics || !image) {

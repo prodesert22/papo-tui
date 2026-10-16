@@ -332,12 +332,15 @@ void r8_modal_draw(r8_modal *m)
     text_label(w, 1, 2, width - 4, title);
     wattrset(w, COLOR_PAIR(THEME_PANEL));
     if (m->kind == R8_HELP) {
-        const char *lines[] = {
-            "Tab/Shift+Tab: percorrer áreas",      "Canais/DMs: ←→ escolher, Enter ativar",
-            "↑↓: navegar · Enter: abrir texto/DM", "Voz: F4 abre o histórico",
-            "F9: notificações · F10: nova DM",     "Ctrl+D na lista DMs: fechar conversa",
-            "Ctrl+R: atualizar ou reconectar",     "F6: conta · Ctrl+L: sair da conta",
-            "Esc: voltar · Ctrl+Q: sair"};
+        const char *lines[] = {"Tab/Shift+Tab: percorrer áreas",
+                               "Canais/DMs: ←→ escolher, Enter ativar",
+                               "↑↓: navegar · Enter: abrir texto/DM",
+                               "Voz: F4 abre o histórico",
+                               "F2: configurações · F9: notificações · F10: nova DM",
+                               "Ctrl+D na lista DMs: fechar conversa",
+                               "Ctrl+R: atualizar ou reconectar",
+                               "F6: conta · Ctrl+L: sair da conta",
+                               "Esc: voltar · Ctrl+Q: sair"};
         for (size_t i = 0; i < sizeof(lines) / sizeof(lines[0]) && (int)i + 3 < height - 2; ++i)
             text_label(w, (int)i + 3, 2, width - 4, lines[i]);
     } else if (m->prefs) {

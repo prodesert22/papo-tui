@@ -14,7 +14,12 @@ class Sessions(unittest.TestCase):
     def probe(self, server, mode, **settings):
         environment = dict(os.environ, LC_ALL="C.UTF-8", **settings)
         result = subprocess.run(
-            [BINARY, server.url, mode], env=environment, capture_output=True, text=True, timeout=25
+            [BINARY, server.url, mode],
+            env=environment,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=25,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn("Synthetic!123", result.stdout + result.stderr)

@@ -7,8 +7,8 @@
 #define VIDEO_FRAME_PIXELS (7U * 1024U * 1024U)
 #define VIDEO_KITTY_FRAME_PIXELS (960U * 540U)
 /* Private, versioned module boundary. No curses, auth or mutable models cross it.
- * Pixel buffers use the process allocator. Modules remain resident after use;
- * every player/context and frame must still be released by its owner. */
+ * Pixel buffers use the process allocator. Modules remain resident inside the media helper after
+ * use; every player/context and frame must still be released by its owner. */
 typedef struct {
     unsigned abi;
     size_t size, request_size, animation_size, graphics_size;

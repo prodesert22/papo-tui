@@ -17,12 +17,21 @@ class WindowsTerminalTests(unittest.TestCase):
             terminal.read(0.03)
         self.assertIn(text, "\n".join(terminal.screen.display))
 
+    def login(self, terminal, server):
+        terminal.send(server.url)
+        terminal.send("\t")
+        terminal.send("josé")
+        self.wait(terminal, "josé")
+        terminal.send("\t")
+        terminal.send("Synthetic!123")
+        terminal.send("\r")
+        self.wait(terminal, "geral")
+
     def test_login_resize_unicode_send_and_exit(self):
         with HistoryMock() as server:
             terminal = Terminal()
             try:
-                terminal.send(server.url + "\tjosé\tSynthetic!123\r")
-                self.wait(terminal, "geral")
+                self.login(terminal, server)
                 terminal.send("\x1bOB\x1bOB\r")
                 self.wait(terminal, "Mensagem 0250")
                 terminal.resize(28, 100)
@@ -51,8 +60,7 @@ class WindowsTerminalTests(unittest.TestCase):
             try:
                 first = Terminal(environment=env)
                 terminals.append(first)
-                first.send(server.url + "\tjosé\tSynthetic!123\r")
-                self.wait(first, "geral")
+                self.login(first, server)
                 deadline = time.monotonic() + 10
                 marker = None
                 while time.monotonic() < deadline:

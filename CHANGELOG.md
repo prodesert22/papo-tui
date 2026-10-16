@@ -5,6 +5,23 @@ full details are available in `releases/`.
 
 ## Unreleased
 
+## [0.2.0]
+
+- Add Normal, Light and Ultralight application modes in the F2 settings modal.
+  Light renders images and animated GIFs with colored Chafa characters and
+  disables video; Ultralight shows media as text and skips media downloads.
+- Use Chafa when a terminal has no supported graphics protocol, and preserve
+  media colors in both direct-color and indexed-color terminals.
+- Move media decoding and rendering to an on-demand helper process. The helper
+  exits after idle time in Light mode; Ultralight avoids starting it entirely.
+- Include GLib subprocess helpers in Windows packages so the media helper can start.
+- Consolidate CI builds by native platform and architecture, reuse dependency
+  caches and run independent builds concurrently with separate validation logs.
+- Document known Windows Unicode input failures and an unresolved sanitizer
+  terminal test failure in the release notes.
+
+See the [full 0.2.0 release notes](releases/v0.2.0.md).
+
 ## [0.1.2]
 
 - Insert new lines with Shift+Enter in supported terminals; Enter still sends

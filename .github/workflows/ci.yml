@@ -16,7 +16,7 @@ permissions:
   contents: read
 concurrency:
   group: ci-${{ github.workflow }}-${{ inputs.ref || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: ${{ !inputs.release }}
 jobs:
   quality:
     runs-on: ubuntu-24.04
@@ -27,110 +27,129 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-      - run: python -m pip install -r requirements-dev.txt
-      - run: python tools/quality.py
-      - run: python -m unittest discover -s tests/contract -v
-      - run: python -m unittest discover -s tests/distribution -v
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
-      - run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
-  linux:
+      - run: python -m pip install -r requirements-dev.txt
+      - name: Check independent quality gates concurrently
+        run: |
+          python tools/quality.py & quality=$!
+          python -m unittest discover -s tests/contract -v & contract=$!
+          python -m unittest discover -s tests/distribution -v & distribution=$!
+          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 & workflow=$!
+          status=0
+          for pid in "$quality" "$contract" "$distribution" "$workflow"; do
+            wait "$pid" || status=1
+          done
+          exit "$status"
+  build:
+    name: Build (${{ matrix.platform }}, ${{ matrix.arch }})
     strategy:
       fail-fast: false
       matrix:
         include:
           - runner: ubuntu-24.04
+            platform: linux
             arch: x86_64
           - runner: ubuntu-24.04-arm
+            platform: linux
+            arch: aarch64
+          - runner: windows-2025
+            platform: windows
+            system: CLANG64
+            package: mingw-w64-clang-x86_64
+            arch: x86_64
+          - runner: windows-11-arm
+            platform: windows
+            system: CLANGARM64
+            package: mingw-w64-clang-aarch64
             arch: aarch64
     runs-on: ${{ matrix.runner }}
+    env:
+      BUILD_ARCH: ${{ matrix.arch }}
+      ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.ref }}
-      - run: sh dist/linux-deps.sh
-      - run: python3 -m venv build/test-env && build/test-env/bin/pip install -r requirements-dev.txt
-      - uses: actions/cache@v4
+      - name: Linux build environment
+        if: matrix.platform == 'linux'
+        run: |
+          if [ '${{ inputs.release }}' = true ]; then
+            sudo apt-get update
+            sudo apt-get install -y flatpak flatpak-builder python3-venv libarchive-tools
+            python3 dist/ci_linux.py --prepare
+          else
+            sh dist/linux-deps.sh
+            if [ "$BUILD_ARCH" = x86_64 ]; then sudo apt-get install -y clang-tidy; fi
+          fi
+          python3 -m venv build/test-env
+          build/test-env/bin/pip install -r requirements-dev.txt
+      - uses: actions/cache/restore@v4
+        if: matrix.platform == 'linux' && !inputs.release
+        id: linux-cache
         with:
           path: |
             build/source-cache
             build/resources
             build/release-deps
           key: linux-${{ matrix.runner }}-${{ hashFiles('dist/dependencies.json', 'dist/bootstrap.py', 'dist/resources.json') }}
-      - run: build/test-env/bin/python dist/build.py --build build/release --prefix build/release-deps
+          restore-keys: |
+            linux-${{ matrix.runner }}-
+      - uses: actions/cache/restore@v4
+        if: matrix.platform == 'linux' && inputs.release
+        id: release-cache
+        with:
+          path: |
+            build/release-tasks/*/source/build/source-cache
+            build/release-tasks/*/source/build/resources
+            build/release-tasks/*/source/build/release-deps
+          key: release-native-v2-${{ matrix.arch }}-${{ hashFiles('dist/dependencies.json', 'dist/bootstrap.py', 'dist/resources.json') }}
+          restore-keys: |
+            release-native-v2-${{ matrix.arch }}-
+      - uses: actions/cache/restore@v4
+        if: matrix.platform == 'linux' && inputs.release
+        id: flatpak-cache
+        with:
+          path: |
+            ~/.local/share/flatpak
+            build/release-tasks/flatpak/source/.flatpak-builder/downloads
+          key: flatpak-${{ matrix.arch }}-26.08-${{ hashFiles('dist/dependencies.json', 'dist/flatpak/build-dependencies.json', 'dist/resources.json') }}
+          restore-keys: |
+            flatpak-${{ matrix.arch }}-26.08-
+      - name: Build and test Linux variants concurrently
+        id: linux-build
+        if: matrix.platform == 'linux' && !inputs.release
         env:
           PATH: ${{ github.workspace }}/build/test-env/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-      - name: Analyze C paths
-        if: matrix.arch == 'x86_64'
         run: |
-          sudo apt-get install -y clang-tidy
-          build/test-env/bin/python tools/analyze.py --build build/release
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: test-logs-linux-${{ matrix.arch }}
-          path: build/release/Testing/Temporary/
-  instrumentation:
-    runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        mode: [sanitizers, coverage]
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref || github.ref }}
-      - run: sh dist/linux-deps.sh
-      - run: python3 -m venv build/test-env && build/test-env/bin/pip install -r requirements-dev.txt
-      - uses: actions/cache@v4
-        with:
-          path: |
-            build/source-cache
-            build/resources
-            build/release-deps
-          key: linux-ubuntu-24.04-${{ hashFiles('dist/dependencies.json', 'dist/bootstrap.py', 'dist/resources.json') }}
-      - run: build/test-env/bin/python dist/build.py --build build/${{ matrix.mode }} --prefix build/release-deps --${{ matrix.mode }}
+          variants=release
+          if [ "$BUILD_ARCH" = x86_64 ]; then variants=release,sanitizers,coverage; fi
+          build/test-env/bin/python dist/build.py --build build --prefix build/release-deps --variants "$variants"
+      - name: Analyze C paths
+        if: matrix.platform == 'linux' && matrix.arch == 'x86_64' && !inputs.release
+        run: build/test-env/bin/python tools/analyze.py --build build/release
+      - name: Coverage report
+        if: always() && matrix.platform == 'linux' && matrix.arch == 'x86_64' && !inputs.release
+        run: |
+          if [ -f build/coverage/CMakeCache.txt ]; then
+            build/test-env/bin/gcovr --root . --filter src/ --exclude 'src/model/text/emoji_data.inc' --html-details build/coverage/index.html --xml build/coverage/coverage.xml --print-summary
+          fi
+      - name: Build, test and package Linux targets concurrently
+        id: release-build
+        if: matrix.platform == 'linux' && inputs.release
         env:
-          PATH: ${{ github.workspace }}/build/test-env/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-          ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
-          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
-      - if: matrix.mode == 'coverage' && always()
-        run: build/test-env/bin/gcovr --root . --filter src/ --exclude 'src/model/text/emoji_data.inc' --html-details build/coverage/index.html --xml build/coverage/coverage.xml --print-summary
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: ${{ matrix.mode }}-results
-          path: |
-            build/${{ matrix.mode }}/Testing/Temporary/
-            build/coverage/*.html
-            build/coverage/*.css
-            build/coverage/*.xml
-  windows:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: windows-2025
-            system: CLANG64
-            package: mingw-w64-clang-x86_64
-            arch: x86_64
-          - runner: windows-11-arm
-            system: CLANGARM64
-            package: mingw-w64-clang-aarch64
-            arch: aarch64
-    runs-on: ${{ matrix.runner }}
-    defaults:
-      run:
-        shell: msys2 {0}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref || github.ref }}
+          RELEASE_REF: ${{ inputs.ref }}
+        run: |
+          version="$(build/test-env/bin/python dist/release.py "$RELEASE_REF" --require-head)"
+          build/test-env/bin/python dist/ci_linux.py --arch "$BUILD_ARCH" --version "$version"
       - uses: actions/setup-python@v5
+        if: matrix.platform == 'windows'
         with:
           python-version: '3.13'
       - uses: msys2/setup-msys2@v2
+        if: matrix.platform == 'windows'
         with:
           msystem: ${{ matrix.system }}
           update: true
@@ -142,39 +161,90 @@ jobs:
             ${{ matrix.package }}-pango ${{ matrix.package }}-fontconfig
             ${{ matrix.package }}-libass ${{ matrix.package }}-libplacebo
             ${{ matrix.package }}-ffmpeg ${{ matrix.package }}-libgcrypt
-      - name: Python test environment
+            ${{ matrix.package }}-vulkan-headers
+      - name: Windows Python test environment
+        if: matrix.platform == 'windows'
+        shell: msys2 {0}
         run: |
           native_python="$(cygpath -u "$pythonLocation")/python.exe"
           "$native_python" -m venv build/test-env
           build/test-env/Scripts/python.exe -m pip install -r requirements-dev.txt
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
+        if: matrix.platform == 'windows'
+        id: windows-cache
         with:
           path: |
             build/source-cache
             build/resources
             build/release-deps
           key: windows-${{ matrix.system }}-${{ hashFiles('dist/dependencies.json', 'dist/bootstrap.py', 'dist/resources.json') }}
-      - run: |
+          restore-keys: |
+            windows-${{ matrix.system }}-
+      - name: Build and test Windows
+        id: windows-build
+        if: matrix.platform == 'windows'
+        shell: msys2 {0}
+        run: |
           export PATH="$PWD/build/test-env/Scripts:$PATH"
           export PAPO_SYSTEM_BIN="$(cygpath -w "$MINGW_PREFIX/bin")"
           python dist/build.py --build build/release --prefix build/release-deps
       - name: ZIP, installer and installation lifecycle
-        if: inputs.release
+        if: matrix.platform == 'windows' && inputs.release
+        shell: msys2 {0}
+        env:
+          RELEASE_REF: ${{ inputs.ref }}
         run: |
           export PATH="$PWD/build/test-env/Scripts:$PATH"
           export ISCC="$(python dist/windows/tools.py | tail -1)"
-          version="$(python dist/release.py '${{ inputs.ref }}' --require-head)"
+          version="$(python dist/release.py "$RELEASE_REF" --require-head)"
           python dist/package.py --build build/release --output build/artifacts --formats zip,installer \
-            --arch '${{ matrix.arch }}' --flavor windows --dependency-prefix build/release-deps
-          python dist/windows/verify.py --artifacts build/artifacts --version "$version" --arch '${{ matrix.arch }}'
+            --arch "$BUILD_ARCH" --flavor windows --dependency-prefix build/release-deps
+          python dist/windows/verify.py --artifacts build/artifacts --version "$version" --arch "$BUILD_ARCH"
+      - uses: actions/cache/save@v4
+        if: always() && !cancelled() && steps.linux-cache.outcome == 'success' && steps.linux-cache.outputs.cache-hit != 'true' && steps.linux-build.outputs.dependencies-ready == 'true'
+        with:
+          path: |
+            build/source-cache
+            build/resources
+            build/release-deps
+          key: ${{ steps.linux-cache.outputs.cache-primary-key }}
+      - uses: actions/cache/save@v4
+        if: always() && !cancelled() && steps.windows-cache.outcome == 'success' && steps.windows-cache.outputs.cache-hit != 'true' && steps.windows-build.outputs.dependencies-ready == 'true'
+        with:
+          path: |
+            build/source-cache
+            build/resources
+            build/release-deps
+          key: ${{ steps.windows-cache.outputs.cache-primary-key }}
+      - uses: actions/cache/save@v4
+        if: always() && !cancelled() && steps.release-cache.outcome == 'success' && steps.release-cache.outputs.cache-hit != 'true' && steps.release-build.outputs.dependencies-ready == 'true'
+        with:
+          path: |
+            build/release-tasks/*/source/build/source-cache
+            build/release-tasks/*/source/build/resources
+            build/release-tasks/*/source/build/release-deps
+          key: ${{ steps.release-cache.outputs.cache-primary-key }}
+      - uses: actions/cache/save@v4
+        if: always() && !cancelled() && steps.flatpak-cache.outcome == 'success' && steps.flatpak-cache.outputs.cache-hit != 'true' && steps.release-build.outputs.flatpak-sdk-ready == 'true'
+        with:
+          path: |
+            ~/.local/share/flatpak
+            build/release-tasks/flatpak/source/.flatpak-builder/downloads
+          key: ${{ steps.flatpak-cache.outputs.cache-primary-key }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-results-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            build/**/ci-logs/*.log
+            build/**/Testing/Temporary/*
+            build/release-tasks/logs/*
+            build/**/coverage/*.html
+            build/**/coverage/*.css
+            build/**/coverage/*.xml
       - uses: actions/upload-artifact@v4
         if: inputs.release
         with:
-          name: packages-windows-${{ matrix.arch }}
+          name: packages-${{ matrix.platform }}-${{ matrix.arch }}
           path: build/artifacts/*
           if-no-files-found: error
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: test-logs-windows-${{ matrix.arch }}
-          path: build/release/Testing/Temporary/

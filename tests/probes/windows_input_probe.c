@@ -1,0 +1,71 @@
+/* Synthetic ConPTY input diagnostics: compare Win32 UTF-16 with ncurses. */
+#include "platform/terminal.h"
+#include "ui/input/text.h"
+#include <locale.h>
+#include <stdio.h>
+#include <wctype.h>
+#include <windows.h>
+
+int main(void)
+{
+    if (!setlocale(LC_ALL, ".UTF8") || !setlocale(LC_NUMERIC, "C") || !terminal_recovery_begin())
+        return 1;
+    HANDLE input = GetStdHandle(STD_INPUT_HANDLE);
+    DWORD mode;
+    if (!GetConsoleMode(input, &mode) ||
+        !SetConsoleMode(input, mode & ~(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT))) {
+        terminal_recovery_end();
+        return 1;
+    }
+    unsigned native[32], keys[32];
+    size_t count = 0, length = 0;
+    puts("PAPO_NATIVE_READY");
+    fflush(stdout);
+    ULONGLONG until = GetTickCount64() + 5000;
+    while (count < 32 && GetTickCount64() < until) {
+        INPUT_RECORD event;
+        DWORD read;
+        if (WaitForSingleObject(input, 20) != WAIT_OBJECT_0)
+            continue;
+        if (!ReadConsoleInputW(input, &event, 1, &read) || !read)
+            break;
+        if (event.EventType != KEY_EVENT || !event.Event.KeyEvent.bKeyDown)
+            continue;
+        unsigned key = event.Event.KeyEvent.uChar.UnicodeChar;
+        if (key == '\r')
+            break;
+        if (key)
+            native[count++] = key;
+    }
+    if (!initscr()) {
+        terminal_recovery_end();
+        return 1;
+    }
+    cbreak();
+    noecho();
+    keypad(stdscr, TRUE);
+    timeout(20);
+    printw("PAPO_CURSES_READY");
+    refresh();
+    until = GetTickCount64() + 5000;
+    while (length < 32 && GetTickCount64() < until) {
+        uint32_t key;
+        int type = text_read_raw(&key);
+        if (type == ERR)
+            continue;
+        if (type == OK && key == 27)
+            break;
+        if (type == OK)
+            keys[length++] = key;
+    }
+    endwin();
+    terminal_recovery_end();
+    printf("\nPAPO_PROBE_RESULT={\"native\":[");
+    for (size_t i = 0; i < count; ++i)
+        printf("%s%u", i ? "," : "", native[i]);
+    printf("],\"curses\":[");
+    for (size_t i = 0; i < length; ++i)
+        printf("%s%u", i ? "," : "", keys[i]);
+    printf("],\"iswprint_e_acute\":%d}\n", !!iswprint(0xe9));
+    return 0;
+}

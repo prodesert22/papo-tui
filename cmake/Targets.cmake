@@ -26,6 +26,7 @@ add_library(
     src/net/auth/session_time.c
     src/net/rate_limit.c
     src/net/realtime/websocket.c
+    src/config/app_mode.c
     src/config/profiles.c
     src/platform/${PAPO_PLATFORM}/profiles_storage.c
     src/config/read_state.c
@@ -119,13 +120,53 @@ foreach(target papo_image_codec papo_video_player)
     endif()
 endforeach()
 
+add_executable(
+    papo-media-worker
+    src/ui/media/media_service_worker.c
+    src/ui/media/media_wire.c
+    src/ui/media/media_backend.c
+    src/ui/media/graphics_encode.c
+    src/ui/media/graphics_buffer.c
+    src/ui/media/sixel_encode.c
+    src/ui/media/image_decode.c
+    src/ui/media/emoji_raster.c
+    src/ui/media/resources.c)
+target_include_directories(papo-media-worker PRIVATE src)
+target_compile_options(papo-media-worker PRIVATE -Wall -Wextra -Wpedantic -Werror)
+target_link_libraries(
+    papo-media-worker
+    PRIVATE papo_platform
+            PkgConfig::NCURSES
+            PkgConfig::GMODULE
+            PkgConfig::PANGO
+            PkgConfig::FONTCONFIG
+            PkgConfig::CHAFA
+            PkgConfig::SIXEL
+            m)
+target_compile_definitions(
+    papo-media-worker
+    PRIVATE PAPO_MEDIA_RESOURCES_WORKER PAPO_IMAGE_MODULE="$<TARGET_FILE_NAME:papo_image_codec>"
+            PAPO_VIDEO_MODULE="$<TARGET_FILE_NAME:papo_video_player>"
+            PAPO_BACKEND_INSTALL_DIR="${CMAKE_INSTALL_FULL_BINDIR}/papo-backends")
+set_target_properties(papo-media-worker PROPERTIES RUNTIME_OUTPUT_DIRECTORY
+                                                   "${CMAKE_CURRENT_BINARY_DIR}/papo-backends")
+add_dependencies(papo-media-worker papo_image_codec papo_video_player)
+if(PAPO_SANITIZERS)
+    target_compile_options(papo-media-worker PRIVATE -fsanitize=address,undefined
+                                                     -fno-omit-frame-pointer)
+    target_link_options(papo-media-worker PRIVATE -fsanitize=address,undefined)
+endif()
+
 add_library(
     papo_media
     src/model/text/emoji_usage.c
     src/ui/media/resources.c
     src/ui/media/media.c
     src/ui/media/media_cache.c
-    src/ui/media/media_backend.c
+    src/ui/media/media_process.c
+    src/ui/media/media_service.c
+    src/ui/media/media_wire.c
+    src/ui/media/graphics_buffer.c
     src/ui/media/media_layout.c
     src/ui/media/message_time.c
     src/ui/media/emoji_image.c
@@ -135,22 +176,15 @@ add_library(
     src/ui/media/graphics.c
     src/ui/media/sixel.c
     src/ui/media/message_blocks.c)
-target_link_libraries(
-    papo_media
-    PUBLIC PkgConfig::FONTCONFIG
-           papo_send_editor
-           PkgConfig::PANGO
-           PkgConfig::GMODULE
-           PkgConfig::SIXEL
-           PkgConfig::CHAFA
-           Threads::Threads
-           m)
+target_link_libraries(papo_media PUBLIC papo_send_editor PkgConfig::GMODULE PkgConfig::GIO
+                                        Threads::Threads m)
 target_compile_definitions(
     papo_media
-    PRIVATE PAPO_IMAGE_MODULE="$<TARGET_FILE_NAME:papo_image_codec>"
+    PRIVATE PAPO_MEDIA_WORKER_FILE="$<TARGET_FILE_NAME:papo-media-worker>"
+            PAPO_IMAGE_MODULE="$<TARGET_FILE_NAME:papo_image_codec>"
             PAPO_VIDEO_MODULE="$<TARGET_FILE_NAME:papo_video_player>"
             PAPO_BACKEND_INSTALL_DIR="${CMAKE_INSTALL_FULL_BINDIR}/papo-backends")
-add_dependencies(papo_media papo_image_codec papo_video_player)
+add_dependencies(papo_media papo-media-worker)
 target_compile_options(papo_media PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_executable(
     papo-tui
@@ -161,6 +195,7 @@ add_executable(
     src/ui/screens/conversation/drawing.c
     src/ui/screens/conversation/input.c
     src/ui/screens/conversation/layout.c
+    src/ui/components/settings.c
     src/ui/screens/inbox.c
     src/ui/screens/profiles.c
     src/ui/components/theme.c

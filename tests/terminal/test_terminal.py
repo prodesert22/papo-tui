@@ -8,6 +8,7 @@ if os.name != "nt":
 import os
 import select
 import signal
+import re
 import struct
 import subprocess
 import sys
@@ -52,6 +53,21 @@ class TerminalStream(pyte.ByteStream):
     # parser omits these standard controls; ignoring them loses visible lines.
     csi = dict(pyte.Stream.csi, S="scroll_up", T="scroll_down")
     events = pyte.Stream.events | {"scroll_up", "scroll_down"}
+
+    def feed(self, data):
+        # pyte omits colon-form SGR used by xterm-direct terminfo. Normalize
+        # equivalent color parameters, preserving CSI split across PTY reads.
+        data = getattr(self, "_sgr_pending", b"") + data
+        tail = re.search(rb"(?:\x1b\[[0-9:;]*|\x1b)$", data)
+        self._sgr_pending = data[tail.start() :] if tail else b""
+        if tail:
+            data = data[: tail.start()]
+
+        def normalize(match):
+            parameters = re.sub(rb"(38|48):2::?", rb"\1;2;", match[1])
+            return b"\x1b[" + parameters.replace(b":", b";") + b"m"
+
+        super().feed(re.sub(rb"\x1b\[([0-9:;]*)m", normalize, data))
 
 
 def editor_region(terminal):
@@ -144,6 +160,16 @@ class PosixTerminal:
     def click(self, row, column):
         # SGR mouse reports, parsed by ncurses rather than by application code.
         self.send(f"\x1b[<0;{column + 1};{row + 1}M\x1b[<0;{column + 1};{row + 1}m")
+
+    def wait_cursor(self, row, column, seconds=3):
+        expected = (row, column)
+        deadline = time.monotonic() + seconds
+        while (
+            self.screen.cursor.y,
+            self.screen.cursor.x,
+        ) != expected and time.monotonic() < deadline:
+            self.read(0.03)
+        return self.screen.cursor.y, self.screen.cursor.x
 
     def return_to_account(self):
         """Explicitly return with F6 for tests of account-only controls."""
@@ -475,10 +501,11 @@ class TerminalTests(unittest.TestCase):
             try:
                 terminal.send(server.url + "\tjosé")
                 terminal.click(9, 14)
-                self.assertEqual((terminal.screen.cursor.y, terminal.screen.cursor.x), (9, 14))
+                self.assertEqual(terminal.wait_cursor(9, 14), (9, 14))
                 terminal.send("X")
                 terminal.click(0, 0)
-                self.assertEqual((terminal.screen.cursor.y, terminal.screen.cursor.x), (9, 15))
+                terminal.read(0.2)
+                self.assertEqual(terminal.wait_cursor(9, 15), (9, 15))
                 terminal.send("\x7f\tSynthetic!123")
                 terminal.click(18, 14)
                 terminal.return_to_account()

@@ -105,6 +105,15 @@ def smoke(stage, version, architecture):
     for module in modules:
         if module.suffix in (".dll", ".so") and binary_arch(module) != architecture:
             raise RuntimeError("Backend architecture mismatch")
+    worker = (
+        binary.parent
+        / "papo-backends"
+        / ("papo-media-worker.exe" if binary.suffix == ".exe" else "papo-media-worker")
+    )
+    if not worker.is_file():
+        raise RuntimeError("Installation is missing the media helper")
+    if binary_arch(worker) != architecture:
+        raise RuntimeError("Media helper architecture mismatch")
 
 
 def source_archive(output, version):
@@ -155,6 +164,8 @@ def source_archive(output, version):
             completed = subprocess.run(
                 [
                     "git",
+                    "-c",
+                    f"safe.directory={ROOT}",
                     "archive",
                     "--format=tar",
                     "--prefix=" + f"papo-tui-{version}/",

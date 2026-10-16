@@ -37,144 +37,8 @@ jobs:
     with:
       ref: ${{ needs.identity.outputs.tag }}
       release: true
-  linux:
-    needs: identity
-    strategy:
-      fail-fast: false
-      matrix:
-        runner: [ubuntu-24.04, ubuntu-24.04-arm]
-        include:
-          - runner: ubuntu-24.04
-            arch: x86_64
-          - runner: ubuntu-24.04-arm
-            arch: aarch64
-        image: ['ubuntu:24.04', 'debian:13', 'fedora:44']
-    runs-on: ${{ matrix.runner }}
-    container: ${{ matrix.image }}
-    steps:
-      - name: Bootstrap checkout prerequisites
-        run: |
-          if command -v apt-get >/dev/null; then
-            apt-get update && apt-get install -y git ca-certificates
-          else
-            dnf install -y git ca-certificates
-          fi
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.identity.outputs.tag }}
-      - run: sh dist/linux-deps.sh
-      - run: python3 -m venv build/test-env && build/test-env/bin/pip install -r requirements-dev.txt
-      - uses: actions/cache@v4
-        with:
-          path: |
-            build/source-cache
-            build/resources
-            build/release-deps
-          key: release-${{ matrix.image }}-${{ matrix.arch }}-${{ hashFiles('dist/dependencies.json', 'dist/bootstrap.py', 'dist/resources.json') }}
-      - run: build/test-env/bin/python dist/build.py --build build/release --prefix build/release-deps
-        env:
-          PATH: ${{ github.workspace }}/build/test-env/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-      - name: Package and verify native distribution
-        env:
-          RELEASE_VERSION: ${{ needs.identity.outputs.version }}
-          BUILD_IMAGE: ${{ matrix.image }}
-          BUILD_ARCH: ${{ matrix.arch }}
-        run: |
-          case "$BUILD_IMAGE" in
-            ubuntu:*) flavor=ubuntu; formats=deb,appimage,arch ;;
-            debian:*) flavor=debian; formats=deb ;;
-            fedora:*) flavor=fedora; formats=rpm ;;
-          esac
-          if [ "$flavor" = ubuntu ]; then
-            apt-get install -y makepkg pacman-package-manager zstd
-            useradd -m builder
-            chown -R builder:builder "$GITHUB_WORKSPACE"
-            runuser -u builder -- build/test-env/bin/python dist/package.py --build build/release --output build/artifacts \
-              --formats "$formats" --arch "$BUILD_ARCH" --flavor "$flavor" --dependency-prefix build/release-deps
-          else
-            build/test-env/bin/python dist/package.py --build build/release --output build/artifacts \
-              --formats "$formats" --arch "$BUILD_ARCH" --flavor "$flavor" --dependency-prefix build/release-deps
-          fi
-          if [ "$flavor" = fedora ]; then
-            dnf install -y "build/artifacts/papo-tui-$RELEASE_VERSION-fedora-$BUILD_ARCH.rpm"
-            papo-tui --version
-            PYTHONPATH="$PWD/tests/support:$PWD/tests/terminal:$PWD/tests/integration:$PWD" \
-              build/test-env/bin/python tests/terminal/test_installed.py /usr/bin/papo-tui
-            dnf remove -y papo-tui
-          else
-            apt-get install -y "./build/artifacts/papo-tui-$RELEASE_VERSION-$flavor-$BUILD_ARCH.deb"
-            papo-tui --version
-            PYTHONPATH="$PWD/tests/support:$PWD/tests/terminal:$PWD/tests/integration:$PWD" \
-              build/test-env/bin/python tests/terminal/test_installed.py /usr/bin/papo-tui
-            apt-get remove -y papo-tui
-          fi
-      - uses: actions/upload-artifact@v4
-        with:
-          name: packages-${{ strategy.job-index }}
-          path: build/artifacts/*
-          if-no-files-found: error
-  flatpak:
-    needs: identity
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: ubuntu-24.04
-            arch: x86_64
-          - runner: ubuntu-24.04-arm
-            arch: aarch64
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.identity.outputs.tag }}
-      - run: |
-          sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder python3-venv
-          python3 -m venv build/test-env
-          build/test-env/bin/pip install -r requirements-dev.txt
-          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-          flatpak install --user --noninteractive flathub org.freedesktop.Platform//26.08 org.freedesktop.Sdk//26.08
-      - run: PYTHON=build/test-env/bin/python dbus-run-session -- sh dist/flatpak/build.sh '${{ matrix.arch }}' '${{ needs.identity.outputs.version }}'
-      - uses: actions/upload-artifact@v4
-        with:
-          name: flatpak-${{ matrix.arch }}
-          path: build/artifacts/*
-          if-no-files-found: error
-  arch-install:
-    needs: [identity, linux]
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: ubuntu-24.04
-            arch: x86_64
-          - runner: ubuntu-24.04-arm
-            arch: aarch64
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.identity.outputs.tag }}
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: packages-*
-          path: build/artifacts
-          merge-multiple: true
-      - name: Install and remove on Arch Linux
-        if: matrix.arch == 'x86_64'
-        env:
-          RELEASE_VERSION: ${{ needs.identity.outputs.version }}
-        run: |
-          docker run --rm -v "$PWD/build/artifacts:/packages:ro" archlinux:base \
-            sh -c 'pacman -Syu --noconfirm && pacman -U --noconfirm "/packages/papo-tui-"$1"-arch-x86_64.pkg.tar.zst" && papo-tui --version && papo-tui --help >/dev/null && pacman -R --noconfirm papo-tui' sh "$RELEASE_VERSION"
-      - name: Install and remove on Arch Linux ARM
-        if: matrix.arch == 'aarch64'
-        run: |
-          sudo apt-get update && sudo apt-get install -y libarchive-tools
-          sh dist/arch/verify.sh 'build/artifacts/papo-tui-${{ needs.identity.outputs.version }}-arch-aarch64.pkg.tar.zst'
   publish:
-    needs: [identity, checks, linux, flatpak, arch-install]
+    needs: [identity, checks]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -185,10 +49,6 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           pattern: packages-*
-          path: build/downloads
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: flatpak-*
           path: build/downloads
       - name: Assemble and verify checksums
         env:
@@ -208,4 +68,4 @@ jobs:
             gh release create "$RELEASE_TAG" --draft --verify-tag --title "$RELEASE_TAG" --notes-file "releases/$RELEASE_TAG.md"
           fi
           gh release upload "$RELEASE_TAG" build/artifacts/* --clobber
-          gh release edit "$RELEASE_TAG" --draft=false --latest
+          gh release edit "$RELEASE_TAG" --title "$RELEASE_TAG" --notes-file "releases/$RELEASE_TAG.md" --draft=false --latest

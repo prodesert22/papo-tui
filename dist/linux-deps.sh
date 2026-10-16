@@ -18,7 +18,7 @@ elif command -v dnf >/dev/null 2>&1; then
         nasm python3 python3-pip python3-devel curl git openssl-devel zlib-devel ncurses-devel \
         glib2-devel pango-devel cairo-devel fontconfig-devel pulseaudio-libs-devel alsa-lib-devel \
         libgcrypt-devel libass-devel libplacebo-devel ffmpeg-free openssl dbus-daemon libsecret-devel \
-        google-noto-color-emoji-fonts patchelf rpm-build libarchive desktop-file-utils appstream dnf5-plugins
+        google-noto-color-emoji-fonts kitty-terminfo patchelf rpm-build libarchive desktop-file-utils appstream dnf5-plugins
 else
     echo 'Use a supported Debian/Ubuntu or Fedora packaging host.' >&2
     exit 1

@@ -7,7 +7,7 @@ mkdir -p build/artifacts build/flatpak
 "$python" -c 'import sys; sys.path.insert(0,"dist"); from package import source_archive; from pathlib import Path; source_archive(Path("build/artifacts"),sys.argv[1])' "$version"
 source_archive="$(pwd)/build/artifacts/papo-tui-$version-source.tar.gz"
 "$python" dist/flatpak/manifest.py --source "$source_archive" --output build/flatpak/manifest.json
-flatpak-builder --user --force-clean --disable-rofiles-fuse --bundle-sources --repo=build/flatpak/repo \
+flatpak-builder --user --force-clean --disable-rofiles-fuse --bundle-sources --repo=build/flatpak/repo --jobs="${PAPO_BUILD_JOBS:-2}" \
     --default-branch=stable --arch="$architecture" build/flatpak/app build/flatpak/manifest.json
 flatpak build-bundle --arch="$architecture" --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo \
     build/flatpak/repo "build/artifacts/papo-tui-$version-flatpak-$architecture.flatpak" io.github.prodesert22.PapoTUI stable

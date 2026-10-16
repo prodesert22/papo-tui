@@ -28,6 +28,11 @@ Enter the instance URL and your credentials. Use **Tab** to move focus,
 
 The [usage guide](docs/uso.md) covers essential controls and common problems.
 
+Press **F2**, or click the gear beside your name below the channels, to choose
+an application mode: **Normal** uses terminal graphics with a Chafa fallback;
+**Light** draws images and animated GIFs with Chafa characters and disables
+video; **Ultralight** uses text only and releases the media libraries.
+
 ## Build
 
 Install the [dependencies](docs/instalacao.md#build-from-source) and run:
@@ -43,7 +48,7 @@ The service contract is in [openapi.yml](openapi.yml).
 
 ## Releases and license
 
-[Changelog](CHANGELOG.md) · [Full release notes](releases/v0.1.2.md)
+[Changelog](CHANGELOG.md) · [Full release notes](releases/v0.2.0.md)
 
 Original code is licensed under [MIT](LICENSE). Bundled libraries and data
 retain their [upstream licenses](THIRD_PARTY_NOTICES.md).

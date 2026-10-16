@@ -29,10 +29,17 @@ class SessionTerminal(unittest.TestCase):
                 terminal.send(server.url + "\tjosé\tSynthetic!123\tSynthetic!123\n")
                 self.wait(terminal, "Conta criada")
                 self.assertFalse(any(r[1].endswith("/auth/login") for r in server.requests))
+                # Status text can arrive before ncurses finishes restoring the
+                # cursor; wait for the completed registration-to-login frame.
+                deadline = time.monotonic() + 5
+                while (
+                    terminal.screen.cursor.y != 12 or terminal.screen.cursor.hidden
+                ) and time.monotonic() < deadline:
+                    terminal.read(0.03)
                 self.assertEqual(terminal.screen.cursor.y, 12)
                 terminal.send("Synthetic!123\n")
                 terminal.return_to_account()
-                self.wait(terminal, "Login realizado")
+                self.wait(terminal, "Tempo real conectado")
                 self.wait(terminal, "[Renovar]")
                 self.button(terminal, "[Renovar]")
                 deadline = time.monotonic() + 3

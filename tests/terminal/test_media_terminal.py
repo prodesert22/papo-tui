@@ -565,17 +565,20 @@ class MediaTerminal(unittest.TestCase):
                     self.assertTrue(t.close())
                 self.assertEqual(list(Path(directory).iterdir()), [])
 
-    def test_no_sixel_keeps_metadata_without_downloading(self):
+    def test_no_graphics_protocol_uses_chafa_fallback(self):
         with self.serve(self.images["png"], "image/png") as server:
             t = self.open(server, sixel=False)
             try:
-                self.wait(t, "Fixture")
-                t.read(0.2)
-                self.assertFalse(any("/attachments/" in r[1] for r in server.requests))
-                t.send("\x1b[18~")
-                self.wait(t, "Este terminal não oferece")
-                t.send("\x1b")
-                self.wait(t, "Conversar em #")
+                deadline = time.monotonic() + 5
+                while (
+                    not any("/attachments/" in r[1] for r in server.requests)
+                    and time.monotonic() < deadline
+                ):
+                    t.read(0.03)
+                self.assertTrue(any("/attachments/" in r[1] for r in server.requests))
+                t.send("Draft with Chafa")
+                self.wait(t, "Draft with Chafa")
+                self.assertEqual(t.stream.frames, [])
             finally:
                 self.assertTrue(t.close())
 
@@ -615,6 +618,7 @@ class MediaTerminal(unittest.TestCase):
         ):
             t = self.open(server, protocol="kitty", environment={"TMPDIR": directory})
             try:
+                self.wait(t, "Mensagem 0001")
                 t.send("Rascunho Kitty\x1b\x1b[18~")
                 self.wait_frames(t, 2)
                 self.wait(t, "Reproduzindo")
@@ -991,16 +995,20 @@ class MediaTerminal(unittest.TestCase):
             finally:
                 self.assertTrue(t.close())
 
-    def test_kitty_rejected_probe_keeps_text_without_downloads(self):
+    def test_kitty_rejected_probe_keeps_chafa_fallback(self):
         with self.serve(self.images["png"], "image/png") as server:
             t = self.open(server, sixel=False)
             try:
                 query = re.search(rb"\x1b_Gi=(\d+),s=1,v=1,a=q", t.output)
                 self.assertIsNotNone(query)
                 t.send("\x1b_Gi=" + query[1].decode() + ";ENOTSUP\x1b\\\x1b[6;16;8t")
-                self.wait(t, "Fixture")
-                t.read(0.2)
-                self.assertFalse(any("/attachments/" in r[1] for r in server.requests))
+                deadline = time.monotonic() + 5
+                while (
+                    not any("/attachments/" in r[1] for r in server.requests)
+                    and time.monotonic() < deadline
+                ):
+                    t.read(0.03)
+                self.assertTrue(any("/attachments/" in r[1] for r in server.requests))
                 self.assertNotIn("ENOTSUP", "\n".join(t.screen.display))
                 self.assertFalse(t.stream.frames)
             finally:
@@ -1313,6 +1321,7 @@ class MediaTerminal(unittest.TestCase):
                 with self.serve(path.read_bytes(), "video/mp4") as server:
                     t = self.open(server, protocol="kitty")
                     try:
+                        self.wait(t, "Mensagem 0001")
                         t.send("\x1b[18~")
                         self.wait_frames(t, 2)
                         scale = min(320 / original[0], 176 / original[1])

@@ -2,6 +2,7 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 #include "ui/media/icons.h"
+#include "config/app_mode.h"
 #include "model/conversation/history.h"
 #include "model/text/emoji_catalog.h"
 #include "net/clock.h"
@@ -31,7 +32,7 @@ struct icon_view {
     uint64_t generation, tick;
     occurrence *occurrences;
     icon_placement *placements;
-    size_t placement_count, placement_capacity;
+    size_t placement_count, placement_capacity, occurrence_capacity;
     char scope[160];
     size_t offset;
     bool font;
@@ -73,11 +74,6 @@ icon_view *icons_create(chat_assets *assets, media_cache *store)
     icon_view *v = calloc(1, sizeof(*v));
     if (!v)
         return NULL;
-    v->occurrences = calloc(ICON_ENTRIES, sizeof(*v->occurrences));
-    if (!v->occurrences) {
-        free(v);
-        return NULL;
-    }
     v->assets = assets;
     v->store = store;
     v->font = emoji_image_available();
@@ -92,6 +88,14 @@ void icons_begin(icon_view *v)
     v->placement_count = 0;
     v->overlay_rows = 0;
     ++v->tick;
+    if (app_mode_get() == APP_MODE_ULTRALIGHT) {
+        free(v->occurrences);
+        v->occurrences = NULL;
+        v->occurrence_capacity = 0;
+        free(v->placements);
+        v->placements = NULL;
+        v->placement_capacity = 0;
+    }
 }
 void icons_begin_editor(icon_view *v)
 {
@@ -189,6 +193,10 @@ bool icons_literal(const uint32_t *text, size_t at)
 size_t icons_resolve(void *context, const uint32_t *text, size_t length, size_t at, uint32_t *icon)
 {
     icon_view *v = context;
+    if (v)
+        v->font = app_mode_get() == APP_MODE_NORMAL;
+    if (app_mode_get() == APP_MODE_ULTRALIGHT)
+        return 0;
     if (!v || at >= length)
         return 0;
     if (text[at] == ':' && !icons_literal(text, at)) {
@@ -222,17 +230,30 @@ size_t icons_resolve(void *context, const uint32_t *text, size_t length, size_t 
 static uint32_t occurrence_id(icon_view *v, uint64_t key)
 {
     occurrence *slot = NULL;
-    for (size_t i = 0; i < ICON_ENTRIES; ++i) {
+    for (size_t i = 0; i < v->occurrence_capacity; ++i) {
         occurrence *o = &v->occurrences[i];
         if (o->id && o->key == key) {
             o->used = v->tick;
             return o->id;
         }
-        if (!o->id && !slot)
+        if (!o->id) {
             slot = o;
+            break;
+        }
+    }
+    if (!slot && v->occurrence_capacity < ICON_ENTRIES) {
+        size_t previous = v->occurrence_capacity;
+        size_t capacity = previous ? previous * 2 : 64;
+        occurrence *grown = realloc(v->occurrences, capacity * sizeof(*grown));
+        if (grown) {
+            memset(grown + previous, 0, (capacity - previous) * sizeof(*grown));
+            v->occurrences = grown;
+            v->occurrence_capacity = capacity;
+            slot = &grown[previous];
+        }
     }
     if (!slot)
-        for (size_t i = 0; i < ICON_ENTRIES; ++i) {
+        for (size_t i = 0; i < v->occurrence_capacity; ++i) {
             occurrence *o = &v->occurrences[i];
             if (o->used < v->tick && (!slot || o->used < slot->used))
                 slot = o;
