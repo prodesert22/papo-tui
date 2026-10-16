@@ -454,7 +454,7 @@ void graphics_frame_prepare(void)
         chafa |= desired[i].protocol == GRAPHICS_CHAFA;
     if (!chafa)
         return;
-    int saved_y, saved_x;
+    int saved_y = -1, saved_x = -1;
     getsyx(saved_y, saved_x);
     int palette[16], palette_size = COLORS < 16 ? COLORS : 16;
     if (COLORS < 256)

@@ -5,6 +5,7 @@ import importlib.util
 import io
 import json
 from pathlib import Path
+import re
 import sys
 import tarfile
 import tempfile
@@ -42,6 +43,25 @@ class DistributionTests(unittest.TestCase):
         ffmpeg = next(x for x in manifest["modules"] if x["name"] == "ffmpeg")
         self.assertIn("--disable-gpl", ffmpeg["config-opts"])
         self.assertIn("--disable-nonfree", ffmpeg["config-opts"])
+        locked = json.loads((ROOT / "dist/dependencies.json").read_text())["sources"]
+        modules = {x["name"]: x for x in manifest["modules"]}
+        for entry in locked:
+            self.assertEqual(
+                modules[entry["name"]]["sources"][0]["dest-filename"], entry["archive"]
+            )
+
+    def test_windows_libsixel_patch_is_repeatable_and_uses_native_timer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory)
+            (source / "src").mkdir()
+            encoder = source / "src/encoder.c"
+            encoder.write_text('#include "rgblookup.h"\nvoid encode(void) { nanosleep(0, 0); }\n')
+            bootstrap.patch_windows_libsixel(source)
+            first = encoder.read_text()
+            bootstrap.patch_windows_libsixel(source)
+            self.assertEqual(encoder.read_text(), first)
+            self.assertIn("CreateWaitableTimer", first)
+            self.assertIn("#define nanosleep sixel_windows_nanosleep", first)
 
     def test_archive_rejects_traversal_and_external_symlinks(self):
         for name, link in [
@@ -75,18 +95,26 @@ class DistributionTests(unittest.TestCase):
             self.assertFalse((root / "target.part").exists())
 
     def test_semver_and_incomplete_assets_fail_closed(self):
-        self.assertEqual(release.validate_tag("v0.1.2"), "0.1.2")
-        for tag in ("0.1.2", "v01.1.0", "v0.1", "v0.1.0-beta", "v0.1.1", "v0.1.3"):
+        match = re.search(
+            r"project\(\s*papo_tui\s+VERSION\s+([^\s)]+)",
+            (ROOT / "CMakeLists.txt").read_text(),
+        )
+        self.assertIsNotNone(match)
+        version = match.group(1)
+        self.assertEqual(release.validate_tag("v" + version), version)
+        major, minor, patch = (int(part) for part in version.split("."))
+        wrong_version = f"v{major + 1}.{minor}.{patch}"
+        for tag in ("0.1.2", "v01.1.0", "v0.1", "v0.1.0-beta", wrong_version):
             with self.subTest(tag=tag), self.assertRaises(ValueError):
                 release.validate_tag(tag)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             with self.assertRaises(ValueError):
-                release.check_assets(root, "0.1.2")
+                release.check_assets(root, version)
             self.assertFalse((root / "SHA256SUMS").exists())
-            for name in release.assets("0.1.2"):
+            for name in release.assets(version):
                 (root / name).write_bytes(name.encode())
-            release.check_assets(root, "0.1.2")
+            release.check_assets(root, version)
             for line in (root / "SHA256SUMS").read_text().splitlines():
                 digest, name = line.split("  ", 1)
                 self.assertEqual(digest, hashlib.sha256((root / name).read_bytes()).hexdigest())

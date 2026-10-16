@@ -17,7 +17,14 @@ def module(entry):
     name = entry["name"]
     result = {
         "name": name,
-        "sources": [{"type": "archive", "url": entry["url"], "sha256": entry["sha256"]}],
+        "sources": [
+            {
+                "type": "archive",
+                "url": entry["url"],
+                "sha256": entry["sha256"],
+                "dest-filename": entry["archive"],
+            }
+        ],
     }
     if entry["buildsystem"] == "cmake":
         result["buildsystem"] = "cmake-ninja"
