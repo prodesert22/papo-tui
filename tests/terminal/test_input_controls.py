@@ -541,6 +541,7 @@ class InputControls(unittest.TestCase):
             t = self.open(server)
             wrap = t.screen.columns - 40
             t.send("a" * wrap + "bravo")
+            self.wait_field(t, "bravo")
             first, end = editor_region(t)
             self.assertEqual(end - first, 2)
             ordinary = t.screen.buffer[first][29]
@@ -553,8 +554,9 @@ class InputControls(unittest.TestCase):
             t.send("\x1b[99;6u")
             self.assertEqual(self.copied(t), "aaaabra")
             t.send("X")
-            self.assertIn("Xvo", self.field(t))
+            self.wait_field(t, "Xvo")
             t.send("\x03um\x0edois\x0etrês")
+            self.wait_field(t, "três")
             first, _ = editor_region(t)
             self.mouse(t, first + 2, 32, 0)
             self.mouse(t, first, 29, 32)

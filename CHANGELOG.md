@@ -5,6 +5,11 @@ full details are available in `releases/`.
 
 ## Unreleased
 
+- Fix Windows Unicode input with a private ncurses console compatibility patch,
+  preserving accented text, characters that overlap function-key codes and emojis.
+- Wait for editor text before asserting soft wraps and dragging selections in
+  terminal tests, including slower sanitizer builds.
+
 ## [0.2.0]
 
 - Add Normal, Light and Ultralight application modes in the F2 settings modal.

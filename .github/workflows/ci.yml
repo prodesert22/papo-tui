@@ -177,7 +177,7 @@ jobs:
             build/source-cache
             build/resources
             build/release-deps
-          key: windows-${{ matrix.system }}-${{ hashFiles('dist/dependencies.json', 'dist/bootstrap.py', 'dist/resources.json') }}
+          key: windows-${{ matrix.system }}-${{ hashFiles('dist/dependencies.json', 'dist/bootstrap.py', 'dist/patches/**', 'dist/resources.json') }}
           restore-keys: |
             windows-${{ matrix.system }}-
       - name: Build and test Windows

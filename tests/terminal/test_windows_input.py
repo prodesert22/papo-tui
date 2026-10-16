@@ -29,7 +29,8 @@ class WindowsInput(unittest.TestCase):
 
         try:
             until("PAPO_NATIVE_READY")
-            payload = "aé界😀z"
+            # U+0103 collides with KEY_UP in the native console driver.
+            payload = "aéăŁ界😀z"
             child.write(payload + "\r")
             until("PAPO_CURSES_READY")
             child.write(payload + "\x1b")

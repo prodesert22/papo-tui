@@ -181,6 +181,35 @@ def build(entry, source, work, prefix, jobs, env):
         ]
         if name == "chafa":
             options += ["--without-imagemagick", "--without-librsvg"]
+        elif name == "ncurses":
+            run(
+                "patch",
+                "-p1",
+                "--forward",
+                "--input",
+                unix_path(ROOT / "dist/patches/ncurses-win32-wide-input.patch"),
+            )
+            options = [
+                "--prefix=" + unix_path(prefix),
+                "--with-shared",
+                "--without-normal",
+                "--without-debug",
+                "--enable-widec",
+                "--enable-term-driver",
+                "--enable-ext-colors",
+                "--enable-ext-mouse",
+                "--enable-sp-funcs",
+                "--enable-interop",
+                "--enable-pc-files",
+                "--without-cxx",
+                "--without-ada",
+                "--without-tests",
+                "--without-progs",
+                "--without-manpages",
+                "--disable-db-install",
+                "--disable-home-terminfo",
+                "--with-pkg-config-libdir=" + unix_path(prefix / "lib/pkgconfig"),
+            ]
         run("sh", unix_path(source / "configure"), *options, cwd=binary)
         run("make", "-j", jobs, cwd=binary)
         run("make", "install", cwd=binary)
@@ -301,6 +330,9 @@ def main():
             "compatibility_patch": (
                 "windows-nanosleep-v1"
                 if os.name == "nt" and entry["name"] == "libsixel"
+                else "windows-wide-input-v1-"
+                + sha256(ROOT / "dist/patches/ncurses-win32-wide-input.patch")
+                if os.name == "nt" and entry["name"] == "ncurses"
                 else "windows-native-threads-v1"
                 if os.name == "nt" and entry["name"] == "mpv"
                 else None

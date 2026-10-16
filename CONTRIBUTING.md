@@ -13,6 +13,15 @@ or custom password storage is needed. pywinpty is used only by Windows tests
 with ConPTY. gcovr and Ruff are development tools. Recipes record sources,
 versions and hashes.
 
+Windows builds use a private ncurses 6.6 with the compatibility patch in
+`dist/patches/ncurses-win32-wide-input.patch`. The upstream console driver passes
+UTF-16 units into the byte/key-code queue: `wget_wch` then misreads accented
+characters as UTF-8 and other Unicode units as function keys. The patch tags
+native non-ASCII units inside that queue and removes the tag in the public
+narrow/wide readers. The existing input adapter joins surrogate pairs. It keeps
+ncurses sequence and mouse decoding, adds no input parser, and leaves Linux on
+its system ncurses. Dependency source kits include the patch and recipe.
+
 Application modes reuse the existing profile configuration, ncurses controls,
 media cache, downloads and Chafa dependency. Configuration schema 4 adds
 `app_mode`; versions 1–3 migrate with Normal as the default. Settings are saved

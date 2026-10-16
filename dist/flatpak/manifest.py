@@ -131,6 +131,8 @@ def manifest(source, digest):
     ]
     modules = []
     for entry in entries:
+        if "posix" not in entry.get("platforms", ["posix"]):
+            continue
         if entry["name"] == "libplacebo":
             modules.extend(module(e) for e in build_dependencies)
         modules.append(module(entry))

@@ -1,0 +1,33 @@
+--- a/ncurses/curses.priv.h
++++ b/ncurses/curses.priv.h
+@@ -2732,0 +2733,3 @@
++/* Distinguish native UTF-16 input units from ncurses key codes until the
++ * public narrow/wide input wrapper selects the character representation. */
++#define NCURSES_WIN32_WIDE 0x10000000
+--- a/ncurses/tinfo/lib_win32con.c
++++ b/ncurses/tinfo/lib_win32con.c
+@@ -1068,0 +1069,4 @@
++#if USE_WIDEC_SUPPORT
++		if (inp_rec.Event.KeyEventChar >= 128)
++		    *buf = (int) inp_rec.Event.KeyEventChar | NCURSES_WIN32_WIDE;
++#endif
+--- a/ncurses/widechar/lib_get_wch.c
++++ b/ncurses/widechar/lib_get_wch.c
+@@ -75,0 +76,7 @@
++#ifdef _NC_WINDOWS
++	    } else if (value & NCURSES_WIN32_WIDE) {
++		/* Console input is UTF-16, not a byte of a UTF-8 sequence. */
++		value &= ~NCURSES_WIN32_WIDE;
++		code = OK;
++		break;
++#endif
+--- a/ncurses/base/lib_getch.c
++++ b/ncurses/base/lib_getch.c
+@@ -656,0 +657,3 @@
++#ifdef _NC_WINDOWS
++    value &= ~NCURSES_WIN32_WIDE;
++#endif
+@@ -673,0 +677,3 @@
++#ifdef _NC_WINDOWS
++    value &= ~NCURSES_WIN32_WIDE;
++#endif

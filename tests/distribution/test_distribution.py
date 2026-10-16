@@ -60,6 +60,9 @@ class DistributionTests(unittest.TestCase):
         locked = json.loads((ROOT / "dist/dependencies.json").read_text())["sources"]
         modules = {x["name"]: x for x in manifest["modules"]}
         for entry in locked:
+            if "posix" not in entry.get("platforms", ["posix"]):
+                self.assertNotIn(entry["name"], modules)
+                continue
             self.assertEqual(
                 modules[entry["name"]]["sources"][0]["dest-filename"], entry["archive"]
             )

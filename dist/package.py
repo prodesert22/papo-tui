@@ -213,6 +213,7 @@ def dependency_sources(output, version, architecture, flavor, prefix, cache, sta
         shutil.copy2(ROOT / "dist/dependencies.json", kit / "dist/dependencies.json")
         shutil.copy2(ROOT / "dist/resources.json", kit / "dist/resources.json")
         shutil.copy2(ROOT / "dist/resources.py", kit / "dist/resources.py")
+        shutil.copytree(ROOT / "dist/patches", kit / "dist/patches")
         resources = ROOT / "build/resources"
         if resources.is_dir():
             shutil.copytree(resources, kit / "font-resources")
