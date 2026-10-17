@@ -13,7 +13,7 @@ foreach(
         "unicode-portability-test|tests/unit/test_unicode_portability.c|papo_send_editor|unicode-portability"
         "runtime-test|tests/unit/test_runtime.c|papo_platform|platform-runtime"
         "emoji-completion-test|tests/unit/test_emoji_completion.c|papo_media|emoji-completion"
-        "windows-storage-test|tests/unit/test_windows_storage.c|papo_auth|windows-storage")
+        "windows-storage-test|tests/unit/test_windows_storage.c|papo_sessions|windows-storage")
     string(REPLACE "|" ";" fields "${spec}")
     list(GET fields 0 target)
     list(GET fields 1 source)

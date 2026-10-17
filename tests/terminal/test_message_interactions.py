@@ -212,6 +212,7 @@ class MessageInteractions(unittest.TestCase):
                 self.assertLessEqual(original - border, 2)
                 self.wait(terminal, "Esc cancelar resposta")
                 terminal.send("\x1b")
+                self.settled(terminal, lambda: "Respondendo" not in self.screen(terminal))
                 self.assertNotIn("Respondendo", self.screen(terminal))
                 self.assertIn("Foco: Mensagem", self.screen(terminal))
                 self.assertIn("Preserved draft", self.editor_text(terminal))
