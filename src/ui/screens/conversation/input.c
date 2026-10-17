@@ -10,7 +10,8 @@ size_t conversation_list_index(view *ui, size_t row)
 {
     for (size_t i = 0; i < history_channel_count(ui->model); ++i) {
         json_t *c = history_channel(ui->model, i);
-        if (json_is_true(json_object_get(c, "_dm")) != ui->list_dms)
+        if (!history_channel_visible(ui->model, i) ||
+            json_is_true(json_object_get(c, "_dm")) != ui->list_dms)
             continue;
         if (!row--)
             return i;
@@ -22,7 +23,8 @@ size_t conversation_list_count(view *ui)
 {
     size_t n = 0;
     for (size_t i = 0; i < history_channel_count(ui->model); ++i)
-        if (json_is_true(json_object_get(history_channel(ui->model, i), "_dm")) == ui->list_dms)
+        if (history_channel_visible(ui->model, i) &&
+            json_is_true(json_object_get(history_channel(ui->model, i), "_dm")) == ui->list_dms)
             ++n;
     return n;
 }

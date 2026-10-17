@@ -53,6 +53,7 @@ struct history {
     json_t *users, *directory, *queried, *summary_ids;
     size_t user_bytes;
     uint64_t users_revision, messages_revision;
+    uint64_t permission_revision, permission_channels;
     bool users_active, users_complete, users_failed, users_partial;
     char users_time[65], users_id[37], users_notice[192];
     json_t *channels, *messages, *read_messages;

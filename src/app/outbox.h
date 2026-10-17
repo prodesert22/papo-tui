@@ -22,7 +22,9 @@ typedef enum {
     OUTBOX_CONFIRM_DUPLICATION,
     OUTBOX_NO_SESSION,
     OUTBOX_FULL,
-    OUTBOX_INVALID
+    OUTBOX_INVALID,
+    OUTBOX_FORBIDDEN,
+    OUTBOX_PERMISSIONS_PENDING
 } outbox_submit_result;
 typedef struct outbox outbox;
 typedef struct {

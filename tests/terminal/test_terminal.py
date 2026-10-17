@@ -472,27 +472,18 @@ class TerminalTests(unittest.TestCase):
                 terminal.click(21, 24)
                 terminal.return_to_account()
                 terminal.wait_text("Login realizado")
-                self.assertEqual(
-                    len(
-                        [
-                            r
-                            for r in server.requests
-                            if not r[1].split("?")[0].endswith(("/dms", "/notifications", "/ws"))
-                        ]
-                    ),
-                    5,
-                )
+                # Permission metadata shares this queue and may finish before
+                # the account screen. Authentication itself must occur once.
+                for endpoint in ("/auth/login_server", "/auth/login"):
+                    self.assertEqual(
+                        sum(r[0] == "POST" and r[1].endswith(endpoint) for r in server.requests), 1
+                    )
+                self.assertTrue(any(r[1].endswith("/auth/whoami") for r in server.requests))
                 terminal.click(21, 24)
                 terminal.wait_text("Você saiu da conta")
                 self.assertEqual(
-                    len(
-                        [
-                            r
-                            for r in server.requests
-                            if not r[1].split("?")[0].endswith(("/dms", "/notifications", "/ws"))
-                        ]
-                    ),
-                    6,
+                    sum(r[0] == "POST" and r[1].endswith("/auth/logout") for r in server.requests),
+                    1,
                 )
                 self.assertNotIn(b"Synthetic!123", terminal.output)
                 self.assertNotIn(b"Server!123", terminal.output)

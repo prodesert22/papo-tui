@@ -48,6 +48,19 @@ static bool begin_refresh(auth_client *client)
 
 bool auth_refresh(auth_client *client)
 {
+    /* Explicit session renewal takes precedence over an internal metadata read.
+     * Preserve its refresh intent, external response ownership and global budget. */
+    if (auth_has_session(client) &&
+        (client->operation == AUTH_PERMISSION_ROLES ||
+         client->operation == AUTH_PERMISSION_CHANNELS ||
+         client->operation == AUTH_PERMISSION_SERVER) &&
+        (client->queued || client->attached)) {
+        client->permission_wanted |= client->operation == AUTH_PERMISSION_ROLES      ? 2U
+                                     : client->operation == AUTH_PERMISSION_CHANNELS ? 4U
+                                                                                     : 1U;
+        auth_internal_detach(client);
+        client->state = AUTH_READY;
+    }
     if (!auth_has_session(client) || client->queued || client->attached ||
         client->state != AUTH_READY || client->api_path || client->logout_requested)
         return false;

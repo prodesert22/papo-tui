@@ -280,7 +280,9 @@ bool history_reaction_mine(const json_t *message, const json_t *emoji)
 bool history_react(history *h, const char *message, const json_t *emoji, bool remove)
 {
     if (!h || !h->active || h->recovering || !auth_has_session(h->auth) || !history_uuid(message) ||
-        !history_reaction_valid(emoji) || history_internal_find(h->messages, message) == SIZE_MAX)
+        !history_reaction_valid(emoji) || history_internal_find(h->messages, message) == SIZE_MAX ||
+        history_permission(h, remove ? PERMISSION_READ_CHANNEL : PERMISSION_SEND_MESSAGES) !=
+            PERMISSION_ALLOWED)
         return false;
     struct history_actions *a = actions(h);
     if (!a || a->queued || a->request == ACTION_REACT || a->request == ACTION_EDIT ||
@@ -306,6 +308,9 @@ static bool queue_message_mutation(history *h, const char *message, const char *
         history_internal_find(h->messages, message) == SIZE_MAX)
         return false;
     json_t *m = history_find_message(h, message);
+    if (permissions_message(auth_permissions(h->auth), m, kind == ACTION_EDIT) !=
+        PERMISSION_ALLOWED)
+        return false;
     if (kind == ACTION_EDIT && (strcmp(s(m, "author_id"), auth_user_id(h->auth)) || !content ||
                                 !*content || strlen(content) > 8192))
         return false;
@@ -406,6 +411,26 @@ bool history_internal_actions_dispatch(history *h, bool foreground)
         return false;
     enum action_kind kind = ACTION_IDLE;
     if (a->queued) {
+        json_t *message = history_find_message(h, a->mutation_message);
+        permission_decision decision =
+            a->mutation == ACTION_REACT
+                ? history_permission(h,
+                                     a->remove ? PERMISSION_READ_CHANNEL : PERMISSION_SEND_MESSAGES)
+                : permissions_message(auth_permissions(h->auth), message,
+                                      a->mutation == ACTION_EDIT);
+        if (decision != PERMISSION_ALLOWED) {
+            a->queued = false;
+            json_decref(a->payload);
+            a->payload = NULL;
+            if (a->mutation == ACTION_EDIT) {
+                snprintf(a->edited_message, sizeof(a->edited_message), "%s", a->mutation_message);
+                a->edit_ready = true;
+                a->edit_success = false;
+            }
+            history_internal_notice(h, HISTORY_NOTICE_MUTATION,
+                                    "Permissão indisponível; operação não enviada.");
+            return true;
+        }
         const char *method;
         if (a->mutation == ACTION_REACT) {
             snprintf(path, sizeof(path), "/channels/%s/messages/%s/reactions", a->mutation_channel,
@@ -417,6 +442,9 @@ bool history_internal_actions_dispatch(history *h, bool foreground)
         }
         if (!auth_mutate_json(h->auth, method, path, a->payload))
             return false;
+        auth_guard_message(h->auth, message,
+                           a->remove ? PERMISSION_READ_CHANNEL : PERMISSION_SEND_MESSAGES,
+                           a->mutation == ACTION_EDIT, a->mutation == ACTION_DELETE);
         kind = a->mutation;
         a->queued = false;
     } else if (*a->reactors && a->want_users && a->users_more &&

@@ -154,6 +154,14 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
     const char *type = history_internal_str((json_t *)event, "type");
     if (!type || !history_internal_string_field((json_t *)event, "type", 128, false))
         goto invalid;
+    if (!strcmp(type, "role_add") || !strcmp(type, "role_remove")) {
+        /* Auth's synchronous WS observer has already applied membership before
+         * any queued HTTP mutation can be admitted. */
+        if (!history_uuid(history_internal_str(event, "user_id")) ||
+            !history_uuid(history_internal_str(event, "role_id")))
+            goto invalid;
+        return true;
+    }
     if (!strcmp(type, "avatar_update")) {
         if (!history_internal_string_field((json_t *)event, "user_id", 36, false) ||
             !history_uuid(history_internal_str((json_t *)event, "user_id")))
@@ -168,6 +176,9 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
                                             ? json_object_get(json_object_get(event, "dm"), "user")
                                             : NULL,
                                         false);
+        if (!strcmp(type, "dm_update"))
+            permissions_dm(auth_permissions(h->auth),
+                           history_internal_str(json_object_get(event, "dm"), "id"), true);
         h->want_authors = true;
         return true;
     }

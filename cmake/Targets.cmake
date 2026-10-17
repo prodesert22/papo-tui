@@ -20,6 +20,8 @@ add_library(
     src/net/auth/session.c
     src/net/auth/transport.c
     src/net/auth/validation.c
+    src/model/permissions.c
+    src/net/auth/permissions.c
     src/model/text/mentions.c
     src/model/assets/catalog.c
     src/net/http/download.c

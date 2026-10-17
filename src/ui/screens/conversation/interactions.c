@@ -1,5 +1,9 @@
 #include "ui/screens/conversation/private.h"
 
+enum { SHOW_REACTORS, ADD_REACTION, REPLY, ORIGINAL, EDIT_MESSAGE, DELETE_MESSAGE };
+static bool action_allowed(view *ui, int action, const json_t *message);
+static int menu_actions(view *ui, int items[6]);
+
 const char *conversation_reply_target(view *ui)
 {
     return *ui->editor_channel ? outbox_reply(send_editor_outbox(ui->editor), ui->editor_channel)
@@ -113,6 +117,21 @@ void conversation_interactions_sync(view *ui)
         snprintf(ui->action_channel, sizeof(ui->action_channel), "%s", channel);
         ui->action_generation = generation;
     }
+    json_t *selected_message = history_find_message(ui->model, ui->selected_message);
+    if (ui->delete_confirm && !action_allowed(ui, DELETE_MESSAGE, selected_message)) {
+        conversation_interactions_close(ui);
+        ui->feedback = "Permissão de exclusão removida; operação cancelada.";
+    }
+    if (ui->reaction_picker && !action_allowed(ui, ADD_REACTION, selected_message)) {
+        emoji_picker_close(ui->emojis);
+        ui->reaction_picker = false;
+        ui->feedback = "Permissão para reagir indisponível.";
+    }
+    int available[6];
+    if (ui->context_open && !ui->delete_confirm && !menu_actions(ui, available)) {
+        conversation_interactions_close(ui);
+        ui->feedback = "Permissões ainda não confirmadas. Aguarde ou use Ctrl+R.";
+    }
     char edited[37];
     bool success;
     if (history_take_edit_result(ui->model, edited, &success) && ui->edit_pending &&
@@ -168,8 +187,15 @@ static void open_context(view *ui, const MEVENT *event)
     conversation_interactions_close(ui);
     if (selected_index(ui) == SIZE_MAX)
         return;
+    int available[6];
+    if (!menu_actions(ui, available)) {
+        ui->feedback = "Permissões ainda não confirmadas. Aguarde ou use Ctrl+R.";
+        return;
+    }
     ui->context_open = true;
     ui->menu_selected = 0;
+    ui->menu_cached_count = 0;
+    ui->menu_permissions = 0;
     ui->context_keyboard = !event;
     if (event) {
         ui->menu_y = event->y;
@@ -179,12 +205,10 @@ static void open_context(view *ui, const MEVENT *event)
     emoji_picker_dismiss(ui->emojis);
     ui->dragging = false;
 }
-enum { SHOW_REACTORS, ADD_REACTION, REPLY, ORIGINAL, EDIT_MESSAGE, DELETE_MESSAGE };
 static bool message_is_own(view *ui, const json_t *m)
 {
-    const char *user = auth_user_id(ui->connections->items[ui->active_tab].auth);
-    return user && *user && !strcmp(conversation_str(m, "author_id"), user) &&
-           !history_message_webhook(m);
+    return permissions_message(auth_permissions(ui->connections->items[ui->active_tab].auth), m,
+                               true) == PERMISSION_ALLOWED;
 }
 static bool begin_edit(view *ui, json_t *m)
 {
@@ -210,18 +234,38 @@ static bool begin_edit(view *ui, json_t *m)
     ui->navigating = false;
     return true;
 }
+static bool action_allowed(view *ui, int action, const json_t *message)
+{
+    if (!json_is_object(message))
+        return false;
+    permissions *p = auth_permissions(ui->connections->items[ui->active_tab].auth);
+    if (action == EDIT_MESSAGE || action == DELETE_MESSAGE)
+        return permissions_message(p, message, action == EDIT_MESSAGE) == PERMISSION_ALLOWED;
+    return history_permission(ui->model, action == ADD_REACTION || action == REPLY
+                                             ? PERMISSION_SEND_MESSAGES
+                                             : PERMISSION_READ_CHANNEL) == PERMISSION_ALLOWED;
+}
 static int menu_actions(view *ui, int items[6])
 {
     json_t *m = history_find_message(ui->model, ui->selected_message);
     int count = 0;
-    items[count++] = SHOW_REACTORS;
-    items[count++] = ADD_REACTION;
-    items[count++] = REPLY;
-    if (*conversation_str(m, "reply_to"))
-        items[count++] = ORIGINAL;
-    if (message_is_own(ui, m))
-        items[count++] = EDIT_MESSAGE;
-    items[count++] = DELETE_MESSAGE;
+    for (int action = SHOW_REACTORS; action <= DELETE_MESSAGE; ++action)
+        if (action_allowed(ui, action, m) &&
+            (action != ORIGINAL || *conversation_str(m, "reply_to")))
+            items[count++] = action;
+    uint64_t revision =
+        permissions_revision(auth_permissions(ui->connections->items[ui->active_tab].auth));
+    if (ui->menu_permissions != revision) {
+        int selected =
+            ui->menu_selected < ui->menu_cached_count ? ui->menu_cached[ui->menu_selected] : -1;
+        ui->menu_selected = 0;
+        for (int i = 0; i < count; ++i)
+            if (items[i] == selected)
+                ui->menu_selected = i;
+        ui->menu_permissions = revision;
+    }
+    memcpy(ui->menu_cached, items, (size_t)count * sizeof(*items));
+    ui->menu_cached_count = count;
     return count;
 }
 static int menu_count(view *ui)
@@ -232,6 +276,10 @@ static int menu_count(view *ui)
 static void message_action(view *ui, int action)
 {
     json_t *m = history_find_message(ui->model, ui->selected_message);
+    if (!action_allowed(ui, action, m)) {
+        ui->feedback = "Permissão indisponível para esta ação.";
+        return;
+    }
     char original[37];
     snprintf(original, sizeof(original), "%s", conversation_str(m, "reply_to"));
     bool keyboard = ui->context_keyboard;
@@ -492,7 +540,7 @@ void conversation_interactions_draw(view *ui)
         return;
     int width = MIN(COLS - 2, ui->reactors_open ? 76 : 30);
     int height = ui->reactors_open ? MIN(LINES - 2, 20) : menu_count(ui) + 2;
-    if (width < 8 || height < 4)
+    if (width < 8 || height < (ui->reactors_open ? 4 : 3))
         return;
     int y = ui->reactors_open ? (LINES - height) / 2 : CLAMP(ui->menu_y, 0, LINES - height);
     int x = ui->reactors_open ? (COLS - width) / 2 : CLAMP(ui->menu_x, 0, COLS - width);

@@ -52,7 +52,7 @@ bool history_reaction_valid(const json_t *emoji);
 bool history_reaction_equal(const json_t *a, const json_t *b);
 bool history_reaction_mine(const json_t *message, const json_t *emoji);
 /* Queue one mutation through the shared asynchronous REST owner. DELETE is
- * authorized by the server; edits additionally require a loaded own message.
+ * checked locally from the shared permission model, then by the server.
  * content is copied. Results are consumed once and scoped to the active channel/session. */
 bool history_edit_message(history *h, const char *message, const char *content);
 bool history_delete_message(history *h, const char *message);
@@ -68,6 +68,9 @@ bool history_recovering(const history *h);
 uint64_t history_insertions(const history *h);
 void history_reload_channels(history *h);
 bool history_select(history *h, size_t channel);
+/* Metadata remains available internally even for channels hidden in the rail. */
+bool history_channel_visible(const history *h, size_t index);
+permission_decision history_permission(const history *h, channel_permission permission);
 void history_recent(history *h);
 /* Queue pages through the existing REST dispatcher, even while an auxiliary
  * read is pending. Failures require history_retry(), with no automatic replay. */

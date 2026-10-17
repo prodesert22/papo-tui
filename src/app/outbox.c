@@ -258,6 +258,10 @@ static outbox_submit_result enqueue(outbox *box, const char *channel, const char
         return OUTBOX_INVALID;
     if (!nonempty)
         return OUTBOX_EMPTY;
+    permission_decision access =
+        permissions_channel(auth_permissions(box->session), channel, PERMISSION_SEND_MESSAGES);
+    if (access != PERMISSION_ALLOWED)
+        return access == PERMISSION_DENIED ? OUTBOX_FORBIDDEN : OUTBOX_PERMISSIONS_PENDING;
     operation *slot = NULL, *oldest = NULL;
     for (size_t i = 0; i < OUTBOX_OPERATION_LIMIT; ++i) {
         operation *item = &box->operations[i];
@@ -380,6 +384,12 @@ void outbox_poll(outbox *box)
         operation *item = &box->operations[i];
         if (item->id && item->state == OUTBOX_QUEUED && (!next || item->id < next->id))
             next = item;
+    }
+    if (next && permissions_channel(auth_permissions(box->session), next->channel,
+                                    PERMISSION_SEND_MESSAGES) != PERMISSION_ALLOWED) {
+        next->state = OUTBOX_FAILED;
+        next->status = 403;
+        return;
     }
     if (next && auth_send_reply(box->session, next->id, next->channel, next->text, next->reply)) {
         next->state = OUTBOX_SENDING;

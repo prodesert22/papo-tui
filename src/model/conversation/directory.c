@@ -237,7 +237,8 @@ void history_typing_activity(history *h)
 {
     uint64_t now;
     json_t *channel = h ? history_channel(h, h->selected) : NULL;
-    if (!h || !auth_has_session(h->auth) || auth_ws_state(h->auth) != WS_OPEN ||
+    if (!h || history_permission(h, PERMISSION_SEND_MESSAGES) != PERMISSION_ALLOWED ||
+        !auth_has_session(h->auth) || auth_ws_state(h->auth) != WS_OPEN ||
         h->context != auth_context_generation(h->auth) || !history_internal_str(channel, "type") ||
         (strcmp(history_internal_str(channel, "type"), "text") &&
          strcmp(history_internal_str(channel, "type"), "voice")) ||

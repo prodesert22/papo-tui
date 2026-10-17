@@ -10,6 +10,25 @@ if(BUILD_TESTING AND WIN32)
 endif()
 if(BUILD_TESTING)
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_executable(permissions-probe tests/probes/permissions_probe.c)
+    target_link_libraries(permissions-probe PRIVATE papo_outbox)
+    target_compile_options(permissions-probe PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_test(
+        NAME permissions-integration
+        COMMAND
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/integration/test_permissions.py
+            $<TARGET_FILE:permissions-probe>)
+    set_tests_properties(permissions-integration PROPERTIES TIMEOUT 120)
+    add_executable(permissions-test tests/unit/test_permissions.c)
+    target_link_libraries(permissions-test PRIVATE papo_auth)
+    target_compile_options(permissions-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_test(NAME permissions-unit COMMAND permissions-test)
+    add_test(
+        NAME permissions-terminal
+        COMMAND
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_permissions.py
+            $<TARGET_FILE:papo-tui>)
+    set_tests_properties(permissions-terminal PROPERTIES TIMEOUT 180)
     find_program(FFMPEG_CLI NAMES ffmpeg REQUIRED)
     add_test(
         NAME app-modes-terminal

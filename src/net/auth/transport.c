@@ -113,6 +113,7 @@ bool auth_internal_request(auth_client *client, auth_state state, const char *pa
     if (state == AUTH_API_MUTATION &&
         curl_easy_setopt(client->easy, CURLOPT_CUSTOMREQUEST, client->api_method) != CURLE_OK)
         goto error;
+    client->permission_serial = permissions_event_serial(client->permissions);
     client->queued = true;
     client->state = state;
     client->operation = state;

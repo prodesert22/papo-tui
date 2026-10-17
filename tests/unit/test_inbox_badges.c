@@ -48,7 +48,13 @@ static history *model(auth_client *auth, json_t *channel)
     assert(h);
     history_enable_r8(h);
     json_t *body = json_pack("{s:[O]}", "channels", channel);
-    assert(body && history_internal_channels_response(h, body));
+    assert(!json_object_set_new(channel, "permissions", json_array()));
+    json_t *identity = json_pack("{s:s,s:[]}", "id", author_id, "roles");
+    assert(identity && permissions_identity(auth_permissions(auth), identity,
+                                            permissions_event_serial(auth_permissions(auth))));
+    assert(body && permissions_update(auth_permissions(auth), PERMISSIONS_CHANNELS, body));
+    json_decref(identity);
+    assert(history_internal_channels_response(h, body));
     json_decref(body);
     return h;
 }

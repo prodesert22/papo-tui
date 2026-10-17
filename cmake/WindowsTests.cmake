@@ -5,6 +5,7 @@ foreach(
     ITEMS
         "media-wire-test|tests/unit/test_media_wire.c|papo_media|media-wire-boundaries"
         "media-service-test|tests/integration/test_media_service.c|papo_media|media-service-integration"
+        "permissions-test|tests/unit/test_permissions.c|papo_auth|permissions-unit"
         "rate-limit-test|tests/unit/test_rate_limit.c|papo_auth|request-rate-limit"
         "session-time-test|tests/unit/test_session_time.c|papo_auth|session-expiry"
         "status-bar-test|tests/unit/test_status_bar.c|papo_send_editor|status-bar-unit"
@@ -63,3 +64,13 @@ foreach(test IN LISTS names)
             "PYTHONPATH=${PROJECT_SOURCE_DIR}/tests/support\;${PROJECT_SOURCE_DIR}/tests/terminal\;${PROJECT_SOURCE_DIR}/tests/integration\;${PROJECT_SOURCE_DIR}"
     )
 endforeach()
+
+add_executable(permissions-probe tests/probes/permissions_probe.c)
+target_link_libraries(permissions-probe PRIVATE papo_outbox)
+add_test(NAME permissions-integration
+         COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/integration/test_permissions.py
+                 $<TARGET_FILE:permissions-probe>)
+add_test(NAME permissions-terminal
+         COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/terminal/test_permissions.py
+                 $<TARGET_FILE:papo-tui>)
+set_tests_properties(permissions-integration permissions-terminal PROPERTIES TIMEOUT 180)

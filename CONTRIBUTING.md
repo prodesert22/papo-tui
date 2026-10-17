@@ -189,6 +189,33 @@ video. It keeps test credentials private under
 build/, removes this run's messages and closes its DM views and sessions.
 The sanitized report distinguishes functional checks from contract divergences.
 
+Permission evaluation reuses Jansson snapshots, GLib UUID validation and the
+existing REST dispatcher; no new dependency is required. Each auth client owns
+its policy, including membership, role definitions, server owner, channel
+permissions and known DM participation. Decisions distinguish allowed, denied
+and unknown. The rail filters a complete metadata catalog, so role grants can
+reveal channels without reading their histories.
+
+A synchronous, metadata-only observer of validated WS events updates membership
+before queued REST transfers are admitted. Role events increment a serial;
+older whoami responses cannot undo them. Message owners and the HTTP admission
+gate both check the same policy. An already transmitted mutation retains its
+response owner. Internal permission reads have their own states in the existing
+single REST queue, never consume an external response slot and share the global
+rate budget. Failed metadata sources become unknown without invalidating the
+session. Previously loaded history and drafts remain visible while access is
+unknown; confirmed denial closes the conversation. New reads and mutations
+still require confirmed capabilities. Reconciliation runs after login, recovery, reconnection, activation,
+Ctrl+R and every 30 seconds in the active instance. The contract has no role-edit
+or channel-permission-change event; periodic REST reconciliation covers that gap
+without promising instantaneous updates. DM access remains server-authoritative:
+the API supplies no explicit block-state field or block-change event.
+
+`permissions-unit`, `permissions-integration` and `permissions-terminal` exercise
+policy decisions, WS grants/revocations, read-only reactions and queued mutation
+cancellation. The standalone permission probe accepts synthetic credentials from
+the environment for isolated backend checks. Reports belong in build/.
+
 ## Validation
 
 ```sh

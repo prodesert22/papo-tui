@@ -87,6 +87,8 @@ class HistoryMock(MockServer):
                 return 200, {"channels": [{"id": "../bad"}]}
             if self.case == "channels-empty":
                 return 200, {"channels": []}
+            for channel in self.channels:
+                channel.setdefault("permissions", [])
             return 200, {"channels": self.channels}
         if url.path.endswith("/messages") and "/channels/" in url.path:
             self.history_started.set()
