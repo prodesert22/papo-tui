@@ -164,8 +164,8 @@ void conversation_draw_tabs(view *ui, auth_client *auth)
     button_draw(ui->tabs, 0, ui->add_hit.x, ui->add_hit.width,
                 adding ? ">+ Adicionar<" : "[+ Adicionar]", adding ? BUTTON_FOCUSED : BUTTON_NORMAL,
                 BUTTON_PANEL);
-    const char *areas[] = {"Abas",   "Canais",     "Histórico",    "Mensagem",
-                           "Emojis", "Canais/DMs", "Configurações"};
+    const char *areas[] = {"Abas",       "Canais",        "Histórico", "Mensagem", "Emojis",
+                           "Canais/DMs", "Configurações", "Anexos",    "Anexar"};
     char summary[1200];
     snprintf(summary, sizeof(summary), "%s · Foco: %s · F2: ajustes · F6: conta",
              auth_username(auth),
@@ -297,7 +297,14 @@ bool conversation_collect_notices(view *ui, auth_client *auth)
 void conversation_draw_footer(view *ui)
 {
     const char *full, *shorter, *minimal;
-    if (r8_modal_is_open(ui->r8) || ui->settings.open) {
+    if (file_picker_open(ui->files)) {
+        full = shorter = "Tab áreas · Espaço marcar · Enter abrir · Esc cancelar";
+        minimal = "Tab · Enter · Esc";
+    } else if (ui->remove_confirm) {
+        full = shorter = "←→ escolher · Enter confirmar · Esc cancelar";
+        minimal = "Enter · Esc";
+
+    } else if (r8_modal_is_open(ui->r8) || ui->settings.open) {
         full = shorter = "↑↓ escolher · Enter abrir · Tab ações · Esc voltar";
         minimal = "Enter · Esc";
     } else if (ui->duplicate_modal) {
@@ -355,6 +362,12 @@ void conversation_draw_footer(view *ui)
         full = "Enter enviar · Shift+Enter linha · F4 emojis · Esc cancelar resposta";
         shorter = "Enter enviar · Esc cancelar resposta";
         minimal = "Esc cancelar resposta";
+    } else if (ui->focus == ATTACHMENT_ROW) {
+        full = shorter = "←→ anexos · Enter remover · Tab ações · Esc voltar";
+        minimal = "←→ · Enter remover";
+    } else if (ui->focus == ATTACH_BUTTON) {
+        full = shorter = "Enter/F3 anexar arquivos · Tab editor";
+        minimal = "Enter anexar";
     } else if (ui->focus == EMOJI_BUTTON) {
         full = shorter = "Enter/F4 emojis · Shift+Tab editor · Esc voltar";
         minimal = "Enter emojis";
@@ -552,7 +565,7 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
             werase(ui->body);
             if (ui->focus == HISTORY_PANEL) {
                 wattrset(ui->body, COLOR_PAIR(THEME_HISTORY_AREA));
-                for (int row = 0; row < ui->editor_border; ++row)
+                for (int row = 0; row < ui->history_top + ui->visible; ++row)
                     mvwhline(ui->body, row, 0, ' ', getmaxx(ui->body));
             }
             char title[2200];
@@ -600,7 +613,8 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
             for (int row = ui->editor_border; row < getmaxy(ui->body); ++row)
                 mvwhline(ui->body, row, 0, ' ', getmaxx(ui->body));
         }
-        bool editing = ui->focus == MESSAGE_INPUT && !ui->duplicate_modal;
+        bool editing = ui->focus == MESSAGE_INPUT && !ui->duplicate_modal &&
+                       !file_picker_open(ui->files) && !ui->remove_confirm;
         wattrset(ui->body, COLOR_PAIR(editing ? THEME_FOCUS_BORDER : THEME_BORDER));
         mvwhline(ui->body, ui->editor_border, 0, ACS_HLINE, getmaxx(ui->body));
         wattrset(ui->body, COLOR_PAIR(editing ? THEME_FOCUS_MUTED : THEME_PANEL_MUTED));
@@ -629,6 +643,10 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                 }
             wattrset(ui->body, COLOR_PAIR(editing ? THEME_FOCUS_AREA : THEME_PANEL));
             text_label(ui->body, conversation_input_top(ui), 1, 1, ">");
+            if (!*ui->edit_message)
+                button_draw(ui->body, conversation_input_top(ui), 2, 9, "Anexar",
+                            ui->focus == ATTACH_BUTTON ? BUTTON_FOCUSED : BUTTON_NORMAL,
+                            BUTTON_PANEL);
             text_layout *measured = &ui->measured;
             text_measure(editor, width, measured);
             if (!ui->editor_scrolling)
@@ -643,13 +661,14 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                                                                      : "Conversar em #%s",
                              conversation_str(c, "name"));
                 wattrset(ui->body, COLOR_PAIR(editing ? THEME_FOCUS_MUTED : THEME_PANEL_MUTED));
-                text_label(ui->body, conversation_input_top(ui), 3, width, placeholder);
+                text_label(ui->body, conversation_input_top(ui), conversation_input_left(ui), width,
+                           placeholder);
             } else {
                 char icon_scope[96];
                 snprintf(icon_scope, sizeof(icon_scope), "editor:%s", ui->editor_channel);
                 icons_scope(ui->icons, icon_scope, 0);
                 text_draw(ui->body, editor, measured, editor->first_row, height,
-                          conversation_input_top(ui), 3);
+                          conversation_input_top(ui), conversation_input_left(ui));
             }
             wattrset(ui->body, COLOR_PAIR(editing ? THEME_FOCUS_MUTED : THEME_PANEL_MUTED));
             if (editor->first_row)
@@ -661,7 +680,7 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                 measured->cursor_row < editor->first_row + height) {
                 wmove(ui->body,
                       conversation_input_top(ui) + measured->cursor_row - editor->first_row,
-                      3 + measured->cursor_column);
+                      conversation_input_left(ui) + measured->cursor_column);
             }
             wattrset(ui->body, COLOR_PAIR(editing ? THEME_FOCUS_MUTED : THEME_PANEL_MUTED));
             wattrset(ui->body, COLOR_PAIR(ui->focus == EMOJI_BUTTON ? THEME_PROFILE_BUTTON_FOCUS
@@ -685,7 +704,8 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                  ACS_HLINE, getmaxx(ui->body));
         char typing[4608];
         history_typing_text(ui->model, typing, sizeof(typing));
-        if (*typing) {
+        if (*typing && conversation_input_top(ui) + ui->editor_rows + ui->editor_padding <
+                           getmaxy(ui->body) - 1) {
             wattrset(ui->body, COLOR_PAIR(THEME_PANEL_ACCENT));
             text_label(ui->body, getmaxy(ui->body) - 1, 3, conversation_input_width(ui), typing);
         }
@@ -696,7 +716,7 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                 measured->cursor_row < editor->first_row + conversation_input_height(ui))
                 wmove(ui->body,
                       conversation_input_top(ui) + measured->cursor_row - editor->first_row,
-                      3 + measured->cursor_column);
+                      conversation_input_left(ui) + measured->cursor_column);
         }
     }
     if (scope == DRAW_ALL) {
@@ -717,18 +737,19 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
     wnoutrefresh(ui->footer);
     if (ui->focus == MESSAGE_INPUT && conversation_input(ui) && ui->body && !ui->duplicate_modal)
         wnoutrefresh(ui->body);
+    conversation_attachments_draw_row(ui);
     conversation_draw_confirmation(ui);
     if (paint_media)
         media_view_draw(ui->media);
     if (mention_popup_open(ui->mentions) && ui->body && conversation_input(ui)) {
         text_layout *measured = &ui->measured;
         text_measure(conversation_input(ui), conversation_input_width(ui), measured);
-        WINDOW *overlay =
-            mention_popup_draw(ui->mentions,
-                               getbegy(ui->body) + conversation_input_top(ui) +
-                                   measured->cursor_row - conversation_input(ui)->first_row,
-                               getbegx(ui->body) + 3 + measured->cursor_column,
-                               getbegx(ui->body) + 1, getmaxx(ui->body) - 2);
+        WINDOW *overlay = mention_popup_draw(
+            ui->mentions,
+            getbegy(ui->body) + conversation_input_top(ui) + measured->cursor_row -
+                conversation_input(ui)->first_row,
+            getbegx(ui->body) + conversation_input_left(ui) + measured->cursor_column,
+            getbegx(ui->body) + 1, getmaxx(ui->body) - 2);
         if (overlay)
             icons_overlay(ui->icons, getbegy(overlay), getbegx(overlay), getmaxy(overlay),
                           getmaxx(overlay));
@@ -740,13 +761,14 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         emoji_picker_draw_suggestions(ui->emojis,
                                       getbegy(ui->body) + conversation_input_top(ui) +
                                           measured->cursor_row - editor->first_row,
-                                      getbegx(ui->body) + 3 + measured->cursor_column,
+                                      getbegx(ui->body) + conversation_input_left(ui) +
+                                          measured->cursor_column,
                                       getbegx(ui->body) + 1, getmaxx(ui->body) - 2);
     }
     bool caret = false;
     if (ui->focus == MESSAGE_INPUT && conversation_input(ui) && ui->body && !ui->duplicate_modal &&
         !(r8_modal_is_open(ui->r8) || ui->settings.open) && !media_view_modal(ui->media) &&
-        !emoji_picker_open(ui->emojis)) {
+        !emoji_picker_open(ui->emojis) && !file_picker_open(ui->files) && !ui->remove_confirm) {
         text_buffer *editor = conversation_input(ui);
         text_layout *measured = &ui->measured;
         text_measure(editor, conversation_input_width(ui), measured);
@@ -755,7 +777,7 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         if (caret)
             setsyx(getbegy(ui->body) + conversation_input_top(ui) + measured->cursor_row -
                        editor->first_row,
-                   getbegx(ui->body) + 3 + measured->cursor_column);
+                   getbegx(ui->body) + conversation_input_left(ui) + measured->cursor_column);
     }
     if (!caret)
         setsyx(-1, -1);
@@ -770,6 +792,13 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
     if (overlay)
         icons_overlay(ui->icons, getbegy(overlay), getbegx(overlay), getmaxy(overlay),
                       getmaxx(overlay));
+    WINDOW *attachment_overlay = conversation_attachments_draw_dialog(ui);
+    if (attachment_overlay) {
+        icons_overlay(ui->icons, getbegy(attachment_overlay), getbegx(attachment_overlay),
+                      getmaxy(attachment_overlay), getmaxx(attachment_overlay));
+        caret = false;
+        setsyx(-1, -1);
+    }
     if (paint_media) {
         if (!ui->duplicate_modal && !ui->settings.open)
             media_view_prepare(ui->media);

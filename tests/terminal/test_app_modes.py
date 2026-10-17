@@ -521,6 +521,8 @@ class AppModes(unittest.TestCase):
         ).stdout
         for mode in ("normal", "light"):
             for key, title in (
+                ("\x1bOR", "Anexar arquivos"),
+                ("attachment-remove", "Remover anexo?"),
                 ("\x1bOS", "Emojis · Esc voltar"),
                 ("E", "Quem reagiu"),
                 ("@", "Menções"),
@@ -557,14 +559,24 @@ class AppModes(unittest.TestCase):
                             if key == "E":
                                 t.send("\x1b[18~")
                                 self.wait(t, lambda: len(red_cells()) > 200)
+                            if key == "attachment-remove":
+                                t.send("\x1bOR")
+                                self.helper.wait(t, "Anexar arquivos")
+                                t.send(
+                                    "\x03"
+                                    + str(Path(self.helper.assets.name) / "landscape.png")
+                                    + "\n"
+                                )
+                                self.helper.wait(t, "landscape.png 🗙]")
+                                self.wait(t, lambda: len(red_cells()) > 200)
                             before = red_cells()
-                            t.send(key)
+                            t.send("\x1b[Z\x1b[Z\n" if key == "attachment-remove" else key)
                             self.helper.wait(t, title)
                             top = next(
                                 i for i, line in enumerate(t.screen.display) if title in line
                             )
                             title_x = t.screen.display[top].index(title)
-                            if title == "Notificações":
+                            if title in ("Notificações", "Remover anexo?"):
                                 top -= 1
                             self.wait(
                                 t,
@@ -608,7 +620,12 @@ class AppModes(unittest.TestCase):
                             self.assertGreater(len(exposed), 8)
                             self.wait(t, lambda: exposed <= red_cells())
                             self.assertEqual(t.stream.frames, [])
-                            if title in ("Menções", "Notificações"):
+                            if title in (
+                                "Menções",
+                                "Notificações",
+                                "Anexar arquivos",
+                                "Remover anexo?",
+                            ):
                                 active_title = title
                                 if title == "Notificações":
                                     t.send("\x1bOC\ngeral")
@@ -629,6 +646,30 @@ class AppModes(unittest.TestCase):
                                 self.wait(t, lambda: len(red_cells()) > 200)
                         finally:
                             self.assertTrue(t.close())
+
+    def test_ultralight_attachment_panels_never_start_media(self):
+        self.seed("ultralight")
+        with self.helper.serve(media.MediaTerminal.images["png"], "image/png") as server:
+            source = Path(self.root.name, "attachment.txt")
+            source.write_text("Synthetic local attachment")
+            t = self.open(server, size=(48, 160))
+            try:
+                self.helper.wait(t, "Fixture")
+                t.send("\x1bOR")
+                self.helper.wait(t, "Anexar arquivos")
+                t.send("\x03" + str(source) + "\n")
+                self.helper.wait(t, "attachment.txt 🗙]")
+                t.send("\x1b[Z\x1b[Z\n")
+                self.helper.wait(t, "Remover anexo?")
+                t.resize(24, 80)
+                self.helper.wait(t, "Remover anexo?")
+                t.send("\x1b")
+                self.helper.wait(t, "attachment.txt 🗙]")
+                self.assertEqual(self.children(t), [])
+                self.assertEqual(t.stream.frames, [])
+                self.assertFalse(any("/attachments/" in request[1] for request in server.requests))
+            finally:
+                self.assertTrue(t.close())
 
     def test_text_modes_do_not_initialize_download_directories(self):
         for mode in ("ultralight", "light"):

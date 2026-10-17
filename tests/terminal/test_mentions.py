@@ -118,7 +118,7 @@ class Mentions(unittest.TestCase):
             def editor_cursor(query):
                 deadline = time.monotonic() + 3
                 while time.monotonic() < deadline:
-                    row = next(i for i, value in enumerate(t.screen.display) if "> Olá " in value)
+                    row = next(i for i, value in enumerate(t.screen.display) if "Olá " in value)
                     column = t.screen.display[row].index(query) + len(query)
                     if not t.screen.cursor.hidden and (t.screen.cursor.y, t.screen.cursor.x) == (
                         row,
@@ -126,7 +126,7 @@ class Mentions(unittest.TestCase):
                     ):
                         break
                     t.read(0.03)
-                row = next(i for i, value in enumerate(t.screen.display) if "> Olá " in value)
+                row = next(i for i, value in enumerate(t.screen.display) if "Olá " in value)
                 column = t.screen.display[row].index(query) + len(query)
                 self.assertFalse(t.screen.cursor.hidden)
                 self.assertEqual((t.screen.cursor.y, t.screen.cursor.x), (row, column))

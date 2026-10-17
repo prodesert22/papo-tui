@@ -1,6 +1,7 @@
 #ifndef PAPO_AUTH_H
 #define PAPO_AUTH_H
 
+#include "model/attachment.h"
 #include "net/realtime/websocket.h"
 #include <stdbool.h>
 #include <stddef.h>
@@ -121,9 +122,13 @@ typedef struct {
     bool transmitted, cancelled;
 } auth_send_receipt;
 
-/* Text-only POST /messages through libcurl MIME and the existing REST queue.
+/* POST /messages through libcurl MIME and the existing REST queue.
  * Copies inputs; rejects concurrent submissions. Never replays the mutation.
  * A 401 may renew identity once to permit a subsequent manual attempt. */
+/* Opens immutable files during preparation; MIME streams own their handles. */
+bool auth_send_attachments(auth_client *client, uint64_t operation_id, const char *channel_id,
+                           const char *content, const char *reply_to, attachment_file *const *files,
+                           size_t count);
 bool auth_send_text(auth_client *client, uint64_t operation_id, const char *channel_id,
                     const char *content);
 /* Optional reply target copied into the multipart; no mention-control field exists. */

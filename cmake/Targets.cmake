@@ -15,6 +15,7 @@ add_library(
     src/net/auth/api.c
     src/net/auth/client.c
     src/net/auth/messages.c
+    src/model/attachment.c
     src/net/auth/realtime.c
     src/net/auth/responses.c
     src/net/auth/session.c
@@ -39,7 +40,7 @@ add_library(
     src/model/notifications/inbox.c)
 target_include_directories(papo_auth PUBLIC src)
 target_link_libraries(papo_auth PUBLIC papo_platform PkgConfig::CURL PkgConfig::JANSSON
-                                       PkgConfig::GLIB)
+                                       PkgConfig::GLIB PkgConfig::GIO)
 
 add_library(papo_outbox src/app/outbox.c)
 target_link_libraries(papo_outbox PUBLIC papo_auth PkgConfig::UNIBREAK)
@@ -85,12 +86,17 @@ add_library(
     src/ui/components/status_bar.c
     src/ui/input/text.c
     src/ui/input/mouse.c
+    src/platform/file_transfer.c
+    src/platform/${PAPO_PLATFORM}/file_transfer.c
     src/platform/${PAPO_PLATFORM}/clipboard.c
     src/app/instances.c)
 target_link_libraries(
     papo_send_editor PUBLIC papo_outbox papo_sessions papo_desktop PkgConfig::NCURSES
                             PkgConfig::UNIBREAK PkgConfig::GLIB)
 target_compile_options(papo_send_editor PRIVATE -Wall -Wextra -Wpedantic -Werror)
+if(WIN32)
+    target_link_libraries(papo_send_editor PRIVATE ole32 shell32 uuid windowscodecs)
+endif()
 
 add_library(papo_image_codec MODULE src/ui/media/image_codec.c)
 target_include_directories(papo_image_codec PRIVATE src)
@@ -195,6 +201,7 @@ add_executable(
     src/ui/screens/conversation/conversation.c
     src/ui/screens/conversation/drawing.c
     src/ui/screens/conversation/input.c
+    src/ui/screens/conversation/attachments.c
     src/ui/screens/conversation/interactions.c
     src/ui/screens/conversation/reactions.c
     src/ui/screens/conversation/layout.c
@@ -203,6 +210,7 @@ add_executable(
     src/ui/screens/profiles.c
     src/ui/components/theme.c
     src/ui/components/button.c)
+target_sources(papo-tui PRIVATE src/ui/components/file_picker.c)
 target_link_libraries(papo-tui PRIVATE papo_media PkgConfig::FORM PkgConfig::NCURSES
                                        PkgConfig::UNIBREAK)
 

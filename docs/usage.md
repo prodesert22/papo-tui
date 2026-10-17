@@ -74,6 +74,8 @@ To open messages in a voice channel, select it in the channel list and press
 | F10 | Start a DM |
 | F9 | Open the notification center and preferences |
 | F4 in the editor | Choose an emoji |
+| F3 or Anexar | Choose files to attach |
+| Ctrl+V in a conversation | Paste copied files, an image, or text from the local clipboard |
 | Shift+Enter or F4 on a voice channel in the channel list | Open its message history |
 | F7 in a conversation | Enter or leave message navigation |
 | ↑ / ↓ during message navigation | Select the previous / next message |
@@ -246,6 +248,59 @@ confirmed, the client refreshes the history before you try again.
 
 Reply targets are preserved with each conversation's draft during the current
 run, including manual send retries. Confirmed sends clear their reply target.
+
+## Send files and pasted images
+
+Click **Anexar** (Attach), focus it with Tab and press Enter, or press **F3**.
+The application opens the system file dialog when available. Otherwise, a
+terminal file picker opens: enter a directory or file in **Caminho** (Path),
+then press Enter. In the list, arrows navigate, Enter opens a directory or
+marks a file, and Space marks files. Tab moves through path, list, Cancelar
+(Cancel), and Anexar (Attach). Select Anexar to add the marked files. Esc
+cancels. The picker remembers its last directory during this conversation view.
+
+Pending files appear horizontally as **[filename 🗙]** in a separate block
+between the conversation history and the message editor.
+Tab reaches the attachment row before Anexar and the editor; Shift+Tab follows
+the reverse order. Use Left/Right to select a file, then Enter, or click its 🗙,
+to open **Remover anexo?** (Remove attachment?). Cancelar is selected initially.
+Choose **Remover** (Remove) to remove it from the draft; the original file is
+kept. Long lists scroll horizontally to keep the selected file visible.
+
+Return to the editor and press Enter to send all attachments and optional text
+in one message. Selecting or pasting files does not send them immediately.
+Attachments stay with each conversation's draft during the current run.
+Editing an existing message preserves that send draft; finish or cancel editing
+before adding files. Signing out or closing the application discards the drafts.
+
+**Ctrl+V** accepts files copied in a file manager, PNG/JPEG images (including
+screenshots), or text. If the clipboard offers several formats, files take
+priority over images, then text; only one representation is pasted. Copied
+folders and remote file URLs are not attached. Pasting a plain-text path keeps
+it as text. On Linux, native clipboard access requires `wl-paste` from
+wl-clipboard under Wayland, or `xclip` under X11. Windows uses the native clipboard.
+SSH sessions and sandboxed installations without clipboard access can use
+Anexar/F3 for files and the terminal's text paste command. A terminal that
+intercepts Ctrl+V must be configured to pass it to the application for native
+file/image pasting. In Kitty, add or replace the Papo-specific Ctrl+V mapping
+in `kitty.conf` with:
+
+```conf
+map --when-focus-on=var:papo_tui=1 ctrl+v send_text all \x16
+```
+
+Reload Kitty configuration with Ctrl+Shift+F5 or restart Kitty. This mapping
+forwards Ctrl+V while Papo is active, allowing the application to read images
+and files directly from the local clipboard.
+
+Preparation copies files privately in the background so later changes to the
+original do not change an already prepared attachment. Local limits are **25
+files per message**, **512 MiB** of temporary attachment data across drafts and
+pending sends, and **64 MiB** per clipboard image. The server can reject uploads
+under its own policy. Read failures or insufficient temporary space show a
+notice; prepared files and your text remain available. Failed sends require an
+explicit retry with Ctrl+T. If the result is uncertain, check history before
+confirming a retry, which can duplicate the message.
 
 ## Images and video
 

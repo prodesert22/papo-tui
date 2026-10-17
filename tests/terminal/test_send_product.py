@@ -3,7 +3,7 @@
 import time
 import unittest
 from history_mock import HistoryMock, CHANNEL
-from test_terminal import Terminal, editor_region
+from test_terminal import Terminal, editor_region, editor_column
 from wcwidth import wcswidth
 
 
@@ -87,7 +87,7 @@ class SendProduct(unittest.TestCase):
                 terminal.send("\x1bOB\n")
                 self.wait(terminal, "# geral · Histórico")
                 self.assertIn("PrimeiXro", self.editor_text(terminal))
-                terminal.click(editor_region(terminal)[0], 32)
+                terminal.click(editor_region(terminal)[0], editor_column(terminal) + 3)
                 self.wait(terminal, "Foco: Mensagem")
                 terminal.send("Y")
                 self.assertIn("Y", self.editor_text(terminal))

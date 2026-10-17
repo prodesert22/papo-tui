@@ -16,6 +16,7 @@
 
 #include "model/conversation/history.h"
 #include "platform/clipboard.h"
+#include "platform/file_transfer.h"
 #include "platform/terminal.h"
 #include "ui/input/editor.h"
 #include "ui/input/text.h"
@@ -1001,6 +1002,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
             if (ui.form)
                 select_focus(&ui, 2);
         }
+        file_transfer_tasks_poll();
         if (clipboard_poll())
             redraw = true;
         if (redraw) {

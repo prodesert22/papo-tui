@@ -22,6 +22,7 @@ class MockServer:
         self.message_count = 0
         self.sent_messages = []
         self.multipart_types = []
+        self.uploads = []
         self.message_received = threading.Event()
         self.name = "Comunidade"
         self.cookie_max_age = None
@@ -302,16 +303,24 @@ class MockServer:
                         ("Content-Type: " + content_type + "\r\nMIME-Version: 1.0\r\n\r\n").encode()
                         + data
                     )
-                    body = {
-                        part.get_param("name", header="content-disposition"): part.get_payload(
-                            decode=True
-                        ).decode("utf-8")
-                        for part in parsed.iter_parts()
-                    }
+                    body, uploads = {}, []
+                    for part in parsed.iter_parts():
+                        name = part.get_param("name", header="content-disposition")
+                        if name == "attachments":
+                            uploads.append(
+                                {
+                                    "name": part.get_filename(),
+                                    "mime": part.get_content_type(),
+                                    "data": part.get_payload(decode=True),
+                                }
+                            )
+                        else:
+                            body[name] = part.get_payload(decode=True).decode("utf-8")
                 except (ValueError, UnicodeError, TypeError):
                     self.respond(400)
                     return
                 outer.requests.append(("POST", self.path, cookie, body))
+                outer.uploads.append(uploads)
                 outer.message_count += 1
                 outer.message_received.set()
                 if (
@@ -348,7 +357,15 @@ class MockServer:
                     "created_at": datetime.now(timezone.utc).isoformat(),
                     "edited_at": None,
                     "reply_to": body.get("reply_to"),
-                    "attachments": [],
+                    "attachments": [
+                        {
+                            "id": f"00000000-0000-4000-8000-{5000 + i:012x}",
+                            "original_file_name": upload["name"],
+                            "mime_type": upload["mime"],
+                            "size_bytes": len(upload["data"]),
+                        }
+                        for i, upload in enumerate(uploads)
+                    ],
                     "embeds": [],
                 }
                 outer.sent_messages.append(message)

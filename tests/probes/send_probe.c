@@ -79,9 +79,31 @@ int main(int argc, char **argv)
     if (!strcmp(mode, "empty"))
         text = " \n\t";
     bool saved = outbox_set_draft(box, channel, text);
+    const char *paths = getenv("PAPO_SEND_FILES");
+    if (paths) {
+        gchar **files = g_strsplit(paths, "\n", -1);
+        for (size_t i = 0; files[i]; ++i) {
+            attachment_file *file = attachment_import(files[i], NULL, NULL);
+            saved &= file && outbox_add_attachment(box, channel, file);
+            attachment_unref(file);
+        }
+        g_strfreev(files);
+    }
     outbox_submit_result submitted =
         !strcmp(mode, "read") ? OUTBOX_EMPTY : outbox_submit(box, channel, false, &id);
     bool busy = id && outbox_submit(box, channel, false, NULL) == OUTBOX_BUSY;
+    if (id && paths) {
+        gchar **files = g_strsplit(paths, "\n", -1);
+        for (size_t i = 0; files[i]; ++i)
+            g_file_set_contents(files[i], "changed after submit", -1, NULL);
+        g_strfreev(files);
+    }
+    const char *later = getenv("PAPO_SEND_LATER_FILE");
+    if (later) {
+        attachment_file *file = attachment_import(later, NULL, NULL);
+        saved &= file && outbox_add_attachment(box, channel, file);
+        attachment_unref(file);
+    }
     bool need_confirmation = false;
     unsigned count = 0;
     json_t *last_message = NULL;
@@ -118,6 +140,9 @@ int main(int argc, char **argv)
             }
         }
         finish(session, box, id);
+        if (!strcmp(mode, "files-uncertain-append"))
+            need_confirmation =
+                outbox_submit(box, channel, false, NULL) == OUTBOX_CONFIRM_DUPLICATION;
         if (second_id)
             finish(session, box, second_id);
         if (!strcmp(mode, "retry")) {
@@ -176,6 +201,8 @@ int main(int argc, char **argv)
                   (int)count, "draft", draft ? draft : "", "second_draft", other ? other : "");
     json_object_set_new(result, "second_state", json_integer((json_int_t)second.state));
     json_object_set_new(result, "session", json_boolean(auth_has_session(session)));
+    const GPtrArray *files = outbox_attachments(box, channel);
+    json_object_set_new(result, "draft_files", json_integer(files ? files->len : 0));
     if (last_message)
         json_object_set(result, "message", last_message);
     if (!strcmp(mode, "read")) {

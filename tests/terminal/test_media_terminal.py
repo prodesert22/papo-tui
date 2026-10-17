@@ -854,6 +854,8 @@ class MediaTerminal(unittest.TestCase):
     def test_floating_panels_preserve_uncovered_attachment_pixels(self):
         for protocol in ("kitty", "sixel", "iterm2"):
             for key, title in (
+                ("\x1bOR", "Anexar arquivos"),
+                ("attachment-remove", "Remover anexo?"),
                 ("\x1bOS", "Emojis · Esc voltar"),
                 ("\x1b[18~E", "Quem reagiu"),
                 ("@", "Menções"),
@@ -891,15 +893,21 @@ class MediaTerminal(unittest.TestCase):
                     t = self.open(server, protocol=protocol, size=(48, 160))
                     try:
                         self.wait_raster(t, lambda w, h: w > 600 and h > 300)
+                        if key == "attachment-remove":
+                            t.send("\x1bOR")
+                            self.wait(t, "Anexar arquivos")
+                            t.send("\x03" + str(Path(self.assets.name) / "landscape.png") + "\n")
+                            self.wait(t, "landscape.png 🗙]")
+                            self.wait_raster(t, lambda w, h: w > 600 and h > 300)
                         first_frame = len(t.stream.frames)
                         first_placement = len(t.stream.placements)
-                        t.send(key)
+                        t.send("\x1b[Z\x1b[Z\n" if key == "attachment-remove" else key)
                         self.wait(t, title)
                         if title == "Menções":
                             self.wait(t, "@member7")
                         display = t.screen.display
                         top = next(i for i, line in enumerate(display) if title in line)
-                        if title == "Notificações":
+                        if title in ("Notificações", "Remover anexo?"):
                             top -= 1  # Its title is inside the frame.
                         title_x = wcswidth(
                             next(line for line in display if title in line).split(title)[0]
@@ -979,7 +987,12 @@ class MediaTerminal(unittest.TestCase):
                                     (top, left, bottom, right),
                                 ),
                             )
-                        if title in ("Menções", "Notificações"):
+                        if title in (
+                            "Menções",
+                            "Notificações",
+                            "Anexar arquivos",
+                            "Remover anexo?",
+                        ):
                             active_title = title
                             if title == "Notificações":
                                 # Search, keyboard filter/date controls and clearing

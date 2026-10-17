@@ -12,7 +12,7 @@ import unittest
 from history_mock import HistoryMock
 from realtime_mock import RealtimeMock
 from mock_server import MockServer
-from test_terminal import Terminal, editor_region
+from test_terminal import Terminal, editor_region, editor_column
 
 
 class InputControls(unittest.TestCase):
@@ -431,7 +431,7 @@ class InputControls(unittest.TestCase):
             t = self.open(server)
             t.send("primeira\x0esegunda\x0eterceira")
             first, end = editor_region(t)
-            start = 29
+            start = editor_column(t)
             ordinary = t.screen.buffer[first][start + 3]
             self.mouse(t, first, start + 3, 0)
             self.mouse(t, first + 1, start + 4, 32)
@@ -539,18 +539,19 @@ class InputControls(unittest.TestCase):
     def test_live_drag_across_soft_wrap_and_upward_across_lines(self):
         with HistoryMock(count=0) as server:
             t = self.open(server)
-            wrap = t.screen.columns - 40
+            start = editor_column(t)
+            wrap = t.screen.columns - start - 11
             t.send("a" * wrap + "bravo")
             self.wait_field(t, "bravo")
             first, end = editor_region(t)
             self.assertEqual(end - first, 2)
-            ordinary = t.screen.buffer[first][29]
-            self.mouse(t, first, 29 + wrap - 4, 0)
-            self.mouse(t, first + 1, 29 + 3, 32)
-            for row, column in ((first, 29 + wrap - 3), (first + 1, 30)):
+            ordinary = t.screen.buffer[first][start]
+            self.mouse(t, first, start + wrap - 4, 0)
+            self.mouse(t, first + 1, start + 3, 32)
+            for row, column in ((first, start + wrap - 3), (first + 1, start + 1)):
                 selected = t.screen.buffer[row][column]
                 self.assertNotEqual((selected.fg, selected.bg), (ordinary.fg, ordinary.bg))
-            self.mouse(t, first + 1, 32, 0, release=True)
+            self.mouse(t, first + 1, start + 3, 0, release=True)
             t.send("\x1b[99;6u")
             self.assertEqual(self.copied(t), "aaaabra")
             t.send("X")
@@ -558,11 +559,11 @@ class InputControls(unittest.TestCase):
             t.send("\x03um\x0edois\x0etrês")
             self.wait_field(t, "três")
             first, _ = editor_region(t)
-            self.mouse(t, first + 2, 32, 0)
-            self.mouse(t, first, 29, 32)
+            self.mouse(t, first + 2, start + 3, 0)
+            self.mouse(t, first, start, 32)
             t.send("\x1b[99;6u")
             self.assertEqual(self.copied(t), "um\ndois\ntrê")
-            self.mouse(t, first, 29, 0, release=True)
+            self.mouse(t, first, start, 0, release=True)
 
     def test_repainting_never_shows_cursor_in_history(self):
         with RealtimeMock(count=5) as server:
@@ -590,7 +591,7 @@ class InputControls(unittest.TestCase):
             row = t.screen.cursor.y
             t.send("\x1b[1;5H\x1b[1;6F")
             self.assertIn("seleção", self.field(t))
-            self.assertTrue(t.screen.buffer[row][29].reverse)
+            self.assertTrue(t.screen.buffer[row][editor_column(t)].reverse)
             t.send("Novo\n")
             self.wait(t, "Mensagem confirmada")
             self.assertEqual(server.sent_messages[-1]["content"], "Novo")

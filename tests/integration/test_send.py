@@ -5,6 +5,8 @@ import os
 import subprocess
 import sys
 import unittest
+import tempfile
+from pathlib import Path
 from mock_server import MockServer
 
 BINARY = sys.argv.pop(1)
@@ -13,6 +15,66 @@ CONFIRMED, FAILED, UNCERTAIN = 2, 3, 4
 
 
 class Sending(unittest.TestCase):
+    def test_binary_attachments_without_text_are_immutable_and_clear_only_submitted_files(self):
+        with tempfile.TemporaryDirectory() as folder, MockServer("send-delayed") as server:
+            first = Path(folder, "résumé.bin")
+            second = Path(folder, "other.txt")
+            later = Path(folder, "later.txt")
+            first.write_bytes(b"\x00\xff\x1bBinary\r\n")
+            second.write_bytes(b"second")
+            later.write_bytes(b"later")
+            result = self.probe(
+                server,
+                PAPO_SEND_TEXT="",
+                PAPO_SEND_FILES=f"{first}\n{second}",
+                PAPO_SEND_LATER_FILE=str(later),
+            )
+            self.assertTrue(result["saved"])
+            self.assertEqual(result["state"], CONFIRMED)
+            self.assertEqual(result["draft_files"], 1)
+            self.assertEqual([p["name"] for p in server.uploads[0]], ["résumé.bin", "other.txt"])
+            self.assertEqual(
+                [p["data"] for p in server.uploads[0]], [b"\x00\xff\x1bBinary\r\n", b"second"]
+            )
+            self.assertEqual(server.sent_messages[0]["content"], "")
+
+    def test_new_attachment_does_not_bypass_uncertain_send_confirmation(self):
+        with tempfile.TemporaryDirectory() as folder, MockServer("send-drop") as server:
+            first, later = Path(folder, "first.txt"), Path(folder, "later.txt")
+            first.write_text("first")
+            later.write_text("later")
+            result = self.probe(
+                server,
+                "files-uncertain-append",
+                PAPO_SEND_TEXT="",
+                PAPO_SEND_FILES=str(first),
+                PAPO_SEND_LATER_FILE=str(later),
+            )
+            self.assertTrue(result["need_confirmation"])
+            self.assertEqual(result["draft_files"], 2)
+            self.assertEqual(server.message_count, 1)
+
+    def test_attachment_rejections_and_uncertain_retry_preserve_original_bytes(self):
+        for scenario, mode, expected in (
+            ("send-forbidden", "send", FAILED),
+            ("send-limited", "send", FAILED),
+            ("send-drop-once", "retry", CONFIRMED),
+        ):
+            with (
+                self.subTest(scenario=scenario),
+                tempfile.TemporaryDirectory() as folder,
+                MockServer(scenario) as server,
+            ):
+                path = Path(folder, "original.bin")
+                path.write_bytes(b"\x00original\xff")
+                result = self.probe(server, mode, PAPO_SEND_TEXT="", PAPO_SEND_FILES=str(path))
+                self.assertEqual(result["second_state" if mode == "retry" else "state"], expected)
+                self.assertTrue(
+                    all(parts[0]["data"] == b"\x00original\xff" for parts in server.uploads)
+                )
+                self.assertEqual(server.message_count, 2 if mode == "retry" else 1)
+                self.assertEqual(result["draft_files"], 0 if mode == "retry" else 1)
+
     def probe(self, server, mode="send", **settings):
         result = subprocess.run(
             [BINARY, server.url, mode],

@@ -191,6 +191,30 @@ The sanitized report distinguishes functional checks from contract divergences.
 
 ## Validation
 
+Attachment sending reuses libcurl MIME, GLib/GIO workers, private temporary-file
+adapters and the per-instance outbox. Immutable, reference-counted copies belong
+to drafts and captured send operations; confirmation removes only submitted IDs.
+New draft attachments survive pending sends. Retries retain the original bytes
+and the existing uncertain-result confirmation and global HTTP budget.
+Local limits (25 files per message, 512 MiB staged process-wide, 64 MiB clipboard
+images) bound resource use; the OpenAPI contract specifies no upload limits.
+
+File selection uses the XDG FileChooser portal through existing GIO on Linux,
+and IFileOpenDialog on an STA worker on Windows. Cancellation differs from
+unavailable support; only the latter opens the ncurses/GIO directory picker.
+The fallback bounds each directory listing to 10,000 entries; a specific path
+can select a file directly. Clipboard reads are explicit and cancellable:
+optional wl-paste/xclip helpers use bounded pipes without a shell; Windows uses
+CF_HDROP, PNG, WIC bitmap encoding and Unicode text. Native Windows libraries
+are system components, and no new third-party library is required. File picker
+and attachment-confirmation bounds use the existing history media cropping.
+Pending files have their own ncurses window between the history viewport and
+the editor. Geometry reserves that block before measuring visible history;
+compact terminals collapse its borders while retaining a visible history row.
+Flatpak file access uses the document portal; the fallback can browse only paths
+already accessible inside the sandbox. No broad filesystem/display permission
+is added for clipboard access.
+
 ```sh
 python3 -m venv build/test-env
 build/test-env/bin/pip install -r requirements-dev.txt
