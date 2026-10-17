@@ -3,7 +3,6 @@
 import json
 from pathlib import Path
 import re
-import tempfile
 import time
 import unittest
 from wcwidth import wcswidth
@@ -21,26 +20,23 @@ class MessageInteractions(unittest.TestCase):
     def open(self, server):
         # Keep Unicode labels observable for text interaction assertions. The
         # graphics suites cover rendered icons; mode tests exercise all modes.
-        config = tempfile.TemporaryDirectory(prefix="papo-interactions-")
-        self.addCleanup(config.cleanup)
-        path = Path(config.name, "papo-tui", "config.json")
-        path.parent.mkdir(mode=0o700)
-        path.write_text(
-            json.dumps(
-                dict(
-                    version=4,
-                    profiles=[],
-                    selected_profile=None,
-                    app_mode="light",
-                    requests_per_second=10,
-                    request_burst=25,
-                    desktop_notifications=False,
-                    notification_preview=False,
-                )
+        # Let the app create its private configuration with native permissions.
+        terminal = product.SendProduct.open(self, server)
+        try:
+            terminal.send("\x1bOQ")
+            self.wait(terminal, "Configurações")
+            self.wait(terminal, "(*) Normal")
+            terminal.send("\t\x1bOB\n\t\n")
+            path = Path(terminal.configuration.name, "papo-tui", "config.json")
+            self.settled(
+                terminal,
+                lambda: path.exists() and json.loads(path.read_text()).get("app_mode") == "light",
             )
-        )
-        path.chmod(0o600)
-        return product.SendProduct.open(self, server, environment={"XDG_CONFIG_HOME": config.name})
+            self.wait(terminal, "Conversar em #geral")
+            return terminal
+        except BaseException:
+            terminal.close()
+            raise
 
     def right_click(self, terminal, text):
         self.wait(terminal, text)

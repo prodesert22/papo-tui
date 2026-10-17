@@ -20,7 +20,13 @@ characters as UTF-8 and other Unicode units as function keys. The patch tags
 native non-ASCII units inside that queue and removes the tag in the public
 narrow/wide readers. The existing input adapter joins surrogate pairs. It keeps
 ncurses sequence and mouse decoding, adds no input parser, and leaves Linux on
-its system ncurses. Dependency source kits include the patch and recipe.
+its system ncurses. The patch also preserves coalesced key repeats and maps
+right clicks to terminal button three regardless of the reported mouse hardware.
+The input adapter checks the native viewport to catch consumed resize events.
+Dependency source kits include the patch and recipe. ConPTY checks exercise
+Unicode, repeated input, resizing and message interactions; those interaction
+tests select Light mode through the UI so Windows creates the configuration
+with its native private permissions.
 
 Application modes reuse the existing profile configuration, ncurses controls,
 media cache, downloads and Chafa dependency. Configuration schema 4 adds

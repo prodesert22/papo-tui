@@ -2082,6 +2082,9 @@ class MediaTerminal(unittest.TestCase):
             t = self.open(server, protocol="kitty", environment={"TMPDIR": directory})
             try:
                 t.resize(34, 140)
+                # Finish the failed cover before opening the player: both paths
+                # must share the downloaded file even when its decode fails.
+                self.wait(t, "Imagem inválida")
                 t.send("Rascunho retry\x1b\x1b[18~\n")
                 self.wait(t, "Vídeo inválido ou codec indisponível")
                 self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), 1)

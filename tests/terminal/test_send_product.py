@@ -18,6 +18,7 @@ class SendProduct(unittest.TestCase):
         self.assertIn(text, self.screen(terminal))
 
     def click(self, terminal, text):
+        self.wait(terminal, text)
         for row, line in enumerate(terminal.screen.display):
             if text in line:
                 terminal.click(row, wcswidth(line[: line.index(text)]) + 1)

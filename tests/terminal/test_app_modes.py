@@ -335,11 +335,13 @@ class AppModes(unittest.TestCase):
 
                         def colored():
                             return sum(
-                                cell.bg not in ("default", "121212", "1c1c1c", "000000")
+                                any(color in (cell.fg, cell.bg) for color in ("ff0000", "0000ff"))
                                 for cell in cells()
                             )
 
-                        self.wait(t, lambda: colored() >= 12)
+                        # Wait for the whole enlarged red/blue fixture. Loading
+                        # labels and indexed theme backgrounds are not frames.
+                        self.wait(t, lambda: colored() == 18)
                         frames = set()
                         deadline = time.monotonic() + 0.9
                         while time.monotonic() < deadline:
@@ -347,6 +349,7 @@ class AppModes(unittest.TestCase):
                             frames.add(tuple((cell.data, cell.fg, cell.bg) for cell in cells()))
                         if mode == "light":
                             self.assertEqual(len(frames), 1)
+                            self.assertTrue(all("ff0000" in (c.fg, c.bg) for c in cells()))
                         else:
                             self.assertGreater(len(frames), 1)
                         self.assertEqual(t.stream.frames, [])

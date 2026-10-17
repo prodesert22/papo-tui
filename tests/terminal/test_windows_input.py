@@ -42,6 +42,11 @@ class WindowsInput(unittest.TestCase):
             )
             self.assertEqual(native, payload, json.dumps(report))
             self.assertEqual(report["curses"], list(map(ord, payload)), json.dumps(report))
+            self.assertEqual(
+                report["repeats"],
+                [ord("a")] * 3 + [ord("é")] * 2 + [0x110000] * 2 + [ord("z")],
+                json.dumps(report),
+            )
             self.assertTrue(report["iswprint_e_acute"], json.dumps(report))
         finally:
             if child.isalive():

@@ -58,6 +58,28 @@ int main(void)
         if (type == OK)
             keys[length++] = key;
     }
+    /* Queue coalesced records explicitly so repeat handling is exercised even
+     * when ConPTY chooses to send adjacent equal keys as separate events. */
+    INPUT_RECORD repeated[] = {
+        {.EventType = KEY_EVENT,
+         .Event.KeyEvent = {.bKeyDown = TRUE, .wRepeatCount = 3, .uChar.UnicodeChar = 'a'}},
+        {.EventType = KEY_EVENT,
+         .Event.KeyEvent = {.bKeyDown = TRUE, .wRepeatCount = 2, .uChar.UnicodeChar = 0xe9}},
+        {.EventType = KEY_EVENT,
+         .Event.KeyEvent = {.bKeyDown = TRUE, .wRepeatCount = 2, .wVirtualKeyCode = VK_UP}},
+        {.EventType = KEY_EVENT,
+         .Event.KeyEvent = {.bKeyDown = TRUE, .wRepeatCount = 1, .uChar.UnicodeChar = 'z'}}};
+    unsigned repeats[8] = {0};
+    DWORD written;
+    bool queued = WriteConsoleInputW(input, repeated, 4, &written) && written == 4;
+    size_t repeat_count = 0;
+    until = GetTickCount64() + 5000;
+    while (queued && repeat_count < 8 && GetTickCount64() < until) {
+        uint32_t key;
+        int type = text_read_raw(&key);
+        if (type != ERR)
+            repeats[repeat_count++] = key == KEY_UP && type == KEY_CODE_YES ? 0x110000 : key;
+    }
     endwin();
     terminal_recovery_end();
     printf("\nPAPO_PROBE_RESULT={\"native\":[");
@@ -66,6 +88,9 @@ int main(void)
     printf("],\"curses\":[");
     for (size_t i = 0; i < length; ++i)
         printf("%s%u", i ? "," : "", keys[i]);
+    printf("],\"repeats\":[");
+    for (size_t i = 0; i < repeat_count; ++i)
+        printf("%s%u", i ? "," : "", repeats[i]);
     printf("],\"iswprint_e_acute\":%d}\n", !!iswprint(0xe9));
     return 0;
 }
