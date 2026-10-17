@@ -129,6 +129,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
     ui->connections = connections;
     ui->active_tab = ui->tab_cursor = instances_index(connections, auth);
     ui->editor = instances_editor(connections, auth);
+    ui->files = file_picker_create();
     if (ui->active_tab < connections->count) {
         instance_connection *connection = &connections->items[ui->active_tab];
         if (!connection->media)
@@ -154,6 +155,8 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
     ui->focus = focus_tabs ? SERVER_TABS : CHANNEL_LIST;
     if (!ui->model || !ui->r8 || !ui->mentions || !ui->icons || !ui->emojis || !ui->editor ||
         ui->active_tab == SIZE_MAX || !conversation_layout(ui)) {
+        conversation_attachments_close(ui);
+        file_picker_destroy(ui->files);
         conversation_interactions_close(ui);
         emoji_picker_destroy(ui->emojis);
         icons_destroy(ui->icons);
@@ -184,9 +187,9 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         uint64_t visible_now = 0;
         net_now_ms(&visible_now);
         if (!ui->body || !ui->at_end || r8_modal_is_open(ui->r8) || ui->settings.open ||
-            ui->duplicate_modal || mention_popup_open(ui->mentions) ||
-            emoji_picker_open(ui->emojis) || media_view_modal(ui->media) || ui->context_open ||
-            ui->reactors_open ||
+            ui->duplicate_modal || file_picker_open(ui->files) || ui->remove_confirm ||
+            mention_popup_open(ui->mentions) || emoji_picker_open(ui->emojis) ||
+            media_view_modal(ui->media) || ui->context_open || ui->reactors_open ||
             !(text_terminal_focused() ||
               (text_terminal_focus_unknown() && visible_now < ui->view_requested_until)))
             history_read_visible(ui->model, NULL);
@@ -196,6 +199,10 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             scope = DRAW_ALL;
         }
         if (conversation_poll_model(ui, auth) || before != auth_get_state(auth)) {
+            redraw = true;
+            scope = DRAW_ALL;
+        }
+        if (conversation_attachments_poll(ui, auth)) {
             redraw = true;
             scope = DRAW_ALL;
         }
@@ -255,6 +262,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                                      !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
                                      !media_view_modal(ui->media) &&
                                      !emoji_picker_open(ui->emojis) && !ui->context_open &&
+                                     !file_picker_open(ui->files) && !ui->remove_confirm &&
                                      !ui->reactors_open)) {
             redraw = true;
             scope = DRAW_ALL;
@@ -264,6 +272,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                                      !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
                                      !media_view_modal(ui->media) &&
                                      !mention_popup_open(ui->mentions) && !ui->context_open &&
+                                     !file_picker_open(ui->files) && !ui->remove_confirm &&
                                      !ui->reactors_open)) {
             redraw = true;
             scope = DRAW_ALL;
@@ -316,7 +325,8 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             connections, auth,
             ui->body && ui->at_end && !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
                     !emoji_picker_open(ui->emojis) && !media_view_modal(ui->media) &&
-                    !ui->context_open && !ui->reactors_open
+                    !ui->context_open && !ui->reactors_open && !file_picker_open(ui->files) &&
+                    !ui->remove_confirm
                 ? conversation_str(history_channel(ui->model, history_selected(ui->model)), "id")
                 : "");
         if (conversation_collect_notices(ui, auth)) {
@@ -355,10 +365,10 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             ui->paste = true;
             text_paste_begin(&ui->paste_data);
             ui->dragging = false;
-            if (!ui->duplicate_modal && !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
-                !media_view_modal(ui->media) && !emoji_picker_open(ui->emojis) &&
-                !ui->context_open && !ui->reactors_open && conversation_input(ui) &&
-                ui->focus != SERVER_TABS) {
+            if (!file_picker_open(ui->files) && !ui->remove_confirm && !ui->duplicate_modal &&
+                !(r8_modal_is_open(ui->r8) || ui->settings.open) && !media_view_modal(ui->media) &&
+                !emoji_picker_open(ui->emojis) && !ui->context_open && !ui->reactors_open &&
+                conversation_input(ui) && ui->focus != SERVER_TABS) {
                 ui->navigating = false;
                 conversation_set_focus(ui, MESSAGE_INPUT);
                 redraw = true;
@@ -367,10 +377,15 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         }
         if (type == KEY_CODE_YES && key == PASTE_END) {
             ui->paste = false;
-            if (!ui->duplicate_modal && !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
-                !media_view_modal(ui->media) && !emoji_picker_open(ui->emojis) &&
-                !ui->context_open && !ui->reactors_open && ui->focus == MESSAGE_INPUT &&
-                conversation_input(ui)) {
+            if (file_picker_paste(ui->files, &ui->paste_data)) {
+                redraw = true;
+                scope = DRAW_ALL;
+                continue;
+            }
+            if (!file_picker_open(ui->files) && !ui->remove_confirm && !ui->duplicate_modal &&
+                !(r8_modal_is_open(ui->r8) || ui->settings.open) && !media_view_modal(ui->media) &&
+                !emoji_picker_open(ui->emojis) && !ui->context_open && !ui->reactors_open &&
+                ui->focus == MESSAGE_INPUT && conversation_input(ui)) {
                 if (!text_paste_commit(&ui->paste_data, conversation_input(ui)))
                     ui->feedback = "Colagem excede o limite; rascunho preservado.";
                 else {
@@ -402,6 +417,21 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         if (ui->paste)
             continue;
         redraw = true;
+        if (type == OK && key == 17) {
+            result = HISTORY_EXIT;
+            break;
+        }
+        if (file_picker_open(ui->files) || ui->remove_confirm) {
+            if (type == KEY_CODE_YES && key == KEY_MOUSE) {
+                MEVENT events[64];
+                size_t count = ui_mouse_events(events, 64);
+                for (size_t i = 0; i < count; ++i)
+                    conversation_attachments_mouse(ui, &events[i]);
+            } else
+                conversation_attachments_key(ui, type, key);
+            scope = DRAW_ALL;
+            continue;
+        }
         if (type == KEY_CODE_YES && key == TEXT_COPY) {
             if (ui->focus == MESSAGE_INPUT && conversation_input(ui) && !ui->duplicate_modal &&
                 !(r8_modal_is_open(ui->r8) || ui->settings.open) && !media_view_modal(ui->media))
@@ -556,6 +586,25 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             scope = DRAW_ALL;
             continue;
         }
+        if (!media_view_modal(ui->media) &&
+            ((type == KEY_CODE_YES && key == KEY_F(3)) || (type == OK && key == 22))) {
+            if (*ui->edit_message)
+                ui->feedback = "Conclua a edição antes de anexar arquivos.";
+            else
+                conversation_attachments_open(ui, type == OK);
+            scope = DRAW_ALL;
+            continue;
+        }
+        if (type == KEY_CODE_YES && (key == KEY_LEFT || key == KEY_RIGHT) &&
+            (ui->focus == ATTACH_BUTTON || ui->focus == EMOJI_BUTTON) && !*ui->edit_message) {
+            conversation_set_focus(ui, ui->focus == ATTACH_BUTTON ? EMOJI_BUTTON : ATTACH_BUTTON);
+            scope = DRAW_ALL;
+            continue;
+        }
+        if (conversation_attachments_key(ui, type, key)) {
+            scope = DRAW_ALL;
+            continue;
+        }
         if (type == OK && key == 20 && conversation_input(ui)) {
             outbox_operation latest;
             if (outbox_latest(send_editor_outbox(ui->editor), ui->editor_channel, &latest) &&
@@ -584,9 +633,18 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             continue;
         }
         if ((type == OK && key == '\t') || (type == KEY_CODE_YES && key == KEY_BTAB)) {
-            int order[] = {SERVER_TABS,   LIST_BUTTONS,  CHANNEL_LIST, SETTINGS_BUTTON,
-                           HISTORY_PANEL, MESSAGE_INPUT, EMOJI_BUTTON};
-            int count = conversation_input(ui) ? 7 : 5, at = 0;
+            int order[9] = {SERVER_TABS, LIST_BUTTONS, CHANNEL_LIST, SETTINGS_BUTTON,
+                            HISTORY_PANEL};
+            int count = 5, at = 0;
+            if (conversation_input(ui)) {
+                const GPtrArray *files = conversation_attachments(ui);
+                if (files && files->len)
+                    order[count++] = ATTACHMENT_ROW;
+                order[count++] = MESSAGE_INPUT;
+                if (!*ui->edit_message)
+                    order[count++] = ATTACH_BUTTON;
+                order[count++] = EMOJI_BUTTON;
+            }
             while (at < count && order[at] != ui->focus)
                 ++at;
             conversation_set_focus(ui, order[(at + (type == OK ? 1 : count - 1)) % count]);
@@ -611,11 +669,15 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 MEVENT e = events[event_index];
                 if (!ui->frame)
                     continue;
+                if (conversation_attachments_mouse(ui, &e)) {
+                    scope = DRAW_ALL;
+                    continue;
+                }
                 if (ui->dragging && conversation_input(ui) && ui->body &&
                     (e.bstate & (BUTTON1_PRESSED | BUTTON1_RELEASED | REPORT_MOUSE_POSITION))) {
                     text_buffer *buffer = conversation_input(ui);
                     int row = e.y - getbegy(ui->body) - conversation_input_top(ui);
-                    int column = e.x - getbegx(ui->body) - 3;
+                    int column = e.x - getbegx(ui->body) - conversation_input_left(ui);
                     text_layout *measured = &ui->measured;
                     text_measure(buffer, conversation_input_width(ui), measured);
                     if (row < 0 && buffer->first_row > 0)
@@ -666,7 +728,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                     if (ui->body && e.x >= getbegx(ui->body) &&
                         e.x < getbegx(ui->body) + getmaxx(ui->body) &&
                         e.y >= getbegy(ui->body) + ui->history_top &&
-                        e.y < getbegy(ui->body) + ui->editor_border)
+                        e.y < getbegy(ui->body) + ui->history_top + ui->visible)
                         conversation_scroll_history(ui, e.bstate & BUTTON4_PRESSED ? -3 : 3, true);
                     else if (ui->body && conversation_input(ui) && e.x >= getbegx(ui->body) &&
                              e.x < getbegx(ui->body) + getmaxx(ui->body) &&
@@ -689,9 +751,9 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 if (!(e.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED)))
                     continue;
                 if (conversation_input(ui) && ui->body &&
-                    e.y == getbegy(ui->body) + conversation_input_top(ui) &&
-                    e.x >= getbegx(ui->body) + getmaxx(ui->body) - 7 &&
-                    e.x < getbegx(ui->body) + getmaxx(ui->body) - 3) {
+                    e.y >= getbegy(ui->body) + conversation_input_top(ui) - ui->editor_padding &&
+                    e.y <= getbegy(ui->body) + conversation_input_top(ui) + ui->editor_padding &&
+                    conversation_hit(ui->emoji_button_hit, e.x - getbegx(ui->body))) {
                     conversation_open_emojis(ui);
                     scope = DRAW_ALL;
                     continue;
@@ -773,12 +835,13 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 y = e.y;
                 x = e.x;
                 if (ui->body && wmouse_trafo(ui->body, &y, &x, false)) {
-                    if (y < ui->editor_border)
+                    if (y < ui->history_top + ui->visible)
                         conversation_set_focus(ui, HISTORY_PANEL);
                     else if (conversation_input(ui) && conversation_input_row(ui, y)) {
                         text_buffer *editor = conversation_input(ui);
                         text_click(editor, conversation_input_width(ui),
-                                   y - conversation_input_top(ui) + editor->first_row, x - 3);
+                                   y - conversation_input_top(ui) + editor->first_row,
+                                   x - conversation_input_left(ui));
                         send_editor_changed(ui->editor);
                         conversation_set_focus(ui, MESSAGE_INPUT);
                         ui->editor_scrolling = false;
@@ -923,6 +986,8 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         }
     }
 finished:
+    conversation_attachments_close(ui);
+    file_picker_destroy(ui->files);
     instances_visible(connections, NULL, NULL);
     text_paste_cancel(&ui->paste_data);
     mousemask(previous_mouse, NULL);

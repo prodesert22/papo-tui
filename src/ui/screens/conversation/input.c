@@ -107,7 +107,15 @@ text_buffer *conversation_input(view *ui)
 
 int conversation_input_width(view *ui)
 {
-    return ui->body ? getmaxx(ui->body) - 12 : 3;
+    return ui->body ? MAX(3, getmaxx(ui->body) - conversation_input_left(ui) -
+                                 (*ui->edit_message ? 9 : 16))
+                    : 3;
+}
+
+int conversation_input_left(view *ui)
+{
+    (void)ui;
+    return 3;
 }
 
 int conversation_input_height(view *ui)
@@ -134,7 +142,8 @@ void conversation_set_focus(view *ui, int focus)
     ui->focus = focus;
     if (focus == CHANNEL_LIST || focus == LIST_BUTTONS || focus == SETTINGS_BUTTON)
         ui->show_channels = true;
-    if (focus == HISTORY_PANEL || focus == MESSAGE_INPUT || focus == EMOJI_BUTTON)
+    if (focus == HISTORY_PANEL || focus == MESSAGE_INPUT || focus == EMOJI_BUTTON ||
+        focus == ATTACHMENT_ROW || focus == ATTACH_BUTTON)
         ui->show_channels = false;
     if (COLS < 80 && was_channels != ui->show_channels)
         conversation_layout(ui);
@@ -216,6 +225,10 @@ void conversation_cancel_edit(view *ui)
 
 void conversation_submit(view *ui, uint64_t retry_id, bool duplicate)
 {
+    if (ui->attachment_task) {
+        ui->feedback = "Aguarde a preparação dos anexos; Esc cancela.";
+        return;
+    }
     if (!conversation_input(ui))
         return;
     ui->feedback = NULL;

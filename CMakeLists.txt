@@ -17,6 +17,7 @@ option(PAPO_SANITIZERS "Enable address and undefined behavior sanitizers" OFF)
 
 option(PAPO_RELEASE_BUILD "Build an official version without a development suffix" OFF)
 option(PAPO_COVERAGE "Instrument application and tests for gcovr" OFF)
+option(PAPO_NATIVE_FILE_DIALOGS "Try native system dialogs before the terminal file picker" ON)
 if(PAPO_RELEASE_BUILD)
     set(PAPO_DISPLAY_VERSION "${PROJECT_VERSION}")
 else()

@@ -17,6 +17,7 @@ typedef struct {
     uint64_t reply_revision;
     char *text;
     uint64_t revision;
+    GPtrArray *files;
 } draft;
 typedef struct {
     uint64_t id, generation, revision;
@@ -27,6 +28,7 @@ typedef struct {
     uint64_t reply_revision;
     char *text;
     json_t *confirmed;
+    GPtrArray *files;
     bool prefix_untouched, transmitted, cancelled;
 } operation;
 
@@ -78,6 +80,7 @@ static bool valid_text(const char *value, bool *nonempty)
 static void dispose_operation(operation *item)
 {
     free(item->text);
+    g_clear_pointer(&item->files, g_ptr_array_unref);
     json_decref(item->confirmed);
     memset(item, 0, sizeof(*item));
 }
@@ -90,6 +93,7 @@ void outbox_reset(outbox *box)
         auth_cancel_send(box->session);
     for (size_t i = 0; i < OUTBOX_DRAFT_LIMIT; ++i) {
         free(box->drafts[i].text);
+        g_clear_pointer(&box->drafts[i].files, g_ptr_array_unref);
         memset(&box->drafts[i], 0, sizeof(draft));
     }
     for (size_t i = 0; i < OUTBOX_OPERATION_LIMIT; ++i)
@@ -250,13 +254,65 @@ const char *outbox_reply(outbox *box, const char *channel)
     return item ? item->reply : "";
 }
 
+const GPtrArray *outbox_attachments(outbox *box, const char *channel)
+{
+    if (!box || !valid_channel(channel) || !synchronize(box))
+        return NULL;
+    draft *item = find_draft(box, channel, false);
+    return item ? item->files : NULL;
+}
+bool outbox_add_attachment(outbox *box, const char *channel, attachment_file *file)
+{
+    if (!box || !file || !valid_channel(channel) || !synchronize(box))
+        return false;
+    draft *item = find_draft(box, channel, true);
+    if (!item || (item->files && item->files->len >= ATTACHMENT_LIMIT))
+        return false;
+    if (!item->files)
+        item->files = g_ptr_array_new_with_free_func((GDestroyNotify)attachment_unref);
+    g_ptr_array_add(item->files, attachment_ref(file));
+    return true;
+}
+bool outbox_remove_attachment(outbox *box, const char *channel, guint64 id)
+{
+    if (!box || !valid_channel(channel) || !synchronize(box))
+        return false;
+    draft *item = find_draft(box, channel, false);
+    for (guint i = 0; item && item->files && i < item->files->len; ++i)
+        if (attachment_id(g_ptr_array_index(item->files, i)) == id) {
+            g_ptr_array_remove_index(item->files, i);
+            return true;
+        }
+    return false;
+}
+static GPtrArray *snapshot_files(const GPtrArray *files)
+{
+    GPtrArray *copy = g_ptr_array_new_with_free_func((GDestroyNotify)attachment_unref);
+    for (guint i = 0; files && i < files->len; ++i)
+        g_ptr_array_add(copy, attachment_ref(g_ptr_array_index(files, i)));
+    return copy;
+}
+static bool contains_files(const GPtrArray *draft_files, const GPtrArray *sent_files)
+{
+    for (guint i = 0; sent_files && i < sent_files->len; ++i) {
+        bool found = false;
+        for (guint j = 0; draft_files && j < draft_files->len; ++j)
+            found |= attachment_id(g_ptr_array_index(draft_files, j)) ==
+                     attachment_id(g_ptr_array_index(sent_files, i));
+        if (!found)
+            return false;
+    }
+    return true;
+}
+
 static outbox_submit_result enqueue(outbox *box, const char *channel, const char *content,
-                                    const char *reply, bool accept_duplicate, uint64_t *id)
+                                    const char *reply, const GPtrArray *files,
+                                    bool accept_duplicate, uint64_t *id)
 {
     bool nonempty;
     if (!valid_text(content, &nonempty))
         return OUTBOX_INVALID;
-    if (!nonempty)
+    if (!nonempty && (!files || !files->len))
         return OUTBOX_EMPTY;
     operation *slot = NULL, *oldest = NULL;
     for (size_t i = 0; i < OUTBOX_OPERATION_LIMIT; ++i) {
@@ -270,7 +326,8 @@ static outbox_submit_result enqueue(outbox *box, const char *channel, const char
             if (item->state == OUTBOX_QUEUED || item->state == OUTBOX_SENDING)
                 return OUTBOX_BUSY;
             if (item->state == OUTBOX_UNCERTAIN && !accept_duplicate &&
-                !strncmp(content, item->text, strlen(item->text)))
+                !strncmp(content, item->text, strlen(item->text)) &&
+                contains_files(files, item->files))
                 return OUTBOX_CONFIRM_DUPLICATION;
         }
     }
@@ -281,6 +338,7 @@ static outbox_submit_result enqueue(outbox *box, const char *channel, const char
     char *snapshot = strdup(content);
     if (!snapshot)
         return OUTBOX_FULL;
+    GPtrArray *file_copy = snapshot_files(files);
     draft *editor = find_draft(box, channel, false);
     if (slot->id)
         dispose_operation(slot);
@@ -292,6 +350,7 @@ static outbox_submit_result enqueue(outbox *box, const char *channel, const char
     slot->state = OUTBOX_QUEUED;
     memcpy(slot->channel, channel, strlen(channel) + 1);
     slot->text = snapshot;
+    slot->files = file_copy;
     slot->prefix_untouched =
         editor && editor->text && !strncmp(editor->text, content, strlen(content));
     if (id)
@@ -308,7 +367,7 @@ outbox_submit_result outbox_submit(outbox *box, const char *channel, bool accept
         return OUTBOX_NO_SESSION;
     draft *item = find_draft(box, channel, false);
     return enqueue(box, channel, item && item->text ? item->text : "", item ? item->reply : "",
-                   accept_duplicate, id);
+                   item ? item->files : NULL, accept_duplicate, id);
 }
 
 outbox_submit_result outbox_retry(outbox *box, uint64_t id, bool accept_duplicate, uint64_t *new_id)
@@ -322,7 +381,8 @@ outbox_submit_result outbox_retry(outbox *box, uint64_t id, bool accept_duplicat
         return OUTBOX_BUSY;
     if (item->state == OUTBOX_UNCERTAIN && !accept_duplicate)
         return OUTBOX_CONFIRM_DUPLICATION;
-    return enqueue(box, item->channel, item->text, item->reply, accept_duplicate, new_id);
+    return enqueue(box, item->channel, item->text, item->reply, item->files, accept_duplicate,
+                   new_id);
 }
 
 static void consume_confirmation(outbox *box, operation *item)
@@ -330,6 +390,10 @@ static void consume_confirmation(outbox *box, operation *item)
     draft *editor = find_draft(box, item->channel, false);
     if (!editor)
         return;
+    /* IDs distinguish submitted files from later additions, even with equal names. */
+    for (guint i = 0; item->files && i < item->files->len; ++i)
+        outbox_remove_attachment(box, item->channel,
+                                 attachment_id(g_ptr_array_index(item->files, i)));
     if (editor->reply_revision == item->reply_revision && !strcmp(editor->reply, item->reply)) {
         editor->reply[0] = 0;
         ++editor->reply_revision;
@@ -381,7 +445,9 @@ void outbox_poll(outbox *box)
         if (item->id && item->state == OUTBOX_QUEUED && (!next || item->id < next->id))
             next = item;
     }
-    if (next && auth_send_reply(box->session, next->id, next->channel, next->text, next->reply)) {
+    if (next &&
+        auth_send_attachments(box->session, next->id, next->channel, next->text, next->reply,
+                              (attachment_file *const *)next->files->pdata, next->files->len)) {
         next->state = OUTBOX_SENDING;
         box->active = next->id;
     }
@@ -468,6 +534,7 @@ void outbox_reconciled(outbox *box, uint64_t id)
     if (item && item->state == OUTBOX_CONFIRMED && !item->confirmed) {
         free(item->text);
         item->text = NULL;
+        g_clear_pointer(&item->files, g_ptr_array_unref);
     }
 }
 

@@ -47,6 +47,10 @@ bool outbox_set_draft(outbox *box, const char *channel_id, const char *content);
 /* Reply metadata is owned by the per-conversation draft, independently of text. */
 bool outbox_set_reply(outbox *box, const char *channel_id, const char *reply_to);
 const char *outbox_reply(outbox *box, const char *channel_id);
+/* Borrowed array, elements owned by the draft. Add retains one file reference. */
+const GPtrArray *outbox_attachments(outbox *box, const char *channel_id);
+bool outbox_add_attachment(outbox *box, const char *channel_id, attachment_file *file);
+bool outbox_remove_attachment(outbox *box, const char *channel_id, guint64 file_id);
 outbox_submit_result outbox_submit(outbox *box, const char *channel_id,
                                    bool accept_possible_duplicate, uint64_t *operation_id);
 /* Retries the captured text, preserving the current editor. An uncertain

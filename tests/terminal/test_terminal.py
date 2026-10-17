@@ -94,6 +94,12 @@ def editor_region(terminal):
     return first, terminal.screen.lines - (6 if terminal.screen.lines >= 18 else 5)
 
 
+def editor_column(terminal):
+    """Text begins after the editor prompt; toolbar buttons sit on the right."""
+    prompt = 27 if terminal.screen.columns >= 80 else 2
+    return prompt + 2
+
+
 class PosixTerminal:
     def __init__(
         self,

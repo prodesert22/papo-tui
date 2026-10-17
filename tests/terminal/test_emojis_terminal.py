@@ -15,7 +15,7 @@ from urllib.parse import urlsplit, parse_qs
 import test_media_terminal as media_tests
 from history_mock import HistoryMock, CHANNEL, STAMP, uuid
 from realtime_mock import RealtimeMock
-from test_terminal import editor_region
+from test_terminal import editor_region, editor_column
 
 
 def encode_emoji_animation(gif, format):
@@ -294,7 +294,7 @@ class EmojiTerminal(unittest.TestCase):
         with self.server() as s:
             t = self.open(s, sixel=False)
             try:
-                t.send("rascunho\t")
+                t.send("rascunho\t\t")
                 self.wait(t, "Foco: Emojis")
                 t.send("\n")
                 self.wait(t, "Emojis · Esc voltar")
@@ -794,7 +794,7 @@ class EmojiTerminal(unittest.TestCase):
 
                         def editor_pixels():
                             row, _ = editor_region(t)
-                            column = t.screen.display[row].index(">") + 2
+                            column = editor_column(t)
                             images = {
                                 int(placement[b"i"])
                                 for placement, position in zip(
@@ -1208,8 +1208,10 @@ class EmojiTerminal(unittest.TestCase):
                     self.until(t, fills_avatar)
                     t.send("\t")
                     self.wait(t, "Foco: Mensagem")
+                    t.send("\t")
+                    self.wait(t, "Foco: Anexar")
                     self.until(t, fills_avatar)
-                    t.send("\x1b[Z")
+                    t.send("\x1b[Z\x1b[Z")
                     self.wait(t, "Foco: Histórico")
                     self.until(t, fills_avatar)
                     self.assertEqual(sum("/users/profile_batch" in r[1] for r in s.requests), 1)

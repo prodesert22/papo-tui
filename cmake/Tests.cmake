@@ -313,6 +313,23 @@ if(BUILD_TESTING)
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/integration/test_send.py
                 $<TARGET_FILE:send-probe>)
     set_tests_properties(message-send-integration PROPERTIES TIMEOUT 120)
+    add_test(
+        NAME attachments-terminal
+        COMMAND
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_attachments.py
+            $<TARGET_FILE:papo-tui>)
+    set_tests_properties(attachments-terminal PROPERTIES TIMEOUT 120)
+    add_executable(attachment-files-test tests/unit/test_attachment_files.c)
+    target_link_libraries(attachment-files-test PRIVATE papo_auth)
+    target_compile_options(attachment-files-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_test(NAME attachment-files COMMAND attachment-files-test)
+    if(NOT WIN32)
+        add_executable(file-portal-test tests/unit/test_file_portal.c)
+        target_link_libraries(file-portal-test PRIVATE papo_send_editor)
+        target_compile_options(file-portal-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+        add_test(NAME file-portal COMMAND file-portal-test)
+        set_tests_properties(file-portal PROPERTIES TIMEOUT 20)
+    endif()
     add_executable(session-probe tests/probes/session_probe.c)
     target_link_libraries(session-probe PRIVATE papo_auth)
     target_compile_options(session-probe PRIVATE -Wall -Wextra -Wpedantic -Werror)

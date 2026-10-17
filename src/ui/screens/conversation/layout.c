@@ -6,6 +6,9 @@ void conversation_destroy_layout(view *ui)
         delwin(ui->confirm);
     if (ui->list)
         delwin(ui->list);
+    if (ui->attachment_bar)
+        delwin(ui->attachment_bar);
+    ui->attachment_bar = NULL;
     if (ui->body)
         delwin(ui->body);
     if (ui->footer)
@@ -497,23 +500,44 @@ bool conversation_editor_geometry(view *ui)
     if (!ui->body)
         return false;
     int rows = 1;
+    const GPtrArray *files = conversation_attachments(ui);
+    int available = getmaxy(ui->body) - ui->history_top;
+    int attachment_rows = files && files->len ? (available >= 10 ? 3 : 1) : 0;
+    int padding = available >= (attachment_rows ? 10 : 7) ? 1 : 0;
     text_buffer *buffer = conversation_input(ui);
     if (buffer) {
         text_layout *measured = &ui->measured;
         text_measure(buffer, conversation_input_width(ui), measured);
         rows = measured->rows;
     }
-    int maximum = getmaxy(ui->body) - ui->history_top - 2 * ui->editor_padding - 4;
+    /* Keep the attachment block outside the editor and preserve history even
+     * at minimum height, where the typing row and block borders collapse. */
+    int bottom_rows = attachment_rows && available <= 5 ? 2 : 3;
+    int maximum = available - 2 * padding - bottom_rows - 1 - attachment_rows;
     if (maximum > 5)
         maximum = 5;
     if (maximum < 1)
         maximum = 1;
     if (rows > maximum)
         rows = maximum;
-    bool changed = rows != ui->editor_rows;
+    int border = getmaxy(ui->body) - rows - 2 * padding - bottom_rows;
+    int attachment_top = border - attachment_rows;
+    bool changed = rows != ui->editor_rows || border != ui->editor_border ||
+                   padding != ui->editor_padding || attachment_rows != ui->attachment_rows ||
+                   attachment_top != ui->attachment_top;
+    if (changed && ui->attachment_bar) {
+        delwin(ui->attachment_bar);
+        ui->attachment_bar = NULL;
+    }
+    ui->editor_padding = padding;
     ui->editor_rows = rows;
-    ui->editor_border = getmaxy(ui->body) - rows - 2 * ui->editor_padding - 3;
-    ui->visible = ui->editor_border - ui->history_top;
+    ui->editor_border = border;
+    ui->attachment_rows = attachment_rows;
+    ui->attachment_top = attachment_top;
+    if (attachment_rows && !ui->attachment_bar)
+        ui->attachment_bar =
+            derwin(ui->body, attachment_rows, getmaxx(ui->body), attachment_top, 0);
+    ui->visible = attachment_top - ui->history_top;
     media_view_viewport(ui->media, ui->visible);
     return changed;
 }
