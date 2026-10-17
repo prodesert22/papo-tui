@@ -62,6 +62,8 @@ bool auth_send_attachments(auth_client *client, uint64_t operation_id, const cha
     if (!auth_has_session(client) || client->state != AUTH_READY || client->queued ||
         client->attached || client->api_path || client->response_ready || client->send_ready ||
         !operation_id || !channel_id || !*channel_id ||
+        permissions_channel(client->permissions, channel_id, PERMISSION_SEND_MESSAGES) !=
+            PERMISSION_ALLOWED ||
         strlen(channel_id) >= sizeof(client->send_channel) || !content || (!*content && !count) ||
         count > ATTACHMENT_LIMIT || (count && !files) || strlen(content) > 8192)
         return false;

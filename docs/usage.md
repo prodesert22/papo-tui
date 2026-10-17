@@ -44,6 +44,12 @@ leading selection marker. Type in the editor and press **Enter** to send;
 also inserts a new line. Pasting text does not send the message automatically.
 Switching conversations preserves drafts during the current run.
 
+Member names use the first valid role color in the order supplied by the server.
+Members without a valid role color, and webhook authors, appear in white.
+Assigning or removing a role updates the name color when its live event arrives.
+Changes to a role's color appear after the role catalog refreshes; Ctrl+R also
+requests an update. Terminals with a limited palette approximate the role color.
+
 Scroll with the arrow keys, PageUp/PageDown or the mouse wheel over the history.
 The next page loads as you approach either edge. A loading indicator appears
 if you reach the edge before the messages arrive.
@@ -178,6 +184,30 @@ Messages containing only rendered emojis use larger 48×48 previews and taller
 rows, wrapping to fit the conversation. Messages with text and reaction buttons
 keep their usual emoji size. Light keeps enlarged server emojis static and uses
 native Unicode emojis; Ultralight keeps the text layout.
+
+## Permissions and access
+
+The channel list hides channels you cannot read. Message menus show only the
+actions your account can perform; keyboard shortcuts follow the same rules.
+In a read-only channel, you can keep a draft, edit or delete your own messages,
+view reactions and remove your own reaction. Sending, replying and adding a
+reaction require permission to send messages. Administrative roles do not let
+you edit another person's messages. Deleting another person's message requires
+`delete_messages` in that channel; this does not apply to other people's DMs.
+
+Assigned or removed roles take effect as soon as their WebSocket event arrives,
+including while a menu or confirmation is open. Other permission changes are
+checked every 30 seconds in the active server tab. Ctrl+R also refreshes
+permissions. These checks can take longer while the connection is unavailable
+or the server limits requests. Permissions that cannot be confirmed remain
+unavailable; the client shows a loading or retry notice.
+
+If you lose access to an open channel, its history closes and your draft stays
+with that conversation. Once access returns, select the channel to resume it.
+An action still waiting to be sent is canceled if its permission is revoked;
+an action already transmitted can still finish. Failed mutations require an
+explicit retry. Managing roles, channels and server settings is not available
+in this client yet.
 
 ## Messages, editing, replies and reactions
 

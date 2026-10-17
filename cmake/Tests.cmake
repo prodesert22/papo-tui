@@ -13,6 +13,31 @@ if(BUILD_TESTING)
     add_test(NAME terminal-windows-lifecycle
              COMMAND ${Python3_EXECUTABLE}
                      ${PROJECT_SOURCE_DIR}/tests/unit/test_terminal_windows.py)
+    add_executable(permissions-probe tests/probes/permissions_probe.c)
+    target_link_libraries(permissions-probe PRIVATE papo_outbox)
+    target_compile_options(permissions-probe PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_test(
+        NAME permissions-integration
+        COMMAND
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/integration/test_permissions.py
+            $<TARGET_FILE:permissions-probe>)
+    set_tests_properties(permissions-integration PROPERTIES TIMEOUT 120)
+    add_executable(permissions-test tests/unit/test_permissions.c)
+    target_link_libraries(permissions-test PRIVATE papo_auth)
+    target_compile_options(permissions-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_test(NAME permissions-unit COMMAND permissions-test)
+    add_test(
+        NAME permissions-terminal
+        COMMAND
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_permissions.py
+            $<TARGET_FILE:papo-tui>)
+    set_tests_properties(permissions-terminal PROPERTIES TIMEOUT 180)
+    add_test(
+        NAME member-colors-terminal
+        COMMAND
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_member_colors.py
+            $<TARGET_FILE:papo-tui>)
+    set_tests_properties(member-colors-terminal PROPERTIES TIMEOUT 90)
     find_program(FFMPEG_CLI NAMES ffmpeg REQUIRED)
     add_test(
         NAME app-modes-terminal
@@ -166,8 +191,7 @@ if(BUILD_TESTING)
     target_link_libraries(media-test PRIVATE papo_media PkgConfig::AVUTIL PkgConfig::SIXEL)
     target_compile_options(media-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
     add_test(NAME media-layout-sixel COMMAND media-test)
-    add_executable(media-modal-probe tests/probes/media_modal_probe.c src/ui/components/theme.c
-                                     src/ui/components/button.c)
+    add_executable(media-modal-probe tests/probes/media_modal_probe.c src/ui/components/button.c)
     target_link_libraries(media-modal-probe PRIVATE papo_media)
     target_compile_options(media-modal-probe PRIVATE -Wall -Wextra -Wpedantic -Werror)
     add_test(
@@ -296,7 +320,7 @@ if(BUILD_TESTING)
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_send_product.py
             $<TARGET_FILE:papo-tui>)
     set_tests_properties(message-send-product PROPERTIES TIMEOUT 120)
-    add_executable(send-terminal-probe tests/probes/send_terminal_probe.c src/ui/components/theme.c)
+    add_executable(send-terminal-probe tests/probes/send_terminal_probe.c)
     target_link_libraries(send-terminal-probe PRIVATE papo_send_editor)
     target_compile_options(send-terminal-probe PRIVATE -Wall -Wextra -Wpedantic -Werror)
     add_test(

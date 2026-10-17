@@ -2,6 +2,7 @@
 #define PAPO_AUTH_H
 
 #include "model/attachment.h"
+#include "model/permissions.h"
 #include "net/realtime/websocket.h"
 #include <stdbool.h>
 #include <stddef.h>
@@ -24,7 +25,10 @@ typedef enum {
     AUTH_REFRESH,
     AUTH_API_GET,
     AUTH_MESSAGE_SEND,
-    AUTH_API_MUTATION
+    AUTH_API_MUTATION,
+    AUTH_PERMISSION_SERVER,
+    AUTH_PERMISSION_ROLES,
+    AUTH_PERMISSION_CHANNELS
 } auth_state;
 
 typedef enum {
@@ -97,6 +101,14 @@ bool auth_get_json(auth_client *client, const char *path);
 bool auth_mutate_json(auth_client *client, const char *method, const char *path,
                       const json_t *body);
 bool auth_api_uncertain(const auth_client *client);
+/* Borrowed, instance/account-scoped policy; auth owns it until destruction. */
+permissions *auth_permissions(auth_client *client);
+void auth_permissions_refresh(auth_client *client);
+const char *auth_permissions_notice(const auth_client *client);
+/* Restricts a just-queued message mutation until HTTP admission. Copies only
+ * authorization metadata; false cancels the unsent mutation safely. */
+bool auth_guard_message(auth_client *client, const json_t *message, channel_permission permission,
+                        bool edit, bool deletion);
 /* Read-only POST /users/user_summary_batch. Copies 1..1000 UUID strings;
  * participates in the same queue/budget and may recover one 401, like GET.
  * This endpoint has no mutation semantics; no generic POST replay API exists. */

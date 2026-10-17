@@ -16,6 +16,9 @@ class MockServer:
     def __init__(self, scenario="public", tls_context=None, secure_cookie=False, username="josé"):
         self.scenario = scenario
         self.username = username
+        self.owner_id = "00000000-0000-4000-8000-000000000001"
+        self.user_roles = []
+        self.roles = []
         self.session_cookie = "user-fixture"
         self.refresh_count = 0
         self.api_count = 0
@@ -136,6 +139,7 @@ class MockServer:
                             200,
                             {
                                 "id": "00000000-0000-4000-8000-000000000002",
+                                "owner_id": outer.owner_id,
                                 "name": outer.name,
                                 "public": not outer.scenario.startswith("private"),
                             },
@@ -156,10 +160,35 @@ class MockServer:
                                 if outer.scenario == "refresh-identity" and outer.refresh_count
                                 else "00000000-0000-4000-8000-000000000001",
                                 "username": outer.username,
+                                "roles": outer.user_roles,
                                 "connection_violation": outer.scenario == "refresh-violation"
                                 and outer.refresh_count > 0,
                             },
                         )
+                elif self.path.endswith("/roles"):
+                    self.respond(200, {"roles": outer.roles})
+                elif self.path.endswith("/channels"):
+                    self.respond(
+                        200,
+                        {
+                            "channels": [
+                                {
+                                    "id": "00000000-0000-4000-8000-000000000003",
+                                    "name": "geral",
+                                    "type": "text",
+                                    "position": 1,
+                                    "permissions": [],
+                                },
+                                {
+                                    "id": "00000000-0000-4000-8000-000000000004",
+                                    "name": "outro",
+                                    "type": "text",
+                                    "position": 2,
+                                    "permissions": [],
+                                },
+                            ]
+                        },
+                    )
                 elif self.path.endswith("/fixture/read"):
                     outer.api_count += 1
                     if outer.scenario == "api-twice" or (

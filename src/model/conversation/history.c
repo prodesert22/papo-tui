@@ -307,7 +307,8 @@ uint64_t history_messages_revision(const history *h)
 
 const char *history_status(const history *h)
 {
-    return h->status;
+    const char *notice = auth_permissions_notice(h->auth);
+    return h->selected == SIZE_MAX && *notice ? notice : h->status;
 }
 
 const char *history_notice(const history *h, history_notice_kind kind, uint64_t *revision)
@@ -429,7 +430,8 @@ void history_reload_channels(history *h)
 bool history_select(history *h, size_t index)
 {
     json_t *c = history_channel(h, index);
-    if (!c || !strcmp(history_internal_str(c, "type"), "category"))
+    if (!c || !history_channel_visible(h, index) ||
+        !strcmp(history_internal_str(c, "type"), "category"))
         return false;
     if (!h->active)
         return false;
@@ -460,6 +462,7 @@ void history_recent(history *h)
 
 bool history_retry(history *h)
 {
+    auth_permissions_refresh(h->auth);
     if (history_interactions_retry(h))
         return true;
     if (h->pending != NONE) {
@@ -549,6 +552,69 @@ bool history_internal_channels_response(history *h, json_t *body)
     return true;
 }
 
+bool history_channel_visible(const history *h, size_t index)
+{
+    json_t *channel = history_channel(h, index);
+    if (!channel)
+        return false;
+    if (!strcmp(history_internal_str(channel, "type"), "category"))
+        return true;
+    return permissions_channel(auth_permissions(h->auth), history_internal_str(channel, "id"),
+                               PERMISSION_READ_CHANNEL) == PERMISSION_ALLOWED;
+}
+permission_decision history_permission(const history *h, channel_permission permission)
+{
+    json_t *channel = h ? history_channel(h, h->selected) : NULL;
+    return channel ? permissions_channel(auth_permissions(h->auth),
+                                         history_internal_str(channel, "id"), permission)
+                   : PERMISSION_UNKNOWN;
+}
+static bool sync_permissions(history *h)
+{
+    permissions *p = auth_permissions(h->auth);
+    uint64_t revision = permissions_revision(p);
+    if (h->permission_revision == revision)
+        return false;
+    uint64_t channels = permissions_channel_revision(p);
+    if (h->permission_channels != channels) {
+        const json_t *metadata = permissions_channels(p);
+        if (metadata && !h->recovering) {
+            /* Recovery owns its channel -> history sequence. A parallel metadata
+             * snapshot must not consume its queued channel refresh. */
+            json_t *array = json_array();
+            const char *id;
+            json_t *value;
+            bool ok = array != NULL;
+            json_object_foreach((json_t *)metadata, id, value)
+            {
+                (void)id;
+                if (json_array_append(array, value))
+                    ok = false;
+            }
+            json_t *body = json_pack("{s:O}", "channels", array ? array : json_null());
+            if (ok && body && history_internal_channels_response(h, body))
+                h->want_channels = false;
+            json_decref(body);
+            json_decref(array);
+        }
+        h->permission_channels = channels;
+    }
+    h->permission_revision = revision;
+    if (h->selected != SIZE_MAX &&
+        history_permission(h, PERMISSION_READ_CHANNEL) == PERMISSION_DENIED) {
+        if (h->pending != NONE && h->pending != INBOX && !history_internal_actions_mutating(h)) {
+            auth_cancel_read(h->auth);
+            h->pending = NONE;
+        }
+        ++h->selection;
+        clear_messages(h);
+        h->selected = SIZE_MAX;
+        history_internal_notice(h, HISTORY_NOTICE_EVENT,
+                                "Acesso ao canal indisponível; rascunho preservado.");
+    }
+    return true;
+}
+
 /* Bit 0: model changed; bit 1: yield before dispatching another request. */
 static int process_response(history *h, uint64_t maintenance_now)
 {
@@ -582,9 +648,12 @@ static int process_response(history *h, uint64_t maintenance_now)
         if (generation == h->context && h->request_context == h->context) {
             inbox_response(h->inbox, body, code, uncertain);
             history_internal_restore_selection(h, current);
-            for (size_t i = 0; i < inbox_dm_count(h->inbox); ++i)
+            for (size_t i = 0; i < inbox_dm_count(h->inbox); ++i) {
+                permissions_dm(auth_permissions(h->auth),
+                               history_internal_str(inbox_dm(h->inbox, i), "id"), true);
                 history_internal_cache_user(h, json_object_get(inbox_dm(h->inbox, i), "user"),
                                             false);
+            }
             h->want_authors = true;
         }
         json_decref(body);
@@ -651,6 +720,10 @@ static int process_response(history *h, uint64_t maintenance_now)
             h->summary_ids = NULL;
         }
         if (!ok) {
+            json_t *channel = history_channel(h, h->selected);
+            if (code == 403 && json_is_true(json_object_get(channel, "_dm")))
+                permissions_dm(auth_permissions(h->auth), history_internal_str(channel, "id"),
+                               false);
             h->failed = kind;
             if (h->recovering && (code == 0 || code == 429 || code >= 500)) {
                 uint64_t now;
@@ -720,6 +793,7 @@ bool history_poll(history *h)
         h->epoch = auth_ws_epoch(h->auth);
     }
     load_reads(h);
+    changed |= sync_permissions(h);
     uint64_t epoch = auth_ws_epoch(h->auth);
     bool connected = auth_has_session(h->auth) && auth_ws_state(h->auth) == WS_OPEN;
     if ((h->typing_connected && !connected) || epoch != h->epoch) {
@@ -761,6 +835,7 @@ bool history_poll(history *h)
         json_decref(event);
         changed = true;
     }
+    changed |= sync_permissions(h);
     int response = process_response(h, maintenance_now);
     changed |= (response & 1) != 0;
     if (h->retry_requested && h->pending == NONE) {
@@ -811,6 +886,7 @@ bool history_poll(history *h)
             return true;
         if (h->r8 && !h->want_channels && !h->want_messages && inbox_dispatch(h->inbox)) {
             h->pending = INBOX;
+            h->request_role_events = h->role_events;
             h->request_context = h->context;
             return true;
         }
@@ -844,6 +920,7 @@ bool history_poll(history *h)
         }
         if (started) {
             h->pending = kind;
+            h->request_role_events = h->role_events;
             h->request_context = h->context;
             h->request_selection = h->selection;
             if (!h->recovering)

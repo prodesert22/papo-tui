@@ -105,7 +105,8 @@ class WebSocketTests(unittest.TestCase):
             result = self.probe(server, "revalidate")
             self.assertIn("ack=1", result.stdout)
             self.assertIn("revalidated_failure=1", result.stdout)
-            self.assertEqual(sum(r[1].endswith("/auth/whoami") for r in server.requests), 1)
+            # Initial identity plus REST reconciliation after the WS upgrade.
+            self.assertEqual(sum(r[1].endswith("/auth/whoami") for r in server.requests), 2)
             self.assertEqual(sum(r[1].endswith("/auth/refresh") for r in server.requests), 1)
 
     def test_wss_trusted_ca_untrusted_certificate_and_hostname(self):

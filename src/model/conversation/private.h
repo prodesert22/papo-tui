@@ -53,6 +53,8 @@ struct history {
     json_t *users, *directory, *queried, *summary_ids;
     size_t user_bytes;
     uint64_t users_revision, messages_revision;
+    uint64_t role_events, request_role_events;
+    uint64_t permission_revision, permission_channels;
     bool users_active, users_complete, users_failed, users_partial;
     char users_time[65], users_id[37], users_notice[192];
     json_t *channels, *messages, *read_messages;
@@ -93,6 +95,7 @@ bool history_internal_cache_user(history *h, json_t *u, bool presence);
 void history_internal_typing_remove(history *h, const char *id);
 bool history_internal_typing_event(history *h, const json_t *event);
 bool history_internal_presence_event(history *h, const json_t *event);
+bool history_internal_role_event(history *h, const json_t *event);
 bool history_internal_users_response(history *h, json_t *body);
 bool history_internal_request_users(history *h);
 bool history_internal_channels_response(history *h, json_t *body);

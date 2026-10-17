@@ -1523,6 +1523,7 @@ class MediaTerminal(unittest.TestCase):
         with self.serve(self.video, "video/mp4") as server:
             t = self.open(server, protocol="iterm2")
             try:
+                self.wait(t, "Mensagem 0001")
                 t.send("\x1b[18~\n")
                 self.wait_frames(t, 2)
                 self.wait(t, "Reproduzindo")

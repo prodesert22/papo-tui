@@ -21,6 +21,8 @@ add_library(
     src/net/auth/session.c
     src/net/auth/transport.c
     src/net/auth/validation.c
+    src/model/permissions.c
+    src/net/auth/permissions.c
     src/model/text/mentions.c
     src/model/assets/catalog.c
     src/net/http/download.c
@@ -83,6 +85,7 @@ add_library(
     src/model/text/emoji_catalog.c
     src/ui/input/editor.c
     src/ui/components/mention_popup.c
+    src/ui/components/theme.c
     src/ui/components/status_bar.c
     src/ui/input/text.c
     src/ui/input/mouse.c
@@ -208,7 +211,6 @@ add_executable(
     src/ui/components/settings.c
     src/ui/screens/inbox.c
     src/ui/screens/profiles.c
-    src/ui/components/theme.c
     src/ui/components/button.c)
 target_sources(papo-tui PRIVATE src/ui/components/file_picker.c)
 target_compile_definitions(papo-tui

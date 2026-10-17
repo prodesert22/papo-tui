@@ -181,6 +181,10 @@ void conversation_draw_tabs(view *ui, auth_client *auth)
         text_label(ui->tabs, 1, ui->conversation_hit.x, 10, "[Conversa]");
     } else
         text_label(ui->tabs, 1, 0, width, summary);
+    wattrset(ui->tabs,
+             COLOR_PAIR(theme_member_pair(history_member_color(ui->model, auth_user_id(auth)),
+                                          focused ? THEME_FOCUS_MUTED : THEME_PANEL_MUTED)));
+    text_label(ui->tabs, 1, 0, COLS < 80 ? width - 20 : width, auth_username(auth));
 }
 
 bool conversation_collect_notices(view *ui, auth_client *auth)
@@ -478,7 +482,6 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         media_view_begin(ui->media);
         icons_begin(ui->icons);
         chat_assets_visible_begin(history_assets(ui->model));
-        message_colors_begin();
     }
     if (!paint_history && paint_media) {
         media_view_frame(ui->media);
@@ -558,10 +561,16 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                 bool notified = unread || mentions;
                 int badge_width =
                     notified ? notification_badge(ui, NULL, 0, 0, mentions, false, 0) : 0;
-                wattrset(ui->list, COLOR_PAIR(selected && focused ? THEME_FOCUSED
-                                              : selected          ? THEME_PANEL_ACTIVE
-                                              : focused           ? THEME_FOCUS_AREA
-                                                                  : THEME_PANEL));
+                int pair = selected && focused ? THEME_FOCUSED
+                           : selected          ? THEME_PANEL_ACTIVE
+                           : focused           ? THEME_FOCUS_AREA
+                                               : THEME_PANEL;
+                if (ui->list_dms)
+                    pair = theme_member_pair(
+                        history_member_color(ui->model,
+                                             conversation_str(json_object_get(c, "user"), "id")),
+                        pair);
+                wattrset(ui->list, COLOR_PAIR(pair));
                 text_label(ui->list, row + 1, 1, ui->side - 2 - badge_width, label);
                 if (notified)
                     notification_badge(ui, ui->list, row + 1, ui->side - 1 - badge_width, mentions,
@@ -582,7 +591,8 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         mvwaddch(ui->list, y + 2, 0, ACS_LLCORNER);
         mvwhline(ui->list, y + 2, 1, ACS_HLINE, w - 2);
         mvwaddch(ui->list, y + 2, w - 1, ACS_LRCORNER);
-        wattrset(ui->list, COLOR_PAIR(THEME_PANEL));
+        wattrset(ui->list, COLOR_PAIR(theme_member_pair(
+                               history_member_color(ui->model, auth_user_id(auth)), THEME_PANEL)));
         text_label(ui->list, y + 1, 2, w - 9, auth_username(auth));
         button_draw(ui->list, y + 1, w - 6, 5, papo_unicode_width(0x2699) == 1 ? "[⚙]" : "[*]",
                     ui->focus == SETTINGS_BUTTON ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);

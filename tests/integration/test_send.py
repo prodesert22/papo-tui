@@ -215,7 +215,8 @@ class Sending(unittest.TestCase):
             result = self.probe(server, "rate")
             self.assertEqual(result["confirmed_count"], 30)
             self.assertEqual(server.message_count, 30)
-            self.assertEqual(len(server.request_times), 33)
+            # Login plus roles, channel permissions and owner reconciliation.
+            self.assertEqual(len(server.request_times), 36)
             self.assertGreaterEqual(server.request_times[-1] - server.request_times[0], 0.75)
 
 

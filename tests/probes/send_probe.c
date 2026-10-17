@@ -72,6 +72,15 @@ int main(int argc, char **argv)
                setting("PAPO_PROBE_SERVER_PASSWORD", ""));
     while (auth_busy(session))
         tick(session, NULL, 1);
+    uint64_t permission_start = 0, permission_now = 0;
+    net_now_ms(&permission_start);
+    do {
+        auth_poll(session);
+        g_usleep(1000);
+        net_now_ms(&permission_now);
+    } while (permissions_channel(auth_permissions(session), channel, PERMISSION_SEND_MESSAGES) ==
+                 PERMISSION_UNKNOWN &&
+             permission_now - permission_start < 10000 && auth_has_session(session));
     outbox *box = outbox_create(session);
     if (!box)
         return 1;

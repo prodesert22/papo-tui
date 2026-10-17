@@ -136,6 +136,8 @@ typedef struct {
     uint64_t unseen;
     int waiting_page;
     bool paging_notice;
+    uint64_t menu_permissions;
+    int menu_cached[6], menu_cached_count;
     size_t section, offset;
     bool at_end, paste, show_channels, layout_failed, duplicate_modal, reenviar;
     bool dragging, editor_scrolling;

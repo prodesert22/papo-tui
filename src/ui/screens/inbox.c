@@ -145,6 +145,15 @@ static const char *channel_id(r8_modal *m, json_t *n, bool event)
     return event ? inbox_message_channel(history_inbox(m->h), s(n, "message_id"))
                  : s(n, "channel_id");
 }
+static unsigned author_color(r8_modal *m, json_t *n, bool event)
+{
+    json_t *v = message(m, n);
+    if (history_message_webhook(v) ||
+        history_message_webhook(inbox_message_preview(history_inbox(m->h), s(n, "message_id"))))
+        return 0x1ffffff;
+    const char *id = s(n, event ? "user_id" : "author_id");
+    return history_member_color(m->h, *id ? id : s(v, "author_id"));
+}
 static json_t *channel(r8_modal *m, const char *id)
 {
     for (size_t i = 0; i < history_channel_count(m->h); ++i) {
@@ -733,10 +742,14 @@ static void choices_draw(r8_modal *m, WINDOW *w, int width, int height)
         else
             snprintf(label, sizeof(label), "%s %s", !strcmp(s(c, "type"), "voice") ? "♪" : "#",
                      s(c, "name"));
-        wattrset(w, COLOR_PAIR(index != m->choice_selected ? THEME_PANEL
-                               : m->choice_focus == 1      ? THEME_FOCUSED
-                               : m->choice_focus == 0      ? THEME_PANEL_ACTIVE
-                                                           : THEME_PANEL));
+        int pair = index != m->choice_selected ? THEME_PANEL
+                   : m->choice_focus == 1      ? THEME_FOCUSED
+                   : m->choice_focus == 0      ? THEME_PANEL_ACTIVE
+                                               : THEME_PANEL;
+        if (m->choice_kind == 2)
+            pair = theme_member_pair(
+                history_member_color(m->h, s(json_object_get(c, "user"), "id")), pair);
+        wattrset(w, COLOR_PAIR(pair));
         text_label(w, row + 4, 2, width - 4, label);
         if (index == m->choice_selected)
             snprintf(m->choice_id, sizeof(m->choice_id), "%s", s(c, "id"));
@@ -816,7 +829,9 @@ WINDOW *r8_modal_draw(r8_modal *m)
     } else if (m->detail) {
         bool event;
         json_t *n = detail(m, &event);
+        wattrset(w, COLOR_PAIR(theme_member_pair(author_color(m, n, event), THEME_PANEL)));
         text_label(w, 3, 2, width - 4, author(m, n, event));
+        wattrset(w, COLOR_PAIR(THEME_PANEL));
         text_buffer content;
         text_layout layout;
         text_decode(&content,
@@ -858,15 +873,24 @@ WINDOW *r8_modal_draw(r8_modal *m)
         for (int row = 0; row < rows && m->first + (size_t)row < m->count; ++row) {
             size_t i = m->first + (size_t)row;
             char label[TEXT_UTF8_BYTES + 4096];
+            char member[2200];
+            int member_x = 2;
+            unsigned color;
             json_t *v;
             if (m->kind == R8_USERS) {
                 v = history_user(m->h, m->users[i]);
+                snprintf(member, sizeof(member), "%s (@%s)",
+                         *s(v, "nickname") ? s(v, "nickname") : s(v, "username"), s(v, "username"));
+                color = history_member_color(m->h, s(v, "id"));
                 snprintf(label, sizeof(label), "%s (@%s) · %s",
                          *s(v, "nickname") ? s(v, "nickname") : s(v, "username"), s(v, "username"),
                          r8_presence_label(inbox_presence(history_inbox(m->h), s(v, "id"))));
             } else {
                 bool event;
                 v = notification(m, i, &event);
+                snprintf(member, sizeof(member), "%s", author(m, v, event));
+                member_x += event ? 8 : json_is_true(json_object_get(v, "read")) ? 0 : 2;
+                color = author_color(m, v, event);
                 char content[TEXT_UTF8_BYTES];
                 projected(m, s(v, "message_content"), content);
                 const char *stamp = timestamp(m, &m->rows[i]);
@@ -891,9 +915,11 @@ WINDOW *r8_modal_draw(r8_modal *m)
                          json_is_true(json_object_get(c, "_dm")) ? "DM: " : "# ",
                          c ? s(c, "name") : "destino indisponível", date);
             }
-            wattrset(w,
-                     COLOR_PAIR(i == m->selected && m->focus == 0 ? THEME_FOCUSED : THEME_PANEL));
+            int pair = i == m->selected && m->focus == 0 ? THEME_FOCUSED : THEME_PANEL;
+            wattrset(w, COLOR_PAIR(pair));
             text_label(w, row + 4, 2, width - 4, label);
+            wattrset(w, COLOR_PAIR(theme_member_pair(color, pair)));
+            text_label(w, row + 4, member_x, width - member_x - 2, member);
             if (i == m->selected)
                 snprintf(m->selected_id, sizeof(m->selected_id), "%s", s(v, "id"));
         }

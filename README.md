@@ -5,6 +5,8 @@ chat in channels or direct messages, with message editing, deletion, replies,
 reactions, notifications, mentions, emojis and media in supported terminals.
 Attach files with **F3** or **📎**, or paste copied files and images with
 **Ctrl+V** when the local clipboard is available.
+Available channels and message actions follow your account permissions.
+Member names follow their role color, with white as the default.
 
 ## Install
 
