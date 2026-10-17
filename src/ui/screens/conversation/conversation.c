@@ -595,6 +595,12 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             scope = DRAW_ALL;
             continue;
         }
+        if (type == KEY_CODE_YES && (key == KEY_LEFT || key == KEY_RIGHT) &&
+            (ui->focus == ATTACH_BUTTON || ui->focus == EMOJI_BUTTON) && !*ui->edit_message) {
+            conversation_set_focus(ui, ui->focus == ATTACH_BUTTON ? EMOJI_BUTTON : ATTACH_BUTTON);
+            scope = DRAW_ALL;
+            continue;
+        }
         if (conversation_attachments_key(ui, type, key)) {
             scope = DRAW_ALL;
             continue;
@@ -634,9 +640,9 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 const GPtrArray *files = conversation_attachments(ui);
                 if (files && files->len)
                     order[count++] = ATTACHMENT_ROW;
+                order[count++] = MESSAGE_INPUT;
                 if (!*ui->edit_message)
                     order[count++] = ATTACH_BUTTON;
-                order[count++] = MESSAGE_INPUT;
                 order[count++] = EMOJI_BUTTON;
             }
             while (at < count && order[at] != ui->focus)
@@ -745,9 +751,9 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 if (!(e.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED)))
                     continue;
                 if (conversation_input(ui) && ui->body &&
-                    e.y == getbegy(ui->body) + conversation_input_top(ui) &&
-                    e.x >= getbegx(ui->body) + getmaxx(ui->body) - 7 &&
-                    e.x < getbegx(ui->body) + getmaxx(ui->body) - 3) {
+                    e.y >= getbegy(ui->body) + conversation_input_top(ui) - ui->editor_padding &&
+                    e.y <= getbegy(ui->body) + conversation_input_top(ui) + ui->editor_padding &&
+                    conversation_hit(ui->emoji_button_hit, e.x - getbegx(ui->body))) {
                     conversation_open_emojis(ui);
                     scope = DRAW_ALL;
                     continue;

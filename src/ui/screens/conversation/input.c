@@ -107,12 +107,15 @@ text_buffer *conversation_input(view *ui)
 
 int conversation_input_width(view *ui)
 {
-    return ui->body ? MAX(3, getmaxx(ui->body) - conversation_input_left(ui) - 9) : 3;
+    return ui->body ? MAX(3, getmaxx(ui->body) - conversation_input_left(ui) -
+                                 (*ui->edit_message ? 9 : 16))
+                    : 3;
 }
 
 int conversation_input_left(view *ui)
 {
-    return *ui->edit_message ? 3 : 12;
+    (void)ui;
+    return 3;
 }
 
 int conversation_input_height(view *ui)

@@ -172,7 +172,7 @@ bool conversation_attachments_poll(view *ui, auth_client *auth)
                 g_strlcpy(ui->attachment_notice,
                           g_error_matches(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED)
                               ? error->message
-                              : "Não foi possível colar. Use Anexar/F3 ou a colagem do terminal.",
+                              : "Não foi possível colar. Use 📎/F3 ou a colagem do terminal.",
                           sizeof(ui->attachment_notice));
                 ui->feedback = ui->attachment_notice;
             }
@@ -270,7 +270,9 @@ bool conversation_attachments_mouse(view *ui, const MEVENT *event)
     if (!ui->body || !(event->bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED)))
         return false;
     int y = event->y - getbegy(ui->body), x = event->x - getbegx(ui->body);
-    if (y == conversation_input_top(ui) && x >= 1 && x < 11 && !*ui->edit_message) {
+    if (y >= conversation_input_top(ui) - ui->editor_padding &&
+        y <= conversation_input_top(ui) + ui->editor_padding &&
+        conversation_hit(ui->attach_button_hit, x) && !*ui->edit_message) {
         conversation_set_focus(ui, ATTACH_BUTTON);
         conversation_attachments_open(ui, false);
         return true;

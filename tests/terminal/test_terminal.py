@@ -82,11 +82,9 @@ def editor_region(terminal):
 
 
 def editor_column(terminal):
-    """Text begins after the attachment button, or the ordinary edit prompt."""
-    row = editor_region(terminal)[0]
+    """Text begins after the editor prompt; toolbar buttons sit on the right."""
     prompt = 27 if terminal.screen.columns >= 80 else 2
-    button = "Anexar" in terminal.screen.display[row][prompt : prompt + 12]
-    return prompt + (11 if button else 2)
+    return prompt + 2
 
 
 class PosixTerminal:

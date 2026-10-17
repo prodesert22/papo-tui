@@ -540,7 +540,7 @@ class InputControls(unittest.TestCase):
         with HistoryMock(count=0) as server:
             t = self.open(server)
             start = editor_column(t)
-            wrap = t.screen.columns - start - 11
+            wrap = t.screen.columns - start - 18  # Reserve both toolbar buttons.
             t.send("a" * wrap + "bravo")
             self.wait_field(t, "bravo")
             first, end = editor_region(t)

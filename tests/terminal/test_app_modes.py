@@ -570,7 +570,7 @@ class AppModes(unittest.TestCase):
                                 self.helper.wait(t, "landscape.png 🗙]")
                                 self.wait(t, lambda: len(red_cells()) > 200)
                             before = red_cells()
-                            t.send("\x1b[Z\x1b[Z\n" if key == "attachment-remove" else key)
+                            t.send("\x1b[Z\n" if key == "attachment-remove" else key)
                             self.helper.wait(t, title)
                             top = next(
                                 i for i, line in enumerate(t.screen.display) if title in line
@@ -659,7 +659,7 @@ class AppModes(unittest.TestCase):
                 self.helper.wait(t, "Anexar arquivos")
                 t.send("\x03" + str(source) + "\n")
                 self.helper.wait(t, "attachment.txt 🗙]")
-                t.send("\x1b[Z\x1b[Z\n")
+                t.send("\x1b[Z\n")
                 self.helper.wait(t, "Remover anexo?")
                 t.resize(24, 80)
                 self.helper.wait(t, "Remover anexo?")

@@ -125,7 +125,7 @@ typedef struct {
         editor_rows, editor_padding, attachment_top, attachment_rows;
     size_t highlighted, active_tab, tab_cursor, first_tab;
     click_range tab_hits[INSTANCE_LIMIT], add_hit, back_hit, next_hit, channels_hit,
-        conversation_hit;
+        conversation_hit, attach_button_hit, emoji_button_hit;
     char anchor[37];
     char editor_channel[64];
     const char *feedback;

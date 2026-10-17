@@ -51,13 +51,13 @@ class Attachments(unittest.TestCase):
             try:
                 self.add_file(terminal, first)
                 self.add_file(terminal, second)
-                for label in ("Anexar", "Anexos", "Histórico"):
+                for label in ("Anexos", "Histórico"):
                     terminal.send("\x1b[Z")
                     self.wait(terminal, "Foco: " + label)
-                for label in ("Anexos", "Anexar", "Mensagem"):
+                for label in ("Anexos", "Mensagem", "Anexar", "Emojis"):
                     terminal.send("\t")
                     self.wait(terminal, "Foco: " + label)
-                terminal.send("\x1b[Z\x1b[Z\x1bOC\n")
+                terminal.send("\x1b[Z\x1b[Z\x1b[Z\x1bOC\n")
                 self.wait(terminal, "Remover anexo?")
                 terminal.send("\n")  # Cancel is the default.
                 self.wait(terminal, "two.txt 🗙]")
@@ -115,7 +115,46 @@ class Attachments(unittest.TestCase):
             source.write_text("original")
             terminal = self.open(server)
             try:
-                self.add_file(terminal, source)
+                row = editor_region(terminal)[0]
+                clip_left, emoji_left = terminal.screen.columns - 16, terminal.screen.columns - 9
+                line = terminal.screen.display[row]
+                self.assertIn("📎", line[clip_left:emoji_left])
+                self.assertNotIn("Anexar", line)
+                self.assertNotIn("[", line[emoji_left:])
+                self.assertNotIn("]", line[emoji_left:])
+                terminal.click(row, 29)  # Place focus in the editor before tabbing.
+                self.wait(terminal, "Foco: Mensagem")
+                normal_bg = terminal.screen.buffer[row][clip_left + 1].bg
+                self.assertEqual(normal_bg, terminal.screen.buffer[row][emoji_left + 1].bg)
+                self.assertNotEqual(normal_bg, terminal.screen.buffer[row][clip_left - 2].bg)
+                terminal.send("\t")
+                self.wait(terminal, "Foco: Anexar")
+                focus_bg = terminal.screen.buffer[row][clip_left + 1].bg
+                self.assertNotEqual(normal_bg, focus_bg)
+                terminal.send("\t")
+                self.wait(terminal, "Foco: Emojis")
+                self.assertEqual(focus_bg, terminal.screen.buffer[row][emoji_left + 1].bg)
+                # Both directions wrap between the two buttons without editing text.
+                for key, label in (
+                    ("\x1bOD", "Anexar"),
+                    ("\x1bOD", "Emojis"),
+                    ("\x1bOC", "Anexar"),
+                    ("\x1bOC", "Emojis"),
+                ):
+                    terminal.send(key)
+                    self.wait(terminal, "Foco: " + label)
+                for left in (clip_left, emoji_left):
+                    self.assertEqual(terminal.screen.buffer[row][left].data, " ")
+                    self.assertEqual(terminal.screen.buffer[row - 1][left].data, " ")
+                self.assertEqual(server.message_count, 0)
+                terminal.send("\n")
+                self.wait(terminal, "Emojis · Esc voltar")
+                terminal.send("\x1b")
+                self.wait(terminal, "Foco: Emojis")
+                terminal.click(row - 1, clip_left)  # The background padding is clickable too.
+                self.wait(terminal, "Anexar arquivos")
+                terminal.send("\x03" + str(source) + "\n")
+                self.wait(terminal, "mouse.txt 🗙]")
                 row = next(
                     i for i, line in enumerate(terminal.screen.display) if "mouse.txt 🗙]" in line
                 )

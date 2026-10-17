@@ -202,6 +202,9 @@ images) bound resource use; the OpenAPI contract specifies no upload limits.
 File selection uses the XDG FileChooser portal through existing GIO on Linux,
 and IFileOpenDialog on an STA worker on Windows. Cancellation differs from
 unavailable support; only the latter opens the ncurses/GIO directory picker.
+Configure a separate build with `-DPAPO_NATIVE_FILE_DIALOGS=OFF` to test the
+terminal picker directly, without attempting a native dialog. This option is
+enabled by default in regular builds.
 The fallback bounds each directory listing to 10,000 entries; a specific path
 can select a file directly. Clipboard reads are explicit and cancellable:
 optional wl-paste/xclip helpers use bounded pipes without a shell; Windows uses

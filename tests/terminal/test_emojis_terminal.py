@@ -294,7 +294,7 @@ class EmojiTerminal(unittest.TestCase):
         with self.server() as s:
             t = self.open(s, sixel=False)
             try:
-                t.send("rascunho\t")
+                t.send("rascunho\t\t")
                 self.wait(t, "Foco: Emojis")
                 t.send("\n")
                 self.wait(t, "Emojis · Esc voltar")
@@ -1207,9 +1207,9 @@ class EmojiTerminal(unittest.TestCase):
 
                     self.until(t, fills_avatar)
                     t.send("\t")
-                    self.wait(t, "Foco: Anexar")
-                    t.send("\t")
                     self.wait(t, "Foco: Mensagem")
+                    t.send("\t")
+                    self.wait(t, "Foco: Anexar")
                     self.until(t, fills_avatar)
                     t.send("\x1b[Z\x1b[Z")
                     self.wait(t, "Foco: Histórico")

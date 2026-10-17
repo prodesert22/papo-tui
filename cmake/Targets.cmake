@@ -211,6 +211,8 @@ add_executable(
     src/ui/components/theme.c
     src/ui/components/button.c)
 target_sources(papo-tui PRIVATE src/ui/components/file_picker.c)
+target_compile_definitions(papo-tui
+                           PRIVATE PAPO_NATIVE_FILE_DIALOGS=$<BOOL:${PAPO_NATIVE_FILE_DIALOGS}>)
 target_link_libraries(papo-tui PRIVATE papo_media PkgConfig::FORM PkgConfig::NCURSES
                                        PkgConfig::UNIBREAK)
 

@@ -901,7 +901,7 @@ class MediaTerminal(unittest.TestCase):
                             self.wait_raster(t, lambda w, h: w > 600 and h > 300)
                         first_frame = len(t.stream.frames)
                         first_placement = len(t.stream.placements)
-                        t.send("\x1b[Z\x1b[Z\n" if key == "attachment-remove" else key)
+                        t.send("\x1b[Z\n" if key == "attachment-remove" else key)
                         self.wait(t, title)
                         if title == "Menções":
                             self.wait(t, "@member7")

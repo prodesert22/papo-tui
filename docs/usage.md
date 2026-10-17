@@ -251,9 +251,12 @@ run, including manual send retries. Confirmed sends clear their reply target.
 
 ## Send files and pasted images
 
-Click **Anexar** (Attach), focus it with Tab and press Enter, or press **F3**.
+Click **📎** to the left of the emoji button, focus it with Tab and press Enter,
+or press **F3**. Both buttons have a filled background; the focused button changes
+color. While either button has focus, Left or Right switches between them.
 The application opens the system file dialog when available. Otherwise, a
-terminal file picker opens: enter a directory or file in **Caminho** (Path),
+terminal file picker opens. Builds with native dialogs disabled open this
+terminal picker directly: enter a directory or file in **Caminho** (Path),
 then press Enter. In the list, arrows navigate, Enter opens a directory or
 marks a file, and Space marks files. Tab moves through path, list, Cancelar
 (Cancel), and Anexar (Attach). Select Anexar to add the marked files. Esc
@@ -261,8 +264,9 @@ cancels. The picker remembers its last directory during this conversation view.
 
 Pending files appear horizontally as **[filename 🗙]** in a separate block
 between the conversation history and the message editor.
-Tab reaches the attachment row before Anexar and the editor; Shift+Tab follows
-the reverse order. Use Left/Right to select a file, then Enter, or click its 🗙,
+Tab follows the visual order: history, pending attachments (when present),
+message editor, 📎, and emoji button. Shift+Tab follows the reverse order.
+Use Left/Right to select a file, then Enter, or click its 🗙,
 to open **Remover anexo?** (Remove attachment?). Cancelar is selected initially.
 Choose **Remover** (Remove) to remove it from the draft; the original file is
 kept. Long lists scroll horizontally to keep the selected file visible.
@@ -280,7 +284,7 @@ folders and remote file URLs are not attached. Pasting a plain-text path keeps
 it as text. On Linux, native clipboard access requires `wl-paste` from
 wl-clipboard under Wayland, or `xclip` under X11. Windows uses the native clipboard.
 SSH sessions and sandboxed installations without clipboard access can use
-Anexar/F3 for files and the terminal's text paste command. A terminal that
+📎/F3 for files and the terminal's text paste command. A terminal that
 intercepts Ctrl+V must be configured to pass it to the application for native
 file/image pasting. In Kitty, add or replace the Papo-specific Ctrl+V mapping
 in `kitty.conf` with:

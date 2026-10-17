@@ -366,10 +366,10 @@ void conversation_draw_footer(view *ui)
         full = shorter = "←→ anexos · Enter remover · Tab ações · Esc voltar";
         minimal = "←→ · Enter remover";
     } else if (ui->focus == ATTACH_BUTTON) {
-        full = shorter = "Enter/F3 anexar arquivos · Tab editor";
+        full = shorter = "←→ botões · Enter/F3 anexar · Shift+Tab editor";
         minimal = "Enter anexar";
     } else if (ui->focus == EMOJI_BUTTON) {
-        full = shorter = "Enter/F4 emojis · Shift+Tab editor · Esc voltar";
+        full = shorter = "←→ botões · Enter/F4 emojis · Shift+Tab voltar";
         minimal = "Enter emojis";
     } else if (ui->focus == MESSAGE_INPUT) {
         full = "Enter enviar · Shift+Enter linha · Ctrl+N linha · Shift+setas selecionar · "
@@ -433,6 +433,35 @@ void conversation_draw_confirmation(view *ui)
     button_draw(modal, 7, width - 14, 12, "[Reenviar]",
                 ui->reenviar ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     wnoutrefresh(modal);
+}
+
+/* The toolbar uses the editor padding for its background, collapsing to a
+ * single row on short terminals. Hit ranges include the entire filled button. */
+static void composer_button(view *ui, int focus, const char *label, click_range *hit,
+                            const char *icon_scope)
+{
+    int row = conversation_input_top(ui), width = 6;
+    int left = getmaxx(ui->body) - (focus == ATTACH_BUTTON ? 15 : 8);
+    *hit = (click_range){left, width};
+    attr_t previous = getattrs(ui->body);
+    attr_t attributes = COLOR_PAIR(ui->focus == focus ? THEME_PROFILE_BUTTON_FOCUS
+                                                      : THEME_PROFILE_BUTTON_SELECTED) |
+                        A_BOLD;
+    if (!has_colors() && ui->focus == focus)
+        attributes |= A_REVERSE;
+    wattrset(ui->body, attributes);
+    for (int y = row - ui->editor_padding; y <= row + ui->editor_padding; ++y)
+        mvwhline(ui->body, y, left, ' ', width);
+    text_buffer icon;
+    text_decode(&icon, label);
+    if (icon_scope) {
+        text_icons(&icon, icons_resolve, icons_paint, ui->icons);
+        icons_scope(ui->icons, icon_scope, 0);
+    }
+    text_measure(&icon, width - 2, &ui->measured);
+    int cells = ui->measured.cursor_column;
+    text_draw(ui->body, &icon, &ui->measured, 0, 1, row, left + (width - cells) / 2);
+    wattrset(ui->body, previous);
 }
 
 void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
@@ -643,10 +672,6 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                 }
             wattrset(ui->body, COLOR_PAIR(editing ? THEME_FOCUS_AREA : THEME_PANEL));
             text_label(ui->body, conversation_input_top(ui), 1, 1, ">");
-            if (!*ui->edit_message)
-                button_draw(ui->body, conversation_input_top(ui), 2, 9, "Anexar",
-                            ui->focus == ATTACH_BUTTON ? BUTTON_FOCUSED : BUTTON_NORMAL,
-                            BUTTON_PANEL);
             text_layout *measured = &ui->measured;
             text_measure(editor, width, measured);
             if (!ui->editor_scrolling)
@@ -683,16 +708,9 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                       conversation_input_left(ui) + measured->cursor_column);
             }
             wattrset(ui->body, COLOR_PAIR(editing ? THEME_FOCUS_MUTED : THEME_PANEL_MUTED));
-            wattrset(ui->body, COLOR_PAIR(ui->focus == EMOJI_BUTTON ? THEME_PROFILE_BUTTON_FOCUS
-                                                                    : THEME_PANEL_ACCENT) |
-                                   A_BOLD);
-            text_buffer smile;
-            text_decode(&smile, "[😄]");
-            text_icons(&smile, icons_resolve, icons_paint, ui->icons);
-            text_measure(&smile, 5, measured);
-            icons_scope(ui->icons, "emoji-button", 0);
-            text_draw(ui->body, &smile, measured, 0, 1, conversation_input_top(ui),
-                      getmaxx(ui->body) - 7);
+            if (!*ui->edit_message)
+                composer_button(ui, ATTACH_BUTTON, "📎", &ui->attach_button_hit, NULL);
+            composer_button(ui, EMOJI_BUTTON, "😄", &ui->emoji_button_hit, "emoji-button");
             wattrset(ui->body, COLOR_PAIR(editing ? THEME_FOCUS_MUTED : THEME_PANEL_MUTED));
         } else {
             wattrset(ui->body, COLOR_PAIR(THEME_PANEL_MUTED));

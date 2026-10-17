@@ -170,9 +170,14 @@ void file_picker_destroy(file_picker *p)
 void file_picker_show(file_picker *p)
 {
     file_picker_close(p);
-    p->open = p->native = true;
+    p->open = true;
     p->focus = 0;
     g_clear_pointer(&p->result, g_ptr_array_unref);
+    if (!PAPO_NATIVE_FILE_DIALOGS) {
+        browse(p, p->directory);
+        return;
+    }
+    p->native = true;
     p->cancel = g_cancellable_new();
     p->task = file_transfer_task_new(p->cancel);
     g_task_run_in_thread(p->task, native_worker);
