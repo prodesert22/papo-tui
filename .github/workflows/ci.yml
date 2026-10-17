@@ -1,7 +1,5 @@
 name: CI
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -16,7 +14,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: ci-${{ github.workflow }}-${{ inputs.ref || github.ref }}
+  group: ci-${{ github.workflow }}-${{ inputs.ref || github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ !inputs.release }}
 jobs:
   quality:
@@ -25,6 +23,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
@@ -32,6 +31,11 @@ jobs:
         with:
           go-version: '1.25'
       - run: python -m pip install -r requirements-dev.txt
+      - name: Validate version changes before merging
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: python dist/release.py --changed-since "$BASE_SHA"
       - name: Check independent quality gates concurrently
         run: |
           python tools/quality.py & quality=$!

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 project(
     papo_tui
-    VERSION 0.3.0
+    VERSION 0.3.1
     LANGUAGES C)
 include(GNUInstallDirs)
 if(UNIX)

@@ -14,7 +14,7 @@ Choose your operating system and architecture: **x86_64** or **ARM64**.
 | Linux | DEB, RPM, Arch, AppImage and Flatpak |
 | Windows | Portable ZIP and installer |
 
-See the [installation guide](docs/instalacao.md) and
+See the [installation guide](docs/installation.md) and
 [build comparison](docs/builds.md).
 
 ## Run
@@ -35,7 +35,7 @@ video; **Ultralight** uses text only and releases the media libraries.
 
 ## Build
 
-Install the [dependencies](docs/instalacao.md#build-from-source) and run:
+Install the [dependencies](docs/installation.md#build-from-source) and run:
 
 ```sh
 cmake -S . -B build -DBUILD_TESTING=OFF
@@ -48,7 +48,7 @@ The service contract is in [openapi.yml](openapi.yml).
 
 ## Releases and license
 
-[Changelog](CHANGELOG.md) · [Full release notes](releases/v0.3.0.md)
+[Changelog](CHANGELOG.md) · [Full release notes](releases/v0.3.1.md)
 
 Original code is licensed under [MIT](LICENSE). Bundled libraries and data
 retain their [upstream licenses](THIRD_PARTY_NOTICES.md).

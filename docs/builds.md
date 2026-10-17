@@ -22,7 +22,7 @@ The ZIP runs without installation; its data is still stored in the user profile.
 
 ## Build a configuration
 
-After preparing the dependencies from the [installation guide](instalacao.md):
+After preparing the dependencies from the [installation guide](installation.md):
 
 ```sh
 cmake --preset release
