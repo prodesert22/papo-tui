@@ -19,9 +19,11 @@ import test_send_product as product
 
 class MessageInteractions(unittest.TestCase):
     screen = product.SendProduct.screen
-    wait = product.SendProduct.wait
     editor_text = product.SendProduct.editor_text
     click = product.SendProduct.click
+
+    def wait(self, terminal, text):
+        self.settled(terminal, lambda: text in self.screen(terminal), seconds=8)
 
     def setUp(self):
         if os.name == "nt":
@@ -34,6 +36,7 @@ class MessageInteractions(unittest.TestCase):
         # Keep Unicode labels observable for text interaction assertions. The
         # graphics suites cover rendered icons; mode tests exercise all modes.
         # Let the app create its private configuration with native permissions.
+        self._mock_server = server
         terminal = product.SendProduct.open(self, server)
         try:
             terminal.send("\x1bOQ")
@@ -45,6 +48,9 @@ class MessageInteractions(unittest.TestCase):
                 terminal,
                 lambda: path.exists() and json.loads(path.read_text()).get("app_mode") == "light",
             )
+            # History remains visible behind settings, so its editor label
+            # alone does not prove that the modal and mode reflow have closed.
+            self.settled(terminal, lambda: "Configurações" not in self.screen(terminal))
             self.wait(terminal, "Conversar em #geral")
             return terminal
         except BaseException:
@@ -76,6 +82,10 @@ class MessageInteractions(unittest.TestCase):
                         "output_hex": output.hex(),
                         "checkpoint": getattr(self, "_protocol_checkpoint", None),
                         "screen": terminal.screen.display,
+                        "requests": [
+                            [method, path] for method, path, *_ in self._mock_server.requests
+                        ],
+                        "reactions": self._mock_server.reaction_calls,
                     },
                     ensure_ascii=True,
                 ),
@@ -360,6 +370,7 @@ class MessageInteractions(unittest.TestCase):
             try:
                 self.wait(terminal, "[☕ 2]")
                 terminal.send("Unsaved draft")
+                self.wait(terminal, "Unsaved draft")
                 self.click(terminal, "[☕ 2]")
                 self.wait(terminal, "[☕ 3]")
                 self.settled(terminal, lambda: len(server.reaction_calls) == 1)
@@ -711,6 +722,6 @@ class MessageInteractions(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    # Surface the first native failure before repeated assertion waits exhaust
-    # CTest's suite timeout and discard unittest's final traceback report.
-    unittest.main(verbosity=2, failfast=os.name == "nt")
+    # Failed waits retain their traces before CTest's outer timeout, while
+    # continuing through the remaining scenarios preserves full diagnostics.
+    unittest.main(verbosity=2)
