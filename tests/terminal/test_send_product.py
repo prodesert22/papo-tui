@@ -211,6 +211,7 @@ class SendProduct(unittest.TestCase):
                 terminal.send("\x1bOB\x1bOC")
                 self.wait(terminal, "# geral · Histórico")
                 terminal.send("\n\n")
+                terminal.resize(24, 100)
                 self.wait(terminal, "Mensagem confirmada")
                 self.assertEqual(server.sent_messages[0]["content"], "Ação\nsegunda linha")
             finally:

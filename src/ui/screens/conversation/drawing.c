@@ -408,7 +408,7 @@ void conversation_draw_footer(view *ui)
     snprintf(short_hints, sizeof(short_hints), "%s%s%s", shorter,
              normal ? " · F3 busca · F8 fixadas" : "",
              normal && !strstr(shorter, "F9") ? " · F9 notificações" : "");
-    snprintf(minimal_hints, sizeof(minimal_hints), "%s%s%s", minimal, normal ? " · F3/F8" : "",
+    snprintf(minimal_hints, sizeof(minimal_hints), "%s%s%s", minimal, normal ? " F3/F8" : "",
              normal ? (getmaxx(ui->footer) >= 60 ? " F9 notificações" : " F9") : "");
     status_bar_draw(&ui->status, ui->footer, 1, full_hints, short_hints, minimal_hints);
 }

@@ -157,7 +157,7 @@ class HistoryTerminal(unittest.TestCase):
                 terminal.click(6, 4)
                 self.assertIn("Foco: Histórico", terminal.screen.display[2])
                 terminal.send("\x1bOD")  # history -> channels
-                self.wait(terminal, "↑↓ canais")
+                self.wait(terminal, "↑↓ · Enter")
                 selected = terminal.screen.buffer[7][2].fg
 
                 def highlighted(row):
@@ -220,7 +220,7 @@ class HistoryTerminal(unittest.TestCase):
                 self.wait(terminal, "Foco: Canais")
                 # ncurses emits the footer after the conversation cells. Wait
                 # for the complete focus transition before recording colors.
-                self.wait(terminal, "↑↓ canais")
+                self.wait(terminal, "↑↓ · Enter")
                 # Author metadata can arrive after the page. Finish that
                 # asynchronous paint before observing navigation-only changes.
                 self.wait(terminal, "Apelido")
