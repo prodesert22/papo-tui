@@ -483,8 +483,7 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         if (!count)
             text_label(ui->list, 1, 1, ui->side - 2,
                        ui->list_dms ? "Nenhuma DM disponível." : "Nenhum canal disponível.");
-        if (ui->highlighted >= count)
-            ui->highlighted = count ? count - 1 : 0;
+        conversation_list_normalize(ui);
         if ((int)ui->highlighted < ui->first_channel)
             ui->first_channel = (int)ui->highlighted;
         if ((int)ui->highlighted >= ui->first_channel + rows)
@@ -498,10 +497,7 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                 const char *type = conversation_str(c, "type");
                 bool unread = history_channel_unread(ui->model, c);
                 char label[2200];
-                snprintf(label, sizeof(label), "%c %s%s%s",
-                         conversation_list_index(ui, index) == history_selected(ui->model) ? '>'
-                         : index == ui->highlighted                                        ? '*'
-                                                                                           : ' ',
+                snprintf(label, sizeof(label), "%s%s%s",
                          !strcmp(type, "category") ? "── "
                          : !strcmp(type, "voice")  ? "♪ "
                                                    : "# ",
@@ -514,7 +510,7 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                                                               conversation_str(user, "id"))),
                              (long long)json_integer_value(json_object_get(c, "unread_count")));
                 }
-                bool selected = index == ui->highlighted;
+                bool selected = index == ui->highlighted && conversation_list_selectable(ui, index);
                 size_t mentions =
                     inbox_unread_mentions(history_inbox(ui->model), conversation_str(c, "id"));
                 bool notified = unread || mentions;

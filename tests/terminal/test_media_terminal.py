@@ -333,7 +333,7 @@ class MediaTerminal(unittest.TestCase):
             t.send("\x1b[?62;4;22c\x1b[6;16;8t")
         t.send(server.url + "\tjosé\tSynthetic!123\n")
         self.wait(t, "geral")
-        t.send("\x1bOB\x1bOB\n")
+        t.send("\x1bOB\n")
         self.wait(t, "Conversar em #geral")
         return t
 
@@ -1179,7 +1179,7 @@ class MediaTerminal(unittest.TestCase):
                 t.read(0.2)
                 t.send("\x1b[17~")
                 self.wait(t, "geral")
-                t.send("\x1bOB\x1bOB\n")
+                t.send("\x1bOB\n")
                 self.wait(t, "Preserved draft")
                 deadline = time.monotonic() + 5
                 while calls < 3 and time.monotonic() < deadline:

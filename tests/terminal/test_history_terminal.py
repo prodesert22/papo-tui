@@ -3,7 +3,7 @@
 import threading
 import time
 import unittest
-from history_mock import HistoryMock, OTHER, uuid
+from history_mock import HistoryMock, CHANNEL, OTHER, VOICE, uuid
 from test_terminal import Terminal, ObservedScreen, TerminalStream
 from wcwidth import wcswidth
 
@@ -76,10 +76,115 @@ class HistoryTerminal(unittest.TestCase):
         t.send(server.url + "\tjosé\tSynthetic!123\n")
         self.wait(t, "geral")
         self.assertNotIn("URL do servidor", "\n".join(t.screen.display))
-        self.assertFalse(any("/messages" in r[1] for r in server.requests))
-        t.send("\x1bOB\x1bOB\n")  # tabs -> category -> first text channel -> open
+        self.wait(t, "Conversar em #geral")
+        t.send("\x1bOB\n")  # tabs -> first channel -> history
         self.wait(t, "Conversar em #geral")
         return t
+
+    def test_server_automatically_opens_first_channel_without_selection_markers(self):
+        with HistoryMock(count=1) as server:
+            terminal = Terminal()
+            try:
+                terminal.send(server.url + "\tjosé\tSynthetic!123\n")
+                self.wait(terminal, "Mensagem 0001")
+                self.wait(terminal, "Conversar em #geral")
+                reads = [r[1] for r in server.requests if "/messages" in r[1]]
+                self.assertEqual(len(reads), 1)
+                self.assertIn(CHANNEL, reads[0])
+                self.assertEqual(terminal.screen.buffer[7][2].data, "#")
+                for row in range(6, 10):
+                    self.assertNotIn(">", terminal.screen.display[row][1:24])
+                self.assertIn("Categoria", terminal.screen.display[6])
+            finally:
+                self.assertTrue(terminal.close())
+
+    def test_automatic_channel_follows_list_order_including_voice_history(self):
+        for first, content in ((OTHER, "Conteúdo do outro canal"), (VOICE, "Conversa de voz 0001")):
+            with self.subTest(first=first), HistoryMock(count=1) as server:
+                for channel in server.channels:
+                    if channel["id"] == first:
+                        channel["position"] = 0
+                terminal = Terminal()
+                try:
+                    terminal.send(server.url + "\tjosé\tSynthetic!123\n")
+                    self.wait(terminal, content)
+                    reads = [r[1] for r in server.requests if "/messages" in r[1]]
+                    self.assertEqual(len(reads), 1)
+                    self.assertIn(first, reads[0])
+                finally:
+                    self.assertTrue(terminal.close())
+
+    def test_categories_are_skipped_by_navigation_and_ignore_mouse_clicks(self):
+        with HistoryMock(count=1) as server:
+            for channel in server.channels:
+                channel["position"] *= 10
+            for number, position in ((30, 21), (31, 22), (32, 50)):
+                server.channels.append(
+                    dict(
+                        id=uuid(number),
+                        name=f"Separador {number}",
+                        position=position,
+                        type="category",
+                        topic=None,
+                    )
+                )
+            terminal = self.open(server)
+            try:
+                self.wait(terminal, "Mensagem 0001")
+                terminal.click(6, 4)
+                self.assertIn("Foco: Histórico", terminal.screen.display[2])
+                terminal.send("\x1bOD")  # history -> channels
+                self.wait(terminal, "↑↓ canais")
+                selected = terminal.screen.buffer[7][2].fg
+
+                def highlighted(row):
+                    self.assertEqual(terminal.screen.buffer[row][2].fg, selected)
+                    for category in (6, 8, 9, 12):
+                        self.assertNotEqual(terminal.screen.buffer[category][2].fg, selected)
+
+                highlighted(7)
+                for key, row in (
+                    ("\x1bOB", 10),
+                    ("\x1bOA", 7),
+                    ("\x1bOF", 11),
+                    ("\x1b[6~", 11),
+                    ("\x1bOH", 7),
+                    ("\x1b[5~", 7),
+                ):
+                    terminal.send(key)
+                    highlighted(row)
+                terminal.send("\x1bOA")
+                self.wait(terminal, "Foco: Canais/DMs")
+                terminal.send("\x1bOB\x1bOB")
+                highlighted(10)
+                reads = [r for r in server.requests if "/messages" in r[1]]
+                for category in (6, 8, 9, 12):
+                    terminal.click(category, 4)
+                    highlighted(10)
+                    self.assertIn("Foco: Canais", terminal.screen.display[2])
+                self.assertEqual([r for r in server.requests if "/messages" in r[1]], reads)
+                terminal.send("\n")
+                self.wait(terminal, "Conteúdo do outro canal")
+            finally:
+                self.assertTrue(terminal.close())
+
+    def test_empty_and_category_only_servers_do_not_open_history(self):
+        for categories in (False, True):
+            with self.subTest(categories=categories), HistoryMock() as server:
+                server.channels = [
+                    c for c in server.channels if categories and c["type"] == "category"
+                ]
+                terminal = Terminal()
+                try:
+                    terminal.send(server.url + "\tjosé\tSynthetic!123\n")
+                    self.wait(terminal, "Categoria" if categories else "Nenhum canal disponível")
+                    terminal.send("\x1bOB\x1bOH\x1bOF\x1b[5~\x1b[6~\n\x1bOC\x1bOS")
+                    terminal.click(6, 4)
+                    terminal.read(0.2)
+                    self.assertFalse(any("/messages" in r[1] for r in server.requests))
+                    self.assertIsNone(terminal.process.poll())
+                finally:
+                    self.assertTrue(terminal.close())
 
     def test_channel_navigation_keeps_chat_and_reopening_current_does_not_reload(self):
         with HistoryMock("slow") as server:
@@ -125,7 +230,7 @@ class HistoryTerminal(unittest.TestCase):
                     )
                 screen.watch = False
                 # Return the highlight to the open channel and confirm it.
-                terminal.send("\x1bOH\x1bOB\n")
+                terminal.send("\x1bOH\n")
                 terminal.read(0.5)
                 self.assertEqual(terminal.screen.display[8][26:], before)
                 self.assertIn("Rascunho preservado", "\n".join(terminal.screen.display))
@@ -289,7 +394,8 @@ class HistoryTerminal(unittest.TestCase):
             try:
                 t.send(server.url + "\tjosé\tSynthetic!123\n")
                 self.wait(t, "geral")
-                self.assertFalse(any("/messages" in r[1] for r in server.requests))
+                self.wait(t, "Mensagem 0250")
+                self.assertEqual(sum("/messages" in r[1] for r in server.requests), 1)
                 t.send("\x1b[17~")
                 self.wait(t, "[Renovar]")
                 t.send("\x12")
@@ -623,13 +729,13 @@ class HistoryTerminal(unittest.TestCase):
                 self.wait(t, "[Trabalho]")
                 self.wait(t, "geral")
                 self.assertIn("Comunidade", t.screen.display[1])
-                t.send("\x1bOB\x1bOB\n")
+                t.send("\x1bOB\n")
                 self.wait(t, "Segunda instância")
                 self.click_text(t, "Comunidade")
                 self.wait(t, "[Comunidade]")
                 self.wait(t, "geral")
                 self.assertNotIn("Segunda instância", "\n".join(t.screen.display))
-                t.send("\x1bOB\x1bOB\n")  # tabs -> list -> text -> history
+                t.send("\x1bOB\n")  # tabs -> first channel -> history
                 self.wait(t, "Mensagem 0250")
                 self.assertEqual(sum(r[1].endswith("/auth/login") for r in first.requests), 1)
                 self.assertEqual(sum(r[1].endswith("/auth/login") for r in second.requests), 1)

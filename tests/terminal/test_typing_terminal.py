@@ -55,7 +55,7 @@ class TypingTerminal(unittest.TestCase):
         terminal.send(server.url + "\tjosé\tSynthetic!123\n")
         self.wait(terminal, "geral")
         terminal.resize(24, 160)
-        terminal.send("\x1bOB\x1bOB\n")
+        terminal.send("\x1bOB\n")
         self.wait(terminal, "Nenhuma mensagem neste canal")
         self.wait(terminal, "Tempo real conectado")
         return terminal

@@ -101,7 +101,7 @@ typedef struct {
     history *model;
     r8_modal *r8;
     app_settings settings;
-    bool list_dms;
+    bool list_dms, initial_channel_pending;
     int list_button;
     size_t highlights[2];
     uint64_t inbox_revision;
@@ -139,6 +139,9 @@ const char *conversation_str(const json_t *obj, const char *key);
 size_t conversation_list_index(view *ui, size_t row);
 size_t conversation_list_count(view *ui);
 json_t *conversation_list_channel(view *ui, size_t row);
+bool conversation_list_selectable(view *ui, size_t row);
+size_t conversation_list_find(view *ui, size_t row, int direction);
+void conversation_list_normalize(view *ui);
 bool conversation_list_notified(view *ui, bool dms);
 void conversation_notification_dot(view *ui, WINDOW *window, int row, int column, int pair);
 void conversation_list_button(view *ui, int button, int column, int width, const char *label);

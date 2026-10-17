@@ -36,7 +36,7 @@ class FooterTerminal(unittest.TestCase):
                 self.assertIn("F9 avisos", self.footer(terminal))
                 self.assertNotIn("F7", self.footer(terminal))
                 self.assertNotIn("Enter enviar", self.footer(terminal))
-                terminal.send("\x1bOB\n")
+                terminal.send("\n")
                 self.wait(terminal, "Nenhuma mensagem neste canal")
                 self.assertIn("↑↓ rolar", self.footer(terminal))
                 self.assertIn("F7 mensagens", self.footer(terminal))
@@ -99,7 +99,7 @@ class FooterTerminal(unittest.TestCase):
             terminal = self.open(server)
             try:
                 terminal.resize(24, 160)
-                terminal.send("\x1bOB\x1bOB\n")
+                terminal.send("\x1bOB\n")
                 self.wait(terminal, "Mensagem 0030")
                 terminal.send("\x1bOH")
                 message = dict(server.message(31), content="Mensagem nova fora da leitura")

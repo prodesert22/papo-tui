@@ -32,6 +32,40 @@ json_t *conversation_list_channel(view *ui, size_t row)
     return history_channel(ui->model, conversation_list_index(ui, row));
 }
 
+bool conversation_list_selectable(view *ui, size_t row)
+{
+    json_t *channel = conversation_list_channel(ui, row);
+    return channel && strcmp(conversation_str(channel, "type"), "category");
+}
+
+size_t conversation_list_find(view *ui, size_t row, int direction)
+{
+    size_t count = conversation_list_count(ui);
+    while (row < count) {
+        if (conversation_list_selectable(ui, row))
+            return row;
+        if (direction < 0) {
+            if (!row)
+                break;
+            --row;
+        } else
+            ++row;
+    }
+    return SIZE_MAX;
+}
+
+void conversation_list_normalize(view *ui)
+{
+    size_t count = conversation_list_count(ui);
+    if (conversation_list_selectable(ui, ui->highlighted))
+        return;
+    size_t start = ui->highlighted < count ? ui->highlighted : count ? count - 1 : 0;
+    size_t row = conversation_list_find(ui, start, 1);
+    if (row == SIZE_MAX)
+        row = conversation_list_find(ui, start, -1);
+    ui->highlighted = row == SIZE_MAX ? 0 : row;
+}
+
 bool conversation_list_notified(view *ui, bool dms)
 {
     for (size_t i = 0; i < history_channel_count(ui->model); ++i) {
@@ -50,6 +84,7 @@ void conversation_switch_list(view *ui, bool dms)
     ui->list_dms = dms;
     ui->list_button = dms;
     ui->highlighted = ui->highlights[dms];
+    conversation_list_normalize(ui);
     ui->first_channel = 0;
 }
 

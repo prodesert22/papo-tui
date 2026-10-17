@@ -6,6 +6,7 @@ import tempfile
 import time
 import unittest
 from r8_mock import R8Mock, DM, AUTHOR, uuid
+from history_mock import CHANNEL, OTHER
 from test_terminal import Terminal
 
 
@@ -52,8 +53,10 @@ class R8Terminal(unittest.TestCase):
                 terminal = self.login(server)
                 terminal.resize(32, 100)
                 if already_open:
-                    terminal.click(7, 4)
                     self.wait(terminal, "Mensagem 0060")
+                else:
+                    terminal.click(8, 4)
+                    self.wait(terminal, "Conteúdo do outro canal")
                 before = sum("/messages" in path for _, path, _, _ in server.requests)
                 self.open_notification_target(terminal)
                 self.assert_centered_target(terminal, target["content"])
@@ -76,8 +79,8 @@ class R8Terminal(unittest.TestCase):
             self.wait(terminal, "Conteúdo do outro canal")
             terminal.send("\x1b[20~")
             self.wait(terminal, "Autor ainda não carregado")
-            self.assertFalse(
-                any(CHANNEL + "/messages" in path for _, path, _, _ in server.requests)
+            self.assertEqual(
+                sum(CHANNEL + "/messages" in path for _, path, _, _ in server.requests), 1
             )
             terminal.send("\n\n")
             self.assert_centered_target(terminal, target["content"])
@@ -260,7 +263,7 @@ class R8Terminal(unittest.TestCase):
                 self.wait(terminal, notice)
                 terminal.read(0.4)
                 self.assertEqual(server.opens, 1)
-                self.assertFalse(any("/messages" in request[1] for request in server.requests))
+                self.assert_initial_history_only(server)
                 fail_open = False
                 terminal.send("\x1b[21~")
                 self.wait(terminal, "Nova DM")
@@ -341,7 +344,7 @@ class R8Terminal(unittest.TestCase):
             self.wait(t, "Filtro: DM: Bia")
             self.wait(t, "Aviso 0003")
             self.assertEqual(server.marked, [])
-            self.assertFalse(any("/messages" in r[1] for r in server.requests))
+            self.assert_initial_history_only(server)
 
     def test_notification_arrows_reach_filters_without_editing_search(self):
         with R8Mock(count=3) as server:
@@ -454,7 +457,7 @@ class R8Terminal(unittest.TestCase):
             self.assertEqual(t.screen.cursor.y, top + 2)
             self.assertNotIn("Outra no canal", "\n".join(t.screen.display))
             self.assertEqual(server.marked, [])
-            self.assertFalse(any("/messages" in r[1] for r in server.requests))
+            self.assert_initial_history_only(server)
             t.send("\n\n")
             self.wait(t, "Detalhes da notificação")
             self.wait(t, "@Apelido")
@@ -505,7 +508,7 @@ class R8Terminal(unittest.TestCase):
             t.send("\x1b[20~")
             self.wait(t, "Bot de avisos")
             self.assertNotIn("Autor indisponível", "\n".join(t.screen.display))
-            self.assertFalse(any("/messages" in r[1] for r in server.requests))
+            self.assert_initial_history_only(server)
             t.send("\n")
             self.wait(t, "Detalhes da notificação")
             self.wait(t, "Bot de avisos")
@@ -570,7 +573,7 @@ class R8Terminal(unittest.TestCase):
             self.assertIn("[Comunidade 12]", t.screen.display[1])
             self.assertIn("(12)", t.screen.display[7])
             self.assertEqual(t.screen.buffer[7][20].fg, "ff0000")
-            self.assertFalse(any("/messages" in r[1] for r in server.requests))
+            self.assert_initial_history_only(server)
             t.resize(32, 140)
             t.send("\x1b[20~\n")
             self.wait(t, "Detalhes da notificação")
@@ -597,7 +600,7 @@ class R8Terminal(unittest.TestCase):
             )
             self.wait(t, "1 avisos")
             self.assertIn("[Comunidade 0]", t.screen.display[1])
-            self.assertFalse(any("/messages" in r[1] for r in server.requests))
+            self.assert_initial_history_only(server)
 
     def test_text_server_counter_is_red_and_inside_delimiters(self):
         for mode in ("normal", "light", "ultralight"):
@@ -647,13 +650,26 @@ class R8Terminal(unittest.TestCase):
             t.read(0.03)
         self.assertIn(text, "\n".join(t.screen.display))
 
+    def assert_initial_history_only(self, server, channel=CHANNEL):
+        reads = [r[1] for r in server.requests if "/messages" in r[1]]
+        self.assertEqual(len(reads), 1)
+        self.assertIn(channel, reads[0])
+
     def login(self, server, **kwargs):
+        before = sum("/messages" in r[1] for r in server.requests)
         t = Terminal(**kwargs)
         self.addCleanup(t.close)
         t.send(server.url + "\tjosé\tSynthetic!123\n")
         self.wait(t, "[Canais]")
         self.wait(t, "[DMs]")
         self.wait(t, "Categoria")
+        end = time.monotonic() + 5
+        while (
+            sum("/messages" in r[1] for r in server.requests) == before and time.monotonic() < end
+        ):
+            t.read(0.03)
+        self.assertEqual(sum("/messages" in r[1] for r in server.requests), before + 1)
+        t.read(0.1)
         return t
 
     def test_black_background_and_sidebar_focus_include_both_buttons(self):
@@ -664,28 +680,28 @@ class R8Terminal(unittest.TestCase):
             self.wait(t, "geral")
             self.assertIn(b"\x1b[48;5;16m\x1b[H\x1b[2J", t.output)
             deadline = time.monotonic() + 2
-            while t.screen.buffer[7][4].bg == "default" and time.monotonic() < deadline:
+            while t.screen.buffer[8][4].bg == "default" and time.monotonic() < deadline:
                 t.read(0.03)
-            resting = t.screen.buffer[7][4].bg
+            resting = t.screen.buffer[8][4].bg
             self.assertEqual(resting, "000000")
             self.assertEqual(t.screen.buffer[5][30].bg, resting)
             t.send("\t")
             self.wait(t, "Foco: Canais/DMs")
-            focused = t.screen.buffer[7][4].bg
+            focused = t.screen.buffer[8][4].bg
             self.assertNotEqual(focused, resting)
             t.send("\x1bOC")
-            self.assertEqual(t.screen.buffer[7][4].bg, focused)
+            self.assertEqual(t.screen.buffer[8][4].bg, focused)
             t.send("\n\x1bOB")
             self.wait(t, "Foco: DMs")
-            self.assertEqual(t.screen.buffer[7][4].bg, focused)
+            self.assertEqual(t.screen.buffer[8][4].bg, focused)
             t.send("\x1bOA")
             self.wait(t, "Foco: Canais/DMs")
-            self.assertEqual(t.screen.buffer[7][4].bg, focused)
+            self.assertEqual(t.screen.buffer[8][4].bg, focused)
             t.click(5, 4)
-            self.assertEqual(t.screen.buffer[7][4].bg, focused)
+            self.assertEqual(t.screen.buffer[8][4].bg, focused)
             t.send("\x1bOA")
             self.wait(t, "Foco: Abas")
-            self.assertEqual(t.screen.buffer[7][4].bg, resting)
+            self.assertEqual(t.screen.buffer[8][4].bg, resting)
 
     def test_backend_cursor_clears_badge_and_new_activity_relights_it(self):
         with R8Mock(count=3) as server:
@@ -697,8 +713,6 @@ class R8Terminal(unittest.TestCase):
                     t.read(0.03)
                 self.assertEqual(t.screen.buffer[7][23].data == "●", present)
 
-            badge(True)
-            t.click(7, 4)
             self.wait(t, "Mensagem 0003")
             badge(False)
             # Old notification IDs point outside the current history page.
@@ -766,10 +780,14 @@ class R8Terminal(unittest.TestCase):
         from history_mock import CHANNEL
 
         with R8Mock() as server:
+            # Open the other channel initially so the long-named channel stays unread.
             for channel in server.channels:
                 channel["last_read_message"] = None
                 if channel["id"] == CHANNEL:
                     channel["name"] = "Um canal com nome longo demais 界"
+                    channel["position"] = 3
+                elif channel["id"] == OTHER:
+                    channel["position"] = 2
             server.dms[0]["unread_count"] = 0
             server.dms[0]["last_message"] = None
             server.dms[0]["user"]["nickname"] = "Destinatário com nome muito longo 界"
@@ -790,16 +808,16 @@ class R8Terminal(unittest.TestCase):
             # The backend cursor lights both the channel and its group without
             # fetching any inactive histories.
             dot(5, 10)
-            dot(7, 23)
+            dot(8, 23)
             dot(5, 19, False)
-            self.assertFalse(any("/messages" in r[1] for r in server.requests))
+            self.assert_initial_history_only(server, OTHER)
             t.click(5, 4)
             group = dot(5, 10)
             self.assertEqual(group.bg, t.screen.buffer[5][3].bg)
             t.send("\x1bOB\x1bOB")
             self.wait(t, "Foco: Canais")
-            cell = dot(7, 23)
-            self.assertEqual(cell.bg, t.screen.buffer[7][4].bg)
+            cell = dot(8, 23)
+            self.assertEqual(cell.bg, t.screen.buffer[8][4].bg)
             # While the channel is still unread, add a notification in the DM.
             message = dict(server.message(50), channel_id=DM, author_id=AUTHOR)
             server.emit(dict(message, type="message"))
@@ -817,7 +835,7 @@ class R8Terminal(unittest.TestCase):
             dot(6, 23)
             self.assertEqual(t.screen.buffer[5][2].data, "[")
             self.assertEqual(t.screen.buffer[5][12].data, "[")
-            self.assertFalse(any("/messages" in r[1] for r in server.requests))
+            self.assert_initial_history_only(server, OTHER)
             t.resize(18, 60)
             dot(5, 10)
             dot(5, 19)
@@ -864,7 +882,7 @@ class R8Terminal(unittest.TestCase):
             restarted.click(5, 13)
             self.wait(restarted, "Bia ·")
             self.assertNotEqual(restarted.screen.buffer[6][23].data, "●")
-            self.assertEqual(sum("/messages" in r[1] for r in server.requests), before)
+            self.assertEqual(sum("/messages" in r[1] for r in server.requests), before + 1)
 
     def test_restart_preserves_reading_when_remote_cursor_stays_old(self):
         with R8Mock(count=3) as server, tempfile.TemporaryDirectory(prefix="r8-reading-") as state:
@@ -896,7 +914,7 @@ class R8Terminal(unittest.TestCase):
             restarted.click(5, 13)
             self.wait(restarted, "Bia ·")
             self.assertNotEqual(restarted.screen.buffer[6][23].data, "●")
-            self.assertEqual(sum("/messages" in r[1] for r in server.requests), before)
+            self.assertEqual(sum("/messages" in r[1] for r in server.requests), before + 1)
 
     def test_adjacent_buttons_keyboard_mouse_and_no_history_on_switch(self):
         with R8Mock() as server:
@@ -914,13 +932,13 @@ class R8Terminal(unittest.TestCase):
             self.wait(t, "Foco: Abas")
             t.send("\t\x1bOC\n")
             self.wait(t, "Bia ·")
-            self.assertFalse(any("/messages" in r[1] for r in server.requests))
+            self.assert_initial_history_only(server)
             t.click(5, 4)
             t.read(0.2)
             self.assertIn("Categoria", "\n".join(t.screen.display))
             t.click(5, 13)
             self.wait(t, "Bia ·")
-            self.assertFalse(any("/messages" in r[1] for r in server.requests))
+            self.assert_initial_history_only(server)
             t.send("\x1bOB\x1bOD")
             self.wait(t, "Foco: DMs")
             t.send("\x1bOA")
@@ -1074,7 +1092,7 @@ class R8Terminal(unittest.TestCase):
             t.send("\x1b[20~")
             self.wait(t, "Novidade no servidor inativo")
             self.assertNotIn("Aviso segundo servidor", "\n".join(t.screen.display))
-            self.assertFalse(any("/messages" in r[1] for r in first.requests))
+            self.assertEqual(sum("/messages" in r[1] for r in first.requests), 2)
 
     def test_presence_and_typing_in_dm_follow_snapshot_and_expire(self):
         with R8Mock(count=0) as server:

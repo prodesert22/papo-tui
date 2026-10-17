@@ -35,8 +35,12 @@ and then sign in.
 To open the profile manager directly, run `papo-tui --profiles`.
 Passwords are not stored in the configuration.
 
-Choose a channel with the arrow keys and Enter, or with the mouse. Type in the
-editor and press **Enter** to send; **Shift+Enter** inserts a new line. **Ctrl+N**
+Opening a server automatically opens its first channel in list order, skipping
+category separators. Choose another channel with the arrow keys and Enter, or
+with the mouse. Categories cannot be selected; arrow keys, Home/End and
+PageUp/PageDown skip them. Channel names use color highlighting without a
+leading selection marker. Type in the editor and press **Enter** to send;
+**Shift+Enter** inserts a new line. **Ctrl+N**
 also inserts a new line. Pasting text does not send the message automatically.
 Switching conversations preserves drafts during the current run.
 

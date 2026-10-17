@@ -4,7 +4,7 @@ import time
 import unittest
 from urllib.parse import urlsplit
 
-from history_mock import HistoryMock, VOICE, uuid
+from history_mock import HistoryMock, CHANNEL, VOICE, uuid
 from realtime_mock import RealtimeMock
 from r8_mock import R8Mock
 from test_terminal import Terminal
@@ -41,6 +41,7 @@ class VoiceConversation(unittest.TestCase):
             self.addCleanup(lambda: self.assertTrue(t.close()))
         t.send(server.url + "\tjosé\tSynthetic!123\n")
         self.wait(t, "Categoria")
+        self.wait(t, "Conversar em #geral")
         return t
 
     def reads(self, server):
@@ -53,7 +54,7 @@ class VoiceConversation(unittest.TestCase):
     def test_enter_click_and_right_preserve_conversation_shift_enter_opens(self):
         with HistoryMock(count=1) as server:
             t = self.login(server)
-            t.send("\x1bOB\x1bOB\n")
+            t.send("\x1bOB\n")
             self.wait(t, "Mensagem 0001")
             t.send("Rascunho do geral")
             t.click(9, 4)
@@ -85,9 +86,11 @@ class VoiceConversation(unittest.TestCase):
     def test_history_shortcut_encodings_with_lock_modifiers_and_narrow_screen(self):
         with HistoryMock(count=0) as server:
             t = self.login(server)
-            # F4 on a category must not request any history.
-            t.send("\x1bOB\x1bOS")
-            self.assertEqual(self.reads(server), [])
+            # Category clicks cannot change the channel or trigger a new read.
+            self.wait(t, "Nenhuma mensagem neste canal")
+            before = self.reads(server)
+            t.click(6, 4)
+            self.assertEqual(self.reads(server), before)
             for locks in (0, 64, 128, 192):
                 for packet in (
                     f"\x1b[1;{1 + locks}S",
@@ -132,7 +135,7 @@ class VoiceConversation(unittest.TestCase):
             self.assertEqual(server.sent_messages[-1]["channel_id"], VOICE)
             self.assertEqual(server.sent_messages[-1]["content"], "Texto enviado no canal de voz")
             self.assertIn("Texto enviado no canal de voz", self.screen(t))
-            t.send("Rascunho da voz\x1b\x1bOD\x1bOH\x1bOB\n")
+            t.send("Rascunho da voz\x1b\x1bOD\x1bOH\n")
             self.wait(t, "# geral · Histórico")
             t.send("Rascunho do texto\x1b\x1bOD\x1bOF\x1bOS")
             self.wait(t, "♪ voz · Histórico")
@@ -142,7 +145,7 @@ class VoiceConversation(unittest.TestCase):
             self.wait(t, "Emojis")
             self.assertEqual(len(server.sent_messages), 1)  # F4 in the editor opens emojis.
             t.send("\x1b")
-            t.send("\x1b\x1bOD\x1bOH\x1bOB\n")
+            t.send("\x1b\x1bOD\x1bOH\n")
             self.wait(t, "Rascunho do texto")
 
     def test_history_errors_can_be_retried_without_enter_starting_voice(self):
@@ -155,16 +158,22 @@ class VoiceConversation(unittest.TestCase):
             with self.subTest(case=case), HistoryMock(case, count=1) as server:
                 t = self.login(server, cleanup=False)
                 try:
+                    self.wait(t, expected)
+                    before = self.reads(server)
                     t.send("\x1bOB\x1bOF\n")
-                    self.assertEqual(self.reads(server), [])
+                    self.assertEqual(self.reads(server), before)
                     t.send("\x1bOS")
                     self.wait(t, expected)
-                    self.assertEqual(len(self.reads(server)), 1)
+                    deadline = time.monotonic() + 5
+                    while len(self.reads(server)) == len(before) and time.monotonic() < deadline:
+                        t.read(0.03)
+                    self.assertEqual(len(self.reads(server)), len(before) + 1)
+                    self.wait(t, expected)
                     server.case = "normal"
                     t.read(1.1 if case == "limited" else 0.1)
                     t.send("\x12")
                     self.wait(t, "Conversa de voz 0001")
-                    self.assertTrue(all(VOICE in r[1] for r in self.reads(server)))
+                    self.assertTrue(all(VOICE in r[1] for r in self.reads(server)[len(before) :]))
                 finally:
                     self.assertTrue(t.close())
 
@@ -197,7 +206,7 @@ class VoiceConversation(unittest.TestCase):
             server.offline = False
             self.wait(t, "Texto recuperado na voz")
             self.wait(t, "Rascunho durante reconexão")
-            self.assertTrue(all(VOICE in r[1] for r in self.reads(server)))
+            self.assertTrue(all(CHANNEL in r[1] or VOICE in r[1] for r in self.reads(server)))
             self.assertFalse(
                 any(event.get("type", "").startswith("voice_") for event in server.ws_messages)
             )
@@ -218,13 +227,14 @@ class VoiceConversation(unittest.TestCase):
             self.wait(t, "Aviso 0001")
             t.send("\n")
             self.wait(t, "Detalhes da notificação")
-            self.assertEqual(self.reads(server), [])
+            self.assertEqual(len(self.reads(server)), 1)
+            self.assertIn(CHANNEL, self.reads(server)[0][1])
             t.send("\n")
             self.wait(t, "♪ voz · Histórico")
             self.wait(t, "Conversa de voz 0001")
             self.wait(t, "↑↓ mensagens")
-            self.assertEqual(len(self.reads(server)), 1)
-            self.assertIn(VOICE, self.reads(server)[0][1])
+            self.assertEqual(len(self.reads(server)), 2)
+            self.assertIn(VOICE, self.reads(server)[1][1])
 
 
 if __name__ == "__main__":
