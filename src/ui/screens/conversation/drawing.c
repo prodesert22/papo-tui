@@ -364,7 +364,7 @@ void conversation_draw_footer(view *ui)
         minimal = voice ? "Shift+Enter/F4 histórico" : "↑↓ · Enter";
     } else if (*ui->edit_message && ui->focus == MESSAGE_INPUT) {
         full = shorter = "Enter editar · Shift+Enter linha · Esc cancelar edição";
-        minimal = "Enter editar · Esc cancelar";
+        minimal = "Enter · Esc";
     } else if (ui->focus == MESSAGE_INPUT && *conversation_reply_target(ui)) {
         full = "Enter enviar · Shift+Enter linha · F4 emojis · Esc cancelar resposta";
         shorter = "Enter enviar · Esc cancelar resposta";
