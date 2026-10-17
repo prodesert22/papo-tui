@@ -58,6 +58,15 @@ add_test(
     COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/terminal/test_discovery_terminal.py
             $<TARGET_FILE:papo-tui>)
 set_tests_properties(message-discovery-terminal PROPERTIES TIMEOUT 180)
+add_executable(permissions-probe tests/probes/permissions_probe.c)
+target_link_libraries(permissions-probe PRIVATE papo_outbox)
+add_test(NAME permissions-integration
+         COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/integration/test_permissions.py
+                 $<TARGET_FILE:permissions-probe>)
+add_test(NAME permissions-terminal
+         COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/terminal/test_permissions.py
+                 $<TARGET_FILE:papo-tui>)
+set_tests_properties(permissions-integration permissions-terminal PROPERTIES TIMEOUT 180)
 get_property(
     names
     DIRECTORY
@@ -71,13 +80,3 @@ foreach(test IN LISTS names)
             "PYTHONPATH=${PROJECT_SOURCE_DIR}/tests/support\;${PROJECT_SOURCE_DIR}/tests/terminal\;${PROJECT_SOURCE_DIR}/tests/integration\;${PROJECT_SOURCE_DIR}"
     )
 endforeach()
-
-add_executable(permissions-probe tests/probes/permissions_probe.c)
-target_link_libraries(permissions-probe PRIVATE papo_outbox)
-add_test(NAME permissions-integration
-         COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/integration/test_permissions.py
-                 $<TARGET_FILE:permissions-probe>)
-add_test(NAME permissions-terminal
-         COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/terminal/test_permissions.py
-                 $<TARGET_FILE:papo-tui>)
-set_tests_properties(permissions-integration permissions-terminal PROPERTIES TIMEOUT 180)

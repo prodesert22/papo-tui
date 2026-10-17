@@ -465,6 +465,7 @@ class MessageInteractions(unittest.TestCase):
             try:
                 self.wait(terminal, "[☕ 1]")
                 self.click(terminal, "[☕ 1]")
+                self.settled(terminal, lambda: len(server.reaction_calls) == 1)
                 terminal.send("\x1b\x1bOB\n")
                 self.wait(terminal, "Conteúdo do outro canal")
                 self.assertNotIn("[☕", self.screen(terminal))

@@ -12,9 +12,29 @@ import test_r8_terminal as r8
 
 
 class DiscoveryTerminal(unittest.TestCase):
-    wait = r8.R8Terminal.wait
     login = r8.R8Terminal.login
-    assert_centered_target = r8.R8Terminal.assert_centered_target
+
+    def until(self, t, predicate):
+        end = time.monotonic() + 7
+        while not predicate() and time.monotonic() < end:
+            t.read(0.03)
+        self.assertTrue(predicate(), "\n".join(t.screen.display))
+
+    def wait(self, t, text):
+        r8.R8Terminal.wait(self, t, text)
+        if text in ("Buscar mensagens no servidor", "Mensagens fixadas"):
+            height, width = min(t.screen.lines - 2, 25), min(t.screen.columns - 4, 90)
+            row = (t.screen.lines - height) // 2 + height - 1
+            column = (t.screen.columns - width) // 2 + width - 1
+            self.until(t, lambda: t.screen.buffer[row][column].data in ("j", "┘"))
+
+    def resize(self, t, rows, columns):
+        t.resize(rows, columns)
+        self.until(t, lambda: t.screen.buffer[rows - 1][columns - 1].data in ("j", "┘"))
+
+    def assert_centered_target(self, t, content):
+        self.until(t, lambda: "Localizando mensagem" not in "\n".join(t.screen.display))
+        r8.R8Terminal.assert_centered_target(self, t, content)
 
     @unittest.skipIf(os.name == "nt", "Native Windows file dialogs cannot be driven through ConPTY")
     def test_integrated_search_and_file_picker_shortcuts_do_not_collide(self):
@@ -41,7 +61,7 @@ class DiscoveryTerminal(unittest.TestCase):
             server.roles = [dict(id=role, name="Pins", permissions=dict(pin_message=True))]
             server.user_roles = [dict(id=role)]
             t = self.login(server)
-            t.resize(32, 160)
+            self.resize(t, 32, 160)
             t.send("\x1b[18~m")
             self.wait(t, "Fixar mensagem")
             self.assertNotIn("Excluir mensagem", "\n".join(t.screen.display))
@@ -72,7 +92,7 @@ class DiscoveryTerminal(unittest.TestCase):
             source = Path(folder, "revoked.txt")
             source.write_text("Permission gated")
             t = self.login(server)
-            t.resize(32, 160)
+            self.resize(t, 32, 160)
             t.send("\x1b[15~")
             self.wait(t, "Anexar arquivos")
             t.send("\x03" + str(source) + "\n")
@@ -123,7 +143,7 @@ class DiscoveryTerminal(unittest.TestCase):
                 target["content"] = "Destino muito antigo"
                 server.pin_ids[CHANNEL] = [target["id"]]
                 t = self.login(server)
-                t.resize(32, 100)
+                self.resize(t, 32, 100)
                 self.wait(t, "Mensagem 10005")
                 t.send("\x1b[19~" if pins else "\x1bOR")
                 self.wait(t, "Mensagens fixadas" if pins else "Buscar mensagens no servidor")
@@ -136,9 +156,9 @@ class DiscoveryTerminal(unittest.TestCase):
                 server.delay = 0.8
                 t.send("\n\n")  # Repeated Enter must not enqueue another jump.
                 self.assert_location_animates(t)
-                t.resize(22, 44)
+                self.resize(t, 22, 44)
                 self.wait(t, "Localizando mensagem…")
-                t.resize(32, 100)
+                self.resize(t, 32, 100)
                 self.assert_centered_target(t, target["content"])
                 reads = self.history_reads(server)[before:]
                 self.assertEqual(len(reads), 2)
@@ -153,7 +173,7 @@ class DiscoveryTerminal(unittest.TestCase):
                 target = server.messages[39]
                 server.pin_ids[CHANNEL] = [target["id"]]
                 t = self.login(server)
-                t.resize(32, 100)
+                self.resize(t, 32, 100)
                 self.wait(t, "Mensagem 0205")
                 t.send("\x1b[19~")
                 self.wait(t, "1 resultado(s)")
@@ -188,7 +208,7 @@ class DiscoveryTerminal(unittest.TestCase):
             target = server.messages[39]
             server.pin_ids[CHANNEL] = [target["id"]]
             t = self.login(server)
-            t.resize(32, 100)
+            self.resize(t, 32, 100)
             self.wait(t, "Mensagem 0205")
             t.send("\x1b[19~")
             self.wait(t, "1 resultado(s)")
@@ -216,7 +236,7 @@ class DiscoveryTerminal(unittest.TestCase):
                 message_id=target["id"], channel_id=CHANNEL, message_content="Destino de aviso"
             )
             t = self.login(server)
-            t.resize(32, 100)
+            self.resize(t, 32, 100)
             self.wait(t, "Mensagem 0320")
             t.send("\x1b[20~")
             self.wait(t, "Destino de aviso")
@@ -231,7 +251,7 @@ class DiscoveryTerminal(unittest.TestCase):
         with DiscoveryMock(205) as server:
             target = server.messages[39]
             t = self.login(server)
-            t.resize(32, 100)
+            self.resize(t, 32, 100)
             self.click(t, "outro")
             self.wait(t, "Conteúdo do outro canal")
             t.send("\x1bOR")
@@ -255,7 +275,7 @@ class DiscoveryTerminal(unittest.TestCase):
         with DiscoveryMock(205) as server:
             server.pin_ids[CHANNEL] = [server.messages[39]["id"]]
             t = self.login(server)
-            t.resize(32, 100)
+            self.resize(t, 32, 100)
             self.wait(t, "Mensagem 0205")
             t.send("\x1b[19~")
             self.wait(t, "1 resultado(s)")
@@ -284,19 +304,22 @@ class DiscoveryTerminal(unittest.TestCase):
         for width in (100, 44):
             with self.subTest(width=width), DiscoveryMock(10) as server:
                 t = self.login(server)
-                t.resize(32 if width == 100 else 22, width)
+                self.resize(t, 32 if width == 100 else 22, width)
                 t.send("\x1bOR")
                 self.wait(t, "Buscar mensagens no servidor")
                 normal = self.button_style(t, "[Buscar]")
                 # Left/Right in the text field must still move its cursor.
                 t.send("Mensagem 000\x1b[D1\x1b[C\x1b[B")
+                self.until(t, lambda: self.button_style(t, "[Buscar]") != normal)
                 focused = self.button_style(t, "[Buscar]")
                 self.assertNotEqual(focused, normal)
                 self.assertEqual(self.button_style(t, "[Filtros]"), normal)
                 t.send("\x1b[C")
+                self.until(t, lambda: self.button_style(t, "[Filtros]") == focused)
                 self.assertEqual(self.button_style(t, "[Filtros]"), focused)
                 self.assertEqual(self.button_style(t, "[Buscar]"), normal)
                 t.send("\x1b[D")
+                self.until(t, lambda: self.button_style(t, "[Buscar]") == focused)
                 self.assertEqual(self.button_style(t, "[Buscar]"), focused)
                 t.send("\x1b[C\n")
                 self.wait(t, "Filtros da busca")
@@ -307,6 +330,7 @@ class DiscoveryTerminal(unittest.TestCase):
                 self.wait(t, "1 resultado(s)")
                 self.assertEqual(server.search_calls[-1][0]["text"], "Mensagem 0010")
                 t.send("\x1b[A")
+                self.until(t, lambda: self.button_style(t, "[Buscar]") == focused)
                 self.assertEqual(self.button_style(t, "[Buscar]"), focused)
                 t.send("\x1b[C\x1b[B\n")
                 self.wait(t, "Detalhes da mensagem")
@@ -323,19 +347,23 @@ class DiscoveryTerminal(unittest.TestCase):
         for width in (100, 44):
             with self.subTest(width=width), DiscoveryMock(10) as server:
                 t = self.login(server)
-                t.resize(32 if width == 100 else 22, width)
+                self.resize(t, 32 if width == 100 else 22, width)
                 t.send("\x1b[19~")
                 self.wait(t, "3 resultado(s)")
                 t.send("0001\n")
                 self.wait(t, "Detalhes da mensagem")
+                self.wait(t, "[Ir para mensagem]")
+                self.wait(t, "[Desafixar]")
                 focused = self.button_style(t, "[Ir para mensagem]")
                 normal = self.button_style(t, "[Desafixar]")
                 self.assertNotEqual(focused, normal)
                 t.send("\x1b[C\x1b[B")
+                self.until(t, lambda: self.button_style(t, "[Desafixar]") == focused)
                 self.assertEqual(self.button_style(t, "[Desafixar]"), focused)
                 self.assertEqual(self.button_style(t, "[Ir para mensagem]"), normal)
                 self.assertEqual(server.pin_calls, [])
                 t.send("\x1b[D")
+                self.until(t, lambda: self.button_style(t, "[Ir para mensagem]") == focused)
                 self.assertEqual(self.button_style(t, "[Ir para mensagem]"), focused)
                 self.assertEqual(self.button_style(t, "[Desafixar]"), normal)
                 t.send("\n")
@@ -357,7 +385,7 @@ class DiscoveryTerminal(unittest.TestCase):
             target.update(content="Original remoto", author_id=uuid(21))
             server.pin_ids[CHANNEL] = [m["id"] for m in server.messages[:35]] + [target["id"]]
             t = self.login(server)
-            t.resize(32, 100)
+            self.resize(t, 32, 100)
             self.click(t, "[Fixadas]")
             self.wait(t, "36 resultado(s)")
             before = sum(r[1].split("?")[0].endswith("/messages") for r in server.requests)
@@ -385,7 +413,7 @@ class DiscoveryTerminal(unittest.TestCase):
     def test_pin_context_menu_unpin_detail_and_failure_keeps_modal(self):
         with DiscoveryMock(10) as server:
             t = self.login(server)
-            t.resize(32, 160)
+            self.resize(t, 32, 160)
             t.send("\x1b[18~m")
             self.wait(t, "Fixar mensagem")
             self.click(t, "Fixar mensagem")
@@ -412,7 +440,7 @@ class DiscoveryTerminal(unittest.TestCase):
             target = server.messages[39]
             target["content"] = "Destino de busca"
             t = self.login(server)
-            t.resize(32, 100)
+            self.resize(t, 32, 100)
             self.click(t, "[Buscar]")
             self.wait(t, "Buscar mensagens no servidor")
             t.send("Destino")
@@ -450,7 +478,7 @@ class DiscoveryTerminal(unittest.TestCase):
     def test_filter_controls_selectors_false_attachments_dates_and_cancel(self):
         with DiscoveryMock(10) as server:
             t = self.login(server)
-            t.resize(32, 100)
+            self.resize(t, 32, 100)
             t.send("\x1bOR")
             self.wait(t, "Buscar mensagens no servidor")
             self.click(t, "[Filtros]")
@@ -511,7 +539,7 @@ class DiscoveryTerminal(unittest.TestCase):
             t.send("\x15outra consulta")
             self.wait(t, "Alterações pendentes")
             self.assertEqual(len(server.search_calls), 3)
-            t.resize(22, 44)
+            self.resize(t, 22, 44)
             self.wait(t, "[Filtros]")
             self.click(t, "[Filtros]")
             self.wait(t, "Filtros da busca")

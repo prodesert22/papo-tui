@@ -898,13 +898,16 @@ class EmojiTerminal(unittest.TestCase):
                 def delayed(method, path, body):
                     if blocked in path:
                         entered.set()
-                        release.wait(8)
+                        release.wait(20)
                     return route(method, path, body)
 
                 s.api_handler = delayed
                 t = self.open(s, protocol="kitty", size=(48, 100))
                 try:
-                    self.until(t, lambda: len(self.avatar_positions(t)) == 6, timeout=3)
+                    # ASan can take longer to parse the two large avatar batches.
+                    # Keep metadata blocked beyond the render deadline so all six
+                    # placements must still arrive independently of that response.
+                    self.until(t, lambda: len(self.avatar_positions(t)) == 6)
                     self.assertFalse(release.is_set())
                     self.until(t, entered.is_set)
                     calls = [r[1] for r in s.requests]

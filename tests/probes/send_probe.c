@@ -47,7 +47,7 @@ static bool finish(auth_client *session, outbox *box, uint64_t id)
 
 static const char *setting(const char *name, const char *fallback)
 {
-    const char *value = getenv(name);
+    const char *value = g_getenv(name);
     return value ? value : fallback;
 }
 
@@ -88,7 +88,7 @@ int main(int argc, char **argv)
     if (!strcmp(mode, "empty"))
         text = " \n\t";
     bool saved = outbox_set_draft(box, channel, text);
-    const char *paths = getenv("PAPO_SEND_FILES");
+    const char *paths = g_getenv("PAPO_SEND_FILES");
     if (paths) {
         gchar **files = g_strsplit(paths, "\n", -1);
         for (size_t i = 0; files[i]; ++i) {
@@ -107,7 +107,7 @@ int main(int argc, char **argv)
             g_file_set_contents(files[i], "changed after submit", -1, NULL);
         g_strfreev(files);
     }
-    const char *later = getenv("PAPO_SEND_LATER_FILE");
+    const char *later = g_getenv("PAPO_SEND_LATER_FILE");
     if (later) {
         attachment_file *file = attachment_import(later, NULL, NULL);
         saved &= file && outbox_add_attachment(box, channel, file);
