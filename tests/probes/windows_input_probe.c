@@ -1,4 +1,4 @@
-/* Synthetic ConPTY input diagnostics: compare Win32 UTF-16 with ncurses. */
+/* Synthetic ConPTY diagnostics: compare Unicode/keys and check VT output modes. */
 #include "platform/terminal.h"
 #include "ui/input/text.h"
 #include <locale.h>
@@ -41,7 +41,8 @@ int main(void)
         terminal_recovery_end();
         return 1;
     }
-    cbreak();
+    raw();
+    nonl();
     noecho();
     keypad(stdscr, TRUE);
     text_input_init();
@@ -104,8 +105,9 @@ int main(void)
                                     : key == '\r'                                     ? '\n'
                                                                                       : key;
     }
-    DWORD flags = 0;
+    DWORD flags = 0, output_flags = 0;
     GetConsoleMode(input, &flags);
+    GetConsoleMode(GetStdHandle(STD_OUTPUT_HANDLE), &output_flags);
     endwin();
     terminal_recovery_end();
     printf("\nPAPO_PROBE_RESULT={\"native\":[");
@@ -120,7 +122,9 @@ int main(void)
     printf("],\"commands\":[");
     for (size_t i = 0; i < command_count; ++i)
         printf("%s%u", i ? "," : "", commands[i]);
-    printf("],\"vt_input\":%d,\"iswprint_e_acute\":%d}\n",
-           !!(flags & ENABLE_VIRTUAL_TERMINAL_INPUT), !!iswprint(0xe9));
+    printf("],\"vt_input\":%d,\"vt_output\":%d,\"processed_output\":%d,\"iswprint_e_acute\":%d}\n",
+           !!(flags & ENABLE_VIRTUAL_TERMINAL_INPUT),
+           !!(output_flags & ENABLE_VIRTUAL_TERMINAL_PROCESSING),
+           !!(output_flags & ENABLE_PROCESSED_OUTPUT), !!iswprint(0xe9));
     return 0;
 }

@@ -43,7 +43,7 @@ bool terminal_recovery_begin(void)
     input_cp = GetConsoleCP();
     output_cp = GetConsoleOutputCP();
     if (!SetConsoleMode(GetStdHandle(STD_OUTPUT_HANDLE),
-                        output_mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING))
+                        output_mode | ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING))
         return false;
     SetConsoleCP(CP_UTF8);
     SetConsoleOutputCP(CP_UTF8);

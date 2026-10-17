@@ -41,6 +41,12 @@ console handles directly and leaves alternate-screen switching to VT sequences;
 input events must not activate a separate native console buffer. The probe tests
 native coalesced text records with VT translation disabled, then tests repeated
 text, arrows and bracketed paste through the actual VT stream.
+Terminfo initialization uses the Win32 console mode defaults even when named
+pipes are disabled; zeroing those fields disables VT output and renders escape
+sequences as text. The native probe uses the application's raw/nonl setup and
+checks processed output and VT output as well as input. ConPTY test teardown
+explicitly closes the pywinpty relay sockets after process exit and removes
+private state only after the session lock has been released.
 
 Application modes reuse the existing profile configuration, ncurses controls,
 media cache, downloads and Chafa dependency. Configuration schema 4 adds

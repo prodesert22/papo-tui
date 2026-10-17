@@ -99,3 +99,10 @@
 +            || !(mode & ENABLE_VIRTUAL_TERMINAL_PROCESSING);
 +        if (!code)
 +            _nc_console_checkinit(TRUE);
+--- a/ncurses/base/lib_newterm.c
++++ b/ncurses/base/lib_newterm.c
+@@ -91 +91,3 @@
+-#elif USE_NAMED_PIPES
++#elif USE_WINCONMODE
++        /* The terminfo driver also uses Win32 TTY mode fields. Initializing
++         * them to zero disables VT output and prints escapes as characters. */

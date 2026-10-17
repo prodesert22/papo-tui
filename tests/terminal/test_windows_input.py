@@ -1,4 +1,4 @@
-"""Locate Unicode loss between ConPTY, the native console and ncurses."""
+"""Verify Unicode, keys and VT output modes through the actual console."""
 
 import json
 import re
@@ -7,6 +7,7 @@ import sys
 import time
 import unittest
 from winpty import Backend, PtyProcess
+from terminal_windows import close_pty_process
 
 BINARY = sys.argv.pop(1)
 
@@ -58,10 +59,11 @@ class WindowsInput(unittest.TestCase):
                 report,
             )
             self.assertTrue(report["vt_input"], report)
+            self.assertTrue(report["vt_output"], report)
+            self.assertTrue(report["processed_output"], report)
             self.assertTrue(report["iswprint_e_acute"], json.dumps(report))
         finally:
-            if child.isalive():
-                child.terminate(force=True)
+            close_pty_process(child)
 
 
 if __name__ == "__main__":

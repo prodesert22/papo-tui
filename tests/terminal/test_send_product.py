@@ -1,5 +1,6 @@
 """R6 through the actual login/conversation screen with synthetic HTTP data."""
 
+import os
 import time
 import unittest
 from history_mock import HistoryMock, CHANNEL
@@ -27,6 +28,10 @@ class SendProduct(unittest.TestCase):
 
     def open(self, server, *, environment=None):
         terminal = Terminal(environment=environment)
+        if os.name == "nt":
+            # Register before login assertions, which may fail before returning
+            # the terminal to a caller's try/finally block.
+            self.addCleanup(terminal.close)
         terminal.send(server.url + "\tjosé\tSynthetic!123\n")
         self.wait(terminal, "geral")
         terminal.send("\x1bOB\n")
