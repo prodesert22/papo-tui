@@ -388,7 +388,7 @@ cross builds and Wine can check compilation and native CMake metadata; ConPTY
 interaction and native credential tests still require Windows.
 
 For releases, each Linux runner uses `dist/ci_linux.py --prepare` before cache
-restore, then `dist/ci_linux.py --arch x86_64 --version 0.3.1` (or `aarch64`).
+restore, then `dist/ci_linux.py --arch x86_64 --version 0.4.0` (or `aarch64`).
 This requires Docker and Flatpak/Builder. Ubuntu, Debian, Fedora and Flatpak
 build in isolated copies of the committed checkout, with two concurrent tasks
 by default (`--workers` overrides this). Compiler jobs are divided between those
@@ -403,6 +403,14 @@ builds are assembled for publication, using the existing asset collision checks.
 prefix and includes licenses, corresponding sources and a library inventory.
 `dist/flatpak/build.sh ARCHITECTURE VERSION` generates the actual bundle and
 its sources; it requires Flatpak/Builder and the Freedesktop 26.08 runtime and SDK.
+
+Record every new feature, behavior change and fix to an already released version
+in `releases/Unreleased.md` with its user-visible effect. Do not add separate fix
+entries for bugs found in a new feature before that feature's first release.
+When preparing a release, consolidate all entries into its complete versioned
+notes and changelog, then truncate `releases/Unreleased.md` to zero bytes in the
+same commit, keeping the file for the next development cycle. Check the changes
+since the previous release so the notes cover the full delivery.
 
 Prepare each release in the PR: update CMakeLists.txt, CHANGELOG.md and
 `releases/vMAJOR.MINOR.PATCH.md`. Version-preparation commit titles start with
