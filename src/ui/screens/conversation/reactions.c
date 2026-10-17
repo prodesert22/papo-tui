@@ -237,9 +237,12 @@ void conversation_reactors_draw(view *ui, WINDOW *w)
         int index = ui->reactor_first[1] + row;
         if (index >= page.count)
             break;
-        wattrset(w, COLOR_PAIR(ui->reactor_users_focus && index == ui->reactor_user
-                                   ? THEME_PANEL_ACTIVE
-                                   : THEME_PANEL));
+        int pair =
+            ui->reactor_users_focus && index == ui->reactor_user ? THEME_PANEL_ACTIVE : THEME_PANEL;
+        wattrset(
+            w, COLOR_PAIR(theme_member_pair(
+                   history_member_color(ui->model, conversation_str(page.users[index], "user_id")),
+                   pair)));
         text_label(w, row + 3, split + 2, width - split - 4,
                    history_author(ui->model, conversation_str(page.users[index], "user_id")));
     }

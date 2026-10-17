@@ -335,7 +335,12 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
                 int accent = ui->focus == HISTORY_PANEL ? THEME_HISTORY_ACCENT : THEME_PANEL_ACCENT;
                 if (r->count && !strcmp(r->segments[0].key, "header"))
                     pair = accent;
-                message_row_draw(ui->body, r, y, 2 + r->x, width - r->x, pair, accent);
+                unsigned author_color =
+                    !r->header || history_message_webhook(m)
+                        ? 0x1ffffff
+                        : history_member_color(ui->model, conversation_str(m, "author_id"));
+                message_row_draw(ui->body, r, y, 2 + r->x, width - r->x, pair, accent,
+                                 author_color);
                 if (r->count && !strcmp(r->segments[0].key, "reply"))
                     conversation_message_hit(
                         ui, conversation_str(m, "id"), REPLY_HIT, getbegy(ui->body) + y,

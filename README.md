@@ -4,6 +4,7 @@ Terminal chat client written in C. Connect to independent Papo instances and
 chat in channels or direct messages, with message editing, deletion, replies,
 reactions, notifications, mentions, emojis and media in supported terminals.
 Available channels and message actions follow your account permissions.
+Member names follow their role color, with white as the default.
 
 ## Install
 

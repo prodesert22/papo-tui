@@ -44,6 +44,12 @@ leading selection marker. Type in the editor and press **Enter** to send;
 also inserts a new line. Pasting text does not send the message automatically.
 Switching conversations preserves drafts during the current run.
 
+Member names use the first valid role color in the order supplied by the server.
+Members without a valid role color, and webhook authors, appear in white.
+Assigning or removing a role updates the name color when its live event arrives.
+Changes to a role's color appear after the role catalog refreshes; Ctrl+R also
+requests an update. Terminals with a limited palette approximate the role color.
+
 Scroll with the arrow keys, PageUp/PageDown or the mouse wheel over the history.
 The next page loads as you approach either edge. A loading indicator appears
 if you reach the edge before the messages arrive.

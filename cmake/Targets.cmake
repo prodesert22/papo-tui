@@ -84,6 +84,7 @@ add_library(
     src/model/text/emoji_catalog.c
     src/ui/input/editor.c
     src/ui/components/mention_popup.c
+    src/ui/components/theme.c
     src/ui/components/status_bar.c
     src/ui/input/text.c
     src/ui/input/mouse.c
@@ -203,7 +204,6 @@ add_executable(
     src/ui/components/settings.c
     src/ui/screens/inbox.c
     src/ui/screens/profiles.c
-    src/ui/components/theme.c
     src/ui/components/button.c)
 target_link_libraries(papo-tui PRIVATE papo_media PkgConfig::FORM PkgConfig::NCURSES
                                        PkgConfig::UNIBREAK)

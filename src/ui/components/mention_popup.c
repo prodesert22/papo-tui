@@ -370,6 +370,10 @@ WINDOW *mention_popup_draw(mention_popup *p, int cy, int cx, int left, int avail
                                 (i == p->selected ? A_BOLD : 0));
         if (i < p->count) {
             json_t *u = history_user(p->h, p->matches[i].index);
+            wattrset(p->window,
+                     COLOR_PAIR(theme_member_pair(history_member_color(p->h, str(u, "id")),
+                                                  i == p->selected ? THEME_FOCUSED : THEME_PANEL)) |
+                         (i == p->selected ? A_BOLD : 0));
             char label[2200];
             snprintf(label, sizeof(label), "%s%s@%s", *str(u, "nickname") ? str(u, "nickname") : "",
                      *str(u, "nickname") ? " · " : "", str(u, "username"));
