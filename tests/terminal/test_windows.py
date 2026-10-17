@@ -7,7 +7,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from history_mock import HistoryMock
-from test_terminal import Terminal
+from test_terminal import Terminal, TerminalStreamTests  # noqa: F401 - shared observer regression tests
 
 
 class WindowsTerminalTests(unittest.TestCase):

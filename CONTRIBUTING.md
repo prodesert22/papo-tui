@@ -47,6 +47,12 @@ sequences as text. The native probe uses the application's raw/nonl setup and
 checks processed output and VT output as well as input. ConPTY test teardown
 explicitly closes the pywinpty relay sockets after process exit and removes
 private state only after the session lock has been released.
+The ConPTY observer decodes relay bytes incrementally so a partial UTF-8 code
+point cannot block a test deadline inside pywinpty's decoder. Its Windows mode
+also honors DEC line drawing alongside UTF-8, matching the
+[Windows console sequences](https://learn.microsoft.com/en-us/windows/console/console-virtual-terminal-sequences#designate-character-set);
+pyte otherwise ignores charset selection in UTF-8 mode and displays border
+letters such as `j` instead of `┘`.
 
 Application modes reuse the existing profile configuration, ncurses controls,
 media cache, downloads and Chafa dependency. Configuration schema 4 adds

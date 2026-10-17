@@ -4,7 +4,9 @@ Reaction fixtures use distinct BMP glyphs, which fit ncurses' Windows wchar_t.
 The native input suites separately verify non-BMP input and message payloads.
 """
 
+import faulthandler
 import json
+import os
 from pathlib import Path
 import re
 import time
@@ -20,6 +22,13 @@ class MessageInteractions(unittest.TestCase):
     wait = product.SendProduct.wait
     editor_text = product.SendProduct.editor_text
     click = product.SendProduct.click
+
+    def setUp(self):
+        if os.name == "nt":
+            # Preserve the blocked call stack if a native ConPTY call stalls;
+            # CTest's outer timeout otherwise kills Python without a traceback.
+            faulthandler.dump_traceback_later(60)
+            self.addCleanup(faulthandler.cancel_dump_traceback_later)
 
     def open(self, server):
         # Keep Unicode labels observable for text interaction assertions. The
@@ -676,4 +685,4 @@ class MessageInteractions(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    unittest.main(verbosity=2)

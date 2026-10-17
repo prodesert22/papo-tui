@@ -54,6 +54,14 @@ class TerminalStream(pyte.ByteStream):
     csi = dict(pyte.Stream.csi, S="scroll_up", T="scroll_down")
     events = pyte.Stream.events | {"scroll_up", "scroll_down"}
 
+    def __init__(self, *args, ansi_charset=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.ansi_charset = ansi_charset
+        if ansi_charset:
+            # ConPTY preserves DEC line drawing alongside UTF-8 text. pyte
+            # otherwise ignores SCS in UTF-8 mode, showing `j` instead of ┘.
+            self.use_utf8 = False
+
     def feed(self, data):
         # pyte omits colon-form SGR used by xterm-direct terminfo. Normalize
         # equivalent color parameters, preserving CSI split across PTY reads.
@@ -67,7 +75,12 @@ class TerminalStream(pyte.ByteStream):
             parameters = re.sub(rb"(38|48):2::?", rb"\1;2;", match[1])
             return b"\x1b[" + parameters.replace(b":", b";") + b"m"
 
-        super().feed(re.sub(rb"\x1b\[([0-9:;]*)m", normalize, data))
+        data = re.sub(rb"\x1b\[([0-9:;]*)m", normalize, data)
+        if self.ansi_charset:
+            # Decode bytes incrementally without disabling the parser's SCS.
+            pyte.Stream.feed(self, self.utf8_decoder.decode(data))
+        else:
+            super().feed(data)
 
 
 def editor_region(terminal):
@@ -222,6 +235,26 @@ if os.name == "nt":
         pass
 else:
     Terminal = PosixTerminal
+
+
+class TerminalStreamTests(unittest.TestCase):
+    def test_windows_line_drawing_and_utf8_survive_every_read_boundary(self):
+        data = "\x1b(0lqk\x1b(B josé 😀\r\n\x1b(0mqj\x1b(B".encode()
+        for split in range(len(data) + 1):
+            with self.subTest(split=split):
+                screen = ObservedScreen(24, 2)
+                stream = TerminalStream(screen, ansi_charset=True)
+                stream.feed(data[:split])
+                stream.feed(data[split:])
+                self.assertEqual(screen.display[0].rstrip(), "┌─┐ josé 😀")
+                self.assertEqual(screen.display[1].rstrip(), "└─┘")
+
+    def test_windows_observer_keeps_ascii_after_leaving_line_drawing(self):
+        screen = ObservedScreen(8, 2)
+        stream = TerminalStream(screen, ansi_charset=True)
+        for byte in b"\x1b(0j\x1b(Bj":
+            stream.feed(bytes([byte]))
+        self.assertEqual(screen.display[0].rstrip(), "┘j")
 
 
 class TerminalTests(unittest.TestCase):

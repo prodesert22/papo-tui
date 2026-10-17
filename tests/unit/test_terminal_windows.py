@@ -7,6 +7,7 @@ import sys
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
+import pyte
 
 
 def load_backend():
@@ -99,6 +100,49 @@ class WindowsTerminalLifecycle(unittest.TestCase):
         ):
             terminal.close()
         terminal.configuration.cleanup.assert_called_once()
+
+
+class WindowsTerminalReads(unittest.TestCase):
+    def terminal(self):
+        receiver, sender = socket.socketpair()
+        self.addCleanup(receiver.close)
+        self.addCleanup(sender.close)
+        terminal = backend.WindowsTerminal.__new__(backend.WindowsTerminal)
+        terminal.child = SimpleNamespace(
+            fd=receiver.fileno(),
+            fileobj=receiver,
+            read=Mock(side_effect=AssertionError("Must not enter pywinpty's blocking decoder")),
+        )
+        terminal.output = bytearray()
+        terminal.screen = pyte.Screen(40, 2)
+        terminal.stream = pyte.ByteStream(terminal.screen)
+        return terminal, sender
+
+    def test_incomplete_utf8_returns_without_waiting_for_the_next_code_point(self):
+        terminal, sender = self.terminal()
+        sender.sendall(b"jos\xc3")
+        terminal.read(0.03)
+        self.assertEqual(terminal.screen.display[0].rstrip(), "jos")
+        sender.sendall("é 😀".encode()[1:])
+        terminal.read(0.03)
+        self.assertEqual(terminal.screen.display[0].rstrip(), "josé 😀")
+        self.assertEqual(terminal.output, "josé 😀".encode())
+
+    def test_invalid_utf8_does_not_block_later_valid_output(self):
+        terminal, sender = self.terminal()
+        sender.sendall(b"\xffready")
+        terminal.read(0.03)
+        self.assertEqual(terminal.screen.display[0].rstrip(), "�ready")
+        self.assertEqual(terminal.output, b"\xffready")
+
+    def test_eof_ends_read_and_empty_read_sentinel_is_not_displayed(self):
+        terminal, sender = self.terminal()
+        sender.sendall(b"0011Ignore")
+        terminal.read(0.03)
+        self.assertEqual(terminal.output, b"")
+        sender.close()
+        terminal.read(0.03)
+        self.assertEqual(terminal.output, b"")
 
 
 if __name__ == "__main__":

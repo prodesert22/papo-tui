@@ -62,7 +62,7 @@ class WindowsTerminal:
         self.process = Process(self.child)
         self.output = bytearray()
         self.screen = ObservedScreen(80, 24)
-        self.stream = TerminalStream(self.screen)
+        self.stream = TerminalStream(self.screen, ansi_charset=True)
         try:
             self.read(0.2)
         except BaseException:
@@ -72,15 +72,18 @@ class WindowsTerminal:
     def read(self, seconds=0.1):
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
-            try:
-                ready, _, _ = select.select([self.child.fd], [], [], 0.02)
-                data = self.child.read(65536) if ready else ""
-            except EOFError:
+            ready, _, _ = select.select([self.child.fd], [], [], 0.02)
+            # PtyProcess.read() blocks in recv(1) until its entire chunk
+            # decodes as UTF-8. Keep incomplete code points in ByteStream
+            # instead, so the caller's deadline still bounds every read.
+            data = self.child.fileobj.recv(65536) if ready else None
+            if data == b"":
                 break
+            if data == b"0011Ignore":
+                continue  # pywinpty's empty-read sentinel.
             if data:
-                encoded = data.encode("utf-8", errors="replace")
-                self.output.extend(encoded)
-                self.stream.feed(encoded)
+                self.output.extend(data)
+                self.stream.feed(data)
             else:
                 time.sleep(0.01)
 
