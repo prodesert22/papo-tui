@@ -135,9 +135,16 @@ bool auth_internal_permission_admitted(auth_client *client)
                 json_string_value(json_object_get(client->permission_message, "channel_id")),
                 client->permission_guard);
     }
-    if (client->operation == AUTH_API_GET && client->api_path &&
-        !strncmp(client->api_path, "/channels/", 10) && strlen(client->api_path) >= 55 &&
-        !strncmp(client->api_path + 46, "/messages", 9)) {
+    bool pin = client->operation == AUTH_API_MUTATION && client->api_path &&
+               g_str_has_suffix(client->api_path, "/pin");
+    if (decision == PERMISSION_ALLOWED && pin)
+        decision = permissions_role(client->permissions, PERMISSION_PIN_MESSAGE);
+    if (decision == PERMISSION_ALLOWED && client->operation == AUTH_MESSAGE_SEND &&
+        client->send_has_attachments)
+        decision = permissions_role(client->permissions, PERMISSION_SEND_ATTACHMENT);
+    if (decision == PERMISSION_ALLOWED && (client->operation == AUTH_API_GET || pin) &&
+        client->api_path && !strncmp(client->api_path, "/channels/", 10) &&
+        strlen(client->api_path) >= 55 && !strncmp(client->api_path + 46, "/messages", 9)) {
         char id[37];
         memcpy(id, client->api_path + 10, 36);
         id[36] = 0;

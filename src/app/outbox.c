@@ -318,6 +318,11 @@ static outbox_submit_result enqueue(outbox *box, const char *channel, const char
         permissions_channel(auth_permissions(box->session), channel, PERMISSION_SEND_MESSAGES);
     if (access != PERMISSION_ALLOWED)
         return access == PERMISSION_DENIED ? OUTBOX_FORBIDDEN : OUTBOX_PERMISSIONS_PENDING;
+    if (files && files->len) {
+        access = permissions_role(auth_permissions(box->session), PERMISSION_SEND_ATTACHMENT);
+        if (access != PERMISSION_ALLOWED)
+            return access == PERMISSION_DENIED ? OUTBOX_FORBIDDEN : OUTBOX_PERMISSIONS_PENDING;
+    }
     operation *slot = NULL, *oldest = NULL;
     for (size_t i = 0; i < OUTBOX_OPERATION_LIMIT; ++i) {
         operation *item = &box->operations[i];
@@ -449,8 +454,11 @@ void outbox_poll(outbox *box)
         if (item->id && item->state == OUTBOX_QUEUED && (!next || item->id < next->id))
             next = item;
     }
-    if (next && permissions_channel(auth_permissions(box->session), next->channel,
-                                    PERMISSION_SEND_MESSAGES) != PERMISSION_ALLOWED) {
+    if (next && (permissions_channel(auth_permissions(box->session), next->channel,
+                                     PERMISSION_SEND_MESSAGES) != PERMISSION_ALLOWED ||
+                 (next->files->len &&
+                  permissions_role(auth_permissions(box->session), PERMISSION_SEND_ATTACHMENT) !=
+                      PERMISSION_ALLOWED))) {
         next->state = OUTBOX_FAILED;
         next->status = 403;
         return;

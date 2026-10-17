@@ -278,6 +278,11 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             scope = DRAW_ALL;
         }
         inbox *box = history_inbox(ui->model);
+        if (*ui->notification_message && !r8_modal_locating(ui->r8)) {
+            inbox_cancel_open(box);
+            ui->notification_channel[0] = ui->notification_message[0] = ui->notification_time[0] =
+                0;
+        }
         if (ui->inbox_revision != inbox_revision(box)) {
             ui->inbox_revision = inbox_revision(box);
             redraw = true;
@@ -289,6 +294,8 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                      r8_modal_destination(ui->r8));
             snprintf(ui->notification_message, sizeof(ui->notification_message), "%s",
                      r8_modal_destination_message(ui->r8));
+            snprintf(ui->notification_time, sizeof(ui->notification_time), "%s",
+                     r8_modal_destination_time(ui->r8));
         }
         const char *destination = *opened ? opened : r8_modal_destination(ui->r8);
         if (*destination) {
@@ -306,7 +313,10 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                     !strcmp(destination,
                             conversation_str(
                                 history_channel(ui->model, history_selected(ui->model)), "id"))) {
-                    history_jump(ui->model, ui->notification_message);
+                    if (history_jump_at(ui->model, ui->notification_message, ui->notification_time))
+                        r8_modal_location_started(ui->r8);
+                    else
+                        r8_modal_location_error(ui->r8, "Mensagem não disponível.");
                     ui->notification_channel[0] = ui->notification_message[0] = 0;
                 }
                 found = true;
@@ -318,9 +328,15 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             r8_modal_destination_clear(ui->r8);
             redraw = true;
         }
-        if (*ui->notification_message && !inbox_opening(box))
+        if (*ui->notification_message && !inbox_opening(box)) {
+            r8_modal_location_error(ui->r8, "Não foi possível abrir a conversa.");
             ui->notification_channel[0] = ui->notification_message[0] = 0;
+        }
         conversation_interactions_sync(ui);
+        if (r8_modal_poll(ui->r8)) {
+            redraw = true;
+            scope = DRAW_ALL;
+        }
         instances_visible(
             connections, auth,
             ui->body && ui->at_end && !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
@@ -547,12 +563,17 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             scope = DRAW_ALL;
             continue;
         }
-        if (type == KEY_CODE_YES && (key == KEY_F(9) || key == KEY_F(10) || key == KEY_F(1))) {
+        if (type == KEY_CODE_YES &&
+            (key == KEY_F(9) || key == KEY_F(10) || key == KEY_F(1) || key == KEY_F(3) ||
+             key == KEY_F(8)) &&
+            !(key == KEY_F(8) && media_view_modal(ui->media))) {
             if (!media_view_modal(ui->media)) {
                 conversation_interactions_close(ui);
                 mention_popup_close(ui->mentions);
                 r8_modal_open(ui->r8, key == KEY_F(9)    ? R8_NOTIFICATIONS
                                       : key == KEY_F(10) ? R8_USERS
+                                      : key == KEY_F(3)  ? R8_SEARCH
+                                      : key == KEY_F(8)  ? R8_PINNED
                                                          : R8_HELP);
             }
             scope = DRAW_ALL;
@@ -587,7 +608,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             continue;
         }
         if (!media_view_modal(ui->media) &&
-            ((type == KEY_CODE_YES && key == KEY_F(3)) || (type == OK && key == 22))) {
+            ((type == KEY_CODE_YES && key == KEY_F(5)) || (type == OK && key == 22))) {
             if (*ui->edit_message)
                 ui->feedback = "Conclua a edição antes de anexar arquivos.";
             else
@@ -755,6 +776,17 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                     e.y <= getbegy(ui->body) + conversation_input_top(ui) + ui->editor_padding &&
                     conversation_hit(ui->emoji_button_hit, e.x - getbegx(ui->body))) {
                     conversation_open_emojis(ui);
+                    scope = DRAW_ALL;
+                    continue;
+                }
+                if (ui->body && e.y == getbegy(ui->body) &&
+                    (conversation_hit(ui->search_hit, e.x - getbegx(ui->body)) ||
+                     conversation_hit(ui->pins_hit, e.x - getbegx(ui->body)))) {
+                    conversation_interactions_close(ui);
+                    mention_popup_close(ui->mentions);
+                    r8_modal_open(ui->r8, conversation_hit(ui->search_hit, e.x - getbegx(ui->body))
+                                              ? R8_SEARCH
+                                              : R8_PINNED);
                     scope = DRAW_ALL;
                     continue;
                 }

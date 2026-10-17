@@ -229,7 +229,8 @@ bool conversation_collect_notices(view *ui, auth_client *auth)
     inbox *box = history_inbox(ui->model);
     char notifications[192] = "";
     if (inbox_unread(box))
-        snprintf(notifications, sizeof(notifications), "%zu avisos%s · F9", inbox_unread(box),
+        snprintf(notifications, sizeof(notifications), "%zu %s%s · F9", inbox_unread(box),
+                 inbox_unread(box) == 1 ? "notificação" : "notificações",
                  inbox_has_more(box) ? "+" : "");
     changed |= status_bar_set(&ui->status, STATUS_NOTIFICATIONS,
                               *inbox_notice(box) ? inbox_notice(box) : notifications);
@@ -307,7 +308,9 @@ void conversation_draw_footer(view *ui)
     } else if (ui->remove_confirm) {
         full = shorter = "←→ escolher · Enter confirmar · Esc cancelar";
         minimal = "Enter · Esc";
-
+    } else if (r8_modal_locating(ui->r8)) {
+        full = shorter = "Esc voltar aos detalhes";
+        minimal = "Esc";
     } else if (r8_modal_is_open(ui->r8) || ui->settings.open) {
         full = shorter = "↑↓ escolher · Enter abrir · Tab ações · Esc voltar";
         minimal = "Enter · Esc";
@@ -348,7 +351,7 @@ void conversation_draw_footer(view *ui)
                          : "←→ servidores · ↓ canais · Enter ativar";
         minimal = "←→ · Enter";
     } else if (ui->focus == LIST_BUTTONS) {
-        full = "←→ Canais/DMs · Enter ativar · ↓ lista · F9 avisos · F10 nova DM";
+        full = "←→ Canais/DMs · Enter ativar · ↓ lista · F9 notificações · F10 nova DM";
         shorter = "←→ escolher · Enter ativar · ↓ lista";
         minimal = "←→ · Enter";
     } else if (ui->focus == CHANNEL_LIST) {
@@ -370,7 +373,7 @@ void conversation_draw_footer(view *ui)
         full = shorter = "←→ anexos · Enter remover · Tab ações · Esc voltar";
         minimal = "←→ · Enter remover";
     } else if (ui->focus == ATTACH_BUTTON) {
-        full = shorter = "←→ botões · Enter/F3 anexar · Shift+Tab editor";
+        full = shorter = "←→ botões · Enter/F5 anexar · Shift+Tab editor";
         minimal = "Enter anexar";
     } else if (ui->focus == EMOJI_BUTTON) {
         full = shorter = "←→ botões · Enter/F4 emojis · Shift+Tab voltar";
@@ -394,16 +397,19 @@ void conversation_draw_footer(view *ui)
     wattrset(ui->footer, COLOR_PAIR(THEME_BORDER));
     mvwhline(ui->footer, 0, 0, ACS_HLINE, getmaxx(ui->footer));
     char full_hints[768], short_hints[512], minimal_hints[256];
-    bool normal = !r8_modal_is_open(ui->r8) && !ui->settings.open && !ui->duplicate_modal &&
+    bool normal = !file_picker_open(ui->files) && !ui->remove_confirm && !ui->attachment_dialog &&
+                  !r8_modal_is_open(ui->r8) && !ui->settings.open && !ui->duplicate_modal &&
                   !ui->reactors_open && !ui->context_open && !media_view_modal(ui->media) &&
                   !emoji_picker_open(ui->emojis) && !emoji_picker_suggesting(ui->emojis) &&
                   !mention_popup_open(ui->mentions);
-    snprintf(full_hints, sizeof(full_hints), "%s%s", full,
-             normal && !strstr(full, "F9") ? " · F9 avisos" : "");
-    snprintf(short_hints, sizeof(short_hints), "%s%s", shorter,
-             normal && !strstr(shorter, "F9") ? " · F9 avisos" : "");
-    snprintf(minimal_hints, sizeof(minimal_hints), "%s%s", minimal,
-             normal ? (getmaxx(ui->footer) >= 60 ? " · F9 avisos" : " · F9") : "");
+    snprintf(full_hints, sizeof(full_hints), "%s%s%s", full,
+             normal ? " · F3 busca · F8 fixadas" : "",
+             normal && !strstr(full, "F9") ? " · F9 notificações" : "");
+    snprintf(short_hints, sizeof(short_hints), "%s%s%s", shorter,
+             normal ? " · F3 busca · F8 fixadas" : "",
+             normal && !strstr(shorter, "F9") ? " · F9 notificações" : "");
+    snprintf(minimal_hints, sizeof(minimal_hints), "%s%s%s", minimal, normal ? " · F3/F8" : "",
+             normal ? (getmaxx(ui->footer) >= 60 ? " F9 notificações" : " F9") : "");
     status_bar_draw(&ui->status, ui->footer, 1, full_hints, short_hints, minimal_hints);
 }
 
@@ -617,7 +623,14 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
             wattrset(ui->body, COLOR_PAIR(ui->focus == HISTORY_PANEL ? THEME_HISTORY_MUTED
                                                                      : THEME_PANEL_MUTED) |
                                    A_BOLD);
-            text_label(ui->body, 0, 2, getmaxx(ui->body) - 4, title);
+            int body_width = getmaxx(ui->body);
+            ui->search_hit = (click_range){body_width - 20, 8};
+            ui->pins_hit = (click_range){body_width - 11, 9};
+            text_label(ui->body, 0, 2, MAX(0, body_width - 23), title);
+            button_draw(ui->body, 0, ui->search_hit.x, ui->search_hit.width, "[Buscar]",
+                        BUTTON_NORMAL, BUTTON_PANEL);
+            button_draw(ui->body, 0, ui->pins_hit.x, ui->pins_hit.width, "[Fixadas]", BUTTON_NORMAL,
+                        BUTTON_PANEL);
             wattrset(ui->body, COLOR_PAIR(ui->focus == HISTORY_PANEL ? THEME_HISTORY_MUTED
                                                                      : THEME_PANEL_MUTED));
             if (ui->history_top == 3)

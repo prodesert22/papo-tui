@@ -34,6 +34,7 @@ add_library(
     src/platform/${PAPO_PLATFORM}/profiles_storage.c
     src/config/read_state.c
     src/platform/${PAPO_PLATFORM}/read_storage.c
+    src/model/conversation/discovery.c
     src/model/conversation/directory.c
     src/model/conversation/events.c
     src/model/conversation/history.c
@@ -209,6 +210,7 @@ add_executable(
     src/ui/screens/conversation/reactions.c
     src/ui/screens/conversation/layout.c
     src/ui/components/settings.c
+    src/ui/screens/message_browser.c
     src/ui/screens/inbox.c
     src/ui/screens/profiles.c
     src/ui/components/button.c)

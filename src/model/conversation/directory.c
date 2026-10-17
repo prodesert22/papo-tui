@@ -1,5 +1,11 @@
+#include "model/conversation/discovery.h"
 #include "model/conversation/private.h"
 
+const char *history_author_username(const history *h, const char *id)
+{
+    const char *name = id ? history_internal_str(json_object_get(h->users, id), "username") : NULL;
+    return name ? name : "";
+}
 const char *history_author(const history *h, const char *id)
 {
     const char *name = history_mention_name((void *)h, id);
@@ -560,6 +566,20 @@ bool history_internal_request_authors(history *h)
         mention_visit_message(m, collect_mention, &batch);
         ok = batch.ok;
     }
+    for (int source = 0; source < 2; ++source)
+        json_array_foreach(source ? history_search_results(h) : history_pins(h), i, m)
+        {
+            const char *id = history_internal_str(m, "author_id");
+            if (history_uuid(id) && !user_resolved(h, id) && !json_object_get(h->queried, id) &&
+                !json_object_get(seen, id) && json_array_size(ids) < 1000 &&
+                json_object_size(h->queried) + json_array_size(ids) < 10000) {
+                ok &= !json_array_append_new(ids, json_string(id)) &&
+                      !json_object_set_new(seen, id, json_true());
+            }
+            mention_batch batch = {h, ids, seen, ok};
+            mention_visit_message(m, collect_mention, &batch);
+            ok = batch.ok;
+        }
     if (h->r8) {
         size_t total = inbox_notification_count(h->inbox) + inbox_event_count(h->inbox);
         for (size_t j = 0; j < total && json_array_size(ids) < 1000; ++j) {
@@ -618,6 +638,17 @@ bool history_maintain(history *h, uint64_t now)
         if (author && *author && json_object_set_new(protected, author, json_true()))
             pins.ok = false;
         mention_visit_message(m, protect_mention, &pins);
+    }
+    for (int source = 0; source < 2; ++source) {
+        size_t i;
+        json_t *message;
+        json_array_foreach(source ? history_search_results(h) : history_pins(h), i, message)
+        {
+            const char *author = history_internal_str(message, "author_id");
+            if (history_uuid(author) && json_object_set_new(protected, author, json_true()))
+                pins.ok = false;
+            mention_visit_message(message, protect_mention, &pins);
+        }
     }
     for (size_t i = 0; i < h->typing_count; ++i)
         if (json_object_set_new(protected, h->typing[i].id, json_true()))

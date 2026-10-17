@@ -79,8 +79,10 @@ To open messages in a voice channel, select it in the channel list and press
 | Ctrl+L in a conversation | Sign out of the current account |
 | F10 | Start a DM |
 | F9 | Open the notification center and preferences |
+| F3 | Search messages on the current server |
+| F8 outside the media player | Open pinned messages in the current conversation |
 | F4 in the editor | Choose an emoji |
-| F3 or Anexar | Choose files to attach |
+| F5 or Anexar | Choose files to attach |
 | Ctrl+V in a conversation | Paste copied files, an image, or text from the local clipboard |
 | Shift+Enter or F4 on a voice channel in the channel list | Open its message history |
 | F7 in a conversation | Enter or leave message navigation |
@@ -130,14 +132,18 @@ ordering apply to loaded notifications. Use **Mais antigas** to load another pag
 or Ctrl+R to refresh. Merely searching or filtering does not mark notifications read.
 
 In notification details, click **Abrir conversa** (Open conversation) or press
-Enter to open its channel or DM and locate the original message. Older messages
-are looked up automatically in that conversation. A closed DM is reopened when
+Enter to open its channel or DM and locate the original message. The modal stays
+open and shows **Localizando mensagem…** (Locating message) with an animated
+indicator until the destination is ready. Esc cancels navigation and returns to
+the details; a read already in flight may finish without navigating to the
+canceled target. Older messages are looked up automatically in that conversation.
+A closed DM is reopened when
 you choose this action. The target receives a highlighted
 border and stays centered in the history viewport as messages, media and reply
 previews finish loading, when enough surrounding content is available. Scrolling
 or selecting another message releases this centering. Esc leaves message navigation.
-A missing message or a failed lookup
-shows a notice; Ctrl+R retries a failed lookup.
+A missing message or a failed lookup is shown inside the modal. Enter or Ctrl+R
+retries explicitly; failures are never retried automatically.
 
 Red dots beside server and channel names indicate unread messages. The count
 shows known unread mentions of you or `@everyone`. In graphics terminals, the
@@ -282,7 +288,7 @@ run, including manual send retries. Confirmed sends clear their reply target.
 ## Send files and pasted images
 
 Click **📎** to the left of the emoji button, focus it with Tab and press Enter,
-or press **F3**. Both buttons have a filled background; the focused button changes
+or press **F5**. Both buttons have a filled background; the focused button changes
 color. While either button has focus, Left or Right switches between them.
 The application opens the system file dialog when available. Otherwise, a
 terminal file picker opens. Builds with native dialogs disabled open this
@@ -304,6 +310,8 @@ kept. Long lists scroll horizontally to keep the selected file visible.
 Return to the editor and press Enter to send all attachments and optional text
 in one message. Selecting or pasting files does not send them immediately.
 Attachments stay with each conversation's draft during the current run.
+Your roles must allow attaching files and sending messages in that conversation.
+If access is revoked before sending, the files remain in the draft.
 Editing an existing message preserves that send draft; finish or cancel editing
 before adding files. Signing out or closing the application discards the drafts.
 
@@ -314,7 +322,7 @@ folders and remote file URLs are not attached. Pasting a plain-text path keeps
 it as text. On Linux, native clipboard access requires `wl-paste` from
 wl-clipboard under Wayland, or `xclip` under X11. Windows uses the native clipboard.
 SSH sessions and sandboxed installations without clipboard access can use
-📎/F3 for files and the terminal's text paste command. A terminal that
+📎/F5 for files and the terminal's text paste command. A terminal that
 intercepts Ctrl+V must be configured to pass it to the application for native
 file/image pasting. In Kitty, add or replace the Papo-specific Ctrl+V mapping
 in `kitty.conf` with:
@@ -335,6 +343,71 @@ under its own policy. Read failures or insufficient temporary space show a
 notice; prepared files and your text remain available. Failed sends require an
 explicit retry with Ctrl+T. If the result is uncertain, check history before
 confirming a retry, which can duplicate the message.
+
+## Pinned messages and server search
+
+Click **Fixadas** (Pinned) in the conversation header, or press **F8** outside
+of the media player, to list that conversation's pinned messages. Type in
+**Buscar** (Search) to filter their text, author name or username. Filtering
+is local and ignores letter case. Use arrow keys, PageUp/PageDown, Home/End
+or the mouse wheel to browse the list. **Ctrl+R** refreshes it.
+
+The message context menu offers **Fixar mensagem** (Pin message) or
+**Desafixar mensagem** (Unpin message), once its pin state has loaded.
+If it cannot load, keep the menu open and use Ctrl+R to retry.
+The server decides whether you have permission; a conversation can have at
+most 100 pins. Pinning and unpinning are not repeated automatically after
+an error or an uncertain response. Check the refreshed list before retrying.
+
+Click **Buscar** (Search) in the conversation header, or press **F3**, to
+search messages on the current instance. Type message content and press
+**Enter**, or click **Buscar**, to query the server. Typing alone does not
+send requests. The initial scope is the whole server, with newest results
+first. Results and text matching follow the server's search behavior.
+The whole-server endpoint may omit DMs; select a specific DM to search it.
+
+From the search text field, press Down to reach **Buscar** and **Filtros**.
+Left/Right selects between these buttons; Enter activates the selected button.
+Down again reaches the results. Up from the first result returns to the buttons,
+and Up again returns to the text field. Tab/Shift+Tab also moves between areas.
+
+**Filtros** (Filters) opens a separate screen in the same panel:
+
+- **Autor** (Author), **Conversa** (Conversation) and **Menciona** (Mentions)
+  open searchable name selectors. Choose **Qualquer / limpar filtro**
+  (Any / clear filter) to remove that restriction.
+- **Contém link** (Contains a link) requires a URL in the message content.
+- **Data inicial / Data final** (Start / end date) accept `YYYY-MM-DD` and
+  include both boundary dates.
+- **Anexos** (Attachments) cycles through **Qualquer**, **Com anexos** and
+  **Sem anexos** (Any, With attachments and Without attachments).
+- **Ordem** (Order) switches between newest and oldest messages first.
+
+Use Tab/Shift+Tab or up/down to reach each filter; the panel scrolls on small
+screens. **Aplicar** (Apply) saves the filters and returns to results without
+sending a request. **Cancelar** (Cancel) or Esc discards filter edits.
+**Limpar filtros** (Clear filters) clears the filter draft. Execute **Buscar**
+to apply your text and filters to a new server query. Text may be empty when
+at least one filter is set; ordering alone is not a search criterion.
+
+Use **Carregar mais** (Load more) for the next page. Loaded results belong to
+the last submitted query; **Alterações pendentes** (Pending changes) means
+you must execute Buscar before loading more with edited criteria. Ctrl+R
+repeats the current text and filters. A local limit of 1,000 results or 4 MiB
+shows a partial-list notice; refine the query when that happens.
+
+In either list, Enter or a click opens message details. **Ir para mensagem**
+(Go to message) opens its conversation, locates older messages when needed,
+and highlights the target using the same navigation as notifications. The
+pinned-message detail also has **Desafixar** (Unpin); the initial selection
+is Go to message. Use Left/Right or Tab to select an action, then Enter to
+activate it. Up/Down scrolls the preview. Other message actions are available in
+the conversation's context menu. Esc returns to the list with its query and
+position preserved. Go to message uses the same animated **Localizando mensagem…**
+view as notifications, keeping the modal open until the destination is ready.
+Esc cancels and returns to details; errors remain in the modal for explicit retry.
+Searching or viewing these previews does not open inactive histories or mark
+notifications read. Opening the actual conversation has its normal read behavior.
 
 ## Images and video
 

@@ -38,6 +38,7 @@ struct auth_client {
     struct curl_slist *headers;
     curl_mime *mime;
     bool send_ready;
+    bool send_has_attachments;
     auth_send_receipt send_receipt;
     json_t *sent_message;
     char send_channel[64];

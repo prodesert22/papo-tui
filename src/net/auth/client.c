@@ -46,6 +46,7 @@ void auth_internal_clear_send(auth_client *client)
     json_decref(client->sent_message);
     client->sent_message = NULL;
     client->send_ready = false;
+    client->send_has_attachments = false;
     client->send_channel[0] = '\0';
 }
 

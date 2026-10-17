@@ -67,11 +67,15 @@ bool auth_send_attachments(auth_client *client, uint64_t operation_id, const cha
         strlen(channel_id) >= sizeof(client->send_channel) || !content || (!*content && !count) ||
         count > ATTACHMENT_LIMIT || (count && !files) || strlen(content) > 8192)
         return false;
+    if (count &&
+        permissions_role(client->permissions, PERMISSION_SEND_ATTACHMENT) != PERMISSION_ALLOWED)
+        return false;
     json_t *valid_utf8 = json_string(content);
     if (!valid_utf8)
         return false;
     json_decref(valid_utf8);
     auth_internal_clear_send(client);
+    client->send_has_attachments = count != 0;
     client->send_receipt = (auth_send_receipt){.outcome = AUTH_SEND_REJECTED,
                                                .operation_id = operation_id,
                                                .generation = client->generation};

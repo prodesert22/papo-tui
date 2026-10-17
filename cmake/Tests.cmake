@@ -70,7 +70,7 @@ if(BUILD_TESTING)
             ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_emojis_terminal.py
             $<TARGET_FILE:papo-tui> ${FFMPEG_CLI})
-    set_tests_properties(emojis-terminal PROPERTIES TIMEOUT 180)
+    set_tests_properties(emojis-terminal PROPERTIES TIMEOUT 210)
     add_executable(interactions-probe tests/probes/interactions_probe.c)
     target_link_libraries(interactions-probe PRIVATE papo_media)
     target_compile_options(interactions-probe PRIVATE -Wall -Wextra -Wpedantic -Werror)
@@ -89,11 +89,23 @@ if(BUILD_TESTING)
                      $<TARGET_FILE:r8-probe>)
     set_tests_properties(r8-integration PROPERTIES TIMEOUT 120)
     add_test(
+        NAME message-discovery-integration
+        COMMAND
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/integration/test_discovery.py
+            $<TARGET_FILE:r8-probe>)
+    set_tests_properties(message-discovery-integration PROPERTIES TIMEOUT 180)
+    add_test(
         NAME r8-terminal
         COMMAND
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_r8_terminal.py
             $<TARGET_FILE:papo-tui>)
     set_tests_properties(r8-terminal PROPERTIES TIMEOUT 120)
+    add_test(
+        NAME message-discovery-terminal
+        COMMAND
+            ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/terminal/test_discovery_terminal.py
+            $<TARGET_FILE:papo-tui>)
+    set_tests_properties(message-discovery-terminal PROPERTIES TIMEOUT 180)
     add_executable(inbox-badges-test tests/unit/test_inbox_badges.c)
     target_link_libraries(inbox-badges-test PRIVATE papo_auth)
     target_compile_options(inbox-badges-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
@@ -235,7 +247,7 @@ if(BUILD_TESTING)
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_media_terminal.py
             $<TARGET_FILE:papo-tui> ${FFMPEG_CLI})
     set_tests_properties(media-integration PROPERTIES TIMEOUT 120)
-    set_tests_properties(media-terminal PROPERTIES TIMEOUT 300)
+    set_tests_properties(media-terminal PROPERTIES TIMEOUT 420)
     find_program(OPENSSL_CLI NAMES openssl REQUIRED)
     add_executable(realtime-probe tests/probes/realtime_probe.c)
     target_link_libraries(realtime-probe PRIVATE papo_auth)

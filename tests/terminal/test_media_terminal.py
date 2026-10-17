@@ -854,12 +854,17 @@ class MediaTerminal(unittest.TestCase):
     def test_floating_panels_preserve_uncovered_attachment_pixels(self):
         for protocol in ("kitty", "sixel", "iterm2"):
             for key, title in (
-                ("\x1bOR", "Anexar arquivos"),
+                ("\x1b[15~", "Anexar arquivos"),
                 ("attachment-remove", "Remover anexo?"),
                 ("\x1bOS", "Emojis · Esc voltar"),
                 ("\x1b[18~E", "Quem reagiu"),
                 ("@", "Menções"),
                 ("\x1b[20~", "Notificações"),
+                ("\x1bOR", "Buscar mensagens no servidor"),
+                ("\x1bOR\t\t\n", "Filtros da busca"),
+                ("\x1b[19~", "Mensagens fixadas"),
+                ("\x1b[19~", "Detalhes da mensagem"),
+                ("\x1b[19~", "Ir para mensagem"),
             ):
                 with (
                     self.subTest(protocol=protocol, modal=title),
@@ -868,6 +873,20 @@ class MediaTerminal(unittest.TestCase):
                     parent = server.api_handler
 
                     def route(method, path, body):
+                        if (
+                            title == "Ir para mensagem"
+                            and "order=asc" in path
+                            and "/messages?" in path
+                        ):
+                            time.sleep(0.8)
+                            return 503, None
+                        if method == "GET" and path.split("?")[0].endswith("/pinned"):
+                            return 200, dict(
+                                channel_id=server.messages[0]["channel_id"],
+                                pinned=[dict(server.messages[0], id=uuid(99), attachments=[])]
+                                if title == "Ir para mensagem"
+                                else server.messages[:1],
+                            )
                         if method == "GET" and path.split("?")[0].endswith("/reactions"):
                             return 200, {
                                 "message_id": server.messages[0]["id"],
@@ -894,7 +913,7 @@ class MediaTerminal(unittest.TestCase):
                     try:
                         self.wait_raster(t, lambda w, h: w > 600 and h > 300)
                         if key == "attachment-remove":
-                            t.send("\x1bOR")
+                            t.send("\x1b[15~")
                             self.wait(t, "Anexar arquivos")
                             t.send("\x03" + str(Path(self.assets.name) / "landscape.png") + "\n")
                             self.wait(t, "landscape.png 🗙]")
@@ -902,12 +921,26 @@ class MediaTerminal(unittest.TestCase):
                         first_frame = len(t.stream.frames)
                         first_placement = len(t.stream.placements)
                         t.send("\x1b[Z\n" if key == "attachment-remove" else key)
+                        if title in ("Detalhes da mensagem", "Ir para mensagem"):
+                            self.wait(t, "1 resultado(s)")
+                            t.send("\n")
+                            if title == "Ir para mensagem":
+                                self.wait(t, "Detalhes da mensagem")
+                                t.send("\n")
                         self.wait(t, title)
                         if title == "Menções":
                             self.wait(t, "@member7")
                         display = t.screen.display
                         top = next(i for i, line in enumerate(display) if title in line)
-                        if title in ("Notificações", "Remover anexo?"):
+                        if title in (
+                            "Notificações",
+                            "Remover anexo?",
+                            "Buscar mensagens no servidor",
+                            "Filtros da busca",
+                            "Mensagens fixadas",
+                            "Detalhes da mensagem",
+                            "Ir para mensagem",
+                        ):
                             top -= 1  # Its title is inside the frame.
                         title_x = wcswidth(
                             next(line for line in display if title in line).split(title)[0]
@@ -992,6 +1025,11 @@ class MediaTerminal(unittest.TestCase):
                             "Notificações",
                             "Anexar arquivos",
                             "Remover anexo?",
+                            "Buscar mensagens no servidor",
+                            "Filtros da busca",
+                            "Mensagens fixadas",
+                            "Detalhes da mensagem",
+                            "Ir para mensagem",
                         ):
                             active_title = title
                             if title == "Notificações":
@@ -1027,6 +1065,15 @@ class MediaTerminal(unittest.TestCase):
                             if title == "Notificações":
                                 t.send("\x1b")
                                 self.wait(t, title)
+                        if title == "Ir para mensagem":
+                            t.send("\x1b")
+                            self.wait(t, "Detalhes da mensagem")
+                        if title in ("Detalhes da mensagem", "Ir para mensagem"):
+                            t.send("\x1b")
+                            self.wait(t, "Mensagens fixadas")
+                        if title == "Filtros da busca":
+                            t.send("\x1b")
+                            self.wait(t, "Buscar mensagens no servidor")
                         t.send("\x1b")
                         self.wait_raster(t, lambda w, h: w > 600 and h > 300)
                         self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), 1)
@@ -1048,7 +1095,13 @@ class MediaTerminal(unittest.TestCase):
                     t.read(0.3)
                     self.assertEqual(len(t.stream.frames), count, "Poster must remain static")
                     poster_ids = t.stream.live_ids.copy()
-                    for key, title in (("@", "Menções"), ("\x1b[20~", "Notificações")):
+                    for key, title in (
+                        ("@", "Menções"),
+                        ("\x1b[20~", "Notificações"),
+                        ("\x1bOR", "Buscar mensagens no servidor"),
+                        ("\x1bOR\t\t\n", "Filtros da busca"),
+                        ("\x1b[19~", "Mensagens fixadas"),
+                    ):
                         t.send(key)
                         self.wait(t, title)
                         if protocol == "kitty":
@@ -1056,11 +1109,19 @@ class MediaTerminal(unittest.TestCase):
                         self.assertEqual(len(t.stream.frames), count)
                         t.send("\x1b")
                         self.assertNotIn(title, "\n".join(t.screen.display))
+                        if title == "Filtros da busca":
+                            self.wait(t, "Buscar mensagens no servidor")
+                            t.send("\x1b")
                     t.send("\x1b[18~")
                     self.wait(t, "Mídia 1/1")
                     self.assertNotIn("[Info]", "\n".join(t.screen.display))
                     t.send("\n")
                     self.wait(t, "Reproduzindo")
+                    t.send("\x1b[19~")
+                    self.wait(t, "Propriedades")
+                    self.assertNotIn("Mensagens fixadas", "\n".join(t.screen.display))
+                    t.send("\x1b[19~")
+                    self.assertNotIn("Propriedades", "\n".join(t.screen.display))
                     self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), 1)
                     t.send("\x1b")
                     self.wait(t, "↑↓ mensagens")

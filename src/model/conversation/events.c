@@ -73,6 +73,7 @@ void history_recover(history *h)
         auth_cancel_read(h->auth);
         h->pending = NONE;
     }
+    history_internal_discovery_recover(h);
     ++h->selection;
     history_internal_actions_reset(h);
     json_decref(h->fresh);
@@ -205,6 +206,11 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
                                       "Erro remoto");
         return true;
     }
+    if (!strcmp(type, "message_pin")) {
+        if (!history_internal_discovery_event(h, event))
+            goto invalid;
+        return true;
+    }
     if (!strcmp(type, "react_update")) {
         if (!history_internal_react_event(h, event))
             goto invalid;
@@ -268,6 +274,8 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
     if (create &&
         (!ctype || (strcmp(ctype, "text") && strcmp(ctype, "voice") && strcmp(ctype, "category"))))
         goto invalid;
+    if (edit || del || embeds)
+        history_internal_discovery_event(h, event);
     bool active = !strcmp(channel, history_internal_str(history_channel(h, h->selected), "id")
                                        ? history_internal_str(history_channel(h, h->selected), "id")
                                        : "");

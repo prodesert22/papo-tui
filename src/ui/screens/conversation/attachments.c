@@ -105,6 +105,12 @@ void conversation_attachments_open(view *ui, bool clipboard)
     if (!conversation_input(ui) || *ui->edit_message || ui->attachment_task ||
         file_picker_open(ui->files) || ui->remove_confirm)
         return;
+    if (!clipboard &&
+        permissions_role(auth_permissions(ui->connections->items[ui->active_tab].auth),
+                         PERMISSION_SEND_ATTACHMENT) != PERMISSION_ALLOWED) {
+        ui->feedback = "Permissão indisponível para anexar arquivos.";
+        return;
+    }
     conversation_interactions_close(ui);
     mention_popup_close(ui->mentions);
     emoji_picker_close(ui->emojis);
@@ -172,7 +178,7 @@ bool conversation_attachments_poll(view *ui, auth_client *auth)
                 g_strlcpy(ui->attachment_notice,
                           g_error_matches(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED)
                               ? error->message
-                              : "Não foi possível colar. Use 📎/F3 ou a colagem do terminal.",
+                              : "Não foi possível colar. Use 📎/F5 ou a colagem do terminal.",
                           sizeof(ui->attachment_notice));
                 ui->feedback = ui->attachment_notice;
             }
