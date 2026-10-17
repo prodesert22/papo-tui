@@ -19,7 +19,7 @@ class InstalledApplication(unittest.TestCase):
             try:
                 terminal.send(server.url + "\tjosé\tSynthetic!123\n")
                 self.wait(terminal, "geral")
-                terminal.send("\x1bOB\x1bOB\n")
+                terminal.send("\x1bOB\n")
                 self.wait(terminal, "Mensagem 0250")
                 terminal.send("Instalação 😀\n")
                 end = time.monotonic() + 10

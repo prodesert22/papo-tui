@@ -70,7 +70,30 @@ typedef struct {
     size_t bytes;
     message_blocks blocks;
 } cached_layout;
+enum { MESSAGE_HIT, REPLY_HIT, REACTION_HIT };
 typedef struct {
+    char id[37];
+    int kind, y, x, height, width;
+    size_t index;
+} message_hit;
+typedef struct {
+    bool delete_confirm, edit_pending;
+    char edit_message[37], edit_submitted[TEXT_UTF8_BYTES];
+    text_buffer edit_input;
+    bool navigating, context_open, context_keyboard, reactors_open, reaction_picker,
+        reactor_users_focus;
+    char selected_message[37], action_channel[37], reaction_target[37];
+    char centered_message[37];
+    char notification_channel[37], notification_message[37];
+    char reactor_emoji[37], reactor_unicode[65];
+    uint64_t action_generation;
+    size_t selected_media;
+    int return_focus, menu_selected, menu_x, menu_y, selection_pending;
+    int reactor_first[2], reactor_cursor, reactor_user;
+    WINDOW *context_window;
+    message_hit hits[2048];
+    size_t hit_count;
+    int selected_start, selected_end;
     GHashTable *layout_index;
     cached_layout layouts[HISTORY_MESSAGE_LIMIT];
     /* Reused on the UI thread; the view owns this large measurement buffer. */
@@ -80,7 +103,7 @@ typedef struct {
     history *model;
     r8_modal *r8;
     app_settings settings;
-    bool list_dms;
+    bool list_dms, initial_channel_pending;
     int list_button;
     size_t highlights[2];
     uint64_t inbox_revision;
@@ -114,18 +137,35 @@ typedef struct {
     bool dragging, editor_scrolling;
     text_paste paste_data;
 } view;
-const char *conversation_str(json_t *obj, const char *key);
+const char *conversation_str(const json_t *obj, const char *key);
 size_t conversation_list_index(view *ui, size_t row);
 size_t conversation_list_count(view *ui);
 json_t *conversation_list_channel(view *ui, size_t row);
+bool conversation_list_selectable(view *ui, size_t row);
+size_t conversation_list_find(view *ui, size_t row, int direction);
+void conversation_list_normalize(view *ui);
 bool conversation_list_notified(view *ui, bool dms);
-void conversation_notification_dot(WINDOW *window, int row, int column, int pair);
+void conversation_notification_dot(view *ui, WINDOW *window, int row, int column, int pair);
 void conversation_list_button(view *ui, int button, int column, int width, const char *label);
 void conversation_switch_list(view *ui, bool dms);
 void conversation_destroy_layout(view *ui);
 bool conversation_layout(view *ui);
 bool conversation_hit(click_range range, int x);
 int conversation_tab_width(view *ui, size_t index, int available);
+void conversation_interactions_sync(view *ui);
+bool conversation_interactions_key(view *ui, int type, uint32_t key);
+bool conversation_interactions_mouse(view *ui, const MEVENT *event);
+void conversation_interactions_draw(view *ui);
+void conversation_reactors_open(view *ui);
+void conversation_reactors_key(view *ui, int type, uint32_t key);
+void conversation_reactors_mouse(view *ui, const MEVENT *event);
+void conversation_reactors_draw(view *ui, WINDOW *window);
+void conversation_interactions_close(view *ui);
+void conversation_reply_label(view *ui, const char *id, int width, char *label, size_t capacity);
+void conversation_message_hit(view *ui, const char *id, int kind, int y, int x, int height,
+                              int width, size_t index);
+bool conversation_accept_reaction(view *ui);
+const char *conversation_reply_target(view *ui);
 void conversation_draw_tabs(view *ui, auth_client *auth);
 void conversation_release_layout(view *ui, cached_layout *c);
 cached_layout *conversation_find_layout(view *ui, size_t index, int width);
@@ -147,6 +187,7 @@ void conversation_set_focus(view *ui, int focus);
 void conversation_open_emojis(view *ui);
 void conversation_open_channel(view *ui, bool voice_history);
 int conversation_activate_tab(view *ui, size_t index, size_t *selected);
+void conversation_cancel_edit(view *ui);
 void conversation_submit(view *ui, uint64_t retry_id, bool duplicate);
 void conversation_close_confirmation(view *ui);
 bool conversation_poll_editor(view *ui, auth_client *auth);

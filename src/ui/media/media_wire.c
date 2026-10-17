@@ -8,7 +8,7 @@
 #include <sys/mman.h>
 #endif
 typedef struct {
-    int width, height, protocol, cell_width, cell_height, top, bottom, max_side;
+    int width, height, protocol, cell_width, cell_height, top, bottom, left, right, max_side;
     uint32_t image_id, background, flags;
     uint64_t frame;
 } wire_request;
@@ -101,13 +101,17 @@ GVariant *media_wire_request(const image_decode_request *r)
     w.cell_height = r->terminal.cell_height;
     w.top = r->top;
     w.bottom = r->bottom;
+    w.left = r->left;
+    w.right = r->right;
     w.max_side = r->max_side;
     w.image_id = r->image_id;
     w.background = r->background;
     w.frame = r->frame;
     w.flags = (r->preview ? 1U : 0U) | (r->native ? 2U : 0U) | (r->decode_only ? 4U : 0U) |
               (r->retain_static ? 8U : 0U) | (r->static_only ? 16U : 0U) | (r->matte ? 32U : 0U) |
-              (r->center ? 64U : 0U) | (r->first_frame ? 128U : 0U) | (r->cover ? 256U : 0U);
+              (r->center ? 64U : 0U) | (r->first_frame ? 128U : 0U) | (r->cover ? 256U : 0U) |
+              (r->region ? 512U : 0U) | (r->video_poster ? 1024U : 0U) |
+              (r->notification_badge ? 2048U : 0U);
     return g_variant_new("(@ays)", media_wire_bytes(&w, sizeof(w)), r->path ? r->path : "");
 }
 bool media_wire_read_request(GVariant *v, image_decode_request *r, char **path)
@@ -123,7 +127,9 @@ bool media_wire_read_request(GVariant *v, image_decode_request *r, char **path)
     if (!ok || w.protocol < GRAPHICS_TEXT || w.protocol > GRAPHICS_CHAFA || w.width < 0 ||
         w.height < 0 || w.width > 16384 || w.height > 16384 || w.cell_width < 0 ||
         w.cell_width > 128 || w.cell_height < 0 || w.cell_height > 128 ||
-        w.frame >= ANIMATION_FRAMES || w.top < 0 || w.bottom < 0)
+        w.frame >= ANIMATION_FRAMES || w.top < 0 || w.bottom < 0 || w.left < 0 || w.right < 0 ||
+        w.top > 16384 || w.bottom > 16384 || w.left > 16384 || w.right > 16384 ||
+        (w.flags & ~4095U))
         return false;
     GVariant *name = g_variant_get_child_value(v, 1);
     gsize length;
@@ -141,6 +147,8 @@ bool media_wire_read_request(GVariant *v, image_decode_request *r, char **path)
                                       w.cell_width, w.cell_height, false};
     r->top = w.top;
     r->bottom = w.bottom;
+    r->left = w.left;
+    r->right = w.right;
     r->max_side = w.max_side;
     r->image_id = w.image_id;
     r->background = w.background;
@@ -154,6 +162,9 @@ bool media_wire_read_request(GVariant *v, image_decode_request *r, char **path)
     r->center = w.flags & 64;
     r->first_frame = w.flags & 128;
     r->cover = w.flags & 256;
+    r->region = w.flags & 512;
+    r->video_poster = w.flags & 1024;
+    r->notification_badge = w.flags & 2048;
     return true;
 }
 GVariant *media_wire_image(const graphics_image *i)

@@ -26,7 +26,8 @@ struct emoji_picker {
     char **unicode_search;
     size_t count, selected, first;
     uint64_t revision, generation;
-    bool open, server, suggesting, dismissed;
+    bool open, server, suggesting, dismissed, reaction;
+    json_t *reaction_choice;
     size_t start, end;
     int focus, columns, rows, left, top, width, height, tile_width, tile_height, image_rows;
     char channel[37], selected_key[160], error[160];
@@ -191,6 +192,7 @@ void emoji_picker_destroy(emoji_picker *p)
                 g_free(p->unicode_search[i]);
         free(p->unicode_search);
         free(p->matches);
+        json_decref(p->reaction_choice);
         emoji_usage_destroy(p->usage);
         free(p);
     }
@@ -203,7 +205,7 @@ void emoji_picker_close(emoji_picker *p)
 {
     if (!p)
         return;
-    p->open = p->suggesting = false;
+    p->open = p->suggesting = p->reaction = false;
     if (p->window) {
         delwin(p->window);
         p->window = NULL;
@@ -215,6 +217,9 @@ void emoji_picker_show(emoji_picker *p, const char *channel, uint64_t generation
         return;
     emoji_picker_close(p);
     p->open = true;
+    p->reaction = false;
+    json_decref(p->reaction_choice);
+    p->reaction_choice = NULL;
     p->focus = 0;
     text_clear(&p->search);
     p->selected_key[0] = 0;
@@ -225,6 +230,20 @@ void emoji_picker_show(emoji_picker *p, const char *channel, uint64_t generation
     chat_assets_emojis_request(p->assets, false);
     update_matches(p);
 }
+void emoji_picker_reaction(emoji_picker *p, const char *channel, uint64_t generation)
+{
+    emoji_picker_show(p, channel, generation);
+    if (p)
+        p->reaction = true;
+}
+json_t *emoji_picker_take_reaction(emoji_picker *p)
+{
+    json_t *choice = p ? p->reaction_choice : NULL;
+    if (p)
+        p->reaction_choice = NULL;
+    return choice;
+}
+
 bool emoji_picker_update(emoji_picker *p, chat_assets *assets, const char *channel,
                          uint64_t generation)
 {
@@ -317,10 +336,22 @@ static void move_selection(emoji_picker *p, int delta)
 }
 static bool choose(emoji_picker *p, text_buffer *editor)
 {
-    if (!editor || p->selected >= p->count)
+    if (p->selected >= p->count)
+        return false;
+    uint32_t id = p->matches[p->selected].id;
+    if (p->reaction) {
+        json_t *choice =
+            json_pack("{s:s}", id & ICON_CUSTOM ? "emoji_id" : "unicode", item_key(p, id));
+        if (!choice)
+            return false;
+        json_decref(p->reaction_choice);
+        p->reaction_choice = choice;
+        emoji_picker_close(p);
+        return true;
+    }
+    if (!editor)
         return false;
     char value[256];
-    uint32_t id = p->matches[p->selected].id;
     if (id & ICON_CUSTOM)
         snprintf(value, sizeof(value), ":%s:", item_name(p, id));
     else
@@ -547,7 +578,7 @@ void emoji_picker_draw(emoji_picker *p)
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     box(w, 0, 0);
     wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
-    text_label(w, 0, 2, width - 4, " Emojis · Esc voltar ");
+    text_label(w, 0, 2, width - 4, p->reaction ? " Reagir · Esc voltar " : " Emojis · Esc voltar ");
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     text_label(w, 1, 2, 7, "Buscar:");
     wattrset(w, COLOR_PAIR(p->focus == 0 ? THEME_FOCUS_AREA : THEME_PANEL));
@@ -587,8 +618,9 @@ void emoji_picker_draw(emoji_picker *p)
                : p->selected < p->count ? item_name(p, p->matches[p->selected].id)
                                         : "");
     text_label(w, height - 2, 2, width - 4,
-               p->server ? chat_assets_notice(p->assets)
-                         : "↑↓←→ escolher · Enter inserir · F5 atualizar");
+               p->server     ? chat_assets_notice(p->assets)
+               : p->reaction ? "↑↓←→ escolher · Enter reagir · F5 atualizar"
+                             : "↑↓←→ escolher · Enter inserir · F5 atualizar");
     wnoutrefresh(w);
     if (p->focus == 0) {
         curs_set(1);

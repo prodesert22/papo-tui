@@ -1,6 +1,6 @@
 #include "ui/screens/conversation/private.h"
 
-const char *conversation_str(json_t *obj, const char *key)
+const char *conversation_str(const json_t *obj, const char *key)
 {
     const char *s = json_string_value(json_object_get(obj, key));
     return s ? s : "";
@@ -32,12 +32,47 @@ json_t *conversation_list_channel(view *ui, size_t row)
     return history_channel(ui->model, conversation_list_index(ui, row));
 }
 
+bool conversation_list_selectable(view *ui, size_t row)
+{
+    json_t *channel = conversation_list_channel(ui, row);
+    return channel && strcmp(conversation_str(channel, "type"), "category");
+}
+
+size_t conversation_list_find(view *ui, size_t row, int direction)
+{
+    size_t count = conversation_list_count(ui);
+    while (row < count) {
+        if (conversation_list_selectable(ui, row))
+            return row;
+        if (direction < 0) {
+            if (!row)
+                break;
+            --row;
+        } else
+            ++row;
+    }
+    return SIZE_MAX;
+}
+
+void conversation_list_normalize(view *ui)
+{
+    size_t count = conversation_list_count(ui);
+    if (conversation_list_selectable(ui, ui->highlighted))
+        return;
+    size_t start = ui->highlighted < count ? ui->highlighted : count ? count - 1 : 0;
+    size_t row = conversation_list_find(ui, start, 1);
+    if (row == SIZE_MAX)
+        row = conversation_list_find(ui, start, -1);
+    ui->highlighted = row == SIZE_MAX ? 0 : row;
+}
+
 bool conversation_list_notified(view *ui, bool dms)
 {
     for (size_t i = 0; i < history_channel_count(ui->model); ++i) {
         json_t *channel = history_channel(ui->model, i);
         if (json_is_true(json_object_get(channel, "_dm")) == dms &&
-            history_channel_unread(ui->model, channel))
+            (history_channel_unread(ui->model, channel) ||
+             inbox_unread_mentions(history_inbox(ui->model), conversation_str(channel, "id"))))
             return true;
     }
     return false;
@@ -49,6 +84,7 @@ void conversation_switch_list(view *ui, bool dms)
     ui->list_dms = dms;
     ui->list_button = dms;
     ui->highlighted = ui->highlights[dms];
+    conversation_list_normalize(ui);
     ui->first_channel = 0;
 }
 
@@ -60,12 +96,13 @@ bool conversation_hit(click_range range, int x)
 text_buffer *conversation_input(view *ui)
 {
     json_t *channel = history_channel(ui->model, history_selected(ui->model));
-    return channel &&
-                   (!strcmp(conversation_str(channel, "type"), "text") ||
-                    !strcmp(conversation_str(channel, "type"), "voice")) &&
-                   !strcmp(conversation_str(channel, "id"), ui->editor_channel)
-               ? send_editor_input(ui->editor)
-               : NULL;
+    if (!channel ||
+        (strcmp(conversation_str(channel, "type"), "text") &&
+         strcmp(conversation_str(channel, "type"), "voice")) ||
+        strcmp(conversation_str(channel, "id"), ui->editor_channel))
+        return NULL;
+    text_buffer *draft = send_editor_input(ui->editor);
+    return draft && *ui->edit_message ? &ui->edit_input : draft;
 }
 
 int conversation_input_width(view *ui)
@@ -123,7 +160,7 @@ void conversation_open_channel(view *ui, bool voice_history)
     bool voice = !strcmp(conversation_str(channel, "type"), "voice");
     if (voice && !voice_history) {
         conversation_set_focus(ui, CHANNEL_LIST);
-        ui->feedback = "Voz em breve. F4 abre o histórico.";
+        ui->feedback = "Voz em breve. Shift+Enter/F4 abre o histórico.";
         return;
     }
     if (voice)
@@ -166,11 +203,40 @@ int conversation_activate_tab(view *ui, size_t index, size_t *selected)
     return -1;
 }
 
+void conversation_cancel_edit(view *ui)
+{
+    ui->edit_message[0] = ui->edit_submitted[0] = 0;
+    ui->edit_pending = false;
+    ui->feedback = NULL;
+    text_clear(&ui->edit_input);
+    mention_popup_close(ui->mentions);
+    emoji_picker_dismiss(ui->emojis);
+    ui->dragging = ui->editor_scrolling = false;
+}
+
 void conversation_submit(view *ui, uint64_t retry_id, bool duplicate)
 {
     if (!conversation_input(ui))
         return;
     ui->feedback = NULL;
+    if (*ui->edit_message) {
+        if (retry_id || ui->edit_pending) {
+            ui->feedback = "Edição em andamento; aguarde ou pressione Esc para cancelar.";
+            return;
+        }
+        char content[TEXT_UTF8_BYTES];
+        if (!text_encode(&ui->edit_input, content) || !*content) {
+            ui->feedback = "Escreva uma mensagem antes de editar; Esc cancela.";
+            return;
+        }
+        if (!history_edit_message(ui->model, ui->edit_message, content)) {
+            ui->feedback = "Não foi possível preparar a edição; aguarde ou tente novamente.";
+            return;
+        }
+        snprintf(ui->edit_submitted, sizeof(ui->edit_submitted), "%s", content);
+        ui->edit_pending = true;
+        return;
+    }
     outbox_submit_result result = retry_id ? send_editor_retry(ui->editor, retry_id, duplicate)
                                            : send_editor_submit(ui->editor, duplicate);
     if (result == OUTBOX_CONFIRM_DUPLICATION) {

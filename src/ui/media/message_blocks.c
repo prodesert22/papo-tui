@@ -172,7 +172,7 @@ static bool column(message_blocks *b, size_t start, const char *key, const char 
         }
         if (styled)
             text_mentions(&buffer, b->resolver, b->resolver_context);
-        if (b->icon_resolver && (card || !strcmp(key, "content")))
+        if (b->icon_resolver && (card || !strcmp(key, "content") || !strncmp(key, "reaction:", 9)))
             text_icons(&buffer, b->icon_resolver, b->icon_painter, b->icon_context);
         text_buffer visible;
         text_project(&buffer, &visible);
@@ -230,6 +230,7 @@ static bool column(message_blocks *b, size_t start, const char *key, const char 
                         return false;
                     r->icons = icons;
                     message_icon_region *icon = &r->icons[r->icon_count++];
+                    memset(icon, 0, sizeof(*icon));
                     icon->id = layout.cells[k].icon;
                     icon->x = x + layout.cells[k].column;
                     icon->offset = base + layout.cells[k].start;
@@ -255,6 +256,103 @@ static bool text(message_blocks *b, const char *key, const char *value, int widt
     return column(b, b->count, key, value, card ? 2 : 0, width - (card ? 4 : 0), bold, card, color,
                   &end);
 }
+static bool emoji_content(message_blocks *b, const char *value, int width, bool graphics,
+                          bool *rendered)
+{
+    *rendered = false;
+    graphics_terminal terminal = graphics_terminal_get();
+    if (!graphics || !b->icon_resolver || !b->icon_painter || terminal.cell_width < 1 ||
+        terminal.cell_height < 1)
+        return true;
+    glong length = 0;
+    gunichar *points = g_utf8_to_ucs4(value, -1, NULL, &length, NULL);
+    if (!points)
+        return true;
+    bool any = false;
+    for (size_t at = 0; at < (size_t)length;) {
+        if (g_unichar_isspace(points[at])) {
+            ++at;
+            continue;
+        }
+        uint32_t icon;
+        size_t consumed =
+            b->icon_resolver(b->icon_context, points + at, (size_t)length - at, 0, &icon);
+        if (!consumed || consumed > (size_t)length - at) {
+            g_free(points);
+            return true;
+        }
+        any = true;
+        at += consumed;
+    }
+    if (!any) {
+        g_free(points);
+        return true;
+    }
+    int pixels = MESSAGE_EMOJI_PIXELS;
+    int columns = (pixels + terminal.cell_width - 1) / terminal.cell_width;
+    if (columns > width) {
+        pixels = width * terminal.cell_width;
+        columns = width;
+    }
+    int rows = (pixels + terminal.cell_height - 1) / terminal.cell_height;
+    size_t line = b->count;
+    int x = 0;
+    bool new_line = true;
+    for (size_t at = 0; at < (size_t)length;) {
+        if (g_unichar_isspace(points[at])) {
+            if (points[at] == '\n' && x) {
+                new_line = true;
+                x = 0;
+            }
+            ++at;
+            continue;
+        }
+        uint32_t id;
+        size_t consumed =
+            b->icon_resolver(b->icon_context, points + at, (size_t)length - at, 0, &id);
+        if (!consumed || consumed > (size_t)length - at)
+            goto error;
+        if (x && x + columns > width) {
+            new_line = true;
+            x = 0;
+        }
+        if (new_line) {
+            line = b->count;
+            for (int sub = 0; sub < rows; ++sub) {
+                if (!blank(b, false, false, false, 0))
+                    goto error;
+                message_row *r = &b->rows[line + (size_t)sub];
+                message_segment *s = &r->segments[r->count++];
+                snprintf(s->key, sizeof(s->key), "content:emoji:%d", sub);
+                s->offset = at;
+                s->width = width;
+                s->text = strdup("");
+                if (!s->text)
+                    goto error;
+            }
+            new_line = false;
+        }
+        for (int sub = 0; sub < rows; ++sub) {
+            message_row *r = &b->rows[line + (size_t)sub];
+            message_icon_region *icons = realloc(r->icons, (r->icon_count + 1) * sizeof(*icons));
+            if (!icons)
+                goto error;
+            r->icons = icons;
+            message_icon_region *icon = &r->icons[r->icon_count++];
+            *icon =
+                (message_icon_region){.id = id, .x = x, .pixels = pixels, .row = sub, .offset = at};
+            snprintf(icon->key, sizeof(icon->key), "content");
+        }
+        x += columns + 1;
+        at += consumed;
+    }
+    g_free(points);
+    *rendered = true;
+    return true;
+error:
+    g_free(points);
+    return false;
+}
 static bool labeled(message_blocks *b, const char *key, const char *prefix, const char *value,
                     int width, bool bold, bool card, unsigned color)
 {
@@ -274,6 +372,84 @@ static void style(message_blocks *b, size_t first, bool muted, bool link)
             b->rows[i].segments[j].muted = muted;
             b->rows[i].segments[j].link = link;
         }
+}
+void message_reaction_label(chat_assets *assets, const json_t *emoji, char *label, size_t capacity)
+{
+    const char *unicode = str(emoji, "unicode");
+    const server_emoji *e = assets ? chat_assets_emoji_id(assets, str(emoji, "emoji_id")) : NULL;
+    if (*unicode)
+        snprintf(label, capacity, "%s", unicode);
+    else
+        snprintf(label, capacity, ":%s:", e ? e->name : "emoji");
+}
+static bool reaction_rows(message_blocks *b, json_t *message, int width)
+{
+    size_t index;
+    json_t *emoji;
+    int x = 0;
+    json_array_foreach(json_object_get(message, "reactions"), index, emoji)
+    {
+        if (b->reaction_count == 20)
+            break;
+        if (!history_reaction_valid(emoji) || !json_is_integer(json_object_get(emoji, "count")) ||
+            json_integer_value(json_object_get(emoji, "count")) <= 0)
+            continue;
+        char glyph[160], label[224], key[40];
+        /* The icon resolver owns catalog identity; recover a custom label via
+         * its context only in callers. A serialized display name is optional. */
+        if (*str(emoji, "unicode"))
+            snprintf(glyph, sizeof(glyph), "%s", str(emoji, "unicode"));
+        else
+            snprintf(glyph, sizeof(glyph),
+                     ":%s:", *str(emoji, "_display_name") ? str(emoji, "_display_name") : "emoji");
+        snprintf(label, sizeof(label), "[%s %lld]", glyph,
+                 (long long)json_integer_value(json_object_get(emoji, "count")));
+        text_buffer buffer;
+        text_layout measured;
+        if (!text_decode(&buffer, label))
+            return false;
+        text_icons(&buffer, b->icon_resolver, b->icon_painter, b->icon_context);
+        text_measure(&buffer, 4096, &measured);
+        int cells = measured.cells[measured.count - 1].column;
+        if (cells > width) {
+            text_measure(&buffer, width + 1, &measured);
+            for (size_t k = 0; k + 1 < measured.count; ++k)
+                if (measured.cells[k].row) {
+                    buffer.length = measured.cells[k].start;
+                    buffer.data[buffer.length] = 0;
+                    break;
+                }
+            char clipped[TEXT_UTF8_BYTES];
+            if (!text_encode(&buffer, clipped))
+                return false;
+            snprintf(label, sizeof(label), "%.*s", (int)sizeof(label) - 1, clipped);
+            cells = width;
+        }
+        if (x && x + cells > width) {
+            x = 0;
+        }
+        /* Each pill owns rows: place them horizontally after construction.
+         * This keeps the existing bounded three-column layout unchanged. */
+        size_t start = b->count;
+        snprintf(key, sizeof(key), "reaction:%zu", index);
+        if (!text(b, key, label, cells + 1, false, false, 0))
+            return false;
+        message_reaction_region *r = &b->reactions[b->reaction_count++];
+        *r = (message_reaction_region){.row = (int)start,
+                                       .x = x,
+                                       .width = cells,
+                                       .index = index,
+                                       .mine = history_reaction_mine(message, emoji)};
+        for (size_t j = start; j < b->count; ++j) {
+            b->rows[j].x = 0;
+            /* wrap_images assigns the final y; reaction tiles can share it. */
+            b->rows[j].tile_width = cells;
+            b->rows[j].tile_rows = 1;
+            b->rows[j].reaction = true;
+        }
+        x += cells + IMAGE_GAP_COLUMNS;
+    }
+    return true;
 }
 static bool region(message_blocks *b, int index, size_t start, size_t end, size_t image_start,
                    int x, int width, int height)
@@ -343,11 +519,15 @@ static bool media(message_blocks *b, json_t *message, json_t *entry, const char 
     b->media[n].full_width = true;
     size_t start = b->count;
     /* A graphical preview is the image itself; F7 is documented in the UI. */
-    if ((!graphics || video) && !labeled(b, key, video ? "[▶ Vídeo / F7] " : "[Imagem / F7] ",
-                                         label, width, false, card, color))
+    if ((!graphics || video) &&
+        !labeled(b, key, video ? (graphics ? "▶ " : "[▶ Vídeo / F7] ") : "[Imagem / F7] ", label,
+                 width, false, card, color))
         return false;
     size_t image_start = b->count;
-    int height = graphics && !video ? 6 : 0;
+    int height =
+        graphics && (!video || (kind == AUTH_MEDIA_ATTACHMENT && app_mode_get() == APP_MODE_NORMAL))
+            ? 6
+            : 0;
     int media_width = width - (card ? 4 : 0);
     if (height && b->measure)
         b->measure(b->measure_context, &b->media[n], media_width, &media_width, &height);
@@ -421,15 +601,21 @@ static bool wrap_images(message_blocks *b, int width)
         }
         if (tile_width < 1 || tile_width > width || tile_rows < 1 || (size_t)tile_rows > count - i)
             return false;
+        if (line && b->rows[i].reaction && i && !b->rows[i - 1].reaction) {
+            y = line_y + line_height;
+            line = false;
+        }
         int x = 0;
         if (line) {
             int remaining = width - right;
             if (remaining < IMAGE_GAP_COLUMNS || tile_width > remaining - IMAGE_GAP_COLUMNS) {
                 y = line_y + line_height;
-                size_t gap = b->count;
-                if (!blank(b, false, false, false, 0))
-                    return false;
-                b->rows[gap].y = y++;
+                if (!b->rows[i].reaction) {
+                    size_t gap = b->count;
+                    if (!blank(b, false, false, false, 0))
+                        return false;
+                    b->rows[gap].y = y++;
+                }
                 line = false;
             } else
                 x = right + IMAGE_GAP_COLUMNS;
@@ -563,10 +749,18 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
     }
     size_t content_start = b->count;
     width -= author_x;
-    if (*str(m, "reply_to") && !labeled(b, "reply", "Resposta: ", reply, width, false, false, 0))
-        goto error;
-    if (*str(m, "content") && !text(b, "content", str(m, "content"), width, false, false, 0))
-        goto error;
+    if (*str(m, "reply_to")) {
+        size_t first_reply = b->count;
+        if (!labeled(b, "reply", "↰ ", reply, width, false, false, 0))
+            goto error;
+        style(b, first_reply, true, false);
+    }
+    if (*str(m, "content")) {
+        bool enlarged;
+        if (!emoji_content(b, str(m, "content"), width, graphics, &enlarged) ||
+            (!enlarged && !text(b, "content", str(m, "content"), width, false, false, 0)))
+            goto error;
+    }
     size_t index;
     json_t *item;
     json_array_foreach(json_object_get(m, "attachments"), index, item)
@@ -601,7 +795,7 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
         }
         bool video = !strncmp(str(item, "mime_type"), "video/", 6);
         bool image = !strncmp(str(item, "mime_type"), "image/", 6);
-        if (!graphics || !image) {
+        if (!graphics || (!image && !video)) {
             if (!labeled(b, key, "Anexo: ", name, width, true, false, 0))
                 goto error;
             snprintf(label, sizeof(label), "Tipo: %s · %lld bytes · Moderação: %s",
@@ -784,6 +978,8 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
             b->rows[card_start].tile_rows = (int)(b->count - card_start);
         }
     }
+    if (!reaction_rows(b, m, width))
+        goto error;
     if (continuation && *str(m, "edited_at")) {
         size_t marker = b->count;
         if (!text(b, "edited", "editado", width, false, false, 0))
@@ -889,6 +1085,8 @@ void message_row_draw(WINDOW *w, const message_row *row, int y, int x, int width
         int text_pair = pair;
         if (row->card)
             text_pair = s->muted ? THEME_EMBED_MUTED : s->link ? accent : pair;
+        else if (s->muted)
+            text_pair = pair == THEME_HISTORY_AREA ? THEME_HISTORY_MUTED : THEME_PANEL_MUTED;
         wattrset(w, COLOR_PAIR(text_pair) | (s->bold ? A_BOLD : 0));
         if (s->highlight) {
             text_buffer buffer;

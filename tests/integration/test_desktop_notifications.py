@@ -71,7 +71,7 @@ class DesktopTests(unittest.TestCase):
     def test_visible_conversation_suppresses_and_focus_loss_emits(self):
         with R8Mock(count=0) as server:
             t = self.login(server)
-            t.send("\x1bOB\x1bOB\n")
+            t.send("\x1bOB\n")
             t.wait_text("Mensagem 0003")
             t.send("\x1b[I")
             message = server.message(4)

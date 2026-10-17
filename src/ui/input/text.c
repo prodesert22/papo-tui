@@ -67,6 +67,13 @@ void text_input_init(void)
         snprintf(sequence, sizeof(sequence), "\033[57414;%du", 2 + locks);
         define_key(sequence, TEXT_SHIFT_ENTER);
     }
+    for (int locks = 0; locks <= 192; locks += 64) {
+        char sequence[32];
+        snprintf(sequence, sizeof(sequence), "\033[127;%du", 5 + locks);
+        define_key(sequence, TEXT_CTRL_BACKSPACE);
+        snprintf(sequence, sizeof(sequence), "\033[27;%d;127~", 5 + locks);
+        define_key(sequence, TEXT_CTRL_BACKSPACE);
+    }
     define_key("\033[27;2;9~", KEY_BTAB);
     const char suffix[] = "DCABHF";
     const int modifiers[] = {1, 2, 5, 6};
@@ -707,6 +714,10 @@ bool text_edit(text_buffer *buffer, int type, uint32_t key, int width, bool mult
     }
     if (type != KEY_CODE_YES)
         return false;
+    if (key == TEXT_CTRL_BACKSPACE) {
+        text_delete_word(buffer, false);
+        return true;
+    }
     if (key == KEY_BACKSPACE || key == KEY_DC) {
         text_delete(buffer, key == KEY_BACKSPACE);
         return true;
@@ -849,6 +860,34 @@ int text_paste_read(text_paste *paste, uint32_t *key, bool multiline, int (*read
     paste->text.data[paste->text.length] = 0;
     return type;
 }
+
+void text_delete_word(text_buffer *buffer, bool right)
+{
+    size_t lo, hi;
+    if (text_selection(buffer, &lo, &hi)) {
+        text_delete(buffer, true);
+        return;
+    }
+    size_t mark = buffer->cursor;
+    text_word(buffer, right); /* Cursor lands on the far edge of the word. */
+    size_t from = buffer->cursor, to = mark;
+    if (from == to) {
+        buffer->cursor = mark;
+        return;
+    }
+    if (from > to) {
+        size_t swap = from;
+        from = to;
+        to = swap;
+    }
+    memmove(buffer->data + from, buffer->data + to,
+            (buffer->length - to + 1) * sizeof(buffer->data[0]));
+    buffer->length -= to - from;
+    buffer->cursor = from;
+    normalize_cursor(buffer);
+    text_unselect(buffer);
+}
+
 bool text_paste_commit(text_paste *paste, text_buffer *buffer)
 {
     bool ok = !paste->truncated && buffer && text_insert_buffer(buffer, &paste->text);

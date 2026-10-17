@@ -43,6 +43,16 @@ if(BUILD_TESTING)
             ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_emojis_terminal.py
             $<TARGET_FILE:papo-tui> ${FFMPEG_CLI})
     set_tests_properties(emojis-terminal PROPERTIES TIMEOUT 180)
+    add_executable(interactions-probe tests/probes/interactions_probe.c)
+    target_link_libraries(interactions-probe PRIVATE papo_media)
+    target_compile_options(interactions-probe PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_test(
+        NAME message-interactions-integration
+        COMMAND
+            ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/integration/test_message_interactions.py
+            $<TARGET_FILE:interactions-probe>)
+    set_tests_properties(message-interactions-integration PROPERTIES TIMEOUT 90)
     add_executable(r8-probe tests/probes/r8_probe.c)
     target_link_libraries(r8-probe PRIVATE papo_auth)
     target_compile_options(r8-probe PRIVATE -Wall -Wextra -Wpedantic -Werror)
@@ -198,7 +208,7 @@ if(BUILD_TESTING)
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_media_terminal.py
             $<TARGET_FILE:papo-tui> ${FFMPEG_CLI})
     set_tests_properties(media-integration PROPERTIES TIMEOUT 120)
-    set_tests_properties(media-terminal PROPERTIES TIMEOUT 240)
+    set_tests_properties(media-terminal PROPERTIES TIMEOUT 300)
     find_program(OPENSSL_CLI NAMES openssl REQUIRED)
     add_executable(realtime-probe tests/probes/realtime_probe.c)
     target_link_libraries(realtime-probe PRIVATE papo_auth)
@@ -249,6 +259,20 @@ if(BUILD_TESTING)
         NAME history-integration
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/integration/test_history.py
                 $<TARGET_FILE:history-probe>)
+    add_test(
+        NAME message-interactions-terminal
+        COMMAND
+            ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_message_interactions.py
+            $<TARGET_FILE:papo-tui>)
+    set_tests_properties(message-interactions-terminal PROPERTIES TIMEOUT 180)
+    add_test(
+        NAME message-mutations-terminal
+        COMMAND
+            ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_message_mutations.py
+            $<TARGET_FILE:papo-tui>)
+    set_tests_properties(message-mutations-terminal PROPERTIES TIMEOUT 180)
     add_test(
         NAME history-terminal
         COMMAND

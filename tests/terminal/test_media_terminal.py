@@ -10,13 +10,35 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
+from wcwidth import wcswidth
 
 FFMPEG = sys.argv.pop(2)
-from history_mock import HistoryMock, uuid  # noqa: E402 - path and test arguments are prepared above
+from history_mock import HistoryMock, STAMP, uuid  # noqa: E402 - path and test arguments are prepared above
 from test_terminal import Terminal, TerminalStream  # noqa: E402 - path and test arguments are prepared above
 import test_history_terminal as history_tests  # noqa: E402 - path and test arguments are prepared above
+
+
+def raster_dimensions(protocol, frame):
+    if protocol == "kitty":
+        return int(frame[b"s"]), int(frame[b"v"])
+    if protocol == "sixel":
+        raster = re.search(rb'"\d+;\d+;(\d+);(\d+)', frame)
+        if raster is None:
+            raise AssertionError("Missing Sixel raster dimensions")
+        return int(raster[1]), int(raster[2])
+    payload = base64.b64decode(frame.split(b":", 1)[1][:-1], validate=True)
+    offset = int.from_bytes(payload[4:8], "little")
+    count = int.from_bytes(payload[offset : offset + 2], "little")
+    tags = {
+        int.from_bytes(payload[pos : pos + 2], "little"): int.from_bytes(
+            payload[pos + 8 : pos + 12], "little"
+        )
+        for pos in range(offset + 2, offset + 2 + count * 12, 12)
+    }
+    return tags[256], tags[257]
 
 
 class GraphicsStream:
@@ -27,6 +49,7 @@ class GraphicsStream:
         self.stream = TerminalStream(screen)
         self.pending = b""
         self.frames = []
+        self.frame_positions = []
         self.protocols = []
         self.kitty_frames = []
         self.live_ids = set()
@@ -38,6 +61,14 @@ class GraphicsStream:
         self.synchronizations = 0
         self.kitty_header = None
         self.kitty_parts = []
+
+    def is_control(self, width, height):
+        # The protocol responder uses 8x16 cells. Keep one-row navigation
+        # badges and the composer button out of attachment/player assertions.
+        y, x = self.screen.cursor.y, self.screen.cursor.x
+        return x == self.screen.columns - 7 or (
+            height == 16 and width <= 192 and (y == 1 or (self.screen.columns >= 80 and x < 24))
+        )
 
     def feed(self, data):
         self.synchronizations += data.count(b"\x1b[?2026h")
@@ -101,9 +132,9 @@ class GraphicsStream:
                 elif values.get(b"a") in (b"T", b"t"):
                     self.kitty_header = values
                     self.kitty_parts = []
-                    # Media regression assertions concern attachment/embed/player
-                    # pixels, rather than the newly graphical composer button.
-                    self.kitty_control = self.screen.cursor.x == self.screen.columns - 7
+                    # Media assertions concern attachment/embed/player pixels;
+                    # UI controls have separate image and placement assertions.
+                    self.kitty_control = self.is_control(*raster_dimensions("kitty", values))
                     if self.kitty_control:
                         self.control_ids.add(int(values[b"i"]))
                 elif self.kitty_header is not None:
@@ -118,13 +149,18 @@ class GraphicsStream:
                         if self.kitty_header[b"a"] == b"T":
                             self.live_ids.add(int(self.kitty_header[b"i"]))
                         self.frames.append(pixels)
+                        self.frame_positions.append((self.screen.cursor.y, self.screen.cursor.x))
                         self.protocols.append("kitty")
                         self.kitty_header = None
             else:
-                if not self.include_icons and self.screen.cursor.x == self.screen.columns - 7:
+                protocol = "iterm2" if iterm else "sixel"
+                if not self.include_icons and self.is_control(
+                    *raster_dimensions(protocol, sequence)
+                ):
                     continue
                 self.frames.append(sequence)
-                self.protocols.append("iterm2" if iterm else "sixel")
+                self.frame_positions.append((self.screen.cursor.y, self.screen.cursor.x))
+                self.protocols.append(protocol)
 
 
 class MediaTerminal(unittest.TestCase):
@@ -297,7 +333,7 @@ class MediaTerminal(unittest.TestCase):
             t.send("\x1b[?62;4;22c\x1b[6;16;8t")
         t.send(server.url + "\tjosé\tSynthetic!123\n")
         self.wait(t, "geral")
-        t.send("\x1bOB\x1bOB\n")
+        t.send("\x1bOB\n")
         self.wait(t, "Conversar em #geral")
         return t
 
@@ -350,27 +386,16 @@ class MediaTerminal(unittest.TestCase):
             len(terminal.stream.frames), count, "\n".join(terminal.screen.display)
         )
 
-    def raster_size(self, terminal):
+    def raster_size(self, terminal, index=-1):
         stream = terminal.stream
         if not stream.frames:
             return 0, 0
-        if stream.protocols[-1] == "kitty":
-            header = stream.kitty_frames[-1][0]
-            return int(header[b"s"]), int(header[b"v"])
-        if stream.protocols[-1] == "sixel":
-            raster = re.search(rb'"\d+;\d+;(\d+);(\d+)', stream.frames[-1])
-            self.assertIsNotNone(raster)
-            return int(raster[1]), int(raster[2])
-        payload = base64.b64decode(stream.frames[-1].split(b":", 1)[1][:-1], validate=True)
-        offset = int.from_bytes(payload[4:8], "little")
-        count = int.from_bytes(payload[offset : offset + 2], "little")
-        tags = {
-            int.from_bytes(payload[pos : pos + 2], "little"): int.from_bytes(
-                payload[pos + 8 : pos + 12], "little"
-            )
-            for pos in range(offset + 2, offset + 2 + count * 12, 12)
-        }
-        return tags[256], tags[257]
+        frame = (
+            stream.kitty_frames[index][0]
+            if stream.protocols[index] == "kitty"
+            else stream.frames[index]
+        )
+        return raster_dimensions(stream.protocols[index], frame)
 
     def wait_raster(self, terminal, predicate):
         deadline = time.monotonic() + 10
@@ -419,7 +444,7 @@ class MediaTerminal(unittest.TestCase):
                             )
                         count = len(t.stream.frames)
                         placements = len(t.stream.placements)
-                        t.send("\x1b[18~")
+                        t.send("\x1b[18~\n")
                         self.wait(t, "[Info]")
                         if protocol == "kitty":
                             deadline = time.monotonic() + 10
@@ -611,6 +636,415 @@ class MediaTerminal(unittest.TestCase):
                 finally:
                     self.assertTrue(t.close())
 
+    def test_f7_selects_attachment_with_arrows_and_right_click_occludes_media(self):
+        with self.serve(self.images["png"], "image/png") as server:
+            item = dict(
+                server.messages[0]["attachments"][0],
+                id=uuid(903),
+                original_file_name="Second image",
+            )
+            server.messages[0]["attachments"].append(item)
+            t = self.open(server, protocol="kitty")
+            try:
+                self.wait_frames(
+                    t
+                )  # Identical bytes share one encoded image across two placements.
+                t.send("Draft preserved\x1b[18~")
+                self.wait(t, "Mídia 1/2")
+                self.assertNotIn("Escolha uma mídia", "\n".join(t.screen.display))
+                t.send("\x1bOC")
+                self.wait(t, "Mídia 2/2")
+                t.send("\n")
+                self.wait(t, "[Info]")
+                self.wait(t, "Second image")
+                t.send("\x1b")
+                self.wait(t, "Mídia 2/2")
+                t.send("\x1b")
+                self.wait(t, "Draft preserved")
+                y, x = t.stream.placement_positions[-1]
+                visible = t.stream.live_placements.copy()
+                t.send(f"\x1b[<2;{x + 1};{y + 1}M\x1b[<2;{x + 1};{y + 1}m")
+                self.wait(t, "Responder")
+                self.assertTrue(
+                    visible - t.stream.live_placements, "Menu must cover overlapping images"
+                )
+                t.send("\x1b")
+                self.wait(t, "Draft preserved")
+                self.assertEqual(server.message_count, 0)
+            finally:
+                self.assertTrue(t.close())
+
+    def test_graphical_server_badge_is_inside_tab_delimiters(self):
+        from history_mock import CHANNEL
+
+        self.include_icons = True
+        for protocol in ("kitty", "sixel", "iterm2"):
+            with (
+                self.subTest(protocol=protocol),
+                self.serve(self.images["png"], "image/png") as server,
+            ):
+                original = server.api_handler
+
+                def route(method, path, body):
+                    if method == "GET" and path.split("?")[0].endswith("/notifications"):
+                        return 200, dict(
+                            notifications=[
+                                dict(
+                                    id=uuid(8000),
+                                    message_id=uuid(9999),
+                                    channel_id=CHANNEL,
+                                    author_id=uuid(21),
+                                    message_content="@mention(<@" + uuid(1) + ">)",
+                                    read=False,
+                                    created_at=STAMP,
+                                )
+                            ],
+                            has_more=False,
+                        )
+                    return original(method, path, body)
+
+                server.api_handler = route
+                t = self.open(server, protocol=protocol)
+                try:
+                    self.wait_frames(t)
+                    self.wait(t, "[Comunidade ❶ ]")
+                    if protocol == "kitty":
+
+                        def badges():
+                            return [
+                                (header, pixels)
+                                for (header, pixels), position in zip(
+                                    t.stream.kitty_frames, t.stream.frame_positions
+                                )
+                                if position[0] == 1
+                                and header[b"v"] == b"16"
+                                and any(
+                                    min(pixels[i : i + 3]) > 230 for i in range(0, len(pixels), 4)
+                                )
+                            ]
+
+                        deadline = time.monotonic() + 8
+                        while not badges() and time.monotonic() < deadline:
+                            t.read(0.03)
+                        self.assertTrue(badges())
+                        header, pixels = badges()[-1]
+                        width, height = int(header[b"s"]), int(header[b"v"])
+                        self.assertEqual((width, height), (16, 16))
+                        red = [
+                            (i // 4 % width, i // 4 // width)
+                            for i in range(0, len(pixels), 4)
+                            if pixels[i] > 240 and pixels[i + 1] < 16 and pixels[i + 2] < 16
+                        ]
+                        self.assertTrue(red)
+                        for axis, size in ((0, width), (1, height)):
+                            low = min(p[axis] for p in red)
+                            high = max(p[axis] for p in red)
+                            self.assertLessEqual(abs(low - (size - 1 - high)), 1)
+                        self.assertTrue(
+                            any(min(pixels[i : i + 3]) > 230 for i in range(0, len(pixels), 4)),
+                            "Badge count must be visible inside the circle",
+                        )
+                        before = len(badges())
+                        t.click(1, t.screen.display[1].index("Comunidade") + 1)
+                        self.wait(t, "Foco: Abas")
+                        deadline = time.monotonic() + 8
+                        while len(badges()) <= before and time.monotonic() < deadline:
+                            t.read(0.03)
+                        self.assertGreater(len(badges()), before)
+                        server_occurrences = {
+                            int(p[b"p"])
+                            for p, position in zip(
+                                t.stream.placements, t.stream.placement_positions
+                            )
+                            if position[0] == 1
+                        }
+                        for occurrence in server_occurrences:
+                            self.assertLessEqual(
+                                sum(p == occurrence for _, p in t.stream.live_placements),
+                                1,
+                                "Replacing a shared image must retire its previous Kitty placement",
+                            )
+                    t.resize(40, 120)
+                    self.wait(t, "[Comunidade ❶ ]")
+                finally:
+                    self.assertTrue(t.close())
+
+    def test_notification_target_stays_centered_after_delayed_media_above_it_loads(self):
+        from history_mock import CHANNEL
+
+        for protocol in ("kitty", "sixel", "iterm2"):
+            with (
+                self.subTest(protocol=protocol),
+                self.serve(self.tall_image, "image/png") as server,
+            ):
+                attachments = server.messages[0]["attachments"]
+                server.count = 60
+                server.messages = [server.message(i) for i in range(1, 61)]
+                target = server.messages[29]
+                server.messages[28]["attachments"] = attachments
+                original = server.api_handler
+                requested, release = threading.Event(), threading.Event()
+
+                def route(method, path, body):
+                    if method == "GET" and path.split("?")[0].endswith("/notifications"):
+                        return 200, dict(
+                            notifications=[
+                                dict(
+                                    id=uuid(8000),
+                                    message_id=target["id"],
+                                    channel_id=CHANNEL,
+                                    author_id=target["author_id"],
+                                    message_content="Destino com mídia tardia",
+                                    read=False,
+                                    created_at=STAMP,
+                                )
+                            ],
+                            has_more=False,
+                        )
+                    if path.split("?")[0].endswith("/read_notification"):
+                        return 200, dict(updated=1)
+                    if "/attachments/" in path:
+                        requested.set()
+                        release.wait(5)
+                    return original(method, path, body)
+
+                server.api_handler = route
+                terminal = self.open(server, protocol=protocol, size=(32, 100))
+                try:
+                    terminal.send("\x1b[20~")
+                    self.wait(terminal, "Destino com mídia tardia")
+                    terminal.send("\n")
+                    self.wait(terminal, "Detalhes da notificação")
+                    terminal.send("\n")
+                    self.wait(terminal, target["content"])
+                    deadline = time.monotonic() + 4
+                    while not requested.is_set() and time.monotonic() < deadline:
+                        terminal.read(0.03)
+                    self.assertTrue(requested.is_set())
+                    row = next(
+                        i
+                        for i, line in enumerate(terminal.screen.display)
+                        if target["content"] in line
+                    )
+                    self.assertLessEqual(abs(row - 15), 2)
+                    release.set()
+                    self.wait_frames(terminal)
+                    terminal.read(0.3)
+                    row = next(
+                        i
+                        for i, line in enumerate(terminal.screen.display)
+                        if target["content"] in line
+                    )
+                    self.assertLessEqual(
+                        abs(row - 15), 2, "Decoded media must not push the target down"
+                    )
+                    terminal.resize(40, 120)
+                    terminal.read(0.3)
+                    row = next(
+                        i
+                        for i, line in enumerate(terminal.screen.display)
+                        if target["content"] in line
+                    )
+                    self.assertLessEqual(abs(row - 19), 2)
+                    self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), 1)
+                finally:
+                    release.set()
+                    self.assertTrue(terminal.close())
+
+    def test_floating_panels_preserve_uncovered_attachment_pixels(self):
+        for protocol in ("kitty", "sixel", "iterm2"):
+            for key, title in (
+                ("\x1bOS", "Emojis · Esc voltar"),
+                ("\x1b[18~E", "Quem reagiu"),
+                ("@", "Menções"),
+                ("\x1b[20~", "Notificações"),
+            ):
+                with (
+                    self.subTest(protocol=protocol, modal=title),
+                    self.serve(self.large_images["landscape"], "image/png") as server,
+                ):
+                    parent = server.api_handler
+
+                    def route(method, path, body):
+                        if method == "GET" and path.split("?")[0].endswith("/reactions"):
+                            return 200, {
+                                "message_id": server.messages[0]["id"],
+                                "reactions": [],
+                                "has_more": False,
+                            }
+                        if method == "GET" and path.split("?")[0].endswith("/users"):
+                            return 200, dict(
+                                users=[
+                                    dict(
+                                        id=uuid(21 + i),
+                                        username=f"member{i}",
+                                        nickname=None,
+                                        created_at=STAMP,
+                                    )
+                                    for i in range(8)
+                                ],
+                                has_more=False,
+                            )
+                        return parent(method, path, body)
+
+                    server.api_handler = route
+                    t = self.open(server, protocol=protocol, size=(48, 160))
+                    try:
+                        self.wait_raster(t, lambda w, h: w > 600 and h > 300)
+                        first_frame = len(t.stream.frames)
+                        first_placement = len(t.stream.placements)
+                        t.send(key)
+                        self.wait(t, title)
+                        if title == "Menções":
+                            self.wait(t, "@member7")
+                        display = t.screen.display
+                        top = next(i for i, line in enumerate(display) if title in line)
+                        if title == "Notificações":
+                            top -= 1  # Its title is inside the frame.
+                        title_x = wcswidth(
+                            next(line for line in display if title in line).split(title)[0]
+                        )
+                        left = next(
+                            x
+                            for x in range(title_x, -1, -1)
+                            if t.screen.buffer[top][x].data in ("l", "┌")
+                        )
+                        right = (
+                            next(
+                                x
+                                for x in range(title_x, t.screen.columns)
+                                if t.screen.buffer[top][x].data in ("k", "┐")
+                            )
+                            + 1
+                        )
+                        bottom = (
+                            next(
+                                y
+                                for y in range(top + 1, t.screen.lines)
+                                if t.screen.buffer[y][left].data in ("m", "└")
+                                and t.screen.buffer[y][right - 1].data in ("j", "┘")
+                            )
+                            + 1
+                        )
+
+                        def background_parts():
+                            if protocol == "kitty":
+                                dimensions = {
+                                    int(h[b"i"]): (int(h[b"s"]), int(h[b"v"]))
+                                    for h, _ in t.stream.kitty_frames
+                                }
+                                images = [
+                                    (dimensions.get(int(p[b"i"]), (0, 0)), position)
+                                    for p, position in zip(
+                                        t.stream.placements[first_placement:],
+                                        t.stream.placement_positions[first_placement:],
+                                    )
+                                    if (int(p[b"i"]), int(p[b"p"])) in t.stream.live_placements
+                                ]
+                            else:
+                                images = [
+                                    (self.raster_size(t, i), t.stream.frame_positions[i])
+                                    for i in range(first_frame, len(t.stream.frames))
+                                ]
+                            return [
+                                (size, point)
+                                for size, point in images
+                                if max(size) > 64 and not (size[0] > 600 and size[1] > 300)
+                            ]
+
+                        deadline = time.monotonic() + 10
+                        while not background_parts() and time.monotonic() < deadline:
+                            t.read(0.03)
+                        parts = background_parts()
+                        self.assertTrue(
+                            parts, "Uncovered attachment pixels disappeared behind the modal"
+                        )
+                        for (w, h), (y, x) in parts:
+                            rows, columns = (h + 15) // 16, (w + 7) // 8
+                            self.assertTrue(
+                                y + rows <= top or y >= bottom or x + columns <= left or x >= right,
+                                (
+                                    protocol,
+                                    title,
+                                    (y, x, rows, columns),
+                                    (top, left, bottom, right),
+                                ),
+                            )
+                        if title in ("Menções", "Notificações"):
+                            active_title = title
+                            if title == "Notificações":
+                                # Search, keyboard filter/date controls and clearing
+                                # the query must preserve the same exposed pixels.
+                                t.send("sem resultado\t\x1bOC\n")
+                                self.wait(t, "Selecionar canal")
+                                t.send("geral")
+                                self.wait(t, "# geral")
+                                if protocol == "kitty":
+                                    self.assertTrue(background_parts())
+                                t.send("\x1b\x1bOC\n")
+                                self.wait(t, "Selecionar DM")
+                                if protocol == "kitty":
+                                    self.assertTrue(background_parts())
+                                t.send("\x1b\x1bOA\x03\t\n")
+                                active_title = "Selecionar DM"
+                                self.wait(t, active_title)
+                                if protocol == "kitty":
+                                    self.assertTrue(background_parts())
+                            t.send("\x12")
+                            self.wait(t, active_title)
+                            if protocol == "kitty":
+                                self.assertTrue(background_parts())
+                            first_frame = len(t.stream.frames)
+                            first_placement = len(t.stream.placements)
+                            t.resize(44, 144)
+                            self.wait(t, active_title)
+                            deadline = time.monotonic() + 10
+                            while not background_parts() and time.monotonic() < deadline:
+                                t.read(0.03)
+                            self.assertTrue(background_parts(), "Image disappeared after resize")
+                            if title == "Notificações":
+                                t.send("\x1b")
+                                self.wait(t, title)
+                        t.send("\x1b")
+                        self.wait_raster(t, lambda w, h: w > 600 and h > 300)
+                        self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), 1)
+                    finally:
+                        self.assertTrue(t.close())
+
+    def test_visible_video_has_automatic_static_poster_and_reuses_download(self):
+        for protocol in ("kitty", "sixel", "iterm2"):
+            with self.subTest(protocol=protocol), self.serve(self.video, "video/mp4") as server:
+                t = self.open(server, protocol=protocol, size=(64, 160))
+                try:
+                    self.wait_frames(t)
+                    self.wait(t, "▶ Fixture")
+                    display = "\n".join(t.screen.display)
+                    self.assertNotIn("Anexo:", display)
+                    self.assertNotIn("Tipo:", display)
+                    self.assertNotIn("Reproduzindo", display)
+                    count = len(t.stream.frames)
+                    t.read(0.3)
+                    self.assertEqual(len(t.stream.frames), count, "Poster must remain static")
+                    poster_ids = t.stream.live_ids.copy()
+                    for key, title in (("@", "Menções"), ("\x1b[20~", "Notificações")):
+                        t.send(key)
+                        self.wait(t, title)
+                        if protocol == "kitty":
+                            self.assertTrue(poster_ids <= t.stream.live_ids)
+                        self.assertEqual(len(t.stream.frames), count)
+                        t.send("\x1b")
+                        self.assertNotIn(title, "\n".join(t.screen.display))
+                    t.send("\x1b[18~")
+                    self.wait(t, "Mídia 1/1")
+                    self.assertNotIn("[Info]", "\n".join(t.screen.display))
+                    t.send("\n")
+                    self.wait(t, "Reproduzindo")
+                    self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), 1)
+                    t.send("\x1b")
+                    self.wait(t, "↑↓ mensagens")
+                finally:
+                    self.assertTrue(t.close())
+
     def test_kitty_video_pause_seek_resize_and_cleanup(self):
         with (
             tempfile.TemporaryDirectory() as directory,
@@ -618,12 +1052,14 @@ class MediaTerminal(unittest.TestCase):
         ):
             t = self.open(server, protocol="kitty", environment={"TMPDIR": directory})
             try:
-                self.wait(t, "Mensagem 0001")
-                t.send("Rascunho Kitty\x1b\x1b[18~")
+                self.wait_frames(t)
+                t.send("Rascunho Kitty\x1b\x1b[18~\n")
                 self.wait_frames(t, 2)
                 self.wait(t, "Reproduzindo")
                 self.assertEqual(set(t.stream.protocols), {"kitty"})
+                first_player_frame = len(t.stream.kitty_frames) - 1
                 header, pixels = t.stream.kitty_frames[-1]
+                player_id = int(header[b"i"])
                 self.assertEqual(len(pixels), int(header[b"s"]) * int(header[b"v"]) * 4)
                 center = (int(header[b"v"]) // 2 * int(header[b"s"]) + int(header[b"s"]) // 2) * 4
                 self.assertGreater(pixels[center + 2], 230)
@@ -632,17 +1068,22 @@ class MediaTerminal(unittest.TestCase):
                 self.wait(t, "Pausado")
                 t.send("\x1bOC\x1bOA")
                 t.send("m")
-                self.assertEqual(len({header[b"i"] for header, _ in t.stream.kitty_frames}), 1)
-                self.assertEqual(t.stream.deleted_ids, [])
+                self.assertEqual(
+                    {int(header[b"i"]) for header, _ in t.stream.kitty_frames[first_player_frame:]},
+                    {player_id},
+                )
+                self.assertNotIn(player_id, t.stream.deleted_ids)
                 self.assertGreater(t.stream.synchronizations, 0)
                 frames = len(t.stream.frames)
                 t.resize(28, 100)
                 self.wait_frames(t, frames + 1)
                 self.wait(t, "Pausado")
                 self.assertLessEqual(len(t.stream.live_ids), 1)
+                player_id = int(t.stream.kitty_frames[-1][0][b"i"])
                 t.send("\x1b")
                 self.wait(t, "Rascunho Kitty")
-                self.assertFalse(t.stream.live_ids)
+                self.assertNotIn(player_id, t.stream.live_ids)
+                self.assertLessEqual(len(t.stream.live_ids), 1)  # Static inline poster remains.
                 self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), 1)
             finally:
                 self.assertTrue(t.close())
@@ -738,7 +1179,7 @@ class MediaTerminal(unittest.TestCase):
                 t.read(0.2)
                 t.send("\x1b[17~")
                 self.wait(t, "geral")
-                t.send("\x1bOB\x1bOB\n")
+                t.send("\x1bOB\n")
                 self.wait(t, "Preserved draft")
                 deadline = time.monotonic() + 5
                 while calls < 3 and time.monotonic() < deadline:
@@ -950,7 +1391,7 @@ class MediaTerminal(unittest.TestCase):
             t = self.open(server, protocol="kitty")
             try:
                 self.wait_frames(t)
-                t.send("\x1b[18~")
+                t.send("\x1b[18~\n")
                 self.wait(t, "[Info]")
                 self.wait(t, "Imagem")
                 self.wait_raster(t, lambda w, h: w >= 232 and h >= 176)
@@ -1051,7 +1492,7 @@ class MediaTerminal(unittest.TestCase):
                 self.assertLessEqual(tags[256], 640)
                 self.assertLessEqual(tags[257], 360)
                 self.assertGreater(payload[tags[273]], 230)
-                t.send("\x1b[18~")
+                t.send("\x1b[18~\n")
                 self.wait_frames(t, 2)
                 t.send("\x1b")
                 self.wait(t, "Conversar em #")
@@ -1060,7 +1501,7 @@ class MediaTerminal(unittest.TestCase):
         with self.serve(self.video, "video/mp4") as server:
             t = self.open(server, protocol="iterm2")
             try:
-                t.send("\x1b[18~")
+                t.send("\x1b[18~\n")
                 self.wait_frames(t, 2)
                 self.wait(t, "Reproduzindo")
                 t.send(" ")
@@ -1092,7 +1533,7 @@ class MediaTerminal(unittest.TestCase):
                     self.assertEqual(len(t.stream.frames), frames, "Navigation redrew the image")
                 t.send("\x1bOH\x1bOB\n")
                 self.wait(t, "Rascunho com imagem")
-                t.send("\x1b[18~")
+                t.send("\x1b[18~\n")
                 self.wait(t, "Imagem")
                 self.wait_frames(t, frames + 1)
                 self.assertEqual(
@@ -1194,8 +1635,8 @@ class MediaTerminal(unittest.TestCase):
         ):
             t = self.open(server, environment={"TMPDIR": directory})
             try:
-                self.wait(t, "Vídeo")
-                t.send("\x1b[18~")
+                self.wait(t, "▶ Fixture")
+                t.send("\x1b[18~\n")
                 self.wait(t, "Carregando mídia")
                 t.send("\x1b")
                 self.wait(t, "Conversar em #geral")
@@ -1256,7 +1697,7 @@ class MediaTerminal(unittest.TestCase):
             ):
                 t = self.open(server, protocol=protocol)
                 try:
-                    t.send("Rascunho\x1b\x1b[18~")
+                    t.send("Rascunho\x1b\x1b[18~\n")
                     self.wait_frames(t, 2)
                     # Fit the 4:3 video; Kitty/iTerm2 pad the final terminal cell.
                     expected = (234 if protocol == "sixel" else 240, 176)
@@ -1321,8 +1762,8 @@ class MediaTerminal(unittest.TestCase):
                 with self.serve(path.read_bytes(), "video/mp4") as server:
                     t = self.open(server, protocol="kitty")
                     try:
-                        self.wait(t, "Mensagem 0001")
-                        t.send("\x1b[18~")
+                        self.wait_frames(t)
+                        t.send("\x1b[18~\n")
                         self.wait_frames(t, 2)
                         scale = min(320 / original[0], 176 / original[1])
                         expected = tuple(max(1, int(n * scale)) for n in original)
@@ -1361,7 +1802,7 @@ class MediaTerminal(unittest.TestCase):
         with self.serve(self.video, "video/mp4") as server:
             t = self.open(server, protocol="kitty", environment={"KITTY_WINDOW_ID": "papo-test"})
             try:
-                t.send("Rascunho controles\x1b\x1b[18~")
+                t.send("Rascunho controles\x1b\x1b[18~\n")
                 self.wait_frames(t, 2)
                 row, controls = self.player_controls(t)
                 t.click(row, controls[0].start() + 1)
@@ -1482,8 +1923,8 @@ class MediaTerminal(unittest.TestCase):
             )
             try:
                 self.assertIn(b"\x1b[?1006", bytes(t.output))
-                self.wait(t, "Vídeo")
-                t.send("\x1b[18~")
+                self.wait(t, "▶ Fixture")
+                t.send("\x1b[18~\n")
                 self.wait_frames(t, 2)
                 row, controls = self.player_controls(t)
                 # Release is a distinct packet, as with a real held click. Input
@@ -1530,10 +1971,10 @@ class MediaTerminal(unittest.TestCase):
         ):
             t = self.open(server, environment={"TMPDIR": directory})
             try:
-                self.wait(t, "Vídeo")
+                self.wait(t, "▶ Fixture")
                 t.send("Rascunho")
                 t.send("\x1b")
-                t.send("\x1b[18~")
+                t.send("\x1b[18~\n")
                 self.wait_frames(t, 2)
                 self.wait(t, "Reproduzindo")
                 t.send(" ")
@@ -1582,7 +2023,7 @@ class MediaTerminal(unittest.TestCase):
             t = self.open(server, protocol="kitty")
             try:
                 t.resize(34, 140)
-                t.send("\x1b[18~")
+                t.send("\x1b[18~\n")
                 self.wait_frames(t, 2)
                 t.send(" ")
                 self.wait(t, "Pausado")
@@ -1641,7 +2082,7 @@ class MediaTerminal(unittest.TestCase):
             t = self.open(server, protocol="kitty", environment={"TMPDIR": directory})
             try:
                 t.resize(34, 140)
-                t.send("Rascunho retry\x1b\x1b[18~")
+                t.send("Rascunho retry\x1b\x1b[18~\n")
                 self.wait(t, "Vídeo inválido ou codec indisponível")
                 self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), 1)
                 parent = server.api_handler
@@ -1673,7 +2114,7 @@ class MediaTerminal(unittest.TestCase):
         with self.serve(self.video, "video/mp4") as server:
             t = self.open(server)
             try:
-                t.send("\x1b[18~")
+                t.send("\x1b[18~\n")
                 self.wait_frames(t, 2)
                 self.wait(t, "Pausado")
                 self.assertIn("3 / 3 s", "\n".join(t.screen.display))

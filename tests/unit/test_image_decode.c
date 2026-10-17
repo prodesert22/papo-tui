@@ -10,7 +10,7 @@ static bool cancelled(void *context)
 }
 int main(int argc, char **argv)
 {
-    assert(argc == 10);
+    assert(argc == 11);
     image_decode_request request = {
         .width = 640,
         .height = 360,
@@ -27,6 +27,20 @@ int main(int argc, char **argv)
         assert(image.width == 16 && image.height == 12 && !frames);
         assert(image.source_width == 16 && image.source_height == 12);
         graphics_image_free(&image);
+        request.region = true;
+        request.top = 2;
+        request.bottom = 3;
+        request.left = 4;
+        request.right = 5;
+        assert(image_decode_file(&request, &image, &frames, NULL, NULL));
+        assert(image.width == 7 && image.height == 7 && !frames);
+        assert(image.source_width == 16 && image.source_height == 12);
+        graphics_image_free(&image);
+        request.left = 16;
+        assert(!image_decode_file(&request, &image, &frames, NULL, NULL));
+        assert(!image.data && !frames);
+        request.top = request.bottom = request.left = request.right = 0;
+        request.region = false;
         request.path = argv[2];
         assert(image_decode_file(&request, &image, &frames, NULL, NULL));
         assert(frames && frames->count == 2 && frames->width == 16 && frames->height == 12);
@@ -152,6 +166,25 @@ int main(int argc, char **argv)
     graphics_image_free(&red);
     graphics_image_free(&blue);
     animation_free(alpha);
+    image_decode_request poster = {
+        .path = argv[10],
+        .width = 160,
+        .height = 120,
+        .native = true,
+        .terminal = {.protocol = GRAPHICS_KITTY, .cell_width = 8, .cell_height = 16}};
+    graphics_image cover = {0};
+    animation *still = NULL;
+    assert(!image_decode_file(&poster, &cover, &still, NULL, NULL));
+    poster.video_poster = true;
+    assert(image_decode_file(&poster, &cover, &still, NULL, NULL));
+    assert(cover.source_width == 32 && cover.source_height == 24 && !still);
+    graphics_image_free(&cover);
+    poster.decode_only = poster.retain_static = true;
+    assert(image_decode_file(&poster, &cover, &still, NULL, NULL));
+    assert(still && still->count == 1 && still->source_width == 32);
+    animation_free(still);
+    still = NULL;
+    assert(!image_decode_file(&poster, &cover, &still, cancelled, NULL));
     puts("GIF frame pixels/delays, native dimensions, proportional limits, crops and cancellation "
          "verified");
     return 0;

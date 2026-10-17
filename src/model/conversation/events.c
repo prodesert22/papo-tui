@@ -69,11 +69,12 @@ void history_recover(history *h)
 {
     if (!h || !auth_has_session(h->auth))
         return;
-    if (h->pending != NONE && h->pending != INBOX) {
+    if (h->pending != NONE && h->pending != INBOX && !history_internal_actions_mutating(h)) {
         auth_cancel_read(h->auth);
         h->pending = NONE;
     }
     ++h->selection;
+    history_internal_actions_reset(h);
     json_decref(h->fresh);
     h->fresh = NULL;
     json_decref(h->boundary);
@@ -191,6 +192,11 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
                                       "Erro remoto");
         return true;
     }
+    if (!strcmp(type, "react_update")) {
+        if (!history_internal_react_event(h, event))
+            goto invalid;
+        return true;
+    }
     bool message = !strcmp(type, "message"), edit = !strcmp(type, "message_edit"),
          del = !strcmp(type, "message_delete");
     bool embeds = !strcmp(type, "message_embeds_update");
@@ -254,7 +260,8 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
                                        : "");
     bool relevant = create || update || remove || active;
     if (relevant && !h->replaying &&
-        (h->recovering || h->pending == CHANNELS || h->pending == MESSAGES))
+        (h->recovering || h->pending == CHANNELS || h->pending == MESSAGES ||
+         (h->pending == ACTIONS && !history_internal_actions_mutating(h))))
         if (!history_internal_remember(h, event))
             return false;
     if (create || update || remove) {
@@ -323,6 +330,7 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
     }
     if (!active)
         return true;
+    history_internal_reference_event(h, event);
     if (message && !h->replaying) {
         const char *author_typing = history_internal_str((json_t *)event, "author_id");
         if (author_typing && *author_typing)

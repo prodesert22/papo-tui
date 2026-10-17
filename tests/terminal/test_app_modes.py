@@ -15,7 +15,9 @@ BINARY, FFMPEG = map(Path, sys.argv[1:3])
 sys.argv = [sys.argv[0], str(BINARY), str(FFMPEG), *sys.argv[3:]]
 import test_media_terminal as media  # noqa: E402 - prepare test arguments before import
 import test_terminal  # noqa: E402
+import test_emojis_terminal as emoji_tests  # noqa: E402
 from history_mock import uuid  # noqa: E402
+from interaction_mock import InteractionMock  # noqa: E402
 
 
 class AppModes(unittest.TestCase):
@@ -195,6 +197,162 @@ class AppModes(unittest.TestCase):
                     finally:
                         self.assertTrue(t.close())
 
+    def test_custom_emoji_freezes_in_light_while_identical_attachment_keeps_animating(self):
+        for format in ("GIF", "WEBP", "PNG"):
+            with self.subTest(format=format):
+                self.check_custom_emoji_mode_transitions(format)
+
+    def check_custom_emoji_mode_transitions(self, format):
+        self.seed("normal")
+        emojis = emoji_tests.EmojiTerminal()
+        emojis.png = media.MediaTerminal.images["png"]
+        emojis.gif = emoji_tests.encode_emoji_animation(media.MediaTerminal.animated_gif, format)
+        with emojis.server(content="Emoji :gato 界: fim", animated=True) as server:
+            server.emojis[0]["format"] = format
+            server.messages[0]["attachments"] = [
+                dict(
+                    id=uuid(901),
+                    mime_type={"GIF": "image/gif", "WEBP": "image/webp", "PNG": "image/png"}[
+                        format
+                    ],
+                    original_file_name="same." + format.lower(),
+                    size_bytes=len(emojis.gif),
+                    moderation_status="clean",
+                )
+            ]
+            parent = server.api_handler
+
+            def route(method, path, body):
+                if "/attachments/" in path:
+                    return (
+                        200,
+                        emojis.gif,
+                        None,
+                        None,
+                        server.messages[0]["attachments"][0]["mime_type"],
+                    )
+                return parent(method, path, body)
+
+            server.api_handler = route
+            t = self.open(server, size=(40, 100))
+            try:
+                for mode in ("normal", "light", "normal", "ultralight"):
+                    with self.subTest(mode=mode):
+                        if json.loads(self.config.read_text())["app_mode"] != mode:
+                            self.choose(t, mode)
+                        self.helper.wait(t, "Emoji ")
+                        if mode == "ultralight":
+                            self.helper.wait(t, ":gato 界:")
+                            self.wait(t, lambda: not self.children(t))
+                            continue
+
+                        def emoji_cells():
+                            row = next(
+                                i for i, line in enumerate(t.screen.display) if "Emoji " in line
+                            )
+                            column = t.screen.display[row].index("Emoji ") + len("Emoji ")
+                            return row, [t.screen.buffer[row][x] for x in (column, column + 1)]
+
+                        def tone(color):
+                            if len(color) != 6:
+                                return None
+                            try:
+                                red, green, blue = bytes.fromhex(color)
+                            except ValueError:
+                                return None
+                            if red > 150 and green < 30 and blue < 30:
+                                return "red"
+                            if blue > 150 and red < 30 and green < 30:
+                                return "blue"
+                            return None
+
+                        self.wait(
+                            t,
+                            lambda: any(
+                                tone(color) is not None
+                                for cell in emoji_cells()[1]
+                                for color in (cell.fg, cell.bg)
+                            ),
+                        )
+                        emoji_frames, attachment_colors = set(), set()
+                        deadline = time.monotonic() + 1.2
+                        while time.monotonic() < deadline:
+                            t.read(0.05)
+                            row, cells = emoji_cells()
+                            emoji_frames.add(tuple((cell.data, cell.fg, cell.bg) for cell in cells))
+                            attachment_colors.update(
+                                tone(color)
+                                for y in range(row + 1, min(row + 8, t.screen.lines - 8))
+                                for x in range(34, 75)
+                                for color in (t.screen.buffer[y][x].fg, t.screen.buffer[y][x].bg)
+                            )
+                        self.assertTrue({"red", "blue"} <= attachment_colors)
+                        if mode == "light":
+                            self.assertEqual(len(emoji_frames), 1)
+                            self.assertNotIn(
+                                "blue",
+                                {tone(color) for cell in cells for color in (cell.fg, cell.bg)},
+                            )
+                        else:
+                            self.assertGreaterEqual(len(emoji_frames), 2)
+                        self.assertEqual(t.stream.frames, [])
+                self.assertEqual(server.message_count, 0)
+            finally:
+                self.assertTrue(t.close())
+
+    def test_emoji_only_messages_enlarge_in_chafa_and_light_and_remain_text_in_ultralight(self):
+        for mode in ("normal", "light", "ultralight"):
+            with self.subTest(mode=mode):
+                self.seed(mode)
+                emojis = emoji_tests.EmojiTerminal()
+                emojis.png = media.MediaTerminal.images["png"]
+                emojis.gif = media.MediaTerminal.animated_gif
+                with emojis.server(content=":gato 界:", count=2, animated=True) as server:
+                    for message in server.messages:
+                        message["author_id"] = uuid(21)
+                    server.messages[1]["content"] = "Depois"
+                    t = self.open(server, size=(40, 100))
+                    try:
+                        self.helper.wait(t, "Depois")
+                        if mode == "ultralight":
+                            self.helper.wait(t, ":gato 界:")
+                            self.assertFalse(any("/emojis?" in r[1] for r in server.requests))
+                            self.assertFalse(self.children(t))
+                            continue
+
+                        def cells():
+                            end = next(
+                                (i for i, line in enumerate(t.screen.display) if "Depois" in line),
+                                -1,
+                            )
+                            if end < 3:
+                                return []
+                            return [
+                                t.screen.buffer[y][x]
+                                for y in range(end - 3, end)
+                                for x in range(34, 40)
+                            ]
+
+                        def colored():
+                            return sum(
+                                cell.bg not in ("default", "121212", "1c1c1c", "000000")
+                                for cell in cells()
+                            )
+
+                        self.wait(t, lambda: colored() >= 12)
+                        frames = set()
+                        deadline = time.monotonic() + 0.9
+                        while time.monotonic() < deadline:
+                            t.read(0.05)
+                            frames.add(tuple((cell.data, cell.fg, cell.bg) for cell in cells()))
+                        if mode == "light":
+                            self.assertEqual(len(frames), 1)
+                        else:
+                            self.assertGreater(len(frames), 1)
+                        self.assertEqual(t.stream.frames, [])
+                    finally:
+                        self.assertTrue(t.close())
+
     def test_chafa_preserves_image_colors_on_indexed_and_direct_terminals(self):
         colors = ("ff5f00", "00d7af", "875fff")
         pixels = b"".join(bytes.fromhex(color) * 32 for color in colors) * 32
@@ -280,13 +438,182 @@ class AppModes(unittest.TestCase):
             t = self.open(server)
             try:
                 self.helper.wait(t, "Fixture")
-                t.send("\x1b[18~")
+                t.send("\x1b[18~\n")
                 self.helper.wait(t, "Vídeos desativados")
                 self.assertFalse(any("/attachments/" in req[1] for req in server.requests))
                 for pid in self.children(t):
                     self.assertNotIn("libmpv.", Path(f"/proc/{pid}/maps").read_text())
             finally:
                 self.assertTrue(t.close())
+
+    def test_message_actions_and_reply_drafts_survive_settings_and_mode_changes(self):
+        for mode, destination in (
+            ("normal", "light"),
+            ("light", "ultralight"),
+            ("ultralight", "normal"),
+        ):
+            with self.subTest(mode=mode):
+                self.seed(mode)
+                with InteractionMock(count=1) as server:
+                    target = server.messages[0]["id"]
+                    server.seed(target, {"unicode": "👍"}, [uuid(30)])
+                    t = self.open(server, size=(32, 100))
+                    try:
+                        self.helper.wait(t, "Mensagem 0001")
+                        t.send("draft stays\x1b[18~E")
+                        self.helper.wait(t, "Quem reagiu")
+                        self.helper.wait(t, "Pessoas")
+                        self.wait(
+                            t,
+                            lambda: any(
+                                r[1].split("?")[0].endswith("/reactions") for r in server.requests
+                            ),
+                        )
+                        t.send("\x1bOQ")
+                        self.helper.wait(t, "Configurações")
+                        self.assertNotIn("Quem reagiu", "\n".join(t.screen.display))
+                        t.send("\x1br")
+                        self.helper.wait(t, "Respondendo a")
+                        t.send("\x1b")
+                        self.assertNotIn("Respondendo a", "\n".join(t.screen.display))
+                        t.send(" tail")
+                        self.helper.wait(t, "draft stays tail")
+                        t.send("\x1b[18~e")
+                        self.helper.wait(t, "Reagir · Esc voltar")
+                        self.choose(t, destination)
+                        self.assertNotIn("Reagir · Esc voltar", "\n".join(t.screen.display))
+                        t.send("r\n")
+                        self.helper.wait(t, "Mensagem confirmada")
+                        self.assertEqual(server.sent_messages[0]["content"], "draft stays tail")
+                        self.assertEqual(server.sent_messages[0]["reply_to"], target)
+                        self.assertEqual(server.reaction_calls, [])
+                        self.assert_no_media_libs(t)
+                        if destination == "ultralight":
+                            self.wait(t, lambda: not self.children(t))
+                    finally:
+                        self.assertTrue(t.close())
+
+    def test_chafa_keeps_uncovered_chat_pixels_behind_floating_panels(self):
+        image = subprocess.run(
+            [
+                str(FFMPEG),
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=red:s=1000x500",
+                "-frames:v",
+                "1",
+                "-threads",
+                "1",
+                "-f",
+                "image2pipe",
+                "-vcodec",
+                "png",
+                "pipe:1",
+            ],
+            check=True,
+            capture_output=True,
+        ).stdout
+        for mode in ("normal", "light"):
+            for key, title in (
+                ("\x1bOS", "Emojis · Esc voltar"),
+                ("E", "Quem reagiu"),
+                ("@", "Menções"),
+                ("\x1b[20~", "Notificações"),
+            ):
+                with self.subTest(mode=mode, modal=title):
+                    self.seed(mode)
+                    with self.helper.serve(image, "image/png") as server:
+                        parent = server.api_handler
+
+                        def route(method, path, body):
+                            if method == "GET" and path.split("?")[0].endswith("/reactions"):
+                                return 200, dict(
+                                    message_id=server.messages[0]["id"],
+                                    reactions=[],
+                                    has_more=False,
+                                )
+                            return parent(method, path, body)
+
+                        server.api_handler = route
+                        t = self.open(server, size=(48, 160))
+                        try:
+
+                            def red_cells():
+                                return {
+                                    (y, x)
+                                    for y in range(8, 40)
+                                    for x in range(32, 150)
+                                    if "ff0000"
+                                    in (t.screen.buffer[y][x].fg, t.screen.buffer[y][x].bg)
+                                }
+
+                            self.wait(t, lambda: len(red_cells()) > 200)
+                            if key == "E":
+                                t.send("\x1b[18~")
+                                self.wait(t, lambda: len(red_cells()) > 200)
+                            before = red_cells()
+                            t.send(key)
+                            self.helper.wait(t, title)
+                            top = next(
+                                i for i, line in enumerate(t.screen.display) if title in line
+                            )
+                            title_x = t.screen.display[top].index(title)
+                            if title == "Notificações":
+                                top -= 1
+                            left = next(
+                                x
+                                for x in range(title_x, -1, -1)
+                                if t.screen.buffer[top][x].data in ("l", "┌")
+                            )
+                            right = (
+                                next(
+                                    x
+                                    for x in range(title_x, t.screen.columns)
+                                    if t.screen.buffer[top][x].data in ("k", "┐")
+                                )
+                                + 1
+                            )
+                            bottom = (
+                                next(
+                                    y
+                                    for y in range(top + 1, t.screen.lines)
+                                    if t.screen.buffer[y][left].data in ("m", "└")
+                                    and t.screen.buffer[y][right - 1].data in ("j", "┘")
+                                )
+                                + 1
+                            )
+                            exposed = {
+                                (y, x)
+                                for y, x in before
+                                if y < top or y >= bottom or x < left or x >= right
+                            }
+                            self.assertGreater(len(exposed), 8)
+                            self.wait(t, lambda: exposed <= red_cells())
+                            self.assertEqual(t.stream.frames, [])
+                            if title in ("Menções", "Notificações"):
+                                active_title = title
+                                if title == "Notificações":
+                                    t.send("\x1bOC\ngeral")
+                                    active_title = "Selecionar canal"
+                                    self.helper.wait(t, active_title)
+                                    self.wait(t, lambda: exposed <= red_cells())
+                                t.send("\x12")
+                                self.helper.wait(t, active_title)
+                                self.wait(t, lambda: exposed <= red_cells())
+                                t.resize(44, 144)
+                                self.helper.wait(t, active_title)
+                                self.wait(t, lambda: len(red_cells()) > 200)
+                                t.send("\x1b")
+                                self.assertNotIn(active_title, "\n".join(t.screen.display))
+                                if title == "Notificações":
+                                    self.helper.wait(t, title)
+                                    t.send("\x1b")
+                                self.wait(t, lambda: len(red_cells()) > 200)
+                        finally:
+                            self.assertTrue(t.close())
 
     def test_text_modes_do_not_initialize_download_directories(self):
         for mode in ("ultralight", "light"):
@@ -328,7 +655,7 @@ class AppModes(unittest.TestCase):
                 self.assertTrue(red_cells())
                 self.assertEqual(self.children(t), [])
                 t.send("\x1b")
-                t.send("\x1b[18~")
+                t.send("\x1b[18~\n")
                 self.helper.wait(t, "[Info]")
                 self.wait(t, lambda: bool(self.children(t)))
                 self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), requests)
@@ -341,7 +668,7 @@ class AppModes(unittest.TestCase):
             t = self.open(server)
             try:
                 self.helper.wait(t, "Fixture")
-                t.send("rascunho do vídeo\x1b\x1b[18~")
+                t.send("rascunho do vídeo\x1b\x1b[18~\n")
                 self.helper.wait(t, "Reproduzindo")
                 self.assertEqual(t.stream.frames, [])
                 self.assertTrue(

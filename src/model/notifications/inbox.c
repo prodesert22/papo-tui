@@ -13,7 +13,7 @@ enum operation { NONE, DMS, RECENT, OLDER, NEWER, OPEN, CLOSE, READ, RESOLVE };
 struct inbox {
     auth_client *auth;
     json_t *dms, *notifications, *events, *presence, *seen, *viewed, *messages, *alerts, *reads,
-        *batch, *journal, *fresh, *unseen;
+        *batch, *journal, *fresh, *unseen, *previews;
     enum operation pending, action;
     bool want_dms, want_recent, want_newer, want_older, more, read_failed, presence_ready,
         presence_partial;
@@ -159,8 +159,9 @@ inbox *inbox_create(auth_client *auth)
     b->reads = json_array();
     b->journal = json_array();
     b->unseen = json_object();
+    b->previews = json_object();
     if (!b->dms || !b->notifications || !b->events || !b->presence || !b->seen || !b->viewed ||
-        !b->messages || !b->alerts || !b->reads || !b->journal || !b->unseen) {
+        !b->messages || !b->alerts || !b->reads || !b->journal || !b->unseen || !b->previews) {
         inbox_destroy(b);
         return NULL;
     }
@@ -184,6 +185,7 @@ void inbox_destroy(inbox *b)
     json_decref(b->journal);
     json_decref(b->fresh);
     json_decref(b->unseen);
+    json_decref(b->previews);
     free(b);
 }
 void inbox_reset(inbox *b)
@@ -199,6 +201,7 @@ void inbox_reset(inbox *b)
     json_object_clear(b->viewed);
     json_object_clear(b->messages);
     json_object_clear(b->unseen);
+    json_object_clear(b->previews);
     b->presence_partial = false;
     json_decref(b->batch);
     b->batch = NULL;
@@ -358,6 +361,42 @@ static bool presence_set(json_t *map, const json_t *event)
     json_decref(copy);
     return ok;
 }
+void inbox_observe_message(inbox *b, const json_t *message)
+{
+    bounded_key(b->messages, s(message, "id"), json_object_get(message, "channel_id"));
+    /* Keep only bounded display metadata, never attachments or full content. */
+    json_t *preview = json_pack("{s:s,s:s,s:s,s:s}", "id", s(message, "id"), "channel_id",
+                                s(message, "channel_id"), "author_id", s(message, "author_id"),
+                                "created_at", s(message, "created_at"));
+    if (preview)
+        json_object_set_new(preview, "_mentions",
+                            json_boolean(mention_message_contains(message, auth_user_id(b->auth)) ||
+                                         strstr(s(message, "content"), "@everyone")));
+    if (preview && uuid_field(message, "webhook_id")) {
+        json_object_set(preview, "webhook_id", json_object_get(message, "webhook_id"));
+        json_t *external = json_object_get(message, "external_author");
+        if (text_field(external, "name", 512, false)) {
+            json_t *author = json_pack("{s:s}", "name", s(external, "name"));
+            if (author)
+                json_object_set_new(preview, "external_author", author);
+        }
+    }
+    /* REST can include attribution omitted by a later WS payload for the same
+     * message. Keep that name until richer metadata replaces it. */
+    json_t *prior = json_object_get(b->previews, s(message, "id"));
+    if (preview && !strcmp(s(prior, "channel_id"), s(message, "channel_id")) &&
+        !*s(message, "author_id") && uuid_field(prior, "webhook_id") &&
+        (!uuid_field(message, "webhook_id") ||
+         !strcmp(s(prior, "webhook_id"), s(message, "webhook_id")))) {
+        json_object_set(preview, "webhook_id", json_object_get(prior, "webhook_id"));
+        if (!*s(json_object_get(preview, "external_author"), "name") &&
+            json_object_get(prior, "external_author"))
+            json_object_set(preview, "external_author", json_object_get(prior, "external_author"));
+    }
+    if (preview && bounded_key(b->previews, s(message, "id"), preview))
+        ++b->revision;
+    json_decref(preview);
+}
 bool inbox_event(inbox *b, const json_t *event)
 {
     const char *type = s(event, "type");
@@ -414,7 +453,7 @@ bool inbox_event(inbox *b, const json_t *event)
             !text_field(event, "author_id", 36, true) ||
             (*s(event, "author_id") && !history_uuid(s(event, "author_id"))))
             return false;
-        bounded_key(b->messages, s(event, "id"), json_object_get(event, "channel_id"));
+        inbox_observe_message(b, event);
         if (strcmp(s(event, "author_id"), auth_user_id(b->auth)) &&
             !json_object_get(b->viewed, s(event, "id"))) {
             json_t *prior = json_object_get(b->unseen, s(event, "channel_id"));
@@ -443,10 +482,10 @@ bool inbox_event(inbox *b, const json_t *event)
                 json_decref(last);
                 sort(b->dms);
                 trim(b->dms, 500, 4U * 1024U * 1024U, true);
-                ++b->revision;
                 break;
             }
         }
+        ++b->revision;
         return true;
     }
     if (strcmp(type, "new_notification"))
@@ -681,8 +720,15 @@ bool inbox_response(inbox *b, json_t *body, long code, bool uncertain)
     } else if ((kind == RECENT || kind == OLDER || kind == NEWER) && code == 200)
         ok = notifications_response(b, body, kind);
     else if ((kind == OPEN || kind == RESOLVE) && (code == 200 || code == 201)) {
+        bool listed = find(b->dms, s(body, "id")) != SIZE_MAX;
         ok = dm_update(b, body);
-        if (ok)
+        /* Resolving a hidden DM supplies its participant, but GET does not
+         * reopen it in the server's list. This follows an explicit open action. */
+        if (ok && kind == RESOLVE) {
+            if (!listed)
+                json_array_remove(b->dms, find(b->dms, s(body, "id")));
+            ok = inbox_open_dm(b, s(json_object_get(body, "user"), "id"));
+        } else if (ok)
             snprintf(b->opened, sizeof(b->opened), "%s", s(body, "id"));
     } else if (kind == CLOSE && code == 204) {
         size_t i = find(b->dms, b->request_id);
@@ -753,6 +799,10 @@ const char *inbox_opened(const inbox *b)
 {
     return b->opened;
 }
+bool inbox_opening(const inbox *b)
+{
+    return b->pending == OPEN || b->pending == RESOLVE || b->action == OPEN || b->action == RESOLVE;
+}
 void inbox_opened_clear(inbox *b)
 {
     b->opened[0] = 0;
@@ -784,6 +834,44 @@ size_t inbox_unread(const inbox *b)
     json_array_foreach(b->notifications, i, v) if (!json_is_true(json_object_get(v, "read")))++ n;
     json_array_foreach(b->events, i, v) if (!json_is_true(json_object_get(v, "_viewed")))++ n;
     return n;
+}
+json_t *inbox_message_preview(const inbox *b, const char *id)
+{
+    return json_object_get(b->previews, id);
+}
+size_t inbox_unread_mentions(const inbox *b, const char *channel)
+{
+    size_t count = 0;
+    const char *seen[1256]; /* Same bounded total as the two notification owners. */
+    for (int event = 0; event < 2; ++event) {
+        json_t *items = event ? b->events : b->notifications;
+        size_t i;
+        json_t *n;
+        json_array_foreach(items, i, n)
+        {
+            if (json_is_true(json_object_get(n, event ? "_viewed" : "read")))
+                continue;
+            const char *destination =
+                event ? inbox_message_channel(b, s(n, "message_id")) : s(n, "channel_id");
+            if (channel && strcmp(channel, destination))
+                continue;
+            const char *content = s(n, "message_content");
+            json_t *preview = inbox_message_preview(b, s(n, "message_id"));
+            if (!mention_contains(content, auth_user_id(b->auth)) &&
+                !strstr(content, "@everyone") &&
+                !json_is_true(json_object_get(preview, "_mentions")))
+                continue;
+            bool duplicate = false;
+            for (size_t j = 0; j < count; ++j)
+                if (!strcmp(seen[j], s(n, "message_id"))) {
+                    duplicate = true;
+                    break;
+                }
+            if (!duplicate && count < sizeof(seen) / sizeof(seen[0]))
+                seen[count++] = s(n, "message_id");
+        }
+    }
+    return count;
 }
 void inbox_view_message(inbox *b, const char *id)
 {

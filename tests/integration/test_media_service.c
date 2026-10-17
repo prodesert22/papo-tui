@@ -1,4 +1,5 @@
 #include "config/app_mode.h"
+#include "ui/media/emoji_image.h"
 #include "ui/media/media_service.h"
 #include <assert.h>
 #include <glib/gstdio.h>
@@ -27,6 +28,10 @@ static gpointer encode(gpointer unused)
     assert(graphics_image_encode(rgb, 8, 16, terminal, &image));
     assert_red(&image);
     graphics_image_free(&image);
+    assert(graphics_image_encode_region_id(rgb, 8, 16, 2, 3, 1, 2, terminal, 77, &image));
+    assert_red(&image);
+    assert(image.width == 5 && image.height == 11 && image.id == 77);
+    graphics_image_free(&image);
     return NULL;
 }
 
@@ -42,6 +47,13 @@ int main(void)
         threads[i] = g_thread_new("test-encode", encode, NULL);
     for (size_t i = 0; i < G_N_ELEMENTS(threads); ++i)
         g_thread_join(threads[i]);
+
+    app_mode_set(APP_MODE_NORMAL);
+    graphics_image glyph = {0};
+    assert(emoji_image_encode_region("😀", 32, 32, 0, terminal, 78, &glyph, 2, 3, 4, 5));
+    assert(glyph.width == 23 && glyph.height == 27 && glyph.id == 78 && glyph.data);
+    graphics_image_free(&glyph);
+    app_mode_set(APP_MODE_LIGHT);
 
     /* Exercise module discovery and binary pipe transport, including NULs and
      * newlines in pixel data. All paths belong to this synthetic fixture. */

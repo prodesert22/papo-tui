@@ -46,6 +46,7 @@ static gpointer load_image(gpointer unused)
                                           sizeof(graphics_image),
                                           graphics_image_encode_id,
                                           graphics_image_encode_preview,
+                                          graphics_image_encode_region_id,
                                           animation_free,
                                           malloc,
                                           calloc,

@@ -23,6 +23,20 @@ static void snapshot(auth_client *auth, history *h)
     json_object_set_new(value, "presence",
                         json_string(inbox_presence(b, "00000000-0000-4000-8000-000000000002")));
     json_object_set_new(value, "unseen", json_integer((json_int_t)inbox_unseen_conversations(b)));
+    json_object_set_new(value, "mentions",
+                        json_integer((json_int_t)inbox_unread_mentions(b, NULL)));
+    json_t *mentions = json_object(), *unread = json_object();
+    for (size_t i = 0; i < history_channel_count(h); ++i) {
+        const char *id = json_string_value(json_object_get(history_channel(h, i), "id"));
+        if (id) {
+            json_object_set_new(mentions, id,
+                                json_integer((json_int_t)inbox_unread_mentions(b, id)));
+            json_object_set_new(unread, id,
+                                json_boolean(history_channel_unread(h, history_channel(h, i))));
+        }
+    }
+    json_object_set_new(value, "channel_mentions", mentions);
+    json_object_set_new(value, "channel_unread", unread);
     json_dumpf(value, stdout, JSON_COMPACT);
     putchar('\n');
     fflush(stdout);

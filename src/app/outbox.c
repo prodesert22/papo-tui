@@ -5,6 +5,7 @@
 #include "platform/unicode.h"
 
 #include <graphemebreak.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <wchar.h>
@@ -12,6 +13,8 @@
 
 typedef struct {
     char channel[64];
+    char reply[37];
+    uint64_t reply_revision;
     char *text;
     uint64_t revision;
 } draft;
@@ -20,6 +23,8 @@ typedef struct {
     outbox_state state;
     long status;
     char channel[64];
+    char reply[37];
+    uint64_t reply_revision;
     char *text;
     json_t *confirmed;
     bool prefix_untouched, transmitted, cancelled;
@@ -224,8 +229,29 @@ static operation *find_operation(outbox *box, uint64_t id)
     return NULL;
 }
 
+bool outbox_set_reply(outbox *box, const char *channel, const char *reply)
+{
+    if (!box || !valid_channel(channel) || !synchronize(box) ||
+        (reply && *reply && !g_uuid_string_is_valid(reply)))
+        return false;
+    draft *item = find_draft(box, channel, true);
+    if (!item || item->reply_revision == UINT64_MAX)
+        return false;
+    snprintf(item->reply, sizeof(item->reply), "%s", reply ? reply : "");
+    ++item->reply_revision;
+    return true;
+}
+
+const char *outbox_reply(outbox *box, const char *channel)
+{
+    if (!box || !valid_channel(channel) || !synchronize(box))
+        return "";
+    draft *item = find_draft(box, channel, false);
+    return item ? item->reply : "";
+}
+
 static outbox_submit_result enqueue(outbox *box, const char *channel, const char *content,
-                                    bool accept_duplicate, uint64_t *id)
+                                    const char *reply, bool accept_duplicate, uint64_t *id)
 {
     bool nonempty;
     if (!valid_text(content, &nonempty))
@@ -261,6 +287,8 @@ static outbox_submit_result enqueue(outbox *box, const char *channel, const char
     slot->id = ++box->next_id;
     slot->generation = box->generation;
     slot->revision = editor ? editor->revision : 0;
+    snprintf(slot->reply, sizeof(slot->reply), "%s", reply ? reply : "");
+    slot->reply_revision = editor ? editor->reply_revision : 0;
     slot->state = OUTBOX_QUEUED;
     memcpy(slot->channel, channel, strlen(channel) + 1);
     slot->text = snapshot;
@@ -279,7 +307,8 @@ outbox_submit_result outbox_submit(outbox *box, const char *channel, bool accept
     if (!synchronize(box))
         return OUTBOX_NO_SESSION;
     draft *item = find_draft(box, channel, false);
-    return enqueue(box, channel, item && item->text ? item->text : "", accept_duplicate, id);
+    return enqueue(box, channel, item && item->text ? item->text : "", item ? item->reply : "",
+                   accept_duplicate, id);
 }
 
 outbox_submit_result outbox_retry(outbox *box, uint64_t id, bool accept_duplicate, uint64_t *new_id)
@@ -293,13 +322,19 @@ outbox_submit_result outbox_retry(outbox *box, uint64_t id, bool accept_duplicat
         return OUTBOX_BUSY;
     if (item->state == OUTBOX_UNCERTAIN && !accept_duplicate)
         return OUTBOX_CONFIRM_DUPLICATION;
-    return enqueue(box, item->channel, item->text, accept_duplicate, new_id);
+    return enqueue(box, item->channel, item->text, item->reply, accept_duplicate, new_id);
 }
 
 static void consume_confirmation(outbox *box, operation *item)
 {
     draft *editor = find_draft(box, item->channel, false);
-    if (!editor || !editor->text || !item->prefix_untouched || editor->revision == UINT64_MAX)
+    if (!editor)
+        return;
+    if (editor->reply_revision == item->reply_revision && !strcmp(editor->reply, item->reply)) {
+        editor->reply[0] = 0;
+        ++editor->reply_revision;
+    }
+    if (!editor->text || !item->prefix_untouched || editor->revision == UINT64_MAX)
         return;
     size_t length = strlen(item->text);
     if (strncmp(editor->text, item->text, length))
@@ -346,7 +381,7 @@ void outbox_poll(outbox *box)
         if (item->id && item->state == OUTBOX_QUEUED && (!next || item->id < next->id))
             next = item;
     }
-    if (next && auth_send_text(box->session, next->id, next->channel, next->text)) {
+    if (next && auth_send_reply(box->session, next->id, next->channel, next->text, next->reply)) {
         next->state = OUTBOX_SENDING;
         box->active = next->id;
     }
@@ -376,6 +411,7 @@ static void view(const operation *item, outbox_operation *value)
                                 .status = item->status,
                                 .channel_id = item->channel,
                                 .content = item->text ? item->text : "",
+                                .reply_to = item->reply,
                                 .transmitted = item->transmitted,
                                 .cancelled = item->cancelled};
 }

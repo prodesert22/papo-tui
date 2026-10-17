@@ -71,8 +71,20 @@ class MediaTests(unittest.TestCase):
     def test_wrong_mime_and_size(self):
         with self.server(mime="text/html") as server:
             self.assertIn("failed=1", self.probe(server))
-        with self.server(body=b"x" * (16 * 1024 * 1024 + 1)) as server:
-            self.assertIn("failed=1", self.probe(server))
+        for mode, mime, limit in (
+            ("image", "image/png", 32 * 1024 * 1024),
+            ("avatar", "image/png", 16 * 1024 * 1024),
+            ("video", "video/mp4", 256 * 1024 * 1024),
+        ):
+            for extra in (0, 1):
+                with (
+                    self.subTest(mode=mode, extra=extra),
+                    self.server(mime=mime, body=b"x" * (limit + extra)) as server,
+                ):
+                    output = self.probe(server, mode)
+                    self.assertIn("failed=1" if extra else "ready=1", output)
+                    if not extra:
+                        self.assertIn(f"bytes={limit} ", output)
 
     def test_cancellation_logout_and_global_budget(self):
         for mode in ("cancel", "logout", "budget"):
@@ -127,7 +139,7 @@ class MediaTests(unittest.TestCase):
     def test_public_avatar_size_mime_and_redirect_limits(self):
         for status, mime, body in (
             (200, "text/html", b"html"),
-            (200, "image/png", b"x" * (2 * 1024 * 1024 + 1)),
+            (200, "image/png", b"x" * (16 * 1024 * 1024 + 1)),
             (302, "image/png", b""),
         ):
             with (

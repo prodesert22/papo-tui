@@ -38,7 +38,7 @@ class InputControls(unittest.TestCase):
         t.send(server.url + "\tjosé\tSynthetic!123\n")
         self.wait(t, "geral")
         t.resize(24, 160)
-        t.send("\x1bOB\x1bOB\n")
+        t.send("\x1bOB\n")
         self.wait(t, "Conversar em #geral")
         return t
 

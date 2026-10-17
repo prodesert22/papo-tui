@@ -27,11 +27,13 @@ static int decode_interrupt(void *context)
 static bool encode_pixels(const image_decode_request *j, const unsigned char *pixels, int w, int h,
                           int source_w, int source_h, graphics_image *out)
 {
-    int top = j->terminal.protocol == GRAPHICS_KITTY ? 0 : j->top;
-    int bottom = j->terminal.protocol == GRAPHICS_KITTY ? 0 : j->bottom;
+    int top = j->terminal.protocol == GRAPHICS_KITTY && !j->region ? 0 : j->top;
+    int bottom = j->terminal.protocol == GRAPHICS_KITTY && !j->region ? 0 : j->bottom;
     if (top < 0 || bottom < 0 || top >= h || bottom >= h || top >= h - bottom)
         return false;
-    bool ok = !top && !bottom && j->preview
+    bool ok = j->region ? host.region(pixels, w, h, top, bottom, j->left, j->right, j->terminal,
+                                      j->image_id, out)
+              : !top && !bottom && j->preview
                   ? host.preview(pixels, w, h, j->terminal, j->image_id, out)
                   : host.encode(pixels + (size_t)top * (size_t)w * 3, w, h - top - bottom,
                                 j->terminal, j->image_id, out);
@@ -63,27 +65,40 @@ static bool decode_file(const image_decode_request *j, graphics_image *out, anim
         goto done;
     decode_guard guard = {cancelled, context};
     format->interrupt_callback = (AVIOInterruptCB){decode_interrupt, &guard};
-    format->max_streams = 1;
+    format->max_streams = j->video_poster ? 16 : 1;
     av_dict_set(&options, "protocol_whitelist", "file", 0);
     av_dict_set(&options, "ignore_loop", "1", 0);
     if (avformat_open_input(&format, j->path, NULL, &options) < 0)
         goto done;
-    AVDictionary *decode_options = NULL;
     size_t source_limit = j->max_side > 0 && j->max_side <= 4096
                               ? (size_t)j->max_side * (size_t)j->max_side
                               : IMAGE_PIXELS;
-    av_dict_set_int(&decode_options, "max_pixels", (int64_t)source_limit, 0);
-    av_dict_set(&decode_options, "threads", "1", 0);
-    int info = avformat_find_stream_info(format, &decode_options);
-    av_dict_free(&decode_options);
+    unsigned streams = format->nb_streams;
+    if (streams > 16)
+        goto done;
+    AVDictionary *decode_options[16] = {0};
+    for (unsigned i = 0; i < streams; ++i) {
+        av_dict_set_int(&decode_options[i], "max_pixels", (int64_t)source_limit, 0);
+        av_dict_set(&decode_options[i], "threads", "1", 0);
+    }
+    int info = avformat_find_stream_info(format, decode_options);
+    for (unsigned i = 0; i < streams; ++i)
+        av_dict_free(&decode_options[i]);
     if (info < 0)
         goto done;
     int stream = av_find_best_stream(format, AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0);
     if (stream < 0)
         goto done;
     AVCodecParameters *parameters = format->streams[stream]->codecpar;
-    if (parameters->codec_id != AV_CODEC_ID_MJPEG && parameters->codec_id != AV_CODEC_ID_PNG &&
-        parameters->codec_id != AV_CODEC_ID_WEBP && parameters->codec_id != AV_CODEC_ID_GIF)
+    /* Resolve the newer WebP animation codec at runtime so builds against
+     * older FFmpeg headers keep working without allowing arbitrary codecs. */
+    const AVCodec *webp_animation = avcodec_find_decoder_by_name("webp_anim");
+    bool animated_image = parameters->codec_id == AV_CODEC_ID_GIF ||
+                          parameters->codec_id == AV_CODEC_ID_APNG ||
+                          (webp_animation && parameters->codec_id == webp_animation->id);
+    if (!j->video_poster && parameters->codec_id != AV_CODEC_ID_MJPEG &&
+        parameters->codec_id != AV_CODEC_ID_PNG && parameters->codec_id != AV_CODEC_ID_WEBP &&
+        !animated_image)
         goto done;
     if (parameters->width < 1 || parameters->height < 1 ||
         (size_t)parameters->width > IMAGE_PIXELS / (size_t)parameters->height)
@@ -105,25 +120,30 @@ static bool decode_file(const image_decode_request *j, graphics_image *out, anim
         atomic_init(&frames->references, 1);
     if (!frame || !packet || !frames)
         goto done;
-    bool gif = parameters->codec_id == AV_CODEC_ID_GIF,
-         static_only = j->static_only || j->first_frame;
+    bool static_only = j->static_only || j->first_frame || j->video_poster;
     int read_status = 0;
-    for (unsigned n = 0; n < 4096 && (read_status = av_read_frame(format, packet)) >= 0; ++n) {
+    for (unsigned n = 0; n < 4096; ++n) {
+        read_status = av_read_frame(format, packet);
+        if (read_status < 0 && (read_status != AVERROR_EOF || !j->video_poster))
+            break;
         if (decode_interrupt(&guard))
             goto done;
-        if (packet->stream_index != stream) {
+        if (read_status >= 0 && packet->stream_index != stream) {
             av_packet_unref(packet);
             continue;
         }
         int64_t duration = av_rescale_q(packet->duration, format->streams[stream]->time_base,
                                         (AVRational){1, 1000});
-        if (avcodec_send_packet(decoder, packet) < 0)
+        if (avcodec_send_packet(decoder, read_status == AVERROR_EOF ? NULL : packet) < 0)
             goto done;
         av_packet_unref(packet);
         int decoded = avcodec_receive_frame(decoder, frame);
         /* GIF extensions can form packets without producing an image. */
-        if (decoded == AVERROR(EAGAIN))
+        if (decoded == AVERROR(EAGAIN)) {
+            if (read_status == AVERROR_EOF)
+                break;
             continue;
+        }
         if (decoded < 0)
             goto done;
         if (frame->width < 1 || frame->height < 1 ||
@@ -236,10 +256,10 @@ static bool decode_file(const image_decode_request *j, graphics_image *out, anim
         frames->delay[frames->count++] = delay;
         frames->duration += delay;
         frames->bytes += bytes;
-        if (!gif || static_only)
+        if (!animated_image || static_only)
             break;
     }
-    if (!frames->count || (gif && !static_only && read_status != AVERROR_EOF) ||
+    if (!frames->count || (animated_image && !static_only && read_status != AVERROR_EOF) ||
         decode_interrupt(&guard))
         goto done;
     image_decode_request encoding = *j;
@@ -331,8 +351,8 @@ G_MODULE_EXPORT const image_codec_api *papo_image_backend(const image_codec_host
         callbacks->request_size != sizeof(image_decode_request) ||
         callbacks->animation_size != sizeof(animation) ||
         callbacks->graphics_size != sizeof(graphics_image) || !callbacks->encode ||
-        !callbacks->preview || !callbacks->release_frames || !callbacks->allocate ||
-        !callbacks->allocate_zero || !callbacks->release)
+        !callbacks->preview || !callbacks->region || !callbacks->release_frames ||
+        !callbacks->allocate || !callbacks->allocate_zero || !callbacks->release)
         return NULL;
     host = *callbacks;
     av_log_set_level(AV_LOG_QUIET);

@@ -1,5 +1,6 @@
 #ifndef PAPO_MESSAGE_BLOCKS_H
 #define PAPO_MESSAGE_BLOCKS_H
+#include "model/assets/catalog.h"
 #include "model/text/mentions.h"
 #include "net/auth/client.h"
 #include "ui/input/text.h"
@@ -7,6 +8,7 @@
 #define MESSAGE_MEDIA_LABEL 512
 #define MESSAGE_COLUMNS 3
 #define MESSAGE_AVATAR_PIXELS 48
+#define MESSAGE_EMOJI_PIXELS 48
 /* Owned presentation, borrowed input JSON only during construction. Stable
  * block keys and Unicode offsets survive reflow and inserts in other blocks. */
 typedef struct {
@@ -35,6 +37,7 @@ typedef struct {
 typedef struct {
     uint32_t id;
     int x;
+    int pixels, row; /* Nonzero pixels: enlarged icon, repeated for each occupied row. */
     size_t offset;
     char key[128];
 } message_icon_region;
@@ -52,12 +55,19 @@ typedef struct {
     size_t icon_count;
     text_icon_painter icon_painter;
     void *icon_context;
-    bool header;
+    bool header, reaction;
     int indent;
 } message_row;
 typedef void (*message_media_measure)(void *context, const message_media *item, int available_width,
                                       int *width, int *height);
 typedef struct {
+    int row, x, width;
+    size_t index;
+    bool mine;
+} message_reaction_region;
+typedef struct {
+    message_reaction_region reactions[20];
+    size_t reaction_count;
     message_row *rows;
     size_t count, capacity;
     int height; /* Physical rows after wrapping image tiles. */
@@ -72,6 +82,7 @@ typedef struct {
     text_icon_painter icon_painter;
     void *icon_context;
 } message_blocks;
+void message_reaction_label(chat_assets *assets, const json_t *emoji, char *label, size_t capacity);
 uint64_t message_media_version(const json_t *entry);
 /* Adjacent messages can share a header only within the same channel and
  * author identity. Webhook display overrides remain distinct. */

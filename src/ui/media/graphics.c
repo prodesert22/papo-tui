@@ -342,6 +342,13 @@ static void erase_image(const displayed_image *d)
             wredrawln(curscr, d->y, d->rows < LINES - d->y ? d->rows : LINES - d->y);
     }
 }
+static bool has_pixel_images(const displayed_image *images, size_t count)
+{
+    for (size_t i = 0; i < count; ++i)
+        if (images[i].protocol != GRAPHICS_CHAFA)
+            return true;
+    return false;
+}
 void graphics_frame_begin(void)
 {
     desired_count = 0;
@@ -413,11 +420,19 @@ void graphics_frame_prepare(void)
 {
     if (!displayed_count && !desired_count)
         return;
-    fputs("\0337", stdout);
+    /* Character rendering uses ncurses' cursor bookkeeping. External cursor
+     * saves/restores are needed only when writing pixel protocol controls. */
+    bool pixels = has_pixel_images(displayed, displayed_count);
+    if (pixels)
+        fputs("\0337", stdout);
     for (size_t i = 0; i < displayed_count; ++i) {
         displayed_image *old = &displayed[i],
                         *next = find_image(desired, desired_count, old->placement_id);
-        if (!next || (old->protocol != GRAPHICS_KITTY && !same_placement(old, next)))
+        /* Kitty placement IDs belong to an image, so changing the encoded
+         * variant needs an explicit deletion even when the occurrence ID stays
+         * the same. The old image may still be used elsewhere in the history. */
+        if (!next || old->id != next->id ||
+            (old->protocol != GRAPHICS_KITTY && !same_placement(old, next)))
             erase_image(old);
         if (old->protocol == GRAPHICS_KITTY) {
             bool retained = false;
@@ -427,7 +442,8 @@ void graphics_frame_prepare(void)
                 fprintf(stdout, "\033_Ga=d,d=I,i=%u,q=2\033\\", old->id);
         }
     }
-    fputs("\0338", stdout);
+    if (pixels)
+        fputs("\0338", stdout);
     fflush(stdout);
     /* Pixels in Sixel/iTerm2 are tied to text cells. Preserve the physical text
      * beneath stationary pictures across forced history redraws and focus
@@ -510,7 +526,9 @@ void graphics_frame_flush(void)
 {
     if (!displayed_count && !desired_count)
         return;
-    fputs("\0337", stdout);
+    bool pixels = has_pixel_images(desired, desired_count);
+    if (pixels)
+        fputs("\0337", stdout);
     for (size_t i = 0; i < desired_count; ++i) {
         displayed_image *next = &desired[i],
                         *old = find_image(displayed, displayed_count, next->placement_id);
@@ -541,7 +559,8 @@ void graphics_frame_flush(void)
         displayed_image *next = realloc(displayed, desired_capacity * sizeof(*next));
         if (!next) {
             desired_count = 0;
-            fputs("\0338", stdout);
+            if (pixels)
+                fputs("\0338", stdout);
             fflush(stdout);
             return;
         }
@@ -554,7 +573,8 @@ void graphics_frame_flush(void)
     for (size_t i = 0; i < displayed_count; ++i)
         displayed[i].image = NULL;
     desired_count = 0;
-    fputs("\0338", stdout);
+    if (pixels)
+        fputs("\0338", stdout);
     fflush(stdout);
 }
 void graphics_images_clear(void)
@@ -571,13 +591,16 @@ void graphics_images_clear(void)
     desired_count = 0;
     if (!displayed_count)
         return;
-    fputs("\0337", stdout);
+    bool pixels = has_pixel_images(displayed, displayed_count);
+    if (pixels)
+        fputs("\0337", stdout);
     for (size_t i = 0; i < displayed_count; ++i) {
         erase_image(&displayed[i]);
         if (displayed[i].protocol == GRAPHICS_KITTY)
             fprintf(stdout, "\033_Ga=d,d=I,i=%u,q=2\033\\", displayed[i].id);
     }
     displayed_count = 0;
-    fputs("\0338", stdout);
+    if (pixels)
+        fputs("\0338", stdout);
     fflush(stdout);
 }

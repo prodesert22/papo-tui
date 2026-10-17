@@ -18,6 +18,7 @@ json_t *inbox_dm(const inbox *box, size_t index);
 bool inbox_open_dm(inbox *box, const char *user);
 bool inbox_close_dm(inbox *box, const char *id);
 const char *inbox_opened(const inbox *box);
+bool inbox_opening(const inbox *box);
 void inbox_opened_clear(inbox *box);
 void inbox_resolve_dm(inbox *box, const char *id);
 void inbox_refresh(inbox *box);
@@ -29,6 +30,14 @@ size_t inbox_event_count(const inbox *box);
 json_t *inbox_notification_event(const inbox *box, size_t index);
 bool inbox_has_more(const inbox *box);
 size_t inbox_unread(const inbox *box);
+/* Known explicit mentions, deduplicated by notification/message promotion.
+ * NULL channel counts the whole instance; previews may be truncated. */
+size_t inbox_unread_mentions(const inbox *box, const char *channel);
+/* Cache bounded display metadata from an already validated active-history/WS
+ * message. Borrows input; does not change notification or conversation reads. */
+void inbox_observe_message(inbox *box, const json_t *message);
+/* Bounded author/time metadata observed in this instance; borrowed JSON. */
+json_t *inbox_message_preview(const inbox *box, const char *message_id);
 void inbox_view(inbox *box, const char *notification_id, bool event);
 void inbox_view_message(inbox *box, const char *message_id);
 void inbox_read_conversation(inbox *box, const char *channel_id);

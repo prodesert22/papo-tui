@@ -80,7 +80,11 @@ static GVariant *execute(unsigned op, GVariant *payload)
         const unsigned char *pixels = g_variant_get_fixed_array(b, &length, 1);
         if (length != (size_t)request.width * (size_t)request.height * 3)
             goto done;
-        bool ok = request.preview
+        bool ok = request.region
+                      ? graphics_image_encode_region_id(
+                            pixels, request.width, request.height, request.top, request.bottom,
+                            request.left, request.right, request.terminal, request.image_id, &image)
+                  : request.preview
                       ? graphics_image_encode_preview(pixels, request.width, request.height,
                                                       request.terminal, request.image_id, &image)
                       : graphics_image_encode_id(pixels, request.width, request.height,
@@ -93,8 +97,7 @@ static GVariant *execute(unsigned op, GVariant *payload)
         const char *text;
         g_variant_get(payload, "(v&s)", &a, &text);
         if (media_wire_read_request(a, &request, &path) && strlen(text) <= 8192 &&
-            emoji_image_encode(text, request.width, request.height, request.background,
-                               request.terminal, request.image_id, &image))
+            emoji_image_encode_request(text, &request, &image))
             result = media_wire_image(&image);
     } else if (op == MEDIA_RPC_VIDEO_OPEN) {
         if (!g_variant_is_of_type(payload, G_VARIANT_TYPE_STRING))

@@ -8,6 +8,9 @@ emoji_picker *emoji_picker_create(chat_assets *assets, icon_view *icons, const c
 void emoji_picker_destroy(emoji_picker *p);
 bool emoji_picker_open(const emoji_picker *p);
 void emoji_picker_show(emoji_picker *p, const char *channel, uint64_t generation);
+void emoji_picker_reaction(emoji_picker *p, const char *channel, uint64_t generation);
+/* Transfers one owned ReactionRequest JSON, or NULL. Caller json_decref(). */
+json_t *emoji_picker_take_reaction(emoji_picker *p);
 void emoji_picker_close(emoji_picker *p);
 bool emoji_picker_update(emoji_picker *p, chat_assets *assets, const char *channel,
                          uint64_t generation);

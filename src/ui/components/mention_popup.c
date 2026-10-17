@@ -325,13 +325,13 @@ bool mention_popup_mouse(mention_popup *p, text_buffer *b, const MEVENT *e, bool
     }
     return true;
 }
-void mention_popup_draw(mention_popup *p, int cy, int cx, int left, int available)
+WINDOW *mention_popup_draw(mention_popup *p, int cy, int cx, int left, int available)
 {
     if (!p || !p->open)
-        return;
+        return NULL;
     int width = available < 48 ? available : 48;
     if (width < 12)
-        return;
+        return NULL;
     int rows = p->count < 8 ? (int)p->count : 8;
     if (rows < 1)
         rows = 1;
@@ -350,7 +350,7 @@ void mention_popup_draw(mention_popup *p, int cy, int cx, int left, int availabl
         delwin(p->window);
     p->window = newwin(height, width, y, x);
     if (!p->window)
-        return;
+        return NULL;
     leaveok(p->window, true);
     wbkgd(p->window, COLOR_PAIR(THEME_PANEL));
     werase(p->window);
@@ -386,4 +386,5 @@ void mention_popup_draw(mention_popup *p, int cy, int cx, int left, int availabl
     wnoutrefresh(p->window);
     /* The floating window must not take the editor's terminal cursor. */
     setsyx(cy, cx);
+    return p->window;
 }

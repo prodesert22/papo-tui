@@ -65,6 +65,110 @@ This lets Kitty distinguish Shift+Enter from Enter. The previous keyboard mode
 is restored through the terminal's push/pop stack on exit. Terminals that do
 not answer keep their existing keyboard mode and can use Ctrl+N for new lines.
 
+Message navigation and context menus share UUID-based history layouts and hit
+regions. Reply targets belong to per-conversation outbox drafts and immutable
+send snapshots; retries preserve the captured target. The multipart transport
+adds only the documented `reply_to` field. There is no mention-control parameter
+in the current contract or inspected backend, so no toggle is exposed.
+
+Replies use a bounded, active-conversation reference cache and sequential cursor
+lookups, separate from the displayed history window. There is no documented
+single-message GET endpoint. Background lookups therefore use the history
+endpoint, whose reads mark remote read state; inactive histories are never
+queried. Failed lookups do not imply deletion. Context changes cancel reads;
+already transmitted mutations retain their response owner until consumed.
+
+Message editing and deletion reuse ncurses, the bounded text editor, Jansson
+and the authenticated REST dispatcher; no dependency is added. Editing uses
+`PUT /messages/{message_id}` with only `content`, preserving attachments and
+custom embeds. Deletion uses the documented DELETE and server authorization.
+The empty-editor Up shortcut searches loaded messages for the newest own
+message; it does not fetch inactive histories or promise a server-wide search.
+Edit buffers are separate from send drafts and are discarded on context changes.
+The editing highlight reuses the existing ncurses message border and UUID-based
+scroll positioning, without new dependencies or requests.
+Both mutations share the global rate budget and retain their response owner
+across conversation changes. Failures require an explicit retry; uncertain
+outcomes refresh the active history without replaying the mutation.
+
+Reactions use the existing authenticated dispatcher and global request budget.
+The `react_update` event has an absolute total and no channel or actor. It can
+update matching messages in this instance, but cannot establish own membership.
+Confirmed mutations and uncertain outcomes reconcile through REST history;
+mutations are never replayed automatically. Participant cursors use the oldest
+`(created_at, id)` across all groups in a descending page, independently of group
+order. Page group counts are not message totals.
+
+The two-column participant panel keeps emoji and user scroll positions separate.
+Its emoji totals come from message summaries; the existing paginated reaction
+owner supplies users for the selected emoji. It reuses the inline icon renderer
+on the overlay layer. Navigation shortcuts (`r`, `e`, `Shift+E`) share the same
+reply and reaction actions as the context menu. No dependency or endpoint is added.
+
+Video covers reuse the existing FFmpeg image module in an explicit first-frame
+mode, including containers with audio. Normal image decoding retains its codec
+allowlist. The module ABI is 8. Files, decoded covers and variants share the
+bounded media cache; libmpv opens the same cached file for playback. Workers
+perform decoding and never access auth, HTTP or curses. No new dependency or
+backend endpoint is required.
+
+Floating menus and dialogs split intersecting history images into at most
+four visible rectangles. Cropped variants reuse the existing bounded worker
+cache and FFmpeg/Chafa encoders, including Unicode icon rasters. The main thread
+only queues variants and places them; no decoding or encoding runs in curses.
+Mention and notification panels return their borrowed ncurses windows so the
+conversation registers their bounds before composing image and icon placements.
+The media service transports crop bounds and the explicit video-cover flag in
+wire version 3. Raster packing and emoji rasterization run only in the helper.
+Light keeps native Unicode emojis and skips video covers and playback;
+Ultralight keeps message actions available without starting the media helper.
+
+Animated server emojis reuse FFmpeg's GIF/APNG decoders and its `webp_anim`
+decoder when available, along with the bounded shared frame/variant cache, with
+no new dependency or endpoint. Light emoji placements
+request the first frame; that flag participates in variant identity so a static
+emoji cannot freeze an attached GIF with identical bytes. Normal keeps the
+existing animation clock. The emoji catalog accepts up to 2 MiB blobs
+and 2048-pixel dimensions, and its HTTP response budget accommodates a full
+25-item base64 page. Existing per-instance temporary-file budgets still apply.
+
+Emoji-only message bodies reuse the icon resolver and shared cache at 48 pixels.
+Their rows retain source offsets for reading anchors and repeat icon regions so
+the viewport can crop partially visible emojis through the existing image path.
+No dependency or backend request is added. Mixed text, reactions and native
+Unicode rendering in Light/Ultralight keep their ordinary layout.
+
+The notification center reuses the mention projector, libc sorting and session
+timestamp comparison for local search, conversation filters and date ordering.
+Search and counters cover loaded pages; the API exposes no global unread total.
+Mention badges count explicit user/everyone mentions in available content;
+truncated previews can omit a mention. General unread messages retain a separate
+dot. Notification payloads lack webhook names and event timestamps/channels;
+bounded metadata from WS and already loaded active-history messages supplies these
+when known, including mention flags beyond the truncated preview.
+Missing metadata stays explicit, without fetching inactive histories or inventing
+an individual-message endpoint. No new dependency is needed.
+Notification arrows distinguish text editing from list/filter actions: horizontal
+list keys change the filter, vertical keys traverse search, controls and results.
+Server badges share tab measurement and drawing, reserve the closing delimiter
+and use plain red counters when the effective renderer is text/Chafa.
+Channel/DM filter selection uses a searchable subview in the same borrowed modal
+window. It reuses bounded text editing/name matching and already loaded directory
+metadata, with UUID selection anchors across updates; no history reads or new
+dependencies are required.
+Category arrows/clicks only cycle the filter; Enter or the separate Name button
+explicitly opens the selector, avoiding focus changes while cycling categories.
+The Name button follows the rendered filter label by one cell; drawing and mouse
+hit testing use the same Unicode cell measurement while the date action retains
+its reserved column.
+
+`python -m tools.check_message_interactions --url http://127.0.0.1:8080`
+validates the C interaction owner against an isolated DM between synthetic
+accounts, including queued-edit cancellation, editing, deletion and an uploaded
+video. It keeps test credentials private under
+build/, removes this run's messages and closes its DM views and sessions.
+The sanitized report distinguishes functional checks from contract divergences.
+
 ## Validation
 
 ```sh
@@ -128,7 +232,7 @@ cross builds and Wine can check compilation and native CMake metadata; ConPTY
 interaction and native credential tests still require Windows.
 
 For releases, each Linux runner uses `dist/ci_linux.py --prepare` before cache
-restore, then `dist/ci_linux.py --arch x86_64 --version 0.2.0` (or `aarch64`).
+restore, then `dist/ci_linux.py --arch x86_64 --version 0.3.0` (or `aarch64`).
 This requires Docker and Flatpak/Builder. Ubuntu, Debian, Fedora and Flatpak
 build in isolated copies of the committed checkout, with two concurrent tasks
 by default (`--workers` overrides this). Compiler jobs are divided between those

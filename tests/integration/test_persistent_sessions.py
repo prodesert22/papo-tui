@@ -129,7 +129,8 @@ class Persistence(unittest.TestCase):
             t = self.terminal()
             self.wait(t, "geral")
             self.assertEqual(self.login_count(server), 1)
-            self.assertFalse(any("/messages" in r[1] for r in server.requests))
+            self.wait(t, "Mensagem 0250")
+            self.assertTrue(any("/messages" in r[1] for r in server.requests))
             for file in Path(self.directory.name).rglob("*"):
                 if file.is_file():
                     data = file.read_bytes()

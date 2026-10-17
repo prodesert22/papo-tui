@@ -28,24 +28,26 @@ typedef struct {
     int width, height;
     graphics_terminal terminal;
     uint32_t image_id;
-    bool preview, native;
+    bool preview, native, video_poster;
     bool decode_only, retain_static, static_only;
     animation *animation;
     size_t frame;
-    int top, bottom;
+    int top, bottom, left, right;
+    bool region; /* Crop the encoded raster on every protocol, including Kitty. */
     bool matte, center, first_frame;
     uint32_t background;
     int max_side;
     /* Fill the output with a proportional center crop instead of letterboxing. */
     bool cover;
+    bool notification_badge; /* Centered red badge; glyph text is its optional count. */
 } image_decode_request;
 void animation_ref(animation *frames);
 void animation_free(animation *frames);
 size_t animation_frame_at(const animation *frames, uint64_t epoch, uint64_t now);
 bool image_encode_frame(const image_decode_request *request, graphics_image *image);
 /* decode_only preserves alpha in canonical frames for shared variants.
- * Return owned graphics and, for multi-frame GIFs, an owned frame reference.
- * FFmpeg performs GIF composition/disposal and supplies presentation delays. */
+ * Return owned graphics and, for animations, an owned frame reference.
+ * FFmpeg performs composition/disposal and supplies presentation delays. */
 bool image_decode_file(const image_decode_request *request, graphics_image *image,
                        animation **frames, bool (*cancelled)(void *context), void *context);
 #endif

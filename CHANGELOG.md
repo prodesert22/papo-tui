@@ -5,12 +5,57 @@ full details are available in `releases/`.
 
 ## Unreleased
 
+## [0.3.0]
+
+### Added
+
+- F7 message navigation, attachment selection and context menus opened with
+  `m` or a right-click, with direct reply/reaction shortcuts.
+- Replies with author/excerpt previews, original-message lookup and navigation,
+  highlighted targets and reply drafts preserved through manual retries.
+- Editing your own messages, including the empty-editor Up shortcut, a dedicated
+  edit buffer and attachment/custom-embed preservation; deletion with confirmation.
+- Reaction toggles with highlighted own reactions and a two-column participant
+  panel with independent scrolling, filtering and pagination.
+- Notification search, channel/DM filters, searchable conversation selectors,
+  explicit Name controls and precise newest/oldest ordering.
+- Animated GIF/APNG/WebP server emojis in Normal mode; larger client emoji/catalog
+  loading bounds and 48×48 emoji-only messages with wrapped, taller rows.
+- Static video covers for visible attachments in Normal mode, reusing cached
+  downloads when opening playback.
+- Automatic opening of the first channel, non-selectable category separators
+  and channel selection indicated by color without leading markers.
+- Ctrl+Backspace word deletion and Shift+Enter access to voice-channel messages,
+  retaining F4 and editor newline behavior.
+
+### Improved and fixed
+
 - Fix Windows Unicode input with a private ncurses console compatibility patch,
   preserving accented text, characters that overlap function-key codes and emojis.
 - Reuse conversation measurement storage to prevent stack exhaustion when
   opening message history on Windows and other terminals with a small stack.
 - Wait for editor text before asserting soft wraps and dragging selections in
   terminal tests, including slower sanitizer builds.
+- Notification destinations retain the target across channel changes, closed
+  DMs, older-history lookups, delayed media loading and terminal resizing.
+- Recover notification authors and webhook names from available message metadata;
+  preserve attribution across partial events without fetching inactive histories.
+- Distinguish unread activity and mention counts with centered graphical badges,
+  red text counters and correct spacing inside server tabs.
+- Preserve uncovered history images, avatars and emojis behind context menus,
+  mention/emoji selectors, notifications and reaction panels across renderers.
+- Retire stale Kitty reaction placements without removing shared history images;
+  keep navigation icons through partial redraws.
+- Keep attached animations independent of static Light-mode emoji variants, and
+  preserve reading anchors when enlarged emojis wrap, scroll or resize.
+- Raise client download limits to 32 MiB per attached image, 16 MiB per avatar
+  and 256 MiB per video, with a larger cached-file budget.
+- Preserve drafts and operation ownership across context changes; distinguish
+  lookup failures from missing messages and require explicit mutation retries.
+- Expand contract fixtures, synthetic HTTP/WS integration, terminal interaction,
+  graphics protocol, display-mode and keyboard encoding coverage.
+
+See the [full 0.3.0 release notes](releases/v0.3.0.md).
 
 ## [0.2.0]
 

@@ -16,6 +16,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #define EMOJI_COUNT 500
+#define EMOJI_BYTES (2U * 1024U * 1024U)
 #define AVATAR_LIMIT 10000U
 #define APP_AVATAR_COUNT 32
 #define TEMP_BYTES (160U * 1024U * 1024U)
@@ -208,7 +209,8 @@ bool chat_assets_emojis_response(chat_assets *a, json_t *response, long status)
             if (!history_uuid(str(e, "id")) || !valid_string(e, "name", 128) || !*str(e, "name") ||
                 !valid_string(e, "created_at", 63) ||
                 !session_time_parse(str(e, "created_at"), &stamp) ||
-                !valid_string(e, "format", 7) || !valid_string(e, "image_blob", 349528)) {
+                !valid_string(e, "format", 7) ||
+                !valid_string(e, "image_blob", (EMOJI_BYTES + 2U) / 3U * 4U)) {
                 ok = false;
                 break;
             }
@@ -227,7 +229,7 @@ bool chat_assets_emojis_response(chat_assets *a, json_t *response, long status)
             uint64_t version = fingerprint(str(e, "image_blob"));
             if (entry->revision != version || !entry->path) {
                 remove_file(a, &entry->path, &entry->bytes);
-                entry->path = blob_file(a, str(e, "image_blob"), 256U * 1024U, &entry->bytes);
+                entry->path = blob_file(a, str(e, "image_blob"), EMOJI_BYTES, &entry->bytes);
                 entry->revision = version;
             }
             snprintf(entry->id, sizeof(entry->id), "%s", str(e, "id"));

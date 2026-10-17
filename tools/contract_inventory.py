@@ -22,6 +22,7 @@ OPERATIONS = {
     "/channels/{channel_id}/messages": ["get"],
     "/messages": ["post"],
     "/messages/{message_id}": ["put", "delete"],
+    "/channels/{channel_id}/messages/{message_id}/reactions": ["get", "post", "delete"],
     "/users": ["get"],
     "/users/profile_batch": ["post"],
     "/users/user_summary_batch": ["post"],

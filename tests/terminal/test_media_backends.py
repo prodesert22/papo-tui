@@ -128,13 +128,14 @@ class MediaBackends(unittest.TestCase):
             self.bundle(tmp, IMAGE, VIDEO)
             terminal = self.helper.open(server, protocol="kitty")
             try:
-                self.assert_text_only(terminal)
-                terminal.send("Draft\x1b\x1b[18~")
+                self.helper.wait_frames(terminal)
+                self.assertNotIn(VIDEO.name, self.maps(terminal))
+                terminal.send("Draft\x1b\x1b[18~\n")
                 self.helper.wait_frames(terminal, 2)
                 maps = self.maps(terminal)
                 self.assertIn(VIDEO.name, maps)
                 self.assertIn("libmpv.", maps)
-                self.assertNotIn(IMAGE.name, maps)
+                self.assertIn(IMAGE.name, maps)
             finally:
                 self.assertTrue(terminal.close())
 
@@ -160,7 +161,7 @@ class MediaBackends(unittest.TestCase):
                 server, protocol="kitty", environment={"LANG": selected, "LC_ALL": selected}
             )
             try:
-                terminal.send("Ação ç界\x1b\x1b[18~")
+                terminal.send("Ação ç界\x1b\x1b[18~\n")
                 self.helper.wait_frames(terminal, 2)
                 self.helper.wait(terminal, "Reproduzindo")
                 terminal.send(" ")
@@ -181,7 +182,7 @@ class MediaBackends(unittest.TestCase):
                 self.bundle(tmp, source)
                 terminal = self.helper.open(server, protocol="kitty")
                 try:
-                    terminal.send("draft preserved\x1b\x1b[18~")
+                    terminal.send("draft preserved\x1b\x1b[18~\n")
                     self.helper.wait(terminal, "Módulo de imagens ausente")
                     terminal.send("\x1b")
                     self.assertIn("draft preserved", "\n".join(terminal.screen.display))
@@ -199,7 +200,7 @@ class MediaBackends(unittest.TestCase):
                 self.bundle(tmp, video=source)
                 terminal = self.helper.open(server, protocol="kitty")
                 try:
-                    terminal.send("draft preserved\x1b\x1b[18~")
+                    terminal.send("draft preserved\x1b\x1b[18~\n")
                     self.helper.wait(terminal, "Módulo de vídeo ausente")
                     terminal.send("\x1b")
                     self.assertIn("draft preserved", "\n".join(terminal.screen.display))

@@ -30,6 +30,8 @@ void media_view_offer(media_view *v, const message_media *item, int y, int x, in
 void media_view_draw(media_view *v);
 void media_view_prepare(media_view *v);
 bool media_view_modal(const media_view *v);
+/* Opens a message-owned item directly; does not depend on visible-list order. */
+bool media_view_open(media_view *v, const message_media *item);
 bool media_view_key(media_view *v, int type, uint32_t key);
 bool media_view_scroll(media_view *v, int y, int x, int delta);
 bool media_view_click(media_view *v, int y, int x);

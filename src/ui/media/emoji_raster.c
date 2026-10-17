@@ -4,16 +4,19 @@
 #include <stdlib.h>
 #include <string.h>
 static bool render_unicode(PangoFontMap *map, const char *text, int width, int height, uint32_t bg,
-                           graphics_terminal terminal, uint32_t id, graphics_image *image)
+                           graphics_terminal terminal, uint32_t id, graphics_image *image, int top,
+                           int bottom, int left, int right, bool badge)
 {
-    if (!text || width < 1 || height < 1 || width > 640 || height > 360)
+    if (!text || width < 1 || height < 1 || width > 640 || height > 360 ||
+        (badge && (width < 3 || height < 3)))
         return false;
     bool ok = false;
     cairo_surface_t *surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, width, height);
     cairo_t *cr = cairo_create(surface);
     PangoContext *context = pango_font_map_create_context(map);
     PangoLayout *layout = pango_layout_new(context);
-    PangoFontDescription *font = pango_font_description_from_string("Noto Color Emoji");
+    PangoFontDescription *font =
+        pango_font_description_from_string(badge ? "Sans Bold" : "Noto Color Emoji");
     pango_font_description_set_absolute_size(font, height * PANGO_SCALE);
     pango_layout_set_font_description(layout, font);
     pango_layout_set_text(layout, text, -1);
@@ -25,11 +28,23 @@ static bool render_unicode(PangoFontMap *map, const char *text, int width, int h
                              (bg & 255) / 255.);
         cairo_paint(cr);
         double sx = (double)width / ink.width, sy = (double)height / ink.height;
+        if (badge) {
+            double radius = (MIN(width, height) - 2) / 2.;
+            cairo_set_source_rgb(cr, 1, 0, 0);
+            cairo_arc(cr, width - 1 - radius, height / 2., radius, -G_PI / 2, G_PI / 2);
+            cairo_arc(cr, 1 + radius, height / 2., radius, G_PI / 2, 3 * G_PI / 2);
+            cairo_close_path(cr);
+            cairo_fill(cr);
+            sx *= .75;
+            sy *= .6;
+            cairo_set_source_rgb(cr, 1, 1, 1);
+        }
         double scale = sx < sy ? sx : sy;
         cairo_translate(cr, (width - ink.width * scale) / 2, (height - ink.height * scale) / 2);
         cairo_scale(cr, scale, scale);
         cairo_move_to(cr, -ink.x, -ink.y);
-        pango_cairo_show_layout(cr, layout);
+        if (!badge || strcmp(text, "●"))
+            pango_cairo_show_layout(cr, layout);
         cairo_surface_flush(surface);
         unsigned char *rgb = calloc(1, image_frame_bytes(width, height));
         if (rgb) {
@@ -44,7 +59,8 @@ static bool render_unicode(PangoFontMap *map, const char *text, int width, int h
                     rgb[at + 1] = (unsigned char)(pixel >> 8);
                     rgb[at + 2] = (unsigned char)pixel;
                 }
-            ok = graphics_image_encode_id(rgb, width, height, terminal, id, image);
+            ok = graphics_image_encode_region_id(rgb, width, height, top, bottom, left, right,
+                                                 terminal, id, image);
             free(rgb);
         }
     }
@@ -58,13 +74,36 @@ static bool render_unicode(PangoFontMap *map, const char *text, int width, int h
 bool emoji_image_encode(const char *text, int width, int height, uint32_t bg,
                         graphics_terminal terminal, uint32_t id, graphics_image *image)
 {
+    return emoji_image_encode_region(text, width, height, bg, terminal, id, image, 0, 0, 0, 0);
+}
+bool emoji_image_encode_region(const char *text, int width, int height, uint32_t bg,
+                               graphics_terminal terminal, uint32_t id, graphics_image *image,
+                               int top, int bottom, int left, int right)
+{
+    image_decode_request request = {.width = width,
+                                    .height = height,
+                                    .background = bg,
+                                    .terminal = terminal,
+                                    .image_id = id,
+                                    .region = true,
+                                    .top = top,
+                                    .bottom = bottom,
+                                    .left = left,
+                                    .right = right};
+    return emoji_image_encode_request(text, &request, image);
+}
+bool emoji_image_encode_request(const char *text, const image_decode_request *r,
+                                graphics_image *image)
+{
     static GPrivate font_map = G_PRIVATE_INIT(g_object_unref);
     PangoFontMap *map = g_private_get(&font_map);
     if (!map) {
         map = pango_cairo_font_map_new();
         g_private_set(&font_map, map);
     }
-    return render_unicode(map, text, width, height, bg, terminal, id, image);
+    return render_unicode(map, text, r->width, r->height, r->background, r->terminal, r->image_id,
+                          image, r->region ? r->top : 0, r->region ? r->bottom : 0,
+                          r->region ? r->left : 0, r->region ? r->right : 0, r->notification_badge);
 }
 bool emoji_image_available(void)
 {

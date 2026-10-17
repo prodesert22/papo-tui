@@ -117,6 +117,7 @@ void theme_init(ui_theme *theme)
     init_extended_pair(THEME_NOTIFICATION_SELECTED, colors[NOTIFICATION_RED], colors[WARM]);
     init_extended_pair(THEME_NOTIFICATION_BUTTON_FOCUS, colors[NOTIFICATION_RED],
                        colors[PROFILE_HIGHLIGHT]);
+    init_extended_pair(THEME_DESTRUCTIVE, colors[PROFILE_WHITE], colors[NOTIFICATION_RED]);
     /* Do not redefine palette entries: Kitty/Konsole can reload them at runtime. */
     static const int ramp[] = {22,  28,  34,  40,  46,  46,  82,  82,  118, 118, 154,
                                154, 154, 226, 226, 220, 220, 220, 203, 196, 196};

@@ -6,6 +6,5 @@
 void media_service_stop(void);
 const char *media_service_error(void);
 bool media_service_iterm2(void);
-bool media_service_glyph(const char *, int, int, uint32_t, graphics_terminal, uint32_t,
-                         graphics_image *);
+bool media_service_glyph(const char *, const image_decode_request *, graphics_image *);
 #endif

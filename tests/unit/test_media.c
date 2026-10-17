@@ -188,6 +188,49 @@ static void graphics_protocols(void)
     graphics_image_free(&image);
     assert(!graphics_image_encode(pixels, 100000, 100000, t, &image));
 }
+static void rectangular_crop(void)
+{
+    unsigned char pixels[12 * 12 * 3];
+    for (int y = 0; y < 12; ++y)
+        for (int x = 0; x < 12; ++x) {
+            size_t at = (size_t)(y * 12 + x) * 3;
+            pixels[at] = (unsigned char)(x * 20);
+            pixels[at + 1] = (unsigned char)(y * 20);
+            pixels[at + 2] = 17;
+        }
+    graphics_terminal t = {.protocol = GRAPHICS_KITTY, .cell_width = 4, .cell_height = 6};
+    graphics_image image = {0};
+    assert(graphics_image_encode_region_id(pixels, 12, 12, 2, 3, 4, 5, t, 42, &image));
+    assert(image.width == 3 && image.height == 7);
+    char encoded[4096] = {0}, payload[2048] = {0};
+    assert(image.length < sizeof(encoded));
+    memcpy(encoded, image.data, image.length);
+    size_t used = 0;
+    for (char *p = encoded; (p = strstr(p, "\033_Gm=1;"));) {
+        p += 7;
+        char *end = strstr(p, "\033\\");
+        assert(end && (size_t)(end - p) < sizeof(payload) - used);
+        memcpy(payload + used, p, (size_t)(end - p));
+        used += (size_t)(end - p);
+        p = end + 2;
+    }
+    int raster_width = 0, raster_height = 0;
+    char *size = strstr(encoded, ",s=");
+    assert(size && sscanf(size, ",s=%d,v=%d", &raster_width, &raster_height) == 2);
+    /* Chafa pads the encoded canvas to whole cells; placement crops it back. */
+    assert(raster_width >= 3 && raster_height >= 7 && raster_width <= 12 && raster_height <= 12);
+    unsigned char rgba[12 * 12 * 4 + 1];
+    assert(av_base64_decode(rgba, payload, sizeof(rgba)) == raster_width * raster_height * 4);
+    for (int y = 0; y < 7; ++y)
+        for (int x = 0; x < 3; ++x) {
+            size_t at = (size_t)(y * raster_width + x) * 4;
+            assert(rgba[at] == (x + 4) * 20 && rgba[at + 1] == (y + 2) * 20);
+            assert(rgba[at + 2] == 17 && rgba[at + 3] == 255);
+        }
+    graphics_image_free(&image);
+    assert(!graphics_image_encode_region_id(pixels, 12, 12, 0, 0, 12, 0, t, 42, &image));
+    assert(!image.data);
+}
 static void preview_crops(void)
 {
     unsigned char pixels[12 * 36 * 3];
@@ -461,14 +504,81 @@ static void embed_author_unique(void)
         json_decref(m);
     }
 }
+static void video_preview_layout(void)
+{
+    json_t *m = json_loads("{\"id\":\"00000000-0000-4000-8000-000000000001\","
+                           "\"attachments\":[{\"id\":\"00000000-0000-4000-8000-000000000002\","
+                           "\"mime_type\":\"video/mp4\",\"original_file_name\":\"video.mp4\"}],"
+                           "\"embeds\":[{\"id\":\"00000000-0000-4000-8000-000000000003\",\"video\":"
+                           "{\"mime_type\":\"video/mp4\"}}]}",
+                           0, NULL);
+    assert(m);
+    message_blocks b;
+    assert(message_blocks_build(&b, m, "Author", "", 80, true));
+    assert(b.media_count == 2 && b.media[0].video && b.media[1].video);
+    bool poster = false, player_link = false;
+    for (size_t r = 0; r < b.count; ++r)
+        for (int i = 0; i < b.rows[r].media_count; ++i) {
+            message_media_region *region = &b.rows[r].media[i];
+            if (!region->index)
+                poster |= region->height > 0;
+            else {
+                assert(region->height == 0);
+                player_link = true;
+            }
+        }
+    assert(poster && player_link);
+    message_blocks_free(&b);
+    json_decref(m);
+}
+static void reactions_and_replies(void)
+{
+    json_t *m =
+        json_pack("{s:s,s:s,s:s,s:[{s:s,s:i},{s:s,s:i},{s:s,s:i},{s:s,s:i}],s:[{s:s}]}", "id",
+                  "00000000-0000-4000-8000-000000000001", "content", "Body", "reply_to",
+                  "00000000-0000-4000-8000-000000000002", "reactions", "unicode", "👍", "count", 2,
+                  "unicode", "😀", "count", 3, "unicode", "🔥", "count", 4, "unicode", "❤", "count",
+                  0, "user_reactions", "unicode", "👍");
+    assert(m);
+    for (int width = 18; width <= 80; width += 62) {
+        message_blocks b;
+        assert(message_blocks_build(&b, m, "Author", "Original: quoted text", width, false));
+        assert(b.reaction_count == 3 && b.reactions[0].mine && !b.reactions[1].mine);
+        int content_indent = -1;
+        bool muted = false;
+        for (size_t r = 0; r < b.count; ++r)
+            for (int k = 0; k < b.rows[r].count; ++k) {
+                if (!strcmp(b.rows[r].segments[k].key, "content"))
+                    content_indent = b.rows[r].indent;
+                if (!strcmp(b.rows[r].segments[k].key, "reply"))
+                    muted |= b.rows[r].segments[k].muted;
+            }
+        assert(muted && content_indent >= 0);
+        for (size_t i = 0; i < b.reaction_count; ++i) {
+            const message_reaction_region *r = &b.reactions[i];
+            assert(b.rows[r->row].indent == content_indent);
+            assert(b.rows[r->row].count == 1);
+            assert(b.rows[r->row].x + r->width <= width - content_indent);
+        }
+        if (width == 80)
+            assert(b.rows[b.reactions[0].row].y == b.rows[b.reactions[2].row].y);
+        else
+            assert(b.rows[b.reactions[0].row].y < b.rows[b.reactions[2].row].y);
+        message_blocks_free(&b);
+    }
+    json_decref(m);
+}
 int main(void)
 {
     assert(setlocale(LC_ALL, "C.UTF-8"));
     init_graphemebreak();
+    video_preview_layout();
+    reactions_and_replies();
     cards();
     embed_layout();
     protocol();
     graphics_protocols();
+    rectangular_crop();
     preview_crops();
     embed_author_unique();
     attachment_layout();

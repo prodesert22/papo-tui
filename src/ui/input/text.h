@@ -82,6 +82,7 @@ enum {
     TEXT_FOCUS_IN,
     TEXT_FOCUS_OUT,
     TEXT_SHIFT_ENTER,
+    TEXT_CTRL_BACKSPACE,
     TEXT_KEYBOARD_SUPPORTED,
     TEXT_CONTROL_BASE
 }; /* Followed by the encoded ASCII key value. */
@@ -120,6 +121,7 @@ void text_draw_styled(WINDOW *window, const text_buffer *buffer, const text_layo
                       int x, int normal, int accent);
 bool text_insert(text_buffer *buffer, uint32_t character, bool multiline);
 void text_delete(text_buffer *buffer, bool backward);
+void text_delete_word(text_buffer *buffer, bool right);
 void text_horizontal(text_buffer *buffer, bool right);
 void text_vertical(text_buffer *buffer, int width, int direction);
 void text_line_edge(text_buffer *buffer, int width, bool end);

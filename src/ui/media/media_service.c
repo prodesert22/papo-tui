@@ -153,14 +153,42 @@ bool graphics_image_encode_preview(const unsigned char *p, int w, int h, graphic
     g_variant_unref(v);
     return ok;
 }
-bool media_service_glyph(const char *text, int w, int h, uint32_t bg, graphics_terminal t,
-                         uint32_t id, graphics_image *out)
+bool graphics_image_encode_region_id(const unsigned char *pixels, int width, int height, int top,
+                                     int bottom, int left, int right, graphics_terminal t,
+                                     uint32_t id, graphics_image *out)
 {
-    image_decode_request r = {
-        .width = w, .height = h, .terminal = t, .image_id = id, .background = bg};
-    GVariant *v = result(
-        rpc(MEDIA_RPC_GLYPH, g_variant_new("(vs)", media_wire_request(&r), text), NULL, NULL));
     memset(out, 0, sizeof(*out));
+    if (!pixels || !graphics_image_capacity(width, height) || top < 0 || bottom < 0 || left < 0 ||
+        right < 0 || top >= height || bottom >= height - top || left >= width ||
+        right >= width - left)
+        return false;
+    image_decode_request r = {.width = width,
+                              .height = height,
+                              .terminal = t,
+                              .image_id = id,
+                              .region = true,
+                              .top = top,
+                              .bottom = bottom,
+                              .left = left,
+                              .right = right};
+    GVariant *v =
+        result(rpc(MEDIA_RPC_ENCODE,
+                   g_variant_new("(v@ay)", media_wire_request(&r),
+                                 media_wire_bytes(pixels, (size_t)width * (size_t)height * 3)),
+                   NULL, NULL));
+    if (!v)
+        return false;
+    bool ok = media_wire_read_image(v, out);
+    g_variant_unref(v);
+    return ok;
+}
+bool media_service_glyph(const char *text, const image_decode_request *request, graphics_image *out)
+{
+    memset(out, 0, sizeof(*out));
+    if (!text)
+        return false;
+    GVariant *v = result(
+        rpc(MEDIA_RPC_GLYPH, g_variant_new("(vs)", media_wire_request(request), text), NULL, NULL));
     if (!v)
         return false;
     bool ok = media_wire_read_image(v, out);

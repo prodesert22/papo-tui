@@ -55,6 +55,26 @@ with tempfile.TemporaryDirectory(prefix="papo-image-decode-") as directory:
         "1",
         transparent,
     )
+    video = root / "poster.mp4"
+    ffmpeg(
+        "-f",
+        "lavfi",
+        "-i",
+        "color=blue:s=32x24:r=10",
+        "-f",
+        "lavfi",
+        "-i",
+        "sine=frequency=440:sample_rate=44100",
+        "-t",
+        "0.4",
+        "-c:v",
+        "mpeg4",
+        "-bf",
+        "2",
+        "-c:a",
+        "aac",
+        video,
+    )
     subprocess.run(
         [
             sys.argv[1],
@@ -67,6 +87,7 @@ with tempfile.TemporaryDirectory(prefix="papo-image-decode-") as directory:
             str(portrait),
             str(large_gif),
             str(transparent),
+            str(video),
         ],
         check=True,
     )

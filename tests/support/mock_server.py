@@ -314,10 +314,11 @@ class MockServer:
                 outer.requests.append(("POST", self.path, cookie, body))
                 outer.message_count += 1
                 outer.message_received.set()
-                if not content_type.startswith("multipart/form-data;") or set(body) != {
-                    "channel_id",
-                    "content",
-                }:
+                if (
+                    not content_type.startswith("multipart/form-data;")
+                    or not {"channel_id", "content"} <= set(body)
+                    or set(body) - {"channel_id", "content", "reply_to"}
+                ):
                     self.respond(400)
                     return
                 if cookie != "Auth=" + outer.session_cookie:
@@ -346,7 +347,7 @@ class MockServer:
                     "content": body["content"],
                     "created_at": datetime.now(timezone.utc).isoformat(),
                     "edited_at": None,
-                    "reply_to": None,
+                    "reply_to": body.get("reply_to"),
                     "attachments": [],
                     "embeds": [],
                 }

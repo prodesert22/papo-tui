@@ -15,6 +15,13 @@ int main(void)
                                     .image_id = 123,
                                     .cover = true,
                                     .matte = true,
+                                    .region = true,
+                                    .video_poster = true,
+                                    .notification_badge = true,
+                                    .top = 1,
+                                    .bottom = 2,
+                                    .left = 3,
+                                    .right = 4,
                                     .background = 0x123456};
     GVariant *value = g_variant_ref_sink(media_wire_request(&request));
     image_decode_request received;
@@ -23,8 +30,15 @@ int main(void)
     assert(!strcmp(path, request.path) && received.cover && received.matte &&
            received.image_id == 123);
     assert(received.width == 32 && received.terminal.protocol == GRAPHICS_CHAFA);
+    assert(received.region && received.video_poster && received.notification_badge &&
+           received.top == 1 && received.bottom == 2 && received.left == 3 && received.right == 4);
     g_free(path);
     g_variant_unref(value);
+    request.left = -1;
+    value = g_variant_ref_sink(media_wire_request(&request));
+    assert(!media_wire_read_request(value, &received, &path) && !path);
+    g_variant_unref(value);
+    request.left = 3;
     char long_path[4200];
     memset(long_path, 'x', sizeof(long_path) - 1);
     long_path[sizeof(long_path) - 1] = 0;

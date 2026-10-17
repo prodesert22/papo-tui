@@ -38,7 +38,7 @@ class WindowsTerminalTests(unittest.TestCase):
             terminal = Terminal()
             try:
                 self.login(terminal, server)
-                terminal.send("\x1bOB\x1bOB\r")
+                terminal.send("\x1bOB\r")
                 self.wait(terminal, "Mensagem 0250")
                 terminal.resize(28, 100)
                 terminal.send("Olá 😀\r")

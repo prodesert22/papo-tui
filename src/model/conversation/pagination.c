@@ -322,6 +322,9 @@ bool history_internal_messages_response(history *h, json_t *body)
     h->messages = next;
     if (!history_internal_trim(h, h->messages, h->newer))
         return false;
+    if (h->r8)
+        for (size_t i = 0; i < count; ++i)
+            inbox_observe_message(h->inbox, json_array_get(page, i));
     /* has_more describes only the requested direction. Empty pages stop it. */
     if (h->newer)
         h->newer_more = count && json_is_true(more);

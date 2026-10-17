@@ -13,6 +13,7 @@ typedef struct history history;
 typedef enum {
     HISTORY_NOTICE_READ,
     HISTORY_NOTICE_EVENT,
+    HISTORY_NOTICE_MUTATION,
     HISTORY_NOTICE_COUNT
 } history_notice_kind;
 /* Owns all JSON models; borrows the auth client. One active conversation, no
@@ -40,6 +41,29 @@ bool history_confirm(history *h, json_t *message, uint64_t generation);
  * Never reads an inactive channel's history. */
 bool history_event(history *h, const json_t *event, uint64_t generation);
 void history_recover(history *h);
+/* Instance-scoped message references and interaction requests. Borrowed JSON. */
+json_t *history_find_message(history *h, const char *id);
+void history_reference_request(history *h, const char *id);
+const char *history_reference_notice(history *h);
+uint64_t history_reference_revision(history *h);
+bool history_jump(history *h, const char *id);
+bool history_take_jump(history *h, char id[37]);
+bool history_reaction_valid(const json_t *emoji);
+bool history_reaction_equal(const json_t *a, const json_t *b);
+bool history_reaction_mine(const json_t *message, const json_t *emoji);
+/* Queue one mutation through the shared asynchronous REST owner. DELETE is
+ * authorized by the server; edits additionally require a loaded own message.
+ * content is copied. Results are consumed once and scoped to the active channel/session. */
+bool history_edit_message(history *h, const char *message, const char *content);
+bool history_delete_message(history *h, const char *message);
+bool history_take_edit_result(history *h, char message[37], bool *success);
+bool history_react(history *h, const char *message, const json_t *emoji, bool remove);
+void history_reactors_open(history *h, const char *message);
+void history_reactors_close(history *h);
+void history_reactors_more(history *h);
+json_t *history_reactors(history *h);
+const char *history_reactors_notice(history *h);
+bool history_interactions_retry(history *h);
 bool history_recovering(const history *h);
 uint64_t history_insertions(const history *h);
 void history_reload_channels(history *h);
@@ -82,7 +106,7 @@ const char *history_users_notice(const history *h);
 const char *history_mention_name(void *context, const char *id);
 const char *history_author(const history *h, const char *id);
 const char *history_status(const history *h);
-/* Independent latest read/event notices. Empty text clears that context. */
+/* Independent latest read, event and mutation notices. Empty text clears that context. */
 const char *history_notice(const history *h, history_notice_kind kind, uint64_t *revision);
 const char *history_event_compact(const history *h);
 /* Copies remote labels into a bounded buffer; render with text_label(). */
