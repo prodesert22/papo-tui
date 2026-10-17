@@ -1,6 +1,7 @@
 """Pinned/search UI against synthetic HTTP/WS using a local terminal transport."""
 
 import time
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -15,6 +16,7 @@ class DiscoveryTerminal(unittest.TestCase):
     login = r8.R8Terminal.login
     assert_centered_target = r8.R8Terminal.assert_centered_target
 
+    @unittest.skipIf(os.name == "nt", "Native Windows file dialogs cannot be driven through ConPTY")
     def test_integrated_search_and_file_picker_shortcuts_do_not_collide(self):
         with DiscoveryMock(10) as server, tempfile.TemporaryDirectory() as folder:
             source = Path(folder, "integration.txt")
@@ -60,6 +62,7 @@ class DiscoveryTerminal(unittest.TestCase):
             self.wait(t, "Sem permissão para desafixar")
             self.assertEqual(len(server.pin_calls), 1)
 
+    @unittest.skipIf(os.name == "nt", "Native Windows file dialogs cannot be driven through ConPTY")
     def test_integrated_attachment_draft_cannot_send_after_role_revocation(self):
         with DiscoveryMock(10) as server, tempfile.TemporaryDirectory() as folder:
             role = uuid(401)
