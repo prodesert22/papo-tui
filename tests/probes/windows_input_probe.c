@@ -44,6 +44,7 @@ int main(void)
     cbreak();
     noecho();
     keypad(stdscr, TRUE);
+    text_input_init();
     timeout(20);
     printw("PAPO_CURSES_READY");
     refresh();
@@ -80,6 +81,25 @@ int main(void)
         if (type != ERR)
             repeats[repeat_count++] = key == KEY_UP && type == KEY_CODE_YES ? 0x110000 : key;
     }
+    unsigned commands[16];
+    size_t command_count = 0;
+    printw("\nPAPO_COMMANDS_READY");
+    refresh();
+    until = GetTickCount64() + 5000;
+    while (command_count < 16 && GetTickCount64() < until) {
+        uint32_t key;
+        int type = text_read_raw(&key);
+        if (type == ERR)
+            continue;
+        if (type == OK && key == 4)
+            break;
+        commands[command_count++] = type == KEY_CODE_YES && key == TEXT_PASTE_START ? 0x110001
+                                    : type == KEY_CODE_YES && key == TEXT_PASTE_END ? 0x110002
+                                    : key == '\r'                                   ? '\n'
+                                                                                    : key;
+    }
+    DWORD flags = 0;
+    GetConsoleMode(input, &flags);
     endwin();
     terminal_recovery_end();
     printf("\nPAPO_PROBE_RESULT={\"native\":[");
@@ -91,6 +111,10 @@ int main(void)
     printf("],\"repeats\":[");
     for (size_t i = 0; i < repeat_count; ++i)
         printf("%s%u", i ? "," : "", repeats[i]);
-    printf("],\"iswprint_e_acute\":%d}\n", !!iswprint(0xe9));
+    printf("],\"commands\":[");
+    for (size_t i = 0; i < command_count; ++i)
+        printf("%s%u", i ? "," : "", commands[i]);
+    printf("],\"vt_input\":%d,\"iswprint_e_acute\":%d}\n",
+           !!(flags & ENABLE_VIRTUAL_TERMINAL_INPUT), !!iswprint(0xe9));
     return 0;
 }

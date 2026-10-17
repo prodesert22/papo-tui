@@ -27,6 +27,12 @@ Dependency source kits include the patch and recipe. ConPTY checks exercise
 Unicode, repeated input, resizing and message interactions; those interaction
 tests select Light mode through the UI so Windows creates the configuration
 with its native private permissions.
+The adapter queries the active `CONOUT$` buffer, since ncurses can switch away
+from the original stdout buffer. The private ncurses patch preserves VT input
+when setting either console handle's mode so ConPTY retains bracketed-paste
+markers. The native probe verifies those markers through the real input stream.
+Text interaction fixtures use distinct BMP emojis, respecting ncurses' 16-bit
+Windows cells; native send/input tests retain supplementary Unicode coverage.
 
 Application modes reuse the existing profile configuration, ncurses controls,
 media cache, downloads and Chafa dependency. Configuration schema 4 adds

@@ -34,6 +34,8 @@ class WindowsInput(unittest.TestCase):
             child.write(payload + "\r")
             until("PAPO_CURSES_READY")
             child.write(payload + "\x1b")
+            until("PAPO_COMMANDS_READY")
+            child.write("\x1b[200~x\ny\x1b[201~\x04")
             until("PAPO_PROBE_RESULT=")
             until("}")
             report = json.loads(re.search(r"PAPO_PROBE_RESULT=(\{[^\r\n]+\})", output)[1])
@@ -47,6 +49,10 @@ class WindowsInput(unittest.TestCase):
                 [ord("a")] * 3 + [ord("é")] * 2 + [0x110000] * 2 + [ord("z")],
                 json.dumps(report),
             )
+            self.assertEqual(
+                report["commands"], [0x110001, ord("x"), 10, ord("y"), 0x110002], report
+            )
+            self.assertTrue(report["vt_input"], report)
             self.assertTrue(report["iswprint_e_acute"], json.dumps(report))
         finally:
             if child.isalive():
