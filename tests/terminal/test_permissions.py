@@ -1,6 +1,7 @@
 """Permission changes through the real TUI with synthetic HTTP and WS data."""
 
 import time
+import threading
 import unittest
 from urllib.parse import urlsplit
 
@@ -66,6 +67,32 @@ class PermissionsTerminal(unittest.TestCase):
     settled = interactions.MessageInteractions.settled
     right_click = interactions.MessageInteractions.right_click
     open = interactions.MessageInteractions.open
+
+    def test_account_renew_preempts_background_permission_read(self):
+        with PermissionMock() as server:
+            terminal = self.open(server)
+            entered, release = threading.Event(), threading.Event()
+            route = server.api_handler
+
+            def delayed(method, path, body):
+                if method == "GET" and path.endswith("/roles") and not entered.is_set():
+                    entered.set()
+                    release.wait(15)
+                return route(method, path, body)
+
+            try:
+                terminal.send("\x1b[17~")
+                self.wait(terminal, "[Renovar]")
+                server.api_handler = delayed
+                server.role(ROLE, True)
+                self.settled(terminal, entered.is_set)
+                terminal.send("\x12")
+                self.settled(terminal, lambda: server.refresh_count == 1)
+                self.assertFalse(release.is_set())
+                self.assertEqual(server.refresh_count, 1)
+            finally:
+                release.set()
+                self.assertTrue(terminal.close())
 
     def test_regular_author_sees_only_permitted_message_actions(self):
         with PermissionMock() as server:

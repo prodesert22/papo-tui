@@ -193,6 +193,7 @@ class RealtimeTests(unittest.TestCase):
             result = client.ready()
             self.assertEqual(result["insertions"], initial["insertions"] + 1)
             self.assertEqual(result["messages"][-1]["embeds"], [{"title": "REST"}])
+            client.wait(lambda _: ("pong", b"r7-ping") in server.ws_controls)
             self.assertIn(("pong", b"r7-ping"), server.ws_controls)
             self.assertEqual(sum("/messages" in r[1] for r in server.requests), 1)
 

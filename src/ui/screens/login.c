@@ -697,16 +697,17 @@ static void clear_passwords(login_ui *ui)
 
 static void extra_action(login_ui *ui, auth_client *client)
 {
-    if (auth_busy(client))
-        return;
     if (auth_has_session(client)) {
         ws_state state = auth_ws_state(client);
-        if (state == WS_ERROR || state == WS_CLOSED)
-            auth_connect_ws(client);
-        else
+        if (state == WS_ERROR || state == WS_CLOSED) {
+            if (!auth_busy(client))
+                auth_connect_ws(client);
+        } else
             auth_refresh(client);
         return;
     }
+    if (auth_busy(client))
+        return;
     snapshot(ui);
     clear_passwords(ui);
     auth_cancel(client);

@@ -79,6 +79,7 @@ class PermissionsIntegration(unittest.TestCase):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            encoding="utf-8",
             env=dict(os.environ, XDG_STATE_HOME=directory.name, XDG_CONFIG_HOME=directory.name),
         )
         self.addCleanup(self.stop_probe, process)

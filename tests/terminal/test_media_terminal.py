@@ -2208,7 +2208,10 @@ class MediaTerminal(unittest.TestCase):
         with self.serve(self.video, "video/mp4") as server:
             t = self.open(server)
             try:
-                t.send("\x1b[18~\n")
+                self.wait_frames(t)
+                t.send("\x1b[18~")
+                self.wait(t, "↑↓ mensagens")
+                t.send("\n")
                 self.wait_frames(t, 2)
                 self.wait(t, "Pausado")
                 self.assertIn("3 / 3 s", "\n".join(t.screen.display))
