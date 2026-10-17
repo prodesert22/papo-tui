@@ -1,0 +1,25 @@
+{
+  "results": [
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-0000000003ea",
+      "content": "Mensagem sintética 2",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-0000000003e9",
+      "content": "Mensagem sintética 1",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    }
+  ],
+  "has_more": false
+}

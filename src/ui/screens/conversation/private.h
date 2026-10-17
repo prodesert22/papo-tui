@@ -6,6 +6,7 @@
 #include "app/desktop.h"
 #include "app/session_store.h"
 #include "config/profiles.h"
+#include "model/conversation/discovery.h"
 #include "model/conversation/history.h"
 #include "net/clock.h"
 #include "platform/clipboard.h"
@@ -85,6 +86,7 @@ typedef struct {
     char selected_message[37], action_channel[37], reaction_target[37];
     char centered_message[37];
     char notification_channel[37], notification_message[37];
+    char notification_time[65];
     char reactor_emoji[37], reactor_unicode[65];
     uint64_t action_generation;
     size_t selected_media;
@@ -121,7 +123,7 @@ typedef struct {
         editor_rows, editor_padding;
     size_t highlighted, active_tab, tab_cursor, first_tab;
     click_range tab_hits[INSTANCE_LIMIT], add_hit, back_hit, next_hit, channels_hit,
-        conversation_hit;
+        conversation_hit, search_hit, pins_hit;
     char anchor[37];
     char editor_channel[64];
     const char *feedback;

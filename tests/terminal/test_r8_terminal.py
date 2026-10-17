@@ -265,15 +265,55 @@ class R8Terminal(unittest.TestCase):
                 self.assertEqual(server.opens, 1)
                 self.assert_initial_history_only(server)
                 fail_open = False
-                terminal.send("\x1b[21~")
-                self.wait(terminal, "Nova DM")
-                terminal.send("bob")
-                self.wait(terminal, "Bia (@bob)")
+                self.wait(terminal, "Não foi possível abrir a conversa.")
                 terminal.send("\n")
                 self.wait(terminal, "Mensagem direta")
-                terminal.read(0.2)
-                self.assertNotIn("↑↓ mensagens", "\n".join(terminal.screen.display))
+                self.wait(terminal, "↑↓ mensagens")
                 self.assertEqual(server.opens, 2)
+
+    def test_cancel_notification_location_ignores_hidden_dm_resolution_and_open_receipts(self):
+        from r8_mock import dm
+
+        for phase in ("GET", "POST"):
+            with self.subTest(phase=phase), R8Mock(count=1) as server:
+                server.dms = []
+                server.notifications[0].update(
+                    channel_id=DM, message_id=uuid(101), message_content="Notificação de destino"
+                )
+                original = server.api_handler
+
+                def route(method, path, body):
+                    if method == "GET" and path.split("?")[0].endswith("/dms/" + DM):
+                        if phase == "GET":
+                            time.sleep(0.7)
+                        return 200, dm()
+                    if method == "POST" and path.endswith("/dms") and phase == "POST":
+                        time.sleep(0.7)
+                    return original(method, path, body)
+
+                server.api_handler = route
+                terminal = self.login(server)
+                terminal.resize(32, 100)
+                self.open_notification_target(terminal)
+                self.wait(terminal, "Localizando mensagem…")
+                deadline = time.monotonic() + 4
+                while time.monotonic() < deadline and not any(
+                    method == phase and (path.endswith("/dms") or path.endswith("/dms/" + DM))
+                    for method, path, _, _ in server.requests
+                ):
+                    terminal.read(0.03)
+                self.assertTrue(
+                    any(
+                        method == phase and (path.endswith("/dms") or path.endswith("/dms/" + DM))
+                        for method, path, _, _ in server.requests
+                    )
+                )
+                terminal.send("\x1b")
+                self.wait(terminal, "Detalhes da notificação")
+                terminal.read(1)
+                self.wait(terminal, "Detalhes da notificação")
+                self.assert_initial_history_only(server)
+                self.assertEqual(server.opens, 0 if phase == "GET" else 1)
 
     def test_notification_reports_missing_target_without_selecting_another_message(self):
         with R8Mock(count=1) as server:

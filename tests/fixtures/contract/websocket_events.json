@@ -22,6 +22,16 @@
     "channel_id": "00000000-0000-0000-0000-000000000003"
   },
   {
+    "type": "message_pin",
+    "message_id": "00000000-0000-0000-0000-0000000003e9",
+    "is_pinned": true
+  },
+  {
+    "type": "message_pin",
+    "message_id": "00000000-0000-0000-0000-0000000003e9",
+    "is_pinned": false
+  },
+  {
     "type": "channel_create",
     "channel_id": "00000000-0000-0000-0000-000000000003",
     "name": "fixture-geral",

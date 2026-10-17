@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
+#include "model/conversation/discovery.h"
 #include "model/conversation/history.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -7,6 +8,14 @@
 #include <unistd.h>
 static void snapshot(auth_client *auth, history *h)
 {
+    static char pin_result[37];
+    static bool pin_success;
+    char pin_message[37];
+    bool success;
+    if (history_take_pin_result(h, pin_message, &success)) {
+        snprintf(pin_result, sizeof(pin_result), "%s", pin_message);
+        pin_success = success;
+    }
     inbox *b = history_inbox(h);
     json_t *dms = json_array(), *notifications = json_array(), *events = json_array();
     for (size_t i = 0; i < inbox_dm_count(b); ++i)
@@ -20,6 +29,19 @@ static void snapshot(auth_client *auth, history *h)
                   "events", events, "session", auth_has_session(auth), "more", inbox_has_more(b),
                   "notice", inbox_notice(b), "unread", (json_int_t)inbox_unread(b), "messages",
                   (json_int_t)history_message_count(h));
+    json_object_set(value, "pins", history_pins(h) ? history_pins(h) : json_null());
+    json_object_set(value, "results",
+                    history_search_results(h) ? history_search_results(h) : json_null());
+    json_object_set_new(value, "ws_open", json_boolean(auth_ws_state(auth) == WS_OPEN));
+    json_object_set_new(value, "recovering", json_boolean(history_recovering(h)));
+    json_object_set_new(value, "loading", json_boolean(history_loading(h)));
+    json_object_set_new(value, "pin_result_id", json_string(pin_result));
+    json_object_set_new(value, "pin_result_success", json_boolean(pin_success));
+    json_object_set_new(value, "search_more", json_boolean(history_search_has_more(h)));
+    json_object_set_new(value, "search_notice", json_string(history_search_notice(h)));
+    json_object_set_new(value, "pin_notice", json_string(history_pins_notice(h)));
+    json_object_set_new(value, "mutation_notice",
+                        json_string(history_notice(h, HISTORY_NOTICE_MUTATION, NULL)));
     json_object_set_new(value, "presence",
                         json_string(inbox_presence(b, "00000000-0000-4000-8000-000000000002")));
     json_object_set_new(value, "unseen", json_integer((json_int_t)inbox_unseen_conversations(b)));
@@ -71,7 +93,30 @@ int main(int argc, char **argv)
             command[strcspn(command, "\r\n")] = 0;
             if (h) {
                 inbox *b = history_inbox(h);
-                if (!strncmp(command, "open ", 5))
+                if (!strncmp(command, "search ", 7)) {
+                    json_t *filters = json_loads(command + 7, JSON_REJECT_DUPLICATES, NULL);
+                    history_search(h, filters);
+                    json_decref(filters);
+                } else if (!strcmp(command, "searchmore"))
+                    history_search_more(h);
+                else if (!strcmp(command, "pins"))
+                    history_pins_refresh(h);
+                else if (!strncmp(command, "react ", 6)) {
+                    json_t *emoji = json_pack("{s:s}", "unicode", "☕");
+                    history_react(h, command + 6, emoji, false);
+                    json_decref(emoji);
+                } else if (!strncmp(command, "pin ", 4))
+                    history_pin_message(h, command + 4, false);
+                else if (!strncmp(command, "unpin ", 6))
+                    history_pin_message(h, command + 6, true);
+                else if (!strcmp(command, "discoveryclose"))
+                    history_discovery_close(h);
+                else if (!strcmp(command, "connectws")) {
+                    auth_realtime_active(auth, true);
+                    auth_connect_ws(auth);
+                } else if (!strcmp(command, "recover"))
+                    history_recover(h);
+                else if (!strncmp(command, "open ", 5))
                     inbox_open_dm(b, command + 5);
                 else if (!strncmp(command, "close ", 6))
                     inbox_close_dm(b, command + 6);

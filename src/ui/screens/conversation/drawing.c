@@ -298,7 +298,10 @@ bool conversation_collect_notices(view *ui, auth_client *auth)
 void conversation_draw_footer(view *ui)
 {
     const char *full, *shorter, *minimal;
-    if (r8_modal_is_open(ui->r8) || ui->settings.open) {
+    if (r8_modal_locating(ui->r8)) {
+        full = shorter = "Esc voltar aos detalhes";
+        minimal = "Esc";
+    } else if (r8_modal_is_open(ui->r8) || ui->settings.open) {
         full = shorter = "↑↓ escolher · Enter abrir · Tab ações · Esc voltar";
         minimal = "Enter · Esc";
     } else if (ui->duplicate_modal) {
@@ -382,12 +385,14 @@ void conversation_draw_footer(view *ui)
                   !ui->reactors_open && !ui->context_open && !media_view_modal(ui->media) &&
                   !emoji_picker_open(ui->emojis) && !emoji_picker_suggesting(ui->emojis) &&
                   !mention_popup_open(ui->mentions);
-    snprintf(full_hints, sizeof(full_hints), "%s%s", full,
+    snprintf(full_hints, sizeof(full_hints), "%s%s%s", full,
+             normal ? " · F3 busca · F8 fixadas" : "",
              normal && !strstr(full, "F9") ? " · F9 notificações" : "");
-    snprintf(short_hints, sizeof(short_hints), "%s%s", shorter,
+    snprintf(short_hints, sizeof(short_hints), "%s%s%s", shorter,
+             normal ? " · F3 busca · F8 fixadas" : "",
              normal && !strstr(shorter, "F9") ? " · F9 notificações" : "");
-    snprintf(minimal_hints, sizeof(minimal_hints), "%s%s", minimal,
-             normal ? (getmaxx(ui->footer) >= 60 ? " · F9 notificações" : " · F9") : "");
+    snprintf(minimal_hints, sizeof(minimal_hints), "%s%s%s", minimal, normal ? " · F3/F8" : "",
+             normal ? (getmaxx(ui->footer) >= 60 ? " F9 notificações" : " F9") : "");
     status_bar_draw(&ui->status, ui->footer, 1, full_hints, short_hints, minimal_hints);
 }
 
@@ -566,7 +571,14 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
             wattrset(ui->body, COLOR_PAIR(ui->focus == HISTORY_PANEL ? THEME_HISTORY_MUTED
                                                                      : THEME_PANEL_MUTED) |
                                    A_BOLD);
-            text_label(ui->body, 0, 2, getmaxx(ui->body) - 4, title);
+            int body_width = getmaxx(ui->body);
+            ui->search_hit = (click_range){body_width - 20, 8};
+            ui->pins_hit = (click_range){body_width - 11, 9};
+            text_label(ui->body, 0, 2, MAX(0, body_width - 23), title);
+            button_draw(ui->body, 0, ui->search_hit.x, ui->search_hit.width, "[Buscar]",
+                        BUTTON_NORMAL, BUTTON_PANEL);
+            button_draw(ui->body, 0, ui->pins_hit.x, ui->pins_hit.width, "[Fixadas]", BUTTON_NORMAL,
+                        BUTTON_PANEL);
             wattrset(ui->body, COLOR_PAIR(ui->focus == HISTORY_PANEL ? THEME_HISTORY_MUTED
                                                                      : THEME_PANEL_MUTED));
             if (ui->history_top == 3)

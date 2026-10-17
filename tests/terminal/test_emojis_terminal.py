@@ -151,8 +151,24 @@ class EmojiTerminal(unittest.TestCase):
         } & t.stream.live_placements
 
     def test_mention_and_notification_panels_retain_avatars_and_inline_emoji(self):
-        for key, title in (("@", "Menções"), ("\x1b[20~", "Notificações")):
+        for key, title in (
+            ("@", "Menções"),
+            ("\x1b[20~", "Notificações"),
+            ("\x1bOR", "Buscar mensagens no servidor"),
+            ("\x1bOR\t\t\n", "Filtros da busca"),
+            ("\x1b[19~", "Mensagens fixadas"),
+        ):
             with self.subTest(panel=title), self.server(content="Emoji 😀") as server:
+                parent = server.api_handler
+
+                def route(method, path, body):
+                    if method == "GET" and path.split("?")[0].endswith("/pinned"):
+                        return 200, dict(
+                            channel_id=server.messages[0]["channel_id"], pinned=server.messages[:1]
+                        )
+                    return parent(method, path, body)
+
+                server.api_handler = route
                 t = self.open(server, protocol="kitty", size=(48, 160))
                 try:
                     t.send("draft ")
@@ -170,6 +186,9 @@ class EmojiTerminal(unittest.TestCase):
                     self.wait(t, title)
                     self.until(t, lambda: images <= t.stream.live_ids)
                     t.send("\x12")
+                    self.wait(t, title)
+                    self.until(t, lambda: images <= t.stream.live_ids)
+                    t.resize(52, 164)
                     self.wait(t, title)
                     self.until(t, lambda: images <= t.stream.live_ids)
                     t.send("\x1b")

@@ -122,6 +122,7 @@ static void load_reads(history *h)
 static void clear_messages(history *h)
 {
     history_internal_actions_reset(h);
+    history_internal_discovery_destroy(h);
     h->typing_count = 0;
     h->typing_sent = 0;
     h->read_attempt[0] = h->read_visible[0] = 0;
@@ -561,6 +562,14 @@ static int process_response(history *h, uint64_t maintenance_now)
     long code;
     uint64_t generation;
     json_t *body = auth_take_response(h->auth, &code, &generation);
+    if (h->pending == DISCOVERY) {
+        if (generation == h->context && h->request_context == h->context &&
+            h->request_selection == h->selection)
+            history_internal_discovery_response(h, body, code);
+        json_decref(body);
+        h->pending = NONE;
+        return 3;
+    }
     if (h->pending == ACTIONS) {
         if (generation == h->context && h->request_context == h->context) {
             history_internal_actions_response(h, body, code, uncertain);
@@ -808,6 +817,8 @@ bool history_poll(history *h)
             }
         }
         if (history_internal_actions_dispatch(h, true))
+            return true;
+        if (!h->want_channels && !h->want_messages && history_internal_discovery_dispatch(h))
             return true;
         if (h->r8 && !h->want_channels && !h->want_messages && inbox_dispatch(h->inbox)) {
             h->pending = INBOX;

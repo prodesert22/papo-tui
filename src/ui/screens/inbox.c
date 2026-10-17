@@ -1,9 +1,11 @@
 #include "ui/screens/inbox.h"
 #include "net/auth/session_time.h"
+#include "net/clock.h"
 #include "ui/components/button.h"
 #include "ui/components/mention_popup.h"
 #include "ui/components/theme.h"
 #include "ui/input/mouse.h"
+#include "ui/screens/message_browser.h"
 #include <glib.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -17,11 +19,16 @@ typedef struct {
 } notification_row;
 struct r8_modal {
     history *h;
+    message_browser *browser;
     auth_client *auth;
     profile_config *config;
     WINDOW *window;
     r8_modal_kind kind;
     bool open, detail, detail_event, prefs;
+    bool locating, location_started, location_failed;
+    uint64_t location_frame;
+    char destination_time[65], location_channel[37], location_message[37], location_time[65];
+    char location_notice[192];
     size_t selected, first, detail_scroll;
     int focus, field_first;
     char detail_id[37], detail_message[37], destination[37], destination_message[37],
@@ -65,6 +72,13 @@ void r8_modal_close(r8_modal *m)
 {
     if (!m)
         return;
+    if (m->locating) {
+        history_cancel_jump(m->h);
+        inbox_cancel_open(history_inbox(m->h));
+    }
+    m->locating = m->location_started = m->location_failed = false;
+    if (m->browser)
+        message_browser_close(m->browser);
     if (m->window) {
         delwin(m->window);
         m->window = NULL;
@@ -77,6 +91,7 @@ void r8_modal_destroy(r8_modal *m)
 {
     if (m) {
         r8_modal_close(m);
+        message_browser_destroy(m->browser);
         free(m);
     }
 }
@@ -93,15 +108,22 @@ void r8_modal_open(r8_modal *m, r8_modal_kind kind)
     m->choosing_conversation = false;
     m->detail = m->prefs = false;
     m->detail_id[0] = m->detail_message[0] = m->selected_id[0] = m->notice[0] = 0;
+    r8_modal_destination_clear(m);
     text_decode(&m->filter, "");
-    if (kind == R8_USERS)
+    if (kind == R8_PINNED || kind == R8_SEARCH) {
+        if (!m->browser)
+            m->browser = message_browser_create(m->h, m->auth);
+        message_browser_open(m->browser, kind == R8_PINNED);
+        m->open = message_browser_is_open(m->browser);
+    } else if (kind == R8_USERS)
         history_users_refresh(m->h);
     else if (kind == R8_NOTIFICATIONS)
         inbox_refresh(history_inbox(m->h));
 }
 bool r8_modal_is_open(const r8_modal *m)
 {
-    return m && m->open;
+    return m && m->open &&
+           ((m->kind != R8_PINNED && m->kind != R8_SEARCH) || message_browser_is_open(m->browser));
 }
 static json_t *notification(r8_modal *m, size_t index, bool *event)
 {
@@ -356,6 +378,15 @@ static json_t *detail(r8_modal *m, bool *event)
     *event = m->detail_event;
     return NULL;
 }
+static void begin_location(r8_modal *m)
+{
+    m->locating = true;
+    m->location_started = m->location_failed = false;
+    m->location_notice[0] = 0;
+    snprintf(m->location_channel, sizeof(m->location_channel), "%s", m->destination);
+    snprintf(m->location_message, sizeof(m->location_message), "%s", m->destination_message);
+    snprintf(m->location_time, sizeof(m->location_time), "%s", m->destination_time);
+}
 static void activate(r8_modal *m)
 {
     inbox *b = history_inbox(m->h);
@@ -379,7 +410,14 @@ static void activate(r8_modal *m)
             snprintf(m->destination, sizeof(m->destination), "%s", id);
             snprintf(m->destination_message, sizeof(m->destination_message), "%s",
                      s(n, "message_id"));
-            r8_modal_close(m);
+            /* Notification time is not the message creation time. Only use an
+             * observed message's own timestamp as a cursor hint. */
+            snprintf(m->destination_time, sizeof(m->destination_time), "%s",
+                     s(message(m, n), "created_at"));
+            if (*m->destination_message)
+                begin_location(m);
+            else
+                r8_modal_close(m);
         } else
             snprintf(m->notice, sizeof(m->notice),
                      "Destino ainda indisponível. Ctrl+R: atualizar.");
@@ -510,6 +548,37 @@ bool r8_modal_key(r8_modal *m, int type, uint32_t key)
 {
     if (!m || !m->open)
         return false;
+    if (m->locating) {
+        if (type == OK && key == 27) {
+            history_cancel_jump(m->h);
+            inbox_cancel_open(history_inbox(m->h));
+            m->locating = m->location_started = m->location_failed = false;
+            r8_modal_destination_clear(m);
+        } else if (m->location_failed &&
+                   ((type == OK && (key == '\n' || key == '\r' || key == 18)) ||
+                    (type == KEY_CODE_YES && key == KEY_ENTER))) {
+            snprintf(m->destination, sizeof(m->destination), "%s", m->location_channel);
+            snprintf(m->destination_message, sizeof(m->destination_message), "%s",
+                     m->location_message);
+            snprintf(m->destination_time, sizeof(m->destination_time), "%s", m->location_time);
+            begin_location(m);
+        }
+        return true;
+    }
+    if (m->kind == R8_PINNED || m->kind == R8_SEARCH) {
+        message_browser_key(m->browser, type, key);
+        if (*message_browser_destination(m->browser)) {
+            snprintf(m->destination, sizeof(m->destination), "%s",
+                     message_browser_destination(m->browser));
+            snprintf(m->destination_message, sizeof(m->destination_message), "%s",
+                     message_browser_destination_message(m->browser));
+            snprintf(m->destination_time, sizeof(m->destination_time), "%s",
+                     message_browser_destination_time(m->browser));
+            message_browser_destination_clear(m->browser);
+            begin_location(m);
+        }
+        return true;
+    }
     update(m);
     m->selected_id[0] = 0;
     if (type == KEY_CODE_YES && key == KEY_RESIZE) {
@@ -759,6 +828,8 @@ WINDOW *r8_modal_draw(r8_modal *m)
 {
     if (!m || !m->open || COLS < 44 || LINES < 14)
         return NULL;
+    if (!m->locating && (m->kind == R8_PINNED || m->kind == R8_SEARCH))
+        return message_browser_draw(m->browser);
     int width = COLS - 4;
     if (width > 90)
         width = 90;
@@ -779,6 +850,23 @@ WINDOW *r8_modal_draw(r8_modal *m)
     wbkgd(w, COLOR_PAIR(THEME_PANEL));
     werase(w);
     box(w, 0, 0);
+    if (m->locating) {
+        char loading[192];
+        static const char *frames[] = {"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"};
+        snprintf(loading, sizeof(loading), "%s Localizando mensagem…",
+                 frames[m->location_frame % G_N_ELEMENTS(frames)]);
+        wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
+        text_label(w, 1, 2, width - 4, "Ir para mensagem");
+        text_label(w, height / 2 - 1, 2, width - 4,
+                   m->location_failed ? m->location_notice : loading);
+        wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
+        text_label(w, height / 2 + 1, 2, width - 4,
+                   m->location_failed ? "Enter: tentar novamente"
+                                      : "Buscando no histórico da conversa");
+        text_label(w, height - 2, 2, width - 4, "Esc: voltar");
+        wnoutrefresh(w);
+        return w;
+    }
     update(m);
     const char *title = m->choosing_conversation
                             ? (m->choice_kind == 2 ? "Selecionar DM" : "Selecionar canal")
@@ -798,6 +886,7 @@ WINDOW *r8_modal_draw(r8_modal *m)
                                "↑↓: navegar · Enter: abrir texto/DM",
                                "Voz: Shift+Enter/F4 abre histórico",
                                "F2: configurações · F9: notificações · F10: nova DM",
+                               "F3: buscar mensagens · F8: mensagens fixadas",
                                "Ctrl+D na lista DMs: fechar conversa",
                                "Ctrl+R: atualizar ou reconectar",
                                "F6: conta · Ctrl+L: sair da conta",
@@ -936,8 +1025,53 @@ const char *r8_modal_destination_message(const r8_modal *m)
 {
     return m->destination_message;
 }
+const char *r8_modal_destination_time(const r8_modal *m)
+{
+    return m->destination_time;
+}
+bool r8_modal_locating(const r8_modal *m)
+{
+    return m && m->open && m->locating;
+}
+void r8_modal_location_started(r8_modal *m)
+{
+    if (m && m->locating)
+        m->location_started = true;
+}
+void r8_modal_location_error(r8_modal *m, const char *error)
+{
+    if (m && m->locating) {
+        m->location_failed = true;
+        snprintf(m->location_notice, sizeof(m->location_notice), "%s", error);
+    }
+}
+bool r8_modal_poll(r8_modal *m)
+{
+    if (!r8_modal_locating(m) || m->location_failed)
+        return false;
+    if (m->location_started && *history_jump_error(m->h)) {
+        r8_modal_location_error(m, history_jump_error(m->h));
+        return true;
+    }
+    uint64_t now = 0;
+    net_now_ms(&now);
+    uint64_t frame = now / 100;
+    if (frame == m->location_frame)
+        return false;
+    m->location_frame = frame;
+    return true;
+}
+void r8_modal_location_complete(r8_modal *m, const char *message)
+{
+    if (r8_modal_locating(m) && !strcmp(message, m->location_message))
+        r8_modal_close(m);
+}
 bool r8_modal_cursor(r8_modal *m)
 {
+    if (r8_modal_locating(m))
+        return false;
+    if (m && (m->kind == R8_PINNED || m->kind == R8_SEARCH))
+        return message_browser_cursor(m->browser);
     if (!m || !m->open || m->kind != R8_NOTIFICATIONS || m->detail || m->prefs || !m->window ||
         COLS < 44 || LINES < 14)
         return false;
@@ -958,4 +1092,6 @@ void r8_modal_destination_clear(r8_modal *m)
 {
     m->destination[0] = 0;
     m->destination_message[0] = 0;
+    m->destination_time[0] = 0;
+    message_browser_destination_clear(m->browser);
 }

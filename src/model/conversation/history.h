@@ -47,6 +47,10 @@ void history_reference_request(history *h, const char *id);
 const char *history_reference_notice(history *h);
 uint64_t history_reference_revision(history *h);
 bool history_jump(history *h, const char *id);
+/* A known message timestamp allows a bounded cursor lookup in the active channel. */
+bool history_jump_at(history *h, const char *id, const char *created_at);
+void history_cancel_jump(history *h);
+const char *history_jump_error(history *h);
 bool history_take_jump(history *h, char id[37]);
 bool history_reaction_valid(const json_t *emoji);
 bool history_reaction_equal(const json_t *a, const json_t *b);
@@ -105,6 +109,7 @@ json_t *history_user(const history *h, size_t index);
 const char *history_users_notice(const history *h);
 const char *history_mention_name(void *context, const char *id);
 const char *history_author(const history *h, const char *id);
+const char *history_author_username(const history *h, const char *id);
 const char *history_status(const history *h);
 /* Independent latest read, event and mutation notices. Empty text clears that context. */
 const char *history_notice(const history *h, history_notice_kind kind, uint64_t *revision);

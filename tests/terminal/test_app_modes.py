@@ -525,6 +525,10 @@ class AppModes(unittest.TestCase):
                 ("E", "Quem reagiu"),
                 ("@", "Menções"),
                 ("\x1b[20~", "Notificações"),
+                ("\x1bOR", "Buscar mensagens no servidor"),
+                ("\x1bOR\t\t\n", "Filtros da busca"),
+                ("\x1b[19~", "Mensagens fixadas"),
+                ("\x1b[19~", "Ir para mensagem"),
             ):
                 with self.subTest(mode=mode, modal=title):
                     self.seed(mode)
@@ -532,6 +536,20 @@ class AppModes(unittest.TestCase):
                         parent = server.api_handler
 
                         def route(method, path, body):
+                            if (
+                                title == "Ir para mensagem"
+                                and "order=asc" in path
+                                and "/messages?" in path
+                            ):
+                                time.sleep(0.8)
+                                return 503, None
+                            if method == "GET" and path.split("?")[0].endswith("/pinned"):
+                                return 200, dict(
+                                    channel_id=server.messages[0]["channel_id"],
+                                    pinned=[dict(server.messages[0], id=uuid(99), attachments=[])]
+                                    if title == "Ir para mensagem"
+                                    else server.messages[:1],
+                                )
                             if method == "GET" and path.split("?")[0].endswith("/reactions"):
                                 return 200, dict(
                                     message_id=server.messages[0]["id"],
@@ -559,12 +577,21 @@ class AppModes(unittest.TestCase):
                                 self.wait(t, lambda: len(red_cells()) > 200)
                             before = red_cells()
                             t.send(key)
+                            if title == "Ir para mensagem":
+                                self.helper.wait(t, "1 resultado(s)")
+                                t.send("\n\n")
                             self.helper.wait(t, title)
                             top = next(
                                 i for i, line in enumerate(t.screen.display) if title in line
                             )
                             title_x = t.screen.display[top].index(title)
-                            if title == "Notificações":
+                            if title in (
+                                "Notificações",
+                                "Buscar mensagens no servidor",
+                                "Filtros da busca",
+                                "Mensagens fixadas",
+                                "Ir para mensagem",
+                            ):
                                 top -= 1
                             self.wait(
                                 t,
@@ -608,7 +635,14 @@ class AppModes(unittest.TestCase):
                             self.assertGreater(len(exposed), 8)
                             self.wait(t, lambda: exposed <= red_cells())
                             self.assertEqual(t.stream.frames, [])
-                            if title in ("Menções", "Notificações"):
+                            if title in (
+                                "Menções",
+                                "Notificações",
+                                "Buscar mensagens no servidor",
+                                "Filtros da busca",
+                                "Mensagens fixadas",
+                                "Ir para mensagem",
+                            ):
                                 active_title = title
                                 if title == "Notificações":
                                     t.send("\x1bOC\ngeral")
@@ -622,13 +656,62 @@ class AppModes(unittest.TestCase):
                                 self.helper.wait(t, active_title)
                                 self.wait(t, lambda: len(red_cells()) > 200)
                                 t.send("\x1b")
-                                self.assertNotIn(active_title, "\n".join(t.screen.display))
+                                if title == "Ir para mensagem":
+                                    self.helper.wait(t, "Detalhes da mensagem")
+                                    t.send("\x1b\x1b")
+                                else:
+                                    self.assertNotIn(active_title, "\n".join(t.screen.display))
                                 if title == "Notificações":
                                     self.helper.wait(t, title)
+                                    t.send("\x1b")
+                                if title == "Filtros da busca":
+                                    self.helper.wait(t, "Buscar mensagens no servidor")
                                     t.send("\x1b")
                                 self.wait(t, lambda: len(red_cells()) > 200)
                         finally:
                             self.assertTrue(t.close())
+
+    def test_ultralight_discovery_panels_never_download_media(self):
+        self.seed("ultralight")
+        with self.helper.serve(media.MediaTerminal.images["png"], "image/png") as server:
+            parent = server.api_handler
+
+            def route(method, path, body):
+                if "order=asc" in path and "/messages?" in path:
+                    time.sleep(0.8)
+                    return 503, None
+                if method == "GET" and path.split("?")[0].endswith("/pinned"):
+                    return 200, dict(
+                        channel_id=server.messages[0]["channel_id"],
+                        pinned=[dict(server.messages[0], id=uuid(99), attachments=[])],
+                    )
+                return parent(method, path, body)
+
+            server.api_handler = route
+            t = self.open(server, size=(32, 100))
+            try:
+                t.send("\x1b[19~")
+                self.helper.wait(t, "Mensagens fixadas")
+                self.helper.wait(t, "1 resultado(s)")
+                t.send("\n")
+                self.helper.wait(t, "Detalhes da mensagem")
+                t.resize(22, 44)
+                self.helper.wait(t, "Ir para mensagem")
+                t.send("\n")
+                self.helper.wait(t, "Localizando mensagem…")
+                t.send("\x1b")
+                self.helper.wait(t, "Detalhes da mensagem")
+                t.send("\x1b\x1b\x1bOR")
+                self.helper.wait(t, "Buscar mensagens no servidor")
+                t.send("\t\t\n")
+                self.helper.wait(t, "Filtros da busca")
+                t.send("\x1b\x1b")
+                self.assertEqual(t.stream.frames, [])
+                self.assertFalse(any("/attachments/" in r[1] for r in server.requests))
+                self.assertEqual(self.children(t), [])
+                self.assert_no_media_libs(t)
+            finally:
+                self.assertTrue(t.close())
 
     def test_text_modes_do_not_initialize_download_directories(self):
         for mode in ("ultralight", "light"):

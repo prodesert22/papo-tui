@@ -189,6 +189,30 @@ video. It keeps test credentials private under
 build/, removes this run's messages and closes its DM views and sessions.
 The sanitized report distinguishes functional checks from contract divergences.
 
+Message discovery adds a scrollable pinned-message list, pin/unpin actions and
+server-side message search with the documented combinable filters. It reuses
+ncurses/text controls, GLib Unicode matching, Jansson and libcurl, without new
+dependencies. Search is a cancellable read-only POST through the existing REST
+owner and global budget; pin mutations retain their receipt owner and never
+replay. Discovery previews do not fetch inactive histories. Only the explicit
+go-to-message action enters the existing notification destination/jump flow.
+All three entry points retain their modal during location, animate through the
+existing GLib monotonic clock and event loop, and close only after the target is
+loaded. Cancellation ignores late reads and hidden-DM navigation receipts.
+When a validated message creation time is known, location requests an ascending
+page from its exact `(created_at, id)` cursor, then uses a returned newer neighbor
+as the descending cursor for a window containing the target and surrounding
+messages. This uses two additional history reads regardless of distance, through
+the existing global budget. Notification timestamps are never used as message
+timestamps. Unknown message times retain the sequential reference lookup; there
+is still no documented single-message GET endpoint. Cursor behavior is covered
+by synthetic fixtures; this is not a new observation of the development backend.
+Pin events contain a message UUID and boolean, without a channel: an exposed
+pin list is invalidated and reconciled, never populated by guessing a channel.
+The search owner accepts missing author attribution and null message text as
+unavailable metadata (also represented by the inspected backend source); the
+OpenAPI contract is left unchanged. Synthetic tests are not live observations.
+
 ## Validation
 
 ```sh
