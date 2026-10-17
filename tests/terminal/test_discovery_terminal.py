@@ -39,6 +39,7 @@ class DiscoveryTerminal(unittest.TestCase):
             server.roles = [dict(id=role, name="Pins", permissions=dict(pin_message=True))]
             server.user_roles = [dict(id=role)]
             t = self.login(server)
+            t.resize(32, 160)
             t.send("\x1b[18~m")
             self.wait(t, "Fixar mensagem")
             self.assertNotIn("Excluir mensagem", "\n".join(t.screen.display))
@@ -68,6 +69,7 @@ class DiscoveryTerminal(unittest.TestCase):
             source = Path(folder, "revoked.txt")
             source.write_text("Permission gated")
             t = self.login(server)
+            t.resize(32, 160)
             t.send("\x1b[15~")
             self.wait(t, "Anexar arquivos")
             t.send("\x03" + str(source) + "\n")
