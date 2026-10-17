@@ -189,6 +189,25 @@ video. It keeps test credentials private under
 build/, removes this run's messages and closes its DM views and sessions.
 The sanitized report distinguishes functional checks from contract divergences.
 
+Member colors reuse Jansson role summaries and the permission client's existing
+role catalog. Only exact `#RRGGBB` strings are accepted; the first valid color in
+membership order wins, with white as the fallback. This is a display convention:
+the contract defines no role hierarchy. Cached summaries retain bounded role
+IDs/colors independently of partial presence metadata. Role events apply to all
+members, including unresolved authors, and reconcile pending REST responses so
+older summaries cannot undo a live assignment or removal. Catalog refreshes
+update definitions without fetching inactive histories. The current account
+uses the same membership snapshot as permission evaluation.
+
+Rendering reuses ncurses color pairs and the existing Unicode header masks.
+The bounded RGB pair table is shared by member names and embed accents, keeps
+selection backgrounds, and reserves its range before Chafa's media pairs. It
+does not redefine palette entries. Pairs remain stable across partial redraws;
+exhausted tables fall back to the preallocated white pair for each background.
+`member-colors-terminal` checks direct/indexed colors, white defaults, webhook
+names, live events, presence, selectors and reaction participants. Model tests
+cover malformed colors, multiple roles, delayed summaries and context reset.
+
 Permission evaluation reuses Jansson snapshots, GLib UUID validation and the
 existing REST dispatcher; no new dependency is required. Each auth client owns
 its policy, including membership, role definitions, server owner, channel

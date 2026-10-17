@@ -87,8 +87,11 @@ bool permissions_identity(permissions *p, const json_t *body, uint64_t serial)
     json_t *role;
     json_array_foreach(roles, i, role)
     {
+        json_t *color = json_object_get(role, "color");
+        if (!json_is_string(color) || json_string_length(color) != 7)
+            color = json_null();
         if (!uuid_value(json_object_get(role, "id")) || json_object_get(ids, str(role, "id")) ||
-            json_object_set(ids, str(role, "id"), json_true()))
+            json_object_set_new(ids, str(role, "id"), json_pack("{s:O}", "color", color)))
             ok = false;
     }
     if (uuid_value(json_object_get(body, "id")))
@@ -283,4 +286,48 @@ const json_t *permissions_channels(const permissions *p)
 uint64_t permissions_channel_revision(const permissions *p)
 {
     return p ? p->channel_revision : 0;
+}
+
+static unsigned role_color(const json_t *role)
+{
+    json_t *value = json_object_get(role, "color");
+    const char *s = json_string_value(value);
+    if (!s || json_string_length(value) != 7 || strlen(s) != 7 || *s != '#')
+        return 0;
+    unsigned rgb = 0x1000000;
+    for (size_t i = 1; i < 7; ++i) {
+        int digit = g_ascii_xdigit_value(s[i]);
+        if (digit < 0)
+            return 0;
+        rgb |= (unsigned)digit << ((6 - i) * 4);
+    }
+    return rgb;
+}
+
+unsigned permissions_member_color(const permissions *p, const char *user, const json_t *roles)
+{
+    bool self = p && user && *p->user && !strcmp(user, p->user);
+    if (self) {
+        const char *id;
+        json_t *summary;
+        json_object_foreach(p->memberships, id, summary)
+        {
+            unsigned color = role_color(p->roles ? json_object_get(p->roles, id) : summary);
+            if (color)
+                return color;
+        }
+    } else {
+        size_t i;
+        json_t *summary;
+        json_array_foreach(roles, i, summary)
+        {
+            if (!uuid_value(json_object_get(summary, "id")))
+                continue;
+            unsigned color =
+                role_color(p && p->roles ? json_object_get(p->roles, str(summary, "id")) : summary);
+            if (color)
+                return color;
+        }
+    }
+    return 0x1ffffff;
 }

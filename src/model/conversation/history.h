@@ -108,6 +108,7 @@ json_t *history_user(const history *h, size_t index);
 const char *history_users_notice(const history *h);
 const char *history_mention_name(void *context, const char *id);
 const char *history_author(const history *h, const char *id);
+unsigned history_member_color(const history *h, const char *id);
 const char *history_status(const history *h);
 /* Independent latest read, event and mutation notices. Empty text clears that context. */
 const char *history_notice(const history *h, history_notice_kind kind, uint64_t *revision);

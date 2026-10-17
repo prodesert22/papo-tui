@@ -886,6 +886,7 @@ bool history_poll(history *h)
             return true;
         if (h->r8 && !h->want_channels && !h->want_messages && inbox_dispatch(h->inbox)) {
             h->pending = INBOX;
+            h->request_role_events = h->role_events;
             h->request_context = h->context;
             return true;
         }
@@ -919,6 +920,7 @@ bool history_poll(history *h)
         }
         if (started) {
             h->pending = kind;
+            h->request_role_events = h->role_events;
             h->request_context = h->context;
             h->request_selection = h->selection;
             if (!h->recovering)

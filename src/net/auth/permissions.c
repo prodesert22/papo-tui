@@ -24,11 +24,17 @@ void auth_internal_permissions_observe(void *context, const json_t *event)
     auth_client *client = context;
     if (!auth_has_session(client))
         return;
-    if (permissions_event(client->permissions, event)) {
+    bool own = permissions_event(client->permissions, event);
+    const char *type = json_string_value(json_object_get(event, "type")),
+               *user = json_string_value(json_object_get(event, "user_id")),
+               *role = json_string_value(json_object_get(event, "role_id"));
+    if (own || (type && (!strcmp(type, "role_add") || !strcmp(type, "role_remove")) && user &&
+                role && g_uuid_string_is_valid(user) && g_uuid_string_is_valid(role))) {
         /* Membership changed locally already. Reconcile missing definitions and
          * identity without waiting for the periodic metadata read. */
         client->permission_wanted |= 2U;
-        client->recheck_at = 0;
+        if (own)
+            client->recheck_at = 0;
     }
 }
 void auth_internal_permissions_poll(auth_client *client, uint64_t now)

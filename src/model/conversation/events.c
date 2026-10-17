@@ -157,10 +157,12 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
     if (!strcmp(type, "role_add") || !strcmp(type, "role_remove")) {
         /* Auth's synchronous WS observer has already applied membership before
          * any queued HTTP mutation can be admitted. */
-        if (!history_uuid(history_internal_str(event, "user_id")) ||
+        if (!history_internal_string_field((json_t *)event, "user_id", 36, false) ||
+            !history_internal_string_field((json_t *)event, "role_id", 36, false) ||
+            !history_uuid(history_internal_str(event, "user_id")) ||
             !history_uuid(history_internal_str(event, "role_id")))
             goto invalid;
-        return true;
+        return history_internal_role_event(h, event);
     }
     if (!strcmp(type, "avatar_update")) {
         if (!history_internal_string_field((json_t *)event, "user_id", 36, false) ||

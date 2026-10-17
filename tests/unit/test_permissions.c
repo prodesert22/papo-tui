@@ -32,8 +32,46 @@ static void event(permissions *p, const char *s)
     assert(permissions_event(p, value));
     json_decref(value);
 }
+static void member_colors(void)
+{
+    permissions *p = permissions_create();
+    assert(p);
+    json_t *roles = load("[{\"id\":\"" ROLE "\",\"color\":null},"
+                         "{\"id\":\"" SECOND "\",\"color\":\"#aBcD09\"}]");
+    assert(permissions_member_color(p, OTHER, NULL) == 0x1ffffff);
+    assert(permissions_member_color(p, OTHER, roles) == 0x1abcd09);
+    json_t *first = json_array_get(roles, 0);
+    const char *invalid[] = {"red", "#gg0000", "#123", "#1234567", "\033[31m", "#12 456"};
+    for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); ++i) {
+        assert(!json_object_set_new(first, "color", json_string(invalid[i])));
+        assert(permissions_member_color(p, OTHER, roles) == 0x1abcd09);
+    }
+    assert(!json_object_set_new(first, "color", json_stringn("#ffffff\0", 8)));
+    assert(permissions_member_color(p, OTHER, roles) == 0x1abcd09);
+    assert(!json_object_set_new(first, "color", json_string("#000000")));
+    assert(permissions_member_color(p, OTHER, roles) == 0x1000000);
+    identity(p, "{\"id\":\"" USER "\",\"roles\":[{\"id\":\"" ROLE "\",\"color\":\"#Ff0000\"}]}");
+    assert(permissions_member_color(p, USER, NULL) == 0x1ff0000);
+    update(p, PERMISSIONS_ROLES,
+           "{\"roles\":[{\"id\":\"" ROLE "\",\"color\":null,\"permissions\":{}},"
+           "{\"id\":\"" SECOND "\",\"color\":\"#00ff00\",\"permissions\":{}}]}");
+    assert(permissions_member_color(p, OTHER, roles) == 0x100ff00);
+    assert(permissions_member_color(p, USER, NULL) == 0x1ffffff);
+    event(p, "{\"type\":\"role_add\",\"user_id\":\"" USER "\",\"role_id\":\"" SECOND "\"}");
+    assert(permissions_member_color(p, USER, NULL) == 0x100ff00);
+    event(p, "{\"type\":\"role_remove\",\"user_id\":\"" USER "\",\"role_id\":\"" SECOND "\"}");
+    assert(permissions_member_color(p, USER, NULL) == 0x1ffffff);
+    update(p, PERMISSIONS_ROLES, "{\"roles\":[]}");
+    assert(permissions_member_color(p, OTHER, roles) == 0x1ffffff);
+    permissions_reset(p);
+    assert(permissions_member_color(p, USER, NULL) == 0x1ffffff);
+    assert(permissions_member_color(p, OTHER, roles) == 0x1000000);
+    json_decref(roles);
+    permissions_destroy(p);
+}
 int main(void)
 {
+    member_colors();
     permissions *p = permissions_create(), *other = permissions_create();
     assert(p && other);
     assert(permissions_role(p, PERMISSION_MANAGE_ROLES) == PERMISSION_UNKNOWN);
