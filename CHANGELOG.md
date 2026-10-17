@@ -5,6 +5,19 @@ full details are available in `releases/`.
 
 ## Unreleased
 
+## [0.3.1]
+
+- Run routine CI on pull requests to main, including version commits, and cancel
+  superseded runs when the PR receives another commit.
+- Publish releases automatically after an increased version is merged from the
+  permanent dev branch, reusing validated native package artifacts.
+- Keep source archives and SHA256SUMS, and reject conflicting tags or attempts
+  to overwrite published releases.
+- Use English filenames for the installation and usage guides, updating links
+  and installed documentation paths.
+
+See the [full 0.3.1 release notes](releases/v0.3.1.md).
+
 ## [0.3.0]
 
 ### Added

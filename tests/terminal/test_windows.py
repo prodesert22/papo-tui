@@ -7,7 +7,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from history_mock import HistoryMock
-from test_terminal import Terminal
+from test_terminal import Terminal, TerminalStreamTests  # noqa: F401 - shared observer regression tests
 
 
 class WindowsTerminalTests(unittest.TestCase):
@@ -41,6 +41,10 @@ class WindowsTerminalTests(unittest.TestCase):
                 terminal.send("\x1bOB\r")
                 self.wait(terminal, "Mensagem 0250")
                 terminal.resize(28, 100)
+                deadline = time.monotonic() + 8
+                while terminal.screen.buffer[27][99].data != "┘" and time.monotonic() < deadline:
+                    terminal.read(0.03)
+                self.assertEqual(terminal.screen.buffer[27][99].data, "┘")
                 terminal.send("Olá 😀\r")
                 deadline = time.monotonic() + 10
                 while not server.sent_messages and time.monotonic() < deadline:

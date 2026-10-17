@@ -920,7 +920,10 @@ bool media_view_open(media_view *v, const message_media *source)
     } else if (v->modal_entry < 0 || !graphics_terminal_get().supported) {
         v->modal_error = "Este terminal não oferece um protocolo gráfico compatível.";
         v->modal = MODAL_ERROR;
-    } else if (v->cache[v->modal_entry].state == ENTRY_ERROR) {
+    } else if (v->cache[v->modal_entry].state == ENTRY_ERROR &&
+               !(item.video && media_resource_path(v->cache[v->modal_entry].resource))) {
+        /* A failed cover can still have a downloaded file for the player.
+         * Refetch video bytes only after the user explicitly retries playback. */
         media_resource_retry(v->cache[v->modal_entry].resource);
         delete_entry(&v->cache[v->modal_entry]);
         v->cache[v->modal_entry].item = v->selected_item;

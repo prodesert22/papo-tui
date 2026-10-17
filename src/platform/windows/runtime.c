@@ -23,7 +23,15 @@ char *papo_executable_path(void)
 bool papo_terminal_size(unsigned *rows, unsigned *columns, unsigned *pixels_x, unsigned *pixels_y)
 {
     CONSOLE_SCREEN_BUFFER_INFO info;
-    if (!GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &info))
+    /* ncurses can activate its own buffer, leaving STD_OUTPUT_HANDLE attached
+     * to the original one. CONOUT$ follows the currently displayed buffer. */
+    HANDLE output = CreateFileW(L"CONOUT$", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+                                OPEN_EXISTING, 0, NULL);
+    if (output == INVALID_HANDLE_VALUE)
+        return false;
+    BOOL ok = GetConsoleScreenBufferInfo(output, &info);
+    CloseHandle(output);
+    if (!ok)
         return false;
     *rows = info.srWindow.Bottom - info.srWindow.Top + 1;
     *columns = info.srWindow.Right - info.srWindow.Left + 1;

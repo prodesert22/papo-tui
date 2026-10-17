@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
+#include "config/app_mode.h"
 #include "ui/input/text.h"
 #include "ui/media/graphics.h"
 #include "ui/media/media_layout.h"
@@ -504,6 +505,45 @@ static void embed_author_unique(void)
         json_decref(m);
     }
 }
+static void attachment_mime_types(void)
+{
+    const struct {
+        const char *json;
+        bool media, video;
+    } fixtures[] = {{"{}", false, false},
+                    {"{\"mime_type\":null}", false, false},
+                    {"{\"mime_type\":42}", false, false},
+                    {"{\"mime_type\":\"\"}", false, false},
+                    {"{\"mime_type\":\"image\"}", false, false},
+                    {"{\"mime_type\":\"video\"}", false, false},
+                    {"{\"mime_type\":\"application/pdf\"}", false, false},
+                    {"{\"mime_type\":\"image/png\"}", true, false},
+                    {"{\"mime_type\":\"image/gif\"}", true, false},
+                    {"{\"mime_type\":\"video/mp4\"}", true, true}};
+    for (size_t f = 0; f < sizeof(fixtures) / sizeof(fixtures[0]); ++f) {
+        json_t *attachment = json_loads(fixtures[f].json, 0, NULL);
+        assert(attachment);
+        assert(!json_object_set_new(attachment, "id",
+                                    json_string("00000000-0000-4000-8000-000000000002")));
+        json_t *m = json_pack("{s:s,s:[o]}", "id", "00000000-0000-4000-8000-000000000001",
+                              "attachments", attachment);
+        assert(m);
+        for (int mode = APP_MODE_NORMAL; mode <= APP_MODE_ULTRALIGHT; ++mode) {
+            app_mode_set((app_mode)mode);
+            for (int graphics = 0; graphics < 2; ++graphics) {
+                message_blocks blocks;
+                assert(message_blocks_build(&blocks, m, "Sender", "", 80, graphics != 0));
+                assert(blocks.media_count ==
+                       (size_t)(fixtures[f].media && mode != APP_MODE_ULTRALIGHT));
+                if (blocks.media_count)
+                    assert(blocks.media[0].video == fixtures[f].video);
+                message_blocks_free(&blocks);
+            }
+        }
+        json_decref(m);
+    }
+    app_mode_set(APP_MODE_NORMAL);
+}
 static void video_preview_layout(void)
 {
     json_t *m = json_loads("{\"id\":\"00000000-0000-4000-8000-000000000001\","
@@ -572,6 +612,7 @@ int main(void)
 {
     assert(setlocale(LC_ALL, "C.UTF-8"));
     init_graphemebreak();
+    attachment_mime_types();
     video_preview_layout();
     reactions_and_replies();
     cards();

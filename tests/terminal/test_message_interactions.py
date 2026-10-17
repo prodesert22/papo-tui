@@ -1,46 +1,83 @@
-"""Message selection, replies and reactions through the actual TUI."""
+"""Message selection, replies and reactions through the actual TUI.
 
+Reaction fixtures use distinct BMP glyphs, which fit ncurses' Windows wchar_t.
+The native input suites separately verify non-BMP input and message payloads.
+"""
+
+import faulthandler
 import json
+import os
 from pathlib import Path
 import re
-import tempfile
 import time
 import unittest
 from wcwidth import wcswidth
 from history_mock import CHANNEL, OTHER, uuid
 from interaction_mock import InteractionMock
 import test_send_product as product
+from test_terminal import editor_region
 
 
 class MessageInteractions(unittest.TestCase):
     screen = product.SendProduct.screen
-    wait = product.SendProduct.wait
-    editor_text = product.SendProduct.editor_text
     click = product.SendProduct.click
+
+    def editor_text(self, terminal):
+        def editor_visible():
+            try:
+                editor_region(terminal)
+            except StopIteration:
+                return False
+            return True
+
+        # Closing a panel can erase its title before ConPTY delivers the
+        # restored editor. Observe the editor before inspecting its contents.
+        self.settled(terminal, editor_visible)
+        return product.SendProduct.editor_text(self, terminal)
+
+    def wait(self, terminal, text):
+        self.settled(terminal, lambda: text in self.screen(terminal), seconds=8)
+
+    def resize(self, terminal, rows, columns):
+        terminal.resize(rows, columns)
+        # ConPTY can retain old text while resize output is in flight. Wait
+        # for the new frame before reading positions or sending input.
+        # The POSIX observer exposes the DEC border glyph as "j".
+        self.settled(
+            terminal, lambda: terminal.screen.buffer[rows - 1][columns - 1].data in ("j", "┘")
+        )
+
+    def setUp(self):
+        if os.name == "nt":
+            # Preserve the blocked call stack if a native ConPTY call stalls;
+            # CTest's outer timeout otherwise kills Python without a traceback.
+            faulthandler.dump_traceback_later(60)
+            self.addCleanup(faulthandler.cancel_dump_traceback_later)
 
     def open(self, server):
         # Keep Unicode labels observable for text interaction assertions. The
         # graphics suites cover rendered icons; mode tests exercise all modes.
-        config = tempfile.TemporaryDirectory(prefix="papo-interactions-")
-        self.addCleanup(config.cleanup)
-        path = Path(config.name, "papo-tui", "config.json")
-        path.parent.mkdir(mode=0o700)
-        path.write_text(
-            json.dumps(
-                dict(
-                    version=4,
-                    profiles=[],
-                    selected_profile=None,
-                    app_mode="light",
-                    requests_per_second=10,
-                    request_burst=25,
-                    desktop_notifications=False,
-                    notification_preview=False,
-                )
+        # Let the app create its private configuration with native permissions.
+        self._mock_server = server
+        terminal = product.SendProduct.open(self, server)
+        try:
+            terminal.send("\x1bOQ")
+            self.wait(terminal, "Configurações")
+            self.wait(terminal, "(*) Normal")
+            terminal.send("\t\x1bOB\n\t\n")
+            path = Path(terminal.configuration.name, "papo-tui", "config.json")
+            self.settled(
+                terminal,
+                lambda: path.exists() and json.loads(path.read_text()).get("app_mode") == "light",
             )
-        )
-        path.chmod(0o600)
-        return product.SendProduct.open(self, server, environment={"XDG_CONFIG_HOME": config.name})
+            # History remains visible behind settings, so its editor label
+            # alone does not prove that the modal and mode reflow have closed.
+            self.settled(terminal, lambda: "Configurações" not in self.screen(terminal))
+            self.wait(terminal, "Conversar em #geral")
+            return terminal
+        except BaseException:
+            terminal.close()
+            raise
 
     def right_click(self, terminal, text):
         self.wait(terminal, text)
@@ -55,13 +92,34 @@ class MessageInteractions(unittest.TestCase):
         deadline = time.monotonic() + seconds
         while not predicate() and time.monotonic() < deadline:
             terminal.read(0.03)
+        if not predicate() and os.name == "nt":
+            # Retain a safely escaped synthetic protocol trace even when
+            # CTest reports only the failing screen assertion.
+            directory = Path.cwd() / "Testing" / "Temporary"
+            directory.mkdir(parents=True, exist_ok=True)
+            output = bytes(terminal.output).replace(b"Synthetic!123", b"[redacted]")
+            (directory / f"{self._testMethodName}-terminal.log").write_text(
+                json.dumps(
+                    {
+                        "output_hex": output.hex(),
+                        "checkpoint": getattr(self, "_protocol_checkpoint", None),
+                        "screen": terminal.screen.display,
+                        "requests": [
+                            [method, path] for method, path, *_ in self._mock_server.requests
+                        ],
+                        "reactions": self._mock_server.reaction_calls,
+                    },
+                    ensure_ascii=True,
+                ),
+                encoding="utf-8",
+            )
         self.assertTrue(predicate(), self.screen(terminal))
 
     def test_f7_selects_messages_and_context_menu_is_available_directly(self):
         with InteractionMock() as server:
             terminal = self.open(server)
             try:
-                terminal.resize(32, 100)
+                self.resize(terminal, 32, 100)
                 self.wait(terminal, "Mensagem 0003")
                 terminal.send("Draft\x1b[18~")
                 self.wait(terminal, "↑↓ mensagens")
@@ -75,6 +133,7 @@ class MessageInteractions(unittest.TestCase):
                 self.wait(terminal, "Ver quem reagiu")
                 self.wait(terminal, "Adicionar reação")
                 terminal.send("m")
+                self.settled(terminal, lambda: "Ver quem reagiu" not in self.screen(terminal))
                 self.assertNotIn("Ver quem reagiu", self.screen(terminal))
                 self.assertIn("↑↓ mensagens", self.screen(terminal))
                 terminal.send("m")
@@ -101,7 +160,7 @@ class MessageInteractions(unittest.TestCase):
         with InteractionMock(count=60) as server:
             terminal = self.open(server)
             try:
-                terminal.resize(32, 100)
+                self.resize(terminal, 32, 100)
                 self.wait(terminal, "Mensagem 0060")
                 terminal.send("Preserved draft\x1b[18~m")
 
@@ -121,9 +180,10 @@ class MessageInteractions(unittest.TestCase):
                 check_position("Mensagem 0060")
                 terminal.send("\x1b" + "\x1bOA" * 24 + "m")
                 check_position("Mensagem 0036")
-                terminal.resize(24, 60)
+                self.resize(terminal, 24, 60)
                 check_position("Mensagem 0036")
                 terminal.send("m")
+                self.settled(terminal, lambda: "Ver quem reagiu" not in self.screen(terminal))
                 self.assertNotIn("Ver quem reagiu", self.screen(terminal))
                 terminal.send("\x1b")
                 self.assertIn("Preserved draft", self.editor_text(terminal))
@@ -136,7 +196,7 @@ class MessageInteractions(unittest.TestCase):
             server.scenario = "send-forbidden"
             terminal = self.open(server)
             try:
-                terminal.resize(32, 140)
+                self.resize(terminal, 32, 140)
                 self.right_click(terminal, "Mensagem 0001")
                 self.click(terminal, "Responder")
                 terminal.send("Reply to first message\n")
@@ -164,7 +224,7 @@ class MessageInteractions(unittest.TestCase):
         with InteractionMock(count=2) as server:
             terminal = self.open(server)
             try:
-                terminal.resize(32, 100)
+                self.resize(terminal, 32, 100)
                 self.wait(terminal, "Mensagem 0002")
                 terminal.send("Preserved draft\x1b[18~\x1bOAR")
                 self.wait(terminal, "Respondendo a")
@@ -185,7 +245,7 @@ class MessageInteractions(unittest.TestCase):
         with InteractionMock(count=2) as server:
             terminal = self.open(server)
             try:
-                terminal.resize(32, 100)
+                self.resize(terminal, 32, 100)
                 self.wait(terminal, "Mensagem 0002")
                 terminal.send("Preserved draft\x1b[18~\x1bOAr")
                 self.wait(terminal, "Respondendo a")
@@ -203,6 +263,7 @@ class MessageInteractions(unittest.TestCase):
                 self.assertLessEqual(original - border, 2)
                 self.wait(terminal, "Esc cancelar resposta")
                 terminal.send("\x1b")
+                self.settled(terminal, lambda: "Respondendo" not in self.screen(terminal))
                 self.assertNotIn("Respondendo", self.screen(terminal))
                 self.assertIn("Foco: Mensagem", self.screen(terminal))
                 self.assertIn("Preserved draft", self.editor_text(terminal))
@@ -226,6 +287,7 @@ class MessageInteractions(unittest.TestCase):
                 terminal.send("\x1b[200~Injected paste\nnot a send\x1b[201~")
                 self.wait(terminal, "Responder")
                 terminal.send("\x1b")
+                self.settled(terminal, lambda: "Responder" not in self.screen(terminal))
                 self.assertIn("Preserved draft", self.editor_text(terminal))
                 self.assertNotIn("Injected", self.editor_text(terminal))
                 self.assertEqual(server.message_count, 0)
@@ -244,7 +306,7 @@ class MessageInteractions(unittest.TestCase):
             server.messages[-1]["reply_to"] = original["id"]
             terminal = self.open(server)
             try:
-                terminal.resize(32, 100)
+                self.resize(terminal, 32, 100)
                 self.wait(terminal, "↰ Build Bot: Original do webhook")
                 self.assertNotIn("Resposta:", self.screen(terminal))
                 self.click(terminal, "↰ Build Bot:")
@@ -281,7 +343,7 @@ class MessageInteractions(unittest.TestCase):
                 self.wait(terminal, "↑↓ mensagens")
                 self.settled(terminal, lambda: "Mensagem 0320" not in self.screen(terminal))
                 self.assertIn("Original muito antiga", self.screen(terminal))
-                terminal.resize(20, 60)
+                self.resize(terminal, 20, 60)
                 self.assertIn("Original muito antiga", self.screen(terminal))
             finally:
                 self.assertTrue(terminal.close())
@@ -325,18 +387,19 @@ class MessageInteractions(unittest.TestCase):
     def test_click_toggles_own_reaction_without_double_counting_ws(self):
         with InteractionMock(count=1) as server:
             message = server.messages[0]["id"]
-            server.seed(message, {"unicode": "👍"}, [uuid(30), uuid(31)])
+            server.seed(message, {"unicode": "☕"}, [uuid(30), uuid(31)])
             terminal = self.open(server)
             try:
-                self.wait(terminal, "[👍 2]")
+                self.wait(terminal, "[☕ 2]")
                 terminal.send("Unsaved draft")
-                self.click(terminal, "[👍 2]")
-                self.wait(terminal, "[👍 3]")
+                self.wait(terminal, "Unsaved draft")
+                self.click(terminal, "[☕ 2]")
+                self.wait(terminal, "[☕ 3]")
                 self.settled(terminal, lambda: len(server.reaction_calls) == 1)
                 # Allow the authoritative history recovery to finish before the next gesture.
                 terminal.read(1.0)
-                self.click(terminal, "[👍 3]")
-                self.wait(terminal, "[👍 2]")
+                self.click(terminal, "[☕ 3]")
+                self.wait(terminal, "[☕ 2]")
                 self.settled(terminal, lambda: len(server.reaction_calls) == 2)
                 self.assertEqual([r[0] for r in server.reaction_calls], ["POST", "DELETE"])
                 self.assertIn("Unsaved draft", self.editor_text(terminal))
@@ -354,6 +417,8 @@ class MessageInteractions(unittest.TestCase):
                 self.wait(terminal, "Unicode")
                 terminal.send("grinning\x1bOB\x1bOB\n")
                 self.settled(terminal, lambda: len(server.reaction_calls) == 1)
+                self.settled(terminal, lambda: "Reagir · Esc voltar" not in self.screen(terminal))
+                self.assertEqual(server.reaction_calls[0][2]["unicode"], "😀")
                 self.assertIn("Preserved draft", self.editor_text(terminal))
                 self.assertEqual(server.message_count, 0)
             finally:
@@ -368,6 +433,7 @@ class MessageInteractions(unittest.TestCase):
                 self.click(terminal, "Adicionar reação")
                 self.wait(terminal, "Unicode")
                 terminal.send("\x1b")
+                self.settled(terminal, lambda: "Reagir · Esc voltar" not in self.screen(terminal))
                 terminal.send(":grinning\t")
                 self.assertEqual(server.reaction_calls, [])
                 self.assertEqual(server.message_count, 0)
@@ -378,48 +444,48 @@ class MessageInteractions(unittest.TestCase):
 
     def test_reaction_429_is_not_replayed(self):
         with InteractionMock(count=1) as server:
-            server.seed(server.messages[0]["id"], {"unicode": "👍"}, [uuid(30)])
+            server.seed(server.messages[0]["id"], {"unicode": "☕"}, [uuid(30)])
             server.reaction_status = 429
             terminal = self.open(server)
             try:
-                self.wait(terminal, "[👍 1]")
-                self.click(terminal, "[👍 1]")
+                self.wait(terminal, "[☕ 1]")
+                self.click(terminal, "[☕ 1]")
                 self.settled(terminal, lambda: len(server.reaction_calls) == 1)
                 terminal.read(1.2)
                 self.assertEqual(len(server.reaction_calls), 1)
-                self.assertIn("[👍 1]", self.screen(terminal))
+                self.assertIn("[☕ 1]", self.screen(terminal))
             finally:
                 self.assertTrue(terminal.close())
 
     def test_inflight_reaction_does_not_apply_to_another_channel(self):
         with InteractionMock(count=1) as server:
-            server.seed(server.messages[0]["id"], {"unicode": "👍"}, [uuid(30)])
+            server.seed(server.messages[0]["id"], {"unicode": "☕"}, [uuid(30)])
             server.reaction_delay = 0.7
             terminal = self.open(server)
             try:
-                self.wait(terminal, "[👍 1]")
-                self.click(terminal, "[👍 1]")
+                self.wait(terminal, "[☕ 1]")
+                self.click(terminal, "[☕ 1]")
                 terminal.send("\x1b\x1bOB\n")
                 self.wait(terminal, "Conteúdo do outro canal")
-                self.assertNotIn("[👍", self.screen(terminal))
+                self.assertNotIn("[☕", self.screen(terminal))
                 self.assertEqual(len(server.reaction_calls), 1)
                 terminal.send("\x1b\x1bOA\n")
-                self.wait(terminal, "[👍 2]")
+                self.wait(terminal, "[☕ 2]")
             finally:
                 self.assertTrue(terminal.close())
 
     def test_reaction_failures_preserve_counts_without_retries(self):
         for status in (400, 403, 404, 409, 500):
             with self.subTest(status=status), InteractionMock(count=1) as server:
-                server.seed(server.messages[0]["id"], {"unicode": "👍"}, [uuid(30)])
+                server.seed(server.messages[0]["id"], {"unicode": "☕"}, [uuid(30)])
                 server.reaction_status = status
                 terminal = self.open(server)
                 try:
-                    self.wait(terminal, "[👍 1]")
-                    self.click(terminal, "[👍 1]")
+                    self.wait(terminal, "[☕ 1]")
+                    self.click(terminal, "[☕ 1]")
                     self.settled(terminal, lambda: len(server.reaction_calls) == 1)
                     terminal.read(0.2)
-                    self.assertIn("[👍 1]", self.screen(terminal))
+                    self.assertIn("[☕ 1]", self.screen(terminal))
                     self.assertEqual(len(server.reaction_calls), 1)
                 finally:
                     self.assertTrue(terminal.close())
@@ -428,7 +494,7 @@ class MessageInteractions(unittest.TestCase):
         with InteractionMock(count=1) as server:
             message = server.messages[0]["id"]
             for i in range(103):
-                server.seed(message, {"unicode": "👍" if i % 2 else "😀"}, [uuid(30 + i)])
+                server.seed(message, {"unicode": "☕" if i % 2 else "☀"}, [uuid(30 + i)])
             terminal = self.open(server)
             try:
                 self.wait(terminal, "Mensagem 0001")
@@ -441,6 +507,7 @@ class MessageInteractions(unittest.TestCase):
                 self.assertEqual(len(pages), 2)
                 self.assertIn("last_id=", pages[1][1])
                 terminal.send("\x1b")
+                self.settled(terminal, lambda: "Quem reagiu" not in self.screen(terminal))
                 self.assertNotIn("Quem reagiu", self.screen(terminal))
             finally:
                 self.assertTrue(terminal.close())
@@ -448,26 +515,26 @@ class MessageInteractions(unittest.TestCase):
     def test_participant_columns_select_filter_and_scroll_independently(self):
         with InteractionMock(count=1) as server:
             emojis = [
-                "😀",
-                "👍",
-                "❤️",
-                "🚀",
-                "🔥",
-                "🎉",
-                "👏",
-                "🤔",
-                "😎",
-                "😂",
-                "😢",
-                "👀",
+                "☀",
+                "☕",
+                "♥",
+                "⚡",
+                "❄",
+                "☃",
+                "♠",
+                "♣",
+                "♦",
+                "♨",
+                "⚽",
+                "⛳",
                 "✅",
                 "❌",
                 "⭐",
-                "💯",
-                "🙏",
-                "💪",
-                "🥳",
-                "🎯",
+                "⌚",
+                "⌛",
+                "☎",
+                "⚓",
+                "☂",
             ]
             message = server.messages[0]["id"]
             server.seed(message, {"unicode": emojis[0]}, [uuid(300 + i) for i in range(35)])
@@ -486,13 +553,23 @@ class MessageInteractions(unittest.TestCase):
             server.api_handler = route
             terminal = self.open(server)
             try:
-                terminal.resize(32, 100)
+                self.resize(terminal, 32, 100)
                 self.wait(terminal, "Mensagem 0001")
                 terminal.send("Preserved draft\x1b[18~E")
                 self.wait(terminal, "Pessoa 0334")
                 self.wait(terminal, "Fim da lista")
 
                 def columns():
+                    self.settled(
+                        terminal,
+                        lambda: (
+                            any(
+                                "Reações" in line and "Pessoas" in line
+                                for line in terminal.screen.display
+                            )
+                            and "Fim da lista" in self.screen(terminal)
+                        ),
+                    )
                     display = terminal.screen.display
                     header = next(
                         i
@@ -530,33 +607,36 @@ class MessageInteractions(unittest.TestCase):
 
                 header, left, right, rows = columns()
                 initial_left = [line[0] for line in rows]
+                self._protocol_checkpoint = len(terminal.output)
                 initial_people = people()
-                self.assertIn("😀 35", "\n".join(initial_left))
-                self.assertNotIn("🎯", "\n".join(initial_left))
+                self.assertIn("☀ 35", "\n".join(initial_left))
+                self.assertNotIn("☂", "\n".join(initial_left))
                 terminal.send(f"\x1b[<65;{right + 3};{header + 4}M")
-                self.assertNotEqual(people(), initial_people)
+                self.settled(terminal, lambda: people() != initial_people)
+                self.settled(terminal, lambda: [line[0] for line in columns()[3]] == initial_left)
                 self.assertEqual([line[0] for line in columns()[3]], initial_left)
                 right_scrolled = people()
                 terminal.send("\x1bOD")
                 for _ in range(3):
                     terminal.send(f"\x1b[<65;{left + 3};{header + 4}M")
-                self.assertIn("🎯", "\n".join(line[0] for line in columns()[3]))
+                self.assertIn("☂", "\n".join(line[0] for line in columns()[3]))
                 self.assertEqual(people(), right_scrolled)
                 terminal.send("\x1bOB" * 13 + "\n")
-                self.wait(terminal, "Pessoa 0419")
+                self.settled(terminal, lambda: people() == ["Pessoa 0419"])
                 self.assertEqual(people(), ["Pessoa 0419"])
                 terminal.send("\x1bOD")
                 header, left, right, rows = columns()
-                row = next(i for i, line in enumerate(rows) if "👏" in line[0])
+                row = next(i for i, line in enumerate(rows) if "♠" in line[0])
                 terminal.click(header + 2 + row, left + 1)
-                self.wait(terminal, "Pessoa 0406")
+                self.settled(terminal, lambda: people() == ["Pessoa 0406"])
                 self.assertEqual(people(), ["Pessoa 0406"])
                 terminal.send("\x1bOC\x1bOA\x1bOD")
                 self.assertEqual(people(), ["Pessoa 0406"])
-                terminal.resize(18, 48)
+                self.resize(terminal, 18, 48)
                 self.wait(terminal, "Pessoa 0406")
                 self.assertEqual(people(), ["Pessoa 0406"])
                 terminal.send("\x1b\x1b")
+                self.settled(terminal, lambda: "Quem reagiu" not in self.screen(terminal))
                 self.assertIn("Preserved draft", self.editor_text(terminal))
                 pages = [r for r in server.requests if r[0] == "GET" and "/reactions?" in r[1]]
                 self.assertEqual(len(pages), 1)
@@ -567,7 +647,7 @@ class MessageInteractions(unittest.TestCase):
 
     def test_participant_failure_waits_for_explicit_retry(self):
         with InteractionMock(count=1) as server:
-            server.seed(server.messages[0]["id"], {"unicode": "👍"}, [uuid(30)])
+            server.seed(server.messages[0]["id"], {"unicode": "☕"}, [uuid(30)])
             server.reactor_status = 503
             terminal = self.open(server)
             try:
@@ -591,16 +671,16 @@ class MessageInteractions(unittest.TestCase):
     def test_older_selected_emoji_loads_missing_participant_pages_automatically(self):
         with InteractionMock(count=1) as server:
             message = server.messages[0]["id"]
-            server.seed(message, {"unicode": "😀"}, [uuid(30)])
-            server.seed(message, {"unicode": "👍"}, [uuid(100 + i) for i in range(120)])
+            server.seed(message, {"unicode": "☀"}, [uuid(30)])
+            server.seed(message, {"unicode": "☕"}, [uuid(100 + i) for i in range(120)])
             terminal = self.open(server)
             try:
                 self.wait(terminal, "Mensagem 0001")
                 terminal.send("\x1b[18~E")
                 self.wait(terminal, "Autor e")
                 self.wait(terminal, "Fim da lista")
-                self.assertIn("😀 1", self.screen(terminal))
-                self.assertIn("👍 120", self.screen(terminal))
+                self.assertIn("☀ 1", self.screen(terminal))
+                self.assertIn("☕ 120", self.screen(terminal))
                 pages = [r for r in server.requests if r[0] == "GET" and "/reactions?" in r[1]]
                 self.assertEqual(len(pages), 2)
                 terminal.read(0.3)
@@ -613,8 +693,8 @@ class MessageInteractions(unittest.TestCase):
     def test_complete_selected_group_does_not_prefetch_other_groups(self):
         with InteractionMock(count=1) as server:
             message = server.messages[0]["id"]
-            server.seed(message, {"unicode": "👍"}, [uuid(100 + i) for i in range(200)])
-            server.seed(message, {"unicode": "😀"}, [uuid(30)])
+            server.seed(message, {"unicode": "☕"}, [uuid(100 + i) for i in range(200)])
+            server.seed(message, {"unicode": "☀"}, [uuid(30)])
             terminal = self.open(server)
             try:
                 self.wait(terminal, "Mensagem 0001")
@@ -625,14 +705,14 @@ class MessageInteractions(unittest.TestCase):
                 terminal.read(0.4)
                 pages = [r for r in server.requests if r[0] == "GET" and "/reactions?" in r[1]]
                 self.assertEqual(len(pages), 1)
-                self.assertIn("👍 200", self.screen(terminal))
-                self.assertIn("😀 1", self.screen(terminal))
+                self.assertIn("☕ 200", self.screen(terminal))
+                self.assertIn("☀ 1", self.screen(terminal))
             finally:
                 self.assertTrue(terminal.close())
 
     def test_participant_panel_closes_when_history_recovers_after_reconnect(self):
         with InteractionMock(count=1) as server:
-            server.seed(server.messages[0]["id"], {"unicode": "👍"}, [uuid(30)])
+            server.seed(server.messages[0]["id"], {"unicode": "☕"}, [uuid(30)])
             terminal = self.open(server)
             try:
                 self.right_click(terminal, "Mensagem 0001")
@@ -656,22 +736,24 @@ class MessageInteractions(unittest.TestCase):
                     type="react_update",
                     message_id=server.messages[0]["id"],
                     emoji_id=None,
-                    unicode="👍",
+                    unicode="☕",
                     count=4,
                 )
                 server.emit(event)
-                self.wait(terminal, "[👍 4]")
+                self.wait(terminal, "[☕ 4]")
                 server.emit(dict(event, count=0))
-                self.settled(terminal, lambda: "[👍" not in self.screen(terminal))
+                self.settled(terminal, lambda: "[☕" not in self.screen(terminal))
                 server.emit(dict(event, unicode="\x1b]52;c;INJECT\x07"))
                 terminal.read(0.2)
                 self.assertNotIn(b"\x1b]52;c;INJECT", terminal.output)
                 server.emit(dict(event, count=-1))
                 terminal.read(0.1)
-                self.assertNotIn("[👍", self.screen(terminal))
+                self.assertNotIn("[☕", self.screen(terminal))
             finally:
                 self.assertTrue(terminal.close())
 
 
 if __name__ == "__main__":
-    unittest.main()
+    # Failed waits retain their traces before CTest's outer timeout, while
+    # continuing through the remaining scenarios preserves full diagnostics.
+    unittest.main(verbosity=2)

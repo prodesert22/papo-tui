@@ -769,12 +769,12 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
         snprintf(key, sizeof(key), "attachment:%s:%zu", str(item, "id"), index);
         const char *name =
             *str(item, "original_file_name") ? str(item, "original_file_name") : "arquivo sem nome";
+        const char *mime = str(item, "mime_type");
         if (app_mode_get() == APP_MODE_ULTRALIGHT) {
-            const char *mime = str(item, "mime_type");
-            const char *kind = !strcmp(mime, "image/gif")    ? "GIF"
-                               : !strncmp(mime, "image/", 6) ? "Imagem"
-                               : !strncmp(mime, "video/", 6) ? "Vídeo"
-                                                             : "Anexo";
+            const char *kind = !strcmp(mime, "image/gif")         ? "GIF"
+                               : g_str_has_prefix(mime, "image/") ? "Imagem"
+                               : g_str_has_prefix(mime, "video/") ? "Vídeo"
+                                                                  : "Anexo";
             json_t *size = json_object_get(item, "size_bytes");
             size_t length = strlen(name);
             if (length > SIZE_MAX - 128)
@@ -793,13 +793,12 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
                 goto error;
             continue;
         }
-        bool video = !strncmp(str(item, "mime_type"), "video/", 6);
-        bool image = !strncmp(str(item, "mime_type"), "image/", 6);
+        bool video = g_str_has_prefix(mime, "video/");
+        bool image = g_str_has_prefix(mime, "image/");
         if (!graphics || (!image && !video)) {
             if (!labeled(b, key, "Anexo: ", name, width, true, false, 0))
                 goto error;
-            snprintf(label, sizeof(label), "Tipo: %s · %lld bytes · Moderação: %s",
-                     str(item, "mime_type"),
+            snprintf(label, sizeof(label), "Tipo: %s · %lld bytes · Moderação: %s", mime,
                      (long long)json_integer_value(json_object_get(item, "size_bytes")),
                      str(item, "moderation_status"));
             if (!text(b, key, label, width, false, false, 0))

@@ -10,6 +10,9 @@ if(BUILD_TESTING AND WIN32)
 endif()
 if(BUILD_TESTING)
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_test(NAME terminal-windows-lifecycle
+             COMMAND ${Python3_EXECUTABLE}
+                     ${PROJECT_SOURCE_DIR}/tests/unit/test_terminal_windows.py)
     find_program(FFMPEG_CLI NAMES ffmpeg REQUIRED)
     add_test(
         NAME app-modes-terminal

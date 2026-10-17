@@ -20,7 +20,48 @@ characters as UTF-8 and other Unicode units as function keys. The patch tags
 native non-ASCII units inside that queue and removes the tag in the public
 narrow/wide readers. The existing input adapter joins surrogate pairs. It keeps
 ncurses sequence and mouse decoding, adds no input parser, and leaves Linux on
-its system ncurses. Dependency source kits include the patch and recipe.
+its system ncurses. The patch also preserves coalesced key repeats and maps
+right clicks to terminal button three regardless of the reported mouse hardware.
+The input adapter checks the native viewport to catch consumed resize events.
+Dependency source kits include the patch and recipe. ConPTY checks exercise
+Unicode, repeated input, resizing and message interactions; those interaction
+tests select Light mode through the UI so Windows creates the configuration
+with its native private permissions.
+The adapter queries the active `CONOUT$` buffer, since ncurses can switch away
+from the original stdout buffer. The private ncurses patch preserves VT input
+when setting either console handle's mode so ConPTY retains bracketed-paste
+markers. The native probe verifies those markers through the real input stream.
+Text interaction fixtures use distinct BMP emojis, respecting ncurses' 16-bit
+Windows cells; native send/input tests retain supplementary Unicode coverage.
+VT-capable consoles use ncurses' existing terminfo driver, which supports
+`define_key` and escape/mouse decoding; the native driver is retained for
+explicit selection or consoles without VT processing. Console size queries
+refresh ncurses' cached buffer information. Terminfo initializes the existing
+console handles directly and leaves alternate-screen switching to VT sequences;
+input events must not activate a separate native console buffer. The probe tests
+native coalesced text records with VT translation disabled, then tests repeated
+text, arrows and bracketed paste through the actual VT stream.
+The terminfo mouse driver reuses ncurses' capability-based mouse initialization
+so its decoder matches SGR reports instead of defaulting to X10. The native
+input probe verifies left/right press and release, both wheel directions and
+SGR coordinates beyond the X10 limit through the same decoder.
+The private Windows ncurses build also uses GLib's Unicode width functions,
+matching the application's layout instead of widening text-presentation emoji
+with ncurses' bundled table. GLib is already a required dependency; bootstrap
+passes its pkg-config flags to ncurses. The console probe checks actual curses
+cell advances for text symbols, emoji and CJK characters.
+Terminfo initialization uses the Win32 console mode defaults even when named
+pipes are disabled; zeroing those fields disables VT output and renders escape
+sequences as text. The native probe uses the application's raw/nonl setup and
+checks processed output and VT output as well as input. ConPTY test teardown
+explicitly closes the pywinpty relay sockets after process exit and removes
+private state only after the session lock has been released.
+The ConPTY observer decodes relay bytes incrementally so a partial UTF-8 code
+point cannot block a test deadline inside pywinpty's decoder. Its Windows mode
+also honors DEC line drawing alongside UTF-8, matching the
+[Windows console sequences](https://learn.microsoft.com/en-us/windows/console/console-virtual-terminal-sequences#designate-character-set);
+pyte otherwise ignores charset selection in UTF-8 mode and displays border
+letters such as `j` instead of `┘`.
 
 Application modes reuse the existing profile configuration, ncurses controls,
 media cache, downloads and Chafa dependency. Configuration schema 4 adds
@@ -180,6 +221,11 @@ ctest --test-dir build --output-on-failure
 python3 tools/quality.py
 ```
 
+For workflow changes, install ShellCheck and run
+`go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12`.
+ShellCheck must be available on PATH: actionlint otherwise omits shell checks,
+so a local success would not exercise the same checks as the GitHub runner.
+
 `PAPO_SANITIZERS=ON` enables ASan/UBSan. `PAPO_COVERAGE=ON` enables GCC
 instrumentation; gcovr generates line and branch coverage reports in build/.
 There is no minimum coverage percentage. New tests should verify observable
@@ -217,7 +263,20 @@ executables directory on PATH. On Windows, use native CPython inside the MSYS2
 CLANG64/CLANGARM64 shell, as shown in the workflow.
 
 CI uses one build matrix for the four native OS/architecture combinations.
-Automatic CI runs only for pushes to `main` and pull requests targeting `main`.
+Development uses a permanent `dev` branch. Commit changes and prepare the next
+version there, then open a pull request targeting `main`. Routine CI runs on
+pull requests, including version commits; each new commit cancels the previous
+run for that PR. The `quality` and four `Build (...)` check names are preserved
+for branch protection. Test executables are compiled, but distribution packages
+are generated only by the release pipeline. Pushes to `dev` do not start CI
+without an open PR, and pushes to `main` do not repeat routine CI.
+
+Merge `dev` into `main` with a merge commit. Before starting the next delivery,
+fetch and merge `origin/main` into `dev` (fast-forward when possible), retaining
+any newer development commits. Keep `dev`; do not force push either branch.
+Configure main protection to require a PR and the existing CI checks. Main
+must allow merge commits; do not enable a linear-history requirement for this
+permanent-branch workflow. Branch protection is managed by the maintainer.
 On Linux, `dist/build.py --build build --prefix build/release-deps
 --variants release,sanitizers,coverage --jobs 4` prepares dependencies once and
 runs independent CMake trees concurrently. `--jobs` is the shared compiler CPU
@@ -232,7 +291,7 @@ cross builds and Wine can check compilation and native CMake metadata; ConPTY
 interaction and native credential tests still require Windows.
 
 For releases, each Linux runner uses `dist/ci_linux.py --prepare` before cache
-restore, then `dist/ci_linux.py --arch x86_64 --version 0.3.0` (or `aarch64`).
+restore, then `dist/ci_linux.py --arch x86_64 --version 0.3.1` (or `aarch64`).
 This requires Docker and Flatpak/Builder. Ubuntu, Debian, Fedora and Flatpak
 build in isolated copies of the committed checkout, with two concurrent tasks
 by default (`--workers` overrides this). Compiler jobs are divided between those
@@ -248,11 +307,28 @@ prefix and includes licenses, corresponding sources and a library inventory.
 `dist/flatpak/build.sh ARCHITECTURE VERSION` generates the actual bundle and
 its sources; it requires Flatpak/Builder and the Freedesktop 26.08 runtime and SDK.
 
-Before releasing, update the version in CMakeLists.txt, the summary in CHANGELOG.md
-and `releases/vMAJOR.MINOR.PATCH.md`. Publish the `vMAJOR.MINOR.PATCH` tag on GitHub.
-The Release workflow validates the tag identity, runs CI, builds each architecture,
-tests packages and publishes only when the entire matrix passes. Manual runs
-accept an existing tag and apply the same checks. Published releases are not
-overwritten. `SHA256SUMS` is generated after all assets are collected and verified.
+Prepare each release in the PR: update CMakeLists.txt, CHANGELOG.md and
+`releases/vMAJOR.MINOR.PATCH.md`. Version-preparation commit titles start with
+`Release MAJOR.MINOR.PATCH: ...` and use English. PR checks validate increasing
+versions and the required release notes. Commit titles do not bypass PR tests.
+
+After the merge, the Release workflow compares the CMake version with the
+previous main revision. An unchanged version finishes without packaging. A new
+version creates an annotated `vMAJOR.MINOR.PATCH` tag on the merged commit, then
+calls the existing native release pipeline directly. The bot writes tags and
+release assets, never commits to main. Releases are serialized and are not
+cancelled by later PR commits. Automatic publication does not depend on another
+workflow being triggered by the bot-created tag.
+
+Every release builds and tests each target and verifies installation before
+publishing. The publish job downloads those same artifacts without rebuilding.
+Packages include licenses, corresponding source archives and `SHA256SUMS`.
+Published releases and existing tags are never replaced or moved.
+
+If an environment or packaging check fails, rerun failed jobs or manually run
+Release with the existing tag. The tag must point to the checked-out commit and
+be reachable from main; a conflicting tag or an already published release is
+rejected. To release code fixes after a failed tagged build, prepare a higher
+version in another PR instead of moving the failed version's tag.
 
 Keep reports and logs in `build/`; do not commit binaries, accounts or cookies.

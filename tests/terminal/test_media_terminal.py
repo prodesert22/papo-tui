@@ -917,15 +917,24 @@ class MediaTerminal(unittest.TestCase):
                             )
                             + 1
                         )
-                        bottom = (
-                            next(
-                                y
-                                for y in range(top + 1, t.screen.lines)
-                                if t.screen.buffer[y][left].data in ("m", "└")
-                                and t.screen.buffer[y][right - 1].data in ("j", "┘")
+                        # A PTY read can stop after the title, before ncurses
+                        # has delivered the bottom border of the same frame.
+                        bottom = None
+                        deadline = time.monotonic() + 8
+                        while bottom is None and time.monotonic() < deadline:
+                            bottom = next(
+                                (
+                                    y
+                                    for y in range(top + 1, t.screen.lines)
+                                    if t.screen.buffer[y][left].data in ("m", "└")
+                                    and t.screen.buffer[y][right - 1].data in ("j", "┘")
+                                ),
+                                None,
                             )
-                            + 1
-                        )
+                            if bottom is None:
+                                t.read(0.03)
+                        self.assertIsNotNone(bottom, "\n".join(t.screen.display))
+                        bottom += 1
 
                         def background_parts():
                             if protocol == "kitty":
@@ -2082,6 +2091,9 @@ class MediaTerminal(unittest.TestCase):
             t = self.open(server, protocol="kitty", environment={"TMPDIR": directory})
             try:
                 t.resize(34, 140)
+                # Finish the failed cover before opening the player: both paths
+                # must share the downloaded file even when its decode fails.
+                self.wait(t, "Imagem inválida")
                 t.send("Rascunho retry\x1b\x1b[18~\n")
                 self.wait(t, "Vídeo inválido ou codec indisponível")
                 self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), 1)

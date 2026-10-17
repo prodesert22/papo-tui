@@ -2,7 +2,7 @@
 
 ## Run the application
 
-After [installing](instalacao.md), open a UTF-8 terminal with at least
+After [installing](installation.md), open a UTF-8 terminal with at least
 44 columns and 22 rows and run:
 
 ```sh
@@ -313,7 +313,7 @@ Use PageUp/PageDown or the mouse wheel over the properties panel to scroll it.
 
 - **Command not found:** check that the application is installed and its folder
   is on PATH. For a portable package, run the executable from the extracted
-  folder; see the [installation guide](instalacao.md).
+  folder; see the [installation guide](installation.md).
 - **Cannot connect:** check the final URL, instance availability and credentials.
   Private servers also require the server password.
 - **Untrusted certificate:** install the instance's CA or run

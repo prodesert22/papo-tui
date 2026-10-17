@@ -335,11 +335,13 @@ class AppModes(unittest.TestCase):
 
                         def colored():
                             return sum(
-                                cell.bg not in ("default", "121212", "1c1c1c", "000000")
+                                any(color in (cell.fg, cell.bg) for color in ("ff0000", "0000ff"))
                                 for cell in cells()
                             )
 
-                        self.wait(t, lambda: colored() >= 12)
+                        # Wait for the whole enlarged red/blue fixture. Loading
+                        # labels and indexed theme backgrounds are not frames.
+                        self.wait(t, lambda: colored() == 18)
                         frames = set()
                         deadline = time.monotonic() + 0.9
                         while time.monotonic() < deadline:
@@ -347,6 +349,7 @@ class AppModes(unittest.TestCase):
                             frames.add(tuple((cell.data, cell.fg, cell.bg) for cell in cells()))
                         if mode == "light":
                             self.assertEqual(len(frames), 1)
+                            self.assertTrue(all("ff0000" in (c.fg, c.bg) for c in cells()))
                         else:
                             self.assertGreater(len(frames), 1)
                         self.assertEqual(t.stream.frames, [])
@@ -563,6 +566,13 @@ class AppModes(unittest.TestCase):
                             title_x = t.screen.display[top].index(title)
                             if title == "Notificações":
                                 top -= 1
+                            self.wait(
+                                t,
+                                lambda: any(
+                                    t.screen.buffer[top][x].data in ("k", "┐")
+                                    for x in range(title_x, t.screen.columns)
+                                ),
+                            )
                             left = next(
                                 x
                                 for x in range(title_x, -1, -1)
@@ -576,15 +586,20 @@ class AppModes(unittest.TestCase):
                                 )
                                 + 1
                             )
-                            bottom = (
-                                next(
-                                    y
-                                    for y in range(top + 1, t.screen.lines)
-                                    if t.screen.buffer[y][left].data in ("m", "└")
-                                    and t.screen.buffer[y][right - 1].data in ("j", "┘")
+
+                            def panel_bottom():
+                                return next(
+                                    (
+                                        y
+                                        for y in range(top + 1, t.screen.lines)
+                                        if t.screen.buffer[y][left].data in ("m", "└")
+                                        and t.screen.buffer[y][right - 1].data in ("j", "┘")
+                                    ),
+                                    None,
                                 )
-                                + 1
-                            )
+
+                            self.wait(t, lambda: panel_bottom() is not None)
+                            bottom = panel_bottom() + 1
                             exposed = {
                                 (y, x)
                                 for y, x in before

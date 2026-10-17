@@ -1,4 +1,4 @@
-"""Locate Unicode loss between ConPTY, the native console and ncurses."""
+"""Verify Unicode, keys and VT output modes through the actual console."""
 
 import json
 import re
@@ -7,6 +7,7 @@ import sys
 import time
 import unittest
 from winpty import Backend, PtyProcess
+from terminal_windows import close_pty_process
 
 BINARY = sys.argv.pop(1)
 
@@ -34,6 +35,15 @@ class WindowsInput(unittest.TestCase):
             child.write(payload + "\r")
             until("PAPO_CURSES_READY")
             child.write(payload + "\x1b")
+            until("PAPO_COMMANDS_READY")
+            child.write("aaabb\x1bOA\x1bOA\x1b[200~x\ny\x1b[201~\x04")
+            until("PAPO_MOUSE_READY")
+            child.write(
+                "\x1b[<0;5;6M\x1b[<0;5;6m"
+                "\x1b[<2;8;9M\x1b[<2;8;9m"
+                "\x1b[<64;10;11M\x1b[<65;10;11M"
+                "\x1b[<0;300;12M\x1b[<0;300;12m"
+            )
             until("PAPO_PROBE_RESULT=")
             until("}")
             report = json.loads(re.search(r"PAPO_PROBE_RESULT=(\{[^\r\n]+\})", output)[1])
@@ -42,10 +52,40 @@ class WindowsInput(unittest.TestCase):
             )
             self.assertEqual(native, payload, json.dumps(report))
             self.assertEqual(report["curses"], list(map(ord, payload)), json.dumps(report))
+            self.assertEqual(
+                report["repeats"],
+                [ord("a")] * 3 + [ord("é")] * 2 + [ord("z")],
+                json.dumps(report),
+            )
+            self.assertEqual(
+                report["commands"],
+                [ord("a")] * 3
+                + [ord("b")] * 2
+                + [0x110000] * 2
+                + [0x110001, ord("x"), 10, ord("y"), 0x110002],
+                report,
+            )
+            self.assertTrue(report["vt_input"], report)
+            self.assertEqual(report["widths"], [1, 1, 1, 1, 2, 2, 1, 1], report)
+            self.assertEqual(
+                report["mouse"],
+                [
+                    [4, 5, 1],
+                    [4, 5, 2],
+                    [7, 8, 3],
+                    [7, 8, 4],
+                    [9, 10, 5],
+                    [9, 10, 6],
+                    [299, 11, 1],
+                    [299, 11, 2],
+                ],
+                report,
+            )
+            self.assertTrue(report["vt_output"], report)
+            self.assertTrue(report["processed_output"], report)
             self.assertTrue(report["iswprint_e_acute"], json.dumps(report))
         finally:
-            if child.isalive():
-                child.terminate(force=True)
+            close_pty_process(child)
 
 
 if __name__ == "__main__":

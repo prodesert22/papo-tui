@@ -2,6 +2,9 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 #include "ui/input/text.h"
+#ifdef _WIN32
+#include "platform/runtime.h"
+#endif
 #include "platform/unicode.h"
 #include "ui/components/theme.h"
 #include <stdint.h>
@@ -144,6 +147,17 @@ bool text_terminal_focus_unknown(void)
 }
 int text_read_raw(uint32_t *key)
 {
+#ifdef _WIN32
+    /* The console driver can consume WINDOW_BUFFER_SIZE_EVENT without issuing
+     * KEY_RESIZE. Reuse the native viewport query and curses' resize support. */
+    unsigned rows, columns, pixels_x, pixels_y;
+    if (stdscr && papo_terminal_size(&rows, &columns, &pixels_x, &pixels_y) && rows <= INT_MAX &&
+        columns <= INT_MAX && ((int)rows != LINES || (int)columns != COLS) &&
+        resize_term((int)rows, (int)columns) == OK) {
+        *key = KEY_RESIZE;
+        return KEY_CODE_YES;
+    }
+#endif
     wint_t native = 0;
     int type = get_wch(&native);
     *key = (uint32_t)native;

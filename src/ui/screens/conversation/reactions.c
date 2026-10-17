@@ -178,7 +178,7 @@ void conversation_reactors_mouse(view *ui, const MEVENT *event)
 }
 static void scrollbar(WINDOW *w, int x, int rows, int first, int count)
 {
-    if (count <= rows)
+    if (rows <= 0 || count <= rows)
         return;
     int thumb = MAX(1, rows * rows / count);
     int top = first * (rows - thumb) / (count - rows);

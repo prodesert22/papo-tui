@@ -331,7 +331,8 @@ char *session_store_take_resume(session_store *s)
         return NULL;
     char *resume = s->resume;
     s->resume = NULL;
-    s->restoring = false;
+    if (resume)
+        s->restoring = false;
     return resume;
 }
 void session_store_cancel_resume(session_store *s)
