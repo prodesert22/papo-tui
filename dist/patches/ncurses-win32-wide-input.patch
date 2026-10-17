@@ -124,3 +124,26 @@
 +#if defined(_NC_WINDOWS_NATIVE) && !USE_NAMED_PIPES
 +    }
 +#endif
+--- a/ncurses/win32con/wcwidth.c
++++ b/ncurses/win32con/wcwidth.c
+@@ -29,0 +30 @@
++#include <glib.h>
+--- a/ncurses/wcwidth.h
++++ b/ncurses/wcwidth.h
+@@ -220,0 +221,14 @@
++#if defined(_NC_WINDOWS_NATIVE)
++#define Lookup(cmp, table) \
++      bisearch(cmp, table, \
++               (int) (sizeof(table) / sizeof(struct interval) - 1))
++    /* Match the application's GLib width policy. The bundled emoji table
++     * treats text-presentation symbols such as U+2600 as double width. */
++    if (!ucs)
++        return 0;
++    if (!g_unichar_validate(ucs))
++        return -1;
++    if (g_unichar_iszerowidth(ucs))
++        return 0;
++    return g_unichar_isprint(ucs) ? (g_unichar_iswide(ucs) ? 2 : 1) : -1;
++#else
+@@ -747,0 +762 @@
++#endif

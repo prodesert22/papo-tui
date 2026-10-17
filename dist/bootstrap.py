@@ -200,6 +200,14 @@ def build(entry, source, work, prefix, jobs, env):
         if name == "chafa":
             options += ["--without-imagemagick", "--without-librsvg"]
         elif name == "ncurses":
+            # Use the same existing GLib width policy as the TUI, rather than
+            # ncurses' bundled table which widens text-presentation emoji.
+            env = dict(env)
+            for option, variable in (("--cflags", "CPPFLAGS"), ("--libs", "LIBS")):
+                flags = subprocess.check_output(
+                    ["pkg-config", option, "glib-2.0"], env=env, text=True
+                ).strip()
+                env[variable] = (flags + " " + env.get(variable, "")).strip()
             run(
                 "patch",
                 "-p1",

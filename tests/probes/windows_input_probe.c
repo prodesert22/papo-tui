@@ -48,6 +48,24 @@ int main(void)
     keypad(stdscr, TRUE);
     text_input_init();
     timeout(20);
+    const wchar_t glyphs[] = L"Aé☀♥☕界⚙❄";
+    int widths[8];
+    WINDOW *measure = newpad(2, 8);
+    if (!measure) {
+        endwin();
+        terminal_recovery_end();
+        return 1;
+    }
+    for (size_t i = 0; i < 8; ++i) {
+        wchar_t text[] = {glyphs[i], 0};
+        cchar_t glyph;
+        werase(measure);
+        widths[i] = setcchar(&glyph, text, A_NORMAL, 0, NULL) == OK &&
+                            mvwadd_wch(measure, 0, 0, &glyph) == OK
+                        ? getcurx(measure)
+                        : -1;
+    }
+    delwin(measure);
     printw("PAPO_CURSES_READY");
     refresh();
     until = GetTickCount64() + 5000;
@@ -142,6 +160,9 @@ int main(void)
     printf("],\"commands\":[");
     for (size_t i = 0; i < command_count; ++i)
         printf("%s%u", i ? "," : "", commands[i]);
+    printf("],\"widths\":[");
+    for (size_t i = 0; i < 8; ++i)
+        printf("%s%d", i ? "," : "", widths[i]);
     printf("],\"mouse\":[");
     for (size_t i = 0; i < mouse_count; ++i) {
         int button = mouse[i].bstate & BUTTON1_PRESSED    ? 1

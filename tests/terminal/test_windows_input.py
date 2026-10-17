@@ -66,6 +66,7 @@ class WindowsInput(unittest.TestCase):
                 report,
             )
             self.assertTrue(report["vt_input"], report)
+            self.assertEqual(report["widths"], [1, 1, 1, 1, 2, 2, 1, 1], report)
             self.assertEqual(
                 report["mouse"],
                 [

@@ -45,6 +45,11 @@ The terminfo mouse driver reuses ncurses' capability-based mouse initialization
 so its decoder matches SGR reports instead of defaulting to X10. The native
 input probe verifies left/right press and release, both wheel directions and
 SGR coordinates beyond the X10 limit through the same decoder.
+The private Windows ncurses build also uses GLib's Unicode width functions,
+matching the application's layout instead of widening text-presentation emoji
+with ncurses' bundled table. GLib is already a required dependency; bootstrap
+passes its pkg-config flags to ncurses. The console probe checks actual curses
+cell advances for text symbols, emoji and CJK characters.
 Terminfo initialization uses the Win32 console mode defaults even when named
 pipes are disabled; zeroing those fields disables VT output and renders escape
 sequences as text. The native probe uses the application's raw/nonl setup and
