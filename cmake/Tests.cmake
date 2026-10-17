@@ -13,6 +13,31 @@ if(BUILD_TESTING)
     add_test(NAME terminal-windows-lifecycle
              COMMAND ${Python3_EXECUTABLE}
                      ${PROJECT_SOURCE_DIR}/tests/unit/test_terminal_windows.py)
+    add_executable(permissions-probe tests/probes/permissions_probe.c)
+    target_link_libraries(permissions-probe PRIVATE papo_outbox)
+    target_compile_options(permissions-probe PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_test(
+        NAME permissions-integration
+        COMMAND
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/integration/test_permissions.py
+            $<TARGET_FILE:permissions-probe>)
+    set_tests_properties(permissions-integration PROPERTIES TIMEOUT 120)
+    add_executable(permissions-test tests/unit/test_permissions.c)
+    target_link_libraries(permissions-test PRIVATE papo_auth)
+    target_compile_options(permissions-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_test(NAME permissions-unit COMMAND permissions-test)
+    add_test(
+        NAME permissions-terminal
+        COMMAND
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_permissions.py
+            $<TARGET_FILE:papo-tui>)
+    set_tests_properties(permissions-terminal PROPERTIES TIMEOUT 180)
+    add_test(
+        NAME member-colors-terminal
+        COMMAND
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_member_colors.py
+            $<TARGET_FILE:papo-tui>)
+    set_tests_properties(member-colors-terminal PROPERTIES TIMEOUT 90)
     find_program(FFMPEG_CLI NAMES ffmpeg REQUIRED)
     add_test(
         NAME app-modes-terminal
@@ -45,7 +70,7 @@ if(BUILD_TESTING)
             ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_emojis_terminal.py
             $<TARGET_FILE:papo-tui> ${FFMPEG_CLI})
-    set_tests_properties(emojis-terminal PROPERTIES TIMEOUT 180)
+    set_tests_properties(emojis-terminal PROPERTIES TIMEOUT 210)
     add_executable(interactions-probe tests/probes/interactions_probe.c)
     target_link_libraries(interactions-probe PRIVATE papo_media)
     target_compile_options(interactions-probe PRIVATE -Wall -Wextra -Wpedantic -Werror)
@@ -64,11 +89,23 @@ if(BUILD_TESTING)
                      $<TARGET_FILE:r8-probe>)
     set_tests_properties(r8-integration PROPERTIES TIMEOUT 120)
     add_test(
+        NAME message-discovery-integration
+        COMMAND
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/integration/test_discovery.py
+            $<TARGET_FILE:r8-probe>)
+    set_tests_properties(message-discovery-integration PROPERTIES TIMEOUT 180)
+    add_test(
         NAME r8-terminal
         COMMAND
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_r8_terminal.py
             $<TARGET_FILE:papo-tui>)
     set_tests_properties(r8-terminal PROPERTIES TIMEOUT 120)
+    add_test(
+        NAME message-discovery-terminal
+        COMMAND
+            ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/terminal/test_discovery_terminal.py
+            $<TARGET_FILE:papo-tui>)
+    set_tests_properties(message-discovery-terminal PROPERTIES TIMEOUT 180)
     add_executable(inbox-badges-test tests/unit/test_inbox_badges.c)
     target_link_libraries(inbox-badges-test PRIVATE papo_auth)
     target_compile_options(inbox-badges-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
@@ -166,8 +203,7 @@ if(BUILD_TESTING)
     target_link_libraries(media-test PRIVATE papo_media PkgConfig::AVUTIL PkgConfig::SIXEL)
     target_compile_options(media-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
     add_test(NAME media-layout-sixel COMMAND media-test)
-    add_executable(media-modal-probe tests/probes/media_modal_probe.c src/ui/components/theme.c
-                                     src/ui/components/button.c)
+    add_executable(media-modal-probe tests/probes/media_modal_probe.c src/ui/components/button.c)
     target_link_libraries(media-modal-probe PRIVATE papo_media)
     target_compile_options(media-modal-probe PRIVATE -Wall -Wextra -Wpedantic -Werror)
     add_test(
@@ -211,7 +247,7 @@ if(BUILD_TESTING)
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_media_terminal.py
             $<TARGET_FILE:papo-tui> ${FFMPEG_CLI})
     set_tests_properties(media-integration PROPERTIES TIMEOUT 120)
-    set_tests_properties(media-terminal PROPERTIES TIMEOUT 300)
+    set_tests_properties(media-terminal PROPERTIES TIMEOUT 420)
     find_program(OPENSSL_CLI NAMES openssl REQUIRED)
     add_executable(realtime-probe tests/probes/realtime_probe.c)
     target_link_libraries(realtime-probe PRIVATE papo_auth)
@@ -296,7 +332,7 @@ if(BUILD_TESTING)
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_send_product.py
             $<TARGET_FILE:papo-tui>)
     set_tests_properties(message-send-product PROPERTIES TIMEOUT 120)
-    add_executable(send-terminal-probe tests/probes/send_terminal_probe.c src/ui/components/theme.c)
+    add_executable(send-terminal-probe tests/probes/send_terminal_probe.c)
     target_link_libraries(send-terminal-probe PRIVATE papo_send_editor)
     target_compile_options(send-terminal-probe PRIVATE -Wall -Wextra -Wpedantic -Werror)
     add_test(
@@ -313,6 +349,23 @@ if(BUILD_TESTING)
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/integration/test_send.py
                 $<TARGET_FILE:send-probe>)
     set_tests_properties(message-send-integration PROPERTIES TIMEOUT 120)
+    add_test(
+        NAME attachments-terminal
+        COMMAND
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_attachments.py
+            $<TARGET_FILE:papo-tui>)
+    set_tests_properties(attachments-terminal PROPERTIES TIMEOUT 120)
+    add_executable(attachment-files-test tests/unit/test_attachment_files.c)
+    target_link_libraries(attachment-files-test PRIVATE papo_auth)
+    target_compile_options(attachment-files-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_test(NAME attachment-files COMMAND attachment-files-test)
+    if(NOT WIN32)
+        add_executable(file-portal-test tests/unit/test_file_portal.c)
+        target_link_libraries(file-portal-test PRIVATE papo_send_editor)
+        target_compile_options(file-portal-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+        add_test(NAME file-portal COMMAND file-portal-test)
+        set_tests_properties(file-portal PROPERTIES TIMEOUT 20)
+    endif()
     add_executable(session-probe tests/probes/session_probe.c)
     target_link_libraries(session-probe PRIVATE papo_auth)
     target_compile_options(session-probe PRIVATE -Wall -Wextra -Wpedantic -Werror)

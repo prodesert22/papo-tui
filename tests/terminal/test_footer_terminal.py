@@ -15,7 +15,10 @@ class FooterTerminal(unittest.TestCase):
         self.assertIn(text, "\n".join(terminal.screen.display))
 
     def footer(self, terminal):
-        return terminal.screen.display[-2]
+        line = terminal.screen.display[-2]
+        self.assertIn("F3", line)
+        self.assertIn("F8", line)
+        return line
 
     def open(self, server):
         terminal = Terminal()
@@ -29,18 +32,20 @@ class FooterTerminal(unittest.TestCase):
             try:
                 terminal.resize(24, 220)
                 self.assertIn("←→ servidores", self.footer(terminal))
-                self.assertIn("F9 avisos", self.footer(terminal))
+                self.assertIn("F3 busca", self.footer(terminal))
+                self.assertIn("F8 fixadas", self.footer(terminal))
+                self.assertIn("F9 notificações", self.footer(terminal))
                 terminal.send("\x1bOB")
                 self.wait(terminal, "Foco: Canais")
                 self.assertIn("↑↓ canais", self.footer(terminal))
-                self.assertIn("F9 avisos", self.footer(terminal))
+                self.assertIn("F9 notificações", self.footer(terminal))
                 self.assertNotIn("F7", self.footer(terminal))
                 self.assertNotIn("Enter enviar", self.footer(terminal))
                 terminal.send("\n")
                 self.wait(terminal, "Nenhuma mensagem neste canal")
                 self.assertIn("↑↓ rolar", self.footer(terminal))
                 self.assertIn("F7 mensagens", self.footer(terminal))
-                self.assertIn("F9 avisos", self.footer(terminal))
+                self.assertIn("F9 notificações", self.footer(terminal))
                 self.assertNotIn("↑↓ canais", self.footer(terminal))
                 terminal.send("Mensagem pelo rodapé\n")
                 self.wait(terminal, "Mensagem confirmada")
@@ -67,8 +72,8 @@ class FooterTerminal(unittest.TestCase):
                 terminal.resize(24, 80)
                 line = self.footer(terminal)
                 self.assertIn("Enter", line)
-                self.assertIn("Conectado", line)
-                self.assertIn("F9 avisos", line)
+                self.assertIn("+1", line)  # The longer hint collapses the oldest notice.
+                self.assertIn("F9 notificações", line)
                 self.assertIn("Mensagem confirmada", line)
                 self.assertIn("Evento ignorado", line)
                 self.assertEqual(line.count(" | "), 2)

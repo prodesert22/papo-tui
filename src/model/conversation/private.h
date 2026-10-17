@@ -16,7 +16,18 @@
 #include <string.h>
 #include <strings.h>
 
-enum request_kind { NONE, CHANNELS, MESSAGES, AUTHORS, USERS, EMOJIS, PROFILES, INBOX, ACTIONS };
+enum request_kind {
+    NONE,
+    CHANNELS,
+    MESSAGES,
+    AUTHORS,
+    USERS,
+    EMOJIS,
+    PROFILES,
+    INBOX,
+    ACTIONS,
+    DISCOVERY
+};
 #define TYPING_LIMIT 128U
 #define TYPING_TIMEOUT_MS 6000U
 #define TYPING_SEND_MS 2000U
@@ -36,6 +47,7 @@ typedef struct {
 } protected_users;
 struct history {
     struct history_actions *actions;
+    struct history_discovery *discovery;
     GHashTable *costs;
     uint64_t cost_sequence, cost_sweep, maintenance, directory_used;
     void (*media_update)(void *, const json_t *);
@@ -53,6 +65,8 @@ struct history {
     json_t *users, *directory, *queried, *summary_ids;
     size_t user_bytes;
     uint64_t users_revision, messages_revision;
+    uint64_t role_events, request_role_events;
+    uint64_t permission_revision, permission_channels;
     bool users_active, users_complete, users_failed, users_partial;
     char users_time[65], users_id[37], users_notice[192];
     json_t *channels, *messages, *read_messages;
@@ -93,6 +107,7 @@ bool history_internal_cache_user(history *h, json_t *u, bool presence);
 void history_internal_typing_remove(history *h, const char *id);
 bool history_internal_typing_event(history *h, const json_t *event);
 bool history_internal_presence_event(history *h, const json_t *event);
+bool history_internal_role_event(history *h, const json_t *event);
 bool history_internal_users_response(history *h, json_t *body);
 bool history_internal_request_users(history *h);
 bool history_internal_channels_response(history *h, json_t *body);
@@ -116,6 +131,12 @@ bool history_internal_authors_response(history *h, json_t *body);
 bool history_internal_request_messages(history *h);
 bool history_internal_request_authors(history *h);
 
+void history_internal_discovery_destroy(history *h);
+void history_internal_discovery_recover(history *h);
+bool history_internal_discovery_dispatch(history *h);
+void history_internal_discovery_response(history *h, json_t *body, long code);
+bool history_internal_discovery_event(history *h, const json_t *event);
+void history_internal_pins_invalidate(history *h);
 bool history_internal_actions_mutating(history *h);
 void history_internal_actions_reset(history *h);
 void history_internal_actions_destroy(history *h);

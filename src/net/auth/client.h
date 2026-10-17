@@ -1,6 +1,8 @@
 #ifndef PAPO_AUTH_H
 #define PAPO_AUTH_H
 
+#include "model/attachment.h"
+#include "model/permissions.h"
 #include "net/realtime/websocket.h"
 #include <stdbool.h>
 #include <stddef.h>
@@ -23,7 +25,10 @@ typedef enum {
     AUTH_REFRESH,
     AUTH_API_GET,
     AUTH_MESSAGE_SEND,
-    AUTH_API_MUTATION
+    AUTH_API_MUTATION,
+    AUTH_PERMISSION_SERVER,
+    AUTH_PERMISSION_ROLES,
+    AUTH_PERMISSION_CHANNELS
 } auth_state;
 
 typedef enum {
@@ -95,7 +100,21 @@ bool auth_get_json(auth_client *client, const char *path);
  * reconciliation before a manual retry. DELETE accepts a NULL body. */
 bool auth_mutate_json(auth_client *client, const char *method, const char *path,
                       const json_t *body);
+/* Read-only POST /search. Copies the documented filters; cursor values must
+ * be supplied together. Shares GET cancellation/session recovery semantics. */
+bool auth_search_messages(auth_client *client, const json_t *filters, const char *since,
+                          const char *last_id);
+/* Bodyless, non-replayed pin mutation; UUID path components are validated. */
+bool auth_pin_message(auth_client *client, const char *channel, const char *message, bool remove);
 bool auth_api_uncertain(const auth_client *client);
+/* Borrowed, instance/account-scoped policy; auth owns it until destruction. */
+permissions *auth_permissions(auth_client *client);
+void auth_permissions_refresh(auth_client *client);
+const char *auth_permissions_notice(const auth_client *client);
+/* Restricts a just-queued message mutation until HTTP admission. Copies only
+ * authorization metadata; false cancels the unsent mutation safely. */
+bool auth_guard_message(auth_client *client, const json_t *message, channel_permission permission,
+                        bool edit, bool deletion);
 /* Read-only POST /users/user_summary_batch. Copies 1..1000 UUID strings;
  * participates in the same queue/budget and may recover one 401, like GET.
  * This endpoint has no mutation semantics; no generic POST replay API exists. */
@@ -121,9 +140,13 @@ typedef struct {
     bool transmitted, cancelled;
 } auth_send_receipt;
 
-/* Text-only POST /messages through libcurl MIME and the existing REST queue.
+/* POST /messages through libcurl MIME and the existing REST queue.
  * Copies inputs; rejects concurrent submissions. Never replays the mutation.
  * A 401 may renew identity once to permit a subsequent manual attempt. */
+/* Opens immutable files during preparation; MIME streams own their handles. */
+bool auth_send_attachments(auth_client *client, uint64_t operation_id, const char *channel_id,
+                           const char *content, const char *reply_to, attachment_file *const *files,
+                           size_t count);
 bool auth_send_text(auth_client *client, uint64_t operation_id, const char *channel_id,
                     const char *content);
 /* Optional reply target copied into the multipart; no mention-control field exists. */

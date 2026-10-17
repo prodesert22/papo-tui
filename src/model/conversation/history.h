@@ -47,12 +47,16 @@ void history_reference_request(history *h, const char *id);
 const char *history_reference_notice(history *h);
 uint64_t history_reference_revision(history *h);
 bool history_jump(history *h, const char *id);
+/* A known message timestamp allows a bounded cursor lookup in the active channel. */
+bool history_jump_at(history *h, const char *id, const char *created_at);
+void history_cancel_jump(history *h);
+const char *history_jump_error(history *h);
 bool history_take_jump(history *h, char id[37]);
 bool history_reaction_valid(const json_t *emoji);
 bool history_reaction_equal(const json_t *a, const json_t *b);
 bool history_reaction_mine(const json_t *message, const json_t *emoji);
 /* Queue one mutation through the shared asynchronous REST owner. DELETE is
- * authorized by the server; edits additionally require a loaded own message.
+ * checked locally from the shared permission model, then by the server.
  * content is copied. Results are consumed once and scoped to the active channel/session. */
 bool history_edit_message(history *h, const char *message, const char *content);
 bool history_delete_message(history *h, const char *message);
@@ -68,6 +72,9 @@ bool history_recovering(const history *h);
 uint64_t history_insertions(const history *h);
 void history_reload_channels(history *h);
 bool history_select(history *h, size_t channel);
+/* Metadata remains available internally even for channels hidden in the rail. */
+bool history_channel_visible(const history *h, size_t index);
+permission_decision history_permission(const history *h, channel_permission permission);
 void history_recent(history *h);
 /* Queue pages through the existing REST dispatcher, even while an auxiliary
  * read is pending. Failures require history_retry(), with no automatic replay. */
@@ -105,6 +112,8 @@ json_t *history_user(const history *h, size_t index);
 const char *history_users_notice(const history *h);
 const char *history_mention_name(void *context, const char *id);
 const char *history_author(const history *h, const char *id);
+unsigned history_member_color(const history *h, const char *id);
+const char *history_author_username(const history *h, const char *id);
 const char *history_status(const history *h);
 /* Independent latest read, event and mutation notices. Empty text clears that context. */
 const char *history_notice(const history *h, history_notice_kind kind, uint64_t *revision);

@@ -29,9 +29,60 @@ static short component(unsigned char value)
     return (short)(((unsigned int)value * 1000 + 127) / 255);
 }
 
+static struct {
+    int fg, bg;
+} rgb_pairs[THEME_RGB_PAIR_COUNT];
+static int rgb_pair_count;
+int theme_rgb_pair(unsigned rgb, int fallback)
+{
+    if (!(rgb & 0x1000000) || !has_colors() || COLORS < 8 || COLOR_PAIRS < 64)
+        return fallback;
+    int r = (int)(rgb >> 16) & 255, g = (int)(rgb >> 8) & 255, b = (int)rgb & 255;
+    int fg;
+    if (COLORS >= 0x1000000)
+        fg = (int)(rgb & 0xffffff);
+    else if (COLORS >= 256) {
+        const int level[] = {0, 95, 135, 175, 215, 255};
+        int best = 0x7fffffff;
+        fg = 16;
+        for (int red = 0; red < 6; ++red)
+            for (int green = 0; green < 6; ++green)
+                for (int blue = 0; blue < 6; ++blue) {
+                    int dr = r - level[red], dg = g - level[green], db = b - level[blue];
+                    int distance = dr * dr + dg * dg + db * db;
+                    if (distance < best) {
+                        best = distance;
+                        fg = 16 + 36 * red + 6 * green + blue;
+                    }
+                }
+    } else
+        fg = (r > 127 ? COLOR_RED : 0) | (g > 127 ? COLOR_GREEN : 0) | (b > 127 ? COLOR_BLUE : 0);
+    int oldfg, background;
+    if (extended_pair_content(fallback, &oldfg, &background) == ERR)
+        return fallback;
+    for (int i = 0; i < rgb_pair_count; ++i)
+        if (rgb_pairs[i].fg == fg && rgb_pairs[i].bg == background)
+            return THEME_PAIR_END + i;
+    if (rgb_pair_count == THEME_RGB_PAIR_COUNT ||
+        (THEME_PAIR_END + rgb_pair_count >= COLOR_PAIRS || THEME_PAIR_END + rgb_pair_count >= 256))
+        return fallback;
+    int pair = THEME_PAIR_END + rgb_pair_count;
+    if (init_extended_pair(pair, fg, background) == ERR)
+        return fallback;
+    rgb_pairs[rgb_pair_count].fg = fg;
+    rgb_pairs[rgb_pair_count++].bg = background;
+    return pair;
+}
+int theme_member_pair(unsigned rgb, int background)
+{
+    int white = theme_rgb_pair(0x1ffffff, background);
+    return theme_rgb_pair(rgb, white);
+}
+
 void theme_init(ui_theme *theme)
 {
     memset(theme, 0, sizeof(*theme));
+    rgb_pair_count = 0;
     if (!has_colors() || start_color() == ERR)
         return;
     const char *term = getenv("TERM"), *kitty_window = getenv("KITTY_WINDOW_ID");
@@ -131,6 +182,10 @@ void theme_init(ui_theme *theme)
             color = i <= 12 ? COLOR_GREEN : i <= 17 ? COLOR_YELLOW : COLOR_RED;
         init_extended_pair(THEME_VOLUME_FIRST + i, color, colors[SURFACE]);
     }
+    const int member_backgrounds[] = {THEME_PANEL, THEME_FOCUSED, THEME_PANEL_ACTIVE,
+                                      THEME_HISTORY_AREA, THEME_PROFILE_FOCUS};
+    for (size_t i = 0; i < sizeof(member_backgrounds) / sizeof(member_backgrounds[0]); ++i)
+        theme_member_pair(0x1ffffff, member_backgrounds[i]);
     wbkgd(stdscr, COLOR_PAIR(THEME_NORMAL));
 }
 

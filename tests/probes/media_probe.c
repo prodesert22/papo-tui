@@ -70,9 +70,11 @@ int main(int argc, char **argv)
         printf("discarded=%d\n", media_download_state(m) == MEDIA_IDLE);
         goto done;
     }
-    bool read = auth_get_json(auth, "/server"), independent = false;
+    bool read = false, independent = false;
     for (int i = 0; i < 10000; ++i) {
         tick(auth, m);
+        if (!read)
+            read = auth_get_json(auth, "/server");
         if (auth_response_ready(auth)) {
             long status;
             json_t *body = auth_take_response(auth, &status, NULL);

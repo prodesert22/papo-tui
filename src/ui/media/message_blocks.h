@@ -107,7 +107,6 @@ bool message_blocks_build_visual(message_blocks *out, json_t *message, const cha
                                  mention_resolver resolver, void *resolver_context,
                                  const char *self, text_icon_resolver icons,
                                  text_icon_painter painter, void *icon_context, bool continuation);
-void message_colors_begin(void);
 void message_row_draw(WINDOW *window, const message_row *row, int y, int x, int width, int pair,
-                      int accent);
+                      int accent, unsigned author_color);
 #endif

@@ -1,4 +1,5 @@
 #include "net/auth/private.h"
+#include <glib.h>
 
 bool auth_get_json(auth_client *client, const char *path)
 {
@@ -134,4 +135,65 @@ json_t *auth_take_response(auth_client *client, long *status, uint64_t *generati
     if (generation)
         *generation = client->response_generation;
     return body;
+}
+
+static bool api_uuid(const char *id)
+{
+    if (!id || strlen(id) != 36)
+        return false;
+    for (size_t i = 0; i < 36; ++i)
+        if (i == 8 || i == 13 || i == 18 || i == 23 ? id[i] != '-' : !g_ascii_isxdigit(id[i]))
+            return false;
+    return true;
+}
+
+bool auth_search_messages(auth_client *client, const json_t *filters, const char *since,
+                          const char *last_id)
+{
+    if (!json_is_object(filters) || !auth_has_session(client) || client->state != AUTH_READY ||
+        client->queued || client->attached || client->api_path || client->response_ready ||
+        (!!(since && *since) != !!(last_id && *last_id)) ||
+        (last_id && *last_id && !api_uuid(last_id)))
+        return false;
+    char path[512] = "/search";
+    if (since && *since) {
+        if (strlen(since) > 64)
+            return false;
+        char *encoded = curl_easy_escape(NULL, since, 0);
+        if (!encoded)
+            return false;
+        snprintf(path, sizeof(path), "/search?since=%s&last_id=%s", encoded, last_id);
+        curl_free(encoded);
+    }
+    json_t *copy = json_deep_copy(filters);
+    char *endpoint = strdup(path);
+    if (!copy || !endpoint) {
+        json_decref(copy);
+        free(endpoint);
+        return false;
+    }
+    client->api_path = endpoint;
+    client->api_body = copy;
+    client->api_retried = false;
+    return auth_internal_request(client, AUTH_API_GET, endpoint, copy, true);
+}
+
+bool auth_pin_message(auth_client *client, const char *channel, const char *message, bool remove)
+{
+    if (!api_uuid(channel) || !api_uuid(message) || !auth_has_session(client) ||
+        client->state != AUTH_READY || client->queued || client->attached || client->api_path ||
+        client->response_ready)
+        return false;
+    if (permissions_role(client->permissions, PERMISSION_PIN_MESSAGE) != PERMISSION_ALLOWED ||
+        permissions_channel(client->permissions, channel, PERMISSION_READ_CHANNEL) !=
+            PERMISSION_ALLOWED)
+        return false;
+    char path[160];
+    snprintf(path, sizeof(path), "/channels/%s/messages/%s/pin", channel, message);
+    client->api_path = strdup(path);
+    if (!client->api_path)
+        return false;
+    client->api_method = remove ? "DELETE" : "POST";
+    client->api_uncertain = false;
+    return auth_internal_request(client, AUTH_API_MUTATION, client->api_path, NULL, !remove);
 }

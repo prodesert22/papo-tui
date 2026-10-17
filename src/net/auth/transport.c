@@ -57,6 +57,11 @@ bool auth_internal_request(auth_client *client, auth_state state, const char *pa
                            bool post)
 {
     auth_internal_detach(client);
+    /* Restore ordinary REST deadlines after a potentially long file upload. */
+    if (curl_easy_setopt(client->easy, CURLOPT_TIMEOUT_MS, 15000L) != CURLE_OK ||
+        curl_easy_setopt(client->easy, CURLOPT_LOW_SPEED_LIMIT, 0L) != CURLE_OK ||
+        curl_easy_setopt(client->easy, CURLOPT_LOW_SPEED_TIME, 0L) != CURLE_OK)
+        goto error;
     free(client->response);
     client->response = NULL;
     client->response_length = 0;
@@ -113,6 +118,7 @@ bool auth_internal_request(auth_client *client, auth_state state, const char *pa
     if (state == AUTH_API_MUTATION &&
         curl_easy_setopt(client->easy, CURLOPT_CUSTOMREQUEST, client->api_method) != CURLE_OK)
         goto error;
+    client->permission_serial = permissions_event_serial(client->permissions);
     client->queued = true;
     client->state = state;
     client->operation = state;
