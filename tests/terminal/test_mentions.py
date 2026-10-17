@@ -348,6 +348,8 @@ class Mentions(unittest.TestCase):
                 t.send("\t")
                 self.wait(t, "@Álice")
                 t.send("\n")
+                # Narrow footers abbreviate notices alongside the function-key hints.
+                t.resize(24, 100)
                 self.wait(t, "Mensagem confirmada")
                 self.assertTrue(s.sent_messages[0]["content"].startswith("Meu @mention"))
             finally:
