@@ -4,7 +4,7 @@ import hashlib
 import importlib.util
 import io
 import json
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import re
 import shlex
 import subprocess
@@ -93,7 +93,8 @@ class DistributionTests(unittest.TestCase):
     def test_windows_mpv_uses_native_threading(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            source, work, prefix = (root / name for name in ("source", "work", "prefix"))
+            source, work = (root / name for name in ("source", "work"))
+            prefix = PureWindowsPath(r"C:\Users\Pedro\Documents\papo-tui\build\release-deps")
             source.mkdir()
             calls = []
 
@@ -115,6 +116,7 @@ class DistributionTests(unittest.TestCase):
                 )
             setup = next(args for args, _ in calls if args[:2] == ["meson", "setup"])
             self.assertIn("-Dwin32-threads=enabled", setup)
+            self.assertIn("--prefix=C:/Users/Pedro/Documents/papo-tui/build/release-deps", setup)
 
     def test_ncurses_pkg_config_uses_native_relocatable_paths(self):
         with tempfile.TemporaryDirectory() as directory:

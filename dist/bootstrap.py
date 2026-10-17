@@ -268,7 +268,9 @@ def build(entry, source, work, prefix, jobs, env):
         run("make", "install", cwd=binary)
     else:
         options = [
-            "--prefix=" + str(prefix),
+            # mpv embeds Meson's command line in a C string without escaping
+            # Windows backslashes (C:\Users becomes an invalid \U escape).
+            "--prefix=" + prefix.as_posix(),
             "--libdir=lib",
             "--buildtype=release",
             "--default-library=shared",
@@ -361,7 +363,7 @@ def main():
                 else "windows-wide-input-v1-"
                 + sha256(ROOT / "dist/patches/ncurses-win32-wide-input.patch")
                 if os.name == "nt" and entry["name"] == "ncurses"
-                else "windows-native-threads-v1"
+                else "windows-native-threads-posix-prefix-v1"
                 if os.name == "nt" and entry["name"] == "mpv"
                 else None
             ),
