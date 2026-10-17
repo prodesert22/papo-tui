@@ -37,6 +37,13 @@ class WindowsInput(unittest.TestCase):
             child.write(payload + "\x1b")
             until("PAPO_COMMANDS_READY")
             child.write("aaabb\x1bOA\x1bOA\x1b[200~x\ny\x1b[201~\x04")
+            until("PAPO_MOUSE_READY")
+            child.write(
+                "\x1b[<0;5;6M\x1b[<0;5;6m"
+                "\x1b[<2;8;9M\x1b[<2;8;9m"
+                "\x1b[<64;10;11M\x1b[<65;10;11M"
+                "\x1b[<0;300;12M\x1b[<0;300;12m"
+            )
             until("PAPO_PROBE_RESULT=")
             until("}")
             report = json.loads(re.search(r"PAPO_PROBE_RESULT=(\{[^\r\n]+\})", output)[1])
@@ -59,6 +66,20 @@ class WindowsInput(unittest.TestCase):
                 report,
             )
             self.assertTrue(report["vt_input"], report)
+            self.assertEqual(
+                report["mouse"],
+                [
+                    [4, 5, 1],
+                    [4, 5, 2],
+                    [7, 8, 3],
+                    [7, 8, 4],
+                    [9, 10, 5],
+                    [9, 10, 6],
+                    [299, 11, 1],
+                    [299, 11, 2],
+                ],
+                report,
+            )
             self.assertTrue(report["vt_output"], report)
             self.assertTrue(report["processed_output"], report)
             self.assertTrue(report["iswprint_e_acute"], json.dumps(report))

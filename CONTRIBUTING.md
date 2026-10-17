@@ -41,6 +41,10 @@ console handles directly and leaves alternate-screen switching to VT sequences;
 input events must not activate a separate native console buffer. The probe tests
 native coalesced text records with VT translation disabled, then tests repeated
 text, arrows and bracketed paste through the actual VT stream.
+The terminfo mouse driver reuses ncurses' capability-based mouse initialization
+so its decoder matches SGR reports instead of defaulting to X10. The native
+input probe verifies left/right press and release, both wheel directions and
+SGR coordinates beyond the X10 limit through the same decoder.
 Terminfo initialization uses the Win32 console mode defaults even when named
 pipes are disabled; zeroing those fields disables VT output and renders escape
 sequences as text. The native probe uses the application's raw/nonl setup and

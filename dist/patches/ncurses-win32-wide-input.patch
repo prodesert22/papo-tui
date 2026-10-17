@@ -106,3 +106,21 @@
 +#elif USE_WINCONMODE
 +        /* The terminfo driver also uses Win32 TTY mode fields. Initializing
 +         * them to zero disables VT output and prints escapes as characters. */
+--- a/ncurses/base/lib_mouse.c
++++ b/ncurses/base/lib_mouse.c
+@@ -382 +382 @@
+-#if !defined(_NC_WINDOWS_NATIVE) || USE_NAMED_PIPES
++#if !defined(_NC_WINDOWS_NATIVE) || USE_NAMED_PIPES || USE_TERM_DRIVER
+@@ -759 +759,7 @@
+-#if !defined(_NC_WINDOWS_NATIVE) || USE_NAMED_PIPES
++#if !defined(_NC_WINDOWS_NATIVE) || USE_NAMED_PIPES || USE_TERM_DRIVER
++#if defined(_NC_WINDOWS_NATIVE) && !USE_NAMED_PIPES
++    /* The terminfo driver selects M_XTERM but does not initialize its wire
++     * format. Reuse the capability-driven SGR/X10 initialization below,
++     * leaving the native Win32 driver's M_TERM_DRIVER selection unchanged. */
++    if (sp->_mouse_type == M_XTERM) {
++#endif
+@@ -767,0 +774,3 @@
++#if defined(_NC_WINDOWS_NATIVE) && !USE_NAMED_PIPES
++    }
++#endif

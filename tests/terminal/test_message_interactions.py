@@ -685,4 +685,6 @@ class MessageInteractions(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main(verbosity=2)
+    # Surface the first native failure before repeated assertion waits exhaust
+    # CTest's suite timeout and discard unittest's final traceback report.
+    unittest.main(verbosity=2, failfast=os.name == "nt")

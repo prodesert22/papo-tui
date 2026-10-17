@@ -1,5 +1,6 @@
 /* Synthetic ConPTY diagnostics: compare Unicode/keys and check VT output modes. */
 #include "platform/terminal.h"
+#include "ui/input/mouse.h"
 #include "ui/input/text.h"
 #include <locale.h>
 #include <stdio.h>
@@ -105,6 +106,25 @@ int main(void)
                                     : key == '\r'                                     ? '\n'
                                                                                       : key;
     }
+    MEVENT mouse[8];
+    size_t mouse_count = 0;
+    ui_mouse_initialize(BUTTON1_PRESSED | BUTTON1_RELEASED | BUTTON3_PRESSED | BUTTON3_RELEASED |
+                        BUTTON4_PRESSED | BUTTON5_PRESSED | REPORT_MOUSE_POSITION);
+    mouseinterval(0);
+    printw("\nPAPO_MOUSE_READY");
+    refresh();
+    until = GetTickCount64() + 5000;
+    while (mouse_count < 8 && GetTickCount64() < until) {
+        uint32_t key;
+        int type = text_read_raw(&key);
+        if (type == KEY_CODE_YES && key == KEY_MOUSE) {
+            MEVENT event;
+            while (getmouse(&event) == OK && mouse_count < 8)
+                mouse[mouse_count++] = event;
+        }
+    }
+    mousemask(0, NULL);
+    ui_mouse_shutdown();
     DWORD flags = 0, output_flags = 0;
     GetConsoleMode(input, &flags);
     GetConsoleMode(GetStdHandle(STD_OUTPUT_HANDLE), &output_flags);
@@ -122,6 +142,17 @@ int main(void)
     printf("],\"commands\":[");
     for (size_t i = 0; i < command_count; ++i)
         printf("%s%u", i ? "," : "", commands[i]);
+    printf("],\"mouse\":[");
+    for (size_t i = 0; i < mouse_count; ++i) {
+        int button = mouse[i].bstate & BUTTON1_PRESSED    ? 1
+                     : mouse[i].bstate & BUTTON1_RELEASED ? 2
+                     : mouse[i].bstate & BUTTON3_PRESSED  ? 3
+                     : mouse[i].bstate & BUTTON3_RELEASED ? 4
+                     : mouse[i].bstate & BUTTON4_PRESSED  ? 5
+                     : mouse[i].bstate & BUTTON5_PRESSED  ? 6
+                                                          : 0;
+        printf("%s[%d,%d,%d]", i ? "," : "", mouse[i].x, mouse[i].y, button);
+    }
     printf("],\"vt_input\":%d,\"vt_output\":%d,\"processed_output\":%d,\"iswprint_e_acute\":%d}\n",
            !!(flags & ENABLE_VIRTUAL_TERMINAL_INPUT),
            !!(output_flags & ENABLE_VIRTUAL_TERMINAL_PROCESSING),
