@@ -26,7 +26,7 @@ papo-tui
 Enter the instance URL and your credentials. Use **Tab** to move focus,
 **Enter** to confirm and **Ctrl+Q** to quit.
 
-The [usage guide](docs/uso.md) covers essential controls and common problems.
+The [usage guide](docs/usage.md) covers essential controls and common problems.
 
 Press **F2**, or click the gear beside your name below the channels, to choose
 an application mode: **Normal** uses terminal graphics with a Chafa fallback;
@@ -48,7 +48,7 @@ The service contract is in [openapi.yml](openapi.yml).
 
 ## Releases and license
 
-[Changelog](CHANGELOG.md) · [Full release notes](releases/v0.2.0.md)
+[Changelog](CHANGELOG.md) · [Full release notes](releases/v0.3.0.md)
 
 Original code is licensed under [MIT](LICENSE). Bundled libraries and data
 retain their [upstream licenses](THIRD_PARTY_NOTICES.md).

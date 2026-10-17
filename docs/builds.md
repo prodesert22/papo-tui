@@ -44,4 +44,4 @@ Useful options:
 | `PAPO_DESKTOP_NOTIFICATIONS=OFF` | Disable popups; keep the notification center |
 | `PAPO_BUNDLE_RUNTIME=ON` | Include libraries in the installation |
 
-See the [usage guide](uso.md) for instructions and troubleshooting.
+See the [usage guide](usage.md) for instructions and troubleshooting.

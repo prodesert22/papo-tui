@@ -24,7 +24,7 @@ install(
     FILES data/emoji/LICENSE
     DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/papo-tui
     RENAME Unicode-LICENSE)
-install(FILES README.md docs/uso.md docs/instalacao.md docs/builds.md
+install(FILES README.md docs/usage.md docs/instalacao.md docs/builds.md
         DESTINATION ${CMAKE_INSTALL_DOCDIR})
 if(UNIX)
     install(FILES dist/io.github.prodesert22.PapoTUI.desktop

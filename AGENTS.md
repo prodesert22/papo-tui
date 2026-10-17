@@ -4,7 +4,7 @@ Este arquivo define como trabalhar neste repositório. Leia-o antes de alterar a
 
 ## Projeto
 
-Papo TUI é um cliente de conversas para terminal em C. O contrato do serviço está em `openapi.yml`; `README.md` e `docs/uso.md` descrevem instalação, execução e uso.
+Papo TUI é um cliente de conversas para terminal em C. O contrato do serviço está em `openapi.yml`; `README.md` e `docs/usage.md` descrevem instalação, execução e uso.
 
 O cliente usa C17, CMake, ncursesw/formw, libcurl, Jansson e bibliotecas de mídia. Há testes HTTP com backend simulado e de interação em pseudoterminal. Não tratar a tela inicial como conclusão de toda a integração. Consulte `src/net/auth/` para os fluxos implementados e `CONTRIBUTING.md` para desenvolvimento e distribuição.
 
@@ -12,7 +12,7 @@ O cliente usa C17, CMake, ncursesw/formw, libcurl, Jansson e bibliotecas de míd
 
 ## Regras de trabalho
 
-1. Leia `README.md`, `docs/uso.md` e os trechos relevantes de `openapi.yml` antes de propor ou implementar uma entrega.
+1. Leia `README.md`, `docs/usage.md` e os trechos relevantes de `openapi.yml` antes de propor ou implementar uma entrega.
 2. Mantenha cada mudança limitada à entrega em andamento. Não misture funcionalidades futuras ou refatorações sem relação com a tarefa.
 3. Não invente endpoints, campos, eventos, permissões ou garantias de sincronização. Quando a especificação não definir um comportamento, registre a lacuna e escolha uma solução que não prometa suporte inexistente no backend.
 4. Trate cada instância como um contexto isolado. Cookies, estado de sessão e entidades do mesmo UUID em instâncias diferentes não podem ser compartilhados.
@@ -25,7 +25,7 @@ O cliente usa C17, CMake, ncursesw/formw, libcurl, Jansson e bibliotecas de míd
 11. Escreva todas as mensagens de commit em inglês, incluindo o título e o corpo quando houver.
 12. Todo novo envio HTTP do cliente deve passar pelo orçamento global de `src/net/rate_limit.c`: padrão de 10 requisições/s e burst de 25. A espera deve ocorrer no ciclo de eventos, sem bloquear a TUI. Não reinicie o orçamento ao autenticar, cancelar, sair da conta ou recriar um cliente; não repita mutações automaticamente ao receber 429. As ferramentas de integração devem manter cadência compatível com esses limites.
 13. A integração confirmou que GET de histórico marca leitura remota. Evite prefetch de históricos de conversas inativas. O WS pode responder heartbeat após expiração/revogação individual; revalide a sessão por REST e não trate ACK como autenticação. Mantenha verificação TLS ativa; `CURL_CA_BUNDLE` permite confiar em uma CA própria.
-14. Escreva `docs/uso.md` em inglês e organize-o como um guia de usuário: como executar o programa, como usar seus recursos e como resolver problemas comuns. Preserve os nomes reais de botões e avisos da interface quando necessário, acompanhados de explicação em inglês. Mantenha detalhes de implementação, arquitetura e desenvolvimento em `CONTRIBUTING.md`; relatórios e diagnósticos de execução ficam em `build/`.
+14. Escreva `docs/usage.md` em inglês e organize-o como um guia de usuário: como executar o programa, como usar seus recursos e como resolver problemas comuns. Preserve os nomes reais de botões e avisos da interface quando necessário, acompanhados de explicação em inglês. Mantenha detalhes de implementação, arquitetura e desenvolvimento em `CONTRIBUTING.md`; relatórios e diagnósticos de execução ficam em `build/`.
 
 ## Build e validação
 
