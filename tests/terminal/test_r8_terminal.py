@@ -482,7 +482,7 @@ class R8Terminal(unittest.TestCase):
     def test_webhook_notification_uses_cached_author_and_red_mention_badges(self):
         with R8Mock(count=0) as server:
             t = self.login(server, environment={"KITTY_WINDOW_ID": "badge-fixture"})
-            self.assertIn("F9 avisos", t.screen.display[-2])
+            self.assertIn("F9 notificações", t.screen.display[-2])
             content = "Olá @mention(<@" + uuid(1) + ">)"
             webhook = dict(
                 server.message(50),
@@ -598,7 +598,7 @@ class R8Terminal(unittest.TestCase):
                     message_content="Aviso sem metadados",
                 )
             )
-            self.wait(t, "1 avisos")
+            self.wait(t, "1 notificação")
             self.assertIn("[Comunidade 0]", t.screen.display[1])
             self.assert_initial_history_only(server)
 

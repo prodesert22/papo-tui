@@ -225,7 +225,8 @@ bool conversation_collect_notices(view *ui, auth_client *auth)
     inbox *box = history_inbox(ui->model);
     char notifications[192] = "";
     if (inbox_unread(box))
-        snprintf(notifications, sizeof(notifications), "%zu avisos%s · F9", inbox_unread(box),
+        snprintf(notifications, sizeof(notifications), "%zu %s%s · F9", inbox_unread(box),
+                 inbox_unread(box) == 1 ? "notificação" : "notificações",
                  inbox_has_more(box) ? "+" : "");
     changed |= status_bar_set(&ui->status, STATUS_NOTIFICATIONS,
                               *inbox_notice(box) ? inbox_notice(box) : notifications);
@@ -337,7 +338,7 @@ void conversation_draw_footer(view *ui)
                          : "←→ servidores · ↓ canais · Enter ativar";
         minimal = "←→ · Enter";
     } else if (ui->focus == LIST_BUTTONS) {
-        full = "←→ Canais/DMs · Enter ativar · ↓ lista · F9 avisos · F10 nova DM";
+        full = "←→ Canais/DMs · Enter ativar · ↓ lista · F9 notificações · F10 nova DM";
         shorter = "←→ escolher · Enter ativar · ↓ lista";
         minimal = "←→ · Enter";
     } else if (ui->focus == CHANNEL_LIST) {
@@ -382,11 +383,11 @@ void conversation_draw_footer(view *ui)
                   !emoji_picker_open(ui->emojis) && !emoji_picker_suggesting(ui->emojis) &&
                   !mention_popup_open(ui->mentions);
     snprintf(full_hints, sizeof(full_hints), "%s%s", full,
-             normal && !strstr(full, "F9") ? " · F9 avisos" : "");
+             normal && !strstr(full, "F9") ? " · F9 notificações" : "");
     snprintf(short_hints, sizeof(short_hints), "%s%s", shorter,
-             normal && !strstr(shorter, "F9") ? " · F9 avisos" : "");
+             normal && !strstr(shorter, "F9") ? " · F9 notificações" : "");
     snprintf(minimal_hints, sizeof(minimal_hints), "%s%s", minimal,
-             normal ? (getmaxx(ui->footer) >= 60 ? " · F9 avisos" : " · F9") : "");
+             normal ? (getmaxx(ui->footer) >= 60 ? " · F9 notificações" : " · F9") : "");
     status_bar_draw(&ui->status, ui->footer, 1, full_hints, short_hints, minimal_hints);
 }
 
