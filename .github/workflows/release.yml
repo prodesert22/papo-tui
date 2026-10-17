@@ -1,13 +1,9 @@
 name: Release
+run-name: Release from main
 on:
   push:
     branches: [main]
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: Existing version tag (vMAJOR.MINOR.PATCH)
-        type: string
-        required: true
+    paths: [CMakeLists.txt]
 permissions:
   contents: read
 concurrency:
@@ -15,6 +11,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   identity:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: write
     runs-on: ubuntu-24.04
@@ -25,33 +22,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
       - id: identity
         env:
-          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_EVENT: ${{ github.event_name }}
+          RELEASE_REF: ${{ github.ref }}
           PREVIOUS_SHA: ${{ github.event.before }}
           GH_TOKEN: ${{ github.token }}
-          AUTOMATIC_RELEASE: ${{ github.event_name == 'push' }}
         run: |
-          if [ -z "$RELEASE_TAG" ]; then
-            version="$(python3 dist/release.py --changed-since "$PREVIOUS_SHA")"
-            if [ -z "$version" ]; then
-              echo 'enabled=false' >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-            RELEASE_TAG="v$version"
+          if [ "$RELEASE_EVENT" != push ] || [ "$RELEASE_REF" != refs/heads/main ]; then
+            echo 'enabled=false' >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          version="$(python3 dist/release.py --changed-since "$PREVIOUS_SHA")"
+          if [ -z "$version" ]; then
+            echo 'enabled=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          RELEASE_TAG="v$version"
           git fetch --no-tags origin main
           python3 dist/release.py "$RELEASE_TAG" --require-main
           if state="$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft 2>/dev/null)"; then
             test "$state" = true || { echo 'Refusing to replace a published release'; exit 1; }
           fi
-          if [ "$AUTOMATIC_RELEASE" = true ]; then
-            version="$(python3 dist/release.py "$RELEASE_TAG" --ensure-tag --require-head --require-main)"
-          else
-            version="$(python3 dist/release.py "$RELEASE_TAG" --require-head --require-main)"
-          fi
+          version="$(python3 dist/release.py "$RELEASE_TAG" --ensure-tag --require-head --require-main)"
           {
             echo 'enabled=true'
             echo "tag=$RELEASE_TAG"

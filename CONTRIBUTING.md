@@ -367,6 +367,8 @@ run for that PR. The `quality` and four `Build (...)` check names are preserved
 for branch protection. Test executables are compiled, but distribution packages
 are generated only by the release pipeline. Pushes to `dev` do not start CI
 without an open PR, and pushes to `main` do not repeat routine CI.
+PR runs are titled `CI for PR #...`, independently of the PR title. Release-mode
+builds in the reusable workflow require a push to `main`.
 
 Merge `dev` into `main` with a merge commit. Before starting the next delivery,
 fetch and merge `origin/main` into `dev` (fast-forward when possible), retaining
@@ -417,9 +419,11 @@ Prepare each release in the PR: update CMakeLists.txt, CHANGELOG.md and
 `Release MAJOR.MINOR.PATCH: ...` and use English. PR checks validate increasing
 versions and the required release notes. Commit titles do not bypass PR tests.
 
-After the merge, the Release workflow compares the CMake version with the
-previous main revision. An unchanged version finishes without packaging. A new
-version creates an annotated `vMAJOR.MINOR.PATCH` tag on the merged commit, then
+After the merge, the Release workflow is triggered only by a push to `main`
+that changes `CMakeLists.txt`. It compares the CMake version with the previous
+main revision before enabling packaging or publication. An unchanged version
+finishes without packaging. A new version creates an annotated
+`vMAJOR.MINOR.PATCH` tag on the merged commit, then
 calls the existing native release pipeline directly. The bot writes tags and
 release assets, never commits to main. Releases are serialized and are not
 cancelled by later PR commits. Automatic publication does not depend on another
@@ -430,10 +434,12 @@ publishing. The publish job downloads those same artifacts without rebuilding.
 Packages include licenses, corresponding source archives and `SHA256SUMS`.
 Published releases and existing tags are never replaced or moved.
 
-If an environment or packaging check fails, rerun failed jobs or manually run
-Release with the existing tag. The tag must point to the checked-out commit and
-be reachable from main; a conflicting tag or an already published release is
-rejected. To release code fixes after a failed tagged build, prepare a higher
-version in another PR instead of moving the failed version's tag.
+Pull requests, pushes to other branches, tag pushes and manual dispatches do not
+start the Release workflow. If an environment or packaging check fails, rerun
+the failed jobs of the original main-push run. Its tag must point to the
+checked-out commit and be reachable from main; a conflicting tag or an already
+published release is rejected. To release code fixes after a failed tagged
+build, prepare a higher version in another PR instead of moving the failed
+version's tag.
 
 Keep reports and logs in `build/`; do not commit binaries, accounts or cookies.

@@ -325,7 +325,14 @@ class MediaTerminal(unittest.TestCase):
         t.stream = stream
         if protocol == "kitty":
             query = re.search(rb"\x1b_Gi=(\d+),s=1,v=1,a=q", t.output)
-            self.assertIsNotNone(query)
+            deadline = time.monotonic() + 5
+            while query is None and t.process.poll() is None and time.monotonic() < deadline:
+                t.read(0.03)
+                query = re.search(rb"\x1b_Gi=(\d+),s=1,v=1,a=q", t.output)
+            self.assertIsNotNone(
+                query,
+                f"Kitty query missing; exit={t.process.poll()}, output={bytes(t.output[-1000:])!r}",
+            )
             t.send("\x1b_Gi=" + query[1].decode() + ";OK\x1b\\\x1b[?62;22c\x1b[6;16;8t")
         elif protocol == "iterm2":
             t.send("\x1b[?62;22c\x1b[6;16;8t")

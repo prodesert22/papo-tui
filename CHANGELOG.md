@@ -31,6 +31,9 @@ Upcoming changes are recorded in [Unreleased](releases/Unreleased.md).
   reads instead of walking all intervening history pages.
 - Label F9 consistently as notifications and show discovery shortcuts in the
   footer; use F3 for search and F5 for attachments.
+- Restrict release runs to pushes changing CMakeLists.txt on main and require a
+  version increase before tagging or packaging. Identify PR checks as CI and
+  block release-mode builds in other event/branch contexts.
 
 See the [full 0.4.0 release notes](releases/v0.4.0.md).
 
