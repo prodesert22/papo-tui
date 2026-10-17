@@ -917,15 +917,24 @@ class MediaTerminal(unittest.TestCase):
                             )
                             + 1
                         )
-                        bottom = (
-                            next(
-                                y
-                                for y in range(top + 1, t.screen.lines)
-                                if t.screen.buffer[y][left].data in ("m", "└")
-                                and t.screen.buffer[y][right - 1].data in ("j", "┘")
+                        # A PTY read can stop after the title, before ncurses
+                        # has delivered the bottom border of the same frame.
+                        bottom = None
+                        deadline = time.monotonic() + 8
+                        while bottom is None and time.monotonic() < deadline:
+                            bottom = next(
+                                (
+                                    y
+                                    for y in range(top + 1, t.screen.lines)
+                                    if t.screen.buffer[y][left].data in ("m", "└")
+                                    and t.screen.buffer[y][right - 1].data in ("j", "┘")
+                                ),
+                                None,
                             )
-                            + 1
-                        )
+                            if bottom is None:
+                                t.read(0.03)
+                        self.assertIsNotNone(bottom, "\n".join(t.screen.display))
+                        bottom += 1
 
                         def background_parts():
                             if protocol == "kitty":
