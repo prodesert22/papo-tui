@@ -33,6 +33,12 @@ when setting either console handle's mode so ConPTY retains bracketed-paste
 markers. The native probe verifies those markers through the real input stream.
 Text interaction fixtures use distinct BMP emojis, respecting ncurses' 16-bit
 Windows cells; native send/input tests retain supplementary Unicode coverage.
+VT-capable consoles use ncurses' existing terminfo driver, which supports
+`define_key` and escape/mouse decoding; the native driver is retained for
+explicit selection or consoles without VT processing. Console size queries
+refresh ncurses' cached buffer information. The probe tests native coalesced
+records with VT translation disabled, then tests repeated text and bracketed
+paste through the actual VT stream.
 
 Application modes reuse the existing profile configuration, ncurses controls,
 media cache, downloads and Chafa dependency. Configuration schema 4 adds
