@@ -15,12 +15,25 @@ from wcwidth import wcswidth
 from history_mock import CHANNEL, OTHER, uuid
 from interaction_mock import InteractionMock
 import test_send_product as product
+from test_terminal import editor_region
 
 
 class MessageInteractions(unittest.TestCase):
     screen = product.SendProduct.screen
-    editor_text = product.SendProduct.editor_text
     click = product.SendProduct.click
+
+    def editor_text(self, terminal):
+        def editor_visible():
+            try:
+                editor_region(terminal)
+            except StopIteration:
+                return False
+            return True
+
+        # Closing a panel can erase its title before ConPTY delivers the
+        # restored editor. Observe the editor before inspecting its contents.
+        self.settled(terminal, editor_visible)
+        return product.SendProduct.editor_text(self, terminal)
 
     def wait(self, terminal, text):
         self.settled(terminal, lambda: text in self.screen(terminal), seconds=8)
