@@ -382,6 +382,7 @@ class DiscoveryTerminal(unittest.TestCase):
     def test_pin_context_menu_unpin_detail_and_failure_keeps_modal(self):
         with DiscoveryMock(10) as server:
             t = self.login(server)
+            t.resize(32, 160)
             t.send("\x1b[18~m")
             self.wait(t, "Fixar mensagem")
             self.click(t, "Fixar mensagem")
