@@ -36,9 +36,11 @@ Windows cells; native send/input tests retain supplementary Unicode coverage.
 VT-capable consoles use ncurses' existing terminfo driver, which supports
 `define_key` and escape/mouse decoding; the native driver is retained for
 explicit selection or consoles without VT processing. Console size queries
-refresh ncurses' cached buffer information. The probe tests native coalesced
-records with VT translation disabled, then tests repeated text and bracketed
-paste through the actual VT stream.
+refresh ncurses' cached buffer information. Terminfo initializes the existing
+console handles directly and leaves alternate-screen switching to VT sequences;
+input events must not activate a separate native console buffer. The probe tests
+native coalesced text records with VT translation disabled, then tests repeated
+text, arrows and bracketed paste through the actual VT stream.
 
 Application modes reuse the existing profile configuration, ncurses controls,
 media cache, downloads and Chafa dependency. Configuration schema 4 adds

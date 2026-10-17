@@ -67,10 +67,8 @@ int main(void)
         {.EventType = KEY_EVENT,
          .Event.KeyEvent = {.bKeyDown = TRUE, .wRepeatCount = 2, .uChar.UnicodeChar = 0xe9}},
         {.EventType = KEY_EVENT,
-         .Event.KeyEvent = {.bKeyDown = TRUE, .wRepeatCount = 2, .wVirtualKeyCode = VK_UP}},
-        {.EventType = KEY_EVENT,
          .Event.KeyEvent = {.bKeyDown = TRUE, .wRepeatCount = 1, .uChar.UnicodeChar = 'z'}}};
-    unsigned repeats[8] = {0};
+    unsigned repeats[6] = {0};
     DWORD written;
     DWORD repeat_mode = 0;
     /* With VT enabled, Windows converts WriteConsoleInput key records to VT
@@ -78,14 +76,14 @@ int main(void)
      * records in native mode, and actual VT stream repeats in the next phase. */
     bool queued = GetConsoleMode(input, &repeat_mode) &&
                   SetConsoleMode(input, repeat_mode & ~ENABLE_VIRTUAL_TERMINAL_INPUT) &&
-                  WriteConsoleInputW(input, repeated, 4, &written) && written == 4;
+                  WriteConsoleInputW(input, repeated, 3, &written) && written == 3;
     size_t repeat_count = 0;
     until = GetTickCount64() + 5000;
-    while (queued && repeat_count < 8 && GetTickCount64() < until) {
+    while (queued && repeat_count < 6 && GetTickCount64() < until) {
         uint32_t key;
         int type = text_read_raw(&key);
         if (type != ERR)
-            repeats[repeat_count++] = key == KEY_UP && type == KEY_CODE_YES ? 0x110000 : key;
+            repeats[repeat_count++] = key;
     }
     SetConsoleMode(input, repeat_mode);
     unsigned commands[16];
@@ -100,10 +98,11 @@ int main(void)
             continue;
         if (type == OK && key == 4)
             break;
-        commands[command_count++] = type == KEY_CODE_YES && key == TEXT_PASTE_START ? 0x110001
-                                    : type == KEY_CODE_YES && key == TEXT_PASTE_END ? 0x110002
-                                    : key == '\r'                                   ? '\n'
-                                                                                    : key;
+        commands[command_count++] = type == KEY_CODE_YES && key == KEY_UP             ? 0x110000
+                                    : type == KEY_CODE_YES && key == TEXT_PASTE_START ? 0x110001
+                                    : type == KEY_CODE_YES && key == TEXT_PASTE_END   ? 0x110002
+                                    : key == '\r'                                     ? '\n'
+                                                                                      : key;
     }
     DWORD flags = 0;
     GetConsoleMode(input, &flags);

@@ -16,10 +16,15 @@
 +static WORD repeated_count;
 @@ -136,0 +141 @@
 +    _nc_console_get_SBI();
-@@ -273 +278 @@
+@@ -204 +209,3 @@
+-    if (WINCONSOLE.lastOut != WINCONSOLE.hdl) {
++    /* VT sequences own the alternate screen in terminfo mode. Activating the
++     * saved Win32 handle here would silently switch back to the blank screen. */
++    if (!WINCONSOLE.isTermInfoConsole && WINCONSOLE.lastOut != WINCONSOLE.hdl) {
+@@ -273 +280 @@
 -	    dwFlag = arg->dwFlagIn | ENABLE_MOUSE_INPUT;
 +	    dwFlag = arg->dwFlagIn | ENABLE_MOUSE_INPUT | VT_FLAG_IN;
-@@ -636,16 +641,4 @@
+@@ -636,16 +643,4 @@
 -    if (mask & RIGHTMOST_BUTTON_PRESSED) {
 -	switch (WINCONSOLE.numButtons) {
 -	case 1:
@@ -40,21 +45,21 @@
 +     * Keep the terminal convention: right click is always button three. */
 +    if (mask & RIGHTMOST_BUTTON_PRESSED)
 +        result |= BUTTON3_PRESSED;
-@@ -832,0 +826,6 @@
+@@ -832,0 +828,6 @@
 +
 +    if ((mode & TW_INPUT) && hdl == repeated_handle && repeated_count) {
 +        if (timeleft)
 +            *timeleft = milliseconds;
 +        return TW_INPUT;
 +    }
-@@ -1022,0 +1022,6 @@
+@@ -1022,0 +1024,6 @@
 +    if (hdl == repeated_handle && repeated_count) {
 +        --repeated_count;
 +        *buf = repeated_key;
 +        return 1;
 +    }
 +
-@@ -1068,0 +1074,8 @@
+@@ -1068,0 +1076,8 @@
 +#if USE_WIDEC_SUPPORT
 +		if (inp_rec.Event.KeyEventChar >= 128)
 +		    *buf = (int) inp_rec.Event.KeyEventChar | NCURSES_WIN32_WIDE;
@@ -85,10 +90,12 @@
 +#endif
 --- a/ncurses/win32con/win32_driver.c
 +++ b/ncurses/win32con/win32_driver.c
-@@ -548 +548,5 @@
+@@ -548 +548,7 @@
 -	code = TRUE;
 +        DWORD mode;
 +        /* VT consoles need the terminfo driver's key trie and mouse parser.
 +         * The native driver rejects define_key and only maps Win32 keycodes. */
 +        code = !GetConsoleMode(GetStdHandle(STD_OUTPUT_HANDLE), &mode)
 +            || !(mode & ENABLE_VIRTUAL_TERMINAL_PROCESSING);
++        if (!code)
++            _nc_console_checkinit(TRUE);

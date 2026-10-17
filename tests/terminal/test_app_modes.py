@@ -566,6 +566,13 @@ class AppModes(unittest.TestCase):
                             title_x = t.screen.display[top].index(title)
                             if title == "Notificações":
                                 top -= 1
+                            self.wait(
+                                t,
+                                lambda: any(
+                                    t.screen.buffer[top][x].data in ("k", "┐")
+                                    for x in range(title_x, t.screen.columns)
+                                ),
+                            )
                             left = next(
                                 x
                                 for x in range(title_x, -1, -1)
@@ -579,15 +586,20 @@ class AppModes(unittest.TestCase):
                                 )
                                 + 1
                             )
-                            bottom = (
-                                next(
-                                    y
-                                    for y in range(top + 1, t.screen.lines)
-                                    if t.screen.buffer[y][left].data in ("m", "└")
-                                    and t.screen.buffer[y][right - 1].data in ("j", "┘")
+
+                            def panel_bottom():
+                                return next(
+                                    (
+                                        y
+                                        for y in range(top + 1, t.screen.lines)
+                                        if t.screen.buffer[y][left].data in ("m", "└")
+                                        and t.screen.buffer[y][right - 1].data in ("j", "┘")
+                                    ),
+                                    None,
                                 )
-                                + 1
-                            )
+
+                            self.wait(t, lambda: panel_bottom() is not None)
+                            bottom = panel_bottom() + 1
                             exposed = {
                                 (y, x)
                                 for y, x in before

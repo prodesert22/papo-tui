@@ -35,7 +35,7 @@ class WindowsInput(unittest.TestCase):
             until("PAPO_CURSES_READY")
             child.write(payload + "\x1b")
             until("PAPO_COMMANDS_READY")
-            child.write("aaabb\x1b[200~x\ny\x1b[201~\x04")
+            child.write("aaabb\x1bOA\x1bOA\x1b[200~x\ny\x1b[201~\x04")
             until("PAPO_PROBE_RESULT=")
             until("}")
             report = json.loads(re.search(r"PAPO_PROBE_RESULT=(\{[^\r\n]+\})", output)[1])
@@ -46,12 +46,15 @@ class WindowsInput(unittest.TestCase):
             self.assertEqual(report["curses"], list(map(ord, payload)), json.dumps(report))
             self.assertEqual(
                 report["repeats"],
-                [ord("a")] * 3 + [ord("é")] * 2 + [0x110000] * 2 + [ord("z")],
+                [ord("a")] * 3 + [ord("é")] * 2 + [ord("z")],
                 json.dumps(report),
             )
             self.assertEqual(
                 report["commands"],
-                [ord("a")] * 3 + [ord("b")] * 2 + [0x110001, ord("x"), 10, ord("y"), 0x110002],
+                [ord("a")] * 3
+                + [ord("b")] * 2
+                + [0x110000] * 2
+                + [0x110001, ord("x"), 10, ord("y"), 0x110002],
                 report,
             )
             self.assertTrue(report["vt_input"], report)
