@@ -46,6 +46,8 @@ class PermissionServer(InteractionMock):
         self.api_handler = self.permission_route
 
     def permission_route(self, method, path, body):
+        if method == "GET" and path.endswith("/pinned"):
+            return 200, {"channel_id": CHANNEL, "pinned": []}
         if method == "GET" and path.endswith("/channels") and self.channel_status:
             return self.channel_status, None
         if method == "GET" and path.endswith("/auth/whoami") and self.hold_identity:
@@ -116,6 +118,71 @@ class PermissionsIntegration(unittest.TestCase):
             self.assertEqual(result["draft"], "Preserved queued draft")
             self.assertEqual(server.message_count, 0)
             self.assertTrue(result["session"])
+
+    def test_attachment_role_revocation_blocks_queued_upload_and_preserves_files(self):
+        with PermissionServer() as server:
+            server.roles[0]["permissions"]["send_attachment"] = True
+            for channel in server.channels:
+                if channel["id"] == CHANNEL:
+                    channel["permissions"] = []
+            process = self.start_probe(server)
+            self.assertTrue(self.command(process, "queue-attachment")["accepted"])
+            server.revoke()
+            result = self.command(process, "poll-long")
+            self.assertEqual(result["send"], ALLOWED)
+            self.assertEqual(result["state"], 3)
+            self.assertEqual(result["draft_files"], 1)
+            self.assertEqual(result["draft"], "Preserved attachment draft")
+            self.assertEqual(server.message_count, 0)
+
+    def test_pin_role_revocation_blocks_queued_pin_and_unpin(self):
+        for command in ("queue-pin", "queue-unpin"):
+            with self.subTest(command=command), PermissionServer() as server:
+                server.roles[0]["permissions"]["pin_message"] = True
+                for channel in server.channels:
+                    if channel["id"] == CHANNEL:
+                        channel["permissions"] = []
+                process = self.start_probe(server)
+                loaded = self.command(process, "load-pins")
+                self.assertEqual(loaded["pin_state"], 0)
+                self.assertEqual(loaded["delete"], DENIED)
+                self.assertEqual(loaded["pin"], ALLOWED)
+                self.assertTrue(self.command(process, command)["accepted"])
+                server.revoke()
+                result = self.command(process, "poll-long")
+                self.assertEqual(result["read"], ALLOWED)
+                self.assertEqual(result["pin"], DENIED)
+                self.assertFalse(any(path.endswith("/pin") for _, path, *_ in server.requests))
+
+    def test_pinned_reads_require_read_access_but_not_pin_permission(self):
+        for revoke in (False, True):
+            with self.subTest(revoke=revoke), PermissionServer() as server:
+                process = self.start_probe(server)
+                self.assertTrue(self.command(process, "queue-pins-read")["accepted"])
+                if revoke:
+                    server.revoke()
+                result = self.command(process, "poll-long")
+                reads = [path for _, path, *_ in server.requests if path.endswith("/pinned")]
+                self.assertEqual(result["direct_status"], 403 if revoke else 200)
+                self.assertEqual(len(reads), 0 if revoke else 1)
+
+    def test_attachment_and_pin_roles_must_be_confirmed_before_queueing(self):
+        for unknown in (False, True):
+            with self.subTest(unknown=unknown), PermissionServer() as server:
+                process = self.start_probe(server)
+                self.assertEqual(self.command(process, "load-pins")["pin_state"], 0)
+                if unknown:
+                    server.source_status = 503
+                    self.command(process, "refresh")
+                    self.command(process, "poll-long")
+                for command in ("queue-attachment", "queue-pin", "queue-unpin"):
+                    result = self.command(process, command)
+                    self.assertFalse(result["accepted"])
+                    self.assertEqual(result["pin"], UNKNOWN if unknown else DENIED)
+                    self.assertEqual(result["attach"], UNKNOWN if unknown else DENIED)
+                self.command(process, "poll-long")
+                self.assertEqual(server.message_count, 0)
+                self.assertFalse(any(path.endswith("/pin") for _, path, *_ in server.requests))
 
     def test_revocation_cancels_rate_queued_deletion_without_http(self):
         with PermissionServer() as server:

@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include "app/outbox.h"
+#include "model/conversation/discovery.h"
 #include "model/conversation/history.h"
 #include "net/clock.h"
 #include "net/rate_limit.h"
@@ -11,11 +12,13 @@
 static void tick(auth_client *auth, history *h, outbox *box)
 {
     auth_poll(auth);
-    history_poll(h);
-    outbox_poll(box);
+    if (h)
+        history_poll(h);
+    if (box)
+        outbox_poll(box);
     outbox_operation operation;
     json_t *message;
-    while ((message = outbox_take_confirmed(box, &operation))) {
+    while (box && (message = outbox_take_confirmed(box, &operation))) {
         json_decref(message);
         outbox_reconciled(box, operation.id);
     }
@@ -75,6 +78,8 @@ int main(int argc, char **argv)
     fflush(stdout);
     char command[64];
     uint64_t operation_id = 0;
+    bool direct_read = false;
+    long direct_status = 0;
     while (fgets(command, sizeof(command), stdin)) {
         bool accepted = false;
         if (!strcmp(command, "quit\n"))
@@ -84,6 +89,31 @@ int main(int argc, char **argv)
             outbox_set_draft(box, argv[2], "Preserved queued draft");
             accepted = outbox_submit(box, argv[2], false, &operation_id) == OUTBOX_ACCEPTED;
             outbox_poll(box);
+        } else if (!strcmp(command, "queue-attachment\n")) {
+            GBytes *bytes = g_bytes_new_static("permission fixture", 18);
+            attachment_file *file = attachment_import_bytes(bytes, "fixture.txt", NULL, NULL);
+            g_bytes_unref(bytes);
+            net_rate_defer(2);
+            outbox_set_draft(box, argv[2], "Preserved attachment draft");
+            accepted = file && outbox_add_attachment(box, argv[2], file) &&
+                       outbox_submit(box, argv[2], false, &operation_id) == OUTBOX_ACCEPTED;
+            attachment_unref(file);
+            outbox_poll(box);
+        } else if (!strcmp(command, "load-pins\n")) {
+            history_pins_refresh(h);
+            poll_for(auth, h, box, 300);
+        } else if (!strcmp(command, "queue-pin\n") || !strcmp(command, "queue-unpin\n")) {
+            net_rate_defer(2);
+            const char *id = json_string_value(json_object_get(history_message(h, 0), "id"));
+            accepted = id && history_pin_message(h, id, !strcmp(command, "queue-unpin\n"));
+            history_poll(h);
+        } else if (!strcmp(command, "queue-pins-read\n")) {
+            char path[100];
+            snprintf(path, sizeof(path), "/channels/%s/pinned", argv[2]);
+            net_rate_defer(2);
+            accepted = auth_get_json(auth, path);
+            direct_read = accepted;
+            direct_status = 0;
         } else if (!strcmp(command, "queue-delete\n")) {
             net_rate_defer(2);
             const char *id = json_string_value(json_object_get(history_message(h, 0), "id"));
@@ -99,9 +129,14 @@ int main(int argc, char **argv)
         } else if (!strcmp(command, "refresh\n"))
             auth_permissions_refresh(auth);
         else if (!strcmp(command, "poll\n"))
-            poll_for(auth, h, box, 300);
+            poll_for(auth, direct_read ? NULL : h, direct_read ? NULL : box, 300);
         else if (!strcmp(command, "poll-long\n"))
-            poll_for(auth, h, box, 2300);
+            poll_for(auth, direct_read ? NULL : h, direct_read ? NULL : box, 2300);
+        if (direct_read && auth_response_ready(auth)) {
+            json_t *response = auth_take_response(auth, &direct_status, NULL);
+            json_decref(response);
+            direct_read = false;
+        }
         outbox_operation operation;
         int state = outbox_get_operation(box, operation_id, &operation) ? (int)operation.state : -1;
         permissions *p = auth_permissions(auth);
@@ -116,6 +151,15 @@ int main(int argc, char **argv)
         json_object_set_new(report, "messages", json_integer((json_int_t)history_message_count(h)));
         json_object_set_new(report, "read",
                             json_integer(permissions_channel(p, argv[2], PERMISSION_READ_CHANNEL)));
+        const GPtrArray *files = outbox_attachments(box, argv[2]);
+        json_object_set_new(report, "draft_files", json_integer(files ? files->len : 0));
+        json_object_set_new(report, "direct_status", json_integer(direct_status));
+        const char *message_id = json_string_value(json_object_get(history_message(h, 0), "id"));
+        json_object_set_new(report, "pin_state", json_integer(history_pin_state(h, message_id)));
+        json_object_set_new(report, "pin",
+                            json_integer(permissions_role(p, PERMISSION_PIN_MESSAGE)));
+        json_object_set_new(report, "attach",
+                            json_integer(permissions_role(p, PERMISSION_SEND_ATTACHMENT)));
         char *text = json_dumps(report, JSON_COMPACT);
         if (!text)
             return 7;

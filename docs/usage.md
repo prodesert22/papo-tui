@@ -311,6 +311,7 @@ Return to the editor and press Enter to send all attachments and optional text
 in one message. Selecting or pasting files does not send them immediately.
 Attachments stay with each conversation's draft during the current run.
 Your roles must allow attaching files and sending messages in that conversation.
+This requires `send_attachment` and the conversation's `send_messages` permission.
 If access is revoked before sending, the files remain in the draft.
 Editing an existing message preserves that send draft; finish or cancel editing
 before adding files. Signing out or closing the application discards the drafts.
@@ -355,8 +356,10 @@ or the mouse wheel to browse the list. **Ctrl+R** refreshes it.
 The message context menu offers **Fixar mensagem** (Pin message) or
 **Desafixar mensagem** (Unpin message), once its pin state has loaded.
 If it cannot load, keep the menu open and use Ctrl+R to retry.
-The server decides whether you have permission; a conversation can have at
-most 100 pins. Pinning and unpinning are not repeated automatically after
+Pinning and unpinning require `pin_message` and permission to read the
+conversation. Viewing the list requires read access without pin permission.
+The server remains authoritative; a conversation can have at most 100 pins.
+Pinning and unpinning are not repeated automatically after
 an error or an uncertain response. Check the refreshed list before retrying.
 
 Click **Buscar** (Search) in the conversation header, or press **F3**, to

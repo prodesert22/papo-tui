@@ -144,7 +144,9 @@ bool auth_internal_permission_admitted(auth_client *client)
         decision = permissions_role(client->permissions, PERMISSION_SEND_ATTACHMENT);
     if (decision == PERMISSION_ALLOWED && (client->operation == AUTH_API_GET || pin) &&
         client->api_path && !strncmp(client->api_path, "/channels/", 10) &&
-        strlen(client->api_path) >= 55 && !strncmp(client->api_path + 46, "/messages", 9)) {
+        strlen(client->api_path) >= 53 &&
+        (!strncmp(client->api_path + 46, "/messages", 9) ||
+         !strncmp(client->api_path + 46, "/pinned", 7))) {
         char id[37];
         memcpy(id, client->api_path + 10, 36);
         id[36] = 0;
