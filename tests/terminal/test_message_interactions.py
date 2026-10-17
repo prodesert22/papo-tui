@@ -64,6 +64,23 @@ class MessageInteractions(unittest.TestCase):
         deadline = time.monotonic() + seconds
         while not predicate() and time.monotonic() < deadline:
             terminal.read(0.03)
+        if not predicate() and os.name == "nt":
+            # Retain a safely escaped synthetic protocol trace even when
+            # CTest reports only the failing screen assertion.
+            directory = Path.cwd() / "Testing" / "Temporary"
+            directory.mkdir(parents=True, exist_ok=True)
+            output = bytes(terminal.output).replace(b"Synthetic!123", b"[redacted]")
+            (directory / f"{self._testMethodName}-terminal.log").write_text(
+                json.dumps(
+                    {
+                        "output_hex": output.hex(),
+                        "checkpoint": getattr(self, "_protocol_checkpoint", None),
+                        "screen": terminal.screen.display,
+                    },
+                    ensure_ascii=True,
+                ),
+                encoding="utf-8",
+            )
         self.assertTrue(predicate(), self.screen(terminal))
 
     def test_f7_selects_messages_and_context_menu_is_available_directly(self):
@@ -542,11 +559,13 @@ class MessageInteractions(unittest.TestCase):
 
                 header, left, right, rows = columns()
                 initial_left = [line[0] for line in rows]
+                self._protocol_checkpoint = len(terminal.output)
                 initial_people = people()
                 self.assertIn("☀ 35", "\n".join(initial_left))
                 self.assertNotIn("☂", "\n".join(initial_left))
                 terminal.send(f"\x1b[<65;{right + 3};{header + 4}M")
-                self.assertNotEqual(people(), initial_people)
+                self.settled(terminal, lambda: people() != initial_people)
+                self.settled(terminal, lambda: [line[0] for line in columns()[3]] == initial_left)
                 self.assertEqual([line[0] for line in columns()[3]], initial_left)
                 right_scrolled = people()
                 terminal.send("\x1bOD")
