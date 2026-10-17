@@ -78,6 +78,11 @@ def schemas():
             },
             ["id", "user_id", "message_id", "message_content"],
         ),
+        "message_pin": shape(
+            "message_pin",
+            {"message_id": uuid(), "is_pinned": {"type": "boolean"}},
+            ["message_id", "is_pinned"],
+        ),
         "react_update": shape(
             "react_update",
             {

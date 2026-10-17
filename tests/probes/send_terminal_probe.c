@@ -49,6 +49,17 @@ int main(int argc, char **argv)
         curl_global_cleanup();
         return 2;
     }
+    uint64_t permission_start = 0, permission_now = 0;
+    net_now_ms(&permission_start);
+    do {
+        auth_poll(session);
+        g_usleep(1000);
+        net_now_ms(&permission_now);
+    } while (
+        permissions_channel(auth_permissions(session),
+                            setting("PAPO_SEND_CHANNEL", "00000000-0000-4000-8000-000000000003"),
+                            PERMISSION_SEND_MESSAGES) == PERMISSION_UNKNOWN &&
+        permission_now - permission_start < 10000 && auth_has_session(session));
     send_editor *editor = send_editor_create(session);
     const char *channels[] = {
         setting("PAPO_SEND_CHANNEL", "00000000-0000-4000-8000-000000000003"),

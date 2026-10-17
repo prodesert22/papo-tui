@@ -16,12 +16,16 @@ class MockServer:
     def __init__(self, scenario="public", tls_context=None, secure_cookie=False, username="josé"):
         self.scenario = scenario
         self.username = username
+        self.owner_id = "00000000-0000-4000-8000-000000000001"
+        self.user_roles = []
+        self.roles = []
         self.session_cookie = "user-fixture"
         self.refresh_count = 0
         self.api_count = 0
         self.message_count = 0
         self.sent_messages = []
         self.multipart_types = []
+        self.uploads = []
         self.message_received = threading.Event()
         self.name = "Comunidade"
         self.cookie_max_age = None
@@ -135,6 +139,7 @@ class MockServer:
                             200,
                             {
                                 "id": "00000000-0000-4000-8000-000000000002",
+                                "owner_id": outer.owner_id,
                                 "name": outer.name,
                                 "public": not outer.scenario.startswith("private"),
                             },
@@ -155,10 +160,35 @@ class MockServer:
                                 if outer.scenario == "refresh-identity" and outer.refresh_count
                                 else "00000000-0000-4000-8000-000000000001",
                                 "username": outer.username,
+                                "roles": outer.user_roles,
                                 "connection_violation": outer.scenario == "refresh-violation"
                                 and outer.refresh_count > 0,
                             },
                         )
+                elif self.path.endswith("/roles"):
+                    self.respond(200, {"roles": outer.roles})
+                elif self.path.endswith("/channels"):
+                    self.respond(
+                        200,
+                        {
+                            "channels": [
+                                {
+                                    "id": "00000000-0000-4000-8000-000000000003",
+                                    "name": "geral",
+                                    "type": "text",
+                                    "position": 1,
+                                    "permissions": [],
+                                },
+                                {
+                                    "id": "00000000-0000-4000-8000-000000000004",
+                                    "name": "outro",
+                                    "type": "text",
+                                    "position": 2,
+                                    "permissions": [],
+                                },
+                            ]
+                        },
+                    )
                 elif self.path.endswith("/fixture/read"):
                     outer.api_count += 1
                     if outer.scenario == "api-twice" or (
@@ -302,16 +332,24 @@ class MockServer:
                         ("Content-Type: " + content_type + "\r\nMIME-Version: 1.0\r\n\r\n").encode()
                         + data
                     )
-                    body = {
-                        part.get_param("name", header="content-disposition"): part.get_payload(
-                            decode=True
-                        ).decode("utf-8")
-                        for part in parsed.iter_parts()
-                    }
+                    body, uploads = {}, []
+                    for part in parsed.iter_parts():
+                        name = part.get_param("name", header="content-disposition")
+                        if name == "attachments":
+                            uploads.append(
+                                {
+                                    "name": part.get_filename(),
+                                    "mime": part.get_content_type(),
+                                    "data": part.get_payload(decode=True),
+                                }
+                            )
+                        else:
+                            body[name] = part.get_payload(decode=True).decode("utf-8")
                 except (ValueError, UnicodeError, TypeError):
                     self.respond(400)
                     return
                 outer.requests.append(("POST", self.path, cookie, body))
+                outer.uploads.append(uploads)
                 outer.message_count += 1
                 outer.message_received.set()
                 if (
@@ -348,7 +386,15 @@ class MockServer:
                     "created_at": datetime.now(timezone.utc).isoformat(),
                     "edited_at": None,
                     "reply_to": body.get("reply_to"),
-                    "attachments": [],
+                    "attachments": [
+                        {
+                            "id": f"00000000-0000-4000-8000-{5000 + i:012x}",
+                            "original_file_name": upload["name"],
+                            "mime_type": upload["mime"],
+                            "size_bytes": len(upload["data"]),
+                        }
+                        for i, upload in enumerate(uploads)
+                    ],
                     "embeds": [],
                 }
                 outer.sent_messages.append(message)

@@ -21,6 +21,8 @@ const char *inbox_opened(const inbox *box);
 bool inbox_opening(const inbox *box);
 void inbox_opened_clear(inbox *box);
 void inbox_resolve_dm(inbox *box, const char *id);
+/* Cancel queued opening and ignore late navigation receipts; sent mutations may finish. */
+void inbox_cancel_open(inbox *box);
 void inbox_refresh(inbox *box);
 void inbox_older(inbox *box);
 void inbox_retry(inbox *box);

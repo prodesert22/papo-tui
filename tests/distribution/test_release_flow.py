@@ -75,16 +75,16 @@ class ReleaseFlow(unittest.TestCase):
         self.commit("Release 0.3.1: Prepare maintenance release")
         self.git("push", "origin", "main")
 
-    def identity(self, *, tag="", state="missing"):
+    def identity(self, *, event="push", ref="refs/heads/main", state="missing"):
         self.output.unlink(missing_ok=True)
         result = subprocess.run(
             ["bash", "-e", "-o", "pipefail", "-c", IDENTITY],
             cwd=self.source,
             env=dict(
                 self.env,
-                RELEASE_TAG=tag,
+                RELEASE_EVENT=event,
+                RELEASE_REF=ref,
                 PREVIOUS_SHA=self.base,
-                AUTOMATIC_RELEASE="false" if tag else "true",
                 FAKE_RELEASE_STATE=state,
                 GITHUB_OUTPUT=str(self.output),
             ),
@@ -101,9 +101,30 @@ class ReleaseFlow(unittest.TestCase):
     def remote_tag(self):
         return self.git("ls-remote", "origin", "refs/tags/v0.3.1*")
 
+    def test_release_trigger_only_watches_version_file_pushes_to_main(self):
+        self.assertEqual(
+            WORKFLOW["on"], {"push": {"branches": ["main"], "paths": ["CMakeLists.txt"]}}
+        )
+
+    def test_pull_requests_other_branches_and_manual_runs_cannot_create_tags(self):
+        self.candidate()
+        for event, ref in (
+            ("pull_request", "refs/pull/2/merge"),
+            ("pull_request", "refs/heads/main"),
+            ("push", "refs/heads/dev"),
+            ("push", "refs/tags/v0.3.1"),
+            ("workflow_dispatch", "refs/heads/main"),
+        ):
+            with self.subTest(event=event, ref=ref):
+                result, output = self.identity(event=event, ref=ref)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(output, {"enabled": "false"})
+                self.assertEqual(self.remote_tag(), "")
+
     def test_unchanged_version_skips_without_creating_a_tag(self):
-        (self.source / "change.txt").write_text("No version change\n")
-        self.commit("Update documentation")
+        with (self.source / "CMakeLists.txt").open("a") as stream:
+            stream.write("# Build change without a version increase\n")
+        self.commit("Update build configuration without changing the version")
         self.git("push", "origin", "main")
         result, output = self.identity()
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -125,9 +146,9 @@ class ReleaseFlow(unittest.TestCase):
         self.assertEqual(self.git("rev-parse", "v0.3.1^{commit}"), merged)
         self.assertEqual(self.git("rev-parse", "origin/main"), merged)
         original = self.remote_tag()
-        for tag, state in (("", "missing"), ("v0.3.1", "true")):
-            with self.subTest(tag=tag):
-                result, output = self.identity(tag=tag, state=state)
+        for state in ("missing", "true"):
+            with self.subTest(state=state):
+                result, output = self.identity(state=state)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(output["enabled"], "true")
                 self.assertEqual(self.remote_tag(), original)
@@ -164,13 +185,6 @@ class ReleaseFlow(unittest.TestCase):
         result, output = self.identity(state="false")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Refusing to replace a published release", result.stdout)
-        self.assertNotIn("enabled", output)
-        self.assertEqual(self.remote_tag(), "")
-
-    def test_manual_retry_requires_an_existing_tag(self):
-        self.candidate()
-        result, output = self.identity(tag="v0.3.1")
-        self.assertNotEqual(result.returncode, 0)
         self.assertNotIn("enabled", output)
         self.assertEqual(self.remote_tag(), "")
 

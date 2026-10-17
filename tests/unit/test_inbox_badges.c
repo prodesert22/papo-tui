@@ -35,6 +35,64 @@ static const char *author_id = "00000000-0000-4000-8000-000000000002";
 static const char *latest_id = "00000000-0000-4000-8000-000000000103";
 static const char *previous_id = "00000000-0000-4000-8000-000000000102";
 static const char *stamp = "2026-10-15T12:00:00Z";
+static void member_roles(auth_client *auth)
+{
+    permissions_reset(auth_permissions(auth));
+    history *h = history_create(auth);
+    assert(h);
+    json_t *user = json_pack("{s:s,s:s,s:[{s:s,s:s}]}", "id", author_id, "username", "Member",
+                             "roles", "id", channel_id, "color", "#ff0000");
+    assert(user && history_internal_cache_user(h, user, false));
+    assert(history_member_color(h, author_id) == 0x1ff0000);
+    json_t *presence = json_pack("{s:s,s:s,s:s}", "user_id", author_id, "status", "online",
+                                 "nickname", "New name");
+    assert(presence && history_internal_presence_event(h, presence));
+    assert(history_member_color(h, author_id) == 0x1ff0000);
+    json_decref(presence);
+    h->pending = AUTHORS;
+    h->request_role_events = h->role_events;
+    json_t *event = json_pack("{s:s,s:s,s:s}", "type", "role_remove", "user_id", author_id,
+                              "role_id", channel_id);
+    assert(event && history_internal_role_event(h, event));
+    assert(history_member_color(h, author_id) == 0x1ffffff);
+    assert(history_internal_cache_user(h, user, false)); /* Delayed pre-event summary. */
+    assert(history_member_color(h, author_id) == 0x1ffffff);
+    h->pending = NONE;
+    assert(history_internal_cache_user(h, user, false)); /* New authoritative summary. */
+    assert(history_member_color(h, author_id) == 0x1ff0000);
+    assert(!json_object_get(json_object_get(h->users, author_id), "_role_changes"));
+    /* An event can precede the first summary for an unresolved author. */
+    h->pending = AUTHORS;
+    h->request_role_events = h->role_events;
+    assert(!json_object_set_new(event, "user_id", json_string(latest_id)));
+    assert(!json_object_set_new(event, "role_id", json_string(previous_id)));
+    assert(!json_object_set_new(event, "type", json_string("role_add")));
+    assert(history_internal_role_event(h, event));
+    assert(!json_object_set_new(user, "id", json_string(latest_id)));
+    json_t *green = json_pack("{s:s,s:s}", "id", previous_id, "color", "#00ff00");
+    assert(green && !json_array_append_new(json_object_get(user, "roles"), green));
+    assert(history_internal_cache_user(h, user, false));
+    assert(history_member_color(h, latest_id) == 0x1ff0000); /* Other roles survive. */
+    assert(!json_object_set_new(event, "type", json_string("role_remove")));
+    assert(!json_object_set_new(event, "role_id", json_string(channel_id)));
+    assert(history_internal_role_event(h, event));
+    assert(history_member_color(h, latest_id) == 0x100ff00);
+    assert(history_internal_cache_user(h, user, false));
+    assert(history_member_color(h, latest_id) == 0x100ff00);
+    size_t bytes = 0;
+    const char *id;
+    json_t *cached;
+    json_object_foreach(h->users, id, cached)
+    {
+        (void)id;
+        bytes += (size_t)json_integer_value(json_object_get(cached, "_cost"));
+    }
+    assert(bytes == h->user_bytes);
+    json_decref(user);
+    json_decref(event);
+    h->pending = NONE;
+    history_destroy(h);
+}
 static json_t *conversation(const char *read)
 {
     return json_pack("{s:s,s:s,s:s,s:i,s:{s:s,s:s},s:s*,s:s*,s:i}", "id", channel_id, "name",
@@ -48,7 +106,13 @@ static history *model(auth_client *auth, json_t *channel)
     assert(h);
     history_enable_r8(h);
     json_t *body = json_pack("{s:[O]}", "channels", channel);
-    assert(body && history_internal_channels_response(h, body));
+    assert(!json_object_set_new(channel, "permissions", json_array()));
+    json_t *identity = json_pack("{s:s,s:[]}", "id", author_id, "roles");
+    assert(identity && permissions_identity(auth_permissions(auth), identity,
+                                            permissions_event_serial(auth_permissions(auth))));
+    assert(body && permissions_update(auth_permissions(auth), PERMISSIONS_CHANNELS, body));
+    json_decref(identity);
+    assert(history_internal_channels_response(h, body));
     json_decref(body);
     return h;
 }
@@ -283,6 +347,7 @@ int main(void)
     history_destroy(h);
     json_decref(dm);
     persisted_read(auth);
+    member_roles(auth);
     auth_destroy(auth);
     curl_global_cleanup();
     puts("Cursor badges: backend startup, successful reads, stale metadata, older pages, author "

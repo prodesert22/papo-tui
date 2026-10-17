@@ -210,7 +210,104 @@ video. It keeps test credentials private under
 build/, removes this run's messages and closes its DM views and sessions.
 The sanitized report distinguishes functional checks from contract divergences.
 
+Member colors reuse Jansson role summaries and the permission client's existing
+role catalog. Only exact `#RRGGBB` strings are accepted; the first valid color in
+membership order wins, with white as the fallback. This is a display convention:
+the contract defines no role hierarchy. Cached summaries retain bounded role
+IDs/colors independently of partial presence metadata. Role events apply to all
+members, including unresolved authors, and reconcile pending REST responses so
+older summaries cannot undo a live assignment or removal. Catalog refreshes
+update definitions without fetching inactive histories. The current account
+uses the same membership snapshot as permission evaluation.
+
+Rendering reuses ncurses color pairs and the existing Unicode header masks.
+The bounded RGB pair table is shared by member names and embed accents, keeps
+selection backgrounds, and reserves its range before Chafa's media pairs. It
+does not redefine palette entries. Pairs remain stable across partial redraws;
+exhausted tables fall back to the preallocated white pair for each background.
+`member-colors-terminal` checks direct/indexed colors, white defaults, webhook
+names, live events, presence, selectors and reaction participants. Model tests
+cover malformed colors, multiple roles, delayed summaries and context reset.
+
+Permission evaluation reuses Jansson snapshots, GLib UUID validation and the
+existing REST dispatcher; no new dependency is required. Each auth client owns
+its policy, including membership, role definitions, server owner, channel
+permissions and known DM participation. Decisions distinguish allowed, denied
+and unknown. The rail filters a complete metadata catalog, so role grants can
+reveal channels without reading their histories.
+
+A synchronous, metadata-only observer of validated WS events updates membership
+before queued REST transfers are admitted. Role events increment a serial;
+older whoami responses cannot undo them. Message owners and the HTTP admission
+gate both check the same policy. An already transmitted mutation retains its
+response owner. Internal permission reads have their own states in the existing
+single REST queue, never consume an external response slot and share the global
+rate budget. Failed metadata sources become unknown without invalidating the
+session. Previously loaded history and drafts remain visible while access is
+unknown; confirmed denial closes the conversation. New reads and mutations
+still require confirmed capabilities. Reconciliation runs after login, recovery, reconnection, activation,
+Ctrl+R and every 30 seconds in the active instance. The contract has no role-edit
+or channel-permission-change event; periodic REST reconciliation covers that gap
+without promising instantaneous updates. DM access remains server-authoritative:
+the API supplies no explicit block-state field or block-change event.
+
+`permissions-unit`, `permissions-integration` and `permissions-terminal` exercise
+policy decisions, WS grants/revocations, read-only reactions and queued mutation
+cancellation. The standalone permission probe accepts synthetic credentials from
+the environment for isolated backend checks. Reports belong in build/.
+
+Message discovery adds a scrollable pinned-message list, pin/unpin actions and
+server-side message search with the documented combinable filters. It reuses
+ncurses/text controls, GLib Unicode matching, Jansson and libcurl, without new
+dependencies. Search is a cancellable read-only POST through the existing REST
+owner and global budget; pin mutations retain their receipt owner and never
+replay. Discovery previews do not fetch inactive histories. Only the explicit
+go-to-message action enters the existing notification destination/jump flow.
+All three entry points retain their modal during location, animate through the
+existing GLib monotonic clock and event loop, and close only after the target is
+loaded. Cancellation ignores late reads and hidden-DM navigation receipts.
+When a validated message creation time is known, location requests an ascending
+page from its exact `(created_at, id)` cursor, then uses a returned newer neighbor
+as the descending cursor for a window containing the target and surrounding
+messages. This uses two additional history reads regardless of distance, through
+the existing global budget. Notification timestamps are never used as message
+timestamps. Unknown message times retain the sequential reference lookup; there
+is still no documented single-message GET endpoint. Cursor behavior is covered
+by synthetic fixtures; this is not a new observation of the development backend.
+Pin events contain a message UUID and boolean, without a channel: an exposed
+pin list is invalidated and reconciled, never populated by guessing a channel.
+The search owner accepts missing author attribution and null message text as
+unavailable metadata (also represented by the inspected backend source); the
+OpenAPI contract is left unchanged. Synthetic tests are not live observations.
+
 ## Validation
+
+Attachment sending reuses libcurl MIME, GLib/GIO workers, private temporary-file
+adapters and the per-instance outbox. Immutable, reference-counted copies belong
+to drafts and captured send operations; confirmation removes only submitted IDs.
+New draft attachments survive pending sends. Retries retain the original bytes
+and the existing uncertain-result confirmation and global HTTP budget.
+Local limits (25 files per message, 512 MiB staged process-wide, 64 MiB clipboard
+images) bound resource use; the OpenAPI contract specifies no upload limits.
+
+File selection uses the XDG FileChooser portal through existing GIO on Linux,
+and IFileOpenDialog on an STA worker on Windows. Cancellation differs from
+unavailable support; only the latter opens the ncurses/GIO directory picker.
+Configure a separate build with `-DPAPO_NATIVE_FILE_DIALOGS=OFF` to test the
+terminal picker directly, without attempting a native dialog. This option is
+enabled by default in regular builds.
+The fallback bounds each directory listing to 10,000 entries; a specific path
+can select a file directly. Clipboard reads are explicit and cancellable:
+optional wl-paste/xclip helpers use bounded pipes without a shell; Windows uses
+CF_HDROP, PNG, WIC bitmap encoding and Unicode text. Native Windows libraries
+are system components, and no new third-party library is required. File picker
+and attachment-confirmation bounds use the existing history media cropping.
+Pending files have their own ncurses window between the history viewport and
+the editor. Geometry reserves that block before measuring visible history;
+compact terminals collapse its borders while retaining a visible history row.
+Flatpak file access uses the document portal; the fallback can browse only paths
+already accessible inside the sandbox. No broad filesystem/display permission
+is added for clipboard access.
 
 ```sh
 python3 -m venv build/test-env
@@ -270,6 +367,8 @@ run for that PR. The `quality` and four `Build (...)` check names are preserved
 for branch protection. Test executables are compiled, but distribution packages
 are generated only by the release pipeline. Pushes to `dev` do not start CI
 without an open PR, and pushes to `main` do not repeat routine CI.
+PR runs are titled `CI for PR #...`, independently of the PR title. Release-mode
+builds in the reusable workflow require a push to `main`.
 
 Merge `dev` into `main` with a merge commit. Before starting the next delivery,
 fetch and merge `origin/main` into `dev` (fast-forward when possible), retaining
@@ -291,7 +390,7 @@ cross builds and Wine can check compilation and native CMake metadata; ConPTY
 interaction and native credential tests still require Windows.
 
 For releases, each Linux runner uses `dist/ci_linux.py --prepare` before cache
-restore, then `dist/ci_linux.py --arch x86_64 --version 0.3.1` (or `aarch64`).
+restore, then `dist/ci_linux.py --arch x86_64 --version 0.4.0` (or `aarch64`).
 This requires Docker and Flatpak/Builder. Ubuntu, Debian, Fedora and Flatpak
 build in isolated copies of the committed checkout, with two concurrent tasks
 by default (`--workers` overrides this). Compiler jobs are divided between those
@@ -307,14 +406,24 @@ prefix and includes licenses, corresponding sources and a library inventory.
 `dist/flatpak/build.sh ARCHITECTURE VERSION` generates the actual bundle and
 its sources; it requires Flatpak/Builder and the Freedesktop 26.08 runtime and SDK.
 
+Record every new feature, behavior change and fix to an already released version
+in `releases/Unreleased.md` with its user-visible effect. Do not add separate fix
+entries for bugs found in a new feature before that feature's first release.
+When preparing a release, consolidate all entries into its complete versioned
+notes and changelog, then truncate `releases/Unreleased.md` to zero bytes in the
+same commit, keeping the file for the next development cycle. Check the changes
+since the previous release so the notes cover the full delivery.
+
 Prepare each release in the PR: update CMakeLists.txt, CHANGELOG.md and
 `releases/vMAJOR.MINOR.PATCH.md`. Version-preparation commit titles start with
 `Release MAJOR.MINOR.PATCH: ...` and use English. PR checks validate increasing
 versions and the required release notes. Commit titles do not bypass PR tests.
 
-After the merge, the Release workflow compares the CMake version with the
-previous main revision. An unchanged version finishes without packaging. A new
-version creates an annotated `vMAJOR.MINOR.PATCH` tag on the merged commit, then
+After the merge, the Release workflow is triggered only by a push to `main`
+that changes `CMakeLists.txt`. It compares the CMake version with the previous
+main revision before enabling packaging or publication. An unchanged version
+finishes without packaging. A new version creates an annotated
+`vMAJOR.MINOR.PATCH` tag on the merged commit, then
 calls the existing native release pipeline directly. The bot writes tags and
 release assets, never commits to main. Releases are serialized and are not
 cancelled by later PR commits. Automatic publication does not depend on another
@@ -325,10 +434,12 @@ publishing. The publish job downloads those same artifacts without rebuilding.
 Packages include licenses, corresponding source archives and `SHA256SUMS`.
 Published releases and existing tags are never replaced or moved.
 
-If an environment or packaging check fails, rerun failed jobs or manually run
-Release with the existing tag. The tag must point to the checked-out commit and
-be reachable from main; a conflicting tag or an already published release is
-rejected. To release code fixes after a failed tagged build, prepare a higher
-version in another PR instead of moving the failed version's tag.
+Pull requests, pushes to other branches, tag pushes and manual dispatches do not
+start the Release workflow. If an environment or packaging check fails, rerun
+the failed jobs of the original main-push run. Its tag must point to the
+checked-out commit and be reachable from main; a conflicting tag or an already
+published release is rejected. To release code fixes after a failed tagged
+build, prepare a higher version in another PR instead of moving the failed
+version's tag.
 
 Keep reports and logs in `build/`; do not commit binaries, accounts or cookies.

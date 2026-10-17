@@ -435,10 +435,17 @@ class MessageInteractions(unittest.TestCase):
                 terminal.send("\x1b")
                 self.settled(terminal, lambda: "Reagir · Esc voltar" not in self.screen(terminal))
                 terminal.send(":grinning\t")
+                # Tab and the completed editor frame can arrive after send's
+                # short read, especially in the sanitizer build under load.
+                self.settled(terminal, lambda: ":grinning" not in self.editor_text(terminal))
                 self.assertEqual(server.reaction_calls, [])
                 self.assertEqual(server.message_count, 0)
                 self.assertIn("Preserved draft", self.editor_text(terminal))
                 self.assertNotIn(":grinning", self.editor_text(terminal))
+                terminal.send("\n")
+                self.settled(terminal, lambda: server.message_count == 1)
+                self.assertEqual(server.sent_messages[0]["content"], "Preserved draft 😀")
+                self.assertEqual(server.reaction_calls, [])
             finally:
                 self.assertTrue(terminal.close())
 
@@ -465,6 +472,7 @@ class MessageInteractions(unittest.TestCase):
             try:
                 self.wait(terminal, "[☕ 1]")
                 self.click(terminal, "[☕ 1]")
+                self.settled(terminal, lambda: len(server.reaction_calls) == 1)
                 terminal.send("\x1b\x1bOB\n")
                 self.wait(terminal, "Conteúdo do outro canal")
                 self.assertNotIn("[☕", self.screen(terminal))

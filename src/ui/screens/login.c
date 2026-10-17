@@ -16,6 +16,7 @@
 
 #include "model/conversation/history.h"
 #include "platform/clipboard.h"
+#include "platform/file_transfer.h"
 #include "platform/terminal.h"
 #include "ui/input/editor.h"
 #include "ui/input/text.h"
@@ -696,16 +697,17 @@ static void clear_passwords(login_ui *ui)
 
 static void extra_action(login_ui *ui, auth_client *client)
 {
-    if (auth_busy(client))
-        return;
     if (auth_has_session(client)) {
         ws_state state = auth_ws_state(client);
-        if (state == WS_ERROR || state == WS_CLOSED)
-            auth_connect_ws(client);
-        else
+        if (state == WS_ERROR || state == WS_CLOSED) {
+            if (!auth_busy(client))
+                auth_connect_ws(client);
+        } else
             auth_refresh(client);
         return;
     }
+    if (auth_busy(client))
+        return;
     snapshot(ui);
     clear_passwords(ui);
     auth_cancel(client);
@@ -1001,6 +1003,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
             if (ui.form)
                 select_focus(&ui, 2);
         }
+        file_transfer_tasks_poll();
         if (clipboard_poll())
             redraw = true;
         if (redraw) {

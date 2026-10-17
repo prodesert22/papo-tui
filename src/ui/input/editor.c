@@ -171,6 +171,8 @@ static void submit_notice(send_editor *editor, outbox_submit_result result)
                              : result == OUTBOX_EMPTY               ? "Mensagem vazia"
                              : result == OUTBOX_BUSY                ? "Envio em andamento"
                              : result == OUTBOX_CONFIRM_DUPLICATION ? "Confirmar reenvio"
+                             : result == OUTBOX_FORBIDDEN           ? "Sem permissão"
+                             : result == OUTBOX_PERMISSIONS_PENDING ? "Confirmando permissões"
                              : result == OUTBOX_NO_SESSION          ? "Confirme a sessão"
                                                                     : "Falha no envio";
     switch (result) {
@@ -189,6 +191,13 @@ static void submit_notice(send_editor *editor, outbox_submit_result result)
         break;
     case OUTBOX_NO_SESSION:
         editor->notice = "Confirme a sessão antes de enviar.";
+        break;
+    case OUTBOX_FORBIDDEN:
+        editor->notice = "Sem permissão para enviar nesta conversa; rascunho preservado.";
+        break;
+    case OUTBOX_PERMISSIONS_PENDING:
+        editor->notice =
+            "Permissões ainda não confirmadas. Aguarde ou use Ctrl+R; rascunho preservado.";
         break;
     case OUTBOX_FULL:
         editor->notice = "Não há espaço para mais envios; revise os resultados pendentes.";

@@ -2,7 +2,13 @@
 
 Terminal chat client written in C. Connect to independent Papo instances and
 chat in channels or direct messages, with message editing, deletion, replies,
-reactions, notifications, mentions, emojis and media in supported terminals.
+reactions, pinned messages, server message search, notifications, mentions, emojis
+and media in supported terminals.
+
+Attach files with **F5** or **📎**, or paste copied files and images with
+**Ctrl+V** when the local clipboard is available.
+Available channels and message actions follow your account permissions.
+Member names follow their role color, with white as the default.
 
 ## Install
 
@@ -48,7 +54,7 @@ The service contract is in [openapi.yml](openapi.yml).
 
 ## Releases and license
 
-[Changelog](CHANGELOG.md) · [Full release notes](releases/v0.3.1.md)
+[Changelog](CHANGELOG.md) · [Full release notes](releases/v0.4.0.md)
 
 Original code is licensed under [MIT](LICENSE). Bundled libraries and data
 retain their [upstream licenses](THIRD_PARTY_NOTICES.md).

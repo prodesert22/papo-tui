@@ -5,6 +5,38 @@ full details are available in `releases/`.
 
 ## Unreleased
 
+Upcoming changes are recorded in [Unreleased](releases/Unreleased.md).
+
+## [0.4.0]
+
+### Added
+
+- File attachments through F5 or the paperclip button, with native file dialogs,
+  a terminal picker fallback, removable draft files and attachment-only messages.
+- Ctrl+V support for copied local files, clipboard images and text, with private
+  background preparation and attachment drafts preserved per conversation.
+- F8 pinned-message browsing with scrolling, local author/text search, message
+  details and permission-aware pin/unpin actions.
+- F3 server message search with author, conversation, mention, link, date,
+  attachment and ordering filters, searchable selectors and result pagination.
+- Permission-aware channel visibility and message actions, live role membership
+  updates, periodic permission refresh and role-colored member names.
+
+### Changed
+
+- Keep notifications, pinned messages and search in their modal with an animated
+  locating view until the requested message is ready; allow cancellation and
+  explicit retries there.
+- Locate older destinations with known message timestamps using bounded cursor
+  reads instead of walking all intervening history pages.
+- Label F9 consistently as notifications and show discovery shortcuts in the
+  footer; use F3 for search and F5 for attachments.
+- Restrict release runs to pushes changing CMakeLists.txt on main and require a
+  version increase before tagging or packaging. Identify PR checks as CI and
+  block release-mode builds in other event/branch contexts.
+
+See the [full 0.4.0 release notes](releases/v0.4.0.md).
+
 ## [0.3.1]
 
 - Run routine CI on pull requests to main, including version commits, and cancel
