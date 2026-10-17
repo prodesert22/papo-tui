@@ -844,6 +844,8 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         } else if (ui->focus == CHANNEL_LIST) {
             scope = DRAW_NAVIGATION;
             size_t count = conversation_list_count(ui);
+            bool voice_history =
+                type == KEY_CODE_YES && (key == TEXT_SHIFT_ENTER || key == KEY_F(4));
             if (type == KEY_CODE_YES && key == KEY_UP && !ui->highlighted)
                 conversation_set_focus(ui, LIST_BUTTONS);
             else if (type == KEY_CODE_YES && key == KEY_UP && ui->highlighted)
@@ -862,9 +864,9 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 ui->highlighted += (size_t)(LINES - CONTENT_Y - 5);
                 if (ui->highlighted >= count)
                     ui->highlighted = count - 1;
-            } else if (enter || (type == KEY_CODE_YES && (key == KEY_RIGHT || key == KEY_F(4)))) {
+            } else if (enter || voice_history || (type == KEY_CODE_YES && key == KEY_RIGHT)) {
                 scope = DRAW_ALL;
-                conversation_open_channel(ui, type == KEY_CODE_YES && key == KEY_F(4));
+                conversation_open_channel(ui, voice_history);
             }
         } else {
             if (type == KEY_CODE_YES && key == KEY_LEFT)

@@ -796,7 +796,7 @@ WINDOW *r8_modal_draw(r8_modal *m)
         const char *lines[] = {"Tab/Shift+Tab: percorrer áreas",
                                "Canais/DMs: ←→ escolher, Enter ativar",
                                "↑↓: navegar · Enter: abrir texto/DM",
-                               "Voz: F4 abre o histórico",
+                               "Voz: Shift+Enter/F4 abre histórico",
                                "F2: configurações · F9: notificações · F10: nova DM",
                                "Ctrl+D na lista DMs: fechar conversa",
                                "Ctrl+R: atualizar ou reconectar",

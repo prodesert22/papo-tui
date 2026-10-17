@@ -50,7 +50,7 @@ class VoiceConversation(unittest.TestCase):
         t.send("\x1bOB\x1bOF" + packet)  # tabs -> list -> last channel
         self.wait(t, "♪ voz · Histórico")
 
-    def test_enter_click_and_right_preserve_conversation_f4_opens(self):
+    def test_enter_click_and_right_preserve_conversation_shift_enter_opens(self):
         with HistoryMock(count=1) as server:
             t = self.login(server)
             t.send("\x1bOB\x1bOB\n")
@@ -69,7 +69,7 @@ class VoiceConversation(unittest.TestCase):
             t.click(9, 4)
             self.assertEqual(self.reads(server), before)
             self.assertIn("# geral · Histórico", self.screen(t))
-            t.send("\x1bOS")
+            t.send("\x1b[13;2u")
             self.wait(t, "Conversa de voz 0001")
             self.assertIn("♪ voz · Histórico", self.screen(t))
             self.assertEqual(len(self.reads(server)), len(before) + 1)
@@ -82,14 +82,20 @@ class VoiceConversation(unittest.TestCase):
             self.assertEqual(self.reads(server), before)
             self.assertIn("Rascunho de voz", self.screen(t))
 
-    def test_f4_encodings_with_lock_modifiers_and_narrow_screen(self):
+    def test_history_shortcut_encodings_with_lock_modifiers_and_narrow_screen(self):
         with HistoryMock(count=0) as server:
             t = self.login(server)
             # F4 on a category must not request any history.
             t.send("\x1bOB\x1bOS")
             self.assertEqual(self.reads(server), [])
             for locks in (0, 64, 128, 192):
-                for packet in (f"\x1b[1;{1 + locks}S", f"\x1b[14;{1 + locks}~"):
+                for packet in (
+                    f"\x1b[1;{1 + locks}S",
+                    f"\x1b[14;{1 + locks}~",
+                    f"\x1b[13;{2 + locks}u",
+                    f"\x1b[27;{2 + locks};13~",
+                    f"\x1b[57414;{2 + locks}u",
+                ):
                     with self.subTest(packet=packet):
                         t.click(7, 4)
                         self.wait(t, "# geral · Histórico")
@@ -102,7 +108,7 @@ class VoiceConversation(unittest.TestCase):
             before = self.reads(server)
             t.send("\n")
             self.assertEqual(self.reads(server), before)
-            t.send("\x1bOS")
+            t.send("\x1b[13;2u")
             self.wait(t, "♪ voz · Histórico")
 
     def test_pagination_send_and_independent_drafts(self):
@@ -215,7 +221,8 @@ class VoiceConversation(unittest.TestCase):
             self.assertEqual(self.reads(server), [])
             t.send("\n")
             self.wait(t, "♪ voz · Histórico")
-            self.wait(t, "Conversa de voz 0003")
+            self.wait(t, "Conversa de voz 0001")
+            self.wait(t, "↑↓ mensagens")
             self.assertEqual(len(self.reads(server)), 1)
             self.assertIn(VOICE, self.reads(server)[0][1])
 

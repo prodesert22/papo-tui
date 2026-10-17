@@ -48,7 +48,8 @@ Closing the application discards drafts. Signing out also disables session
 recovery. If a send remains unconfirmed, check the history before resending:
 the message may already have reached the server.
 
-Voice calls are not available yet.
+To open messages in a voice channel, select it in the channel list and press
+**Shift+Enter** or **F4**. Voice calls are not available yet.
 
 ## Keyboard and mouse
 
@@ -69,6 +70,7 @@ Voice calls are not available yet.
 | F10 | Start a DM |
 | F9 | Open the notification center and preferences |
 | F4 in the editor | Choose an emoji |
+| Shift+Enter or F4 on a voice channel in the channel list | Open its message history |
 | F7 in a conversation | Enter or leave message navigation |
 | ↑ / ↓ during message navigation | Select the previous / next message |
 | ← / → during message navigation | Select media within the message |
@@ -339,6 +341,7 @@ Use PageUp/PageDown or the mouse wheel over the properties panel to scroll it.
   the application.
 - **Shift+Enter sends instead of adding a line:** use a terminal that supports
   reporting modified Enter, such as Kitty. If the terminal cannot distinguish
-  it from Enter, use Ctrl+N to insert a new line.
+  it from Enter, use Ctrl+N to insert a new line, or F4 in the channel list to
+  open a voice channel's messages.
 - **Linux terminal settings were disrupted:** run `reset`, even if the
   characters do not appear as you type.

@@ -343,10 +343,11 @@ void conversation_draw_footer(view *ui)
     } else if (ui->focus == CHANNEL_LIST) {
         bool voice = !strcmp(
             conversation_str(conversation_list_channel(ui, ui->highlighted), "type"), "voice");
-        full = voice ? "↑↓ canais · F4 histórico · Enter voz (em breve) · ↑ topo"
+        full = voice ? "↑↓ canais · Shift+Enter/F4 histórico · Enter voz (em breve) · ↑ topo"
                      : "↑↓ canais · Enter/→ abrir · ↑ topo · Ctrl+R atualizar";
-        shorter = voice ? "↑↓ canais · F4 histórico · ↑ topo" : "↑↓ canais · Enter abrir · ↑ topo";
-        minimal = voice ? "F4 histórico" : "↑↓ · Enter";
+        shorter = voice ? "↑↓ canais · Shift+Enter/F4 histórico · ↑ topo"
+                        : "↑↓ canais · Enter abrir · ↑ topo";
+        minimal = voice ? "Shift+Enter/F4 histórico" : "↑↓ · Enter";
     } else if (*ui->edit_message && ui->focus == MESSAGE_INPUT) {
         full = shorter = "Enter editar · Shift+Enter linha · Esc cancelar edição";
         minimal = "Enter editar · Esc cancelar";
