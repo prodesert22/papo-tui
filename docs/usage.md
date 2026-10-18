@@ -481,6 +481,11 @@ Use PageUp/PageDown or the mouse wheel over the properties panel to scroll it.
   folder; see the [installation guide](installation.md).
 - **Cannot connect:** check the final URL, instance availability and credentials.
   Private servers also require the server password.
+- **Server reports an IP block:** contact the instance administrator. A block
+  during private server authorization happens before your account is checked;
+  an already open session in another client does not confirm that a new login
+  is allowed. Account or IP blocks reported during login are shown separately
+  from a refusal to validate an existing session.
 - **Untrusted certificate:** install the instance's CA or run
   `CURL_CA_BUNDLE=/path/to/ca.pem papo-tui`. In PowerShell, set
   `$env:CURL_CA_BUNDLE='C:\path\to\ca.pem'` before running the application.

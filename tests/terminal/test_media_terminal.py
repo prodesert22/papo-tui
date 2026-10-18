@@ -17,7 +17,7 @@ from wcwidth import wcswidth
 
 FFMPEG = sys.argv.pop(2)
 from history_mock import HistoryMock, STAMP, uuid  # noqa: E402 - path and test arguments are prepared above
-from test_terminal import Terminal, TerminalStream  # noqa: E402 - path and test arguments are prepared above
+from test_terminal import Terminal, TerminalStream, wait_for_screen  # noqa: E402 - path and test arguments are prepared above
 import test_history_terminal as history_tests  # noqa: E402 - path and test arguments are prepared above
 
 
@@ -1115,10 +1115,23 @@ class MediaTerminal(unittest.TestCase):
                             self.assertTrue(poster_ids <= t.stream.live_ids)
                         self.assertEqual(len(t.stream.frames), count)
                         t.send("\x1b")
+                        wait_for_screen(
+                            t,
+                            lambda: title not in "\n".join(t.screen.display),
+                            f"Panel did not close: {title}",
+                        )
                         self.assertNotIn(title, "\n".join(t.screen.display))
                         if title == "Filtros da busca":
                             self.wait(t, "Buscar mensagens no servidor")
                             t.send("\x1b")
+                            wait_for_screen(
+                                t,
+                                lambda: (
+                                    "Buscar mensagens no servidor"
+                                    not in "\n".join(t.screen.display)
+                                ),
+                                "Search panel did not close",
+                            )
                     t.send("\x1b[18~")
                     self.wait(t, "Mídia 1/1")
                     self.assertNotIn("[Info]", "\n".join(t.screen.display))
@@ -1128,6 +1141,11 @@ class MediaTerminal(unittest.TestCase):
                     self.wait(t, "Propriedades")
                     self.assertNotIn("Mensagens fixadas", "\n".join(t.screen.display))
                     t.send("\x1b[19~")
+                    wait_for_screen(
+                        t,
+                        lambda: "Propriedades" not in "\n".join(t.screen.display),
+                        "Video properties did not close",
+                    )
                     self.assertNotIn("Propriedades", "\n".join(t.screen.display))
                     self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), 1)
                     t.send("\x1b")
@@ -1508,7 +1526,11 @@ class MediaTerminal(unittest.TestCase):
                 t.click(4, 33)
                 t.read(0.1)
                 self.wait_frames(t, frames + 1)
-                t.read(0.05)
+                wait_for_screen(
+                    t,
+                    lambda: "Propriedades" not in "\n".join(t.screen.display),
+                    "Image properties did not close",
+                )
                 self.assertNotIn("Propriedades", "\n".join(t.screen.display))
                 self.assertEqual(t.stream.placement_positions[-1], (6, 38))
                 self.assertEqual(t.stream.placements[-1][b"i"], image_id)
@@ -1516,7 +1538,11 @@ class MediaTerminal(unittest.TestCase):
                 # upload of the same cached variant when its pane returns.
                 self.assertEqual(len(t.stream.frames), frames + 1)
                 t.click(8, 4)
-                t.read(0.2)
+                wait_for_screen(
+                    t,
+                    lambda: "Esc: voltar" not in "\n".join(t.screen.display),
+                    "Image viewer did not close",
+                )
                 self.assertNotIn("Esc: voltar", "\n".join(t.screen.display))
                 self.assertIn("# geral", "\n".join(t.screen.display))
                 self.assertEqual(sum("/embeds/" in r[1] for r in server.requests), 1)

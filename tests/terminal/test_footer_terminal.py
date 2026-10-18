@@ -4,10 +4,18 @@ import time
 import unittest
 from history_mock import CHANNEL
 from realtime_mock import RealtimeMock
-from test_terminal import Terminal
+from test_terminal import Terminal, wait_for_screen
 
 
 class FooterTerminal(unittest.TestCase):
+    def resize(self, terminal, rows, columns):
+        terminal.resize(rows, columns)
+        wait_for_screen(
+            terminal,
+            lambda: terminal.screen.buffer[rows - 1][columns - 1].data in ("j", "┘"),
+            "Resized footer frame did not arrive",
+        )
+
     def wait(self, terminal, text):
         deadline = time.monotonic() + 8
         while text not in "\n".join(terminal.screen.display) and time.monotonic() < deadline:
@@ -20,6 +28,14 @@ class FooterTerminal(unittest.TestCase):
         self.assertIn("F8", line)
         return line
 
+    def wait_footer(self, terminal, text):
+        wait_for_screen(
+            terminal,
+            lambda: text in terminal.screen.display[-2],
+            f"Missing footer text: {text}",
+        )
+        return self.footer(terminal)
+
     def open(self, server):
         terminal = Terminal()
         terminal.send(server.url + "\tjosé\tSynthetic!123\n")
@@ -30,22 +46,22 @@ class FooterTerminal(unittest.TestCase):
         with RealtimeMock(count=0) as server:
             terminal = self.open(server)
             try:
-                terminal.resize(24, 220)
-                self.assertIn("←→ servidores", self.footer(terminal))
-                self.assertIn("F3 busca", self.footer(terminal))
-                self.assertIn("F8 fixadas", self.footer(terminal))
-                self.assertIn("F9 notificações", self.footer(terminal))
+                self.resize(terminal, 24, 220)
+                self.wait_footer(terminal, "←→ servidores")
+                self.wait_footer(terminal, "F3 busca")
+                self.wait_footer(terminal, "F8 fixadas")
+                self.wait_footer(terminal, "F9 notificações")
                 terminal.send("\x1bOB")
                 self.wait(terminal, "Foco: Canais")
-                self.assertIn("↑↓ canais", self.footer(terminal))
-                self.assertIn("F9 notificações", self.footer(terminal))
+                self.wait_footer(terminal, "↑↓ canais")
+                self.wait_footer(terminal, "F9 notificações")
                 self.assertNotIn("F7", self.footer(terminal))
                 self.assertNotIn("Enter enviar", self.footer(terminal))
                 terminal.send("\n")
                 self.wait(terminal, "Nenhuma mensagem neste canal")
-                self.assertIn("↑↓ rolar", self.footer(terminal))
-                self.assertIn("F7 mensagens", self.footer(terminal))
-                self.assertIn("F9 notificações", self.footer(terminal))
+                self.wait_footer(terminal, "↑↓ rolar")
+                self.wait_footer(terminal, "F7 mensagens")
+                self.wait_footer(terminal, "F9 notificações")
                 self.assertNotIn("↑↓ canais", self.footer(terminal))
                 terminal.send("Mensagem pelo rodapé\n")
                 self.wait(terminal, "Mensagem confirmada")
@@ -69,7 +85,7 @@ class FooterTerminal(unittest.TestCase):
                 )
                 self.assertNotIn("Mensagem confirmada", "\n".join(terminal.screen.display[:-2]))
                 self.assertNotIn("Evento de tempo real", "\n".join(terminal.screen.display[:-2]))
-                terminal.resize(24, 80)
+                self.resize(terminal, 24, 80)
                 line = self.footer(terminal)
                 self.assertIn("Enter", line)
                 self.assertIn("+1", line)  # The longer hint collapses the oldest notice.
@@ -77,7 +93,7 @@ class FooterTerminal(unittest.TestCase):
                 self.assertIn("Mensagem confirmada", line)
                 self.assertIn("Evento ignorado", line)
                 self.assertEqual(line.count(" | "), 2)
-                terminal.resize(24, 220)
+                self.resize(terminal, 24, 220)
                 server.emit(dict(type="error", channel_id=CHANNEL))
                 self.wait(terminal, "O servidor informou um erro")
                 line = self.footer(terminal)
@@ -85,16 +101,16 @@ class FooterTerminal(unittest.TestCase):
                 self.assertIn("Mensagem confirmada", line)
                 self.assertIn("Tempo real conectado", line)
                 self.assertEqual(line.count(" | "), 2)
-                terminal.resize(14, 44)
-                self.assertIn("Enter", self.footer(terminal))
-                self.assertIn("F9", self.footer(terminal))
+                self.resize(terminal, 14, 44)
+                self.wait_footer(terminal, "Enter")
+                self.wait_footer(terminal, "F9")
                 self.assertEqual(len(self.footer(terminal)), 44)
-                terminal.resize(24, 220)
-                self.assertIn("O servidor informou um erro", self.footer(terminal))
-                self.assertIn("Mensagem confirmada pelo servidor", self.footer(terminal))
+                self.resize(terminal, 24, 220)
+                self.wait_footer(terminal, "O servidor informou um erro")
+                self.wait_footer(terminal, "Mensagem confirmada pelo servidor")
                 terminal.send("\x1b\x1bOD\x1bOH\x1bOA\x1bOA")
                 self.wait(terminal, "Foco: Abas")
-                self.assertIn("←→ servidores", self.footer(terminal))
+                self.wait_footer(terminal, "←→ servidores")
                 self.assertNotIn("F7", self.footer(terminal))
             finally:
                 self.assertTrue(terminal.close())
@@ -103,7 +119,7 @@ class FooterTerminal(unittest.TestCase):
         with RealtimeMock(count=30) as server:
             terminal = self.open(server)
             try:
-                terminal.resize(24, 160)
+                self.resize(terminal, 24, 160)
                 terminal.send("\x1bOB\n")
                 self.wait(terminal, "Mensagem 0030")
                 terminal.send("\x1bOH")

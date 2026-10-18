@@ -55,6 +55,41 @@ class AuthTests(unittest.TestCase):
             self.assertIn("instância é privada", result.stdout)
             self.assertEqual(len(server.requests), 1)
 
+    def test_forbidden_identifies_login_stage_and_distinguishes_ip_block(self):
+        for endpoint, scenario, mode, expected_requests, banned_notice, denied_notice in (
+            (
+                "/auth/login_server",
+                "private",
+                "private",
+                2,
+                "bloqueou este IP",
+                "autorização da instância",
+            ),
+            ("/auth/login", "public", "", 2, "bloqueou a conta ou este IP", "acesso à conta"),
+            ("/auth/whoami", "public", "", 3, "bloqueou esta conta", "validação da sessão"),
+            ("/server", "public", "", 1, None, "acesso à instância"),
+        ):
+            for banned in (False, True) if banned_notice else (False,):
+                with self.subTest(endpoint=endpoint, banned=banned), MockServer(scenario) as server:
+
+                    def reject(_method, path, _body):
+                        if path.endswith(endpoint):
+                            return 403, {
+                                "type": "https://papo.invalid/errors/"
+                                + ("banned" if banned else "forbidden"),
+                                "detail": "Synthetic!123\u001b[2J must never appear",
+                            }
+                        return None
+
+                    server.api_handler = reject
+                    result = self.run_probe(server.url, mode)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn("ready=0", result.stdout)
+                    self.assertIn(banned_notice if banned else denied_notice, result.stdout)
+                    self.assertNotIn("Synthetic!123", result.stdout)
+                    self.assertNotIn("\u001b", result.stdout)
+                    self.assertEqual(len(server.requests), expected_requests)
+
     def test_logout_and_fresh_cookie_jar(self):
         with MockServer() as server:
             result = self.run_probe(server.url, "logout")

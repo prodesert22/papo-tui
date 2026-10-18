@@ -346,9 +346,23 @@ void auth_internal_complete(auth_client *client, CURLcode result, long status)
         } else if (status == 429) {
             net_rate_defer(client->retry_after);
             message = "Limite de requisições atingido. Aguarde antes de tentar novamente.";
-        } else if (status == 403)
-            message = "O servidor recusou o acesso a esta conta.";
-        else if (status == 409 && previous == AUTH_REGISTER)
+        } else if (status == 403) {
+            if (auth_internal_problem_is(client, "banned"))
+                message =
+                    previous == AUTH_SERVER_PASSWORD
+                        ? "O servidor bloqueou este IP. Contate a administração da instância."
+                    : previous == AUTH_LOGIN || previous == AUTH_REGISTER
+                        ? "O servidor bloqueou a conta ou este IP. Contate a administração."
+                        : "O servidor bloqueou esta conta. Contate a administração da instância.";
+            else
+                message = previous == AUTH_SERVER_PASSWORD
+                              ? "O servidor recusou a autorização da instância (HTTP 403)."
+                          : previous == AUTH_LOGIN || previous == AUTH_REGISTER
+                              ? "O servidor recusou o acesso à conta (HTTP 403)."
+                          : previous == AUTH_WHOAMI || previous == AUTH_REFRESH
+                              ? "O servidor recusou a validação da sessão (HTTP 403)."
+                              : "O servidor recusou o acesso à instância (HTTP 403).";
+        } else if (status == 409 && previous == AUTH_REGISTER)
             message = "Nome de usuário já está em uso. Escolha outro.";
         else if (status == 400 && previous == AUTH_REGISTER)
             message = "Cadastro recusado. Confira usuário e a política de senha desta instância.";

@@ -1,6 +1,7 @@
 """Emoji picker, authenticated assets and retained pictures in a real PTY."""
 
 import base64
+import os
 import fcntl
 from datetime import datetime, timezone
 import signal
@@ -1675,5 +1676,17 @@ class EmojiTerminal(unittest.TestCase):
                     self.assertTrue(t.close())
 
 
+def load_tests(loader, tests, pattern):
+    partition = os.environ.get("PAPO_TEST_EMOJI_PARTITION")
+    if partition is None:
+        return tests
+    if partition not in ("0", "1"):
+        raise ValueError("PAPO_TEST_EMOJI_PARTITION must be 0 or 1")
+    # Keep the normal unittest order and every discovered case. CTest runs
+    # both disjoint halves; direct execution still runs the complete suite.
+    cases = [case for group in tests for case in group]
+    return unittest.TestSuite(cases[int(partition) :: 2])
+
+
 if __name__ == "__main__":
-    unittest.main()
+    unittest.main(verbosity=2)

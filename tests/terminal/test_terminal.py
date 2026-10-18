@@ -17,6 +17,7 @@ import tempfile
 import unittest
 
 import pyte
+from wcwidth import wcswidth
 
 from mock_server import MockServer
 
@@ -63,6 +64,28 @@ class TerminalStream(pyte.ByteStream):
             self.use_utf8 = False
 
     def feed(self, data):
+        # pyte does not consume APC strings such as Kitty graphics queries.
+        # They are nonprinting, including when their opener or ST terminator
+        # is split across reads. Retain at most one byte of a partial marker.
+        data = getattr(self, "_apc_tail", b"") + data
+        self._apc_tail = b""
+        visible = []
+        while data:
+            inside = getattr(self, "_apc_open", False)
+            marker = b"\x1b\\" if inside else b"\x1b_"
+            end = data.find(marker)
+            if end < 0:
+                if data.endswith(b"\x1b"):
+                    self._apc_tail = b"\x1b"
+                    data = data[:-1]
+                if not inside:
+                    visible.append(data)
+                break
+            if not inside:
+                visible.append(data[:end])
+            self._apc_open = not inside
+            data = data[end + len(marker) :]
+        data = b"".join(visible)
         # pyte omits colon-form SGR used by xterm-direct terminfo. Normalize
         # equivalent color parameters, preserving CSI split across PTY reads.
         data = getattr(self, "_sgr_pending", b"") + data
@@ -98,6 +121,21 @@ def editor_column(terminal):
     """Text begins after the editor prompt; toolbar buttons sit on the right."""
     prompt = 27 if terminal.screen.columns >= 80 else 2
     return prompt + 2
+
+
+def wait_for_screen(terminal, predicate, description, seconds=5):
+    """Observe a postcondition; sending input is not a rendering barrier."""
+    deadline = time.monotonic() + seconds
+    while True:
+        try:
+            if predicate():
+                return
+        except StopIteration:
+            # An incremental repaint may temporarily omit the editor prompt.
+            pass
+        if time.monotonic() >= deadline:
+            raise AssertionError(description + "\n" + "\n".join(terminal.screen.display))
+        terminal.read(0.03)
 
 
 class PosixTerminal:
@@ -244,6 +282,30 @@ else:
 
 
 class TerminalStreamTests(unittest.TestCase):
+    def test_kitty_graphics_query_never_changes_text_or_cursor(self):
+        query = b"\x1b_Gi=1347440639,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\"
+        data = b"\x1b[2;3H" + query + "josé".encode()
+        for split in range(len(data) + 1):
+            with self.subTest(split=split):
+                screen = ObservedScreen(12, 3)
+                stream = TerminalStream(screen)
+                stream.feed(data[:split])
+                stream.feed(data[split:])
+                self.assertEqual(screen.display[1].rstrip(), "  josé")
+                self.assertEqual((screen.cursor.y, screen.cursor.x), (1, 6))
+
+    def test_fragmented_graphics_payload_is_discarded_without_buffering_it(self):
+        screen = ObservedScreen(12, 2)
+        stream = TerminalStream(screen)
+        stream.feed(b"before\x1b_")
+        for _ in range(100):
+            stream.feed(b"A" * 1024)
+            self.assertEqual(stream._apc_tail, b"")
+        stream.feed(b"\x1b")
+        stream.feed(b"\\after")
+        self.assertEqual(screen.display[0].rstrip(), "beforeafter")
+        self.assertEqual((screen.cursor.y, screen.cursor.x), (0, 11))
+
     def test_windows_line_drawing_and_utf8_survive_every_read_boundary(self):
         data = "\x1b(0lqk\x1b(B josé 😀\r\n\x1b(0mqj\x1b(B".encode()
         for split in range(len(data) + 1):
@@ -288,6 +350,11 @@ class TerminalTests(unittest.TestCase):
     def test_three_areas_and_wide_text_survive_resize(self):
         terminal = Terminal()
         try:
+            wait_for_screen(
+                terminal,
+                lambda: "[ Entrar ]" in terminal.screen.display[18],
+                "Initial login frame did not arrive",
+            )
             self.assertIn("papo", terminal.screen.display[2])
             self.assertIn("Usuário (username)", terminal.screen.display[8])
             self.assertIn("[ Entrar ]", terminal.screen.display[18])
@@ -296,19 +363,33 @@ class TerminalTests(unittest.TestCase):
                 rule = terminal.screen.display[row][10:70]
                 self.assertIn(rule, ("q" * 60, "─" * 60))
             terminal.send("\tação界語")
+            self.assertEqual(terminal.wait_cursor(9, 20), (9, 20))
             self.assertIn("ação界語", terminal.screen.display[9])
             self.assertEqual((terminal.screen.cursor.y, terminal.screen.cursor.x), (9, 20))
             terminal.resize(16, 40)
+            wait_for_screen(
+                terminal,
+                lambda: "Amplie o terminal" in terminal.screen.display[0],
+                "Compact login frame did not arrive",
+            )
             self.assertIn("Amplie o terminal", terminal.screen.display[0])
             terminal.resize(2, 18)
+            wait_for_screen(
+                terminal,
+                lambda: terminal.screen.display[1].rstrip() == "Ctrl+Q: sair",
+                "Minimal login frame did not arrive",
+            )
             self.assertEqual(terminal.screen.display[1].rstrip(), "Ctrl+Q: sair")
             terminal.resize(22, 44)
+            self.assertEqual(terminal.wait_cursor(8, 14), (8, 14))
             self.assertIn("ação界語", terminal.screen.display[8])
             self.assertEqual((terminal.screen.cursor.y, terminal.screen.cursor.x), (8, 14))
             terminal.resize(30, 100)
+            self.assertEqual(terminal.wait_cursor(12, 30), (12, 30))
             self.assertIn("ação界語", terminal.screen.display[12])
             self.assertEqual((terminal.screen.cursor.y, terminal.screen.cursor.x), (12, 30))
             terminal.send("\x7f")
+            self.assertEqual(terminal.wait_cursor(12, 28), (12, 28))
             self.assertIn("ação界", terminal.screen.display[12])
             self.assertNotIn("語", terminal.screen.display[12])
             self.assertEqual((terminal.screen.cursor.y, terminal.screen.cursor.x), (12, 28))
@@ -452,12 +533,19 @@ class TerminalTests(unittest.TestCase):
         with MockServer("private") as server:
             terminal = Terminal()
             try:
+                wait_for_screen(
+                    terminal,
+                    lambda: "[ Entrar ]" in terminal.screen.display[18],
+                    "Initial login frame did not arrive",
+                )
                 for index, value in enumerate([server.url, "josé", "Synthetic!123", "Server!123"]):
                     if index:
                         terminal.send("\t")
                     # Repeat past the beginning of both populated and empty inputs.
                     terminal.screen.visible_cursor_rows.clear()
                     terminal.send("apagar" + "\x7f" * 40 + "\x08" * 10 + value)
+                    row, column = 6 + 3 * index, 12 + wcswidth(value)
+                    self.assertEqual(terminal.wait_cursor(row, column), (row, column))
                     self.assertEqual(terminal.screen.cursor.y, 6 + 3 * index)
                     self.assertTrue(
                         all(row == 6 + 3 * index for row in terminal.screen.visible_cursor_rows)
@@ -480,6 +568,7 @@ class TerminalTests(unittest.TestCase):
             terminal = Terminal()
             try:
                 terminal.send(server.url + "\tjosé\x1bOH")
+                self.assertEqual(terminal.wait_cursor(9, 12), (9, 12))
                 for _ in range(4):
                     terminal.send("\x7f" * 16)
                     self.assertEqual((terminal.screen.cursor.y, terminal.screen.cursor.x), (9, 12))
@@ -498,6 +587,11 @@ class TerminalTests(unittest.TestCase):
             terminal = Terminal()
             try:
                 terminal.resize(30, 100)
+                wait_for_screen(
+                    terminal,
+                    lambda: "Usuário (username)" in terminal.screen.display[11],
+                    "Resized login form did not arrive",
+                )
                 # The centered card now begins at row 4 and column 18.
                 for row, value in [
                     (9, server.url),
@@ -507,6 +601,10 @@ class TerminalTests(unittest.TestCase):
                 ]:
                     terminal.click(row, 22)
                     terminal.send(value)
+                    self.assertEqual(
+                        terminal.wait_cursor(row, 22 + wcswidth(value)),
+                        (row, 22 + wcswidth(value)),
+                    )
                     self.assertEqual(terminal.screen.cursor.y, row)
                 terminal.click(21, 24)
                 terminal.return_to_account()

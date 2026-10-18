@@ -139,6 +139,7 @@ class MessageInteractions(unittest.TestCase):
                 terminal.send("m")
                 self.wait(terminal, "Ver quem reagiu")
                 terminal.send("\x1b\x1b")
+                self.settled(terminal, lambda: "Ver quem reagiu" not in self.screen(terminal))
                 self.right_click(terminal, "Mensagem 0001")
                 self.wait(terminal, "Responder")
                 self.click(terminal, "Responder")
@@ -434,7 +435,9 @@ class MessageInteractions(unittest.TestCase):
                 self.wait(terminal, "Unicode")
                 terminal.send("\x1b")
                 self.settled(terminal, lambda: "Reagir · Esc voltar" not in self.screen(terminal))
-                terminal.send(":grinning\t")
+                terminal.send(":grinning")
+                self.settled(terminal, lambda: ":grinning" in self.editor_text(terminal))
+                terminal.send("\t")
                 # Tab and the completed editor frame can arrive after send's
                 # short read, especially in the sanitizer build under load.
                 self.settled(terminal, lambda: ":grinning" not in self.editor_text(terminal))
@@ -627,6 +630,7 @@ class MessageInteractions(unittest.TestCase):
                 terminal.send("\x1bOD")
                 for _ in range(3):
                     terminal.send(f"\x1b[<65;{left + 3};{header + 4}M")
+                self.settled(terminal, lambda: "☂" in "\n".join(line[0] for line in columns()[3]))
                 self.assertIn("☂", "\n".join(line[0] for line in columns()[3]))
                 self.assertEqual(people(), right_scrolled)
                 terminal.send("\x1bOB" * 13 + "\n")

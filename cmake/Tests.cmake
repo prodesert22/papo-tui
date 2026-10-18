@@ -70,7 +70,8 @@ if(BUILD_TESTING)
             ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_emojis_terminal.py
             $<TARGET_FILE:papo-tui> ${FFMPEG_CLI})
-    set_tests_properties(emojis-terminal PROPERTIES TIMEOUT 210)
+    set_tests_properties(emojis-terminal PROPERTIES TIMEOUT 210 ENVIRONMENT
+                                                    "PAPO_TEST_EMOJI_PARTITION=0")
     add_executable(interactions-probe tests/probes/interactions_probe.c)
     target_link_libraries(interactions-probe PRIVATE papo_media)
     target_compile_options(interactions-probe PRIVATE -Wall -Wextra -Wpedantic -Werror)
@@ -450,6 +451,25 @@ if(BUILD_TESTING)
         NAME release-cli
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/integration/test_release.py
                 $<TARGET_FILE:papo-tui> ${PAPO_DISPLAY_VERSION})
+    add_test(
+        NAME terminal-synchronization
+        COMMAND
+            ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_terminal_synchronization.py
+            $<TARGET_FILE:papo-tui>)
+    set_tests_properties(
+        terminal-synchronization
+        PROPERTIES
+            TIMEOUT 240 ENVIRONMENT
+            "PAPO_TEST_FFMPEG=${FFMPEG_CLI};PAPO_TEST_MODAL_PROBE=$<TARGET_FILE:media-modal-probe>")
+    add_test(
+        NAME emojis-terminal-part-2
+        COMMAND
+            ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_emojis_terminal.py
+            $<TARGET_FILE:papo-tui> ${FFMPEG_CLI})
+    set_tests_properties(emojis-terminal-part-2 PROPERTIES TIMEOUT 210 ENVIRONMENT
+                                                           "PAPO_TEST_EMOJI_PARTITION=1")
 endif()
 
 if(BUILD_TESTING)

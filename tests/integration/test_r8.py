@@ -226,6 +226,7 @@ class R8Tests(unittest.TestCase):
     def test_blocked_and_rate_limit_leave_state_and_require_manual_retry(self):
         with R8Mock(case="blocked") as server:
             c = self.observer(server)
+            c.wait(lambda r: len(r["notifications"]) == 1)
             c.command("open " + AUTHOR)
             r = c.wait(lambda r: "bloqueada" in r["notice"])
             self.assertTrue(r["session"])

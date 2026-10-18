@@ -330,6 +330,24 @@ behavior and relevant failures rather than repeat the implementation.
 Count test suites and scenarios separately: each CTest entry may run many
 unittest cases. Never use personal credentials, keyrings or clipboard data in tests.
 
+Terminal `send()` and `resize()` only perform a short output read; they do not
+guarantee that the application has processed the input or painted a complete
+frame. Before inspecting text, cursor positions, colors or click coordinates,
+wait for the specific postcondition with a bounded deadline. Observe the initial
+state before testing its disappearance, and verify submitted payloads when the
+screen alone could pass on stale content. Do not replace these checks with longer
+fixed sleeps or retries of failed tests. `terminal-synchronization` runs real
+editor scenarios with reads deferred until explicit waits, both with whole
+output chunks and fragmented escape/UTF-8 sequences. Add affected scenarios to
+that suite when fixing a terminal timing failure.
+The generic pyte observer also discards nonprinting Kitty APC sequences across
+read boundaries, keeping only a partial marker rather than buffering image data.
+Its parser tests cover every split of a graphics query and bounded payload handling.
+CTest runs the 39 emoji terminal scenarios in two disjoint partitions, keeping
+each group below its deadline when the build variants run concurrently. Direct
+execution of `test_emojis_terminal.py` runs all cases unless
+`PAPO_TEST_EMOJI_PARTITION` selects partition `0` or `1`.
+
 On Linux, `tools/check_light_performance.py --binary build/papo-tui
 --output build/light-performance.json` measures host/helper RSS and PSS, CPU
 and input latency against synthetic local HTTP and PTY data. Its results are
