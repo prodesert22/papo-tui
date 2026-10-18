@@ -913,13 +913,12 @@ bool media_view_poll(media_view *v, history *h)
     return changed;
 }
 static const message_media *embed_video(const message_media *items, size_t count,
-                                       const message_media *image)
+                                        const message_media *image)
 {
     if (image->kind != AUTH_MEDIA_EMBED || strcmp(image->role, "thumbnail"))
         return NULL;
     for (size_t i = 0; i < count; ++i)
-        if (items[i].kind == AUTH_MEDIA_VIDEO && items[i].video &&
-            !strcmp(items[i].id, image->id))
+        if (items[i].kind == AUTH_MEDIA_VIDEO && items[i].video && !strcmp(items[i].id, image->id))
             return &items[i];
     return NULL;
 }

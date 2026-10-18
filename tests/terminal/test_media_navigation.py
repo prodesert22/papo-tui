@@ -18,9 +18,9 @@ def wait_identity(terminal, identity):
     """
     wait_for_screen(
         terminal,
-        lambda: media.uuid(identity)
-        in "".join(
-            ch for ch in "\n".join(terminal.screen.display) if ch in "0123456789abcdef-"
+        lambda: (
+            media.uuid(identity)
+            in "".join(ch for ch in "\n".join(terminal.screen.display) if ch in "0123456789abcdef-")
         ),
         f"Image {identity} is not the one shown",
     )

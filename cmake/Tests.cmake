@@ -266,7 +266,8 @@ if(BUILD_TESTING)
     add_test(
         NAME media-navigation-terminal
         COMMAND
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_media_navigation.py
+            ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_media_navigation.py
             $<TARGET_FILE:papo-tui> ${FFMPEG_CLI})
     set_tests_properties(media-navigation-terminal PROPERTIES TIMEOUT 180)
     find_program(OPENSSL_CLI NAMES openssl REQUIRED)
