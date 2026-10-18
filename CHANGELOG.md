@@ -55,6 +55,8 @@ Upcoming changes are recorded in [Unreleased](releases/Unreleased.md).
 
 ### Fixed
 
+- Display user mentions in system notification previews as @username instead of
+  raw @mention(<@uuid>) tokens, using each instance's user data.
 - Center mention counts inside notification badges and remove the extra + suffix.
 - Keep replies separate from adjacent messages in history grouping.
 - Use ncurses 6.6 across Linux and Windows builds so rapid mouse drags preserve

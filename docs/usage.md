@@ -258,6 +258,11 @@ means the notification omitted attribution. Opening the conversation loads the
 message and its author. The client does not fetch inactive conversation histories
 just to fill author names, because history reads also mark conversations read.
 
+System notification previews show user mentions as **@username**, rather than
+the stored `@mention(<@uuid>)` token. They use the username, even when the person
+has a nickname. A user whose username is unavailable appears as
+**@usuário indisponível** (user unavailable); `@everyone` stays unchanged.
+
 Type `:` to open emoji suggestions, then keep typing to filter Unicode and
 server emojis by name or keyword. Use ↑/↓ to choose, Tab or Enter to insert,
 and Esc to dismiss. Confirming a suggestion inserts it without sending the
