@@ -7,7 +7,7 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from bootstrap import ROOT, sha256
+from bootstrap import ROOT, ncurses_options, sha256
 
 APP_ID = "io.github.prodesert22.PapoTUI"
 RUNTIME = "26.08"
@@ -60,6 +60,8 @@ def module(entry):
         result["config-opts"] = ["--enable-shared", "--disable-static", "--libdir=/app/lib"]
         if name == "chafa":
             result["config-opts"] += ["--without-imagemagick", "--without-librsvg"]
+        elif name == "ncurses":
+            result["config-opts"] = ncurses_options("/app")
     elif name == "ffmpeg":
         result["config-opts"] = [
             "--enable-shared",

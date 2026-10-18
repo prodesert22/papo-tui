@@ -59,7 +59,7 @@ install the development packages for the libraries below.
 
 | Library | Minimum | Purpose |
 | --- | --- | --- |
-| ncursesw and formw | 6.1 | Terminal interface |
+| ncursesw and formw | 6.6 | Terminal interface |
 | libcurl | 7.86 | HTTP and WebSocket; requires WS/WSS, TLS and asynchronous DNS |
 | Jansson | 2.14 | JSON |
 | libunibreak | 6.1 | Unicode graphemes and words |
@@ -84,6 +84,15 @@ On Debian/Ubuntu and Fedora, development package names and versions vary.
 The build recipes provide missing dependencies without replacing system
 libraries; see [builds](builds.md). An installed libcurl may lack WebSocket
 support even when it meets the minimum version: CMake checks this.
+
+Builds use ncurses 6.6 for consistent mouse selection and copying. If your
+distribution ships an older version, install the locked dependency in a private
+prefix before configuring:
+
+```sh
+python3 dist/bootstrap.py --prefix build/release-deps --only ncurses
+cmake -S . -B build -DCMAKE_PREFIX_PATH="$PWD/build/release-deps" -DBUILD_TESTING=OFF
+```
 
 ```sh
 cmake -S . -B build -DBUILD_TESTING=OFF

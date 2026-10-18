@@ -19,8 +19,9 @@ UTF-16 units into the byte/key-code queue: `wget_wch` then misreads accented
 characters as UTF-8 and other Unicode units as function keys. The patch tags
 native non-ASCII units inside that queue and removes the tag in the public
 narrow/wide readers. The existing input adapter joins surrogate pairs. It keeps
-ncurses sequence and mouse decoding, adds no input parser, and leaves Linux on
-its system ncurses. The patch also preserves coalesced key repeats and maps
+ncurses sequence and mouse decoding and adds no input parser.
+Linux and Windows builds use the same locked ncurses 6.6 source; only Windows
+applies the console patch. The patch also preserves coalesced key repeats and maps
 right clicks to terminal button three regardless of the reported mouse hardware.
 The input adapter checks the native viewport to catch consumed resize events.
 Dependency source kits include the patch and recipe. ConPTY checks exercise
@@ -371,6 +372,11 @@ update the emoji catalog and fixtures through their generators.
 ## Packaging and releases
 
 `dist/dependencies.json`, `resources.json` and `tools.json` pin sources and hashes.
+The private prefix includes ncursesw/formw 6.6 on Linux as well as Windows.
+The older ncurses 6.4 shipped by Ubuntu 24.04 retrieves accumulated mouse events
+in reverse order; 6.6 preserves their order, which text selection and copying
+require. CMake rejects older ncurses/form libraries. Linux reuses the system
+terminfo database, and release bundles include the private shared libraries.
 `dist/bootstrap.py --prefix build/release-deps` prepares a private prefix;
 `dist/build.py --build build/release --prefix build/release-deps` also configures,
 builds and tests. Run these with the virtual environment's Python and put its
