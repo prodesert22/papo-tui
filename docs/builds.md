@@ -20,28 +20,6 @@ ZIP include their libraries alongside the program. Flatpak uses Freedesktop
 The Windows installer supports installation and removal for the current user.
 The ZIP runs without installation; its data is still stored in the user profile.
 
-## Build a configuration
-
-After preparing the dependencies from the [installation guide](installation.md):
-
-```sh
-cmake --preset release
-cmake --build --preset release
-```
-
-The `debug`, `sanitizers` and `coverage` presets are also available.
-The last two are for Linux development. If you use a Python virtual environment
-or external dependencies, pass `-DPython3_EXECUTABLE=...` and
-`-DCMAKE_PREFIX_PATH=...` when configuring the preset.
-
-Useful options:
-
-| CMake option | Effect |
-| --- | --- |
-| `BUILD_TESTING=OFF` | Build only the application |
-| `PAPO_RELEASE_BUILD=ON` | Version without the `-dev` suffix |
-| `PAPO_DESKTOP_SESSIONS=OFF` | Disable recovery through the credential store |
-| `PAPO_DESKTOP_NOTIFICATIONS=OFF` | Disable popups; keep the notification center |
-| `PAPO_BUNDLE_RUNTIME=ON` | Include libraries in the installation |
-
-See the [usage guide](usage.md) for instructions and troubleshooting.
+See the [installation guide](installation.md) to install a downloaded package
+and the [usage guide](usage.md) for controls and troubleshooting.
+To compile a binary yourself, follow [BUILD.md](../BUILD.md).

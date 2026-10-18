@@ -401,15 +401,23 @@ void conversation_draw_footer(view *ui)
                   !ui->reactors_open && !ui->context_open && !media_view_modal(ui->media) &&
                   !emoji_picker_open(ui->emojis) && !emoji_picker_suggesting(ui->emojis) &&
                   !mention_popup_open(ui->mentions);
-    snprintf(full_hints, sizeof(full_hints), "%s%s%s", full,
+    snprintf(full_hints, sizeof(full_hints), "%s%s%s%s", full,
              normal ? " · F3 busca · F8 fixadas" : "",
-             normal && !strstr(full, "F9") ? " · F9 notificações" : "");
-    snprintf(short_hints, sizeof(short_hints), "%s%s%s", shorter,
+             normal && !strstr(full, "F9") ? " · F9 notificações" : "",
+             normal && !strstr(full, "F10") ? " · F10 membros" : "");
+    snprintf(short_hints, sizeof(short_hints), "%s%s%s%s", shorter,
              normal ? " · F3 busca · F8 fixadas" : "",
-             normal && !strstr(shorter, "F9") ? " · F9 notificações" : "");
-    snprintf(minimal_hints, sizeof(minimal_hints), "%s%s%s", minimal, normal ? " F3/F8" : "",
-             normal ? (getmaxx(ui->footer) >= 60 ? " F9 notificações" : " F9") : "");
-    status_bar_draw(&ui->status, ui->footer, 1, full_hints, short_hints, minimal_hints);
+             normal && !strstr(shorter, "F9") ? " · F9 notificações" : "",
+             normal && !strstr(shorter, "F10") ? " · F10 membros" : "");
+    snprintf(minimal_hints, sizeof(minimal_hints), "%s%s%s%s", minimal, normal ? " F3/F8" : "",
+             normal ? (getmaxx(ui->footer) >= 60 ? " F9 notificações" : " F9") : "",
+             normal ? (getmaxx(ui->footer) >= 80 ? " F10 membros" : " F10") : "");
+    int hint_width = getmaxx(ui->footer) - 2;
+    const char *compact =
+        text_label(NULL, 0, 0, 1024, short_hints) > hint_width ? minimal_hints : short_hints;
+    const char *hints =
+        text_label(NULL, 0, 0, 1024, full_hints) > hint_width ? compact : full_hints;
+    status_bar_draw(&ui->status, ui->footer, 1, hints, compact, minimal_hints);
 }
 
 void conversation_draw_confirmation(view *ui)

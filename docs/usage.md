@@ -73,7 +73,8 @@ DMs also reaches Search. Tab and Shift+Tab include all three controls.
 Press **F10** or click **👤** beside the pinned-message button to open the member
 drawer on the right. It reserves space beside the conversation when the terminal is wide
 enough and overlays the right side on narrower screens. Closing or resizing it
-preserves your draft and reading position.
+preserves your draft and reading position. The conversation footer includes
+**F10 membros** (Members), shortened to **F10** when space is limited.
 
 Each member shows an avatar (or their centered first initial), display name and
 presence dot: green for online, yellow for away, red for busy and gray for offline. A text label also identifies

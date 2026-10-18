@@ -44,15 +44,8 @@ video; **Ultralight** uses text only and releases the media libraries.
 
 ## Build
 
-Install the [dependencies](docs/installation.md#build-from-source) and run:
-
-```sh
-cmake -S . -B build -DBUILD_TESTING=OFF
-cmake --build build
-./build/papo-tui
-```
-
-To contribute or run tests, see [CONTRIBUTING.md](CONTRIBUTING.md).
+See [BUILD.md](BUILD.md) for the packages to install and the commands to build
+the Linux binary or Windows executable, run tests and prepare packages.
 The service contract is in [openapi.yml](openapi.yml).
 
 ## Releases and license
