@@ -42,6 +42,8 @@ struct ws_client {
     uint64_t incoming_deadline;
     char close_payload[125];
     size_t close_length;
+    void (*observer)(void *, const json_t *);
+    void *observer_context;
     json_t *events[WS_QUEUE_LIMIT];
     size_t event_sizes[WS_QUEUE_LIMIT];
     size_t event_head, event_count, event_bytes;
@@ -379,6 +381,8 @@ static bool finish_event(ws_client *client)
         fail(client, "A fila de eventos de tempo real excedeu o limite.");
         return false;
     }
+    if (client->observer)
+        client->observer(client->observer_context, event);
     if (strcmp(type, "heartbeat_ack") == 0)
         client->ack_deadline = 0;
     size_t index = (client->event_head + client->event_count) % WS_QUEUE_LIMIT;
@@ -601,4 +605,10 @@ long ws_http_status(const ws_client *client)
 size_t ws_queued_events(const ws_client *client)
 {
     return client->event_count;
+}
+
+void ws_observe(ws_client *client, void (*observer)(void *, const json_t *), void *context)
+{
+    client->observer = observer;
+    client->observer_context = context;
 }

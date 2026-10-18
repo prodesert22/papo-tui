@@ -35,16 +35,31 @@ static bool render_unicode(PangoFontMap *map, const char *text, int width, int h
             cairo_arc(cr, 1 + radius, height / 2., radius, G_PI / 2, 3 * G_PI / 2);
             cairo_close_path(cr);
             cairo_fill(cr);
-            sx *= .75;
-            sy *= .6;
-            cairo_set_source_rgb(cr, 1, 1, 1);
-        }
-        double scale = sx < sy ? sx : sy;
-        cairo_translate(cr, (width - ink.width * scale) / 2, (height - ink.height * scale) / 2);
-        cairo_scale(cr, scale, scale);
-        cairo_move_to(cr, -ink.x, -ink.y);
-        if (!badge || strcmp(text, "●"))
+            if (strcmp(text, "●")) {
+                cairo_move_to(cr, 0, 0);
+                pango_cairo_layout_path(cr, layout);
+                double x1, y1, x2, y2;
+                cairo_path_extents(cr, &x1, &y1, &x2, &y2);
+                cairo_path_t *glyph = cairo_copy_path(cr);
+                cairo_new_path(cr);
+                if (x2 > x1 && y2 > y1) {
+                    double scale = MIN(width * .75 / (x2 - x1), height * .6 / (y2 - y1));
+                    cairo_translate(cr, width / 2., height / 2.);
+                    cairo_scale(cr, scale, scale);
+                    cairo_translate(cr, -(x1 + x2) / 2., -(y1 + y2) / 2.);
+                    cairo_append_path(cr, glyph);
+                    cairo_set_source_rgb(cr, 1, 1, 1);
+                    cairo_fill(cr);
+                }
+                cairo_path_destroy(glyph);
+            }
+        } else {
+            double scale = sx < sy ? sx : sy;
+            cairo_translate(cr, (width - ink.width * scale) / 2, (height - ink.height * scale) / 2);
+            cairo_scale(cr, scale, scale);
+            cairo_move_to(cr, -ink.x, -ink.y);
             pango_cairo_show_layout(cr, layout);
+        }
         cairo_surface_flush(surface);
         unsigned char *rgb = calloc(1, image_frame_bytes(width, height));
         if (rgb) {

@@ -1,9 +1,23 @@
+#include "model/conversation/discovery.h"
 #include "model/conversation/private.h"
 
+const char *history_author_username(const history *h, const char *id)
+{
+    const char *name = id ? history_internal_str(json_object_get(h->users, id), "username") : NULL;
+    return name ? name : "";
+}
 const char *history_author(const history *h, const char *id)
 {
     const char *name = history_mention_name((void *)h, id);
     return name ? name : "Autor indisponível";
+}
+
+unsigned history_member_color(const history *h, const char *id)
+{
+    return h && id && *id
+               ? permissions_member_color(auth_permissions(h->auth), id,
+                                          json_object_get(json_object_get(h->users, id), "roles"))
+               : 0x1ffffff;
 }
 
 bool history_message_webhook(const json_t *message)
@@ -26,6 +40,11 @@ const char *history_message_author(const history *h, const json_t *message)
 void history_users_active(history *h, bool active)
 {
     h->users_active = active;
+}
+
+void history_members_active(history *h, bool active)
+{
+    h->members_active = active;
 }
 
 void history_users_retry(history *h)
@@ -56,6 +75,11 @@ void history_users_refresh(history *h)
 size_t history_user_count(const history *h)
 {
     return json_array_size(h->directory);
+}
+
+bool history_users_complete(const history *h)
+{
+    return h->users_complete;
 }
 
 uint64_t history_users_revision(const history *h)
@@ -115,6 +139,42 @@ static bool user_resolved(const history *h, const char *id)
     return name && *name;
 }
 
+static json_t *user_roles(const json_t *source)
+{
+    json_t *roles = json_array();
+    if (!roles || json_array_size(source) > 10000)
+        return roles;
+    size_t i;
+    json_t *role;
+    json_array_foreach(source, i, role)
+    {
+        const char *id = history_internal_str(role, "id");
+        if (!history_uuid(id) || json_string_length(json_object_get(role, "id")) != 36)
+            continue;
+        json_t *color = json_object_get(role, "color");
+        if (!json_is_string(color) || json_string_length(color) != 7)
+            color = json_null();
+        json_t *name = json_object_get(role, "name");
+        if (!json_is_string(name) || json_string_length(name) > 1024)
+            name = json_null();
+        json_t *copy = json_pack("{s:s,s:O,s:O}", "id", id, "color", color, "name", name);
+        if (!copy || json_array_append_new(roles, copy)) {
+            json_decref(roles);
+            return NULL;
+        }
+    }
+    return roles;
+}
+
+static bool change_role(json_t *roles, const char *id, bool add)
+{
+    size_t index = history_internal_find(roles, id);
+    if (!add)
+        return index == SIZE_MAX || !json_array_remove(roles, index);
+    return index != SIZE_MAX || (json_array_size(roles) < 10000 &&
+                                 !json_array_append_new(roles, json_pack("{s:s}", "id", id)));
+}
+
 bool history_internal_cache_user(history *h, json_t *u, bool presence)
 {
     const char *id = history_internal_str(u, "id"), *name = history_internal_str(u, "username");
@@ -147,6 +207,35 @@ bool history_internal_cache_user(history *h, json_t *u, bool presence)
     size_t cost = strlen(name) + (nickname ? strlen(nickname) : 0) + (phrase ? strlen(phrase) : 0) +
                   4096 + strlen(fold_name) + strlen(fold_nick) + strlen(normal_name) +
                   strlen(normal_nick);
+    /* Presence is partial. REST started before a role event must not undo it. */
+    json_t *source = json_object_get(u, "roles");
+    bool partial = !json_is_array(source) || presence,
+         stale = h->pending != NONE &&
+                 (uint64_t)json_integer_value(json_object_get(prior, "_role_event")) >
+                     h->request_role_events;
+    if (partial)
+        source = json_object_get(prior, "roles");
+    json_t *roles = user_roles(source);
+    json_t *changes = partial || stale ? json_object_get(prior, "_role_changes") : NULL;
+    const char *role_id;
+    json_t *add;
+    if (!partial && stale)
+        json_object_foreach(changes, role_id, add)
+        {
+            if (!change_role(roles, role_id, json_is_true(add))) {
+                json_decref(roles);
+                roles = NULL;
+                break;
+            }
+        }
+    if (!roles) {
+        g_free(fold_name);
+        g_free(fold_nick);
+        g_free(normal_name);
+        g_free(normal_nick);
+        return false;
+    }
+    cost += (json_array_size(roles) + json_object_size(changes)) * 1536;
     if ((!prior && json_object_size(h->users) >= 10000) ||
         cost > 14U * 1024U * 1024U - (h->user_bytes - old)) {
         h->users_partial = h->users_complete = true;
@@ -154,6 +243,7 @@ bool history_internal_cache_user(history *h, json_t *u, bool presence)
         g_free(fold_nick);
         g_free(normal_name);
         g_free(normal_nick);
+        json_decref(roles);
         return true;
     }
     json_t *copy = json_pack(
@@ -164,12 +254,18 @@ bool history_internal_cache_user(history *h, json_t *u, bool presence)
         "_presence", live);
     uint64_t now = 0;
     net_now_ms(&now);
-    bool prepared = copy && !json_object_set_new(copy, "_cost", json_integer((json_int_t)cost)) &&
+    bool prepared = copy && !json_object_set(copy, "roles", roles) &&
+                    (!changes || !json_object_set(copy, "_role_changes", changes)) &&
+                    !json_object_set_new(
+                        copy, "_role_event",
+                        json_integer(json_integer_value(json_object_get(prior, "_role_event")))) &&
+                    !json_object_set_new(copy, "_cost", json_integer((json_int_t)cost)) &&
                     !json_object_set_new(copy, "_used", json_integer((json_int_t)now)) &&
                     !json_object_set_new(copy, "_fold_name", json_string(fold_name)) &&
                     !json_object_set_new(copy, "_fold_nick", json_string(fold_nick)) &&
                     !json_object_set_new(copy, "_normal_name", json_string(normal_name)) &&
                     !json_object_set_new(copy, "_normal_nick", json_string(normal_nick));
+    json_decref(roles);
     g_free(fold_name);
     g_free(fold_nick);
     g_free(normal_name);
@@ -178,6 +274,11 @@ bool history_internal_cache_user(history *h, json_t *u, bool presence)
         json_decref(copy);
         return false;
     }
+    json_t *status_message = json_object_get(metadata, "status_message");
+    if (!status_message)
+        status_message = json_object_get(prior, "status_message");
+    if (json_is_string(status_message) && json_string_length(status_message) <= 2048)
+        json_object_set(copy, "status_message", status_message);
     json_t *banned = json_object_get(u, "banned");
     if (!json_is_boolean(banned))
         banned = json_object_get(prior, "banned");
@@ -190,6 +291,55 @@ bool history_internal_cache_user(history *h, json_t *u, bool presence)
         h->user_bytes = h->user_bytes - old + cost;
         ++h->users_revision;
     }
+    return ok;
+}
+
+bool history_internal_role_event(history *h, const json_t *event)
+{
+    const char *id = history_internal_str(event, "user_id"),
+               *role = history_internal_str(event, "role_id");
+    json_t *user = json_object_get(h->users, id);
+    if (!user) {
+        /* A summary may already be in flight for an unresolved author. Keep
+         * its live changes until that response can be reconciled. */
+        json_t *placeholder = json_pack("{s:s,s:s}", "id", id, "username", "");
+        bool ok = placeholder && history_internal_cache_user(h, placeholder, false);
+        json_decref(placeholder);
+        if (!ok)
+            return false;
+        user = json_object_get(h->users, id);
+        if (!user)
+            return true; /* The bounded directory is full. */
+    }
+    json_t *roles = user_roles(json_object_get(user, "roles"));
+    if (!roles)
+        return false;
+    bool add = !strcmp(history_internal_str(event, "type"), "role_add");
+    json_t *prior = json_object_get(user, "_role_changes"),
+           *changes = prior ? json_deep_copy(prior) : json_object();
+    bool ok = changes && (json_object_size(changes) < 10000 || json_object_get(changes, role)) &&
+              !json_object_set_new(changes, role, add ? json_true() : json_false()) &&
+              change_role(roles, role, add);
+    size_t old = (json_array_size(json_object_get(user, "roles")) + json_object_size(prior)) * 1536,
+           next = (json_array_size(roles) + json_object_size(changes)) * 1536;
+    if (next > old && next - old > 14U * 1024U * 1024U - h->user_bytes)
+        ok = false;
+    size_t cost = (size_t)json_integer_value(json_object_get(user, "_cost"));
+    json_t *copy = ok ? json_deep_copy(user) : NULL;
+    if (ok)
+        ok =
+            copy && !json_object_set(copy, "roles", roles) &&
+            !json_object_set(copy, "_role_changes", changes) &&
+            !json_object_set_new(copy, "_cost", json_integer((json_int_t)(cost - old + next))) &&
+            !json_object_set_new(copy, "_role_event", json_integer((json_int_t)++h->role_events)) &&
+            !json_object_set(h->users, id, copy);
+    if (ok) {
+        h->user_bytes = h->user_bytes - old + next;
+        ++h->users_revision;
+    }
+    json_decref(roles);
+    json_decref(copy);
+    json_decref(changes);
     return ok;
 }
 
@@ -237,7 +387,8 @@ void history_typing_activity(history *h)
 {
     uint64_t now;
     json_t *channel = h ? history_channel(h, h->selected) : NULL;
-    if (!h || !auth_has_session(h->auth) || auth_ws_state(h->auth) != WS_OPEN ||
+    if (!h || history_permission(h, PERMISSION_SEND_MESSAGES) != PERMISSION_ALLOWED ||
+        !auth_has_session(h->auth) || auth_ws_state(h->auth) != WS_OPEN ||
         h->context != auth_context_generation(h->auth) || !history_internal_str(channel, "type") ||
         (strcmp(history_internal_str(channel, "type"), "text") &&
          strcmp(history_internal_str(channel, "type"), "voice")) ||
@@ -302,10 +453,8 @@ bool history_internal_presence_event(history *h, const json_t *event)
         !history_internal_string_field((json_t *)event, "nickname", 1024, true) ||
         !history_internal_string_field((json_t *)event, "typing", 256, true))
         return false;
-    if (!strcmp(state, "offline")) {
+    if (!strcmp(state, "offline"))
         history_internal_typing_remove(h, id);
-        return true;
-    }
     json_t *prior = json_object_get(h->users, id);
     json_t *user =
         json_pack("{s:s,s:s,s:O,s:O,s:b}", "id", id, "username",
@@ -433,6 +582,20 @@ bool history_internal_request_authors(history *h)
         mention_visit_message(m, collect_mention, &batch);
         ok = batch.ok;
     }
+    for (int source = 0; source < 2; ++source)
+        json_array_foreach(source ? history_search_results(h) : history_pins(h), i, m)
+        {
+            const char *id = history_internal_str(m, "author_id");
+            if (history_uuid(id) && !user_resolved(h, id) && !json_object_get(h->queried, id) &&
+                !json_object_get(seen, id) && json_array_size(ids) < 1000 &&
+                json_object_size(h->queried) + json_array_size(ids) < 10000) {
+                ok &= !json_array_append_new(ids, json_string(id)) &&
+                      !json_object_set_new(seen, id, json_true());
+            }
+            mention_batch batch = {h, ids, seen, ok};
+            mention_visit_message(m, collect_mention, &batch);
+            ok = batch.ok;
+        }
     if (h->r8) {
         size_t total = inbox_notification_count(h->inbox) + inbox_event_count(h->inbox);
         for (size_t j = 0; j < total && json_array_size(ids) < 1000; ++j) {
@@ -479,7 +642,7 @@ bool history_maintain(history *h, uint64_t now)
     if (!h || now < h->maintenance || now - h->maintenance < 1000)
         return false;
     h->maintenance = now;
-    if (h->users_active)
+    if (h->users_active || h->members_active)
         return false; /* A popup borrows directory indices. */
     json_t *protected = json_object();
     if (!protected)
@@ -491,6 +654,17 @@ bool history_maintain(history *h, uint64_t now)
         if (author && *author && json_object_set_new(protected, author, json_true()))
             pins.ok = false;
         mention_visit_message(m, protect_mention, &pins);
+    }
+    for (int source = 0; source < 2; ++source) {
+        size_t i;
+        json_t *message;
+        json_array_foreach(source ? history_search_results(h) : history_pins(h), i, message)
+        {
+            const char *author = history_internal_str(message, "author_id");
+            if (history_uuid(author) && json_object_set_new(protected, author, json_true()))
+                pins.ok = false;
+            mention_visit_message(message, protect_mention, &pins);
+        }
     }
     for (size_t i = 0; i < h->typing_count; ++i)
         if (json_object_set_new(protected, h->typing[i].id, json_true()))

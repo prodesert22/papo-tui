@@ -27,6 +27,7 @@ typedef struct profile_config {
     unsigned request_burst;
     bool desktop_notifications, notification_preview;
     app_mode mode;
+    bool members_by_status;
     int directory;
     bool writable, existed;
     struct stat revision;
@@ -38,6 +39,7 @@ typedef struct profile_config {
 } profile_config;
 
 bool profiles_set_mode(profile_config *config, app_mode mode);
+bool profiles_set_member_grouping(profile_config *config, bool by_status);
 profile_config *profiles_create(void);
 void profiles_destroy(profile_config *config);
 bool profiles_reload(profile_config *config);

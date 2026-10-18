@@ -150,6 +150,28 @@ class Persistence(unittest.TestCase):
             self.assertEqual(self.login_count(server), 1)
             self.assertTrue(t.close())
 
+    def test_saved_session_restores_when_new_logins_are_ip_blocked(self):
+        self.keyring()
+        with HistoryMock() as server:
+            t = self.login(server)
+            self.assertTrue(t.close())
+            route = server.api_handler
+
+            def reject_new_logins(method, path, body):
+                if method == "POST" and path.endswith(("/auth/login", "/auth/login_server")):
+                    return 403, {"type": "https://papo.invalid/errors/banned"}
+                return route(method, path, body)
+
+            server.api_handler = reject_new_logins
+            start = len(server.requests)
+            t = self.terminal()
+            self.wait(t, "geral")
+            self.wait(t, "Mensagem 0250")
+            self.assertEqual(self.login_count(server), 1)
+            self.assertTrue(any(r[1].endswith("/auth/whoami") for r in server.requests[start:]))
+            self.assertFalse(any(r[1].endswith("/auth/login_server") for r in server.requests))
+            self.assertTrue(t.close())
+
     @unittest.skipUnless(os.environ.get("PAPO_TEST_SECRET"), "libsecret adapter not built")
     def test_secret_service_restart(self):
         self.keyring("secret")

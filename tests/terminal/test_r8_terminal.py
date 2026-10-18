@@ -265,15 +265,55 @@ class R8Terminal(unittest.TestCase):
                 self.assertEqual(server.opens, 1)
                 self.assert_initial_history_only(server)
                 fail_open = False
-                terminal.send("\x1b[21~")
-                self.wait(terminal, "Nova DM")
-                terminal.send("bob")
-                self.wait(terminal, "Bia (@bob)")
+                self.wait(terminal, "Não foi possível abrir a conversa.")
                 terminal.send("\n")
                 self.wait(terminal, "Mensagem direta")
-                terminal.read(0.2)
-                self.assertNotIn("↑↓ mensagens", "\n".join(terminal.screen.display))
+                self.wait(terminal, "↑↓ mensagens")
                 self.assertEqual(server.opens, 2)
+
+    def test_cancel_notification_location_ignores_hidden_dm_resolution_and_open_receipts(self):
+        from r8_mock import dm
+
+        for phase in ("GET", "POST"):
+            with self.subTest(phase=phase), R8Mock(count=1) as server:
+                server.dms = []
+                server.notifications[0].update(
+                    channel_id=DM, message_id=uuid(101), message_content="Notificação de destino"
+                )
+                original = server.api_handler
+
+                def route(method, path, body):
+                    if method == "GET" and path.split("?")[0].endswith("/dms/" + DM):
+                        if phase == "GET":
+                            time.sleep(0.7)
+                        return 200, dm()
+                    if method == "POST" and path.endswith("/dms") and phase == "POST":
+                        time.sleep(0.7)
+                    return original(method, path, body)
+
+                server.api_handler = route
+                terminal = self.login(server)
+                terminal.resize(32, 100)
+                self.open_notification_target(terminal)
+                self.wait(terminal, "Localizando mensagem…")
+                deadline = time.monotonic() + 4
+                while time.monotonic() < deadline and not any(
+                    method == phase and (path.endswith("/dms") or path.endswith("/dms/" + DM))
+                    for method, path, _, _ in server.requests
+                ):
+                    terminal.read(0.03)
+                self.assertTrue(
+                    any(
+                        method == phase and (path.endswith("/dms") or path.endswith("/dms/" + DM))
+                        for method, path, _, _ in server.requests
+                    )
+                )
+                terminal.send("\x1b")
+                self.wait(terminal, "Detalhes da notificação")
+                terminal.read(1)
+                self.wait(terminal, "Detalhes da notificação")
+                self.assert_initial_history_only(server)
+                self.assertEqual(server.opens, 0 if phase == "GET" else 1)
 
     def test_notification_reports_missing_target_without_selecting_another_message(self):
         with R8Mock(count=1) as server:
@@ -482,7 +522,7 @@ class R8Terminal(unittest.TestCase):
     def test_webhook_notification_uses_cached_author_and_red_mention_badges(self):
         with R8Mock(count=0) as server:
             t = self.login(server, environment={"KITTY_WINDOW_ID": "badge-fixture"})
-            self.assertIn("F9 avisos", t.screen.display[-2])
+            self.assertIn("F9 notificações", t.screen.display[-2])
             content = "Olá @mention(<@" + uuid(1) + ">)"
             webhook = dict(
                 server.message(50),
@@ -598,7 +638,7 @@ class R8Terminal(unittest.TestCase):
                     message_content="Aviso sem metadados",
                 )
             )
-            self.wait(t, "1 avisos")
+            self.wait(t, "1 notificação")
             self.assertIn("[Comunidade 0]", t.screen.display[1])
             self.assert_initial_history_only(server)
 
@@ -636,6 +676,7 @@ class R8Terminal(unittest.TestCase):
                     },
                 )
                 self.wait(t, "[Comunidade 12]")
+
                 line = t.screen.display[1]
                 start = line.index("12]")
                 self.assertEqual(t.screen.buffer[1][start].fg, "ff0000")
@@ -643,6 +684,14 @@ class R8Terminal(unittest.TestCase):
                 self.assertNotEqual(t.screen.buffer[1][start + 2].fg, "ff0000")
                 t.resize(14, 44)
                 self.wait(t, "[Comunidade 12]")
+
+    def test_paginated_notifications_do_not_add_plus_to_the_server_badge(self):
+        with R8Mock(count=105) as server:
+            for n in server.notifications:
+                n["message_content"] = "@mention(<@" + uuid(1) + ">)"
+            terminal = self.login(server)
+            self.wait(terminal, "[Comunidade 100]")
+            self.assertNotIn("+", terminal.screen.display[1].split("]", 1)[0])
 
     def wait(self, t, text):
         end = time.monotonic() + 7
@@ -970,7 +1019,7 @@ class R8Terminal(unittest.TestCase):
             path = t.configuration.name + "/papo-tui/config.json"
             with open(path) as f:
                 config = json.load(f)
-            self.assertEqual(config["version"], 4)
+            self.assertEqual(config["version"], 5)
             self.assertFalse(config["desktop_notifications"])
             self.assertFalse(config["notification_preview"])
             t.resize(14, 44)
@@ -979,28 +1028,26 @@ class R8Terminal(unittest.TestCase):
             self.wait(t, "[Canais]")
             self.wait(t, "[DMs]")
 
-    def test_new_dm_picker_filters_excludes_self_and_banned_and_closes(self):
+    def test_member_drawer_replaces_dm_picker_and_includes_banned_members(self):
         with R8Mock() as server:
             t = self.login(server)
             t.send("\x1b[21~")
-            self.wait(t, "Nova DM")
-            self.wait(t, "Bia (@bob)")
-            self.assertNotIn("banido", "\n".join(t.screen.display))
-            server.emit(dict(type="presence_update", user_id=uuid(3), status="online"))
-            t.read(0.2)
-            self.assertNotIn("banido", "\n".join(t.screen.display))
-            t.send("nenhum")
-            self.wait(t, "Nenhum usuário disponível")
-            t.send("\x03")
-            self.wait(t, "Bia (@bob)")
-            t.send("bia\n")
+            self.wait(t, "Membros (3)")
+            self.wait(t, "Bia")
+            self.wait(t, "banido")
+            t.send("/nenhum\n")
+            self.wait(t, "Nenhum membro encontrado")
+            t.send("/\x15bia\n")
+            self.wait(t, "Membros (1)")
+            t.send("m")
+            self.wait(t, "Ver perfil")
+            row = next(i for i, line in enumerate(t.screen.display) if "Ver perfil" in line)
+            t.click(row + 1, t.screen.display[row].index("Ver perfil") + 1)
             self.wait(t, "Mensagem direta")
-            t.click(5, 13)
-            t.send("\x1bOB\x04")
-            self.wait(t, "Nenhuma DM")
-            self.assertTrue(
-                any(r[0] == "DELETE" and r[1].endswith("/dms/" + DM) for r in server.requests)
-            )
+            self.assertEqual(server.opens, 1)
+            t.send("\x1b[21~")
+            self.wait(t, "Mensagem direta")
+            self.assertNotIn("Membros (", "\n".join(t.screen.display))
 
     def test_details_survive_ephemeral_promotion_to_different_rest_id(self):
         from r8_mock import notification

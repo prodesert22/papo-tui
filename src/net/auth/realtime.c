@@ -67,6 +67,7 @@ void auth_poll(auth_client *client)
     ws_state ws_after = ws_get_state(client->websocket);
     if (ws_before != ws_after && ws_after == WS_OPEN) {
         ++client->ws_epoch;
+        auth_permissions_refresh(client);
         client->ws_stable_at = tick + 30000;
         client->ws_retry_at = 0;
     }
@@ -80,7 +81,10 @@ void auth_poll(auth_client *client)
     if (client->authenticated && ws_before != ws_after &&
         (ws_after == WS_ERROR || ws_after == WS_CLOSED))
         client->recheck_at = 0;
+    auth_internal_permissions_poll(client, tick);
     if (client->queued) {
+        if (!auth_internal_permission_admitted(client))
+            return;
         if (!client->gate_passed && client->session_gate &&
             (client->operation == AUTH_REFRESH || client->operation == AUTH_LOGOUT)) {
             int permit = client->session_gate(client->gate_context, client);
@@ -153,6 +157,8 @@ void auth_realtime_active(auth_client *client, bool active)
         return;
     if (!client->ws_managed && client->validation_deadline >= 15000)
         client->recheck_at = client->validation_deadline - 15000;
+    if (active && !client->ws_active && auth_has_session(client))
+        auth_permissions_refresh(client);
     client->ws_managed = true;
     client->ws_active = active;
     ws_state state = ws_get_state(client->websocket);

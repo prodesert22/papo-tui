@@ -64,6 +64,38 @@ def unix_path(path):
     return str(path)
 
 
+def ncurses_options(prefix, windows=False):
+    options = [
+        "--prefix=" + prefix,
+        "--libdir=" + prefix + "/lib",
+        "--with-shared",
+        "--without-normal",
+        "--without-debug",
+        "--enable-widec",
+        "--enable-ext-colors",
+        "--enable-ext-mouse",
+        "--enable-sp-funcs",
+        "--enable-pc-files",
+        "--without-cxx",
+        "--without-ada",
+        "--without-tests",
+        "--without-progs",
+        "--without-manpages",
+        "--disable-db-install",
+        "--with-pkg-config-libdir=" + prefix + "/lib/pkgconfig",
+    ]
+    if windows:
+        options += ["--enable-term-driver", "--enable-interop", "--disable-home-terminfo"]
+    else:
+        # Use the distro's terminal database while keeping the library private.
+        options += [
+            "--disable-pkg-ldflags",
+            "--with-default-terminfo-dir=/usr/share/terminfo",
+            "--with-terminfo-dirs=/etc/terminfo:/lib/terminfo:/usr/share/terminfo",
+        ]
+    return options
+
+
 def relocate_ncurses_pc(prefix):
     """Keep ncurses' MSYS install paths out of native CMake include flags."""
     installed = unix_path(prefix)
@@ -200,46 +232,26 @@ def build(entry, source, work, prefix, jobs, env):
         if name == "chafa":
             options += ["--without-imagemagick", "--without-librsvg"]
         elif name == "ncurses":
-            # Use the same existing GLib width policy as the TUI, rather than
-            # ncurses' bundled table which widens text-presentation emoji.
-            env = dict(env)
-            for option, variable in (("--cflags", "CPPFLAGS"), ("--libs", "LIBS")):
-                flags = subprocess.check_output(
-                    ["pkg-config", option, "glib-2.0"], env=env, text=True
-                ).strip()
-                env[variable] = (flags + " " + env.get(variable, "")).strip()
-            run(
-                "patch",
-                "-p1",
-                "--forward",
-                "--input",
-                unix_path(ROOT / "dist/patches/ncurses-win32-wide-input.patch"),
-            )
-            options = [
-                "--prefix=" + unix_path(prefix),
-                "--with-shared",
-                "--without-normal",
-                "--without-debug",
-                "--enable-widec",
-                "--enable-term-driver",
-                "--enable-ext-colors",
-                "--enable-ext-mouse",
-                "--enable-sp-funcs",
-                "--enable-interop",
-                "--enable-pc-files",
-                "--without-cxx",
-                "--without-ada",
-                "--without-tests",
-                "--without-progs",
-                "--without-manpages",
-                "--disable-db-install",
-                "--disable-home-terminfo",
-                "--with-pkg-config-libdir=" + unix_path(prefix / "lib/pkgconfig"),
-            ]
+            if os.name == "nt":
+                # Use the TUI's existing GLib width policy on Windows.
+                env = dict(env)
+                for option, variable in (("--cflags", "CPPFLAGS"), ("--libs", "LIBS")):
+                    flags = subprocess.check_output(
+                        ["pkg-config", option, "glib-2.0"], env=env, text=True
+                    ).strip()
+                    env[variable] = (flags + " " + env.get(variable, "")).strip()
+                run(
+                    "patch",
+                    "-p1",
+                    "--forward",
+                    "--input",
+                    unix_path(ROOT / "dist/patches/ncurses-win32-wide-input.patch"),
+                )
+            options = ncurses_options(unix_path(prefix), windows=os.name == "nt")
         run("sh", unix_path(source / "configure"), *options, cwd=binary)
         run("make", "-j", jobs, cwd=binary)
         run("make", "install", cwd=binary)
-        if name == "ncurses":
+        if name == "ncurses" and os.name == "nt":
             relocate_ncurses_pc(prefix)
     elif entry["buildsystem"] == "ffmpeg":
         binary.mkdir(exist_ok=True)
@@ -373,6 +385,10 @@ def main():
             ),
             "prefix": str(prefix),
         }
+        if entry["name"] == "ncurses":
+            identity["configure_options"] = ncurses_options(
+                unix_path(prefix), windows=os.name == "nt"
+            )
         if stamp.exists() and json.loads(stamp.read_text()) == identity:
             if os.name == "nt" and entry["name"] == "ncurses":
                 relocate_ncurses_pc(prefix)

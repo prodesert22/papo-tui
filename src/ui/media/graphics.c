@@ -18,7 +18,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#define MEDIA_PAIR_START (THEME_PAIR_END + 32)
+#define MEDIA_PAIR_START (THEME_PAIR_END + THEME_RGB_PAIR_COUNT)
 #define MEDIA_PAIR_LIMIT 8192
 typedef struct {
     int foreground, background;

@@ -138,7 +138,7 @@ def source_archive(output, version):
             "LICENSE",
             "THIRD_PARTY_NOTICES.md",
             "CHANGELOG.md",
-            "CONTRIBUTING.md",
+            "BUILD.md",
             "AGENTS.md",
             "requirements-dev.txt",
             "openapi.yml",

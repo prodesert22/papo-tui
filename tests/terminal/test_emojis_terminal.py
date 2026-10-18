@@ -1,6 +1,7 @@
 """Emoji picker, authenticated assets and retained pictures in a real PTY."""
 
 import base64
+import os
 import fcntl
 from datetime import datetime, timezone
 import signal
@@ -15,7 +16,7 @@ from urllib.parse import urlsplit, parse_qs
 import test_media_terminal as media_tests
 from history_mock import HistoryMock, CHANNEL, STAMP, uuid
 from realtime_mock import RealtimeMock
-from test_terminal import editor_region
+from test_terminal import editor_region, editor_column
 
 
 def encode_emoji_animation(gif, format):
@@ -151,8 +152,24 @@ class EmojiTerminal(unittest.TestCase):
         } & t.stream.live_placements
 
     def test_mention_and_notification_panels_retain_avatars_and_inline_emoji(self):
-        for key, title in (("@", "Menções"), ("\x1b[20~", "Notificações")):
+        for key, title in (
+            ("@", "Menções"),
+            ("\x1b[20~", "Notificações"),
+            ("\x1bOR", "Buscar mensagens no servidor"),
+            ("\x1bOR\t\t\n", "Filtros da busca"),
+            ("\x1b[19~", "Mensagens fixadas"),
+        ):
             with self.subTest(panel=title), self.server(content="Emoji 😀") as server:
+                parent = server.api_handler
+
+                def route(method, path, body):
+                    if method == "GET" and path.split("?")[0].endswith("/pinned"):
+                        return 200, dict(
+                            channel_id=server.messages[0]["channel_id"], pinned=server.messages[:1]
+                        )
+                    return parent(method, path, body)
+
+                server.api_handler = route
                 t = self.open(server, protocol="kitty", size=(48, 160))
                 try:
                     t.send("draft ")
@@ -170,6 +187,9 @@ class EmojiTerminal(unittest.TestCase):
                     self.wait(t, title)
                     self.until(t, lambda: images <= t.stream.live_ids)
                     t.send("\x12")
+                    self.wait(t, title)
+                    self.until(t, lambda: images <= t.stream.live_ids)
+                    t.resize(52, 164)
                     self.wait(t, title)
                     self.until(t, lambda: images <= t.stream.live_ids)
                     t.send("\x1b")
@@ -294,7 +314,7 @@ class EmojiTerminal(unittest.TestCase):
         with self.server() as s:
             t = self.open(s, sixel=False)
             try:
-                t.send("rascunho\t")
+                t.send("rascunho\t\t")
                 self.wait(t, "Foco: Emojis")
                 t.send("\n")
                 self.wait(t, "Emojis · Esc voltar")
@@ -794,7 +814,7 @@ class EmojiTerminal(unittest.TestCase):
 
                         def editor_pixels():
                             row, _ = editor_region(t)
-                            column = t.screen.display[row].index(">") + 2
+                            column = editor_column(t)
                             images = {
                                 int(placement[b"i"])
                                 for placement, position in zip(
@@ -879,13 +899,16 @@ class EmojiTerminal(unittest.TestCase):
                 def delayed(method, path, body):
                     if blocked in path:
                         entered.set()
-                        release.wait(8)
+                        release.wait(20)
                     return route(method, path, body)
 
                 s.api_handler = delayed
                 t = self.open(s, protocol="kitty", size=(48, 100))
                 try:
-                    self.until(t, lambda: len(self.avatar_positions(t)) == 6, timeout=3)
+                    # ASan can take longer to parse the two large avatar batches.
+                    # Keep metadata blocked beyond the render deadline so all six
+                    # placements must still arrive independently of that response.
+                    self.until(t, lambda: len(self.avatar_positions(t)) == 6)
                     self.assertFalse(release.is_set())
                     self.until(t, entered.is_set)
                     calls = [r[1] for r in s.requests]
@@ -1208,8 +1231,10 @@ class EmojiTerminal(unittest.TestCase):
                     self.until(t, fills_avatar)
                     t.send("\t")
                     self.wait(t, "Foco: Mensagem")
+                    t.send("\t")
+                    self.wait(t, "Foco: Anexar")
                     self.until(t, fills_avatar)
-                    t.send("\x1b[Z")
+                    t.send("\x1b[Z\x1b[Z")
                     self.wait(t, "Foco: Histórico")
                     self.until(t, fills_avatar)
                     self.assertEqual(sum("/users/profile_batch" in r[1] for r in s.requests), 1)
@@ -1651,5 +1676,17 @@ class EmojiTerminal(unittest.TestCase):
                     self.assertTrue(t.close())
 
 
+def load_tests(loader, tests, pattern):
+    partition = os.environ.get("PAPO_TEST_EMOJI_PARTITION")
+    if partition is None:
+        return tests
+    if partition not in ("0", "1"):
+        raise ValueError("PAPO_TEST_EMOJI_PARTITION must be 0 or 1")
+    # Keep the normal unittest order and every discovered case. CTest runs
+    # both disjoint halves; direct execution still runs the complete suite.
+    cases = [case for group in tests for case in group]
+    return unittest.TestSuite(cases[int(partition) :: 2])
+
+
 if __name__ == "__main__":
-    unittest.main()
+    unittest.main(verbosity=2)

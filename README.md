@@ -2,7 +2,18 @@
 
 Terminal chat client written in C. Connect to independent Papo instances and
 chat in channels or direct messages, with message editing, deletion, replies,
-reactions, notifications, mentions, emojis and media in supported terminals.
+reactions, pinned messages, server message search, notifications, mentions, emojis
+and media in supported terminals.
+
+Attach files with **F5** or **📎**, or paste copied files and images with
+**Ctrl+V** when the local clipboard is available.
+Available channels and message actions follow your account permissions.
+Member names follow their role color, with white as the default.
+Open the member drawer with **👤** or **F10** to search people, view profiles,
+start direct messages and access available member actions.
+Use the arrows to select DMs, and **m** or a right-click to close one from its menu.
+The terminal window title shows the current conversation and server, plus the
+total known unread mentions across connected instances when there are any.
 
 ## Install
 
@@ -35,20 +46,13 @@ video; **Ultralight** uses text only and releases the media libraries.
 
 ## Build
 
-Install the [dependencies](docs/installation.md#build-from-source) and run:
-
-```sh
-cmake -S . -B build -DBUILD_TESTING=OFF
-cmake --build build
-./build/papo-tui
-```
-
-To contribute or run tests, see [CONTRIBUTING.md](CONTRIBUTING.md).
+See [BUILD.md](BUILD.md) for the packages to install and the commands to build
+the Linux binary or Windows executable, run tests and prepare packages.
 The service contract is in [openapi.yml](openapi.yml).
 
 ## Releases and license
 
-[Changelog](CHANGELOG.md) · [Full release notes](releases/v0.3.1.md)
+[Changelog](CHANGELOG.md) · [Full release notes](releases/v0.4.0.md)
 
 Original code is licensed under [MIT](LICENSE). Bundled libraries and data
 retain their [upstream licenses](THIRD_PARTY_NOTICES.md).

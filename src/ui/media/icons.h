@@ -29,6 +29,8 @@ bool icons_paint_clipped(icon_view *v, WINDOW *w, uint32_t icon, int y, int x, i
 bool icons_literal(const uint32_t *text, size_t at);
 bool icons_avatar(icon_view *v, const char *id, const char *message, int y, int x, int top,
                   int bottom, int pair);
+bool icons_member_picture(icon_view *v, const char *id, bool banner, const char *scope, int y,
+                          int x, int columns, int rows, int pair);
 bool icons_message_avatar(icon_view *v, const json_t *message, int y, int x, int top, int bottom,
                           int pair);
 /* Same worker implementation as the picker/history; useful for decoder checks. */

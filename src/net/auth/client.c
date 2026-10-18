@@ -36,6 +36,8 @@ void auth_internal_clear_api(auth_client *client)
     client->api_response = NULL;
     client->response_ready = client->api_retried = false;
     client->api_method = NULL;
+    json_decref(client->permission_message);
+    client->permission_message = NULL;
     client->api_uncertain = false;
 }
 
@@ -44,12 +46,17 @@ void auth_internal_clear_send(auth_client *client)
     json_decref(client->sent_message);
     client->sent_message = NULL;
     client->send_ready = false;
+    client->send_has_attachments = false;
     client->send_channel[0] = '\0';
 }
 
 void auth_internal_clear_identity(auth_client *client)
 {
     auth_internal_clear_send(client);
+    permissions_reset(client->permissions);
+    client->permission_wanted = 0;
+    client->permission_due = 0;
+    client->permission_failed = client->permission_retried = 0;
     client->authenticated = client->recovering = client->after_refresh = false;
     client->refresh_at = client->recheck_at = 0;
     client->validation_deadline = 0;
@@ -138,10 +145,11 @@ auth_client *auth_create(void)
     auth_client *client = calloc(1, sizeof(*client));
     if (!client)
         return NULL;
+    client->permissions = permissions_create();
     client->easy = curl_easy_init();
     client->multi = curl_multi_init();
     client->cookies = curl_share_init();
-    if (!client->easy || !client->multi || !client->cookies ||
+    if (!client->permissions || !client->easy || !client->multi || !client->cookies ||
         curl_share_setopt(client->cookies, CURLSHOPT_SHARE, CURL_LOCK_DATA_COOKIE) != CURLSHE_OK ||
         curl_share_setopt(client->cookies, CURLSHOPT_SHARE, CURL_LOCK_DATA_CONNECT) != CURLSHE_OK ||
         curl_easy_setopt(client->easy, CURLOPT_SHARE, client->cookies) != CURLE_OK ||
@@ -152,6 +160,7 @@ auth_client *auth_create(void)
             curl_multi_cleanup(client->multi);
         if (client->cookies)
             curl_share_cleanup(client->cookies);
+        permissions_destroy(client->permissions);
         free(client);
         return NULL;
     }
@@ -179,6 +188,7 @@ auth_client *auth_create(void)
     if (ca_bundle && *ca_bundle)
         SET(CURLOPT_CAINFO, ca_bundle);
 #undef SET
+    ws_observe(client->websocket, auth_internal_permissions_observe, client);
     snprintf(client->message, sizeof(client->message), "Preencha os dados para entrar.");
     return client;
 }
@@ -281,6 +291,7 @@ bool auth_logout(auth_client *client)
     if ((!auth_has_session(client) && !*client->user_id) || client->logout_requested)
         return false;
     client->logout_requested = true;
+    permissions_reset(client->permissions);
     client->authenticated = false;
     ++client->generation;
     auth_internal_clear_api(client);
@@ -332,6 +343,7 @@ void auth_destroy(auth_client *client)
     curl_multi_cleanup(client->multi);
     curl_share_cleanup(client->cookies);
     curl_free(client->base);
+    permissions_destroy(client->permissions);
     free(client->response);
     free(client);
 }

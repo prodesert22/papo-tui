@@ -16,7 +16,7 @@ struct inbox {
         *batch, *journal, *fresh, *unseen, *previews;
     enum operation pending, action;
     bool want_dms, want_recent, want_newer, want_older, more, read_failed, presence_ready,
-        presence_partial;
+        presence_partial, open_cancelled;
     char oldest_time[65], oldest_id[37], newest_time[65], newest_id[37];
     char request_id[37], action_id[37], opened[37], notice[192];
     char refresh_id[37], refresh_time[65];
@@ -202,7 +202,7 @@ void inbox_reset(inbox *b)
     json_object_clear(b->messages);
     json_object_clear(b->unseen);
     json_object_clear(b->previews);
-    b->presence_partial = false;
+    b->presence_partial = b->open_cancelled = false;
     json_decref(b->batch);
     b->batch = NULL;
     b->pending = b->action = NONE;
@@ -579,8 +579,9 @@ void inbox_cancel_read(inbox *b)
 bool inbox_open_dm(inbox *b, const char *user)
 {
     if (!history_uuid(user) || !strcmp(user, auth_user_id(b->auth)) || b->action != NONE ||
-        b->pending == OPEN || b->pending == CLOSE)
+        b->pending == OPEN || b->pending == CLOSE || b->pending == RESOLVE)
         return false;
+    b->open_cancelled = false;
     snprintf(b->action_id, sizeof(b->action_id), "%s", user);
     b->action = OPEN;
     notice(b, "Abrindo DM…");
@@ -597,10 +598,18 @@ bool inbox_close_dm(inbox *b, const char *id)
 }
 void inbox_resolve_dm(inbox *b, const char *id)
 {
-    if (history_uuid(id) && b->action == NONE) {
+    if (history_uuid(id) && b->action == NONE && b->pending != OPEN && b->pending != RESOLVE) {
+        b->open_cancelled = false;
         b->action = RESOLVE;
         snprintf(b->action_id, sizeof(b->action_id), "%s", id);
     }
+}
+void inbox_cancel_open(inbox *b)
+{
+    b->open_cancelled = true;
+    if (b->action == OPEN || b->action == RESOLVE)
+        b->action = NONE;
+    b->opened[0] = 0;
 }
 static bool notification_request(inbox *b, enum operation kind)
 {
@@ -700,6 +709,8 @@ bool inbox_response(inbox *b, json_t *body, long code, bool uncertain)
 {
     enum operation kind = b->pending;
     b->pending = NONE;
+    if ((kind == OPEN || kind == RESOLVE) && b->open_cancelled)
+        return true;
     bool ok = false;
     if (kind == DMS && code == 200) {
         json_t *dms = json_object_get(body, "dms"), *old = b->dms;
@@ -958,4 +969,9 @@ json_t *inbox_take_alert(inbox *b)
 uint64_t inbox_revision(const inbox *b)
 {
     return b->revision;
+}
+
+const json_t *inbox_presence_info(const inbox *b, const char *id)
+{
+    return b && id ? json_object_get(b->presence, id) : NULL;
 }

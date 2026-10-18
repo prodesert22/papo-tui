@@ -1,0 +1,1005 @@
+{
+  "results": [
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-0000000003e9",
+      "content": "Mensagem sintética 1",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-0000000003ea",
+      "content": "Mensagem sintética 2",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-0000000003eb",
+      "content": "Mensagem sintética 3",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-0000000003ec",
+      "content": "Mensagem sintética 4",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-0000000003ed",
+      "content": "Mensagem sintética 5",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-0000000003ee",
+      "content": "Mensagem sintética 6",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-0000000003ef",
+      "content": "Mensagem sintética 7",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-0000000003f0",
+      "content": "Mensagem sintética 8",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-0000000003f1",
+      "content": "Mensagem sintética 9",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-0000000003f2",
+      "content": "Mensagem sintética 10",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-0000000003f3",
+      "content": "Mensagem sintética 11",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-0000000003f4",
+      "content": "Mensagem sintética 12",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-0000000003f5",
+      "content": "Mensagem sintética 13",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-0000000003f6",
+      "content": "Mensagem sintética 14",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-0000000003f7",
+      "content": "Mensagem sintética 15",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-0000000003f8",
+      "content": "Mensagem sintética 16",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-0000000003f9",
+      "content": "Mensagem sintética 17",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-0000000003fa",
+      "content": "Mensagem sintética 18",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-0000000003fb",
+      "content": "Mensagem sintética 19",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-0000000003fc",
+      "content": "Mensagem sintética 20",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-0000000003fd",
+      "content": "Mensagem sintética 21",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-0000000003fe",
+      "content": "Mensagem sintética 22",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-0000000003ff",
+      "content": "Mensagem sintética 23",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000400",
+      "content": "Mensagem sintética 24",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000401",
+      "content": "Mensagem sintética 25",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000402",
+      "content": "Mensagem sintética 26",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000403",
+      "content": "Mensagem sintética 27",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000404",
+      "content": "Mensagem sintética 28",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000405",
+      "content": "Mensagem sintética 29",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000406",
+      "content": "Mensagem sintética 30",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000407",
+      "content": "Mensagem sintética 31",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000408",
+      "content": "Mensagem sintética 32",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000409",
+      "content": "Mensagem sintética 33",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-00000000040a",
+      "content": "Mensagem sintética 34",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-00000000040b",
+      "content": "Mensagem sintética 35",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-00000000040c",
+      "content": "Mensagem sintética 36",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-00000000040d",
+      "content": "Mensagem sintética 37",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-00000000040e",
+      "content": "Mensagem sintética 38",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-00000000040f",
+      "content": "Mensagem sintética 39",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000410",
+      "content": "Mensagem sintética 40",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000411",
+      "content": "Mensagem sintética 41",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000412",
+      "content": "Mensagem sintética 42",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000413",
+      "content": "Mensagem sintética 43",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000414",
+      "content": "Mensagem sintética 44",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000415",
+      "content": "Mensagem sintética 45",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000416",
+      "content": "Mensagem sintética 46",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000417",
+      "content": "Mensagem sintética 47",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000418",
+      "content": "Mensagem sintética 48",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000419",
+      "content": "Mensagem sintética 49",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-00000000041a",
+      "content": "Mensagem sintética 50",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-00000000041b",
+      "content": "Mensagem sintética 51",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-00000000041c",
+      "content": "Mensagem sintética 52",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-00000000041d",
+      "content": "Mensagem sintética 53",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-00000000041e",
+      "content": "Mensagem sintética 54",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-00000000041f",
+      "content": "Mensagem sintética 55",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000420",
+      "content": "Mensagem sintética 56",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000421",
+      "content": "Mensagem sintética 57",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000422",
+      "content": "Mensagem sintética 58",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000423",
+      "content": "Mensagem sintética 59",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000424",
+      "content": "Mensagem sintética 60",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000425",
+      "content": "Mensagem sintética 61",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000426",
+      "content": "Mensagem sintética 62",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000427",
+      "content": "Mensagem sintética 63",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000428",
+      "content": "Mensagem sintética 64",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000429",
+      "content": "Mensagem sintética 65",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-00000000042a",
+      "content": "Mensagem sintética 66",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-00000000042b",
+      "content": "Mensagem sintética 67",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-00000000042c",
+      "content": "Mensagem sintética 68",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-00000000042d",
+      "content": "Mensagem sintética 69",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-00000000042e",
+      "content": "Mensagem sintética 70",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-00000000042f",
+      "content": "Mensagem sintética 71",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000430",
+      "content": "Mensagem sintética 72",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000431",
+      "content": "Mensagem sintética 73",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000432",
+      "content": "Mensagem sintética 74",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000433",
+      "content": "Mensagem sintética 75",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000434",
+      "content": "Mensagem sintética 76",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000435",
+      "content": "Mensagem sintética 77",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000436",
+      "content": "Mensagem sintética 78",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000437",
+      "content": "Mensagem sintética 79",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000438",
+      "content": "Mensagem sintética 80",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000439",
+      "content": "Mensagem sintética 81",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-00000000043a",
+      "content": "Mensagem sintética 82",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-00000000043b",
+      "content": "Mensagem sintética 83",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-00000000043c",
+      "content": "Mensagem sintética 84",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-00000000043d",
+      "content": "Mensagem sintética 85",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-00000000043e",
+      "content": "Mensagem sintética 86",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-00000000043f",
+      "content": "Mensagem sintética 87",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000440",
+      "content": "Mensagem sintética 88",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000441",
+      "content": "Mensagem sintética 89",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000442",
+      "content": "Mensagem sintética 90",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000443",
+      "content": "Mensagem sintética 91",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000444",
+      "content": "Mensagem sintética 92",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000445",
+      "content": "Mensagem sintética 93",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000446",
+      "content": "Mensagem sintética 94",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000447",
+      "content": "Mensagem sintética 95",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000448",
+      "content": "Mensagem sintética 96",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-000000000449",
+      "content": "Mensagem sintética 97",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-00000000044a",
+      "content": "Mensagem sintética 98",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-00000000044b",
+      "content": "Mensagem sintética 99",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000001",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    },
+    {
+      "type": "message",
+      "id": "00000000-0000-0000-0000-00000000044c",
+      "content": "Mensagem sintética 100",
+      "channel_id": "00000000-0000-0000-0000-000000000003",
+      "channel_name": "fixture-geral",
+      "author_id": "00000000-0000-0000-0000-000000000002",
+      "author_username": "fixture_alice",
+      "created_at": "2026-10-12T12:00:00Z"
+    }
+  ],
+  "has_more": true
+}

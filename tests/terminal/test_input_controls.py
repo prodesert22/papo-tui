@@ -12,7 +12,8 @@ import unittest
 from history_mock import HistoryMock
 from realtime_mock import RealtimeMock
 from mock_server import MockServer
-from test_terminal import Terminal, editor_region
+from test_terminal import Terminal, editor_region, editor_column, wait_for_screen
+from wcwidth import wcswidth
 
 
 class InputControls(unittest.TestCase):
@@ -31,6 +32,8 @@ class InputControls(unittest.TestCase):
     def terminal(self, *args, **kwargs):
         t = Terminal(*args, **kwargs)
         self.addCleanup(lambda: self.assertTrue(t.close()))
+        arguments = kwargs.get("arguments", args[0] if args else ())
+        self.wait(t, "papo · Servidores salvos" if "--profiles" in arguments else "URL do servidor")
         return t
 
     def open(self, server, **kwargs):
@@ -38,6 +41,11 @@ class InputControls(unittest.TestCase):
         t.send(server.url + "\tjosé\tSynthetic!123\n")
         self.wait(t, "geral")
         t.resize(24, 160)
+        wait_for_screen(
+            t,
+            lambda: t.screen.buffer[23][159].data in ("j", "┘"),
+            "Resized conversation frame did not arrive",
+        )
         t.send("\x1bOB\n")
         self.wait(t, "Conversar em #geral")
         return t
@@ -47,25 +55,40 @@ class InputControls(unittest.TestCase):
         return "\n".join(t.screen.display[first:end])
 
     def wait_field(self, t, text, seconds=3):
-        deadline = time.monotonic() + seconds
-        while text not in self.field(t) and time.monotonic() < deadline:
-            t.read(0.03)
-        self.assertIn(text, self.field(t))
+        wait_for_screen(t, lambda: text in self.field(t), f"Missing editor text: {text}", seconds)
 
     def wait_cursor(self, t, row, column, seconds=3):
         expected = (row, column)
-        deadline = time.monotonic() + seconds
-        while (t.screen.cursor.y, t.screen.cursor.x) != expected and time.monotonic() < deadline:
-            t.read(0.03)
-        self.assertEqual((t.screen.cursor.y, t.screen.cursor.x), expected)
+        wait_for_screen(
+            t,
+            lambda: (t.screen.cursor.y, t.screen.cursor.x) == expected,
+            f"Cursor did not reach {expected}",
+            seconds,
+        )
 
     def mouse(self, t, row, column, code, release=False):
         t.send(f"\x1b[<{code};{column + 1};{row + 1}{'m' if release else 'M'}")
 
-    def copied(self, t):
-        matches = re.findall(rb"\x1b\]52;c;([A-Za-z0-9+/=]*)\x07", t.output)
-        self.assertTrue(matches)
-        return base64.b64decode(matches[-1]).decode()
+    def wait_copied(self, t, expected):
+        previous = getattr(t, "observed_copies", 0)
+
+        def received():
+            matches = re.findall(rb"\x1b\]52;c;([A-Za-z0-9+/=]*)\x07", t.output)
+            return len(matches) > previous and base64.b64decode(matches[-1]).decode() == expected
+
+        wait_for_screen(t, received, "Expected clipboard snapshot did not arrive")
+        t.observed_copies = len(re.findall(rb"\x1b\]52;c;([A-Za-z0-9+/=]*)\x07", t.output))
+
+    def wait_selected(self, t, cells, ordinary):
+        wait_for_screen(
+            t,
+            lambda: all(
+                (t.screen.buffer[row][column].fg, t.screen.buffer[row][column].bg)
+                != (ordinary.fg, ordinary.bg)
+                for row, column in cells
+            ),
+            "Selection highlight was not rendered",
+        )
 
     def test_placeholder_growth_five_rows_wheel_and_clear(self):
         with HistoryMock(count=0) as server:
@@ -75,17 +98,20 @@ class InputControls(unittest.TestCase):
             self.assertEqual(end - first, 1)
             for n in range(1, 7):
                 t.send(("\x0e" if n > 1 else "") + f"linha{n}")
+                self.wait_field(t, f"linha{n}")
                 first, end = editor_region(t)
                 self.assertEqual(end - first, min(n, 5))
             self.assertNotIn("linha1", self.field(t))
-            self.assertIn("linha6", self.field(t))
+            self.wait_field(t, "linha6")
             self.mouse(t, first, 35, 64)
-            self.assertIn("linha1", self.field(t))
+            self.wait_field(t, "linha1")
+            wait_for_screen(t, lambda: t.screen.cursor.hidden, "Scrolled editor cursor is visible")
+            self.wait_field(t, "linha1")
             self.assertTrue(t.screen.cursor.hidden)
             self.mouse(t, first, 35, 65)
-            self.assertIn("linha6", self.field(t))
+            self.wait_field(t, "linha6")
             t.send("\x1bOA\x1bOHX")
-            self.assertIn("Xlinha5", self.field(t))
+            self.wait_field(t, "Xlinha5")
             t.send("\x03")
             self.wait(t, "Conversar em #geral")
             self.assertIsNone(t.process.poll())
@@ -93,9 +119,10 @@ class InputControls(unittest.TestCase):
             self.assertEqual(end - first, 1)
             t.resize(14, 44)
             t.send("primeira\x0esegunda")
+            self.wait_field(t, "segunda")
             first, end = editor_region(t)
             self.assertEqual(end - first, 1)
-            self.assertIn("segunda", self.field(t))
+            self.wait_field(t, "segunda")
             t.send("\x03")
             self.wait(t, "Conversar em #geral")
 
@@ -105,11 +132,12 @@ class InputControls(unittest.TestCase):
             self.assertIn(b"\x1b[?u", t.output)
             self.assertNotIn(b"\x1b[>1u", t.output)
             t.send("\x1b[?0u")
+            wait_for_screen(t, lambda: b"\x1b[>1u" in t.output, "Keyboard mode was not negotiated")
             self.assertIn(b"\x1b[>1u", t.output)
             t.send("primeira linha\x1b[13;2usegunda linha\x1b[27;2;13~terceira linha")
-            self.assertIn("primeira linha", self.field(t))
-            self.assertIn("segunda linha", self.field(t))
-            self.assertIn("terceira linha", self.field(t))
+            self.wait_field(t, "primeira linha")
+            self.wait_field(t, "segunda linha")
+            self.wait_field(t, "terceira linha")
             self.assertFalse(server.sent_messages)
             t.send("\n")
             self.wait(t, "Mensagem confirmada")
@@ -122,10 +150,10 @@ class InputControls(unittest.TestCase):
         with RealtimeMock(count=0) as server:
             t = self.open(server)
             t.send("\x1b[?0uoriginal\x1b[57423u\x1b[57424;2uNovo")
-            self.assertIn("Novo", self.field(t))
+            self.wait_field(t, "Novo")
             self.assertNotIn("original", self.field(t))
             t.send("\x1b[57414;2usegunda")
-            self.assertIn("segunda", self.field(t))
+            self.wait_field(t, "segunda")
             self.assertFalse(server.sent_messages)
             t.send("\x1b[57414u")
             self.wait(t, "Mensagem confirmada")
@@ -146,6 +174,7 @@ class InputControls(unittest.TestCase):
                     with self.subTest(locks=locks, packet=packet):
                         lines.append(f"linha{len(lines)}")
                         t.send(packet + lines[-1])
+                        self.wait_field(t, lines[-1])
                         self.assertFalse(server.sent_messages)
             t.send("\n")
             self.wait(t, "Mensagem confirmada")
@@ -156,10 +185,19 @@ class InputControls(unittest.TestCase):
         with MockServer() as server:
             t = self.terminal()
             t.send("\x1b[?0u" + server.url + "\tjosé\tSynthetic!123")
+            password_row = next(
+                row + 1 for row, line in enumerate(t.screen.display) if "Senha (password)" in line
+            )
+            self.wait_cursor(t, password_row, 12 + len("Synthetic!123"))
             for packet in ("\x1b[13;2u", "\x1b[27;130;13~", "\x1b[57414;194u"):
-                t.send(packet)
+                # An extra character proves the preceding packet was handled
+                # before asserting that no request was submitted.
+                t.send(packet + "X")
+                self.wait_cursor(t, password_row, 12 + len("Synthetic!123X"))
                 self.assertFalse(server.requests)
                 self.assertIn("Senha (password)", self.screen(t))
+                t.send("\x7f")
+                self.wait_cursor(t, password_row, 12 + len("Synthetic!123"))
             t.send("\n")
             self.wait(t, "[Canais]")
 
@@ -167,6 +205,7 @@ class InputControls(unittest.TestCase):
     def test_negotiated_keyboard_mode_is_popped_once_on_sigterm(self):
         t = self.terminal()
         t.send("\x1b[?17u\x1b[?31u")
+        wait_for_screen(t, lambda: b"\x1b[>1u" in t.output, "Keyboard mode was not negotiated")
         self.assertEqual(t.output.count(b"\x1b[>1u"), 1)
         t.process.send_signal(signal.SIGTERM)
         t.process.wait(timeout=5)
@@ -179,10 +218,13 @@ class InputControls(unittest.TestCase):
         with HistoryMock(count=0) as server:
             t = self.open(server)
             t.send("Ação界")
-            row = t.screen.cursor.y
-            end = t.screen.cursor.x
+            self.wait_field(t, "Ação界")
+            row, _ = editor_region(t)
+            end = editor_column(t) + wcswidth("Ação界")
+            self.wait_cursor(t, row, end)
             ordinary = t.screen.buffer[row][end - 1]
             t.send("\x1b[1;2D\x1b[1;2D")
+            self.wait_selected(t, ((row, end - 1),), ordinary)
             selected = t.screen.buffer[row][end - 1]
             self.assertNotEqual((selected.fg, selected.bg), (ordinary.fg, ordinary.bg))
             t.send("X\n")
@@ -201,6 +243,9 @@ class InputControls(unittest.TestCase):
         with HistoryMock(count=0) as server:
             t = self.open(server)
             t.send("ação  duas\x0epalavras\x1b[1;5H")
+            self.wait_field(t, "palavras")
+            first, _ = editor_region(t)
+            self.wait_cursor(t, first, editor_column(t))
             row, column = t.screen.cursor.y, t.screen.cursor.x
             t.send("\x1b[1;5C")
             self.wait_cursor(t, row, column + 4)
@@ -217,6 +262,10 @@ class InputControls(unittest.TestCase):
         for arguments, opening in (((), "\t"), (("--profiles",), "\x0e")):
             f = self.terminal(arguments=arguments)
             f.send(opening + "uma palavra\x1bOH")
+            self.wait(f, "uma palavra")
+            field_row = next(i for i, line in enumerate(f.screen.display) if "uma palavra" in line)
+            field_column = f.screen.display[field_row].index("uma palavra")
+            self.wait_cursor(f, field_row, field_column)
             row, column = f.screen.cursor.y, f.screen.cursor.x
             f.send("\x1b[1;5C")
             self.wait_cursor(f, row, column + 3)
@@ -232,12 +281,13 @@ class InputControls(unittest.TestCase):
         self.assertIn(b"\x1b]1337;SetUserVar=papo_tui=MQ==\x07", t.output)
         self.assertIn(b"\x1b[?u", t.output)
         t.send("\x1b[?0u")
+        wait_for_screen(t, lambda: b"\x1b[>1u" in t.output, "Keyboard mode was not negotiated")
         self.assertEqual(t.output.count(b"\x1b[>1u"), 1)
         t.send("\x1b[?1u")
         self.assertEqual(t.output.count(b"\x1b[>1u"), 1)
         t.send("\ttexto selecionado\x1bOH\x1b[1;2F\x1b[99;6u")
         self.wait(t, "Texto copiado")
-        self.assertEqual(self.copied(t), "texto selecionado")
+        self.wait_copied(t, "texto selecionado")
         self.assertIn("texto selecionado", self.screen(t))
         t.send("\x11")
         t.process.wait(timeout=5)
@@ -251,6 +301,9 @@ class InputControls(unittest.TestCase):
             t.send("Mensagem enviada\n")
             self.wait(t, "Mensagem confirmada")
             t.send("alpha beta")
+            self.wait_field(t, "alpha beta")
+            first, _ = editor_region(t)
+            self.wait_cursor(t, first, editor_column(t) + len("alpha beta"))
             row = t.screen.cursor.y
             start = t.screen.cursor.x - 10
             t.send(
@@ -259,12 +312,12 @@ class InputControls(unittest.TestCase):
             self.mouse(t, row, start + 2, 2)
             self.mouse(t, row, start + 2, 2, release=True)
             self.wait(t, "Texto copiado")
-            self.assertEqual(self.copied(t), "alpha")
+            self.wait_copied(t, "alpha")
             footer = t.screen.display[-2]
             self.assertIn("Tempo real conectado", footer)
             self.assertIn("Mensagem confirmada", footer)
             t.send("X")
-            self.assertIn("X beta", self.field(t))
+            self.wait_field(t, "X beta")
             t.read(3.2)
             self.assertNotIn("Texto copiado", t.screen.display[-2])
             self.assertIn("Tempo real conectado", t.screen.display[-2])
@@ -276,7 +329,7 @@ class InputControls(unittest.TestCase):
             t.send("texto antigo\x1bOH\x1b[1;2F")
             t.send("\x1b[200~ação\r")
             t.read(0.15)
-            self.assertIn("texto antigo", self.field(t))
+            self.wait_field(t, "texto antigo")
             self.assertNotIn("ação", self.field(t))
             server.emit(
                 dict(server.message(1), type="message", content="Mensagem durante a colagem")
@@ -284,10 +337,10 @@ class InputControls(unittest.TestCase):
             self.wait(t, "Mensagem durante a colagem")
             t.send("\nsegunda linha\x03\x11")
             self.assertFalse(server.sent_messages)
-            self.assertIn("texto antigo", self.field(t))
+            self.wait_field(t, "texto antigo")
             t.send("\x1b[201~")
-            self.assertIn("ação", self.field(t))
-            self.assertIn("segunda linha", self.field(t))
+            self.wait_field(t, "ação")
+            self.wait_field(t, "segunda linha")
             self.assertNotIn("texto antigo", self.field(t))
             self.assertIsNone(t.process.poll())
             t.send("\n")
@@ -300,7 +353,7 @@ class InputControls(unittest.TestCase):
             t.send("texto intacto\x1bOH\x1b[1;2F")
             t.send("\x1b[200~" + "界" * 2050 + "\x1b[201~")
             self.wait(t, "Colagem excede o limite")
-            self.assertIn("texto intacto", self.field(t))
+            self.wait_field(t, "texto intacto")
             self.assertFalse(server.sent_messages)
             t.send("Novo\n")
             self.wait(t, "Mensagem confirmada")
@@ -310,8 +363,15 @@ class InputControls(unittest.TestCase):
         with MockServer() as server:
             t = self.terminal()
             t.send(server.url + "\tusuário errado\x1bOH\x1b[1;2Fjosé\t")
+            password_row = next(
+                row + 1 for row, line in enumerate(t.screen.display) if "Senha (password)" in line
+            )
+            self.wait_cursor(t, password_row, 12)
             row, column = t.screen.cursor.y, t.screen.cursor.x
-            t.send("SenhaErrada\x03")
+            t.send("SenhaErrada")
+            self.wait_cursor(t, row, column + len("SenhaErrada"))
+            t.send("\x03")
+            self.wait_cursor(t, row, column)
             self.assertIsNone(t.process.poll())
             t.send("\x1b[200~Synthetic!123")
             t.read(0.1)
@@ -320,11 +380,11 @@ class InputControls(unittest.TestCase):
             self.assertNotIn(b"Synthetic!123", t.output)
             t.send("\x1b[99;6u")
             self.wait(t, "Texto copiado")
-            self.assertEqual(self.copied(t), "Synthetic!123")
+            self.wait_copied(t, "Synthetic!123")
             self.mouse(t, row, column + 2, 2)
             self.mouse(t, row, column + 2, 2, release=True)
             self.wait(t, "Texto copiado")
-            self.assertEqual(self.copied(t), "Synthetic!123")
+            self.wait_copied(t, "Synthetic!123")
             t.send("\n")
             self.wait(t, "[Comunidade]")
             login = next(
@@ -342,11 +402,11 @@ class InputControls(unittest.TestCase):
             t.send("Lugar teste\x1b[1;5D\x1b[1;2F")
             t.send("\x1b[27;6;67~")
             self.wait(t, "Texto copiado")
-            self.assertEqual(self.copied(t), "teste")
+            self.wait_copied(t, "teste")
             self.mouse(t, row, column + 7, 2)
             self.mouse(t, row, column + 7, 2, release=True)
             self.wait(t, "Texto copiado")
-            self.assertEqual(self.copied(t), "teste")
+            self.wait_copied(t, "teste")
             t.send("amigos\tURL errada\x03\x1b[200~" + server.url + "\x1b[201~\t\n")
             self.wait(t, "Lugar amigos")
             self.assertIsNone(t.process.poll())
@@ -376,6 +436,9 @@ class InputControls(unittest.TestCase):
                 ),
             )
             t.send("conteúdo antigo\x1bOH\x1b[1;2F")
+            self.wait_field(t, "conteúdo antigo")
+            first, _ = editor_region(t)
+            self.wait_cursor(t, first, editor_column(t) + wcswidth("conteúdo antigo"))
             row, column = t.screen.cursor.y, t.screen.cursor.x
             self.mouse(t, row, column + 2, 2)
             self.mouse(t, row, column + 2, 2, release=True)
@@ -404,13 +467,16 @@ class InputControls(unittest.TestCase):
                 ),
             )
             t.send("snapshot\x1bOH\x1b[1;2F")
+            self.wait_field(t, "snapshot")
+            first, _ = editor_region(t)
+            self.wait_cursor(t, first, editor_column(t) + len("snapshot"))
             row, column = t.screen.cursor.y, t.screen.cursor.x
             self.mouse(t, row, column + 2, 2)
             self.mouse(t, row, column + 2, 2, release=True)
             t.send("nova mensagem\n")
             self.wait(t, "Mensagem confirmada")
             self.wait(t, "Texto copiado")
-            self.assertEqual(self.copied(t), "snapshot")
+            self.wait_copied(t, "snapshot")
 
     def test_selection_survives_pending_confirmation_and_channel_drafts(self):
         with HistoryMock(count=0) as server:
@@ -430,11 +496,15 @@ class InputControls(unittest.TestCase):
         with HistoryMock(count=0) as server:
             t = self.open(server)
             t.send("primeira\x0esegunda\x0eterceira")
+            self.wait_field(t, "terceira")
             first, end = editor_region(t)
-            start = 29
+            start = editor_column(t)
             ordinary = t.screen.buffer[first][start + 3]
             self.mouse(t, first, start + 3, 0)
             self.mouse(t, first + 1, start + 4, 32)
+            self.wait_selected(
+                t, ((first, start + 3), (first, start + 6), (first + 1, start + 1)), ordinary
+            )
             for row, column in ((first, start + 3), (first, start + 6), (first + 1, start + 1)):
                 selected = t.screen.buffer[row][column]
                 self.assertNotEqual((selected.fg, selected.bg), (ordinary.fg, ordinary.bg))
@@ -442,8 +512,8 @@ class InputControls(unittest.TestCase):
             self.assertEqual((unselected.fg, unselected.bg), (ordinary.fg, ordinary.bg))
             self.mouse(t, first + 1, start + 4, 0, release=True)
             t.send("X")
-            self.assertIn("priXnda", self.field(t))
-            self.assertIn("terceira", self.field(t))
+            self.wait_field(t, "priXnda")
+            self.wait_field(t, "terceira")
             t.send("\x1bOHY\x1bOFZ\x1bOA\x1bOB\n")
             self.wait(t, "Mensagem confirmada")
             self.assertEqual(server.sent_messages[-1]["content"], "YpriXndaZ\nterceira")
@@ -455,15 +525,15 @@ class InputControls(unittest.TestCase):
             for sequence in ("\x1b[99;6u", "\x1b[67;6u", "\x1b[27;6;67~"):
                 t.send(sequence)
                 self.wait(t, "Texto copiado")
-                self.assertEqual(self.copied(t), "primeira\nsegunda")
-                self.assertIn("primeira", self.field(t))
-                self.assertIn("segunda", self.field(t))
+                self.wait_copied(t, "primeira\nsegunda")
+                self.wait_field(t, "primeira")
+                self.wait_field(t, "segunda")
             t.send("Novo")
-            self.assertIn("Novo", self.field(t))
+            self.wait_field(t, "Novo")
             self.assertNotIn("primeira", self.field(t))
             t.send("\x1b[49;5u")
             self.assertIsNone(t.process.poll())
-            self.assertIn("Novo", self.field(t))
+            self.wait_field(t, "Novo")
             t.send("\x1b[99;5u")
             self.wait(t, "Conversar em #geral")
 
@@ -490,17 +560,23 @@ class InputControls(unittest.TestCase):
             for locks in (0, 64, 128, 192):
                 ctrl, shift_ctrl = 5 + locks, 6 + locks
                 t.send("original")
+                self.wait_field(t, "original")
+                first, _ = editor_region(t)
+                self.wait_cursor(t, first, editor_column(t) + len("original"))
                 position = (t.screen.cursor.y, t.screen.cursor.x)
-                t.send(f"\x1b[118;{ctrl}u")
-                self.assertIn("Foco: Mensagem", self.screen(t))
-                self.assertIn("original", self.field(t))
+                t.send(f"\x1b[118;{ctrl}uX")
+                self.wait_field(t, "originalX")
+                t.send("\x7f")
+                self.wait_cursor(t, *position)
+                self.wait(t, "Foco: Mensagem")
+                self.wait_field(t, "original")
                 self.assertEqual((t.screen.cursor.y, t.screen.cursor.x), position)
                 self.assertNotIn(f"{ctrl}u", self.field(t))
                 t.send("\x1b[200~ colagem\r\nsegunda\x1b[201~")
-                self.assertIn("original colagem", self.field(t))
-                self.assertIn("segunda", self.field(t))
+                self.wait_field(t, "original colagem")
+                self.wait_field(t, "segunda")
                 t.send(f"\x1b[1;{ctrl}H\x1b[1;{shift_ctrl}F\x1b[99;{shift_ctrl}u")
-                self.assertEqual(self.copied(t), "original colagem\nsegunda")
+                self.wait_copied(t, "original colagem\nsegunda")
                 t.send(f"\x1b[99;{ctrl}u")
                 self.wait(t, "Conversar em #geral")
             t.send("\x1b[113;133u")
@@ -510,10 +586,14 @@ class InputControls(unittest.TestCase):
         with HistoryMock(count=0) as server:
             t = self.open(server)
             t.send("preservado")
+            self.wait_field(t, "preservado")
+            expected = "preservado"
             for packet in ("\x1b[57361;133u", "\x1b[99;133:3u", "\x1b[?1u"):
-                t.send(packet)
-                self.assertIn("Foco: Mensagem", self.screen(t))
-                self.assertIn("preservado", self.field(t))
+                expected += "X"
+                t.send(packet + "X")
+                self.wait_field(t, expected)
+                self.wait(t, "Foco: Mensagem")
+                self.wait_field(t, "preservado")
                 self.assertNotIn("133", self.field(t))
             t.send("\x03")
             self.wait(t, "Conversar em #geral")
@@ -521,60 +601,66 @@ class InputControls(unittest.TestCase):
     def test_locked_login_and_profile_controls_preserve_paste_and_focus(self):
         t = self.terminal()
         t.send("\x1b[9;129uusuário\x1b[118;133u")
+        self.wait(t, "usuário")
         self.assertIn("usuário", t.screen.display[t.screen.cursor.y])
         self.assertNotIn("133u", self.screen(t))
         t.send("\x1b[117;133u\x1b[200~novo usuário\x1b[201~")
-        self.assertIn("novo usuário", self.screen(t))
+        self.wait(t, "novo usuário")
         self.assertNotIn("usuárionovo", self.screen(t))
         p = self.terminal(arguments=("--profiles",))
         p.send("\x0e")
         self.wait(p, "Nome local")
         p.send("perfil\x1b[118;133u\x1b[57361;133u")
         self.assertNotIn("133", self.screen(p))
-        self.assertIn("perfil", self.screen(p))
+        self.wait(p, "perfil")
         p.send("\x1b[99;133u\x1b[200~novo perfil\x1b[201~")
-        self.assertIn("novo perfil", self.screen(p))
+        self.wait(p, "novo perfil")
         self.assertNotIn("perfilnovo", self.screen(p))
 
     def test_live_drag_across_soft_wrap_and_upward_across_lines(self):
         with HistoryMock(count=0) as server:
             t = self.open(server)
-            wrap = t.screen.columns - 40
+            start = editor_column(t)
+            wrap = t.screen.columns - start - 18  # Reserve both toolbar buttons.
             t.send("a" * wrap + "bravo")
             self.wait_field(t, "bravo")
             first, end = editor_region(t)
             self.assertEqual(end - first, 2)
-            ordinary = t.screen.buffer[first][29]
-            self.mouse(t, first, 29 + wrap - 4, 0)
-            self.mouse(t, first + 1, 29 + 3, 32)
-            for row, column in ((first, 29 + wrap - 3), (first + 1, 30)):
+            ordinary = t.screen.buffer[first][start]
+            self.mouse(t, first, start + wrap - 4, 0)
+            self.mouse(t, first + 1, start + 3, 32)
+            self.wait_selected(t, ((first, start + wrap - 3), (first + 1, start + 1)), ordinary)
+            for row, column in ((first, start + wrap - 3), (first + 1, start + 1)):
                 selected = t.screen.buffer[row][column]
                 self.assertNotEqual((selected.fg, selected.bg), (ordinary.fg, ordinary.bg))
-            self.mouse(t, first + 1, 32, 0, release=True)
+            self.mouse(t, first + 1, start + 3, 0, release=True)
             t.send("\x1b[99;6u")
-            self.assertEqual(self.copied(t), "aaaabra")
+            self.wait_copied(t, "aaaabra")
             t.send("X")
             self.wait_field(t, "Xvo")
             t.send("\x03um\x0edois\x0etrês")
             self.wait_field(t, "três")
             first, _ = editor_region(t)
-            self.mouse(t, first + 2, 32, 0)
-            self.mouse(t, first, 29, 32)
+            self.mouse(t, first + 2, start + 3, 0)
+            self.mouse(t, first, start, 32)
             t.send("\x1b[99;6u")
-            self.assertEqual(self.copied(t), "um\ndois\ntrê")
-            self.mouse(t, first, 29, 0, release=True)
+            self.wait_copied(t, "um\ndois\ntrê")
+            self.mouse(t, first, start, 0, release=True)
 
     def test_repainting_never_shows_cursor_in_history(self):
         with RealtimeMock(count=5) as server:
             t = self.open(server)
             t.send("rascunho")
+            self.wait_field(t, "rascunho")
             observed = len(t.screen.visible_cursor_rows)
             t.send("X")
+            self.wait_field(t, "rascunhoX")
             self.assertTrue(
                 all(row == editor_region(t)[0] for row in t.screen.visible_cursor_rows[observed:]),
                 t.screen.visible_cursor_rows[observed:],
             )
             t.send("\x1b")
+            wait_for_screen(t, lambda: t.screen.cursor.hidden, "History cursor is visible")
             self.assertTrue(t.screen.cursor.hidden)
             observed = len(t.screen.visible_cursor_rows)
             server.emit(
@@ -587,10 +673,17 @@ class InputControls(unittest.TestCase):
         with HistoryMock(count=0) as server:
             t = self.open(server, terminal_type="vt100")
             t.send("seleção")
-            row = t.screen.cursor.y
+            self.wait_field(t, "seleção")
+            row, _ = editor_region(t)
+            self.wait_cursor(t, row, editor_column(t) + wcswidth("seleção"))
             t.send("\x1b[1;5H\x1b[1;6F")
-            self.assertIn("seleção", self.field(t))
-            self.assertTrue(t.screen.buffer[row][29].reverse)
+            wait_for_screen(
+                t,
+                lambda: t.screen.buffer[row][editor_column(t)].reverse,
+                "Monochrome selection was not rendered",
+            )
+            self.wait_field(t, "seleção")
+            self.assertTrue(t.screen.buffer[row][editor_column(t)].reverse)
             t.send("Novo\n")
             self.wait(t, "Mensagem confirmada")
             self.assertEqual(server.sent_messages[-1]["content"], "Novo")

@@ -17,16 +17,17 @@
 typedef struct {
     uint64_t key, used;
     uint32_t id;
-    uint32_t fragments[4];
+    uint32_t fragments[32];
 } occurrence;
 typedef struct {
     media_resource *resource;
     image_decode_request request;
     uint32_t occurrence;
-    uint32_t fragments[4];
+    uint32_t fragments[32];
     uint64_t revision;
     int y, x, top, bottom;
     bool editor, overlay, navigation;
+    unsigned layer;
 } icon_placement;
 struct icon_view {
     chat_assets *assets;
@@ -38,7 +39,6 @@ struct icon_view {
     char scope[160];
     size_t offset;
     bool font;
-    int overlay_y, overlay_x, overlay_rows, overlay_columns;
 };
 static uint64_t hash(const char *s)
 {
@@ -90,7 +90,6 @@ void icons_begin(icon_view *v)
     for (size_t i = 0; i < v->placement_count; ++i)
         release_placement(&v->placements[i]);
     v->placement_count = 0;
-    v->overlay_rows = 0;
     media_cache_overlay(v->store, 0, 0, 0, 0);
     ++v->tick;
     if (app_mode_get() == APP_MODE_ULTRALIGHT) {
@@ -116,7 +115,6 @@ void icons_begin_editor(icon_view *v)
             v->placements[count++] = p;
     }
     v->placement_count = count;
-    v->overlay_rows = 0;
     media_cache_overlay(v->store, 0, 0, 0, 0);
 }
 void icons_begin_overlay(icon_view *v)
@@ -132,18 +130,12 @@ void icons_begin_overlay(icon_view *v)
             v->placements[count++] = p;
     }
     v->placement_count = count;
-    v->overlay_rows = 0;
     media_cache_overlay(v->store, 0, 0, 0, 0);
 }
 void icons_overlay(icon_view *v, int y, int x, int rows, int columns)
 {
-    if (v) {
-        v->overlay_y = y;
-        v->overlay_x = x;
-        v->overlay_rows = rows;
-        v->overlay_columns = columns;
+    if (v)
         media_cache_overlay(v->store, y, x, rows, columns);
-    }
 }
 void icons_begin_navigation(icon_view *v)
 {
@@ -283,7 +275,7 @@ static occurrence *occurrence_slot(icon_view *v, uint64_t key)
     if (!slot)
         return NULL;
     *slot = (occurrence){.key = key, .used = v->tick, .id = graphics_image_next_id()};
-    for (size_t i = 0; i < 4; ++i)
+    for (size_t i = 0; i < G_N_ELEMENTS(slot->fragments); ++i)
         slot->fragments[i] = graphics_image_next_id();
     return slot;
 }
@@ -330,6 +322,8 @@ static bool offer(icon_view *v, media_resource *resource, image_decode_request r
         .editor = !strncmp(v->scope, "editor:", 7) || !strcmp(v->scope, "emoji-button"),
         .overlay = !strcmp(v->scope, "emoji-picker") || !strcmp(v->scope, "emoji-popup") ||
                    !strcmp(v->scope, "reaction-users")};
+    p->overlay |= !strncmp(v->scope, "member:", 7);
+    p->layer = p->overlay ? media_cache_overlay_count(v->store) : 0;
     memcpy(p->fragments, slot->fragments, sizeof(p->fragments));
     uint64_t now = 0;
     net_now_ms(&now);
@@ -477,21 +471,51 @@ void icons_prepare(icon_view *v)
         return;
     uint64_t now = 0;
     net_now_ms(&now);
-    for (int layer = 0; layer < 2; ++layer) {
-        if (layer == 1 && v->overlay_rows > 0)
-            graphics_frame_occlude(v->overlay_y, v->overlay_x, v->overlay_rows, v->overlay_columns);
+    for (unsigned layer = 0; layer <= media_cache_overlay_count(v->store); ++layer) {
         for (size_t i = 0; i < v->placement_count; ++i) {
             icon_placement *p = &v->placements[i];
-            if (p->overlay != (layer == 1))
+            if (p->layer != layer)
                 continue;
             const graphics_image *image = placement_image(p, now);
             if (!image)
                 continue;
             p->revision = image->revision;
-            media_resource_place_image(
-                p->resource, false, p->request, image, p->occurrence, p->fragments, p->y, p->x,
-                image->protocol == GRAPHICS_KITTY ? p->top : 0,
-                image->protocol == GRAPHICS_KITTY ? p->bottom : 0, p->overlay);
+            media_resource_place_image(p->resource, false, p->request, image, p->occurrence,
+                                       p->fragments, p->y, p->x,
+                                       image->protocol == GRAPHICS_KITTY ? p->top : 0,
+                                       image->protocol == GRAPHICS_KITTY ? p->bottom : 0, p->layer);
         }
     }
+}
+
+bool icons_member_picture(icon_view *v, const char *id, bool banner, const char *scope, int y,
+                          int x, int columns, int rows, int pair)
+{
+    graphics_terminal terminal = graphics_terminal_get();
+    if (!v || !v->store || !terminal.supported || app_mode_get() == APP_MODE_ULTRALIGHT ||
+        terminal.cell_width < 1 || terminal.cell_height < 1 || columns < 1 || rows < 1)
+        return false;
+    media_resource *resource = NULL;
+    if (banner)
+        resource = media_cache_acquire(v->store, AUTH_MEDIA_CONTENT, id, 0, false);
+    else {
+        const author_avatar *avatar = chat_assets_avatar(v->assets, id);
+        if (avatar && avatar->path)
+            resource = media_cache_acquire_file(v->store, avatar->path, avatar->revision);
+    }
+    if (!resource)
+        return false;
+    media_resource_cache_for_session(resource);
+    int width = columns * terminal.cell_width, height = rows * terminal.cell_height;
+    if (!banner)
+        width = height = MIN(width, height);
+    image_decode_request request = {.width = width,
+                                    .height = height,
+                                    .terminal = terminal,
+                                    .center = true,
+                                    .matte = true,
+                                    .background = background(pair),
+                                    .max_side = 2048};
+    icons_scope(v, scope, 0);
+    return offer(v, resource, request, y, x, 0, 0, 0);
 }

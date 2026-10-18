@@ -25,6 +25,14 @@ static void desktop_key(const instance_connection *item, char key[80])
     snprintf(key, 80, "%llu:%llu", (unsigned long long)item->serial,
              (unsigned long long)item->desktop_generation);
 }
+static const char *desktop_mention_username(void *context, const char *id)
+{
+    const instance_connection *item = context;
+    const char *username = history_author_username(item->model, id);
+    if (*username)
+        return username;
+    return !strcmp(id, auth_user_id(item->auth)) ? auth_username(item->auth) : NULL;
+}
 static void release_model(instance_connections *c, size_t i)
 {
     if (c->visible_auth == c->items[i].auth)
@@ -221,7 +229,7 @@ bool instances_poll(instance_connections *connections, auth_client *active)
                     continue;
                 const char *author = json_string_value(json_object_get(event, "user_id"));
                 char title[2200], safe_title[TEXT_UTF8_BYTES], safe_body[TEXT_UTF8_BYTES];
-                text_buffer buffer;
+                text_buffer buffer, projected;
                 snprintf(title, sizeof(title), "%s · %s", item->name,
                          history_author(item->model, author ? author : ""));
                 if (!text_decode(&buffer, title) || !text_encode(&buffer, safe_title))
@@ -230,7 +238,11 @@ bool instances_poll(instance_connections *connections, auth_client *active)
                     connections->config->notification_preview
                         ? json_string_value(json_object_get(event, "message_content"))
                         : "Nova notificação";
-                if (!text_decode(&buffer, body ? body : "") || !text_encode(&buffer, safe_body))
+                if (!text_decode(&buffer, body ? body : ""))
+                    continue;
+                text_mentions(&buffer, desktop_mention_username, item);
+                text_project(&buffer, &projected);
+                if (!text_encode(&projected, safe_body))
                     continue;
                 desktop_queue(connections->desktop, key, safe_title, safe_body);
             }

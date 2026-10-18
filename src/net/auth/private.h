@@ -24,6 +24,13 @@
 #define RESPONSE_LIMIT (1024U * 1024U)
 
 struct auth_client {
+    permissions *permissions;
+    json_t *permission_message;
+    channel_permission permission_guard;
+    bool permission_edit, permission_delete;
+    unsigned permission_wanted;
+    unsigned permission_failed, permission_retried;
+    uint64_t permission_due, permission_serial;
     CURLSH *cookies;
     ws_client *websocket;
     CURL *easy;
@@ -31,6 +38,7 @@ struct auth_client {
     struct curl_slist *headers;
     curl_mime *mime;
     bool send_ready;
+    bool send_has_attachments;
     auth_send_receipt send_receipt;
     json_t *sent_message;
     char send_channel[64];
@@ -102,5 +110,9 @@ bool auth_internal_session_cookie_valid(const char *row, const char *url);
 bool auth_internal_send_transmitted(auth_client *client);
 void auth_internal_reconnect_later(auth_client *client, uint64_t now);
 void auth_internal_complete(auth_client *client, CURLcode result, long status);
+void auth_internal_permissions_observe(void *context, const json_t *event);
+void auth_internal_permissions_poll(auth_client *client, uint64_t now);
+void auth_internal_permissions_response(auth_client *client, CURLcode result, long status);
+bool auth_internal_permission_admitted(auth_client *client);
 
 #endif

@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "model/text/mentions.h"
+#include "platform/file_transfer.h"
 #include "ui/media/resources.h"
 #include "ui/screens/login.h"
 
@@ -50,6 +51,7 @@ int main(int argc, char **argv)
     }
     media_resources_init();
     int result = login_run_profiles(profiles, allow_http);
+    file_transfer_shutdown();
     mention_cleanup();
     curl_global_cleanup();
     return result;

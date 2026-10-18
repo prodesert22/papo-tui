@@ -35,6 +35,19 @@ class DistributionTests(unittest.TestCase):
             self.assertNotIn("latest", entry["url"])
             self.assertNotIn("continuous", entry["url"])
 
+    def test_ncurses_source_is_shared_by_linux_windows_and_flatpak(self):
+        sources = json.loads((ROOT / "dist/dependencies.json").read_text())["sources"]
+        ncurses = next(entry for entry in sources if entry["name"] == "ncurses")
+        self.assertEqual(ncurses["version"], "6.6")
+        self.assertTrue({"posix", "nt"} <= set(ncurses.get("platforms", ("posix", "nt"))))
+        manifest = flatpak.manifest({"path": "/tmp/source.tar.gz"}, "a" * 64)
+        module = next(item for item in manifest["modules"] if item["name"] == "ncurses")
+        self.assertEqual(module["sources"][0]["sha256"], ncurses["sha256"])
+        self.assertIn("--enable-widec", module["config-opts"])
+        self.assertIn("--with-shared", module["config-opts"])
+        self.assertNotIn("--enable-term-driver", module["config-opts"])
+        self.assertNotIn("--disable-home-terminfo", module["config-opts"])
+
     def test_flatpak_uses_locked_sources_and_restricted_permissions(self):
         manifest = flatpak.manifest({"path": "/tmp/source.tar.gz"}, "a" * 64)
         names = {x["name"] for x in manifest["modules"]}

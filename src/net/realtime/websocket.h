@@ -29,6 +29,9 @@ void ws_destroy(ws_client *client);
 /* Base must be validated by auth_normalize_url() and belong to this jar. */
 bool ws_connect(ws_client *client, const char *base);
 void ws_poll(ws_client *client);
+/* Synchronous metadata observer before REST admission; borrowed event/context.
+ * Must not perform I/O or change this WS client. Queue ownership is unchanged. */
+void ws_observe(ws_client *client, void (*observer)(void *, const json_t *), void *context);
 /* Borrows event and copies its serialized JSON into a bounded output queue. */
 bool ws_send(ws_client *client, const json_t *event);
 /* Graceful close is polled for at most 250 ms; abort releases I/O immediately. */

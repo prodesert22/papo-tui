@@ -47,6 +47,8 @@ void chat_assets_avatar_invalidate(chat_assets *a, const char *id);
 json_t *chat_assets_profiles_request(chat_assets *a);
 bool chat_assets_profiles_wanted(const chat_assets *a);
 bool chat_assets_profiles_response(chat_assets *a, json_t *response, long status);
+/* Observe an explicitly fetched profile through the same bounded avatar store. */
+void chat_assets_profile_observe(chat_assets *a, const json_t *profile, uint64_t version);
 void chat_assets_cancel(chat_assets *a);
 void chat_assets_visible_begin(chat_assets *a);
 void chat_assets_profiles_retry(chat_assets *a);

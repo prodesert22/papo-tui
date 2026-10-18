@@ -5,6 +5,67 @@ full details are available in `releases/`.
 
 ## Unreleased
 
+Upcoming changes are recorded in [Unreleased](releases/Unreleased.md).
+
+## [0.4.0]
+
+### Added
+
+- File attachments through F5 or the paperclip button, with native file dialogs,
+  a terminal picker fallback, removable draft files and attachment-only messages.
+- Ctrl+V support for copied local files, clipboard images and text, with private
+  background preparation and attachment drafts preserved per conversation.
+- F8 pinned-message browsing with scrolling, local author/text search, message
+  details and permission-aware pin/unpin actions.
+- F3 server message search with author, conversation, mention, link, date,
+  attachment and ordering filters, searchable selectors and result pagination.
+- Permission-aware channel visibility and message actions, live role membership
+  updates, periodic permission refresh and role-colored member names.
+- Server member drawer through 👤 or F10, with nickname/@username search,
+  saved role/status grouping, avatars, presence and full profile previews.
+- Member context menus through m or right-click, with DMs, block/unblock and
+  permission-gated ban/unban and password-reset links.
+- DM context menus through m or right-click to close a conversation.
+- Terminal window titles showing the active channel or DM and server, with the
+  total known unread mentions across connected instances when nonzero.
+
+### Changed
+
+- Keep notifications, pinned messages and search in their modal with an animated
+  locating view until the requested message is ready; allow cancellation and
+  explicit retries there.
+- Locate older destinations with known message timestamps using bounded cursor
+  reads instead of walking all intervening history pages.
+- Label F9 consistently as notifications and show discovery shortcuts in the
+  footer; use F3 for search, F5 for attachments and F10 for members, with hints
+  that fit compact layouts.
+- Use 🔍, 📌 (🖈 in text mode) and 👤 in the conversation header, with arrow-key
+  navigation between controls, the history and the member drawer.
+- Keep arrow navigation in the DM list after clicking a conversation, with a
+  visible selection that preserves role colors. Context menus keep names visible.
+- Restrict release runs to pushes changing CMakeLists.txt on main and require a
+  version increase before tagging or packaging. Identify PR checks as CI and
+  block release-mode builds in other event/branch contexts.
+- Open the video player when pressing Enter on an embed cover instead of the
+  cover image, and move between the images of a message with the left and right
+  arrows while the image viewer is open.
+- Expand installation prerequisites for Fedora, RHEL, Arch Linux and Windows.
+  Replace CONTRIBUTING.md with BUILD.md covering compilation, tests and the
+  Linux and Windows package recipes.
+
+### Fixed
+
+- Display user mentions in system notification previews as @username instead of
+  raw @mention(<@uuid>) tokens, using each instance's user data.
+- Center mention counts inside notification badges and remove the extra + suffix.
+- Keep replies separate from adjacent messages in history grouping.
+- Use ncurses 6.6 across Linux and Windows builds so rapid mouse drags preserve
+  text selection and copying.
+- Identify server-reported IP blocks during private instance authorization and
+  distinguish other access refusals by authentication stage.
+
+See the [full 0.4.0 release notes](releases/v0.4.0.md).
+
 ## [0.3.1]
 
 - Run routine CI on pull requests to main, including version commits, and cancel

@@ -69,10 +69,13 @@ void history_recover(history *h)
 {
     if (!h || !auth_has_session(h->auth))
         return;
-    if (h->pending != NONE && h->pending != INBOX && !history_internal_actions_mutating(h)) {
+    if (h->pending != NONE && h->pending != INBOX && !history_internal_actions_mutating(h) &&
+        !history_internal_members_mutating(h)) {
         auth_cancel_read(h->auth);
         h->pending = NONE;
     }
+    history_internal_discovery_recover(h);
+    history_internal_members_recover(h);
     ++h->selection;
     history_internal_actions_reset(h);
     json_decref(h->fresh);
@@ -154,6 +157,23 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
     const char *type = history_internal_str((json_t *)event, "type");
     if (!type || !history_internal_string_field((json_t *)event, "type", 128, false))
         goto invalid;
+    if (!strcmp(type, "role_add") || !strcmp(type, "role_remove")) {
+        /* Auth's synchronous WS observer has already applied membership before
+         * any queued HTTP mutation can be admitted. */
+        if (!history_internal_string_field((json_t *)event, "user_id", 36, false) ||
+            !history_internal_string_field((json_t *)event, "role_id", 36, false) ||
+            !history_uuid(history_internal_str(event, "user_id")) ||
+            !history_uuid(history_internal_str(event, "role_id")))
+            goto invalid;
+        return history_internal_role_event(h, event);
+    }
+    if (!strcmp(type, "user_join")) {
+        if (!history_internal_string_field((json_t *)event, "user_id", 36, false) ||
+            !history_uuid(history_internal_str(event, "user_id")))
+            goto invalid;
+        h->users_complete = h->users_failed = false;
+        return true;
+    }
     if (!strcmp(type, "avatar_update")) {
         if (!history_internal_string_field((json_t *)event, "user_id", 36, false) ||
             !history_uuid(history_internal_str((json_t *)event, "user_id")))
@@ -168,6 +188,9 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
                                             ? json_object_get(json_object_get(event, "dm"), "user")
                                             : NULL,
                                         false);
+        if (!strcmp(type, "dm_update"))
+            permissions_dm(auth_permissions(h->auth),
+                           history_internal_str(json_object_get(event, "dm"), "id"), true);
         h->want_authors = true;
         return true;
     }
@@ -190,6 +213,11 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
     if (!strcmp(type, "error")) {
         history_internal_event_status(h, "O servidor informou um erro de tempo real.",
                                       "Erro remoto");
+        return true;
+    }
+    if (!strcmp(type, "message_pin")) {
+        if (!history_internal_discovery_event(h, event))
+            goto invalid;
         return true;
     }
     if (!strcmp(type, "react_update")) {
@@ -255,13 +283,16 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
     if (create &&
         (!ctype || (strcmp(ctype, "text") && strcmp(ctype, "voice") && strcmp(ctype, "category"))))
         goto invalid;
+    if (edit || del || embeds)
+        history_internal_discovery_event(h, event);
     bool active = !strcmp(channel, history_internal_str(history_channel(h, h->selected), "id")
                                        ? history_internal_str(history_channel(h, h->selected), "id")
                                        : "");
     bool relevant = create || update || remove || active;
     if (relevant && !h->replaying &&
         (h->recovering || h->pending == CHANNELS || h->pending == MESSAGES ||
-         (h->pending == ACTIONS && !history_internal_actions_mutating(h))))
+         (h->pending == ACTIONS && !history_internal_actions_mutating(h) &&
+          !history_internal_members_mutating(h))))
         if (!history_internal_remember(h, event))
             return false;
     if (create || update || remove) {

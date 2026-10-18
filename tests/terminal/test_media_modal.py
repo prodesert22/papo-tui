@@ -1,16 +1,16 @@
 """Modal interactions over a local PTY, without a server or session credentials."""
 
-import time
 import unittest
-from test_terminal import Terminal
+from test_terminal import Terminal, wait_for_screen
 
 
 class ModalTest(unittest.TestCase):
-    def wait(self, t, text):
-        deadline = time.monotonic() + 5
-        while text not in "\n".join(t.screen.display) and time.monotonic() < deadline:
-            t.read(0.03)
-        self.assertIn(text, "\n".join(t.screen.display))
+    def wait(self, t, text, absent=False):
+        wait_for_screen(
+            t,
+            lambda: (text in "\n".join(t.screen.display)) != absent,
+            f"Unexpected modal state for: {text}",
+        )
 
     def button_position(self, t):
         for y, line in enumerate(t.screen.display):
@@ -18,6 +18,18 @@ class ModalTest(unittest.TestCase):
             if x >= 0:
                 return y, x + 1
         self.fail("Info button is missing from the modal")
+
+    def resize(self, t, rows, columns):
+        previous = self.button_position(t)
+        t.resize(rows, columns)
+        wait_for_screen(
+            t,
+            lambda: (
+                any("[Info" in line for line in t.screen.display)
+                and self.button_position(t) != previous
+            ),
+            "Resized media button did not arrive",
+        )
 
     def test_properties_button_keys_resize_and_outside_click(self):
         t = Terminal(arguments=("--demo",))
@@ -34,43 +46,37 @@ class ModalTest(unittest.TestCase):
             self.wait(t, "image/gif")
             self.assertEqual(self.button_position(t), button)
             t.click(*button)
-            t.read(0.1)
-            self.assertNotIn("Propriedades", "\n".join(t.screen.display))
+            self.wait(t, "Propriedades", absent=True)
             t.click(*button)
             self.wait(t, "Propriedades")
             self.assertNotIn(b"\x1b]52;", t.output)
             t.send("\x1b[6~")
             self.wait(t, "Dimensões")
             t.send("i")
-            t.read(0.1)
-            self.assertNotIn("Propriedades", "\n".join(t.screen.display))
+            self.wait(t, "Propriedades", absent=True)
             t.send("\t\n")
             self.wait(t, "Propriedades")
             t.send("\x1b[19~")
-            t.read(0.1)
-            self.assertNotIn("Propriedades", "\n".join(t.screen.display))
+            self.wait(t, "Propriedades", absent=True)
             t.send("\x1b[19~")
             self.wait(t, "Propriedades")
             t.send("\x1b[<65;65;12M")
-            t.read(0.1)
-            self.assertNotIn("Nome", "\n".join(t.screen.display))
-            t.resize(14, 44)
+            self.wait(t, "Nome", absent=True)
+            self.resize(t, 14, 44)
             self.wait(t, "Propriedades")
             button = self.button_position(t)
             t.click(*button)
-            t.read(0.1)
-            self.assertNotIn("Propriedades", "\n".join(t.screen.display))
+            self.wait(t, "Propriedades", absent=True)
             self.assertEqual(self.button_position(t), button)
             t.click(*button)
             self.wait(t, "Propriedades")
             t.send("\x1b[6~")
             t.send("\x1b[5~")
-            t.resize(30, 100)
+            self.resize(t, 30, 100)
             self.wait(t, "Propriedades")
             button = self.button_position(t)
             t.click(*button)
-            t.read(0.1)
-            self.assertNotIn("Propriedades", "\n".join(t.screen.display))
+            self.wait(t, "Propriedades", absent=True)
             t.click(*button)
             self.wait(t, "Propriedades")
             t.click(8, 4)

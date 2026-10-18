@@ -41,7 +41,7 @@ bool message_same_author(const json_t *previous, const json_t *message)
         return true;
     }
     const char *id = str(message, "author_id");
-    if (*str(message, "edited_at"))
+    if (*str(message, "edited_at") || *str(message, "reply_to"))
         return false;
     return history_uuid(id) && !strcmp(str(previous, "author_id"), id);
 }
@@ -728,6 +728,18 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
         size_t header_end;
         if (!column(b, 0, "header", label, author_x, width - author_x, true, false, 0, &header_end))
             goto error;
+        for (size_t i = 0; i < header_end; ++i) {
+            message_segment *segment = &b->rows[i].segments[0];
+            text_buffer text;
+            if (!text_decode(&text, segment->text))
+                goto error;
+            segment->highlight_length = text.length;
+            segment->highlight = calloc(text.length + 1, 1);
+            if (!segment->highlight)
+                goto error;
+            for (size_t k = 0; k < text.length; ++k)
+                segment->highlight[k] = segment->offset + k < name.length;
+        }
         text_buffer initials = {0}, decoded;
         if (text_decode(&decoded, author)) {
             for (size_t k = 0; k < decoded.length && initials.length < 2; ++k)
@@ -1014,55 +1026,8 @@ void message_blocks_free(message_blocks *b)
     free(b->media);
     memset(b, 0, sizeof(*b));
 }
-static struct {
-    int fg, bg;
-} frame_colors[32];
-static int frame_color_count;
-void message_colors_begin(void)
-{
-    frame_color_count = 0;
-}
-static int color_pair(unsigned rgb, int fallback)
-{
-    if (!(rgb & 0x1000000) || !has_colors() || COLORS < 8 || COLOR_PAIRS < 64)
-        return fallback;
-    int r = (int)(rgb >> 16) & 255, g = (int)(rgb >> 8) & 255, b = (int)rgb & 255;
-    int fg;
-    if (COLORS >= 0x1000000)
-        fg = (int)(rgb & 0xffffff);
-    else if (COLORS >= 256) {
-        const int level[] = {0, 95, 135, 175, 215, 255};
-        int best = 0x7fffffff;
-        fg = 16;
-        for (int red = 0; red < 6; ++red)
-            for (int green = 0; green < 6; ++green)
-                for (int blue = 0; blue < 6; ++blue) {
-                    int dr = r - level[red], dg = g - level[green], db = b - level[blue];
-                    int distance = dr * dr + dg * dg + db * db;
-                    if (distance < best) {
-                        best = distance;
-                        fg = 16 + 36 * red + 6 * green + blue;
-                    }
-                }
-    } else
-        fg = (r > 127 ? COLOR_RED : 0) | (g > 127 ? COLOR_GREEN : 0) | (b > 127 ? COLOR_BLUE : 0);
-    int oldfg, background;
-    if (extended_pair_content(fallback, &oldfg, &background) == ERR)
-        return fallback;
-    for (int i = 0; i < frame_color_count; ++i)
-        if (frame_colors[i].fg == fg && frame_colors[i].bg == background)
-            return THEME_PAIR_END + i;
-    if (frame_color_count == 32 || THEME_PAIR_END + frame_color_count >= COLOR_PAIRS)
-        return fallback;
-    int pair = THEME_PAIR_END + frame_color_count;
-    if (init_extended_pair(pair, fg, background) == ERR)
-        return fallback;
-    frame_colors[frame_color_count].fg = fg;
-    frame_colors[frame_color_count++].bg = background;
-    return pair;
-}
 void message_row_draw(WINDOW *w, const message_row *row, int y, int x, int width, int pair,
-                      int accent)
+                      int accent, unsigned author_color)
 {
     x += row->indent;
     width -= row->indent;
@@ -1073,7 +1038,7 @@ void message_row_draw(WINDOW *w, const message_row *row, int y, int x, int width
         if (row->card_width > 0 && row->card_width < width)
             width = row->card_width;
         pair = THEME_EMBED_AREA;
-        accent = color_pair(row->color, THEME_EMBED_ACCENT);
+        accent = theme_rgb_pair(row->color, THEME_EMBED_ACCENT);
         wattrset(w, COLOR_PAIR(pair));
         mvwhline(w, y, x, ' ', width);
         wattrset(w, COLOR_PAIR(accent));
@@ -1093,7 +1058,11 @@ void message_row_draw(WINDOW *w, const message_row *row, int y, int x, int width
             if (text_decode(&buffer, s->text)) {
                 text_measure(&buffer, s->width, &layout);
                 text_draw_styled(w, &buffer, &layout, s->highlight, s->highlight_length, 0, 1, y,
-                                 x + s->x, text_pair, row->card ? THEME_EMBED_ACCENT : accent);
+                                 x + s->x, text_pair,
+                                 row->header && !strcmp(s->key, "header")
+                                     ? theme_member_pair(author_color, text_pair)
+                                 : row->card ? THEME_EMBED_ACCENT
+                                             : accent);
             }
         } else
             text_label(w, y, x + s->x, s->width, s->text);

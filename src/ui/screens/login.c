@@ -7,6 +7,7 @@
 #include "net/auth/client.h"
 #include "platform/unicode.h"
 #include "ui/components/button.h"
+#include "ui/components/terminal_title.h"
 #include "ui/components/theme.h"
 #include "ui/input/mouse.h"
 #include "ui/media/graphics.h"
@@ -16,6 +17,7 @@
 
 #include "model/conversation/history.h"
 #include "platform/clipboard.h"
+#include "platform/file_transfer.h"
 #include "platform/terminal.h"
 #include "ui/input/editor.h"
 #include "ui/input/text.h"
@@ -696,16 +698,17 @@ static void clear_passwords(login_ui *ui)
 
 static void extra_action(login_ui *ui, auth_client *client)
 {
-    if (auth_busy(client))
-        return;
     if (auth_has_session(client)) {
         ws_state state = auth_ws_state(client);
-        if (state == WS_ERROR || state == WS_CLOSED)
-            auth_connect_ws(client);
-        else
+        if (state == WS_ERROR || state == WS_CLOSED) {
+            if (!auth_busy(client))
+                auth_connect_ws(client);
+        } else
             auth_refresh(client);
         return;
     }
+    if (auth_busy(client))
+        return;
     snapshot(ui);
     clear_passwords(ui);
     auth_cancel(client);
@@ -904,6 +907,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
     fputs("\033[?2004h", stdout);
     fflush(stdout);
     text_input_terminal_active(true);
+    terminal_title_begin();
     int result = layout(&ui) ? 0 : 1;
     bool startup_restore = !open_profiles;
     if (!result && !open_profiles && *session_store_last_url(connections->sessions) &&
@@ -1001,6 +1005,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
             if (ui.form)
                 select_focus(&ui, 2);
         }
+        file_transfer_tasks_poll();
         if (clipboard_poll())
             redraw = true;
         if (redraw) {
@@ -1158,6 +1163,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
     mousemask(0, NULL);
     ui_mouse_drag_tracking(false);
     theme_restore(&theme);
+    terminal_title_end();
     endwin();
     ui_mouse_shutdown();
     terminal_recovery_end();

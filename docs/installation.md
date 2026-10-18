@@ -1,21 +1,84 @@
 # Installation
 
 Choose **x86_64** for 64-bit Intel/AMD computers or **ARM64** for AArch64
-computers. Release packages are available under **Releases**.
-Check the `SHA256SUMS` file before installing.
+computers. Download the package for your system from
+[Releases](https://github.com/prodesert22/papo-tui/releases), together with
+`SHA256SUMS` to verify the download. The [build comparison](builds.md) lists
+the distribution versions targeted by each package.
+
+To compile the program instead, see [BUILD.md](../BUILD.md).
 
 ## Linux
 
-Download the appropriate package and install it from the download folder:
+Use a UTF-8 terminal. Release packages include the application's private
+libraries; the package manager installs their declared system dependencies.
+The commands below install runtime requirements, not compiler toolchains.
+
+### Debian and Ubuntu
+
+Choose the matching Debian or Ubuntu DEB. In its download folder, run:
 
 ```sh
-sudo apt install ./papo-tui*.deb          # Debian or Ubuntu; choose your distribution's build
-sudo dnf install ./papo-tui*.rpm          # Fedora
-sudo pacman -U ./papo-tui*.pkg.tar.zst    # Arch or Arch Linux ARM
+sudo apt update
+sudo apt install ca-certificates ncurses-base fontconfig fonts-noto-color-emoji
+sudo apt install ./papo-tui-*.deb
+papo-tui
 ```
 
-These commands are alternatives: run only the one for your system.
-Then start `papo-tui` in a terminal.
+Keep only the chosen application DEB in that folder when using the wildcard.
+
+### Fedora
+
+The release RPM targets **Fedora 44**. Install it with DNF so its runtime
+requirements are resolved:
+
+```sh
+sudo dnf install ca-certificates ncurses-base fontconfig alsa-lib google-noto-color-emoji-fonts
+sudo dnf install ./papo-tui-*-fedora-*.rpm
+papo-tui
+```
+
+### RHEL
+
+On RHEL, install Flatpak and use the downloaded **Flatpak** package with the
+[commands below](#flatpak):
+
+```sh
+sudo dnf install flatpak
+```
+
+The Fedora RPM targets a different distribution and glibc baseline; it is not
+a RHEL package. For a native build on RHEL 10, see [BUILD.md](../BUILD.md#rhel-10).
+The current AppImage requires **glibc 2.39+**, so it cannot run on RHEL 8 or 9.
+See Red Hat's [Flatpak installation instructions](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/9/html/administering_the_system_using_the_gnome_desktop_environment/assembly_installing-applications-using-flatpak_administering-the-system-using-the-gnome-desktop-environment).
+
+### Arch Linux and Arch Linux ARM
+
+Update the system, then install the downloaded package for its architecture:
+
+```sh
+sudo pacman -Syu --needed ca-certificates ncurses fontconfig alsa-lib noto-fonts-emoji
+sudo pacman -U ./papo-tui-*-arch-*.pkg.tar.zst
+papo-tui
+```
+
+The release package is downloaded from Releases; these commands do not require
+an AUR helper. Keep only the matching application package in the folder.
+
+### Optional clipboard and session support
+
+For copying or pasting files/images through the local Linux clipboard, install
+**wl-clipboard** on Wayland or **xclip** on X11. Text paste through the terminal
+and F5 file selection remain available without these helpers.
+
+| System | Wayland | X11 |
+| --- | --- | --- |
+| Debian/Ubuntu | `sudo apt install wl-clipboard` | `sudo apt install xclip` |
+| Fedora | `sudo dnf install wl-clipboard` | `sudo dnf install xclip` |
+| Arch | `sudo pacman -S --needed wl-clipboard` | `sudo pacman -S --needed xclip` |
+
+To remember sessions, unlock your desktop's Secret Service or KWallet credential
+store. Without an available store, the application asks you to sign in again.
 
 ### AppImage
 
@@ -29,7 +92,10 @@ Without FUSE, extract the file with `--appimage-extract` and run
 
 ### Flatpak
 
-Install Flatpak and add Flathub to obtain the runtime:
+Install **flatpak** with your system's package manager: `sudo apt install flatpak`
+on Debian/Ubuntu, `sudo dnf install flatpak` on Fedora/RHEL, or
+`sudo pacman -S --needed flatpak` on Arch. Add Flathub to obtain the required
+Freedesktop runtime, then install the downloaded application bundle:
 
 ```sh
 flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
@@ -43,72 +109,42 @@ with other builds.
 
 ## Windows
 
-Use Windows 11 and a terminal with UTF-8 support, such as Windows Terminal.
-Choose the installer for your architecture and follow its instructions.
-Installation for the current user does not need to modify other users' directories.
+Use **Windows 11** and a terminal with UTF-8 support. Install
+[Windows Terminal](https://learn.microsoft.com/en-us/windows/terminal/install)
+from Microsoft Store if it is not already present, or run in PowerShell:
+
+```powershell
+winget install --id Microsoft.WindowsTerminal --exact
+```
+
+Download the **installer** or **portable ZIP** for x86_64 or ARM64. The installer
+supports the current user and creates a Start menu shortcut. With the default
+installation folder, you can also run it from PowerShell:
+
+```powershell
+& "$env:LOCALAPPDATA\Programs\Papo TUI\papo-tui.exe"
+```
+
+Use your chosen folder if you changed it during installation. The installer
+does not add the executable to PATH.
 
 To use the portable ZIP, extract **all** its contents and run `papo-tui.exe`
 from the terminal. Do not move only the executable: it uses the included DLLs,
 resources and the media helper in `papo-backends`. MSYS2 is not required to run
-the package.
+the package. The package also contains its font and terminal data; you do not
+need CMake, Python or a separate development environment to use it.
+
+From PowerShell in the extracted ZIP folder, run:
+
+```powershell
+.\papo-tui.exe
+```
 
 ## Build from source
 
-The project uses **C17**, **CMake 3.21+** and **pkg-config/pkgconf**. To build it,
-install the development packages for the libraries below.
-
-| Library | Minimum | Purpose |
-| --- | --- | --- |
-| ncursesw and formw | 6.1 | Terminal interface |
-| libcurl | 7.86 | HTTP and WebSocket; requires WS/WSS, TLS and asynchronous DNS |
-| Jansson | 2.14 | JSON |
-| libunibreak | 6.1 | Unicode graphemes and words |
-| GLib and GModule | 2.66 | Data structures, tasks and modules |
-| GIO | 2.66 on Linux; 2.88 on Windows | Media helper, credential stores and notifications |
-| libsixel | 1.8 | Sixel output |
-| Chafa | 1.16 | Character rendering and Kitty/iTerm2 graphics output |
-| PangoCairo | 1.50 | Text and color emojis |
-| Fontconfig | 2.13 | Font discovery |
-| libmpv | API 2.0 | Video and audio |
-| FFmpeg | avformat/avcodec 58, avutil 56, swscale 5 | Images and frames |
-| Noto Color Emoji | — | Emoji font |
-| libsecret, optional on Linux | 0.20 | Secret Service/GNOME Keyring |
-
-On Arch Linux:
-
-```sh
-sudo pacman -S --needed base-devel cmake pkgconf ncurses curl jansson libunibreak libsixel chafa glib2 pango cairo noto-fonts-emoji mpv ffmpeg libsecret
-```
-
-On Debian/Ubuntu and Fedora, development package names and versions vary.
-The build recipes provide missing dependencies without replacing system
-libraries; see [builds](builds.md). An installed libcurl may lack WebSocket
-support even when it meets the minimum version: CMake checks this.
-
-```sh
-cmake -S . -B build -DBUILD_TESTING=OFF
-cmake --build build
-cmake --install build --prefix "$HOME/.local"
-```
-
-Add `~/.local/bin` to PATH or run `~/.local/bin/papo-tui`.
-To use dependencies installed under another prefix, pass
-`-DCMAKE_PREFIX_PATH=/path/to/dependencies`.
-
-On Windows, build in the MSYS2 **CLANG64** or **CLANGARM64** environment with
-CMake, Ninja and libraries for the same architecture. Install
-`mingw-w64-clang-x86_64-vulkan-headers` or
-`mingw-w64-clang-aarch64-vulkan-headers` as appropriate; libplacebo compiles its
-Vulkan stubs with these headers even when Vulkan itself is disabled. See the
-build recipes.
-
-For Unicode keyboard input on Windows, use the ncurses build from the project's
-dependency recipe. Run `python dist/bootstrap.py --prefix build/release-deps --only ncurses`
-with native Windows Python in that shell, then configure CMake with
-`-DCMAKE_PREFIX_PATH=build/release-deps`.
-Before running a local build in MSYS2, set
-`export TERMINFO="$(cygpath -m "$MINGW_PREFIX/share/terminfo")"`.
-Installed Windows packages include their own terminal database.
+[BUILD.md](../BUILD.md) lists development packages and complete build/run commands
+for Debian/Ubuntu, Fedora, RHEL 10, Arch Linux and Windows, including native
+x86_64 and ARM64 environments. It also covers optional tests and packaging.
 
 ## Data and removal
 

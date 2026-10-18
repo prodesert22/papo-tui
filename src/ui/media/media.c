@@ -37,7 +37,7 @@ typedef struct {
     graphics_image image; /* Borrowed snapshot; cache owns its buffers. */
     uint64_t used;
     uint32_t placement_id;
-    uint32_t fragments[4];
+    uint32_t fragments[32];
     const char *error;
 } cache_entry;
 typedef struct {
@@ -56,6 +56,7 @@ typedef struct {
 } job;
 struct media_view {
     auth_client *auth;
+    history *model; /* Borrowed while the conversation is active. */
     media_cache *store;
     cache_entry cache[CACHE_COUNT];
     placement visible[VISIBLE_COUNT];
@@ -86,6 +87,8 @@ struct media_view {
     int info_scroll, info_rows;
     int selected, modal_entry, modal_width, modal_height;
     message_media selected_item;
+    message_media *gallery; /* Owned metadata; resources stay in the shared cache. */
+    size_t gallery_count, gallery_index, image_count;
     uint64_t modal_token;
     graphics_image modal_image;
     const char *modal_error;
@@ -353,6 +356,9 @@ static void close_modal(media_view *v)
 {
     if (!v)
         return;
+    free(v->gallery);
+    v->gallery = NULL;
+    v->gallery_count = v->gallery_index = v->image_count = 0;
     atomic_store(&v->active, 0);
     g_mutex_lock(&v->lock);
     v->playing = false;
@@ -388,6 +394,7 @@ void media_view_reset(media_view *v)
     if (v->visible_count || v->modal != MODAL_NONE)
         graphics_images_clear();
     close_modal(v);
+    v->model = NULL;
     clear_positions(v);
     for (int i = 0; i < CACHE_COUNT; ++i)
         delete_entry(&v->cache[i]);
@@ -401,6 +408,7 @@ void media_view_suspend(media_view *v)
         return;
     graphics_images_clear();
     close_modal(v);
+    v->model = NULL;
     clear_positions(v);
     for (int i = 0; i < CACHE_COUNT; ++i)
         delete_entry(&v->cache[i]);
@@ -716,6 +724,7 @@ bool media_view_poll(media_view *v, history *h)
         media_view_reset(v);
         return changed;
     }
+    v->model = h;
     uint64_t now = 0;
     net_now_ms(&now);
     graphics_terminal terminal = graphics_terminal_get();
@@ -903,12 +912,59 @@ bool media_view_poll(media_view *v, history *h)
     }
     return changed;
 }
+static const message_media *embed_video(const message_media *items, size_t count,
+                                        const message_media *image)
+{
+    if (image->kind != AUTH_MEDIA_EMBED || strcmp(image->role, "thumbnail"))
+        return NULL;
+    for (size_t i = 0; i < count; ++i)
+        if (items[i].kind == AUTH_MEDIA_VIDEO && items[i].video && !strcmp(items[i].id, image->id))
+            return &items[i];
+    return NULL;
+}
+static bool gallery_image(const media_view *v, size_t index)
+{
+    const message_media *item = &v->gallery[index];
+    return !item->video && strcmp(item->role, "author") &&
+           !embed_video(v->gallery, v->gallery_count, item);
+}
+static void open_message_media(media_view *v, message_media *item)
+{
+    json_t *message = v->model ? history_find_message(v->model, item->message) : NULL;
+    message_blocks blocks;
+    if (!json_is_object(message) ||
+        !message_blocks_build(&blocks, message, "", "", COLS > 8 ? COLS - 4 : 44, true))
+        return;
+    const message_media *video = embed_video(blocks.media, blocks.media_count, item);
+    if (video)
+        *item = *video;
+    if (!item->video && strcmp(item->role, "author")) {
+        size_t selected = SIZE_MAX;
+        for (size_t i = 0; i < blocks.media_count; ++i)
+            if (blocks.media[i].kind == item->kind && !strcmp(blocks.media[i].id, item->id) &&
+                !strcmp(blocks.media[i].role, item->role)) {
+                selected = i;
+                break;
+            }
+        if (selected != SIZE_MAX) {
+            v->gallery = blocks.media;
+            v->gallery_count = blocks.media_count;
+            v->gallery_index = selected;
+            blocks.media = NULL;
+            blocks.media_count = 0;
+            for (size_t i = 0; i < v->gallery_count; ++i)
+                v->image_count += gallery_image(v, i);
+        }
+    }
+    message_blocks_free(&blocks);
+}
 bool media_view_open(media_view *v, const message_media *source)
 {
     if (!v || !source)
         return false;
     message_media item = *source;
     close_modal(v);
+    open_message_media(v, &item);
     if (item.kind == AUTH_MEDIA_THUMBNAIL)
         item.kind = AUTH_MEDIA_ATTACHMENT;
     v->selected_item = item;
@@ -929,6 +985,24 @@ bool media_view_open(media_view *v, const message_media *source)
         v->cache[v->modal_entry].item = v->selected_item;
     }
     return true;
+}
+static void gallery_step(media_view *v, bool forward)
+{
+    size_t index = v->gallery_index;
+    for (size_t i = 0; i < v->gallery_count; ++i) {
+        index = forward ? (index + 1) % v->gallery_count
+                        : (index + v->gallery_count - 1) % v->gallery_count;
+        if (index == v->gallery_index)
+            return;
+        if (!gallery_image(v, index) || !v->model || !live(v->model, &v->gallery[index]))
+            continue;
+        message_media item = v->gallery[index];
+        bool info_open = v->info_open, info_focused = v->info_focused;
+        media_view_open(v, &item);
+        v->info_open = info_open;
+        v->info_focused = info_focused;
+        return;
+    }
 }
 static void select_item(media_view *v, int index)
 {
@@ -969,6 +1043,11 @@ bool media_view_key(media_view *v, int type, uint32_t key)
         if ((type == OK && (key == '\n' || key == '\r')) ||
             (type == KEY_CODE_YES && key == KEY_ENTER))
             select_item(v, v->selected);
+        return true;
+    }
+    if (!v->selected_item.video && v->image_count > 1 && type == KEY_CODE_YES &&
+        (key == KEY_LEFT || key == KEY_RIGHT)) {
+        gallery_step(v, key == KEY_RIGHT);
         return true;
     }
     if (v->modal != MODAL_LIST) {
@@ -1302,7 +1381,15 @@ void media_view_draw(media_view *v)
             draw_video_controls(v, w);
         else
             text_label(w, height - 3, 3, image_width, v->modal_animated ? "GIF animado" : "Imagem");
-        if (!v->selected_item.video || v->modal != MODAL_PLAYING)
+        if (!v->selected_item.video && v->image_count > 1) {
+            size_t number = 0;
+            for (size_t i = 0; i <= v->gallery_index; ++i)
+                number += gallery_image(v, i);
+            char hint[128];
+            snprintf(hint, sizeof(hint), "%zu/%zu · ←→ imagens · i: informações · Esc: voltar",
+                     number, v->image_count);
+            text_label(w, height - 2, 3, image_width, hint);
+        } else if (!v->selected_item.video || v->modal != MODAL_PLAYING)
             text_label(w, height - 2, 3, image_width,
                        v->selected_item.video ? "Espaço pausa · ←→ 5s · ,/. 1s · ↑↓ volume · m"
                                               : "i: informações · Esc: voltar");

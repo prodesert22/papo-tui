@@ -6,6 +6,9 @@ void conversation_destroy_layout(view *ui)
         delwin(ui->confirm);
     if (ui->list)
         delwin(ui->list);
+    if (ui->attachment_bar)
+        delwin(ui->attachment_bar);
+    ui->attachment_bar = NULL;
     if (ui->body)
         delwin(ui->body);
     if (ui->footer)
@@ -31,6 +34,8 @@ bool conversation_layout(view *ui)
         return true;
     bool wide = COLS >= 80;
     int rows = LINES - CONTENT_Y - 3;
+    int body_width = wide ? COLS - 27 : COLS - 2;
+    ui->members_reserved = ui->members_open && body_width >= 74 ? 30 : 0;
     ui->side = wide ? 24 : COLS - 2;
     ui->history_top = rows >= 8 ? 3 : rows >= 7 ? 2 : 1;
     /* Reserve a visible history row, both input borders and the typing row. */
@@ -48,8 +53,9 @@ bool conversation_layout(view *ui)
     if (wide || ui->show_channels)
         ui->list = derwin(ui->frame, rows, ui->side, CONTENT_Y, 1);
     if (wide || !ui->show_channels)
-        ui->body = derwin(ui->frame, rows, wide ? COLS - 3 - ui->side : COLS - 2, CONTENT_Y,
-                          wide ? ui->side + 2 : 1);
+        ui->body =
+            derwin(ui->frame, rows, (wide ? COLS - 3 - ui->side : COLS - 2) - ui->members_reserved,
+                   CONTENT_Y, wide ? ui->side + 2 : 1);
     bool ok = ui->tabs && ui->footer && (wide ? ui->list && ui->body : ui->list || ui->body);
     ui->layout_failed = !ok;
     return ok;
@@ -335,7 +341,12 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
                 int accent = ui->focus == HISTORY_PANEL ? THEME_HISTORY_ACCENT : THEME_PANEL_ACCENT;
                 if (r->count && !strcmp(r->segments[0].key, "header"))
                     pair = accent;
-                message_row_draw(ui->body, r, y, 2 + r->x, width - r->x, pair, accent);
+                unsigned author_color =
+                    !r->header || history_message_webhook(m)
+                        ? 0x1ffffff
+                        : history_member_color(ui->model, conversation_str(m, "author_id"));
+                message_row_draw(ui->body, r, y, 2 + r->x, width - r->x, pair, accent,
+                                 author_color);
                 if (r->count && !strcmp(r->segments[0].key, "reply"))
                     conversation_message_hit(
                         ui, conversation_str(m, "id"), REPLY_HIT, getbegy(ui->body) + y,
@@ -380,7 +391,9 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
                 }
                 if (observed && !emoji_picker_open(ui->emojis) &&
                     !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
-                    !media_view_modal(ui->media) && !ui->context_open && !ui->reactors_open) {
+                    !media_view_modal(ui->media) && !ui->context_open && !ui->reactors_open &&
+                    !conversation_members_modal(ui) &&
+                    !(ui->members_open && !ui->members_reserved)) {
                     if ((r->count && strcmp(r->segments[0].key, "header")) || r->media_count)
                         inbox_view_message(history_inbox(ui->model), conversation_str(m, "id"));
                     if (ui->at_end && (r->count || r->media_count))
@@ -497,23 +510,44 @@ bool conversation_editor_geometry(view *ui)
     if (!ui->body)
         return false;
     int rows = 1;
+    const GPtrArray *files = conversation_attachments(ui);
+    int available = getmaxy(ui->body) - ui->history_top;
+    int attachment_rows = files && files->len ? (available >= 10 ? 3 : 1) : 0;
+    int padding = available >= (attachment_rows ? 10 : 7) ? 1 : 0;
     text_buffer *buffer = conversation_input(ui);
     if (buffer) {
         text_layout *measured = &ui->measured;
         text_measure(buffer, conversation_input_width(ui), measured);
         rows = measured->rows;
     }
-    int maximum = getmaxy(ui->body) - ui->history_top - 2 * ui->editor_padding - 4;
+    /* Keep the attachment block outside the editor and preserve history even
+     * at minimum height, where the typing row and block borders collapse. */
+    int bottom_rows = attachment_rows && available <= 5 ? 2 : 3;
+    int maximum = available - 2 * padding - bottom_rows - 1 - attachment_rows;
     if (maximum > 5)
         maximum = 5;
     if (maximum < 1)
         maximum = 1;
     if (rows > maximum)
         rows = maximum;
-    bool changed = rows != ui->editor_rows;
+    int border = getmaxy(ui->body) - rows - 2 * padding - bottom_rows;
+    int attachment_top = border - attachment_rows;
+    bool changed = rows != ui->editor_rows || border != ui->editor_border ||
+                   padding != ui->editor_padding || attachment_rows != ui->attachment_rows ||
+                   attachment_top != ui->attachment_top;
+    if (changed && ui->attachment_bar) {
+        delwin(ui->attachment_bar);
+        ui->attachment_bar = NULL;
+    }
+    ui->editor_padding = padding;
     ui->editor_rows = rows;
-    ui->editor_border = getmaxy(ui->body) - rows - 2 * ui->editor_padding - 3;
-    ui->visible = ui->editor_border - ui->history_top;
+    ui->editor_border = border;
+    ui->attachment_rows = attachment_rows;
+    ui->attachment_top = attachment_top;
+    if (attachment_rows && !ui->attachment_bar)
+        ui->attachment_bar =
+            derwin(ui->body, attachment_rows, getmaxx(ui->body), attachment_top, 0);
+    ui->visible = attachment_top - ui->history_top;
     media_view_viewport(ui->media, ui->visible);
     return changed;
 }

@@ -24,6 +24,8 @@ static void complete_send(auth_client *client, CURLcode result, long status, boo
     json_decref(body);
     client->send_ready = true;
     client->state = AUTH_READY;
+    if (status == 403)
+        auth_permissions_refresh(client);
     if (status == 429)
         net_rate_defer(client->retry_after);
     if (result == CURLE_OK && status == 401)
@@ -55,6 +57,8 @@ static void complete_api(auth_client *client, CURLcode result, long status, bool
             client, "O servidor bloqueou esta conta. Entre novamente após resolver o acesso.");
         return;
     }
+    if (result == CURLE_OK && status == 403)
+        auth_permissions_refresh(client);
     if (result == CURLE_OK && status == 429)
         net_rate_defer(client->retry_after);
     json_error_t error;
@@ -77,6 +81,18 @@ static void complete_api(auth_client *client, CURLcode result, long status, bool
                      (status >= 200 && status < 300 && status != 204 && !json_is_object(body)));
     if (result != CURLE_OK || (!body && status == 200))
         status = 0;
+    if (!mutation && result == CURLE_OK && status == 200) {
+        if (!strcmp(client->api_path, "/channels"))
+            permissions_update(client->permissions, PERMISSIONS_CHANNELS, body);
+        else if (!strcmp(client->api_path, "/roles"))
+            permissions_update(client->permissions, PERMISSIONS_ROLES, body);
+        else if (!strcmp(client->api_path, "/server"))
+            permissions_update(client->permissions, PERMISSIONS_SERVER, body);
+        else if (!strcmp(client->api_path, "/auth/whoami"))
+            permissions_identity(client->permissions, body, client->permission_serial);
+    }
+    json_decref(client->permission_message);
+    client->permission_message = NULL;
     free(client->api_path);
     client->api_path = NULL;
     json_decref(client->api_body);
@@ -111,6 +127,7 @@ static void complete_server(auth_client *client, json_t *body, auth_state previo
             client,
             "Backend incompatível: não foi possível identificar a configuração da instância.");
     } else {
+        permissions_update(client->permissions, PERMISSIONS_SERVER, body);
         auth_internal_copy_server_name(client, name);
         client->server_public = json_is_true(public_value);
         if (previous == AUTH_DISCOVERY_SERVER) {
@@ -194,6 +211,9 @@ static void complete_whoami(auth_client *client, json_t *body)
         client->session_rejected = true;
         auth_internal_fail(client, "Não foi possível confirmar a sessão. Entre novamente.");
     } else {
+        permissions_identity(client->permissions, body, client->permission_serial);
+        if (!client->authenticated)
+            auth_permissions_refresh(client);
         snprintf(client->user, sizeof(client->user), "%s", username);
         snprintf(client->user_id, sizeof(client->user_id), "%s", id);
         uint64_t now;
@@ -202,7 +222,10 @@ static void complete_whoami(auth_client *client, json_t *body)
         else {
             /* Start early enough for the existing 15s REST timeout. A
              * rate-limited or busy queue must not keep WS trusted forever. */
-            client->recheck_at = now + (client->ws_managed ? 15000 : 30000);
+            client->recheck_at =
+                client->permission_serial != permissions_event_serial(client->permissions)
+                    ? now
+                    : now + (client->ws_managed ? 15000 : 30000);
             client->validation_deadline = now + 30000;
             if (!client->refresh_at)
                 client->refresh_at = now + 30000;
@@ -233,6 +256,11 @@ void auth_internal_complete(auth_client *client, CURLcode result, long status)
     bool transmitted = (previous == AUTH_MESSAGE_SEND || previous == AUTH_API_MUTATION) &&
                        auth_internal_send_transmitted(client);
     auth_internal_detach(client);
+    if (previous == AUTH_PERMISSION_SERVER || previous == AUTH_PERMISSION_ROLES ||
+        previous == AUTH_PERMISSION_CHANNELS) {
+        auth_internal_permissions_response(client, result, status);
+        return;
+    }
     if (previous == AUTH_MESSAGE_SEND) {
         complete_send(client, result, status, transmitted);
         return;
@@ -318,9 +346,23 @@ void auth_internal_complete(auth_client *client, CURLcode result, long status)
         } else if (status == 429) {
             net_rate_defer(client->retry_after);
             message = "Limite de requisições atingido. Aguarde antes de tentar novamente.";
-        } else if (status == 403)
-            message = "O servidor recusou o acesso a esta conta.";
-        else if (status == 409 && previous == AUTH_REGISTER)
+        } else if (status == 403) {
+            if (auth_internal_problem_is(client, "banned"))
+                message =
+                    previous == AUTH_SERVER_PASSWORD
+                        ? "O servidor bloqueou este IP. Contate a administração da instância."
+                    : previous == AUTH_LOGIN || previous == AUTH_REGISTER
+                        ? "O servidor bloqueou a conta ou este IP. Contate a administração."
+                        : "O servidor bloqueou esta conta. Contate a administração da instância.";
+            else
+                message = previous == AUTH_SERVER_PASSWORD
+                              ? "O servidor recusou a autorização da instância (HTTP 403)."
+                          : previous == AUTH_LOGIN || previous == AUTH_REGISTER
+                              ? "O servidor recusou o acesso à conta (HTTP 403)."
+                          : previous == AUTH_WHOAMI || previous == AUTH_REFRESH
+                              ? "O servidor recusou a validação da sessão (HTTP 403)."
+                              : "O servidor recusou o acesso à instância (HTTP 403).";
+        } else if (status == 409 && previous == AUTH_REGISTER)
             message = "Nome de usuário já está em uso. Escolha outro.";
         else if (status == 400 && previous == AUTH_REGISTER)
             message = "Cadastro recusado. Confira usuário e a política de senha desta instância.";

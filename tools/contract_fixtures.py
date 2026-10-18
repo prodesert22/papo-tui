@@ -350,6 +350,73 @@ def build_cases():
             "detail": "Dados sintéticos para verificar tratamento de falhas.",
         }
         add(f"problem_{status}", path, method, problem, status, media="application/problem+json")
+    data = messages()
+    pin_path = "/channels/{channel_id}/messages/{message_id}/pin"
+    pinned = dict(channel_id=CHANNEL, message_id=data[0]["id"], pinned_by=USER, pinned_at=DATE)
+    add("message_pin_created", pin_path, "post", pinned, 201)
+    add("message_pin_existing", pin_path, "post", dict(pinned, pinned_by=None), 200)
+    add("message_unpin", pin_path, "delete", None, 204)
+    add(
+        "pinned_messages",
+        "/channels/{channel_id}/pinned",
+        "get",
+        dict(channel_id=CHANNEL, pinned=data[:3]),
+    )
+    add(
+        "pinned_messages_empty",
+        "/channels/{channel_id}/pinned",
+        "get",
+        dict(channel_id=CHANNEL, pinned=[]),
+    )
+    add(
+        "search_request",
+        "/search",
+        "post",
+        dict(
+            text="sintética",
+            author=USER,
+            channel_id=CHANNEL,
+            mention=PEER,
+            has="link",
+            order="asc",
+            date_start="2026-10-12",
+            date_end="2026-10-13",
+            contains_attachment=False,
+        ),
+        request=True,
+    )
+    add(
+        "search_invalid_order",
+        "/search",
+        "post",
+        dict(text="fixture", order="invalid"),
+        request=True,
+        valid=False,
+    )
+    add("search_empty", "/search", "post", dict(results=[], has_more=False))
+    for order in ("asc", "desc"):
+        results = [
+            dict(
+                type="message",
+                id=m["id"],
+                content=m["content"],
+                channel_id=CHANNEL,
+                channel_name="fixture-geral",
+                author_id=m["author_id"],
+                author_username="fixture_alice",
+                created_at=DATE,
+            )
+            for m in data
+        ]
+        if order == "desc":
+            results.reverse()
+        for number, page in enumerate((results[:100], results[100:]), 1):
+            add(
+                f"search_{order}_page_{number}",
+                "/search",
+                "post",
+                dict(results=page, has_more=number == 1),
+            )
     return cases
 
 
@@ -385,6 +452,8 @@ def build_events():
             "edited_at": DATE,
         },
         {"type": "message_delete", "id": data[0]["id"], "channel_id": CHANNEL},
+        {"type": "message_pin", "message_id": data[0]["id"], "is_pinned": True},
+        {"type": "message_pin", "message_id": data[0]["id"], "is_pinned": False},
         {
             "type": "channel_create",
             "channel_id": CHANNEL,

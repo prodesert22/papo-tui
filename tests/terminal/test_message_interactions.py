@@ -139,6 +139,7 @@ class MessageInteractions(unittest.TestCase):
                 terminal.send("m")
                 self.wait(terminal, "Ver quem reagiu")
                 terminal.send("\x1b\x1b")
+                self.settled(terminal, lambda: "Ver quem reagiu" not in self.screen(terminal))
                 self.right_click(terminal, "Mensagem 0001")
                 self.wait(terminal, "Responder")
                 self.click(terminal, "Responder")
@@ -434,11 +435,20 @@ class MessageInteractions(unittest.TestCase):
                 self.wait(terminal, "Unicode")
                 terminal.send("\x1b")
                 self.settled(terminal, lambda: "Reagir · Esc voltar" not in self.screen(terminal))
-                terminal.send(":grinning\t")
+                terminal.send(":grinning")
+                self.settled(terminal, lambda: ":grinning" in self.editor_text(terminal))
+                terminal.send("\t")
+                # Tab and the completed editor frame can arrive after send's
+                # short read, especially in the sanitizer build under load.
+                self.settled(terminal, lambda: ":grinning" not in self.editor_text(terminal))
                 self.assertEqual(server.reaction_calls, [])
                 self.assertEqual(server.message_count, 0)
                 self.assertIn("Preserved draft", self.editor_text(terminal))
                 self.assertNotIn(":grinning", self.editor_text(terminal))
+                terminal.send("\n")
+                self.settled(terminal, lambda: server.message_count == 1)
+                self.assertEqual(server.sent_messages[0]["content"], "Preserved draft 😀")
+                self.assertEqual(server.reaction_calls, [])
             finally:
                 self.assertTrue(terminal.close())
 
@@ -465,6 +475,7 @@ class MessageInteractions(unittest.TestCase):
             try:
                 self.wait(terminal, "[☕ 1]")
                 self.click(terminal, "[☕ 1]")
+                self.settled(terminal, lambda: len(server.reaction_calls) == 1)
                 terminal.send("\x1b\x1bOB\n")
                 self.wait(terminal, "Conteúdo do outro canal")
                 self.assertNotIn("[☕", self.screen(terminal))
@@ -619,6 +630,7 @@ class MessageInteractions(unittest.TestCase):
                 terminal.send("\x1bOD")
                 for _ in range(3):
                     terminal.send(f"\x1b[<65;{left + 3};{header + 4}M")
+                self.settled(terminal, lambda: "☂" in "\n".join(line[0] for line in columns()[3]))
                 self.assertIn("☂", "\n".join(line[0] for line in columns()[3]))
                 self.assertEqual(people(), right_scrolled)
                 terminal.send("\x1bOB" * 13 + "\n")

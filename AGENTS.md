@@ -6,7 +6,7 @@ Este arquivo define como trabalhar neste repositório. Leia-o antes de alterar a
 
 Papo TUI é um cliente de conversas para terminal em C. O contrato do serviço está em `openapi.yml`; `README.md` e `docs/usage.md` descrevem instalação, execução e uso.
 
-O cliente usa C17, CMake, ncursesw/formw, libcurl, Jansson e bibliotecas de mídia. Há testes HTTP com backend simulado e de interação em pseudoterminal. Não tratar a tela inicial como conclusão de toda a integração. Consulte `src/net/auth/` para os fluxos implementados e `CONTRIBUTING.md` para desenvolvimento e distribuição.
+O cliente usa C17, CMake, ncursesw/formw, libcurl, Jansson e bibliotecas de mídia. Há testes HTTP com backend simulado e de interação em pseudoterminal. Não tratar a tela inicial como conclusão de toda a integração. Consulte `src/net/auth/` para os fluxos implementados e `BUILD.md` para compilação, testes e distribuição.
 
 `tools/` contém inventário, geração/validação de fixtures e probe da instância de desenvolvimento. `tls_proxy.go` usa a biblioteca padrão Go para verificações HTTPS/WSS. As ferramentas são de desenvolvimento. Diferencie observação real de fixtures. Inventários e relatórios de execução ficam em `build/`; dados locais de contas de teste e cookies não devem entrar em commits. O modo `--username` lê a senha do ambiente sem persistir credenciais.
 
@@ -25,7 +25,8 @@ O cliente usa C17, CMake, ncursesw/formw, libcurl, Jansson e bibliotecas de míd
 11. Escreva todas as mensagens de commit em inglês, incluindo o título e o corpo quando houver.
 12. Todo novo envio HTTP do cliente deve passar pelo orçamento global de `src/net/rate_limit.c`: padrão de 10 requisições/s e burst de 25. A espera deve ocorrer no ciclo de eventos, sem bloquear a TUI. Não reinicie o orçamento ao autenticar, cancelar, sair da conta ou recriar um cliente; não repita mutações automaticamente ao receber 429. As ferramentas de integração devem manter cadência compatível com esses limites.
 13. A integração confirmou que GET de histórico marca leitura remota. Evite prefetch de históricos de conversas inativas. O WS pode responder heartbeat após expiração/revogação individual; revalide a sessão por REST e não trate ACK como autenticação. Mantenha verificação TLS ativa; `CURL_CA_BUNDLE` permite confiar em uma CA própria.
-14. Escreva `docs/usage.md` em inglês e organize-o como um guia de usuário: como executar o programa, como usar seus recursos e como resolver problemas comuns. Preserve os nomes reais de botões e avisos da interface quando necessário, acompanhados de explicação em inglês. Mantenha detalhes de implementação, arquitetura e desenvolvimento em `CONTRIBUTING.md`; relatórios e diagnósticos de execução ficam em `build/`.
+14. Escreva `docs/usage.md` em inglês e organize-o como um guia de usuário: como executar o programa, como usar seus recursos e como resolver problemas comuns. Preserve os nomes reais de botões e avisos da interface quando necessário, acompanhados de explicação em inglês. Mantenha detalhes de implementação e arquitetura fora de `docs/`, e instruções de compilação, testes e distribuição em `BUILD.md`; relatórios e diagnósticos de execução ficam em `build/`.
+15. Registre cada nova funcionalidade, mudança de comportamento e correção de bug de uma versão já lançada em `releases/Unreleased.md`, na mesma entrega da alteração. Descreva o efeito para o usuário; não registre como correção separada os bugs encontrados e corrigidos em uma funcionalidade ainda em desenvolvimento, antes de seu primeiro lançamento. Ao preparar uma nova release, consolide todas as entradas nas notas completas de `releases/vMAJOR.MINOR.PATCH.md`, atualize `CHANGELOG.md` e a versão do projeto e esvazie `releases/Unreleased.md` no mesmo commit, preservando o arquivo com zero bytes para o próximo ciclo. As notas devem cobrir todas as mudanças entregues desde a versão anterior, sem perder entradas do arquivo Unreleased.
 
 ## Build e validação
 
@@ -37,7 +38,7 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-Para testes Python, instale `requirements-dev.txt` em um ambiente virtual e indique seu interpretador ao CMake, conforme README. Use YAML 1.2 e validação OpenAPI 3.0: não transformar enum `off` em booleano nem ignorar `nullable`. O inventário e as fixtures são gerados por `tools.contract_inventory` e `tools.contract_fixtures`; atualize-os com seus geradores.
+Para testes Python, instale `requirements-dev.txt` em um ambiente virtual e indique seu interpretador ao CMake, conforme `BUILD.md`. Use YAML 1.2 e validação OpenAPI 3.0: não transformar enum `off` em booleano nem ignorar `nullable`. O inventário e as fixtures são gerados por `tools.contract_inventory` e `tools.contract_fixtures`; atualize-os com seus geradores.
 
 Execute os testes apropriados às mudanças antes de afirmar que estão validadas. Para mudanças na integração com o backend, inclua cenários de falha e valide contra a instância de desenvolvimento quando disponível. Não coloque credenciais reais em fixtures.
 

@@ -45,6 +45,8 @@ enum {
 };
 
 #define THEME_COLOR_COUNT 14
+/* Reserved before the media/Chafa pair range; never recycle visible text pairs. */
+#define THEME_RGB_PAIR_COUNT 128
 
 typedef struct {
     struct {
@@ -57,6 +59,9 @@ typedef struct {
  * mutable palettes, restore saved ncurses values before endwin. */
 void theme_init(ui_theme *theme);
 void theme_restore(ui_theme *theme);
+/* Tagged RGB foreground, preserving the existing background and palette. */
+int theme_rgb_pair(unsigned rgb, int fallback);
+int theme_member_pair(unsigned rgb, int background);
 /* Fixed palette colors: green through 60%, yellow through 85%, then red. */
 int theme_volume_pair(int percent);
 

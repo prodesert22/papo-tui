@@ -55,7 +55,7 @@ struct image_object {
 };
 struct media_resource {
     media_cache *cache;
-    char key[128], id[37];
+    char key[128], id[65];
     auth_media_kind kind;
     uint64_t revision, used;
     size_t refs, visible_refs;
@@ -76,7 +76,10 @@ struct media_cache {
     GList *tasks;
     media_download *downloads[MEDIA_CACHE_DOWNLOADS];
     media_resource *fetching[MEDIA_CACHE_DOWNLOADS];
-    int overlay_y, overlay_x, overlay_rows, overlay_columns;
+    struct {
+        int y, x, rows, columns;
+    } overlays[8];
+    unsigned overlay_count;
 };
 struct task {
     media_cache *cache;
@@ -86,7 +89,7 @@ struct task {
     enum { TASK_INGEST, TASK_DECODE, TASK_ENCODE, TASK_TRIM } kind;
     atomic_bool cancelled, done;
     char *path, *input, *glyph;
-    char id[37];
+    char id[65];
     bool embed, priority, ok, submitted;
     size_t reservation, file_reservation;
     image_decode_request request;
@@ -820,7 +823,7 @@ static media_resource *acquire(media_cache *c, const char *key, auth_media_kind 
 media_resource *media_cache_acquire(media_cache *c, auth_media_kind kind, const char *id,
                                     uint64_t revision, bool video)
 {
-    if (!c || !id || strlen(id) != 36)
+    if (!c || !id || strlen(id) != (kind == AUTH_MEDIA_CONTENT ? 64U : 36U))
         return NULL;
     char key[128];
     snprintf(key, sizeof(key), "%d:%s:%llu", (int)kind, id, (unsigned long long)revision);
@@ -1400,14 +1403,25 @@ void media_cache_overlay(media_cache *c, int y, int x, int rows, int columns)
 {
     if (!c)
         return;
-    c->overlay_y = y;
-    c->overlay_x = x;
-    c->overlay_rows = rows;
-    c->overlay_columns = columns;
+    if (rows < 1 || columns < 1) {
+        c->overlay_count = 0;
+        return;
+    }
+    if (c->overlay_count < G_N_ELEMENTS(c->overlays)) {
+        unsigned i = c->overlay_count++;
+        c->overlays[i].y = y;
+        c->overlays[i].x = x;
+        c->overlays[i].rows = rows;
+        c->overlays[i].columns = columns;
+    }
+}
+unsigned media_cache_overlay_count(const media_cache *c)
+{
+    return c ? c->overlay_count : 0;
 }
 void media_resource_place_image(media_resource *r, bool author, image_decode_request request,
-                                const graphics_image *image, uint32_t id, uint32_t fragments[4],
-                                int y, int x, int top, int bottom, bool overlay)
+                                const graphics_image *image, uint32_t id, uint32_t fragments[32],
+                                int y, int x, int top, int bottom, unsigned layer)
 {
     if (!r || !image || !image->data || top < 0 || bottom < 0 || top + bottom >= image->height ||
         image->cell_width < 1 || image->cell_height < 1)
@@ -1415,21 +1429,42 @@ void media_resource_place_image(media_resource *r, bool author, image_decode_req
     media_cache *c = r->cache;
     int rows = (image->height - top - bottom + image->cell_height - 1) / image->cell_height;
     int columns = image->columns;
-    if (overlay || c->overlay_rows < 1 || c->overlay_columns < 1 ||
-        y >= c->overlay_y + c->overlay_rows || y + rows <= c->overlay_y ||
-        x >= c->overlay_x + c->overlay_columns || x + columns <= c->overlay_x) {
+    typedef struct {
+        int x, y, width, height;
+    } rectangle;
+    rectangle pieces[32] = {{0, 0, columns, rows}};
+    size_t count = 1;
+    bool cropped = false;
+    for (unsigned k = layer; k < c->overlay_count; ++k) {
+        rectangle next[32];
+        size_t used = 0;
+        for (size_t i = 0; i < count; ++i) {
+            rectangle p = pieces[i];
+            int left = MAX(p.x, c->overlays[k].x - x);
+            int right = MIN(p.x + p.width, c->overlays[k].x + c->overlays[k].columns - x);
+            int upper = MAX(p.y, c->overlays[k].y - y);
+            int lower = MIN(p.y + p.height, c->overlays[k].y + c->overlays[k].rows - y);
+            if (left >= right || upper >= lower) {
+                if (used < G_N_ELEMENTS(next))
+                    next[used++] = p;
+                continue;
+            }
+            cropped = true;
+            rectangle split[4] = {{p.x, p.y, p.width, upper - p.y},
+                                  {p.x, lower, p.width, p.y + p.height - lower},
+                                  {p.x, upper, left - p.x, lower - upper},
+                                  {right, upper, p.x + p.width - right, lower - upper}};
+            for (size_t n = 0; n < G_N_ELEMENTS(split); ++n)
+                if (split[n].width > 0 && split[n].height > 0 && used < G_N_ELEMENTS(next))
+                    next[used++] = split[n];
+        }
+        count = used;
+        memcpy(pieces, next, used * sizeof(*pieces));
+    }
+    if (!cropped) {
         graphics_image_place_id(image, id, y, x, top, bottom);
         return;
     }
-    int left = MAX(0, c->overlay_x - x),
-        right = MIN(columns, c->overlay_x + c->overlay_columns - x);
-    int upper = MAX(0, c->overlay_y - y), lower = MIN(rows, c->overlay_y + c->overlay_rows - y);
-    struct {
-        int x, y, width, height;
-    } pieces[4] = {{0, 0, columns, upper},
-                   {0, lower, columns, rows - lower},
-                   {0, upper, left, lower - upper},
-                   {right, upper, columns - right, lower - upper}};
     int base_top = top + image->crop_top;
     int end = base_top + image->height - top - bottom;
     request.width = image->width;
@@ -1437,7 +1472,7 @@ void media_resource_place_image(media_resource *r, bool author, image_decode_req
     request.native = false;
     request.region = true;
     request.preview = false;
-    for (size_t i = 0; i < 4; ++i) {
+    for (size_t i = 0; i < count; ++i) {
         if (pieces[i].width < 1 || pieces[i].height < 1)
             continue;
         request.left = pieces[i].x * image->cell_width;

@@ -21,6 +21,8 @@ const char *inbox_opened(const inbox *box);
 bool inbox_opening(const inbox *box);
 void inbox_opened_clear(inbox *box);
 void inbox_resolve_dm(inbox *box, const char *id);
+/* Cancel queued opening and ignore late navigation receipts; sent mutations may finish. */
+void inbox_cancel_open(inbox *box);
 void inbox_refresh(inbox *box);
 void inbox_older(inbox *box);
 void inbox_retry(inbox *box);
@@ -46,6 +48,7 @@ bool inbox_message_viewed(const inbox *box, const char *message_id);
 size_t inbox_unseen_conversations(const inbox *box);
 const char *inbox_notice(const inbox *box);
 const char *inbox_presence(const inbox *box, const char *user);
+const json_t *inbox_presence_info(const inbox *box, const char *user);
 const char *inbox_message_channel(const inbox *box, const char *message_id);
 /* Transfers a new WS notification for desktop eligibility. Never snapshots. */
 json_t *inbox_take_alert(inbox *box);
