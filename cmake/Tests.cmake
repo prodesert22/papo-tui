@@ -149,6 +149,11 @@ if(BUILD_TESTING)
     target_compile_options(status-bar-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
     add_test(NAME status-bar-unit COMMAND status-bar-test)
     add_test(
+        NAME terminal-title
+        COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/terminal/test_terminal_title.py
+                $<TARGET_FILE:papo-tui>)
+    set_tests_properties(terminal-title PROPERTIES TIMEOUT 90)
+    add_test(
         NAME footer-terminal
         COMMAND
             ${Python3_EXECUTABLE}

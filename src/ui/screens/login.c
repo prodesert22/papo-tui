@@ -7,6 +7,7 @@
 #include "net/auth/client.h"
 #include "platform/unicode.h"
 #include "ui/components/button.h"
+#include "ui/components/terminal_title.h"
 #include "ui/components/theme.h"
 #include "ui/input/mouse.h"
 #include "ui/media/graphics.h"
@@ -906,6 +907,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
     fputs("\033[?2004h", stdout);
     fflush(stdout);
     text_input_terminal_active(true);
+    terminal_title_begin();
     int result = layout(&ui) ? 0 : 1;
     bool startup_restore = !open_profiles;
     if (!result && !open_profiles && *session_store_last_url(connections->sessions) &&
@@ -1161,6 +1163,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
     mousemask(0, NULL);
     ui_mouse_drag_tracking(false);
     theme_restore(&theme);
+    terminal_title_end();
     endwin();
     ui_mouse_shutdown();
     terminal_recovery_end();

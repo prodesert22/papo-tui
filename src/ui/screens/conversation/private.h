@@ -20,6 +20,7 @@
 #include "ui/components/mention_popup.h"
 #include "ui/components/settings.h"
 #include "ui/components/status_bar.h"
+#include "ui/components/terminal_title.h"
 #include "ui/components/theme.h"
 #include "ui/input/editor.h"
 #include "ui/input/mouse.h"

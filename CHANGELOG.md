@@ -26,6 +26,8 @@ Upcoming changes are recorded in [Unreleased](releases/Unreleased.md).
 - Member context menus through m or right-click, with DMs, block/unblock and
   permission-gated ban/unban and password-reset links.
 - DM context menus through m or right-click to close a conversation.
+- Terminal window titles showing the active channel or DM and server, with the
+  total known unread mentions across connected instances when nonzero.
 
 ### Changed
 
@@ -35,7 +37,8 @@ Upcoming changes are recorded in [Unreleased](releases/Unreleased.md).
 - Locate older destinations with known message timestamps using bounded cursor
   reads instead of walking all intervening history pages.
 - Label F9 consistently as notifications and show discovery shortcuts in the
-  footer; use F3 for search and F5 for attachments.
+  footer; use F3 for search, F5 for attachments and F10 for members, with hints
+  that fit compact layouts.
 - Use 🔍, 📌 (🖈 in text mode) and 👤 in the conversation header, with arrow-key
   navigation between controls, the history and the member drawer.
 - Keep arrow navigation in the DM list after clicking a conversation, with a
@@ -46,6 +49,9 @@ Upcoming changes are recorded in [Unreleased](releases/Unreleased.md).
 - Open the video player when pressing Enter on an embed cover instead of the
   cover image, and move between the images of a message with the left and right
   arrows while the image viewer is open.
+- Expand installation prerequisites for Fedora, RHEL, Arch Linux and Windows.
+  Replace CONTRIBUTING.md with BUILD.md covering compilation, tests and the
+  Linux and Windows package recipes.
 
 ### Fixed
 

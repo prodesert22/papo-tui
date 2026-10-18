@@ -48,6 +48,11 @@ add_test(NAME windows-input
                  $<TARGET_FILE:windows-input-probe>)
 set_tests_properties(windows-input PROPERTIES TIMEOUT 30)
 
+add_test(NAME terminal-title
+         COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/terminal/test_terminal_title.py
+                 $<TARGET_FILE:papo-tui>)
+set_tests_properties(terminal-title PROPERTIES TIMEOUT 90)
+
 add_test(
     NAME message-interactions-terminal
     COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/terminal/test_message_interactions.py

@@ -12,6 +12,8 @@ Member names follow their role color, with white as the default.
 Open the member drawer with **👤** or **F10** to search people, view profiles,
 start direct messages and access available member actions.
 Use the arrows to select DMs, and **m** or a right-click to close one from its menu.
+The terminal window title shows the current conversation and server, plus the
+total known unread mentions across connected instances when there are any.
 
 ## Install
 

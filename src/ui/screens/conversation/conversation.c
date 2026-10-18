@@ -1072,6 +1072,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         }
     }
 finished:
+    terminal_title_reset();
     conversation_members_destroy(ui);
     conversation_attachments_close(ui);
     file_picker_destroy(ui->files);

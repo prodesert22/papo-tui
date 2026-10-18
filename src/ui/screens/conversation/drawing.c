@@ -483,6 +483,18 @@ static void composer_button(view *ui, int focus, const char *label, click_range 
 
 void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
 {
+    json_t *channel = history_channel(ui->model, history_selected(ui->model));
+    char conversation[2200];
+    snprintf(conversation, sizeof(conversation), "%s%s",
+             json_is_true(json_object_get(channel, "_dm")) ? "DM com " : "",
+             conversation_str(channel, "name"));
+    size_t mentions = 0;
+    for (size_t i = 0; i < ui->connections->count; ++i) {
+        const instance_connection *connection = &ui->connections->items[i];
+        if (connection->model && auth_has_session(connection->auth))
+            mentions += inbox_unread_mentions(history_inbox(connection->model), NULL);
+    }
+    terminal_title_set(conversation, ui->connections->items[ui->active_tab].name, mentions);
     if (ui->members_open)
         scope = DRAW_ALL;
     bool paint_history = scope == DRAW_ALL || scope == DRAW_CONVERSATION;

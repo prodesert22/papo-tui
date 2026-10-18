@@ -44,6 +44,14 @@ leading selection marker. Type in the editor and press **Enter** to send;
 also inserts a new line. Pasting text does not send the message automatically.
 Switching conversations preserves drafts during the current run.
 
+In terminals that support window titles, the title shows **channel | server**
+(or **DM com name | server** for a direct message). A count such as **(3)**
+shows the total known unread mentions across connected instances, including
+`@everyone`; ordinary unread messages do not add to it. The count disappears
+when it reaches zero. Switching conversations updates the title, and returning
+to login clears the conversation name. Long names are shortened to fit.
+A terminal setting that forces a fixed tab title may override this display.
+
 Member names use the first valid role color in the order supplied by the server.
 Members without a valid role color, and webhook authors, appear in white.
 Assigning or removing a role updates the name color when its live event arrives.

@@ -89,6 +89,7 @@ add_library(
     src/ui/components/mention_popup.c
     src/ui/components/theme.c
     src/ui/components/status_bar.c
+    src/ui/components/terminal_title.c
     src/ui/input/text.c
     src/ui/input/mouse.c
     src/platform/file_transfer.c
