@@ -898,7 +898,7 @@ WINDOW *r8_modal_draw(r8_modal *m)
                                "Canais/DMs: ←→ escolher, Enter ativar",
                                "↑↓: navegar · Enter: abrir texto/DM",
                                "Voz: Shift+Enter/F4 abre histórico",
-                               "F2: configurações · F9: notificações · F10: nova DM",
+                               "F2: configurações · F9: notificações · F10: membros",
                                "F3: buscar mensagens · F8: mensagens fixadas",
                                "Ctrl+D na lista DMs: fechar conversa",
                                "Ctrl+R: atualizar ou reconectar",

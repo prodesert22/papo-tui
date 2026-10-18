@@ -34,6 +34,8 @@ bool conversation_layout(view *ui)
         return true;
     bool wide = COLS >= 80;
     int rows = LINES - CONTENT_Y - 3;
+    int body_width = wide ? COLS - 27 : COLS - 2;
+    ui->members_reserved = ui->members_open && body_width >= 74 ? 30 : 0;
     ui->side = wide ? 24 : COLS - 2;
     ui->history_top = rows >= 8 ? 3 : rows >= 7 ? 2 : 1;
     /* Reserve a visible history row, both input borders and the typing row. */
@@ -51,8 +53,9 @@ bool conversation_layout(view *ui)
     if (wide || ui->show_channels)
         ui->list = derwin(ui->frame, rows, ui->side, CONTENT_Y, 1);
     if (wide || !ui->show_channels)
-        ui->body = derwin(ui->frame, rows, wide ? COLS - 3 - ui->side : COLS - 2, CONTENT_Y,
-                          wide ? ui->side + 2 : 1);
+        ui->body =
+            derwin(ui->frame, rows, (wide ? COLS - 3 - ui->side : COLS - 2) - ui->members_reserved,
+                   CONTENT_Y, wide ? ui->side + 2 : 1);
     bool ok = ui->tabs && ui->footer && (wide ? ui->list && ui->body : ui->list || ui->body);
     ui->layout_failed = !ok;
     return ok;
@@ -388,7 +391,9 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
                 }
                 if (observed && !emoji_picker_open(ui->emojis) &&
                     !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
-                    !media_view_modal(ui->media) && !ui->context_open && !ui->reactors_open) {
+                    !media_view_modal(ui->media) && !ui->context_open && !ui->reactors_open &&
+                    !conversation_members_modal(ui) &&
+                    !(ui->members_open && !ui->members_reserved)) {
                     if ((r->count && strcmp(r->segments[0].key, "header")) || r->media_count)
                         inbox_view_message(history_inbox(ui->model), conversation_str(m, "id"));
                     if (ui->at_end && (r->count || r->media_count))

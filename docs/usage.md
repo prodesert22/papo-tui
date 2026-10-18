@@ -61,6 +61,89 @@ the message may already have reached the server.
 To open messages in a voice channel, select it in the channel list and press
 **Shift+Enter** or **F4**. Voice calls are not available yet.
 
+## Server members and profiles
+
+The conversation header has **🔍** (Search), **📌** (Pinned messages) and **👤**
+(Members). Text rendering uses **🖈** for pinned messages. At the top of the
+history, press ↑ to focus these controls, then ←/→ to move between them and
+Enter to open one. ↓ returns to the history; on 👤, it enters an open member
+drawer. ↑ goes to server tabs. From the channel/DM selector buttons, → after
+DMs also reaches Search. Tab and Shift+Tab include all three controls.
+
+Press **F10** or click **👤** beside the pinned-message button to open the member
+drawer on the right. It reserves space beside the conversation when the terminal is wide
+enough and overlays the right side on narrower screens. Closing or resizing it
+preserves your draft and reading position.
+
+Each member shows an avatar (or their centered first initial), display name and
+presence dot: green for online, yellow for away, red for busy and gray for offline. A text label also identifies
+the state. **Desconhecido** (Unknown) means presence has not been confirmed;
+a saved away/busy preference alone does not establish that someone is online.
+Ultralight shows text and an avatar placeholder without loading images.
+
+**Agrupar: Cargo** (Group by role) is the default. Members appear once, under
+the first role supplied by the server; this order does not imply a role
+hierarchy. People without roles appear under **Sem cargo** (No role). Select
+the grouping control to switch to **Agrupar: Status** (Group by status). The
+choice is saved locally for future runs across instances.
+
+Press **/** or click **Buscar** (Search) to filter by nickname or @username,
+then press Enter to return to the list. Search ignores case and operates on
+loaded members; loading and partial-list notices identify incomplete results.
+Use Tab/Shift+Tab to move between search, grouping and results. Use ↑/↓,
+Home/End or PageUp/PageDown to select people, or use the mouse. Press **Ctrl+R**
+to refresh the list and **Esc** or **F10** to close the drawer.
+
+Press **m** on the selected member, or **right-click a member**, to open their
+context menu. It sits to the left of the drawer, or above/below the selected row
+on narrow screens, keeping the member's name visible. Navigate with ↑/↓ and
+Enter, or click an option:
+
+- **Ver perfil** (View profile) opens their profile. Enter on a member also
+  opens it directly. The modal shows their banner, avatar, nickname, @username,
+  roles, description, presence and status message when available. Avatars and
+  banners retain their full image, with padding when their shape differs from
+  the available space. Use ↑/↓ or
+  the mouse wheel to scroll, Ctrl+R to refresh and Esc to return.
+- **Mensagem** (Message) opens or reopens a DM and focuses its editor. The
+  server may refuse a DM when either participant has blocked the other.
+- **Bloquear / Desbloquear** (Block / Unblock) shows only the applicable action.
+  Blocking prevents DMs in both directions and does not hide public-channel
+  messages. Unblocking does not automatically reopen a closed DM.
+- **Banir / Desbanir** (Ban / Unban) requires the instance owner or
+  `manage_server` permission and asks for confirmation. A ban applies to the
+  entire instance and revokes the target's sessions. Unbanning requires them
+  to sign in again.
+- **Gerar link de reset de senha** (Generate password-reset link) has the same
+  administrative requirement and asks for confirmation. The result shows a
+  single-use link and its expiration. Choose **Copiar** (Copy) or press Enter
+  to copy it. A new link invalidates previous links for that account. Closing
+  the modal discards the displayed link.
+
+Your own entry offers only the profile. Administrative actions follow confirmed
+permissions and the server's response. Menus reuse your account's existing
+permission state; opening them does not request permissions again. Block state
+loads when the drawer opens, and ban state comes from the member list. If a menu
+opens before this finishes, it shows a loading placeholder until its options are
+ready. Ctrl+R refreshes state; failures offer an explicit retry. Failed
+mutations are never repeated automatically. After an uncertain result, refresh
+state before deciding whether to repeat the action. Profile/banner changes made
+elsewhere may require reopening the profile or pressing Ctrl+R.
+
+## Direct messages
+
+Choose **DMs** beside **Canais** to see your conversations. ↑/↓ moves the highlighted
+recipient; Enter or → opens the selected conversation. The highlight remains
+visible when people share the same role color. On wide screens, clicking a DM keeps
+focus in the list so the arrows continue selecting people. Typing focuses the
+editor. Switching the list or moving its selection does not load other histories.
+
+Press **m** on a selected DM, or right-click its entry, to open a menu with
+**Fechar DM** (Close DM). Enter or a click closes that conversation in your list;
+Esc or m dismisses the menu. **Ctrl+D** in the DM list also closes the selected
+conversation. The menu keeps the recipient's name visible. Closing preserves its remote history; a new message can make it
+reappear. Pending sends must finish before you close that DM.
+
 ## Keyboard and mouse
 
 | Control | Action |
@@ -77,7 +160,7 @@ To open messages in a voice channel, select it in the channel list and press
 | F6 | Open the account screen |
 | F2 | Open application settings |
 | Ctrl+L in a conversation | Sign out of the current account |
-| F10 | Start a DM |
+| F10 / 👤 beside 📌/🖈 | Open or close the server member drawer |
 | F9 | Open the notification center and preferences |
 | F3 | Search messages on the current server |
 | F8 outside the media player | Open pinned messages in the current conversation |
@@ -148,9 +231,8 @@ retries explicitly; failures are never retried automatically.
 Red dots beside server and channel names indicate unread messages. The count
 shows known unread mentions of you or `@everyone`. In graphics terminals, the
 badge is centered vertically in the row, with a white count inside the red
-circle; larger counts use a wider rounded badge. Text channel indicators use
-circled digits or parentheses. A `+` on the server badge means more notification
-pages are available.
+circle; larger counts use a wider rounded badge. The number is centered inside
+the badge. Text channel indicators use circled digits or parentheses.
 Server badges sit inside the tab delimiters, separated from the name by one
 space, for example `[Server ❶]`. With text rendering (Chafa, Light or Ultralight),
 the badge is a plain red mention counter, such as `[Server 1]`; zero indicates

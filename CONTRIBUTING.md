@@ -281,6 +281,45 @@ The search owner accepts missing author attribution and null message text as
 unavailable metadata (also represented by the inspected backend source); the
 OpenAPI contract is left unchanged. Synthetic tests are not live observations.
 
+## Member drawer and profiles
+
+The member drawer reuses ncurses, the GLib Unicode directory, Jansson, the
+existing role catalog and inbox presence snapshots. No additional library is
+needed. Its first-role grouping is a client display convention, not a backend
+hierarchy. The saved grouping is a global presentation preference in config
+version 5; older configs migrate on the next successful save. Queries, entity
+snapshots and member operations stay within their instance/account context.
+
+A dedicated member owner participates in history's single REST dispatcher.
+It prepares the block list on drawer opening and reuses the loaded member's ban
+state, so a context menu can show its actions together without serial reads.
+Explicit refreshes and uncertain mutations invalidate these snapshots. The menu
+uses the authenticated user's existing permission model, with no extra permission
+reads on drawer/menu opening; role events update that shared model. Blocking has
+no role-permission requirement in the inspected backend. Profile reads and
+mutations have independent ownership from channel selection. Sent mutations
+retain their receipt owner when panels close; a closed
+reset result is discarded. Ban/reset use owner-or-manage_server authorization,
+including the HTTP admission gate. Bodyless member POSTs are endpoint-specific,
+never a generic replayable mutation facility. Reset links are bounded to 2048
+UTF-8 bytes to fit the existing clipboard/text buffer; oversized receipts remain
+uncertain rather than being truncated. All traffic shares the global
+nonblocking request budget.
+
+The drawer and profile use visible avatar requests and the shared media cache.
+Content-addressable banner downloads accept validated 64-digit SHA-256 keys;
+ordinary media retains UUID validation. Ordered panel rectangles extend the
+existing cache crop path, so the drawer, menus and profiles preserve uncovered
+history and drawer media. Resources and temporary files remain owned by the
+existing instance media cache. Ultralight avoids member image acquisition.
+
+The contract has no server-side member search, role hierarchy, block-change,
+ban-change or banner-change event. Search covers paginated loaded users and
+reports local limits. Presence uses validated snapshots/live events and remains
+unknown until confirmed. Member actions reconcile on menu opening or explicit
+retry; profile metadata refreshes on opening or Ctrl+R. Tests use synthetic peers;
+backend and visual reports belong in build/ and must identify their provenance.
+
 ## Validation
 
 Attachment sending reuses libcurl MIME, GLib/GIO workers, private temporary-file

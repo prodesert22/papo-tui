@@ -697,16 +697,19 @@ class MediaTerminal(unittest.TestCase):
                         return 200, dict(
                             notifications=[
                                 dict(
-                                    id=uuid(8000),
-                                    message_id=uuid(9999),
+                                    id=uuid(8000 + i),
+                                    message_id=uuid(9999 + i),
                                     channel_id=CHANNEL,
                                     author_id=uuid(21),
-                                    message_content="@mention(<@" + uuid(1) + ">)",
+                                    message_content="@mention(<@" + uuid(1) + ">)"
+                                    if i == 0
+                                    else "Aviso",
                                     read=False,
                                     created_at=STAMP,
                                 )
+                                for i in range(99, -1, -1)
                             ],
-                            has_more=False,
+                            has_more=True,
                         )
                     return original(method, path, body)
 
@@ -715,6 +718,7 @@ class MediaTerminal(unittest.TestCase):
                 try:
                     self.wait_frames(t)
                     self.wait(t, "[Comunidade ❶ ]")
+                    self.assertNotIn("+", t.screen.display[1].split("]", 1)[0])
                     if protocol == "kitty":
 
                         def badges():
@@ -751,6 +755,19 @@ class MediaTerminal(unittest.TestCase):
                             any(min(pixels[i : i + 3]) > 230 for i in range(0, len(pixels), 4)),
                             "Badge count must be visible inside the circle",
                         )
+                        white = [
+                            (i // 4 % width, i // 4 // width)
+                            for i in range(0, len(pixels), 4)
+                            if min(pixels[i : i + 3]) > 230
+                        ]
+                        for axis, size in ((0, width), (1, height)):
+                            low = min(p[axis] for p in white)
+                            high = max(p[axis] for p in white)
+                            self.assertLessEqual(
+                                abs(low - (size - 1 - high)),
+                                1,
+                                "Mention number must be centered inside the badge",
+                            )
                         before = len(badges())
                         t.click(1, t.screen.display[1].index("Comunidade") + 1)
                         self.wait(t, "Foco: Abas")

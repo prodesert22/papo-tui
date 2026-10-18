@@ -331,3 +331,12 @@ unsigned permissions_member_color(const permissions *p, const char *user, const 
     }
     return 0x1ffffff;
 }
+
+const json_t *permissions_role_info(const permissions *p, const char *id)
+{
+    return p && id ? json_object_get(p->roles, id) : NULL;
+}
+const char *permissions_owner(const permissions *p)
+{
+    return p && p->owner_known ? p->owner : "";
+}

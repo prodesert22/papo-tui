@@ -36,12 +36,12 @@ struct chat_assets {
     json_t *profiles;
     uint64_t profile_versions[4];
 };
-static const char *str(json_t *o, const char *key)
+static const char *str(const json_t *o, const char *key)
 {
     const char *s = json_string_value(json_object_get(o, key));
     return s ? s : "";
 }
-static bool valid_string(json_t *o, const char *key, size_t limit)
+static bool valid_string(const json_t *o, const char *key, size_t limit)
 {
     json_t *v = json_object_get(o, key);
     return json_is_string(v) && json_string_length(v) <= limit &&
@@ -400,6 +400,64 @@ json_t *chat_assets_profiles_request(chat_assets *a)
     }
     return a->profiles;
 }
+static void store_profile_avatar(chat_assets *a, author_avatar *p, const json_t *found)
+{
+    p->dirty = p->requested = p->failed = false;
+    json_t *blob = json_object_get(found, "avatar_blob");
+    size_t length = json_string_length(blob);
+    if (length && length <= 2796204 && valid_string(found, "avatar_blob", 2796204)) {
+        char *checksum =
+            g_compute_checksum_for_string(G_CHECKSUM_SHA256, str(found, "avatar_blob"), -1);
+        if (!checksum) {
+            p->failed = true;
+            return;
+        }
+        if (p->path && !strcmp(checksum, p->checksum)) {
+            g_free(checksum);
+            return;
+        }
+        /* Compact inputs share the existing asset file budget. Evicting
+         * visible avatars from a smaller private quota caused repeated
+         * profile reads despite the shared decoded-image cache. */
+        while (length / 4 * 3 > temporary_available(a)) {
+            author_avatar *victim = NULL;
+            GHashTableIter iter;
+            gpointer value;
+            g_hash_table_iter_init(&iter, a->avatars);
+            while (g_hash_table_iter_next(&iter, NULL, &value)) {
+                author_avatar *v = value;
+                if (v != p && v->path && !v->requested && v->used < a->visible_tick &&
+                    (!victim || v->used < victim->used))
+                    victim = v;
+            }
+            if (!victim)
+                break;
+            remove_file(a, &victim->path, &victim->bytes);
+            /* Retry only when the evicted author becomes visible again. */
+            victim->dirty = true;
+            ++victim->revision;
+        }
+        size_t bytes = 0;
+        char *path = blob_file(a, str(found, "avatar_blob"), 2U * 1024U * 1024U, &bytes);
+        if (path) {
+            remove_file(a, &p->path, &p->bytes);
+            p->path = path;
+            p->bytes = bytes;
+            snprintf(p->checksum, sizeof(p->checksum), "%s", checksum);
+            ++p->revision;
+        } else
+            p->failed = true;
+        g_free(checksum);
+    } else if ((!blob || json_is_null(blob) || (json_is_string(blob) && !length))) {
+        if (p->path) {
+            remove_file(a, &p->path, &p->bytes);
+            p->checksum[0] = 0;
+            ++p->revision;
+        }
+    } else {
+        p->failed = true;
+    }
+}
 bool chat_assets_profiles_response(chat_assets *a, json_t *response, long status)
 {
     if (app_mode_get() == APP_MODE_ULTRALIGHT) {
@@ -431,60 +489,7 @@ bool chat_assets_profiles_response(chat_assets *a, json_t *response, long status
                 found = profile;
                 break;
             }
-        json_t *blob = json_object_get(found, "avatar_blob");
-        size_t length = json_string_length(blob);
-        if (length && length <= 2796204 && valid_string(found, "avatar_blob", 2796204)) {
-            char *checksum =
-                g_compute_checksum_for_string(G_CHECKSUM_SHA256, str(found, "avatar_blob"), -1);
-            if (!checksum) {
-                p->failed = true;
-                continue;
-            }
-            if (p->path && !strcmp(checksum, p->checksum)) {
-                g_free(checksum);
-                continue;
-            }
-            /* Compact inputs share the existing asset file budget. Evicting
-             * visible avatars from a smaller private quota caused repeated
-             * profile reads despite the shared decoded-image cache. */
-            while (length / 4 * 3 > temporary_available(a)) {
-                author_avatar *victim = NULL;
-                GHashTableIter iter;
-                gpointer value;
-                g_hash_table_iter_init(&iter, a->avatars);
-                while (g_hash_table_iter_next(&iter, NULL, &value)) {
-                    author_avatar *v = value;
-                    if (v != p && v->path && !v->requested && v->used < a->visible_tick &&
-                        (!victim || v->used < victim->used))
-                        victim = v;
-                }
-                if (!victim)
-                    break;
-                remove_file(a, &victim->path, &victim->bytes);
-                /* Retry only when the evicted author becomes visible again. */
-                victim->dirty = true;
-                ++victim->revision;
-            }
-            size_t bytes = 0;
-            char *path = blob_file(a, str(found, "avatar_blob"), 2U * 1024U * 1024U, &bytes);
-            if (path) {
-                remove_file(a, &p->path, &p->bytes);
-                p->path = path;
-                p->bytes = bytes;
-                snprintf(p->checksum, sizeof(p->checksum), "%s", checksum);
-                ++p->revision;
-            } else
-                p->failed = true;
-            g_free(checksum);
-        } else if ((!blob || json_is_null(blob) || (json_is_string(blob) && !length))) {
-            if (p->path) {
-                remove_file(a, &p->path, &p->bytes);
-                p->checksum[0] = 0;
-                ++p->revision;
-            }
-        } else {
-            p->failed = true;
-        }
+        store_profile_avatar(a, p, found);
     }
     json_decref(a->profiles);
     a->profiles = NULL;
@@ -559,4 +564,18 @@ void chat_assets_clear_media(chat_assets *a)
     ++a->revision;
     ++a->emoji_revision;
     snprintf(a->notice, sizeof(a->notice), "Emojis gráficos desativados no modo ultralight.");
+}
+
+void chat_assets_profile_observe(chat_assets *a, const json_t *profile, uint64_t version)
+{
+    if (!a || app_mode_get() == APP_MODE_ULTRALIGHT)
+        return;
+    const char *id = str(profile, "id");
+    if (!chat_assets_avatar(a, id))
+        return;
+    author_avatar *p = g_hash_table_lookup(a->avatars, id);
+    if (p->version != version)
+        return;
+    store_profile_avatar(a, p, profile);
+    ++a->revision;
 }

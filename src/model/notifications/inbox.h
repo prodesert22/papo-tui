@@ -48,6 +48,7 @@ bool inbox_message_viewed(const inbox *box, const char *message_id);
 size_t inbox_unseen_conversations(const inbox *box);
 const char *inbox_notice(const inbox *box);
 const char *inbox_presence(const inbox *box, const char *user);
+const json_t *inbox_presence_info(const inbox *box, const char *user);
 const char *inbox_message_channel(const inbox *box, const char *message_id);
 /* Transfers a new WS notification for desktop eligibility. Never snapshots. */
 json_t *inbox_take_alert(inbox *box);

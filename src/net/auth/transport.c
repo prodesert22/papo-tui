@@ -69,7 +69,10 @@ bool auth_internal_request(auth_client *client, auth_state state, const char *pa
         /* A page can contain 25 base64-encoded emojis of up to 2 MiB each. */
         state == AUTH_API_GET && !strncmp(path, "/emojis?", 8)           ? 72U * 1024U * 1024U
         : state == AUTH_API_GET && !strcmp(path, "/users/profile_batch") ? 16U * 1024U * 1024U
-                                                                         : RESPONSE_LIMIT;
+        : state == AUTH_API_GET && strlen(path) == 51 && !strncmp(path, "/users/", 7) &&
+                !strcmp(path + 43, "/profile")
+            ? 4U * 1024U * 1024U
+            : RESPONSE_LIMIT;
     client->overflow = false;
     client->retry_after = PAPO_RATE_DEFAULT_COOLDOWN_SECONDS;
     /* A fresh HTTP/1.1 connection avoids libcurl's stale-connection/stream
@@ -184,19 +187,21 @@ error:
 
 CURL *auth_media_easy(auth_client *client, auth_media_kind kind, const char *id)
 {
-    if (!auth_has_session(client) || !id || strlen(id) != 36)
+    if (!auth_has_session(client) || !id || kind < AUTH_MEDIA_ATTACHMENT ||
+        kind > AUTH_MEDIA_CONTENT)
         return NULL;
-    for (size_t i = 0; i < 36; ++i) {
-        bool dash = i == 8 || i == 13 || i == 18 || i == 23;
+    size_t expected = kind == AUTH_MEDIA_CONTENT ? 64 : 36;
+    if (strlen(id) != expected)
+        return NULL;
+    for (size_t i = 0; i < expected; ++i) {
+        bool dash = kind != AUTH_MEDIA_CONTENT && (i == 8 || i == 13 || i == 18 || i == 23);
         if (dash ? id[i] != '-'
                  : !((id[i] >= '0' && id[i] <= '9') || (id[i] >= 'a' && id[i] <= 'f') ||
                      (id[i] >= 'A' && id[i] <= 'F')))
             return NULL;
     }
     const char *formats[] = {"/attachments/%s", "/attachments/%s/thumbnail", "/embeds/%s",
-                             "/embeds/%s/video"};
-    if (kind < AUTH_MEDIA_ATTACHMENT || kind > AUTH_MEDIA_VIDEO)
-        return NULL;
+                             "/embeds/%s/video", "/media/%s"};
     char path[96];
     snprintf(path, sizeof(path), formats[kind], id);
     size_t length = strlen(client->base) + strlen(path) + 1;

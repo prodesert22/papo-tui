@@ -26,7 +26,8 @@ enum request_kind {
     PROFILES,
     INBOX,
     ACTIONS,
-    DISCOVERY
+    DISCOVERY,
+    MEMBERS
 };
 #define TYPING_LIMIT 128U
 #define TYPING_TIMEOUT_MS 6000U
@@ -46,6 +47,8 @@ typedef struct {
     bool ok;
 } protected_users;
 struct history {
+    struct history_members *members;
+    bool members_active;
     struct history_actions *actions;
     struct history_discovery *discovery;
     GHashTable *costs;
@@ -131,6 +134,11 @@ bool history_internal_authors_response(history *h, json_t *body);
 bool history_internal_request_messages(history *h);
 bool history_internal_request_authors(history *h);
 
+void history_internal_members_destroy(history *h);
+bool history_internal_members_mutating(history *h);
+bool history_internal_members_dispatch(history *h);
+void history_internal_members_response(history *h, json_t *body, long code, bool uncertain);
+void history_internal_members_recover(history *h);
 void history_internal_discovery_destroy(history *h);
 void history_internal_discovery_recover(history *h);
 bool history_internal_discovery_dispatch(history *h);

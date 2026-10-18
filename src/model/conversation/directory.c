@@ -42,6 +42,11 @@ void history_users_active(history *h, bool active)
     h->users_active = active;
 }
 
+void history_members_active(history *h, bool active)
+{
+    h->members_active = active;
+}
+
 void history_users_retry(history *h)
 {
     h->users_failed = false;
@@ -70,6 +75,11 @@ void history_users_refresh(history *h)
 size_t history_user_count(const history *h)
 {
     return json_array_size(h->directory);
+}
+
+bool history_users_complete(const history *h)
+{
+    return h->users_complete;
 }
 
 uint64_t history_users_revision(const history *h)
@@ -144,7 +154,10 @@ static json_t *user_roles(const json_t *source)
         json_t *color = json_object_get(role, "color");
         if (!json_is_string(color) || json_string_length(color) != 7)
             color = json_null();
-        json_t *copy = json_pack("{s:s,s:O}", "id", id, "color", color);
+        json_t *name = json_object_get(role, "name");
+        if (!json_is_string(name) || json_string_length(name) > 1024)
+            name = json_null();
+        json_t *copy = json_pack("{s:s,s:O,s:O}", "id", id, "color", color, "name", name);
         if (!copy || json_array_append_new(roles, copy)) {
             json_decref(roles);
             return NULL;
@@ -222,7 +235,7 @@ bool history_internal_cache_user(history *h, json_t *u, bool presence)
         g_free(normal_nick);
         return false;
     }
-    cost += (json_array_size(roles) + json_object_size(changes)) * 512;
+    cost += (json_array_size(roles) + json_object_size(changes)) * 1536;
     if ((!prior && json_object_size(h->users) >= 10000) ||
         cost > 14U * 1024U * 1024U - (h->user_bytes - old)) {
         h->users_partial = h->users_complete = true;
@@ -261,6 +274,11 @@ bool history_internal_cache_user(history *h, json_t *u, bool presence)
         json_decref(copy);
         return false;
     }
+    json_t *status_message = json_object_get(metadata, "status_message");
+    if (!status_message)
+        status_message = json_object_get(prior, "status_message");
+    if (json_is_string(status_message) && json_string_length(status_message) <= 2048)
+        json_object_set(copy, "status_message", status_message);
     json_t *banned = json_object_get(u, "banned");
     if (!json_is_boolean(banned))
         banned = json_object_get(prior, "banned");
@@ -302,8 +320,8 @@ bool history_internal_role_event(history *h, const json_t *event)
     bool ok = changes && (json_object_size(changes) < 10000 || json_object_get(changes, role)) &&
               !json_object_set_new(changes, role, add ? json_true() : json_false()) &&
               change_role(roles, role, add);
-    size_t old = (json_array_size(json_object_get(user, "roles")) + json_object_size(prior)) * 512,
-           next = (json_array_size(roles) + json_object_size(changes)) * 512;
+    size_t old = (json_array_size(json_object_get(user, "roles")) + json_object_size(prior)) * 1536,
+           next = (json_array_size(roles) + json_object_size(changes)) * 1536;
     if (next > old && next - old > 14U * 1024U * 1024U - h->user_bytes)
         ok = false;
     size_t cost = (size_t)json_integer_value(json_object_get(user, "_cost"));
@@ -435,10 +453,8 @@ bool history_internal_presence_event(history *h, const json_t *event)
         !history_internal_string_field((json_t *)event, "nickname", 1024, true) ||
         !history_internal_string_field((json_t *)event, "typing", 256, true))
         return false;
-    if (!strcmp(state, "offline")) {
+    if (!strcmp(state, "offline"))
         history_internal_typing_remove(h, id);
-        return true;
-    }
     json_t *prior = json_object_get(h->users, id);
     json_t *user =
         json_pack("{s:s,s:s,s:O,s:O,s:b}", "id", id, "username",
@@ -626,7 +642,7 @@ bool history_maintain(history *h, uint64_t now)
     if (!h || now < h->maintenance || now - h->maintenance < 1000)
         return false;
     h->maintenance = now;
-    if (h->users_active)
+    if (h->users_active || h->members_active)
         return false; /* A popup borrows directory indices. */
     json_t *protected = json_object();
     if (!protected)

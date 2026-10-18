@@ -121,12 +121,13 @@ static bool decode(profile_config *config, json_t *root)
     if (version == 1) {
         if (json_object_size(root) != 3)
             return false;
-    } else if (version == 2 || version == 3 || version == 4) {
+    } else if (version == 2 || version == 3 || version == 4 || version == 5) {
         json_t *rate = json_object_get(root, "requests_per_second");
         json_t *burst = json_object_get(root, "request_burst");
         if (json_object_size(root) != (version == 2   ? 5U
                                        : version == 3 ? 7U
-                                                      : 8U) ||
+                                       : version == 4 ? 8U
+                                                      : 9U) ||
             !json_is_number(rate) || !json_is_integer(burst) || json_integer_value(burst) <= 0 ||
             json_integer_value(burst) > UINT_MAX ||
             !net_rate_parameters_valid(json_number_value(rate),
@@ -144,9 +145,15 @@ static bool decode(profile_config *config, json_t *root)
         }
     } else
         return false;
-    if (version == 4 &&
+    if (version >= 4 &&
         !app_mode_parse(json_text(json_object_get(root, "app_mode"), 16), &config->mode))
         return false;
+    if (version >= 5) {
+        json_t *group = json_object_get(root, "members_by_status");
+        if (!json_is_boolean(group))
+            return false;
+        config->members_by_status = json_is_true(group);
+    }
     json_t *array = json_object_get(root, "profiles");
     json_t *selected = json_object_get(root, "selected_profile");
     if (!json_is_array(array) || json_array_size(array) > PROFILE_LIMIT)
@@ -256,12 +263,13 @@ static bool save_locked(profile_config *config)
     }
     json_t *selection = *config->selected ? json_string(config->selected) : json_null();
     json_t *root =
-        selection ? json_pack("{s:i,s:O,s:O,s:f,s:I,s:b,s:b,s:s}", "version", 4, "profiles", array,
-                              "selected_profile", selection, "requests_per_second",
+        selection ? json_pack("{s:i,s:O,s:O,s:f,s:I,s:b,s:b,s:s,s:b}", "version", 5, "profiles",
+                              array, "selected_profile", selection, "requests_per_second",
                               config->requests_per_second, "request_burst",
                               (json_int_t)config->request_burst, "desktop_notifications",
                               config->desktop_notifications, "notification_preview",
-                              config->notification_preview, "app_mode", app_mode_name(config->mode))
+                              config->notification_preview, "app_mode", app_mode_name(config->mode),
+                              "members_by_status", config->members_by_status)
                   : NULL;
     json_decref(selection);
     json_decref(array);
@@ -424,5 +432,14 @@ bool profiles_set_mode(profile_config *config, app_mode mode)
     if (!copy)
         return false;
     copy->mode = mode;
+    return commit(config, copy);
+}
+
+bool profiles_set_member_grouping(profile_config *config, bool by_status)
+{
+    profile_config *copy = candidate(config);
+    if (!copy)
+        return false;
+    copy->members_by_status = by_status;
     return commit(config, copy);
 }

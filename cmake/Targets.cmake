@@ -35,6 +35,7 @@ add_library(
     src/config/read_state.c
     src/platform/${PAPO_PLATFORM}/read_storage.c
     src/model/conversation/discovery.c
+    src/model/conversation/members.c
     src/model/conversation/directory.c
     src/model/conversation/events.c
     src/model/conversation/history.c
@@ -208,6 +209,7 @@ add_executable(
     src/ui/screens/conversation/attachments.c
     src/ui/screens/conversation/interactions.c
     src/ui/screens/conversation/reactions.c
+    src/ui/screens/conversation/members.c
     src/ui/screens/conversation/layout.c
     src/ui/components/settings.c
     src/ui/screens/message_browser.c

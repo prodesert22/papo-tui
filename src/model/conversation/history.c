@@ -194,6 +194,7 @@ void history_destroy(history *h)
     if (!h)
         return;
     save_reads(h);
+    history_internal_members_destroy(h);
     if (h->pending != NONE)
         auth_cancel_read(h->auth);
     chat_assets_destroy(h->assets);
@@ -227,7 +228,10 @@ void history_active(history *h, bool active)
         return;
     h->active = active;
     if (!active) {
-        if (h->pending != NONE && h->pending != INBOX && !history_internal_actions_mutating(h)) {
+        if (h->pending != NONE && h->pending != INBOX && !history_internal_actions_mutating(h) &&
+            !history_internal_members_mutating(h)) {
+            if (h->pending == MEMBERS)
+                history_internal_members_recover(h);
             auth_cancel_read(h->auth);
             h->pending = NONE;
         }
@@ -414,7 +418,10 @@ int history_paging_direction(const history *h)
 
 void history_reload_channels(history *h)
 {
-    if (h->pending != NONE && h->pending != INBOX && !history_internal_actions_mutating(h)) {
+    if (h->pending != NONE && h->pending != INBOX && !history_internal_actions_mutating(h) &&
+        !history_internal_members_mutating(h)) {
+        if (h->pending == MEMBERS)
+            history_internal_members_recover(h);
         auth_cancel_read(h->auth);
         h->pending = NONE;
     }
@@ -441,7 +448,10 @@ bool history_select(history *h, size_t index)
         inbox_cancel_read(h->inbox);
         h->pending = NONE;
     }
-    if (h->pending != NONE && h->pending != INBOX && !history_internal_actions_mutating(h)) {
+    if (h->pending != NONE && h->pending != INBOX && !history_internal_actions_mutating(h) &&
+        !history_internal_members_mutating(h)) {
+        if (h->pending == MEMBERS)
+            history_internal_members_recover(h);
         auth_cancel_read(h->auth);
         h->pending = NONE;
     }
@@ -603,7 +613,10 @@ static bool sync_permissions(history *h)
     h->permission_revision = revision;
     if (h->selected != SIZE_MAX &&
         history_permission(h, PERMISSION_READ_CHANNEL) == PERMISSION_DENIED) {
-        if (h->pending != NONE && h->pending != INBOX && !history_internal_actions_mutating(h)) {
+        if (h->pending != NONE && h->pending != INBOX && !history_internal_actions_mutating(h) &&
+            !history_internal_members_mutating(h)) {
+            if (h->pending == MEMBERS)
+                history_internal_members_recover(h);
             auth_cancel_read(h->auth);
             h->pending = NONE;
         }
@@ -628,6 +641,13 @@ static int process_response(history *h, uint64_t maintenance_now)
     long code;
     uint64_t generation;
     json_t *body = auth_take_response(h->auth, &code, &generation);
+    if (h->pending == MEMBERS) {
+        if (generation == h->context && h->request_context == h->context)
+            history_internal_members_response(h, body, code, uncertain);
+        json_decref(body);
+        h->pending = NONE;
+        return 3;
+    }
     if (h->pending == DISCOVERY) {
         if (generation == h->context && h->request_context == h->context &&
             h->request_selection == h->selection)
@@ -779,6 +799,7 @@ bool history_poll(history *h)
     bool changed = history_maintain(h, maintenance_now);
     if (h->context != auth_context_generation(h->auth)) {
         history_internal_actions_destroy(h);
+        history_internal_members_destroy(h);
         save_reads(h);
         h->read_loaded = h->read_dirty = h->read_save_failed = false;
         h->read_url[0] = h->read_user[0] = 0;
@@ -891,6 +912,8 @@ bool history_poll(history *h)
                 h->want_messages = true;
             }
         }
+        if (history_internal_members_dispatch(h))
+            return true;
         if (history_internal_actions_dispatch(h, true))
             return true;
         if (!h->want_channels && !h->want_messages && history_internal_discovery_dispatch(h))
@@ -903,13 +926,15 @@ bool history_poll(history *h)
         }
         /* Visible avatars already have author IDs; they must not wait for
          * names from the rest of the history or the entire emoji catalogue. */
-        enum request_kind kind = h->want_channels                         ? CHANNELS
-                                 : h->want_messages                       ? MESSAGES
-                                 : chat_assets_profiles_wanted(h->assets) ? PROFILES
-                                 : h->want_authors                        ? AUTHORS
-                                 : chat_assets_emojis_wanted(h->assets)   ? EMOJIS
-                                 : h->users_active && !h->users_complete && !h->users_failed ? USERS
-                                                                                             : NONE;
+        enum request_kind kind =
+            h->want_channels                         ? CHANNELS
+            : h->want_messages                       ? MESSAGES
+            : chat_assets_profiles_wanted(h->assets) ? PROFILES
+            : h->want_authors                        ? AUTHORS
+            : chat_assets_emojis_wanted(h->assets)   ? EMOJIS
+            : (h->users_active || h->members_active) && !h->users_complete && !h->users_failed
+                ? USERS
+                : NONE;
         if ((kind == NONE || kind == EMOJIS || kind == USERS) &&
             history_internal_actions_dispatch(h, false))
             return true;

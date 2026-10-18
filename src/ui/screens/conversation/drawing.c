@@ -16,8 +16,7 @@ void conversation_notification_dot(view *ui, WINDOW *window, int row, int column
     }
     wattrset(window, previous);
 }
-static int notification_badge(view *ui, WINDOW *window, int row, int column, size_t count,
-                              bool more, int pair)
+static int notification_badge(view *ui, WINDOW *window, int row, int column, size_t count, int pair)
 {
     char label[32];
     if (!count)
@@ -27,22 +26,18 @@ static int notification_badge(view *ui, WINDOW *window, int row, int column, siz
         label[bytes] = 0;
     } else
         snprintf(label, sizeof(label), "(%zu)", count);
-    if (more && count)
-        strncat(label, "+", sizeof(label) - strlen(label) - 1);
     attr_t previous = window ? getattrs(window) : 0;
     if (window)
         wattrset(window, (has_colors() ? COLOR_PAIR(pair) : 0) | A_BOLD);
     int width = text_label(window, row, column, 24, label);
     if (graphical_badge()) {
-        int columns = MAX(2, width - (more && count ? 1 : 0));
+        int columns = MAX(2, width);
         if (window) {
             if (columns > width)
                 mvwaddch(window, row, column + width, ' ');
             icons_notification(ui->icons, window, row, column, columns, count, pair);
-            if (more && count)
-                mvwaddch(window, row, column + columns, '+');
         }
-        width = columns + (more && count ? 1 : 0);
+        width = columns;
     }
     if (window)
         wattrset(window, previous);
@@ -57,14 +52,13 @@ static bool instance_unread(history *h)
             return true;
     return false;
 }
-static int server_badge(view *ui, WINDOW *window, int row, int column, size_t count, bool more,
-                        int pair)
+static int server_badge(view *ui, WINDOW *window, int row, int column, size_t count, int pair)
 {
     graphics_protocol protocol = graphics_terminal_get().protocol;
     if (protocol != GRAPHICS_TEXT && protocol != GRAPHICS_CHAFA)
-        return notification_badge(ui, window, row, column, count, more, pair);
+        return notification_badge(ui, window, row, column, count, pair);
     char label[32];
-    snprintf(label, sizeof(label), "%zu%s", count, more && count ? "+" : "");
+    snprintf(label, sizeof(label), "%zu", count);
     attr_t previous = window ? getattrs(window) : 0;
     if (window)
         wattrset(window, (has_colors() ? COLOR_PAIR(pair) : 0) | A_BOLD);
@@ -93,7 +87,7 @@ int conversation_tab_width(view *ui, size_t index, int available)
     inbox *box = history_inbox(ui->connections->items[index].model);
     size_t mentions = inbox_unread_mentions(box, NULL);
     if (inbox_unread(box) || instance_unread(ui->connections->items[index].model))
-        width += 1 + server_badge(ui, NULL, 0, 0, mentions, inbox_has_more(box), 0);
+        width += 1 + server_badge(ui, NULL, 0, 0, mentions, 0);
     return width > available ? available : width;
 }
 
@@ -141,8 +135,7 @@ void conversation_draw_tabs(view *ui, auth_client *auth)
         inbox *box = history_inbox(ui->connections->items[i].model);
         size_t mentions = inbox_unread_mentions(box, NULL);
         bool notified = inbox_unread(box) || instance_unread(ui->connections->items[i].model);
-        int badge_width =
-            notified ? server_badge(ui, NULL, 0, 0, mentions, inbox_has_more(box), 0) : 0;
+        int badge_width = notified ? server_badge(ui, NULL, 0, 0, mentions, 0) : 0;
         snprintf(label, sizeof(label), "%c%s",
                  selected ? '['
                  : active ? '>'
@@ -151,7 +144,7 @@ void conversation_draw_tabs(view *ui, auth_client *auth)
         int used = text_label(ui->tabs, 0, x, size - 3 - badge_width - (notified ? 1 : 0), label);
         if (notified) {
             mvwaddch(ui->tabs, 0, x + used++, ' ');
-            used += server_badge(ui, ui->tabs, 0, x + used, mentions, inbox_has_more(box),
+            used += server_badge(ui, ui->tabs, 0, x + used, mentions,
                                  active     ? THEME_NOTIFICATION_BUTTON_FOCUS
                                  : selected ? THEME_NOTIFICATION_SELECTED
                                             : THEME_NOTIFICATION);
@@ -165,7 +158,8 @@ void conversation_draw_tabs(view *ui, auth_client *auth)
                 adding ? ">+ Adicionar<" : "[+ Adicionar]", adding ? BUTTON_FOCUSED : BUTTON_NORMAL,
                 BUTTON_PANEL);
     const char *areas[] = {"Abas",       "Canais",        "Histórico", "Mensagem", "Emojis",
-                           "Canais/DMs", "Configurações", "Anexos",    "Anexar"};
+                           "Canais/DMs", "Configurações", "Anexos",    "Anexar",   "Membros",
+                           "Membros",    "Buscar",        "Fixadas"};
     char summary[1200];
     snprintf(summary, sizeof(summary), "%s · Foco: %s · F2: ajustes · F6: conta",
              auth_username(auth),
@@ -343,6 +337,11 @@ void conversation_draw_footer(view *ui)
                "reações · Esc";
         shorter = "↑↓ mensagens · m menu · r responder · e/E reações";
         minimal = "↑↓ mensagens · m menu · r/e/E";
+    } else if (ui->focus == SEARCH_BUTTON || ui->focus == PINS_BUTTON ||
+               ui->focus == MEMBERS_BUTTON) {
+        full = "←→ botões · Enter abrir · ↓ histórico/lista · ↑ servidores · Esc histórico";
+        shorter = "←→ botões · Enter abrir · ↓ histórico · ↑ servidores";
+        minimal = "←→ · Enter · ↓ histórico";
     } else if (ui->focus == SERVER_TABS) {
         bool adding = ui->tab_cursor == ui->connections->count;
         full = adding ? "←→ servidores · Enter adicionar · ↓ canais · Ctrl+Q sair"
@@ -351,7 +350,7 @@ void conversation_draw_footer(view *ui)
                          : "←→ servidores · ↓ canais · Enter ativar";
         minimal = "←→ · Enter";
     } else if (ui->focus == LIST_BUTTONS) {
-        full = "←→ Canais/DMs · Enter ativar · ↓ lista · F9 notificações · F10 nova DM";
+        full = "←→ Canais/DMs · Enter ativar · ↓ lista · F9 notificações · F10 membros";
         shorter = "←→ escolher · Enter ativar · ↓ lista";
         minimal = "←→ · Enter";
     } else if (ui->focus == CHANNEL_LIST) {
@@ -476,6 +475,8 @@ static void composer_button(view *ui, int focus, const char *label, click_range 
 
 void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
 {
+    if (ui->members_open)
+        scope = DRAW_ALL;
     bool paint_history = scope == DRAW_ALL || scope == DRAW_CONVERSATION;
     bool paint_navigation = paint_history || scope == DRAW_NAVIGATION;
     bool paint_media = paint_history || paint_navigation || scope == DRAW_MEDIA ||
@@ -565,23 +566,29 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                 size_t mentions =
                     inbox_unread_mentions(history_inbox(ui->model), conversation_str(c, "id"));
                 bool notified = unread || mentions;
-                int badge_width =
-                    notified ? notification_badge(ui, NULL, 0, 0, mentions, false, 0) : 0;
-                int pair = selected && focused ? THEME_FOCUSED
-                           : selected          ? THEME_PANEL_ACTIVE
-                           : focused           ? THEME_FOCUS_AREA
-                                               : THEME_PANEL;
+                int badge_width = notified ? notification_badge(ui, NULL, 0, 0, mentions, 0) : 0;
+                int pair = selected && focused
+                               ? (ui->list_dms ? THEME_PROFILE_FOCUS : THEME_FOCUSED)
+                           : selected ? THEME_PANEL_ACTIVE
+                           : focused  ? THEME_FOCUS_AREA
+                                      : THEME_PANEL;
                 if (ui->list_dms)
                     pair = theme_member_pair(
                         history_member_color(ui->model,
                                              conversation_str(json_object_get(c, "user"), "id")),
                         pair);
-                wattrset(ui->list, COLOR_PAIR(pair));
+                attr_t attributes = COLOR_PAIR(pair);
+                if (ui->list_dms && selected)
+                    attributes |= A_BOLD | (has_colors() ? 0 : A_REVERSE);
+                wattrset(ui->list, attributes);
+                if (ui->list_dms && selected)
+                    mvwhline(ui->list, row + 1, 1, ' ', ui->side - 2);
                 text_label(ui->list, row + 1, 1, ui->side - 2 - badge_width, label);
                 if (notified)
                     notification_badge(ui, ui->list, row + 1, ui->side - 1 - badge_width, mentions,
-                                       false,
-                                       focused    ? THEME_NOTIFICATION_FOCUS
+                                       selected && focused && ui->list_dms
+                                           ? THEME_NOTIFICATION_BUTTON_FOCUS
+                                       : focused  ? THEME_NOTIFICATION_FOCUS
                                        : selected ? THEME_NOTIFICATION_SELECTED
                                                   : THEME_NOTIFICATION);
             }
@@ -624,13 +631,17 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                                                                      : THEME_PANEL_MUTED) |
                                    A_BOLD);
             int body_width = getmaxx(ui->body);
-            ui->search_hit = (click_range){body_width - 20, 8};
-            ui->pins_hit = (click_range){body_width - 11, 9};
+            ui->search_hit = (click_range){body_width - 19, 5};
+            ui->pins_hit = (click_range){body_width - 13, 5};
+            ui->members_hit = (click_range){body_width - 7, 5};
             text_label(ui->body, 0, 2, MAX(0, body_width - 23), title);
-            button_draw(ui->body, 0, ui->search_hit.x, ui->search_hit.width, "[Buscar]",
-                        BUTTON_NORMAL, BUTTON_PANEL);
-            button_draw(ui->body, 0, ui->pins_hit.x, ui->pins_hit.width, "[Fixadas]", BUTTON_NORMAL,
-                        BUTTON_PANEL);
+            button_draw(ui->body, 0, ui->search_hit.x, ui->search_hit.width, "🔍",
+                        ui->focus == SEARCH_BUTTON ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
+            button_draw(ui->body, 0, ui->pins_hit.x, ui->pins_hit.width,
+                        graphical_badge() ? "📌" : "🖈",
+                        ui->focus == PINS_BUTTON ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
+            button_draw(ui->body, 0, ui->members_hit.x, ui->members_hit.width, "👤",
+                        ui->focus == MEMBERS_BUTTON ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
             wattrset(ui->body, COLOR_PAIR(ui->focus == HISTORY_PANEL ? THEME_HISTORY_MUTED
                                                                      : THEME_PANEL_MUTED));
             if (ui->history_top == 3)
@@ -782,6 +793,7 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
     conversation_draw_confirmation(ui);
     if (paint_media)
         media_view_draw(ui->media);
+    conversation_members_draw(ui);
     if (mention_popup_open(ui->mentions) && ui->body && conversation_input(ui)) {
         text_layout *measured = &ui->measured;
         text_measure(conversation_input(ui), conversation_input_width(ui), measured);
@@ -856,6 +868,11 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         caret = false;
         setsyx(-1, -1);
     }
+    if (conversation_members_modal(ui)) {
+        caret = false;
+        setsyx(-1, -1);
+    } else if (conversation_members_cursor(ui))
+        caret = true;
     doupdate();
     if (paint_media)
         graphics_frame_flush();

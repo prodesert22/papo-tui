@@ -2,6 +2,7 @@
 
 import copy
 import unittest
+from wcwidth import wcswidth
 from urllib.parse import urlsplit
 
 from history_mock import STAMP, uuid
@@ -77,7 +78,7 @@ class MemberColors(unittest.TestCase):
         result = []
         for y, line in enumerate(terminal.screen.display):
             if label in line:
-                x = line.index(label)
+                x = wcswidth(line[: line.index(label)])
                 result.append(
                     [terminal.screen.buffer[y][x + offset] for offset in range(len(label))]
                 )
@@ -138,7 +139,7 @@ class MemberColors(unittest.TestCase):
                 terminal.resize(28, 90)
                 self.assert_color(terminal, "Red Member", "ffffff")
                 terminal.send("\x1b\x15\x1b[21~")
-                self.wait(terminal, "Nova DM")
+                self.wait(terminal, "Membros (")
                 self.assert_color(terminal, "White Member", "ffffff")
                 self.assert_color(terminal, "Green Member", "00ff00")
                 terminal.send("\x1b")

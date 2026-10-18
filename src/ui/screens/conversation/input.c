@@ -145,7 +145,8 @@ void conversation_set_focus(view *ui, int focus)
     if (focus == CHANNEL_LIST || focus == LIST_BUTTONS || focus == SETTINGS_BUTTON)
         ui->show_channels = true;
     if (focus == HISTORY_PANEL || focus == MESSAGE_INPUT || focus == EMOJI_BUTTON ||
-        focus == ATTACHMENT_ROW || focus == ATTACH_BUTTON)
+        focus == ATTACHMENT_ROW || focus == ATTACH_BUTTON || focus == SEARCH_BUTTON ||
+        focus == PINS_BUTTON || focus == MEMBERS_BUTTON)
         ui->show_channels = false;
     if (COLS < 80 && was_channels != ui->show_channels)
         conversation_layout(ui);

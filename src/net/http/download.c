@@ -18,7 +18,7 @@ struct media_download {
     CURL *easy;
     FILE *file;
     char *directory, *path;
-    char id[37], mime[80];
+    char id[65], mime[80];
     auth_media_kind kind;
     media_state state;
     size_t bytes, limit;
@@ -168,7 +168,8 @@ static bool begin_request(media_download *m, CURL *easy, auth_media_kind kind, b
 }
 bool media_download_request(media_download *m, auth_media_kind kind, const char *id, bool video)
 {
-    if (!m || !auth_has_session(m->auth) || !id || strlen(id) != 36)
+    if (!m || !auth_has_session(m->auth) || !id ||
+        strlen(id) != (kind == AUTH_MEDIA_CONTENT ? 64U : 36U))
         return false;
     return begin_request(m, auth_media_easy(m->auth, kind, id), kind, video, false);
 }

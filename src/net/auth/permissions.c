@@ -135,6 +135,12 @@ bool auth_internal_permission_admitted(auth_client *client)
                 json_string_value(json_object_get(client->permission_message, "channel_id")),
                 client->permission_guard);
     }
+    bool member_admin = client->operation == AUTH_API_MUTATION && client->api_path &&
+                        g_str_has_prefix(client->api_path, "/users/") &&
+                        (g_str_has_suffix(client->api_path, "/ban") ||
+                         g_str_has_suffix(client->api_path, "/reset"));
+    if (decision == PERMISSION_ALLOWED && member_admin)
+        decision = permissions_role(client->permissions, PERMISSION_MANAGE_SERVER);
     bool pin = client->operation == AUTH_API_MUTATION && client->api_path &&
                g_str_has_suffix(client->api_path, "/pin");
     if (decision == PERMISSION_ALLOWED && pin)

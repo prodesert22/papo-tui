@@ -67,6 +67,10 @@ add_test(NAME permissions-terminal
          COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/terminal/test_permissions.py
                  $<TARGET_FILE:papo-tui>)
 set_tests_properties(permissions-integration permissions-terminal PROPERTIES TIMEOUT 180)
+add_test(NAME members-terminal
+         COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/terminal/test_members.py
+                 $<TARGET_FILE:papo-tui>)
+set_tests_properties(members-terminal PROPERTIES TIMEOUT 180)
 get_property(
     names
     DIRECTORY

@@ -37,7 +37,7 @@ typedef struct {
     graphics_image image; /* Borrowed snapshot; cache owns its buffers. */
     uint64_t used;
     uint32_t placement_id;
-    uint32_t fragments[4];
+    uint32_t fragments[32];
     const char *error;
 } cache_entry;
 typedef struct {

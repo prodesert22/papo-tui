@@ -21,6 +21,11 @@ Upcoming changes are recorded in [Unreleased](releases/Unreleased.md).
   attachment and ordering filters, searchable selectors and result pagination.
 - Permission-aware channel visibility and message actions, live role membership
   updates, periodic permission refresh and role-colored member names.
+- Server member drawer through 👤 or F10, with nickname/@username search,
+  saved role/status grouping, avatars, presence and full profile previews.
+- Member context menus through m or right-click, with DMs, block/unblock and
+  permission-gated ban/unban and password-reset links.
+- DM context menus through m or right-click to close a conversation.
 
 ### Changed
 
@@ -31,9 +36,22 @@ Upcoming changes are recorded in [Unreleased](releases/Unreleased.md).
   reads instead of walking all intervening history pages.
 - Label F9 consistently as notifications and show discovery shortcuts in the
   footer; use F3 for search and F5 for attachments.
+- Use 🔍, 📌 (🖈 in text mode) and 👤 in the conversation header, with arrow-key
+  navigation between controls, the history and the member drawer.
+- Keep arrow navigation in the DM list after clicking a conversation, with a
+  visible selection that preserves role colors. Context menus keep names visible.
 - Restrict release runs to pushes changing CMakeLists.txt on main and require a
   version increase before tagging or packaging. Identify PR checks as CI and
   block release-mode builds in other event/branch contexts.
+
+### Fixed
+
+- Center mention counts inside notification badges and remove the extra + suffix.
+- Keep replies separate from adjacent messages in history grouping.
+- Use ncurses 6.6 across Linux and Windows builds so rapid mouse drags preserve
+  text selection and copying.
+- Identify server-reported IP blocks during private instance authorization and
+  distinguish other access refusals by authentication stage.
 
 See the [full 0.4.0 release notes](releases/v0.4.0.md).
 

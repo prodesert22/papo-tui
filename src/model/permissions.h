@@ -43,6 +43,8 @@ permission_decision permissions_channel(const permissions *p, const char *id,
 permission_decision permissions_message(const permissions *p, const json_t *message, bool edit);
 /* Borrowed full channel metadata, including channels hidden from the user. */
 const json_t *permissions_channels(const permissions *p);
+const json_t *permissions_role_info(const permissions *p, const char *id);
+const char *permissions_owner(const permissions *p);
 /* First valid #RRGGBB in membership order; white when no role supplies a color.
  * The current role catalog supersedes summaries. RGB has bit 24 set. */
 unsigned permissions_member_color(const permissions *p, const char *user, const json_t *roles);

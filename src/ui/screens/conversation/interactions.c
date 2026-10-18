@@ -68,10 +68,53 @@ void conversation_interactions_close(view *ui)
         delwin(ui->context_window);
         ui->context_window = NULL;
     }
-    if (ui->context_open)
+    if (ui->context_open && !*ui->dm_context_id)
         history_discovery_close(ui->model);
     ui->context_open = ui->context_keyboard = ui->reactors_open = ui->delete_confirm = false;
+    ui->dm_context_id[0] = 0;
     history_reactors_close(ui->model);
+}
+static json_t *dm_channel(view *ui, const char *id)
+{
+    for (size_t i = 0; i < history_channel_count(ui->model); ++i) {
+        json_t *channel = history_channel(ui->model, i);
+        if (json_is_true(json_object_get(channel, "_dm")) &&
+            !strcmp(conversation_str(channel, "id"), id))
+            return channel;
+    }
+    return NULL;
+}
+void conversation_close_dm(view *ui, const char *id)
+{
+    if (!dm_channel(ui, id))
+        return;
+    outbox_operation operation;
+    bool busy = outbox_latest(send_editor_outbox(ui->editor), id, &operation) &&
+                (operation.state == OUTBOX_QUEUED || operation.state == OUTBOX_SENDING);
+    if (busy)
+        ui->feedback = "Aguarde o envio antes de fechar a DM.";
+    else if (!inbox_close_dm(history_inbox(ui->model), id))
+        ui->feedback = "Não foi possível fechar a DM; aguarde ou tente novamente.";
+}
+static void open_dm_context(view *ui, const MEVENT *event)
+{
+    json_t *channel = conversation_list_channel(ui, ui->highlighted);
+    if (!ui->list_dms || !channel)
+        return;
+    conversation_interactions_close(ui);
+    snprintf(ui->dm_context_id, sizeof(ui->dm_context_id), "%s", conversation_str(channel, "id"));
+    ui->context_open = true;
+    ui->context_keyboard = !event;
+    ui->menu_selected = 0;
+    if (event) {
+        ui->menu_y = event->y;
+        ui->menu_x = event->x;
+    }
+    ui->selected_message[0] = 0;
+    ui->navigating = ui->dragging = false;
+    mention_popup_close(ui->mentions);
+    emoji_picker_dismiss(ui->emojis);
+    conversation_set_focus(ui, CHANNEL_LIST);
 }
 static size_t selected_index(view *ui)
 {
@@ -130,7 +173,10 @@ void conversation_interactions_sync(view *ui)
         ui->feedback = "Permissão para reagir indisponível.";
     }
     int available[7];
-    if (ui->context_open && !ui->delete_confirm && !menu_actions(ui, available)) {
+    if (*ui->dm_context_id && (!ui->list_dms || !dm_channel(ui, ui->dm_context_id)))
+        conversation_interactions_close(ui);
+    if (ui->context_open && !*ui->dm_context_id && !ui->delete_confirm &&
+        !menu_actions(ui, available)) {
         conversation_interactions_close(ui);
         ui->feedback = "Permissões ainda não confirmadas. Aguarde ou use Ctrl+R.";
     }
@@ -277,7 +323,7 @@ static int menu_actions(view *ui, int items[7])
 static int menu_count(view *ui)
 {
     int items[7];
-    return ui->delete_confirm ? 2 : menu_actions(ui, items);
+    return *ui->dm_context_id ? 1 : ui->delete_confirm ? 2 : menu_actions(ui, items);
 }
 static void message_action(view *ui, int action)
 {
@@ -321,6 +367,13 @@ static void message_action(view *ui, int action)
 }
 static void menu_activate(view *ui)
 {
+    if (*ui->dm_context_id) {
+        char id[37];
+        snprintf(id, sizeof(id), "%s", ui->dm_context_id);
+        conversation_interactions_close(ui);
+        conversation_close_dm(ui, id);
+        return;
+    }
     if (ui->delete_confirm) {
         bool remove = ui->menu_selected == 1;
         conversation_interactions_close(ui);
@@ -361,8 +414,12 @@ bool conversation_interactions_key(view *ui, int type, uint32_t key)
             return true;
         }
         if (ui->context_open) {
-            if (type == OK && key == 18)
-                history_pins_refresh(ui->model);
+            if (type == OK && key == 18) {
+                if (*ui->dm_context_id)
+                    inbox_refresh(history_inbox(ui->model));
+                else
+                    history_pins_refresh(ui->model);
+            }
             if (type == KEY_CODE_YES && key == KEY_UP && ui->menu_selected)
                 --ui->menu_selected;
             if (type == KEY_CODE_YES && key == KEY_DOWN && ui->menu_selected + 1 < menu_count(ui))
@@ -371,6 +428,10 @@ bool conversation_interactions_key(view *ui, int type, uint32_t key)
                 menu_activate(ui);
         } else
             conversation_reactors_key(ui, type, key);
+        return true;
+    }
+    if (ui->focus == CHANNEL_LIST && ui->list_dms && type == OK && key == 'm') {
+        open_dm_context(ui, NULL);
         return true;
     }
     if (type == OK && key == 27 && *ui->edit_message) {
@@ -502,6 +563,17 @@ bool conversation_interactions_mouse(view *ui, const MEVENT *event)
     }
     if (!left && !right)
         return false;
+    if (right && ui->list_dms && ui->list) {
+        int y = event->y, x = event->x;
+        if (wmouse_trafo(ui->list, &y, &x, false) && y >= 1 && y < getmaxy(ui->list) - 3) {
+            size_t row = (size_t)(ui->first_channel + y - 1);
+            if (conversation_list_selectable(ui, row)) {
+                ui->highlighted = row;
+                open_dm_context(ui, event);
+            }
+            return true;
+        }
+    }
     if (left && ui->body && *ui->edit_message &&
         event->y == getbegy(ui->body) + ui->editor_border) {
         if (event->x >= getbegx(ui->body) + getmaxx(ui->body) - 5)
@@ -558,7 +630,20 @@ void conversation_interactions_draw(view *ui)
         return;
     int y = ui->reactors_open ? (LINES - height) / 2 : CLAMP(ui->menu_y, 0, LINES - height);
     int x = ui->reactors_open ? (COLS - width) / 2 : CLAMP(ui->menu_x, 0, COLS - width);
-    if (ui->context_keyboard && ui->body) {
+    if (*ui->dm_context_id && ui->list) {
+        int row = getbegy(ui->list) + 1 + (int)ui->highlighted - ui->first_channel;
+        int left = getbegx(ui->list) - width - 1;
+        int right = getbegx(ui->list) + getmaxx(ui->list) + 1;
+        y = CLAMP(row, 0, LINES - height);
+        if (left >= 0)
+            x = left;
+        else if (right + width <= COLS)
+            x = right;
+        else {
+            x = 0;
+            y = row + 1 + height <= LINES ? row + 1 : MAX(0, row - height);
+        }
+    } else if (ui->context_keyboard && ui->body) {
         int top = getbegy(ui->body) + ui->history_top;
         y = CLAMP(top + ui->selected_start - ui->first + 1, top,
                   MAX(top, top + ui->visible - height));
@@ -575,7 +660,10 @@ void conversation_interactions_draw(view *ui)
     icons_overlay(ui->icons, y, x, height, width);
     wbkgd(w, COLOR_PAIR(THEME_PANEL));
     box(w, 0, 0);
-    if (ui->context_open) {
+    if (*ui->dm_context_id) {
+        wattrset(w, COLOR_PAIR(THEME_PANEL_ACTIVE));
+        text_label(w, 1, 1, width - 2, "Fechar DM");
+    } else if (ui->context_open) {
         const char *labels[] = {
             "Ver quem reagiu",
             "Adicionar reação",

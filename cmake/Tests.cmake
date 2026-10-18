@@ -38,12 +38,21 @@ if(BUILD_TESTING)
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_member_colors.py
             $<TARGET_FILE:papo-tui>)
     set_tests_properties(member-colors-terminal PROPERTIES TIMEOUT 90)
+    add_test(NAME members-terminal
+             COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/terminal/test_members.py
+                     $<TARGET_FILE:papo-tui>)
+    set_tests_properties(members-terminal PROPERTIES TIMEOUT 180)
     find_program(FFMPEG_CLI NAMES ffmpeg REQUIRED)
     add_test(
         NAME app-modes-terminal
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_app_modes.py
                 $<TARGET_FILE:papo-tui> ${FFMPEG_CLI})
     set_tests_properties(app-modes-terminal PROPERTIES TIMEOUT 150)
+    add_test(
+        NAME members-media-terminal
+        COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/terminal/test_members_media.py
+                $<TARGET_FILE:papo-tui> ${FFMPEG_CLI})
+    set_tests_properties(members-media-terminal PROPERTIES TIMEOUT 120)
     add_executable(media-wire-test tests/unit/test_media_wire.c)
     target_link_libraries(media-wire-test PRIVATE papo_media)
     target_compile_options(media-wire-test PRIVATE -Wall -Wextra -Wpedantic -Werror)

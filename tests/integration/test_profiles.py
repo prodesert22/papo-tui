@@ -56,7 +56,7 @@ class ProfilesTests(unittest.TestCase):
         return result["id"]
 
     def test_app_modes_migrate_and_preserve_other_preferences(self):
-        for version in (1, 2, 3):
+        for version in (1, 2, 3, 4):
             with self.subTest(version=version):
                 value = self.configuration(version=1)
                 value["version"] = version
@@ -64,17 +64,34 @@ class ProfilesTests(unittest.TestCase):
                     value.update(requests_per_second=3, request_burst=7)
                 if version >= 3:
                     value.update(desktop_notifications=False, notification_preview=False)
+                if version >= 4:
+                    value["app_mode"] = "normal"
                 self.seed(value)
                 self.assertEqual(self.probe("list")["app_mode"], "normal")
                 self.assertTrue(self.probe("mode", "light")["ok"])
                 saved = json.loads(self.path.read_text())
-                self.assertEqual((saved["version"], saved["app_mode"]), (4, "light"))
+                self.assertEqual((saved["version"], saved["app_mode"]), (5, "light"))
                 self.assertEqual(saved["request_burst"], 7 if version >= 2 else 25)
                 self.assertEqual(self.probe("list")["app_mode"], "light")
                 self.assertTrue(self.probe("mode", "ultralight")["ok"])
                 previous = self.path.read_bytes()
                 self.assertFalse(self.probe("mode", "unknown")["ok"])
                 self.assertEqual(self.path.read_bytes(), previous)
+
+    def test_member_grouping_persists_and_preserves_other_preferences(self):
+        self.add()
+        self.assertFalse(self.probe("list")["members_by_status"])
+        self.assertTrue(self.probe("member-grouping", "status")["ok"])
+        self.assertTrue(self.probe("list")["members_by_status"])
+        self.assertTrue(self.probe("mode", "light")["ok"])
+        saved = json.loads(self.path.read_text())
+        self.assertTrue(saved["members_by_status"])
+        self.assertEqual(saved["app_mode"], "light")
+        saved["members_by_status"] = "invalid"
+        self.seed(saved)
+        previous = self.path.read_bytes()
+        self.assertFalse(self.probe("list")["writable"])
+        self.assertEqual(self.path.read_bytes(), previous)
 
     def test_unknown_persisted_mode_preserves_file_and_blocks_saving(self):
         self.add()
@@ -117,6 +134,7 @@ class ProfilesTests(unittest.TestCase):
                 "desktop_notifications",
                 "notification_preview",
                 "app_mode",
+                "members_by_status",
             },
         )
         self.assertTrue(all(set(item) == {"id", "name", "url"} for item in persisted["profiles"]))
@@ -173,7 +191,7 @@ class ProfilesTests(unittest.TestCase):
         self.assertEqual(self.probe("list")["requests_per_second"], 10)
         self.assertEqual(self.path.read_bytes(), before)
         self.assertTrue(self.probe("rate", "2.5", "3")["ok"])
-        self.assertEqual(json.loads(self.path.read_text())["version"], 4)
+        self.assertEqual(json.loads(self.path.read_text())["version"], 5)
         restored = self.probe("list")
         self.assertEqual(
             (restored["requests_per_second"], restored["request_burst"], restored["selected"]),
@@ -209,7 +227,7 @@ class ProfilesTests(unittest.TestCase):
         self.assertFalse(loaded["desktop_notifications"])
         self.assertFalse(loaded["notification_preview"])
         valid = json.loads(self.path.read_text())
-        self.assertEqual(valid["version"], 4)
+        self.assertEqual(valid["version"], 5)
         valid["notification_preview"] = "false"
         self.seed(valid)
         before = self.path.read_bytes()

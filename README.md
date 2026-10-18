@@ -9,6 +9,9 @@ Attach files with **F5** or **📎**, or paste copied files and images with
 **Ctrl+V** when the local clipboard is available.
 Available channels and message actions follow your account permissions.
 Member names follow their role color, with white as the default.
+Open the member drawer with **👤** or **F10** to search people, view profiles,
+start direct messages and access available member actions.
+Use the arrows to select DMs, and **m** or a right-click to close one from its menu.
 
 ## Install
 

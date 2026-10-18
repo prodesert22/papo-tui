@@ -386,7 +386,7 @@ class DiscoveryTerminal(unittest.TestCase):
             server.pin_ids[CHANNEL] = [m["id"] for m in server.messages[:35]] + [target["id"]]
             t = self.login(server)
             self.resize(t, 32, 100)
-            self.click(t, "[Fixadas]")
+            self.click(t, "🖈")
             self.wait(t, "36 resultado(s)")
             before = sum(r[1].split("?")[0].endswith("/messages") for r in server.requests)
             t.send("original")
@@ -441,7 +441,7 @@ class DiscoveryTerminal(unittest.TestCase):
             target["content"] = "Destino de busca"
             t = self.login(server)
             self.resize(t, 32, 100)
-            self.click(t, "[Buscar]")
+            self.click(t, "🔍")
             self.wait(t, "Buscar mensagens no servidor")
             t.send("Destino")
             t.read(0.25)

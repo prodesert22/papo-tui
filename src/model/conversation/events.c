@@ -69,11 +69,13 @@ void history_recover(history *h)
 {
     if (!h || !auth_has_session(h->auth))
         return;
-    if (h->pending != NONE && h->pending != INBOX && !history_internal_actions_mutating(h)) {
+    if (h->pending != NONE && h->pending != INBOX && !history_internal_actions_mutating(h) &&
+        !history_internal_members_mutating(h)) {
         auth_cancel_read(h->auth);
         h->pending = NONE;
     }
     history_internal_discovery_recover(h);
+    history_internal_members_recover(h);
     ++h->selection;
     history_internal_actions_reset(h);
     json_decref(h->fresh);
@@ -164,6 +166,13 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
             !history_uuid(history_internal_str(event, "role_id")))
             goto invalid;
         return history_internal_role_event(h, event);
+    }
+    if (!strcmp(type, "user_join")) {
+        if (!history_internal_string_field((json_t *)event, "user_id", 36, false) ||
+            !history_uuid(history_internal_str(event, "user_id")))
+            goto invalid;
+        h->users_complete = h->users_failed = false;
+        return true;
     }
     if (!strcmp(type, "avatar_update")) {
         if (!history_internal_string_field((json_t *)event, "user_id", 36, false) ||
@@ -282,7 +291,8 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
     bool relevant = create || update || remove || active;
     if (relevant && !h->replaying &&
         (h->recovering || h->pending == CHANNELS || h->pending == MESSAGES ||
-         (h->pending == ACTIONS && !history_internal_actions_mutating(h))))
+         (h->pending == ACTIONS && !history_internal_actions_mutating(h) &&
+          !history_internal_members_mutating(h))))
         if (!history_internal_remember(h, event))
             return false;
     if (create || update || remove) {

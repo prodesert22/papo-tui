@@ -147,6 +147,31 @@ static bool api_uuid(const char *id)
     return true;
 }
 
+bool auth_member_action(auth_client *client, const char *id, int action)
+{
+    if (!api_uuid(id) || action < 0 || action > 4 || !auth_has_session(client) ||
+        client->state != AUTH_READY || client->queued || client->attached || client->api_path ||
+        client->response_ready || !strcmp(id, auth_user_id(client)))
+        return false;
+    char path[96];
+    snprintf(path, sizeof(path), "/users/%s/%s", id,
+             action < 2   ? "block"
+             : action < 4 ? "ban"
+                          : "reset");
+    json_t *body = action == 2 || action == 3 ? json_pack("{s:b}", "ban_state", action == 2) : NULL;
+    if ((action == 2 || action == 3) && !body)
+        return false;
+    client->api_path = strdup(path);
+    if (!client->api_path) {
+        json_decref(body);
+        return false;
+    }
+    client->api_body = body;
+    client->api_method = action == 1 ? "DELETE" : action == 2 || action == 3 ? "PUT" : "POST";
+    client->api_uncertain = false;
+    return auth_internal_request(client, AUTH_API_MUTATION, client->api_path, body, body != NULL);
+}
+
 bool auth_search_messages(auth_client *client, const json_t *filters, const char *since,
                           const char *last_id)
 {

@@ -970,3 +970,8 @@ uint64_t inbox_revision(const inbox *b)
 {
     return b->revision;
 }
+
+const json_t *inbox_presence_info(const inbox *b, const char *id)
+{
+    return b && id ? json_object_get(b->presence, id) : NULL;
+}

@@ -44,12 +44,14 @@ typedef enum {
     AUTH_MEDIA_ATTACHMENT,
     AUTH_MEDIA_THUMBNAIL,
     AUTH_MEDIA_EMBED,
-    AUTH_MEDIA_VIDEO
+    AUTH_MEDIA_VIDEO,
+    AUTH_MEDIA_CONTENT
 } auth_media_kind;
 /* Internal read-only media transport. Creates an owned easy handle configured
  * for this instance's cookies and TLS policy; never dispatches HTTP. The media
  * owner must destroy it before auth_destroy and acquire the global budget.
- * Only UUID-addressed, documented media endpoints are accepted. Main thread. */
+ * Only documented media endpoints with validated UUIDs or content hashes are accepted. Main thread.
+ */
 CURL *auth_media_easy(auth_client *client, auth_media_kind kind, const char *id);
 /* Public webhook avatars: no cookies, credentials or redirects. HTTPS URLs or
  * the documented /webhooks/<uuid>/avatar path on this instance only. */
@@ -106,6 +108,9 @@ bool auth_search_messages(auth_client *client, const json_t *filters, const char
                           const char *last_id);
 /* Bodyless, non-replayed pin mutation; UUID path components are validated. */
 bool auth_pin_message(auth_client *client, const char *channel, const char *message, bool remove);
+/* UUID target, action: block/unblock/ban/unban/reset (0..4). Bodyless POSTs
+ * are endpoint-specific and never replayed. */
+bool auth_member_action(auth_client *client, const char *id, int action);
 bool auth_api_uncertain(const auth_client *client);
 /* Borrowed, instance/account-scoped policy; auth owns it until destruction. */
 permissions *auth_permissions(auth_client *client);
