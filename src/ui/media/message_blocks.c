@@ -41,7 +41,7 @@ bool message_same_author(const json_t *previous, const json_t *message)
         return true;
     }
     const char *id = str(message, "author_id");
-    if (*str(message, "edited_at"))
+    if (*str(message, "edited_at") || *str(message, "reply_to"))
         return false;
     return history_uuid(id) && !strcmp(str(previous, "author_id"), id);
 }
