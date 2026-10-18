@@ -258,6 +258,12 @@ if(BUILD_TESTING)
             $<TARGET_FILE:papo-tui> ${FFMPEG_CLI})
     set_tests_properties(media-integration PROPERTIES TIMEOUT 120)
     set_tests_properties(media-terminal PROPERTIES TIMEOUT 420)
+    add_test(
+        NAME media-navigation-terminal
+        COMMAND
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_media_navigation.py
+            $<TARGET_FILE:papo-tui> ${FFMPEG_CLI})
+    set_tests_properties(media-navigation-terminal PROPERTIES TIMEOUT 180)
     find_program(OPENSSL_CLI NAMES openssl REQUIRED)
     add_executable(realtime-probe tests/probes/realtime_probe.c)
     target_link_libraries(realtime-probe PRIVATE papo_auth)

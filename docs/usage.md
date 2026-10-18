@@ -557,6 +557,19 @@ cropping. Their size adjusts when you resize the terminal.
 Click **Info**, or press `i` or F8, to show or hide the media properties.
 Use PageUp/PageDown or the mouse wheel over the properties panel to scroll it.
 
+### Browse the images of a message
+
+While the image viewer is open and the message carries more than one image, press
+← or → to show the previous or the next one. The viewer moves around and shows
+the current position, for example **2/3 · ←→ imagens**. Only the images of the
+opened message are shown; images from other messages never join the sequence.
+The properties panel stays open while you browse, and downloads are reused, so
+switching back to an image already seen does not download it again.
+
+When a message carries an embed with a video, pressing Enter on the embed cover
+opens the video player directly. The **Abrir player** entry keeps working as
+before and reuses the download already made for the cover.
+
 ## Troubleshooting
 
 - **Command not found:** check that the application is installed and its folder

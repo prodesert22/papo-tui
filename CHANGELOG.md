@@ -43,6 +43,9 @@ Upcoming changes are recorded in [Unreleased](releases/Unreleased.md).
 - Restrict release runs to pushes changing CMakeLists.txt on main and require a
   version increase before tagging or packaging. Identify PR checks as CI and
   block release-mode builds in other event/branch contexts.
+- Open the video player when pressing Enter on an embed cover instead of the
+  cover image, and move between the images of a message with the left and right
+  arrows while the image viewer is open.
 
 ### Fixed
 
