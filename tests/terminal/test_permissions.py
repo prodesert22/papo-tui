@@ -169,6 +169,10 @@ class PermissionsTerminal(unittest.TestCase):
             terminal = self.open(server)
             try:
                 terminal.send("Draft survives access changes")
+                self.settled(
+                    terminal,
+                    lambda: "Draft survives access changes" in self.editor_text(terminal),
+                )
                 server.role(READ_ROLE, False)
                 self.settled(
                     terminal, lambda: "Mensagem 0002" not in self.screen(terminal), seconds=3

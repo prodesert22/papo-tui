@@ -25,6 +25,7 @@ def build_variant(
     suite="all",
     case=None,
     test_only=False,
+    build_only=False,
     full_instrumentation=False,
 ):
     env = dict(os.environ)
@@ -67,13 +68,18 @@ def build_variant(
 
     def run(stage, command):
         started = time.monotonic()
+        print(f"[{mode}] Starting {stage}", flush=True)
         try:
             subprocess.run(
                 command, env=env, check=True, stdout=log, stderr=subprocess.STDOUT if log else None
             )
         finally:
-            stages.append({"stage": stage, "seconds": time.monotonic() - started})
-            (reports / "stages.json").write_text(json.dumps(stages, indent=2), encoding="utf-8")
+            seconds = time.monotonic() - started
+            stages.append({"stage": stage, "seconds": seconds})
+            print(f"[{mode}] Finished {stage} in {seconds:.2f}s", flush=True)
+            (reports / ("build-stages.json" if build_only else "stages.json")).write_text(
+                json.dumps(stages, indent=2), encoding="utf-8"
+            )
 
     if not test_only:
         run("configure", ["cmake", "-S", str(ROOT), "-B", str(build), "-G", "Ninja", *options])
@@ -82,6 +88,8 @@ def build_variant(
         "inventory",
         [sys.executable, str(ROOT / "tools/check_test_inventory.py"), "--build", str(build)],
     )
+    if build_only:
+        return
     metadata = {
         "platform": platform.platform(),
         "architecture": platform.machine(),
@@ -92,6 +100,9 @@ def build_variant(
         "test_jobs": test_jobs,
         "tools": {},
         "cache_hit": os.environ.get("PAPO_CI_CACHE_HIT", "unknown"),
+        "instrumentation_options": {
+            key: os.environ.get(key) for key in ("ASAN_OPTIONS", "UBSAN_OPTIONS")
+        },
         "runner_image": {
             key: os.environ.get(key) for key in ("ImageOS", "ImageVersion", "RUNNER_OS")
         },
@@ -141,6 +152,8 @@ def build_variant(
             command += ["-L", "^(unit|integration)$"]
     if case:
         command += ["-R", "^" + re.escape(case) + "$"]
+    for filename in ("results.xml", "timings.json", "summary.md"):
+        (reports / filename).unlink(missing_ok=True)
     started = time.monotonic()
     try:
         run("test", command)
@@ -188,10 +201,14 @@ def main():
         action="store_true",
         help="list existing configured tests without building or running",
     )
-    parser.add_argument(
+    execution = parser.add_mutually_exclusive_group()
+    execution.add_argument(
         "--test-only",
         action="store_true",
         help="test an existing build without preparing or compiling",
+    )
+    execution.add_argument(
+        "--build-only", action="store_true", help="prepare and compile without executing tests"
     )
     parser.add_argument(
         "--full-instrumentation",
@@ -219,6 +236,7 @@ def main():
         ready = prefix / ".papo-prepared"
         ready.unlink(missing_ok=True)
         started = time.monotonic()
+        print("Preparing locked dependencies and resources", flush=True)
         subprocess.run(
             [
                 sys.executable,
@@ -230,10 +248,23 @@ def main():
             ],
             check=True,
         )
-        subprocess.run([sys.executable, str(ROOT / "dist/resources.py")], check=True)
+        subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "dist/resources.py"),
+                "--manifest",
+                str(ROOT / "dist/resources.json"),
+                str(ROOT / "tests/fixtures/resources.json"),
+            ],
+            check=True,
+        )
         build.mkdir(parents=True, exist_ok=True)
-        (build / "preparation.json").write_text(
+        (build / "ci-logs").mkdir(parents=True, exist_ok=True)
+        (build / "ci-logs/preparation.json").write_text(
             json.dumps({"seconds": time.monotonic() - started}), encoding="utf-8"
+        )
+        print(
+            f"Prepared dependencies and resources in {time.monotonic() - started:.2f}s", flush=True
         )
         ready.touch()
         if os.environ.get("GITHUB_OUTPUT"):
@@ -246,7 +277,8 @@ def main():
     # so CPU/memory budgets never multiply through nested concurrency.
     for variant in variants:
         directory = build / variant if args.variants else build
-        path = logs / (variant + ".log")
+        suffix = "-build" if args.build_only else "-test" if args.test_only else ""
+        path = logs / (variant + suffix + ".log")
         try:
             with path.open("w", encoding="utf-8") as log:
                 build_variant(
@@ -259,6 +291,7 @@ def main():
                     suite=args.suite,
                     case=args.case,
                     test_only=args.test_only,
+                    build_only=args.build_only,
                     full_instrumentation=args.full_instrumentation,
                 )
         except (subprocess.CalledProcessError, OSError) as error:
@@ -269,7 +302,8 @@ def main():
                 flush=True,
             )
         else:
-            print(f"Passed {variant}; log={path}", flush=True)
+            label = "Built" if args.build_only else "Passed"
+            print(f"{label} {variant}; log={path}", flush=True)
     if not passed:
         raise SystemExit(1)
 

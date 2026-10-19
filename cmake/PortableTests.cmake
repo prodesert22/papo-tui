@@ -70,3 +70,6 @@ papo_add_test(NAME permissions-terminal COMMAND ${Python3_EXECUTABLE}
               ${PROJECT_SOURCE_DIR}/tests/terminal/test_permissions.py $<TARGET_FILE:papo-tui>)
 papo_add_test(NAME members-terminal COMMAND ${Python3_EXECUTABLE}
               ${PROJECT_SOURCE_DIR}/tests/terminal/test_members.py $<TARGET_FILE:papo-tui>)
+
+papo_add_test(NAME terminal-stream-unit COMMAND ${Python3_EXECUTABLE}
+              ${PROJECT_SOURCE_DIR}/tests/unit/test_terminal_stream.py)

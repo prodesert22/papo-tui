@@ -76,10 +76,13 @@ class RedactingStream:
         self.stream.flush()
 
 
-def diagnostics(directory):
+def diagnostics(directory, case=None):
     import test_context
 
+    if (directory / "diagnostic.json").exists():
+        return
     data = {
+        "checkpoint": getattr(case, "_protocol_checkpoint", None),
         "terminals": [
             {"screen": t.screen.display, "output": redact(repr(bytes(t.output)))}
             for t in test_context.terminals
@@ -93,6 +96,31 @@ def diagnostics(directory):
     (directory / "diagnostic.json").write_text(
         redact(json.dumps(data, ensure_ascii=True, indent=2)), encoding="utf-8"
     )
+
+
+class CaseResult(unittest.TextTestResult):
+    def __init__(self, *args, directory):
+        super().__init__(*args)
+        self.directory = directory
+
+    def snapshot(self, case):
+        try:
+            diagnostics(self.directory, case)
+        except Exception:
+            traceback.print_exc()
+
+    def addFailure(self, case, error):
+        self.snapshot(case)
+        super().addFailure(case, error)
+
+    def addError(self, case, error):
+        self.snapshot(case)
+        super().addError(case, error)
+
+    def addSubTest(self, case, subtest, error):
+        if error is not None:
+            self.snapshot(case)
+        super().addSubTest(case, subtest, error)
 
 
 def main():
@@ -116,6 +144,8 @@ def main():
     started = time.monotonic()
     identifier = f"{script.stem}.{args.case}"
     directory = Path(os.environ.get("PAPO_TEST_REPORTS", "Testing/Temporary/cases")) / identifier
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "diagnostic.json").unlink(missing_ok=True)
     faulthandler.dump_traceback_later(45, repeat=True)
     try:
         if args.case not in discover(script):
@@ -132,7 +162,11 @@ def main():
                 else:
                     os.environ["PAPO_TEST_PROTOCOL"] = part
         suite = unittest.defaultTestLoader.loadTestsFromName(selector, module)
-        result = unittest.TextTestRunner(verbosity=2, stream=RedactingStream(sys.stderr)).run(suite)
+        result = unittest.TextTestRunner(
+            verbosity=2,
+            stream=RedactingStream(sys.stderr),
+            resultclass=lambda *values: CaseResult(*values, directory=directory),
+        ).run(suite)
         skipped = result.testsRun > 0 and len(result.skipped) == result.testsRun
         successful = result.wasSuccessful() and result.testsRun > 0
         import test_context

@@ -192,6 +192,32 @@ class DistributionTests(unittest.TestCase):
             self.assertEqual(target.read_bytes(), b"existing")
             self.assertFalse((root / "target.part").exists())
 
+    def test_dependency_kit_only_contains_declared_release_fonts(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "dist/patches").mkdir(parents=True)
+            (root / "build/resources/test-fonts").mkdir(parents=True)
+            (root / "build/resources/NotoColorEmoji.ttf").write_bytes(b"release font")
+            (root / "build/resources/test-fonts/NotoSans.ttf").write_bytes(b"test font")
+            (root / "dist/dependencies.json").write_text('{"sources": []}', encoding="utf-8")
+            (root / "dist/resources.json").write_text(
+                '{"files": [{"name": "NotoColorEmoji.ttf"}]}', encoding="utf-8"
+            )
+            for name in ("bootstrap.py", "resources.py"):
+                (root / "dist" / name).write_text("# synthetic fixture", encoding="utf-8")
+            with (
+                patch.object(package, "ROOT", root),
+                patch.object(package, "collect"),
+                patch.object(package.shutil, "which", return_value=None),
+            ):
+                archive = package.dependency_sources(
+                    root, "0.1.0", "x86_64", "test", root / "prefix", root / "cache", root / "stage"
+                )
+            with tarfile.open(archive) as source:
+                files = source.getnames()
+                self.assertIn("dependency-sources/font-resources/NotoColorEmoji.ttf", files)
+                self.assertFalse(any("test-fonts" in name for name in files))
+
     def test_source_archive_marks_container_checkout_safe(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)

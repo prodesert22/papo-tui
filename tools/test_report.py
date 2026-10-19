@@ -64,6 +64,13 @@ def summarize(path, output, elapsed=None):
 
 def compare(paths):
     rows = [json.loads(Path(p).read_text(encoding="utf-8")) for p in paths]
+    if any(case["status"] == "failed" for row in rows for case in row.get("cases", [])):
+        raise ValueError(
+            "Failed attempts must not be included in successful-run timing comparisons"
+        )
+    inventories = [{case["name"] for case in row.get("cases", [])} for row in rows]
+    if inventories and any(inventory != inventories[0] for inventory in inventories[1:]):
+        raise ValueError("Scenario inventories differ; compare equivalent runs")
     elapsed = [row["elapsed_seconds"] for row in rows if row.get("elapsed_seconds") is not None]
     return {
         "runs": len(rows),

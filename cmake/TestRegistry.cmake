@@ -45,8 +45,9 @@ function(papo_finalize_tests)
             NAME test-fonts-prepare
             COMMAND
                 "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/dist/resources.py" --manifest
+                "${PROJECT_SOURCE_DIR}/dist/resources.json"
                 "${PROJECT_SOURCE_DIR}/tests/fixtures/resources.json" --output
-                "${PROJECT_SOURCE_DIR}/build/resources/test-fonts")
+                "${PROJECT_SOURCE_DIR}/build/resources")
         set_tests_properties(test-fonts-prepare PROPERTIES FIXTURES_SETUP test-fonts LABELS
                                                            "setup;media" TIMEOUT 120)
         add_test(
@@ -118,7 +119,9 @@ function(papo_finalize_tests)
                 set_tests_properties("${id}" PROPERTIES SKIP_RETURN_CODE 77)
             endif()
             set(labels "unit")
-            if(script MATCHES "/terminal/" OR name MATCHES "terminal")
+            if(script MATCHES "/unit/")
+                set(labels "unit")
+            elseif(script MATCHES "/terminal/" OR name MATCHES "terminal")
                 set(labels "terminal")
             elseif(script MATCHES "/integration/" OR name MATCHES "integration")
                 set(labels "integration")

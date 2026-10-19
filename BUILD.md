@@ -254,6 +254,9 @@ suite with sanitizers or coverage; the scheduled CI does this automatically.
 `--suite all` with that option also reproduces the full instrumented suite.
 `--jobs` limits compilation and `--test-jobs` limits concurrent test processes.
 Multiple local `--variants release,sanitizers,coverage` execute sequentially.
+For separate compilation and test stages, run the build command with
+`--build-only`, then repeat it with `--test-only`. CI saves verified dependencies
+between these stages, so test failures preserve the compiled dependency cache.
 
 CTest remains available directly:
 
@@ -285,6 +288,8 @@ JUnit results, a timing summary and all scenarios above **30 seconds**. Failed
 Python cases also save safely escaped terminal output, the screen and HTTP
 methods/paths under `Testing/Temporary/cases`. Credentials and cookies are
 redacted. GitHub uploads these reports even when a job fails.
+`preparation.json` measures dependency/resource preparation; `build-stages.json`
+and `stages.json` distinguish compilation from test execution in split stages.
 
 Synthetic FFmpeg media is prepared once per tool identity, verified by hashes,
 and copied into each case's private directory. Test fonts are downloaded from
@@ -298,6 +303,15 @@ To compare completed timing reports, use:
 ```sh
 python tools/test_report.py --compare build/run-1/ci-logs/timings.json build/run-2/ci-logs/timings.json build/run-3/ci-logs/timings.json
 ```
+
+To record the whole GitHub matrix after an attempt finishes, authenticate `gh`
+and run `python tools/ci_timings.py RUN_ID --attempt ATTEMPT`. The report includes
+elapsed workflow time, summed job time, each job result and the exact commit;
+reports remain under `build/ci-reports`.
+
+The periodic permission-reconciliation scenario deliberately exercises a real
+30-second interval. Its reason is recorded in `tests/time_budgets.json`; other
+cases over 30 seconds remain visible for investigation and subdivision.
 
 Record cache state, CPU budget and profile alongside comparisons. Report the
 whole matrix's elapsed time and runner minutes as well as individual test times;

@@ -33,7 +33,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref || github.ref }}
+          ref: ${{ inputs.ref || github.sha }}
           fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
@@ -90,7 +90,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref || github.ref }}
+          ref: ${{ inputs.ref || github.sha }}
       - uses: actions/setup-python@v5
         if: matrix.platform == 'linux'
         with:
@@ -144,14 +144,28 @@ jobs:
           key: flatpak-${{ matrix.arch }}-26.08-${{ hashFiles('dist/dependencies.json', 'dist/flatpak/build-dependencies.json', 'dist/resources.json') }}
           restore-keys: |
             flatpak-${{ matrix.arch }}-26.08-
-      - name: Build and test Linux Release
+      - name: Build Linux Release
         id: linux-build
         if: matrix.platform == 'linux' && !inputs.release
         env:
           PAPO_CI_CACHE_HIT: ${{ steps.linux-cache.outputs.cache-hit }}
           PATH: ${{ github.workspace }}/build/test-env/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
         run: |
-          build/test-env/bin/python dist/build.py --build build --prefix build/release-deps --variants release
+          build/test-env/bin/python dist/build.py --build build --prefix build/release-deps --variants release --build-only
+      - uses: actions/cache/save@v4
+        if: always() && !cancelled() && steps.linux-cache.outcome == 'success' && steps.linux-cache.outputs.cache-hit != 'true' && steps.linux-build.outputs.dependencies-ready == 'true'
+        with:
+          path: |
+            build/source-cache
+            build/resources
+            build/release-deps
+          key: ${{ steps.linux-cache.outputs.cache-primary-key }}
+      - name: Test Linux Release
+        if: matrix.platform == 'linux' && !inputs.release
+        env:
+          PAPO_CI_CACHE_HIT: ${{ steps.linux-cache.outputs.cache-hit }}
+          PATH: ${{ github.workspace }}/build/test-env/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: build/test-env/bin/python dist/build.py --build build --prefix build/release-deps --variants release --test-only
       - name: Build, test and package Linux targets concurrently
         id: release-build
         if: matrix.platform == 'linux' && inputs.release
@@ -198,7 +212,7 @@ jobs:
           key: windows-${{ matrix.system }}-${{ steps.windows-env.outputs.fingerprint }}-${{ hashFiles('dist/dependencies.json', 'dist/bootstrap.py', 'dist/patches/**', 'dist/resources.json', 'tests/fixtures/resources.json') }}
           restore-keys: |
             windows-${{ matrix.system }}-
-      - name: Build and test Windows
+      - name: Build Windows
         env:
           PAPO_CI_CACHE_HIT: ${{ steps.windows-cache.outputs.cache-hit }}
         id: windows-build
@@ -207,7 +221,23 @@ jobs:
         run: |
           export PATH="$PWD/build/test-env/Scripts:$PATH"
           export PAPO_SYSTEM_BIN="$(cygpath -w "$MINGW_PREFIX/bin")"
-          python dist/build.py --build build/release --prefix build/release-deps
+          python dist/build.py --build build/release --prefix build/release-deps --build-only
+      - uses: actions/cache/save@v4
+        if: always() && !cancelled() && steps.windows-cache.outcome == 'success' && steps.windows-cache.outputs.cache-hit != 'true' && steps.windows-build.outputs.dependencies-ready == 'true'
+        with:
+          path: |
+            build/source-cache
+            build/resources
+            build/release-deps
+          key: ${{ steps.windows-cache.outputs.cache-primary-key }}
+      - name: Test Windows
+        if: matrix.platform == 'windows'
+        env:
+          PAPO_CI_CACHE_HIT: ${{ steps.windows-cache.outputs.cache-hit }}
+        shell: msys2 {0}
+        run: |
+          export PATH="$PWD/build/test-env/Scripts:$PATH"
+          python dist/build.py --build build/release --prefix build/release-deps --test-only
       - name: ZIP, installer and installation lifecycle
         if: matrix.platform == 'windows' && inputs.release
         shell: msys2 {0}
@@ -220,22 +250,6 @@ jobs:
           python dist/package.py --build build/release --output build/artifacts --formats zip,installer \
             --arch "$BUILD_ARCH" --flavor windows --dependency-prefix build/release-deps
           python dist/windows/verify.py --artifacts build/artifacts --version "$version" --arch "$BUILD_ARCH"
-      - uses: actions/cache/save@v4
-        if: always() && !cancelled() && steps.linux-cache.outcome == 'success' && steps.linux-cache.outputs.cache-hit != 'true' && steps.linux-build.outputs.dependencies-ready == 'true'
-        with:
-          path: |
-            build/source-cache
-            build/resources
-            build/release-deps
-          key: ${{ steps.linux-cache.outputs.cache-primary-key }}
-      - uses: actions/cache/save@v4
-        if: always() && !cancelled() && steps.windows-cache.outcome == 'success' && steps.windows-cache.outputs.cache-hit != 'true' && steps.windows-build.outputs.dependencies-ready == 'true'
-        with:
-          path: |
-            build/source-cache
-            build/resources
-            build/release-deps
-          key: ${{ steps.windows-cache.outputs.cache-primary-key }}
       - uses: actions/cache/save@v4
         if: always() && !cancelled() && steps.release-cache.outcome == 'success' && steps.release-cache.outputs.cache-hit != 'true' && steps.release-build.outputs.dependencies-ready == 'true'
         with:
@@ -284,7 +298,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref || github.ref }}
+          ref: ${{ inputs.ref || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
@@ -306,8 +320,23 @@ jobs:
           key: linux-ubuntu-24.04-${{ steps.instrumentation-env.outputs.fingerprint }}-${{ hashFiles('dist/dependencies.json', 'dist/bootstrap.py', 'dist/patches/**', 'dist/resources.json', 'tests/fixtures/resources.json') }}
           restore-keys: |
             linux-ubuntu-24.04-
-      - name: Build and test isolated variant
+      - name: Build isolated variant
         id: instrumented-build
+        env:
+          PAPO_CI_CACHE_HIT: ${{ steps.dependencies.outputs.cache-hit }}
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          export PATH="$PWD/build/test-env/bin:$PATH"
+          python dist/build.py --build build --prefix build/release-deps --variants "$VARIANT" --build-only
+      - uses: actions/cache/save@v4
+        if: always() && !cancelled() && steps.dependencies.outputs.cache-hit != 'true' && steps.instrumented-build.outputs.dependencies-ready == 'true'
+        with:
+          path: |
+            build/source-cache
+            build/resources
+            build/release-deps
+          key: ${{ steps.dependencies.outputs.cache-primary-key }}
+      - name: Test isolated variant
         env:
           PAPO_CI_CACHE_HIT: ${{ steps.dependencies.outputs.cache-hit }}
           VARIANT: ${{ matrix.variant }}
@@ -316,7 +345,7 @@ jobs:
           export PATH="$PWD/build/test-env/bin:$PATH"
           options=()
           if [ "$FULL" = true ]; then options+=(--full-instrumentation); fi
-          python dist/build.py --build build --prefix build/release-deps --variants "$VARIANT" "${options[@]}"
+          python dist/build.py --build build --prefix build/release-deps --variants "$VARIANT" --test-only "${options[@]}"
       - name: Analyze C paths independently of test results
         if: always() && matrix.variant == 'coverage' && !cancelled()
         run: |
@@ -335,14 +364,6 @@ jobs:
         if: github.event_name == 'schedule' && matrix.variant == 'sanitizers'
         run: |
           ctest --test-dir build/sanitizers --output-on-failure --no-tests=error --parallel 2 --repeat until-fail:10 -R 'test_grouping_survives_prepend_scroll_and_resize|test_graphical_server_badge_is_inside_tab_delimiters'
-      - uses: actions/cache/save@v4
-        if: always() && !cancelled() && steps.dependencies.outputs.cache-hit != 'true' && steps.instrumented-build.outputs.dependencies-ready == 'true'
-        with:
-          path: |
-            build/source-cache
-            build/resources
-            build/release-deps
-          key: ${{ steps.dependencies.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:

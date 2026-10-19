@@ -93,25 +93,4 @@ class MessageInteractions(unittest.TestCase):
         deadline = time.monotonic() + seconds
         while not predicate() and time.monotonic() < deadline:
             terminal.read(0.03)
-        if not predicate() and os.name == "nt":
-            # Retain a safely escaped synthetic protocol trace even when
-            # CTest reports only the failing screen assertion.
-            directory = Path.cwd() / "Testing" / "Temporary"
-            directory.mkdir(parents=True, exist_ok=True)
-            output = bytes(terminal.output).replace(b"Synthetic!123", b"[redacted]")
-            (directory / f"{self._testMethodName}-terminal.log").write_text(
-                json.dumps(
-                    {
-                        "output_hex": output.hex(),
-                        "checkpoint": getattr(self, "_protocol_checkpoint", None),
-                        "screen": terminal.screen.display,
-                        "requests": [
-                            [method, path] for method, path, *_ in self._mock_server.requests
-                        ],
-                        "reactions": self._mock_server.reaction_calls,
-                    },
-                    ensure_ascii=True,
-                ),
-                encoding="utf-8",
-            )
         self.assertTrue(predicate(), self.screen(terminal))

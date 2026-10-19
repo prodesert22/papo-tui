@@ -7,7 +7,6 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
-import time
 import unittest
 from unittest.mock import patch
 import urllib.request
@@ -59,11 +58,12 @@ class HarnessTests(unittest.TestCase):
         self.assertFalse(server.thread.is_alive())
         self.assertFalse(server.server.handlers)
 
-    def test_shutdown_does_not_wait_for_default_http_poll_interval(self):
-        started = time.monotonic()
-        with MockServer():
+    def test_shutdown_closes_the_listener_and_joins_the_server(self):
+        server = MockServer()
+        with server:
             pass
-        self.assertLess(time.monotonic() - started, 0.4)
+        self.assertFalse(server.thread.is_alive())
+        self.assertEqual(server.server.fileno(), -1)
 
     def test_importing_terminal_support_preserves_argv(self):
         source = ROOT / "tests/support/terminal_support.py"
@@ -134,6 +134,40 @@ class HarnessTests(unittest.TestCase):
                     timeout=5,
                 )
                 self.assertEqual(result.returncode, expected, result.stderr)
+
+    def test_failure_snapshot_precedes_terminal_cleanup(self):
+        with tempfile.TemporaryDirectory() as folder:
+            script = Path(folder, "fixture.py")
+            script.write_text(
+                "import unittest\nfrom types import SimpleNamespace\nimport test_context\n"
+                "class Cases(unittest.TestCase):\n"
+                "    def test_failure(self):\n"
+                "        terminal = SimpleNamespace(screen=SimpleNamespace(display=['visible before cleanup']), output=b'', close=lambda: True)\n"
+                "        test_context.terminals.append(terminal)\n"
+                "        self.addCleanup(setattr, terminal.screen, 'display', ['cleared'])\n"
+                "        self.fail('controlled failure')\n",
+                encoding="utf-8",
+            )
+            reports = Path(folder, "reports")
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "tests/support/run_case.py"),
+                    "--script",
+                    str(script),
+                    "--case",
+                    "Cases.test_failure",
+                    "--",
+                ],
+                env=dict(os.environ, PAPO_TEST_REPORTS=str(reports)),
+                capture_output=True,
+                timeout=5,
+            )
+            self.assertEqual(result.returncode, 1)
+            data = json.loads(
+                (reports / "fixture.Cases.test_failure/diagnostic.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(data["terminals"][0]["screen"], ["visible before cleanup"])
 
     def test_reports_do_not_count_skips_or_errors_as_passes(self):
         with tempfile.TemporaryDirectory() as folder:

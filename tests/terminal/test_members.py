@@ -33,6 +33,7 @@ class Members(unittest.TestCase):
             interactions.MessageInteractions.click(self, terminal, text)
 
     right_click = interactions.MessageInteractions.right_click
+    resize = interactions.MessageInteractions.resize
 
     def open(self, server, *, columns=120, mode="ultralight", environment=None):
         terminal = Terminal(environment=environment)
@@ -56,6 +57,11 @@ class Members(unittest.TestCase):
     def search(self, terminal, text):
         terminal.send("/" + text + "\n")
         self.settled(terminal, lambda: "Membros (1)" in self.screen(terminal))
+
+    def select_member(self, terminal, name):
+        self.search(terminal, name)
+        terminal.send("/\x15\n")
+        self.wait(terminal, "Membros (6)")
 
     def menu(self, terminal, text="Bia", *, mouse=False):
         self.search(terminal, "bob" if text == "Bia" else text)
@@ -113,16 +119,26 @@ class Members(unittest.TestCase):
             self.wait(terminal, "Foco: Membros")
             terminal.send("\x1b[21~")
             self.settled(terminal, lambda: "Membros (" not in self.screen(terminal))
-            terminal.resize(26, 70)
-            self.wait(terminal, "🔍")
-            self.wait(terminal, "🖈")
-            self.wait(terminal, "👤")
+            self.resize(terminal, 26, 70)
+            self.wait(terminal, "Foco: Membros")
             terminal.send("\n")
             self.wait(terminal, "Membros (6)")
             terminal.send("\x1bOD")
             self.wait(terminal, "Foco: Membros")
             self.assertNotIn("Membros (", self.screen(terminal))
             self.assertNotIn("👤", terminal.screen.display[1])
+
+    @unittest.skipIf(
+        os.name == "nt",
+        "Native ncurses wchar_t cannot draw supplementary-plane header icons; navigation is tested separately",
+    )
+    def test_header_icons_remain_visible_at_narrow_sizes(self):
+        with MemberMock() as server:
+            terminal = self.open(server)
+            self.click(terminal, "Conversar em #geral")
+            self.resize(terminal, 26, 70)
+            for glyph in ("🔍", "🖈", "👤"):
+                self.wait(terminal, glyph)
 
     def test_first_menu_uses_loaded_member_data_and_has_no_empty_bottom_rows(self):
         with MemberMock() as server:
@@ -176,7 +192,7 @@ class Members(unittest.TestCase):
         with MemberMock() as server:
             terminal = self.open(server)
             self.drawer(terminal)
-            terminal.send("\x1bOF")
+            self.select_member(terminal, "Zed")
             self.wait(terminal, "Zed")
             target_row = next(i for i, line in enumerate(terminal.screen.display) if "Zed" in line)
             terminal.send("m")
@@ -255,8 +271,12 @@ class Members(unittest.TestCase):
         with MemberMock() as server:
             terminal = self.open(server)
             self.drawer(terminal)
-            terminal.send("\x1bOF\x12")
-            self.wait(terminal, "Membros (6)")
+            self.select_member(terminal, "Zed")
+            next(member for member in server.members if member["nickname"] == "Zed")["nickname"] = (
+                "Zed updated"
+            )
+            terminal.send("\x12")
+            self.wait(terminal, "Zed updated")
             terminal.send("m")
             self.wait(terminal, "Desbanir")
             self.assertIn("Zed", self.screen(terminal))
@@ -511,6 +531,7 @@ class Members(unittest.TestCase):
             terminal.send("m\n")
             self.settled(terminal, lambda: server.dm_closes == [uuid(3001)])
             self.wait(terminal, "Mensagem direta")
+            self.settled(terminal, lambda: "Carol ·" not in self.screen(terminal))
             self.assertNotIn("Carol ·", self.screen(terminal))
             self.assertEqual(len(server.dms), 1)
 
@@ -560,7 +581,7 @@ class Members(unittest.TestCase):
                 terminal = self.open(server)
                 self.drawer(terminal)
                 self.search(terminal, "bob")
-                terminal.resize(36, columns)
+                self.resize(terminal, 36, columns)
                 self.wait(terminal, "Bia")
                 row = next(i for i, line in enumerate(terminal.screen.display) if "Bia" in line)
                 column = terminal.screen.display[row].index("Bia")

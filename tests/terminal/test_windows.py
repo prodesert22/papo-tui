@@ -9,7 +9,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from history_mock import HistoryMock
-from terminal_support import Terminal, TerminalStreamTests  # noqa: F401 - shared observer regression tests
+from terminal_support import Terminal
 
 
 class WindowsTerminalTests(unittest.TestCase):
