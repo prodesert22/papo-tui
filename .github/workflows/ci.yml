@@ -120,7 +120,7 @@ jobs:
             build/source-cache
             build/resources
             build/release-deps
-          key: linux-${{ matrix.runner }}-${{ steps.linux-env.outputs.fingerprint }}-${{ hashFiles('dist/dependencies.json', 'dist/bootstrap.py', 'dist/patches/**', 'dist/resources.json') }}
+          key: linux-${{ matrix.runner }}-${{ steps.linux-env.outputs.fingerprint }}-${{ hashFiles('dist/dependencies.json', 'dist/bootstrap.py', 'dist/patches/**', 'dist/resources.json', 'tests/fixtures/resources.json') }}
           restore-keys: |
             linux-${{ matrix.runner }}-
       - uses: actions/cache/restore@v4
@@ -131,7 +131,7 @@ jobs:
             build/release-tasks/*/source/build/source-cache
             build/release-tasks/*/source/build/resources
             build/release-tasks/*/source/build/release-deps
-          key: release-native-v2-${{ matrix.arch }}-${{ hashFiles('dist/dependencies.json', 'dist/bootstrap.py', 'dist/patches/**', 'dist/resources.json') }}
+          key: release-native-v2-${{ matrix.arch }}-${{ hashFiles('dist/dependencies.json', 'dist/bootstrap.py', 'dist/patches/**', 'dist/resources.json', 'tests/fixtures/resources.json') }}
           restore-keys: |
             release-native-v2-${{ matrix.arch }}-
       - uses: actions/cache/restore@v4
@@ -195,7 +195,7 @@ jobs:
             build/source-cache
             build/resources
             build/release-deps
-          key: windows-${{ matrix.system }}-${{ steps.windows-env.outputs.fingerprint }}-${{ hashFiles('dist/dependencies.json', 'dist/bootstrap.py', 'dist/patches/**', 'dist/resources.json') }}
+          key: windows-${{ matrix.system }}-${{ steps.windows-env.outputs.fingerprint }}-${{ hashFiles('dist/dependencies.json', 'dist/bootstrap.py', 'dist/patches/**', 'dist/resources.json', 'tests/fixtures/resources.json') }}
           restore-keys: |
             windows-${{ matrix.system }}-
       - name: Build and test Windows
@@ -303,7 +303,7 @@ jobs:
             build/source-cache
             build/resources
             build/release-deps
-          key: linux-ubuntu-24.04-${{ steps.instrumentation-env.outputs.fingerprint }}-${{ hashFiles('dist/dependencies.json', 'dist/bootstrap.py', 'dist/patches/**', 'dist/resources.json') }}
+          key: linux-ubuntu-24.04-${{ steps.instrumentation-env.outputs.fingerprint }}-${{ hashFiles('dist/dependencies.json', 'dist/bootstrap.py', 'dist/patches/**', 'dist/resources.json', 'tests/fixtures/resources.json') }}
           restore-keys: |
             linux-ubuntu-24.04-
       - name: Build and test isolated variant

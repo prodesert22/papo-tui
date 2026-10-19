@@ -125,7 +125,7 @@ function(papo_finalize_tests)
             elseif(name STREQUAL "api-contract" OR name STREQUAL "emojis-catalogue")
                 set(labels "contract")
             endif()
-            if(name MATCHES "media|image|emoji|app-modes")
+            if(name MATCHES "media|image|emoji|app-modes" OR case MATCHES "media_")
                 list(APPEND labels "media")
             endif()
             if(name

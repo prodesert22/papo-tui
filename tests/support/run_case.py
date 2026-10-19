@@ -109,6 +109,8 @@ def main():
         parser.error("--script and --case are required")
     arguments = args.arguments[1:] if args.arguments[:1] == ["--"] else args.arguments
     os.environ["PAPO_TEST_ARGUMENTS"] = json.dumps(arguments)
+    os.environ.pop("PAPO_TEST_PROTOCOL", None)
+    os.environ.pop("PAPO_TEST_PANEL", None)
     script = args.script.resolve()
     sys.path.insert(0, str(script.parent))
     started = time.monotonic()
@@ -116,6 +118,8 @@ def main():
     directory = Path(os.environ.get("PAPO_TEST_REPORTS", "Testing/Temporary/cases")) / identifier
     faulthandler.dump_traceback_later(45, repeat=True)
     try:
+        if args.case not in discover(script):
+            raise ValueError("Unknown scenario: " + args.case)
         spec = importlib.util.spec_from_file_location("papo_case_" + script.stem, script)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
