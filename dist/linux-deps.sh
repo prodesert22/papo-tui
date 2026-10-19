@@ -8,7 +8,8 @@ if command -v apt-get >/dev/null 2>&1; then
         nasm python3 python3-venv python3-dev curl git libssl-dev zlib1g-dev libncurses-dev \
         libglib2.0-dev libpango1.0-dev libcairo2-dev libfontconfig-dev libpulse-dev libasound2-dev \
         libgcrypt20-dev libass-dev libplacebo-dev ffmpeg openssl dbus-daemon libsecret-1-dev \
-        fonts-noto-color-emoji ncurses-term kitty-terminfo patchelf dpkg-dev rpm libarchive-tools desktop-file-utils appstream
+        fonts-noto-color-emoji ncurses-term kitty-terminfo patchelf dpkg-dev rpm libarchive-tools desktop-file-utils appstream locales
+    $elevate localedef -i pt_BR -f UTF-8 pt_BR.UTF-8
     for sources in /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list.d/debian.sources; do
         if [ -f "$sources" ]; then $elevate sed -i 's/^Types: deb$/Types: deb deb-src/' "$sources"; fi
     done
@@ -18,7 +19,7 @@ elif command -v dnf >/dev/null 2>&1; then
         nasm python3 python3-pip python3-devel curl git openssl-devel zlib-devel ncurses-devel \
         glib2-devel pango-devel cairo-devel fontconfig-devel pulseaudio-libs-devel alsa-lib-devel \
         libgcrypt-devel libass-devel libplacebo-devel ffmpeg-free openssl dbus-daemon libsecret-devel \
-        google-noto-color-emoji-fonts kitty-terminfo patchelf rpm-build libarchive desktop-file-utils appstream dnf5-plugins
+        google-noto-color-emoji-fonts kitty-terminfo patchelf rpm-build libarchive desktop-file-utils appstream dnf5-plugins glibc-langpack-pt
 else
     echo 'Use a supported Debian/Ubuntu or Fedora packaging host.' >&2
     exit 1

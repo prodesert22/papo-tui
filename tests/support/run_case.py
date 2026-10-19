@@ -65,6 +65,17 @@ def redact(value):
     )
 
 
+def allowed_skip_reason(script, case, platform=None):
+    root = Path(__file__).resolve().parents[2]
+    try:
+        relative = Path(script).resolve().relative_to(root).as_posix()
+    except ValueError:
+        return None
+    policies = json.loads((root / "tests/platforms.json").read_text(encoding="utf-8"))
+    platform = platform or ("windows" if os.name == "nt" else "linux")
+    return policies.get(relative, {}).get("skips", {}).get(platform, {}).get(case)
+
+
 class RedactingStream:
     def __init__(self, stream):
         self.stream = stream
@@ -172,6 +183,18 @@ def main():
         ).run(suite)
         skipped = result.testsRun > 0 and len(result.skipped) == result.testsRun
         successful = result.wasSuccessful() and result.testsRun > 0
+        unexpected_skips = []
+        if os.environ.get("PAPO_TEST_REQUIRED") == "1":
+            allowed = allowed_skip_reason(script, args.case)
+            unexpected_skips = [reason for _, reason in result.skipped if reason != allowed]
+            if unexpected_skips:
+                successful = False
+                print(
+                    redact(
+                        "Unexpected skip in required CI profile: " + "; ".join(unexpected_skips)
+                    ),
+                    file=sys.stderr,
+                )
         import test_context
 
         for terminal in test_context.terminals:
@@ -182,6 +205,7 @@ def main():
             "seconds": time.monotonic() - started,
             "tests": result.testsRun,
             "skipped": [reason for _, reason in result.skipped],
+            "unexpected_skips": unexpected_skips,
             "success": successful,
         }
     except BaseException:

@@ -295,6 +295,11 @@ Synthetic FFmpeg media is prepared once per tool identity, verified by hashes,
 and copied into each case's private directory. Test fonts are downloaded from
 verified sources; raster tests use their own Fontconfig configuration. Initial
 resource downloads need network access; mock HTTP tests use loopback servers.
+Linux CI generates `pt_BR.UTF-8` for the decimal-locale scenario. For an existing
+Linux test host, install its locale data and run `sudo localedef -i pt_BR -f UTF-8
+pt_BR.UTF-8` if none of `pt_BR.UTF-8`, `de_DE.UTF-8` or `fr_FR.UTF-8` is available.
+The FFmpeg CLI needs the `libwebp_anim` encoder to generate animated fixtures;
+the application's own libraries perform the decoding checks.
 PTY and graphics protocol results do not establish visual correctness in a real
 emulator. Keep real-emulator visual evidence separate under `build/`.
 
@@ -316,6 +321,9 @@ cases over 30 seconds remain visible for investigation and subdivision.
 Record cache state, CPU budget and profile alongside comparisons. Report the
 whole matrix's elapsed time and runner minutes as well as individual test times;
 a shorter job must not conceal omitted scenarios or failed attempts.
+CI sets `PAPO_TEST_REQUIRED=1`: an ignored case fails unless its exact ID and
+reason are declared for that platform in `tests/platforms.json`. Ad hoc local
+runs still report capability skips explicitly.
 
 ### Update test dependencies
 

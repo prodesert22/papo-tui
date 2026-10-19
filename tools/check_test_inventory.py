@@ -32,6 +32,12 @@ def check(build):
         if not labels:
             raise ValueError(f"Missing labels: {key}")
     exclusions = json.loads((ROOT / "tests/platforms.json").read_text(encoding="utf-8"))
+    for relative, policy in exclusions.items():
+        declared = discover(ROOT / relative)
+        for platform_cases in policy.get("skips", {}).values():
+            stale = set(platform_cases) - set(declared)
+            if stale:
+                raise ValueError(f"Stale platform skip declarations: {relative}: {sorted(stale)}")
     platform = "windows" if sys.platform == "win32" else "linux"
     expected = set()
     skipped = []

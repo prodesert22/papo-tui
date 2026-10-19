@@ -68,9 +68,11 @@ def compare(paths):
         raise ValueError(
             "Failed attempts must not be included in successful-run timing comparisons"
         )
-    inventories = [{case["name"] for case in row.get("cases", [])} for row in rows]
+    inventories = [{case["name"]: case["status"] for case in row.get("cases", [])} for row in rows]
     if inventories and any(inventory != inventories[0] for inventory in inventories[1:]):
-        raise ValueError("Scenario inventories differ; compare equivalent runs")
+        raise ValueError(
+            "Scenario inventories or completion states differ; compare equivalent runs"
+        )
     elapsed = [row["elapsed_seconds"] for row in rows if row.get("elapsed_seconds") is not None]
     return {
         "runs": len(rows),

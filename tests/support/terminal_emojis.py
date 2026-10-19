@@ -17,12 +17,8 @@ def encode_emoji_animation(gif, format):
         "WEBP": ("libwebp_anim", "webp"),
         "PNG": ("apng", "apng"),
     }[format]
-    if format == "WEBP":
-        decoders = subprocess.run(
-            [media_tests.FFMPEG, "-hide_banner", "-decoders"], capture_output=True, check=True
-        ).stdout.split()
-        if b"webp_anim" not in decoders:
-            raise unittest.SkipTest("Installed FFmpeg does not provide webp_anim")
+    # This CLI generates fixtures; decoding is exercised by the client's own
+    # FFmpeg libraries. Its decoder list does not describe client capabilities.
     return subprocess.run(
         [
             media_tests.FFMPEG,

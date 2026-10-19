@@ -16,8 +16,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tests/support"))
 sys.path.insert(0, str(ROOT / "tools"))
 from mock_server import MockServer  # noqa: E402
-from run_case import diagnostics, discover, redact  # noqa: E402
-from test_report import read_results  # noqa: E402
+from run_case import allowed_skip_reason, diagnostics, discover, redact  # noqa: E402
+from test_report import compare, read_results  # noqa: E402
 
 
 class HarnessTests(unittest.TestCase):
@@ -119,7 +119,11 @@ class HarnessTests(unittest.TestCase):
                 encoding="utf-8",
             )
             env = dict(os.environ, PAPO_TEST_REPORTS=str(Path(folder, "reports")))
-            for case, expected in (("Cases.test_skip", 77), ("Cases.test_closed", 0)):
+            for case, expected, required in (
+                ("Cases.test_skip", 77, "0"),
+                ("Cases.test_skip", 1, "1"),
+                ("Cases.test_closed", 0, "1"),
+            ):
                 result = subprocess.run(
                     [
                         sys.executable,
@@ -130,11 +134,30 @@ class HarnessTests(unittest.TestCase):
                         case,
                         "--",
                     ],
-                    env=env,
+                    env=dict(env, PAPO_TEST_REQUIRED=required),
                     capture_output=True,
                     timeout=5,
                 )
                 self.assertEqual(result.returncode, expected, result.stderr)
+
+    def test_required_platform_skips_are_declared_for_exact_cases(self):
+        script = ROOT / "tests/terminal/test_members.py"
+        case = "Members.test_header_icons_remain_visible_at_narrow_sizes"
+        self.assertIn("ncurses", allowed_skip_reason(script, case, "windows"))
+        self.assertIsNone(allowed_skip_reason(script, case, "linux"))
+        self.assertIsNone(allowed_skip_reason(script, "Members.test_missing", "windows"))
+
+    def test_animation_fixture_checks_encoding_without_probing_cli_decoders(self):
+        from terminal_emojis import encode_emoji_animation
+
+        with patch(
+            "terminal_emojis.subprocess.run", return_value=SimpleNamespace(stdout=b"fixture")
+        ) as run:
+            self.assertEqual(encode_emoji_animation(b"GIF fixture", "WEBP"), b"fixture")
+        run.assert_called_once()
+        command = run.call_args.args[0]
+        self.assertIn("libwebp_anim", command)
+        self.assertNotIn("-decoders", command)
 
     def test_failure_snapshot_precedes_terminal_cleanup(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -180,6 +203,16 @@ class HarnessTests(unittest.TestCase):
             self.assertEqual(
                 [case["status"] for case in read_results(path)], ["passed", "skipped", "failed"]
             )
+
+    def test_timing_comparison_rejects_newly_skipped_scenarios(self):
+        with tempfile.TemporaryDirectory() as folder:
+            reports = []
+            for status in ("passed", "skipped"):
+                path = Path(folder, status + ".json")
+                path.write_text(json.dumps({"cases": [{"name": "case", "status": status}]}))
+                reports.append(path)
+            with self.assertRaisesRegex(ValueError, "completion states"):
+                compare(reports)
 
     def test_diagnostics_keep_the_last_screen_when_finally_already_closed_terminal(self):
         with tempfile.TemporaryDirectory() as folder:
