@@ -87,7 +87,7 @@ class PermissionsIntegration(unittest.TestCase):
             encoding="utf-8",
             env=dict(os.environ, XDG_STATE_HOME=directory.name, XDG_CONFIG_HOME=directory.name),
         )
-        self.addCleanup(self.stop_probe, process)
+        server.client_cleanup.callback(self.stop_probe, process)
         self.assertEqual(json.loads(process.stdout.readline()), {"ready": True})
         return process
 

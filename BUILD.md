@@ -270,6 +270,8 @@ A test's `send()` delivers input; it does not establish that rendering or a
 network operation has finished. Shared terminal helpers belong in
 `tests/support`, with explicit waits for visible state or mock events. Test
 modules must be importable without consuming arguments or starting services.
+Register probe shutdown with the mock's `client_cleanup` so the client can
+finish its HTTP/WS close handshake before the server and handlers stop.
 New Python scenarios must appear exactly once in the CTest inventory. Platform
 exclusions require a reason in `tests/platforms.json`; missing dependencies in
 a required CI profile are failures. `tools/check_test_inventory.py --build`

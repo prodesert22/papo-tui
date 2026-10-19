@@ -9,6 +9,8 @@ import hashlib
 import threading
 import socket
 import traceback
+import sys
+from contextlib import ExitStack
 from test_context import servers
 import time
 import websocket
@@ -50,11 +52,19 @@ class FixtureHTTPServer(ThreadingHTTPServer):
                 connection.shutdown(socket.SHUT_RDWR)
             except OSError:
                 pass
+            connection.close()
         deadline = time.monotonic() + 5
         for handler in handlers:
             handler.join(max(0, deadline - time.monotonic()))
-        if any(handler.is_alive() for handler in handlers):
-            raise RuntimeError("Synthetic HTTP handler failed to stop")
+        live = [handler for handler in handlers if handler.is_alive()]
+        if live:
+            frames = sys._current_frames()
+            stacks = [
+                "".join(traceback.format_stack(frames[handler.ident]))
+                for handler in live
+                if handler.ident in frames
+            ]
+            raise RuntimeError("Synthetic HTTP handler failed to stop:\n" + "\n".join(stacks))
 
 
 class MockServer:
@@ -84,6 +94,7 @@ class MockServer:
         self.websocket_hook = None  # Optional controlled realtime fixture.
         self.message_hook = None
         self.stopping = threading.Event()
+        self.client_cleanup = ExitStack()
         outer = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -593,11 +604,18 @@ class MockServer:
         return self
 
     def __exit__(self, *_args):
-        self.stopping.set()
-        self.server.shutdown()
-        self.server.finish_handlers()
-        self.server.server_close()
-        self.thread.join(timeout=5)
+        try:
+            # Clients must complete their close handshake while HTTP/WS is
+            # still served, before the fixture tears down active handlers.
+            self.client_cleanup.close()
+        finally:
+            self.stopping.set()
+            self.server.shutdown()
+            try:
+                self.server.finish_handlers()
+            finally:
+                self.server.server_close()
+                self.thread.join(timeout=5)
         if self.thread.is_alive():
             raise RuntimeError("Synthetic HTTP server failed to stop")
         if self.server.failures and not _args[0]:

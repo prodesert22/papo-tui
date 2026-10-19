@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 import urllib.request
+import websocket
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tests/support"))
@@ -65,6 +66,46 @@ class HarnessTests(unittest.TestCase):
             pass
         self.assertFalse(server.thread.is_alive())
         self.assertEqual(server.server.fileno(), -1)
+
+    def test_clients_close_while_the_mock_is_still_serving(self):
+        server = MockServer()
+        completed = []
+
+        def close_client():
+            with urllib.request.urlopen(server.url + "/health", timeout=2) as response:
+                completed.append(response.status)
+
+        with server:
+            server.client_cleanup.callback(close_client)
+        self.assertEqual(completed, [200])
+        self.assertFalse(server.thread.is_alive())
+
+    def test_client_cleanup_failure_still_closes_the_server(self):
+        server = MockServer()
+
+        def fail():
+            raise AssertionError("controlled client cleanup failure")
+
+        with self.assertRaisesRegex(AssertionError, "controlled client cleanup failure"):
+            with server:
+                server.client_cleanup.callback(fail)
+        self.assertFalse(server.thread.is_alive())
+        self.assertEqual(server.server.fileno(), -1)
+
+    def test_websocket_client_finishes_close_before_handlers_stop(self):
+        server = MockServer()
+        with server:
+            connection = websocket.create_connection(
+                server.url.replace("http://", "ws://") + "/ws",
+                cookie="Auth=user-fixture",
+                timeout=2,
+                http_no_proxy=["127.0.0.1"],
+            )
+            server.client_cleanup.callback(connection.close)
+            self.assertTrue(server.ws_connected.wait(2))
+        self.assertFalse(connection.connected)
+        self.assertTrue(any(kind == "close" for kind, _ in server.ws_controls))
+        self.assertFalse(server.server.handlers)
 
     def test_importing_terminal_support_preserves_argv(self):
         source = ROOT / "tests/support/terminal_support.py"
