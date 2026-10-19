@@ -49,6 +49,13 @@ class TerminalSynchronization(unittest.TestCase):
                     case_type(method).run(result)
                 self.assertTrue(result.wasSuccessful(), str(result.failures + result.errors))
 
+    def test_search_filters_wait_for_each_changed_control(self):
+        discovery = importlib.import_module("test_discovery_terminal")
+        self.exercise(
+            discovery.DiscoveryTerminal,
+            "test_filter_controls_selectors_false_attachments_dates_and_cancel",
+        )
+
     def test_input_placeholder_growth_five_rows_wheel_and_clear(self):
         self.exercise(
             test_input_controls.InputControls, "test_placeholder_growth_five_rows_wheel_and_clear"
