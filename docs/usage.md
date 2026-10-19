@@ -190,6 +190,7 @@ reappear. Pending sends must finish before you close that DM.
 | Enter while editing a message | Save the edit |
 | Esc while editing a message | Cancel editing and restore the send draft |
 | Shift+Enter in the editor | Insert a new line |
+| Ctrl+Backspace / Ctrl+W | Delete the word before the cursor |
 
 Type `@` in the editor to choose a person to mention; confirm with Tab or Enter.
 After closing the chooser, Enter sends the message.
@@ -626,5 +627,9 @@ before and reuses the download already made for the cover.
   reporting modified Enter, such as Kitty. If the terminal cannot distinguish
   it from Enter, use Ctrl+N to insert a new line, or F4 in the channel list to
   open a voice channel's messages.
+- **Ctrl+Backspace deletes only one character:** some terminals send the same
+  code for Backspace and Ctrl+Backspace. Use Ctrl+W to delete the word before
+  the cursor, or a terminal that reports the modified key, such as GNOME
+  Terminal.
 - **Linux terminal settings were disrupted:** run `reset`, even if the
   characters do not appear as you type.

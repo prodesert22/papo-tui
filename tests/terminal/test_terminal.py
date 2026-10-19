@@ -147,9 +147,15 @@ class PosixTerminal:
         environment=None,
         allow_local_http=True,
         unset_environment=(),
+        erase_char=None,
     ):
         self.master, self.slave = pty.openpty()
         self.original = termios.tcgetattr(self.slave)
+        if erase_char is not None:
+            attributes = termios.tcgetattr(self.slave)
+            attributes[6][termios.VERASE] = bytes([erase_char])
+            termios.tcsetattr(self.slave, termios.TCSANOW, attributes)
+            self.original = termios.tcgetattr(self.slave)
         fcntl.ioctl(self.slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
         env = dict(os.environ, TERM=terminal_type, LANG="C.UTF-8", LC_ALL="C.UTF-8")
         for key in unset_environment:

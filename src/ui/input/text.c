@@ -17,6 +17,18 @@
 
 void text_input_init(void)
 {
+#ifndef _WIN32
+    /* VTE and xterm toggle the erase code for Ctrl+Backspace: when Backspace
+     * is ^? (0x7f) the modified key arrives as ^H (0x08), and vice versa.
+     * Register that alternate code as Ctrl+Backspace so ordinary Backspace
+     * still deletes one character. Terminals with another erase character do
+     * not distinguish the keys; Ctrl+W remains available. */
+    int erase = erasechar();
+    if (erase == 0x08)
+        define_key("\177", TEXT_CTRL_BACKSPACE);
+    else if (erase == 0x7f)
+        define_key("\010", TEXT_CTRL_BACKSPACE);
+#endif
     define_key("\033[I", TEXT_FOCUS_IN);
     define_key("\033[O", TEXT_FOCUS_OUT);
     for (int flags = 0; flags < 32; ++flags) {
@@ -710,6 +722,10 @@ bool text_edit(text_buffer *buffer, int type, uint32_t key, int width, bool mult
     if (type == OK) {
         if (key == 3 || key == 21) {
             text_clear(buffer);
+            return true;
+        }
+        if (key == 23) { /* Ctrl+W also deletes the previous word. */
+            text_delete_word(buffer, false);
             return true;
         }
         if (key == 8 || key == 127) {

@@ -276,6 +276,46 @@ class InputControls(unittest.TestCase):
             f.send("\x1b[1;5D")
             self.wait_cursor(f, row, column)
 
+    def test_ctrl_w_deletes_word_without_modified_keys(self):
+        with HistoryMock(count=0) as server:
+            t = self.open(server)
+            t.send("um dois")
+            self.wait_field(t, "um dois")
+            t.send("\x17")
+            self.wait_field(t, "um ")
+            t.send("\x17")
+            self.wait(t, "Conversar em #geral")
+
+    @unittest.skipIf(os.name == "nt", "Windows ncurses does not expose the terminal erase code")
+    def test_ctrl_backspace_deletes_word_with_legacy_erase_code(self):
+        with HistoryMock(count=0) as server:
+            t = self.open(server)
+            t.send("um dois três")
+            self.wait_field(t, "um dois três")
+            # VTE/GNOME Terminal sends ^? for Backspace and ^H for Ctrl+Backspace.
+            t.send("\x7f")
+            self.wait_field(t, "um dois trê")
+            t.send("\x08")
+            self.wait_field(t, "um dois ")
+            t.send("\x08")
+            self.wait_field(t, "um ")
+            t.send("\x08")
+            self.wait(t, "Conversar em #geral")
+
+    @unittest.skipIf(os.name == "nt", "Windows ncurses does not expose the terminal erase code")
+    def test_ctrl_backspace_when_backspace_sends_ctrl_h(self):
+        with HistoryMock(count=0) as server:
+            t = self.open(server, erase_char=0x08)
+            t.send("um dois")
+            self.wait_field(t, "um dois")
+            # Backspace is ^H, so the modified key arrives as ^? (0x7f).
+            t.send("\x08")
+            self.wait_field(t, "um doi")
+            t.send("\x7f")
+            self.wait_field(t, "um ")
+            t.send("\x7f")
+            self.wait(t, "Conversar em #geral")
+
     def test_kitty_copy_marker_lifecycle_and_forwarded_shortcut(self):
         t = self.terminal(environment=dict(KITTY_WINDOW_ID="papo-synthetic-window"))
         self.assertIn(b"\x1b]1337;SetUserVar=papo_tui=MQ==\x07", t.output)
