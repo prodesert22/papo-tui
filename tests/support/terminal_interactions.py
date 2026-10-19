@@ -63,18 +63,14 @@ class MessageInteractions(unittest.TestCase):
             self.wait(terminal, "Configurações")
             self.wait(terminal, "(*) Normal")
             terminal.send("\t\x1bOB\n\t\n")
-            path = Path(terminal.configuration.name, "papo-tui", "config.json")
-            self.settled(
-                terminal,
-                lambda: (
-                    path.exists()
-                    and json.loads(path.read_text(encoding="utf-8")).get("app_mode") == "light"
-                ),
-            )
             # History remains visible behind settings, so its editor label
             # alone does not prove that the modal and mode reflow have closed.
             self.settled(terminal, lambda: "Configurações" not in self.screen(terminal))
             self.wait(terminal, "Conversar em #geral")
+            # Saving closes the configuration file before closing the modal.
+            # Polling the file during save races Windows' exclusive write handle.
+            path = Path(terminal.configuration.name, "papo-tui", "config.json")
+            self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["app_mode"], "light")
             return terminal
         except BaseException:
             terminal.close()

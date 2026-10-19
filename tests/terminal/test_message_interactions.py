@@ -519,18 +519,29 @@ class MessageInteractions(support.MessageInteractions):
                 header, left, right, rows = columns()
                 initial_left = [line[0] for line in rows]
                 self._protocol_checkpoint = len(terminal.output)
+                expected_initial = [f"Pessoa {i:04d}" for i in range(334, 334 - len(rows), -1)]
+                self.settled(terminal, lambda: people() == expected_initial)
                 initial_people = people()
                 self.assertIn("☀ 35", "\n".join(initial_left))
                 self.assertNotIn("☂", "\n".join(initial_left))
                 terminal.send(f"\x1b[<65;{right + 3};{header + 4}M")
-                self.settled(terminal, lambda: people() != initial_people)
+                # One wheel event moves three rows. A changed list may be an
+                # intermediate ConPTY repaint; wait for the complete viewport.
+                right_scrolled = [f"Pessoa {i:04d}" for i in range(331, 331 - len(rows), -1)]
+                self.settled(terminal, lambda: people() == right_scrolled)
+                self.assertNotEqual(right_scrolled, initial_people)
                 self.settled(terminal, lambda: [line[0] for line in columns()[3]] == initial_left)
                 self.assertEqual([line[0] for line in columns()[3]], initial_left)
-                right_scrolled = people()
                 terminal.send("\x1bOD")
                 for _ in range(3):
                     terminal.send(f"\x1b[<65;{left + 3};{header + 4}M")
-                self.settled(terminal, lambda: "☂" in "\n".join(line[0] for line in columns()[3]))
+                self.settled(
+                    terminal,
+                    lambda: (
+                        "☂" in "\n".join(line[0] for line in columns()[3])
+                        and people() == right_scrolled
+                    ),
+                )
                 self.assertIn("☂", "\n".join(line[0] for line in columns()[3]))
                 self.assertEqual(people(), right_scrolled)
                 terminal.send("\x1bOB" * 13 + "\n")

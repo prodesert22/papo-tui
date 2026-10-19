@@ -271,6 +271,7 @@ class PosixTerminal:
     def close(self, signal_number=None, exit_key="\x11"):
         if self._closed:
             return self._restored
+        self._screen_before_close = list(self.screen.display)
         if self.process.poll() is None:
             if signal_number is not None:
                 self.process.send_signal(signal_number)

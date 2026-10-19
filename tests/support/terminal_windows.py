@@ -110,6 +110,8 @@ class WindowsTerminal:
     def close(self, signal_number=None, exit_key="\x11"):
         if self._closed:
             return self._clean_exit
+        if hasattr(self, "screen"):
+            self._screen_before_close = list(self.screen.display)
         try:
             if self.child.isalive():
                 if signal_number is None:

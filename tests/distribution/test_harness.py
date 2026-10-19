@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 import urllib.request
@@ -15,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tests/support"))
 sys.path.insert(0, str(ROOT / "tools"))
 from mock_server import MockServer  # noqa: E402
-from run_case import discover, redact  # noqa: E402
+from run_case import diagnostics, discover, redact  # noqa: E402
 from test_report import read_results  # noqa: E402
 
 
@@ -179,6 +180,18 @@ class HarnessTests(unittest.TestCase):
             self.assertEqual(
                 [case["status"] for case in read_results(path)], ["passed", "skipped", "failed"]
             )
+
+    def test_diagnostics_keep_the_last_screen_when_finally_already_closed_terminal(self):
+        with tempfile.TemporaryDirectory() as folder:
+            terminal = SimpleNamespace(
+                screen=SimpleNamespace(display=["cleared"]),
+                _screen_before_close=["visible before quit"],
+                output=b"",
+            )
+            with patch("test_context.terminals", [terminal]), patch("test_context.servers", []):
+                diagnostics(Path(folder))
+            data = json.loads(Path(folder, "diagnostic.json").read_text(encoding="utf-8"))
+            self.assertEqual(data["terminals"][0]["screen"], ["visible before quit"])
 
     def test_diagnostics_redact_credentials_and_cookies(self):
         self.assertNotIn("Synthetic!123", redact("Synthetic!123"))

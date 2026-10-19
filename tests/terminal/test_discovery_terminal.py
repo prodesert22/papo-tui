@@ -349,6 +349,7 @@ class DiscoveryTerminal(unittest.TestCase):
                 while len(server.search_calls) < 2 and time.monotonic() < deadline:
                     t.read(0.03)
                 self.assertEqual(len(server.search_calls), 2)
+                self.until(t, lambda: "Detalhes da mensagem" not in "\n".join(t.screen.display))
                 self.assertNotIn("Detalhes da mensagem", "\n".join(t.screen.display))
 
     def test_pin_detail_arrows_select_go_and_unpin_without_activating(self):
@@ -375,6 +376,7 @@ class DiscoveryTerminal(unittest.TestCase):
                 self.assertEqual(self.button_style(t, "[Ir para mensagem]"), focused)
                 self.assertEqual(self.button_style(t, "[Desafixar]"), normal)
                 t.send("\n")
+                self.until(t, lambda: "Detalhes da mensagem" not in "\n".join(t.screen.display))
                 self.assertNotIn("Detalhes da mensagem", "\n".join(t.screen.display))
                 self.assertEqual(server.pin_calls, [])
                 t.send("\x1b[19~")

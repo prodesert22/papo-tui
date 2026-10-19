@@ -84,7 +84,10 @@ def diagnostics(directory, case=None):
     data = {
         "checkpoint": getattr(case, "_protocol_checkpoint", None),
         "terminals": [
-            {"screen": t.screen.display, "output": redact(repr(bytes(t.output)))}
+            {
+                "screen": getattr(t, "_screen_before_close", t.screen.display),
+                "output": redact(repr(bytes(t.output))),
+            }
             for t in test_context.terminals
         ],
         "requests": [
