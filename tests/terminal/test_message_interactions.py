@@ -66,8 +66,23 @@ class MessageInteractions(support.MessageInteractions):
                 terminal.send("Preserved draft\x1b[18~m")
 
                 def check_position(message):
-                    self.wait(terminal, "Ver quem reagiu")
-                    self.wait(terminal, message)
+                    def positioned():
+                        rows = terminal.screen.display
+                        message_row = next(
+                            (i for i, line in enumerate(rows) if message in line), None
+                        )
+                        menu_row = next(
+                            (i for i, line in enumerate(rows) if "Ver quem reagiu" in line), None
+                        )
+                        return (
+                            message_row is not None
+                            and menu_row is not None
+                            and abs(menu_row - message_row) <= 4
+                            and rows[menu_row].index("Ver quem reagiu")
+                            > rows[message_row].index(message) + len(message)
+                        )
+
+                    self.settled(terminal, positioned)
                     rows = terminal.screen.display
                     message_row = next(i for i, line in enumerate(rows) if message in line)
                     menu_row = next(i for i, line in enumerate(rows) if "Ver quem reagiu" in line)
@@ -79,7 +94,9 @@ class MessageInteractions(support.MessageInteractions):
                     )
 
                 check_position("Mensagem 0060")
-                terminal.send("\x1b" + "\x1bOA" * 24 + "m")
+                terminal.send("\x1b")
+                self.settled(terminal, lambda: "Ver quem reagiu" not in self.screen(terminal))
+                terminal.send("\x1bOA" * 24 + "m")
                 check_position("Mensagem 0036")
                 self.resize(terminal, 24, 60)
                 check_position("Mensagem 0036")

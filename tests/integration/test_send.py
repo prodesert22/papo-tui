@@ -198,8 +198,10 @@ class Sending(unittest.TestCase):
             self.assertFalse(result["transmitted"])
             self.assertEqual(server.message_count, 0)
             self.assertEqual(result["draft"], TEXT)
-        with MockServer("send-cancel") as server:
-            result = self.probe(server, "cancel")
+        with tempfile.TemporaryDirectory() as folder, MockServer("send-cancel") as server:
+            received = Path(folder, "received")
+            server.message_hook = lambda _message: received.touch()
+            result = self.probe(server, "cancel", PAPO_SEND_RECEIVED_FILE=str(received))
             self.assertEqual(result["state"], UNCERTAIN)
             self.assertTrue(result["transmitted"])
             self.assertEqual(server.message_count, 1)

@@ -224,6 +224,12 @@ class TerminalSynchronization(unittest.TestCase):
             "test_f7_selects_messages_and_context_menu_is_available_directly",
         )
 
+    def test_message_menu_waits_for_current_position_after_navigation(self):
+        self.exercise(
+            test_message_interactions.MessageInteractions,
+            "test_keyboard_menu_stays_next_to_selected_message_after_scroll_and_resize",
+        )
+
     def test_footer_waits_for_resize(self):
         for method in unittest.defaultTestLoader.getTestCaseNames(
             test_footer_terminal.FooterTerminal

@@ -419,7 +419,7 @@ class MockServer:
                     self.respond(401)
                     return
                 scenario = outer.scenario
-                if scenario in ("send-delayed", "send-cancel"):
+                if scenario == "send-delayed":
                     outer.stopping.wait(0.3)
                 codes = {
                     "send-validation": 400,
@@ -456,6 +456,8 @@ class MockServer:
                 outer.sent_messages.append(message)
                 if outer.message_hook:
                     outer.message_hook(message)
+                if scenario == "send-cancel":
+                    outer.stopping.wait()
                 if scenario == "send-timeout":
                     outer.stopping.wait(16)
                 if scenario == "send-drop" or (
