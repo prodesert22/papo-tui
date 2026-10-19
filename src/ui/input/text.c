@@ -141,6 +141,20 @@ void text_input_init(void)
             snprintf(sequence, sizeof(sequence), "\033[%d;%d~", numbers[i], 1 + locks);
             define_key(sequence, keys[i]);
         }
+    /* Shift+PageUp/PageDown scroll a full page where the terminal reports the
+     * modified key: xterm's modifyOtherKeys and Kitty keep the legacy page
+     * numbering with a modifier, as CSI ~ or CSI u. */
+    const int page_numbers[] = {5, 6};
+    const int page_codes[] = {57421, 57422};
+    const int page_keys[] = {TEXT_SHIFT_PAGE_UP, TEXT_SHIFT_PAGE_DOWN};
+    for (size_t i = 0; i < sizeof(page_numbers) / sizeof(page_numbers[0]); ++i)
+        for (int locks = 0; locks <= 192; locks += 64) {
+            char sequence[32];
+            snprintf(sequence, sizeof(sequence), "\033[%d;%d~", page_numbers[i], 2 + locks);
+            define_key(sequence, page_keys[i]);
+            snprintf(sequence, sizeof(sequence), "\033[%d;%du", page_codes[i], 2 + locks);
+            define_key(sequence, page_keys[i]);
+        }
     for (int i = 0; i < 4; ++i)
         for (int locks = 0; locks <= 192; locks += 64) {
             char sequence[32];

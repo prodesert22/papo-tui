@@ -316,6 +316,70 @@ class InputControls(unittest.TestCase):
             t.send("\x7f")
             self.wait(t, "Conversar em #geral")
 
+    def test_page_keys_scroll_history_without_leaving_the_editor(self):
+        with HistoryMock(count=30) as server:
+            t = self.open(server)
+            self.wait(t, "Mensagem 0030")
+            t.send("rascunho")
+            self.wait_field(t, "rascunho")
+
+            def row_of(message):
+                return next(
+                    (row for row, line in enumerate(t.screen.display) if message in line), None
+                )
+
+            self.assertIn("Foco: Mensagem", self.screen(t))
+            latest = row_of("Mensagem 0030")
+            self.assertIsNotNone(latest)
+
+            # PgUp/PgDn scroll one line per press and keep the editor focused.
+            t.send("\x1b[5~")
+            wait_for_screen(
+                t,
+                lambda: row_of("Mensagem 0030") == latest + 1,
+                "PageUp did not scroll one line from the editor",
+            )
+            t.send("\x1b[6~")
+            wait_for_screen(
+                t,
+                lambda: row_of("Mensagem 0030") == latest,
+                "PageDown did not return one line",
+            )
+            self.wait_field(t, "rascunho")
+            self.assertIn("Foco: Mensagem", self.screen(t))
+
+            # Shift variants scroll a full page where the terminal reports the
+            # modified key (xterm modifyOtherKeys and Kitty CSI-u).
+            for page_up, page_down in (
+                ("\x1b[5;2~", "\x1b[6;2~"),
+                ("\x1b[57421;2u", "\x1b[57422;2u"),
+            ):
+                t.send(page_up)
+                wait_for_screen(
+                    t,
+                    lambda: (
+                        (
+                            row_of("Mensagem 0028"),
+                            row_of("Mensagem 0027"),
+                            row_of("Mensagem 0026"),
+                        )
+                        == (latest + 1, latest - 2, latest - 5)
+                    ),
+                    f"{page_up!r} did not scroll a full page from the editor",
+                )
+                self.assertIsNone(row_of("Mensagem 0030"))
+                t.send(page_down)
+                wait_for_screen(
+                    t,
+                    lambda: row_of("Mensagem 0030") == latest,
+                    f"{page_down!r} did not return a full page",
+                )
+
+            self.wait_field(t, "rascunho")
+            self.assertIn("Foco: Mensagem", self.screen(t))
+            t.send("X")
+            self.wait_field(t, "rascunhoX")
+
     def test_kitty_copy_marker_lifecycle_and_forwarded_shortcut(self):
         t = self.terminal(environment=dict(KITTY_WINDOW_ID="papo-synthetic-window"))
         self.assertIn(b"\x1b]1337;SetUserVar=papo_tui=MQ==\x07", t.output)

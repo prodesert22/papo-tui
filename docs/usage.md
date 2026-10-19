@@ -59,8 +59,11 @@ Changes to a role's color appear after the role catalog refreshes; Ctrl+R also
 requests an update. Terminals with a limited palette approximate the role color.
 
 Scroll with the arrow keys, PageUp/PageDown or the mouse wheel over the history.
-The next page loads as you approach either edge. A loading indicator appears
-if you reach the edge before the messages arrive.
+While the editor is focused, PageUp/PageDown scroll one line per press and
+Shift+PageUp/PageDown scroll a full page in terminals that report the modified
+key; GNOME Terminal keeps Shift+PageUp/PageDown for its own scrollback. The next
+page loads as you approach either edge. A loading indicator appears if you reach
+the edge before the messages arrive.
 
 Closing the application discards drafts. Signing out also disables session
 recovery. If a send remains unconfirmed, check the history before resending:
@@ -163,6 +166,7 @@ reappear. Pending sends must finish before you close that DM.
 | Ctrl+C | Clear the field; quit when outside a field |
 | ↑ / ↓ or mouse wheel over history | Scroll the conversation |
 | PageUp / PageDown in history | Scroll by a page; nearby pages load automatically |
+| PageUp / PageDown in the editor | Scroll the conversation one line per press; Shift+PageUp/PageDown scroll a page where the terminal reports the modified key |
 | Home / End in history | Go to the start of loaded history / recent messages |
 | Ctrl+R | Refresh or retry a request/connection |
 | Ctrl+T | Retry the last failed send |

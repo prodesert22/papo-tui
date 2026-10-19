@@ -974,7 +974,16 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         if (ui->focus == MESSAGE_INPUT) {
             if (enter)
                 conversation_submit(ui, 0, false);
-            else {
+            else if (type == KEY_CODE_YES && (key == KEY_PPAGE || key == KEY_NPAGE)) {
+                /* Keep typing while browsing: one line per press. */
+                scope = DRAW_CONVERSATION;
+                conversation_scroll_history(ui, key == KEY_PPAGE ? -1 : 1, true);
+            } else if (type == KEY_CODE_YES &&
+                       (key == TEXT_SHIFT_PAGE_UP || key == TEXT_SHIFT_PAGE_DOWN)) {
+                scope = DRAW_CONVERSATION;
+                conversation_scroll_history(
+                    ui, key == TEXT_SHIFT_PAGE_UP ? -ui->visible : ui->visible, true);
+            } else {
                 if (!mention_popup_open(ui->mentions))
                     scope = DRAW_EDITOR;
                 conversation_edit(ui, type, key);
