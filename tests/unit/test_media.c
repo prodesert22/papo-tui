@@ -544,6 +544,39 @@ static void attachment_mime_types(void)
     }
     app_mode_set(APP_MODE_NORMAL);
 }
+static size_t content_rows(const message_blocks *b)
+{
+    size_t rows = 0;
+    for (size_t r = 0; r < b->count; ++r)
+        for (int k = 0; k < b->rows[r].count; ++k)
+            if (!strcmp(b->rows[r].segments[k].key, "content"))
+                ++rows;
+    return rows;
+}
+static void exact_width_content(void)
+{
+    /* Messages have no end-of-line cursor: text filling the drawable column
+     * must not wrap a trailing space into an empty extra line. */
+    enum { WIDTH = 80, GUTTER = 6 };
+    char filled[WIDTH - GUTTER + 1], spaced[WIDTH - GUTTER + 1];
+    memset(filled, 'x', WIDTH - GUTTER);
+    filled[WIDTH - GUTTER] = 0;
+    memset(spaced, 'x', WIDTH - GUTTER - 1);
+    spaced[WIDTH - GUTTER - 1] = ' ';
+    spaced[WIDTH - GUTTER] = 0;
+    app_mode_set(APP_MODE_NORMAL);
+    for (int variant = 0; variant < 2; ++variant) {
+        json_t *m = json_pack("{s:s,s:s}", "id", "00000000-0000-4000-8000-000000000001", "content",
+                              variant ? spaced : filled);
+        assert(m);
+        message_blocks b;
+        assert(message_blocks_build(&b, m, "Author", "", WIDTH, false));
+        assert(content_rows(&b) == 1);
+        assert(b.count == 3); /* Header, content and the separator row. */
+        message_blocks_free(&b);
+        json_decref(m);
+    }
+}
 static void video_preview_layout(void)
 {
     json_t *m = json_loads("{\"id\":\"00000000-0000-4000-8000-000000000001\","
@@ -613,6 +646,7 @@ int main(void)
     assert(setlocale(LC_ALL, "C.UTF-8"));
     init_graphemebreak();
     attachment_mime_types();
+    exact_width_content();
     video_preview_layout();
     reactions_and_replies();
     cards();

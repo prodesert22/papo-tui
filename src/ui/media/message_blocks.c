@@ -179,7 +179,10 @@ static bool column(message_blocks *b, size_t start, const char *key, const char 
         if (card)
             card_measure(&buffer, width, &layout);
         else
-            text_measure(&buffer, width, &layout);
+            /* Messages have no end-of-line cursor: the full column width is
+             * drawable, so ask text_measure for one extra cell to avoid
+             * wrapping a cell that still fits (usually a trailing space). */
+            text_measure(&buffer, width + 1, &layout);
         for (int line = 0; line < layout.rows; ++line) {
             if (!reserve(b, row + 1))
                 return false;
@@ -1056,7 +1059,7 @@ void message_row_draw(WINDOW *w, const message_row *row, int y, int x, int width
             text_buffer buffer;
             text_layout layout;
             if (text_decode(&buffer, s->text)) {
-                text_measure(&buffer, s->width, &layout);
+                text_measure(&buffer, s->width + 1, &layout);
                 text_draw_styled(w, &buffer, &layout, s->highlight, s->highlight_length, 0, 1, y,
                                  x + s->x, text_pair,
                                  row->header && !strcmp(s->key, "header")

@@ -7,3 +7,6 @@
   one line per press, like the arrow keys over the history. Shift+PageUp/PageDown
   scroll a full page in terminals that report the modified key; GNOME Terminal
   keeps Shift+PageUp/PageDown for its own scrollback.
+- Long messages no longer show an extra blank line after text that exactly
+  fills the conversation width. Message text now uses the full drawable width
+  instead of reserving a cell that only the editor cursor needs.

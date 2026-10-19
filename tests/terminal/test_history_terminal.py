@@ -687,6 +687,29 @@ class HistoryTerminal(unittest.TestCase):
             finally:
                 self.assertTrue(t.close())
 
+    def test_message_filling_the_width_keeps_one_separator_line(self):
+        with HistoryMock(count=2) as server:
+            # At 212 columns the content area fits 175 cells; a trailing space
+            # at that boundary used to wrap into an empty line below the text.
+            server.messages[0]["content"] = "WRAP" + "A" * 170 + " "
+            t = self.open(server)
+            try:
+                t.resize(30, 212)
+                self.wait(t, "Mensagem 0002")
+                self.wait(t, "WRAP")
+
+                def row_of(text):
+                    return next(
+                        (row for row, line in enumerate(t.screen.display) if text in line), None
+                    )
+
+                first, second = row_of("WRAP"), row_of("Mensagem 0002")
+                self.assertIsNotNone(first)
+                self.assertIsNotNone(second)
+                self.assertEqual(second - first, 3)
+            finally:
+                self.assertTrue(t.close())
+
     def test_narrow_navigation_errors_and_return_account(self):
         with HistoryMock("forbidden") as server:
             t = self.open(server)
