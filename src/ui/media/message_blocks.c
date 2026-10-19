@@ -132,6 +132,32 @@ static void card_measure(const text_buffer *buffer, int width, text_layout *layo
     layout->cells[count].column = column;
     layout->rows = row + 1;
 }
+/* Trailing spaces at a line end are invisible; when they overflow the column
+ * they wrap alone into an extra empty row, so drop them before measuring.
+ * Explicit newlines stay, keeping blank lines written by the author. */
+static void trim_line_ends(text_buffer *buffer)
+{
+    size_t out = 0, pending = 0;
+    for (size_t at = 0; at < buffer->length; ++at) {
+        uint32_t character = buffer->data[at];
+        if (character == ' ' || character == '\t') {
+            ++pending;
+            continue;
+        }
+        if (character == '\n')
+            pending = 0;
+        else
+            while (pending) {
+                buffer->data[out++] = ' ';
+                --pending;
+            }
+        buffer->data[out++] = character;
+    }
+    buffer->length = out;
+    buffer->data[out] = 0;
+    if (buffer->cursor > out)
+        buffer->cursor = out;
+}
 /* Appends one wrapped column at a specified row. Other columns can occupy the
  * same rows. All terminal controls pass through the shared Unicode decoder. */
 static bool column(message_blocks *b, size_t start, const char *key, const char *value, int x,
@@ -172,6 +198,7 @@ static bool column(message_blocks *b, size_t start, const char *key, const char 
         }
         if (styled)
             text_mentions(&buffer, b->resolver, b->resolver_context);
+        trim_line_ends(&buffer);
         if (b->icon_resolver && (card || !strcmp(key, "content") || !strncmp(key, "reaction:", 9)))
             text_icons(&buffer, b->icon_resolver, b->icon_painter, b->icon_context);
         text_buffer visible;

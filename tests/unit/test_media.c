@@ -556,18 +556,24 @@ static size_t content_rows(const message_blocks *b)
 static void exact_width_content(void)
 {
     /* Messages have no end-of-line cursor: text filling the drawable column
-     * must not wrap a trailing space into an empty extra line. */
+     * must not wrap a trailing space into an empty extra line, and trailing
+     * spaces that overflow the column are dropped instead of wrapping. */
     enum { WIDTH = 80, GUTTER = 6 };
-    char filled[WIDTH - GUTTER + 1], spaced[WIDTH - GUTTER + 1];
+    char filled[WIDTH - GUTTER + 1], spaced[WIDTH - GUTTER + 1], trailing[WIDTH - GUTTER + 3];
     memset(filled, 'x', WIDTH - GUTTER);
     filled[WIDTH - GUTTER] = 0;
     memset(spaced, 'x', WIDTH - GUTTER - 1);
     spaced[WIDTH - GUTTER - 1] = ' ';
     spaced[WIDTH - GUTTER] = 0;
+    memset(trailing, 'x', WIDTH - GUTTER);
+    trailing[WIDTH - GUTTER] = ' ';
+    trailing[WIDTH - GUTTER + 1] = ' ';
+    trailing[WIDTH - GUTTER + 2] = 0;
+    const char *variants[] = {filled, spaced, trailing};
     app_mode_set(APP_MODE_NORMAL);
-    for (int variant = 0; variant < 2; ++variant) {
+    for (size_t variant = 0; variant < sizeof(variants) / sizeof(*variants); ++variant) {
         json_t *m = json_pack("{s:s,s:s}", "id", "00000000-0000-4000-8000-000000000001", "content",
-                              variant ? spaced : filled);
+                              variants[variant]);
         assert(m);
         message_blocks b;
         assert(message_blocks_build(&b, m, "Author", "", WIDTH, false));
