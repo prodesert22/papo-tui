@@ -80,6 +80,14 @@ class WorkflowTests(unittest.TestCase):
                 any(step.get("uses") == "actions/cache/save@v4" for step in steps[start + 1 : end])
             )
 
+    def test_native_cache_fallbacks_require_the_same_toolchain_identity(self):
+        for job in WORKFLOW["jobs"].values():
+            for step in job.get("steps", []):
+                if step.get("id") not in {"linux-cache", "windows-cache", "dependencies"}:
+                    continue
+                for prefix in step["with"]["restore-keys"].splitlines():
+                    self.assertIn(".outputs.fingerprint", prefix)
+
     def test_matrix_report_distinguishes_elapsed_and_summed_job_time(self):
         run = dict(
             id=1,

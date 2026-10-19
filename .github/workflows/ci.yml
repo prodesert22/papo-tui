@@ -120,9 +120,10 @@ jobs:
             build/source-cache
             build/resources
             build/release-deps
-          key: linux-${{ matrix.runner }}-${{ steps.linux-env.outputs.fingerprint }}-${{ hashFiles('dist/dependencies.json', 'dist/bootstrap.py', 'dist/patches/**', 'dist/resources.json', 'tests/fixtures/resources.json') }}
+          key: linux-${{ matrix.runner }}-${{ matrix.arch }}-${{ steps.linux-env.outputs.fingerprint }}-${{ hashFiles('dist/dependencies.json', 'dist/bootstrap.py', 'dist/patches/**', 'dist/resources.json', 'tests/fixtures/resources.json') }}
           restore-keys: |
-            linux-${{ matrix.runner }}-
+            linux-${{ matrix.runner }}-${{ matrix.arch }}-${{ steps.linux-env.outputs.fingerprint }}-
+            linux-${{ matrix.runner }}-${{ steps.linux-env.outputs.fingerprint }}-
       - uses: actions/cache/restore@v4
         if: matrix.platform == 'linux' && inputs.release
         id: release-cache
@@ -211,7 +212,7 @@ jobs:
             build/release-deps
           key: windows-${{ matrix.system }}-${{ steps.windows-env.outputs.fingerprint }}-${{ hashFiles('dist/dependencies.json', 'dist/bootstrap.py', 'dist/patches/**', 'dist/resources.json', 'tests/fixtures/resources.json') }}
           restore-keys: |
-            windows-${{ matrix.system }}-
+            windows-${{ matrix.system }}-${{ steps.windows-env.outputs.fingerprint }}-
       - name: Build Windows
         env:
           PAPO_CI_CACHE_HIT: ${{ steps.windows-cache.outputs.cache-hit }}
@@ -317,9 +318,10 @@ jobs:
             build/source-cache
             build/resources
             build/release-deps
-          key: linux-ubuntu-24.04-${{ steps.instrumentation-env.outputs.fingerprint }}-${{ hashFiles('dist/dependencies.json', 'dist/bootstrap.py', 'dist/patches/**', 'dist/resources.json', 'tests/fixtures/resources.json') }}
+          key: linux-ubuntu-24.04-x86_64-${{ steps.instrumentation-env.outputs.fingerprint }}-${{ hashFiles('dist/dependencies.json', 'dist/bootstrap.py', 'dist/patches/**', 'dist/resources.json', 'tests/fixtures/resources.json') }}
           restore-keys: |
-            linux-ubuntu-24.04-
+            linux-ubuntu-24.04-x86_64-${{ steps.instrumentation-env.outputs.fingerprint }}-
+            linux-ubuntu-24.04-${{ steps.instrumentation-env.outputs.fingerprint }}-
       - name: Build isolated variant
         id: instrumented-build
         env:
