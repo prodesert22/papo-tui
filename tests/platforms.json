@@ -1,0 +1,123 @@
+{
+  "tests/integration/test_desktop_notifications.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/integration/test_discovery.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/integration/test_image_buffer.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/integration/test_image_decode.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/integration/test_media.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/integration/test_media_cache.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/integration/test_message_interactions.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/integration/test_persistent_sessions.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/integration/test_profiles.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/integration/test_r8.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/integration/test_read_state.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/integration/test_realtime.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/integration/test_voice_conversation.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/integration/test_ws.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/terminal/test_app_modes.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/terminal/test_attachments.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/terminal/test_emojis_terminal.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/terminal/test_footer_terminal.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/terminal/test_history_terminal.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/terminal/test_input_controls.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/terminal/test_installed.py": {
+    "linux": "Runs against installed packages in release verification",
+    "windows": "Runs against installed packages in release verification"
+  },
+  "tests/terminal/test_media_backends.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/terminal/test_media_modal.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/terminal/test_media_navigation.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/terminal/test_media_terminal.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/terminal/test_member_colors.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/terminal/test_members_media.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/terminal/test_mentions.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/terminal/test_message_mutations.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/terminal/test_profiles_terminal.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/terminal/test_r8_terminal.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/terminal/test_realtime_terminal.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/terminal/test_send_product.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/terminal/test_send_terminal.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/terminal/test_session_terminal.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/terminal/test_terminal.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/terminal/test_terminal_synchronization.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/terminal/test_typing_terminal.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/terminal/test_windows.py": {
+    "linux": "Requires native Windows ConPTY and Windows input APIs"
+  },
+  "tests/terminal/test_windows_input.py": {
+    "linux": "Requires native Windows ConPTY and Windows input APIs"
+  }
+}

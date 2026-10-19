@@ -1,5 +1,7 @@
 """Voice-channel text conversations through the TUI; synthetic HTTP/WS only."""
 
+from test_context import main as test_main
+
 import time
 import unittest
 from urllib.parse import urlsplit
@@ -7,7 +9,7 @@ from urllib.parse import urlsplit
 from history_mock import HistoryMock, CHANNEL, VOICE, uuid
 from realtime_mock import RealtimeMock
 from r8_mock import R8Mock
-from test_terminal import Terminal
+from terminal_support import Terminal
 
 
 class VoiceRealtimeMock(RealtimeMock):
@@ -238,4 +240,6 @@ class VoiceConversation(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

@@ -1,5 +1,7 @@
 """R3 acceptance on a real PTY, with isolated public configuration and fixtures."""
 
+from test_context import main as test_main
+
 import json
 from pathlib import Path
 import tempfile
@@ -7,7 +9,7 @@ import time
 import unittest
 
 from mock_server import MockServer
-from test_terminal import Terminal
+from terminal_support import Terminal
 
 UP, DOWN, LEFT, RIGHT = "\x1bOA", "\x1bOB", "\x1bOD", "\x1bOC"
 HOME, END, PGUP, PGDOWN, F5 = "\x1bOH", "\x1bOF", "\x1b[5~", "\x1b[6~", "\x1b[15~"
@@ -87,7 +89,7 @@ class ProfileTerminalTests(unittest.TestCase):
         return terminal.screen.buffer[row][column]
 
     def config(self):
-        return json.loads(self.path.read_text())
+        return json.loads(self.path.read_text(encoding="utf-8"))
 
     def test_startup_login_button_modal_selection_and_cancel(self):
         self.seed(["http://127.0.0.1:9/papo", "http://127.0.0.1:10/other"])
@@ -313,7 +315,7 @@ class ProfileTerminalTests(unittest.TestCase):
         self.click(terminal, "[+ Adicionar]")
         terminal.send("New\thttp://127.0.0.1:9/papo\n\n")
         self.wait(terminal, "Configuração bloqueada")
-        self.assertEqual(self.path.read_text(), "{broken")
+        self.assertEqual(self.path.read_text(encoding="utf-8"), "{broken")
         terminal.send("\x1b")
         self.seed(["http://127.0.0.1:9/papo"])
         terminal.send("\x12" + LEFT + DOWN)
@@ -333,4 +335,6 @@ class ProfileTerminalTests(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

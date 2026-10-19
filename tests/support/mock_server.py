@@ -7,9 +7,54 @@ from datetime import datetime, timedelta, timezone
 import base64
 import hashlib
 import threading
+import socket
+import traceback
+from test_context import servers
 import time
 import websocket
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+
+class FixtureHTTPServer(ThreadingHTTPServer):
+    """Propagate handler failures and bound shutdown, including active WS peers."""
+
+    daemon_threads = True
+
+    def __init__(self, *args):
+        self.failures = []
+        self.handlers = set()
+        self.connections = set()
+        self.guard = threading.Lock()
+        super().__init__(*args)
+
+    def handle_error(self, request, client_address):
+        self.failures.append(traceback.format_exc())
+
+    def process_request_thread(self, request, address):
+        with self.guard:
+            self.handlers.add(threading.current_thread())
+            self.connections.add(request)
+        try:
+            super().process_request_thread(request, address)
+        finally:
+            with self.guard:
+                self.handlers.discard(threading.current_thread())
+                self.connections.discard(request)
+
+    def finish_handlers(self):
+        with self.guard:
+            connections = list(self.connections)
+            handlers = list(self.handlers)
+        for connection in connections:
+            try:
+                connection.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+        deadline = time.monotonic() + 5
+        for handler in handlers:
+            handler.join(max(0, deadline - time.monotonic()))
+        if any(handler.is_alive() for handler in handlers):
+            raise RuntimeError("Synthetic HTTP handler failed to stop")
 
 
 class MockServer:
@@ -530,11 +575,14 @@ class MockServer:
                     connection.connected = False
                     outer.ws_connected.clear()
 
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.server = FixtureHTTPServer(("127.0.0.1", 0), Handler)
         self.secure = tls_context is not None
         if tls_context:
             self.server.socket = tls_context.wrap_socket(self.server.socket, server_side=True)
-        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread = threading.Thread(
+            target=lambda: self.server.serve_forever(poll_interval=0.01), daemon=True
+        )
+        servers.append(self)
 
     @property
     def url(self):
@@ -547,5 +595,12 @@ class MockServer:
     def __exit__(self, *_args):
         self.stopping.set()
         self.server.shutdown()
+        self.server.finish_handlers()
         self.server.server_close()
-        self.thread.join()
+        self.thread.join(timeout=5)
+        if self.thread.is_alive():
+            raise RuntimeError("Synthetic HTTP server failed to stop")
+        if self.server.failures and not _args[0]:
+            raise AssertionError(
+                "Synthetic HTTP handler failed:\n" + "\n".join(self.server.failures)
+            )

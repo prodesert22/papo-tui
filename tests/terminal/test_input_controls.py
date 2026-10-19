@@ -1,5 +1,7 @@
 """Real input controls in PTYs; clipboard helpers are synthetic or OSC-only."""
 
+from test_context import main as test_main
+
 import base64
 import json
 import os
@@ -12,7 +14,7 @@ import unittest
 from history_mock import HistoryMock
 from realtime_mock import RealtimeMock
 from mock_server import MockServer
-from test_terminal import Terminal, editor_region, editor_column, wait_for_screen
+from terminal_support import Terminal, editor_region, editor_column, wait_for_screen
 from wcwidth import wcswidth
 
 
@@ -410,7 +412,9 @@ class InputControls(unittest.TestCase):
             t.send("amigos\tURL errada\x03\x1b[200~" + server.url + "\x1b[201~\t\n")
             self.wait(t, "Lugar amigos")
             self.assertIsNone(t.process.poll())
-            config = json.loads((Path(t.configuration.name) / "papo-tui/config.json").read_text())
+            config = json.loads(
+                (Path(t.configuration.name) / "papo-tui/config.json").read_text(encoding="utf-8")
+            )
             self.assertEqual(config["profiles"][0]["name"], "Lugar amigos")
             self.assertEqual(config["profiles"][0]["url"], server.url)
 
@@ -445,7 +449,7 @@ class InputControls(unittest.TestCase):
             t.send("Mensagem enquanto copia\n")
             self.wait(t, "Mensagem confirmada")
             self.wait(t, "Texto copiado")
-            self.assertEqual(captured.read_text(), "conteúdo antigo")
+            self.assertEqual(captured.read_text(encoding="utf-8"), "conteúdo antigo")
             self.assertEqual(server.sent_messages[-1]["content"], "Mensagem enquanto copia")
             self.assertNotIn(b"\x1b]52;c;", t.output)
 
@@ -690,4 +694,6 @@ class InputControls(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

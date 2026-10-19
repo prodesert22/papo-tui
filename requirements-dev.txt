@@ -1,3 +1,4 @@
+# Input for requirements/ci-*-py313.txt; regenerate with tools/lock_requirements.py.
 # Development-only terminal, OpenAPI and backend integration checks.
 pyte>=0.8.2,<0.9
 ruamel.yaml>=0.18,<0.19

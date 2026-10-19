@@ -1,5 +1,7 @@
 """Pinned/search UI against synthetic HTTP/WS using a local terminal transport."""
 
+from test_context import main as test_main
+
 import time
 import os
 from pathlib import Path
@@ -8,7 +10,7 @@ import unittest
 from urllib.parse import parse_qs, urlsplit
 from discovery_mock import DiscoveryMock
 from history_mock import CHANNEL, uuid
-import test_r8_terminal as r8
+import terminal_discovery as r8
 
 
 class DiscoveryTerminal(unittest.TestCase):
@@ -109,6 +111,12 @@ class DiscoveryTerminal(unittest.TestCase):
             self.assertNotIn("Anexar arquivos", "\n".join(t.screen.display))
 
     def click(self, t, label):
+        # Functional scenarios use documented shortcuts when the native Windows
+        # wchar_t cannot represent a supplementary-plane header icon.
+        if os.name == "nt" and label in ("🖈", "🔍"):
+            t.send("\x1b[19~" if label == "🖈" else "\x1bOR")
+            self.wait(t, "Mensagens fixadas" if label == "🖈" else "Buscar mensagens no servidor")
+            return
         self.wait(t, label)
         t.read(0.08)
         row = next(i for i, line in enumerate(t.screen.display) if label in line)
@@ -555,4 +563,6 @@ class DiscoveryTerminal(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

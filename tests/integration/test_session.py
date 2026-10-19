@@ -1,13 +1,16 @@
 """R4 integration with explicitly synthetic accounts and opaque cookies."""
 
+from test_context import main as test_main
+
+from test_context import argument
+
 import json
 import os
 import subprocess
-import sys
 import unittest
 from mock_server import MockServer
 
-BINARY = sys.argv.pop(1)
+BINARY = argument(0)
 
 
 class Sessions(unittest.TestCase):
@@ -189,4 +192,6 @@ class Sessions(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

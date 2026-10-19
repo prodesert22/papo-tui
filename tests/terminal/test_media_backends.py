@@ -1,17 +1,19 @@
 """Lazy dependency loading and failure handling; synthetic HTTP and PTY only."""
 
+from test_context import main as test_main
+
+from test_context import argument
+
 import locale
 from pathlib import Path
 import shutil
-import sys
 import tempfile
 import unittest
 
 # test_media_terminal consumes the first two arguments when imported.
-BINARY, FFMPEG, FAKE, IMAGE, VIDEO = map(Path, sys.argv[1:6])
-sys.argv = [sys.argv[0], str(BINARY), str(FFMPEG), *sys.argv[6:]]
-import test_media_terminal as media  # noqa: E402 - path and test arguments are prepared above
-import test_terminal  # noqa: E402 - path and test arguments are prepared above
+BINARY, FFMPEG, FAKE, IMAGE, VIDEO = (Path(argument(i)) for i in range(5))
+import terminal_media as media  # noqa: E402 - path and test arguments are prepared above
+import terminal_support as test_terminal  # noqa: E402 - path and test arguments are prepared above
 from history_mock import HistoryMock  # noqa: E402 - path and test arguments are prepared above
 
 
@@ -35,12 +37,12 @@ class MediaBackends(unittest.TestCase):
         test_terminal.BINARY = self.previous
 
     def maps(self, terminal):
-        maps = Path(f"/proc/{terminal.process.pid}/maps").read_text()
+        maps = Path(f"/proc/{terminal.process.pid}/maps").read_text(encoding="utf-8")
         for task in Path(f"/proc/{terminal.process.pid}/task").iterdir():
-            for pid in (task / "children").read_text().split():
+            for pid in (task / "children").read_text(encoding="utf-8").split():
                 try:
                     if b"papo-media-worker" in Path(f"/proc/{pid}/cmdline").read_bytes():
-                        maps += Path(f"/proc/{pid}/maps").read_text()
+                        maps += Path(f"/proc/{pid}/maps").read_text(encoding="utf-8")
                 except FileNotFoundError:
                     pass
         return maps
@@ -210,4 +212,6 @@ class MediaBackends(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        5,
+    )

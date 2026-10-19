@@ -2,20 +2,23 @@
 Synthetic backend evidence; never uses a real account.
 """
 
+from test_context import main as test_main
+
+from test_context import argument
+
 import base64
 import json
 import os
 from pathlib import Path
 import subprocess
-import sys
 import tempfile
 import threading
 import time
 import unittest
 from history_mock import HistoryMock
 
-BINARY = sys.argv.pop(1)
-FFMPEG = sys.argv.pop(1)
+BINARY = argument(0)
+FFMPEG = argument(1)
 # Tiny valid PNG, decoded by the same FFmpeg pipeline as the application.
 PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1cAAAAASUVORK5CYII="
@@ -287,4 +290,6 @@ class Cache(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        2,
+    )

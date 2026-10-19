@@ -47,3 +47,12 @@ Ao alterar menus, modais ou composição de tela, verifique que imagens, avatare
 ## Organização pretendida
 
 `src/app/` contém ciclo e estado do aplicativo; `src/ui/` separa telas, componentes, entrada e mídia; `src/net/` separa autenticação/API, HTTP e tempo real. Modelos e configuração ficam em `src/model/` e `src/config/`; `src/platform/` adapta recursos nativos de Linux e Windows. `tests/` separa testes unitários, integração, terminal, contrato, distribuição e suporte; `docs/` documenta instalação e uso. Só criar módulos e diretórios quando houver código que os utilize.
+
+## Manutenção dos testes e CI
+
+- Use o executor e os perfis descritos em `BUILD.md` para reproduzir o CI. As quatro combinações nativas de SO/arquitetura são obrigatórias em PRs; variantes instrumentadas usam runners separados.
+- Coloque helpers em `tests/support`, sem importar cenários de outras suítes para reutilizar infraestrutura. Testes metamórficos podem executar cenários explicitamente sob outro observador.
+- Não consuma argumentos nem inicie processos, rede ou geração de mídia durante importação. Use os recursos explícitos de `test_context` e o executor de cenários.
+- Envio de entrada não é uma barreira de renderização. Aguarde pós-condições da tela, eventos do mock ou frames; preserve esperas que comprovem comportamento temporal.
+- Preserve IDs estáveis e a conferência do inventário. Divida cenários extensos por comportamento/protocolo e justifique casos acima de 30 segundos. Exclusões por plataforma precisam de motivo explícito.
+- Mantenha locks, fontes e fixtures verificáveis. Não trate repetição até passar, aumento indiscriminado de timeout ou remoção de asserções como correção de instabilidade.

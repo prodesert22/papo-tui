@@ -13,7 +13,7 @@ from ruamel.yaml import YAML
 ROOT = Path(__file__).resolve().parents[2]
 yaml = YAML(typ="safe")
 yaml.version = (1, 2)
-WORKFLOW = yaml.load((ROOT / ".github/workflows/release.yml").read_text())
+WORKFLOW = yaml.load((ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8"))
 IDENTITY = WORKFLOW["jobs"]["identity"]["steps"][-1]["run"]
 
 
@@ -92,7 +92,9 @@ class ReleaseFlow(unittest.TestCase):
             text=True,
         )
         output = (
-            dict(line.split("=", 1) for line in self.output.read_text().splitlines())
+            dict(
+                line.split("=", 1) for line in self.output.read_text(encoding="utf-8").splitlines()
+            )
             if self.output.exists()
             else {}
         )

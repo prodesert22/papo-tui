@@ -10,9 +10,10 @@ from bootstrap import ROOT, download
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=ROOT / "build/resources")
+    parser.add_argument("--manifest", type=Path, default=ROOT / "dist/resources.json")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
-    lock = json.loads((ROOT / "dist/resources.json").read_text())
+    lock = json.loads(args.manifest.read_text(encoding="utf-8"))
     for entry in lock["files"]:
         target = args.output / entry["name"]
         target.parent.mkdir(parents=True, exist_ok=True)

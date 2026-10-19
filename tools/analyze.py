@@ -12,6 +12,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build", type=Path, required=True)
     parser.add_argument("--jobs", type=int, default=2)
+    parser.add_argument(
+        "--clang-tidy", default="clang-tidy-18", help="pinned Clang 18 analyzer executable"
+    )
     args = parser.parse_args()
     build = args.build.resolve()
     commands = json.loads((build / "compile_commands.json").read_text())
@@ -22,7 +25,7 @@ def main():
     def analyze(source):
         result = subprocess.run(
             [
-                "clang-tidy",
+                args.clang_tidy,
                 "-p",
                 str(build),
                 "-quiet",

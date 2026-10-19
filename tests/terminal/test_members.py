@@ -1,5 +1,7 @@
 """Member drawer and actions through the real TUI and synthetic REST/WS."""
 
+from test_context import main as test_main
+
 import base64
 import json
 import os
@@ -12,8 +14,8 @@ import unittest
 from history_mock import uuid
 from member_mock import MemberMock, AUTHOR
 from r8_mock import dm
-from test_terminal import Terminal
-import test_message_interactions as interactions
+from terminal_support import Terminal
+import terminal_interactions as interactions
 
 
 class Members(unittest.TestCase):
@@ -76,7 +78,7 @@ class Members(unittest.TestCase):
             self.click(terminal, "Agrupar: Cargo")
             self.wait(terminal, "Agrupar: Status")
             path = Path(terminal.configuration.name, "papo-tui", "config.json")
-            self.assertTrue(json.loads(path.read_text())["members_by_status"])
+            self.assertTrue(json.loads(path.read_text(encoding="utf-8"))["members_by_status"])
             server.emit(
                 dict(
                     type="presence_sync",
@@ -725,4 +727,6 @@ class Members(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

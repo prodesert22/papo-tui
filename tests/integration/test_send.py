@@ -1,15 +1,18 @@
 """R6 multipart and bounded outbox against controlled synthetic fixtures."""
 
+from test_context import main as test_main
+
+from test_context import argument
+
 import json
 import os
 import subprocess
-import sys
 import unittest
 import tempfile
 from pathlib import Path
 from mock_server import MockServer
 
-BINARY = sys.argv.pop(1)
+BINARY = argument(0)
 TEXT = "Olá, ação!\nSegunda linha."
 CONFIRMED, FAILED, UNCERTAIN = 2, 3, 4
 
@@ -221,4 +224,6 @@ class Sending(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

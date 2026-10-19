@@ -1,15 +1,18 @@
 """Verify Unicode, keys and VT output modes through the actual console."""
 
+from test_context import main as test_main
+
+from test_context import argument
+
 import json
 import re
 import select
-import sys
 import time
 import unittest
 from winpty import Backend, PtyProcess
 from terminal_windows import close_pty_process
 
-BINARY = sys.argv.pop(1)
+BINARY = argument(0)
 
 
 class WindowsInput(unittest.TestCase):
@@ -89,4 +92,6 @@ class WindowsInput(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

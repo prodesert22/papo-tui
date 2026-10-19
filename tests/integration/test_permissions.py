@@ -1,10 +1,13 @@
 """Queued HTTP mutations and WS membership changes, using the actual C owners."""
 
+from test_context import main as test_main
+
+from test_context import argument
+
 import copy
 import json
 import os
 import subprocess
-import sys
 import threading
 import time
 import tempfile
@@ -13,7 +16,7 @@ import unittest
 from history_mock import CHANNEL, uuid
 from interaction_mock import InteractionMock
 
-BINARY = sys.argv.pop(1)
+BINARY = argument(0)
 ROLE = uuid(400)
 ALLOWED, DENIED, UNKNOWN = 2, 1, 0
 
@@ -290,4 +293,6 @@ class PermissionsIntegration(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

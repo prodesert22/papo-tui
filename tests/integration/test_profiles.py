@@ -1,18 +1,21 @@
 """R3 persistence and discovery checks; all accounts and cookies are synthetic."""
 
+from test_context import main as test_main
+
+from test_context import argument
+
 import json
 import os
 from pathlib import Path
 import socket
 import ssl
 import subprocess
-import sys
 import tempfile
 import unittest
 
 from mock_server import MockServer
 
-PROBE = sys.argv.pop(1)
+PROBE = argument(0)
 
 
 class ProfilesTests(unittest.TestCase):
@@ -69,7 +72,7 @@ class ProfilesTests(unittest.TestCase):
                 self.seed(value)
                 self.assertEqual(self.probe("list")["app_mode"], "normal")
                 self.assertTrue(self.probe("mode", "light")["ok"])
-                saved = json.loads(self.path.read_text())
+                saved = json.loads(self.path.read_text(encoding="utf-8"))
                 self.assertEqual((saved["version"], saved["app_mode"]), (5, "light"))
                 self.assertEqual(saved["request_burst"], 7 if version >= 2 else 25)
                 self.assertEqual(self.probe("list")["app_mode"], "light")
@@ -84,7 +87,7 @@ class ProfilesTests(unittest.TestCase):
         self.assertTrue(self.probe("member-grouping", "status")["ok"])
         self.assertTrue(self.probe("list")["members_by_status"])
         self.assertTrue(self.probe("mode", "light")["ok"])
-        saved = json.loads(self.path.read_text())
+        saved = json.loads(self.path.read_text(encoding="utf-8"))
         self.assertTrue(saved["members_by_status"])
         self.assertEqual(saved["app_mode"], "light")
         saved["members_by_status"] = "invalid"
@@ -95,7 +98,7 @@ class ProfilesTests(unittest.TestCase):
 
     def test_unknown_persisted_mode_preserves_file_and_blocks_saving(self):
         self.add()
-        value = json.loads(self.path.read_text())
+        value = json.loads(self.path.read_text(encoding="utf-8"))
         value["app_mode"] = "unknown"
         self.seed(value)
         previous = self.path.read_bytes()
@@ -122,7 +125,7 @@ class ProfilesTests(unittest.TestCase):
         )
         self.assertEqual(self.path.stat().st_mode & 0o7777, 0o600)
         self.assertEqual(self.path.parent.stat().st_mode & 0o7777, 0o700)
-        persisted = json.loads(self.path.read_text())
+        persisted = json.loads(self.path.read_text(encoding="utf-8"))
         self.assertEqual(
             set(persisted),
             {
@@ -184,14 +187,14 @@ class ProfilesTests(unittest.TestCase):
     def test_rate_preferences_validation_restart_and_v1_migration(self):
         first = self.add()
         legacy = self.configuration(
-            json.loads(self.path.read_text())["profiles"], version=1, selected=first
+            json.loads(self.path.read_text(encoding="utf-8"))["profiles"], version=1, selected=first
         )
         self.seed(legacy)
         before = self.path.read_bytes()
         self.assertEqual(self.probe("list")["requests_per_second"], 10)
         self.assertEqual(self.path.read_bytes(), before)
         self.assertTrue(self.probe("rate", "2.5", "3")["ok"])
-        self.assertEqual(json.loads(self.path.read_text())["version"], 5)
+        self.assertEqual(json.loads(self.path.read_text(encoding="utf-8"))["version"], 5)
         restored = self.probe("list")
         self.assertEqual(
             (restored["requests_per_second"], restored["request_burst"], restored["selected"]),
@@ -226,7 +229,7 @@ class ProfilesTests(unittest.TestCase):
         loaded = self.probe("list")
         self.assertFalse(loaded["desktop_notifications"])
         self.assertFalse(loaded["notification_preview"])
-        valid = json.loads(self.path.read_text())
+        valid = json.loads(self.path.read_text(encoding="utf-8"))
         self.assertEqual(valid["version"], 5)
         valid["notification_preview"] = "false"
         self.seed(valid)
@@ -433,4 +436,6 @@ class ProfilesTests(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )
