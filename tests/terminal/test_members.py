@@ -170,6 +170,9 @@ class Members(unittest.TestCase):
                 if "Gerar link de reset de senha" in line
             )
             column = terminal.screen.display[row].index("Gerar link de reset de senha") - 2
+            self.settled(
+                terminal, lambda: terminal.screen.buffer[row + 1][column].data in ("m", "└")
+            )
             self.assertIn(terminal.screen.buffer[row + 1][column].data, ("m", "└"))
 
     def test_slow_initial_block_list_updates_without_input_and_first_click_works(self):

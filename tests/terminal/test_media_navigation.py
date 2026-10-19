@@ -80,7 +80,16 @@ class MediaNavigation(unittest.TestCase):
                     t.send("\x1bOC\x1bOD")
                     self.helper.wait(t, "0 / 3 s")
                     self.assertNotIn("imagens", "\n".join(t.screen.display))
+                    # Reopening may reuse a player the worker has not closed
+                    # yet. Give both reused and fresh players a playing state.
+                    t.send(" ")
+                    self.helper.wait(t, "Reproduzindo")
                     t.send("\x1b")
+                    wait_for_screen(
+                        t,
+                        lambda: "Mídia · Esc:" not in "\n".join(t.screen.display),
+                        "The player must close before selecting another media entry",
+                    )
                     self.helper.wait(t, "Mídia 1/2")
                     # The explicit player entry continues to work and reuses the download.
                     t.send("\x1bOC\n")
