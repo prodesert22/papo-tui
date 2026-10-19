@@ -78,6 +78,13 @@ class Members(unittest.TestCase):
             terminal.send("rascunho preservado")
             self.drawer(terminal)
             self.wait(terminal, "Comunidade")
+            self.settled(
+                terminal,
+                lambda: (
+                    "Bia" in self.screen(terminal)
+                    and "Carregando usuários" not in self.screen(terminal)
+                ),
+            )
             # Bia belongs to two roles but appears only under the first.
             rows = [line for line in terminal.screen.display if "Bia" in line]
             self.assertEqual(len(rows), 1)
@@ -94,7 +101,7 @@ class Members(unittest.TestCase):
             self.wait(terminal, "Online")
             self.search(terminal, "@BOB")
             self.wait(terminal, "Bia")
-            terminal.resize(26, 60)
+            self.resize(terminal, 26, 60)
             self.wait(terminal, "Membros (1)")
             terminal.send("\x1b[21~")
             self.wait(terminal, "rascunho preservado")
