@@ -251,6 +251,13 @@ class TerminalSynchronization(unittest.TestCase):
             "test_confirmed_message_merges_without_get_and_keeps_later_edits",
         )
 
+    def test_member_menu_waits_for_role_event_reconciliation(self):
+        members = importlib.import_module("test_members")
+        self.exercise(
+            members.Members,
+            "test_admin_options_follow_own_role_events_without_refreshing_on_menu_open",
+        )
+
     def test_footer_waits_for_resize(self):
         for method in unittest.defaultTestLoader.getTestCaseNames(
             test_footer_terminal.FooterTerminal

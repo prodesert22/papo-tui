@@ -429,11 +429,26 @@ class Members(unittest.TestCase):
             self.menu(terminal)
             self.wait(terminal, "Banir")
             server.user_roles = []
+            event_start = len(server.requests)
             server.emit(dict(type="role_remove", user_id=uuid(1), role_id=server.roles[0]["id"]))
             self.settled(terminal, lambda: "Gerar link" not in self.screen(terminal))
             self.assertIn("Bloquear", self.screen(terminal))
+            # Role events reconcile role definitions and identity over REST.
+            # Observe those reads before measuring requests caused by the menu.
+            self.settled(
+                terminal,
+                lambda: all(
+                    any(path.endswith(endpoint) for _, path, *_ in server.requests[event_start:])
+                    for endpoint in ("/roles", "/auth/whoami")
+                ),
+            )
+            for endpoint in ("/roles", "/auth/whoami"):
+                self.assertEqual(
+                    sum(path.endswith(endpoint) for _, path, *_ in server.requests[event_start:]),
+                    1,
+                )
             terminal.send("\x1b")
-            terminal.read(0.3)
+            self.settled(terminal, lambda: "Ver perfil" not in self.screen(terminal))
             before = len(server.requests)
             self.right_click(terminal, "Bia")
             self.wait(terminal, "Ver perfil")
