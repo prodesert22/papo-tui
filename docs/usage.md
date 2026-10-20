@@ -575,6 +575,10 @@ seek, and the right bar to adjust the volume from 0 to 100%. The volume gradient
 is green up to 60%, yellow up to 85% and red above that.
 The button shows `[▶]` to resume and `[⏸]` to pause.
 
+The volume you choose is kept when the player closes, when you open the next
+video and when you start the application again. It is stored in the same
+configuration file as the server profiles, next to the application mode.
+
 Videos scale up or down to fit the player, preserving their aspect ratio without
 cropping. Their size adjusts when you resize the terminal.
 

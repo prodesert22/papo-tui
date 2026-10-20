@@ -1,5 +1,9 @@
 # Unreleased
 
+- The player keeps the volume you choose. Closing the player no longer resets
+  the volume to its default: the next video starts with the level you set, and
+  the level is saved in the configuration file so it survives closing the
+  application.
 - Video attachments keep their cover and their player when the server reports
   a generic file type for them. The server detects an attachment's type from
   the file contents and recognizes only some video containers, so files such

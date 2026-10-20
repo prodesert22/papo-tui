@@ -173,8 +173,12 @@ static void update_player(void *context, const video_controls *controls, video_i
             level = 100;
         /* Retain the requested value across quick key repeats until the
          * corresponding property notification arrives. */
-        if (mpv_set_property_async(p->handle, 0, "volume", MPV_FORMAT_DOUBLE, &level) >= 0)
+        if (mpv_set_property_async(p->handle, 0, "volume", MPV_FORMAT_DOUBLE, &level) >= 0) {
             p->volume_target = level;
+            /* Report the dispatched level right away: the property
+             * notification follows one event later. */
+            p->info.volume = level;
+        }
     }
     *info = p->info;
 }

@@ -56,7 +56,7 @@ class ProfilesTests(unittest.TestCase):
         return result["id"]
 
     def test_app_modes_migrate_and_preserve_other_preferences(self):
-        for version in (1, 2, 3, 4):
+        for version in (1, 2, 3, 4, 5):
             with self.subTest(version=version):
                 value = self.configuration(version=1)
                 value["version"] = version
@@ -66,17 +66,42 @@ class ProfilesTests(unittest.TestCase):
                     value.update(desktop_notifications=False, notification_preview=False)
                 if version >= 4:
                     value["app_mode"] = "normal"
+                if version >= 5:
+                    value["members_by_status"] = True
                 self.seed(value)
                 self.assertEqual(self.probe("list")["app_mode"], "normal")
                 self.assertTrue(self.probe("mode", "light")["ok"])
                 saved = json.loads(self.path.read_text())
-                self.assertEqual((saved["version"], saved["app_mode"]), (5, "light"))
+                self.assertEqual((saved["version"], saved["app_mode"]), (6, "light"))
                 self.assertEqual(saved["request_burst"], 7 if version >= 2 else 25)
+                self.assertEqual(saved["player_volume"], 50)
                 self.assertEqual(self.probe("list")["app_mode"], "light")
                 self.assertTrue(self.probe("mode", "ultralight")["ok"])
                 previous = self.path.read_bytes()
                 self.assertFalse(self.probe("mode", "unknown")["ok"])
                 self.assertEqual(self.path.read_bytes(), previous)
+
+    def test_player_volume_persists_migrates_and_rejects_invalid_levels(self):
+        self.assertEqual(self.probe("list")["player_volume"], 50)
+        self.assertTrue(self.probe("volume", "80")["ok"])
+        self.assertEqual(self.probe("list")["player_volume"], 80)
+        saved = json.loads(self.path.read_text())
+        self.assertEqual((saved["version"], saved["player_volume"]), (6, 80))
+        self.assertTrue(self.probe("volume", "0")["ok"])
+        self.assertTrue(self.probe("volume", "100")["ok"])
+        self.assertEqual(self.probe("list")["player_volume"], 100)
+        before = self.path.read_bytes()
+        for level in ("-1", "101", "abc", "", "12.5"):
+            with self.subTest(level=level):
+                self.assertFalse(self.probe("volume", level)["ok"])
+                self.assertEqual(self.path.read_bytes(), before)
+        self.assertEqual(self.probe("list")["player_volume"], 100)
+        saved = json.loads(self.path.read_text())
+        saved["player_volume"] = 900
+        self.seed(saved)
+        self.assertFalse(self.probe("list")["writable"])
+        self.assertFalse(self.probe("volume", "70")["ok"])
+        self.assertEqual(self.path.read_bytes(), json.dumps(saved).encode())
 
     def test_member_grouping_persists_and_preserves_other_preferences(self):
         self.add()
@@ -135,6 +160,7 @@ class ProfilesTests(unittest.TestCase):
                 "notification_preview",
                 "app_mode",
                 "members_by_status",
+                "player_volume",
             },
         )
         self.assertTrue(all(set(item) == {"id", "name", "url"} for item in persisted["profiles"]))
@@ -191,7 +217,7 @@ class ProfilesTests(unittest.TestCase):
         self.assertEqual(self.probe("list")["requests_per_second"], 10)
         self.assertEqual(self.path.read_bytes(), before)
         self.assertTrue(self.probe("rate", "2.5", "3")["ok"])
-        self.assertEqual(json.loads(self.path.read_text())["version"], 5)
+        self.assertEqual(json.loads(self.path.read_text())["version"], 6)
         restored = self.probe("list")
         self.assertEqual(
             (restored["requests_per_second"], restored["request_burst"], restored["selected"]),
@@ -227,7 +253,7 @@ class ProfilesTests(unittest.TestCase):
         self.assertFalse(loaded["desktop_notifications"])
         self.assertFalse(loaded["notification_preview"])
         valid = json.loads(self.path.read_text())
-        self.assertEqual(valid["version"], 5)
+        self.assertEqual(valid["version"], 6)
         valid["notification_preview"] = "false"
         self.seed(valid)
         before = self.path.read_bytes()

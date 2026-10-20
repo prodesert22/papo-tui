@@ -5,6 +5,7 @@ actual emulator's pixel composition. Actual terminal evidence is separate.
 """
 
 import base64
+import json
 import re
 from pathlib import Path
 import subprocess
@@ -1190,6 +1191,43 @@ class MediaTerminal(unittest.TestCase):
                 self.wait(t, "Reproduzindo")
                 t.send("\x1b")
                 self.wait(t, "↑↓ mensagens")
+            finally:
+                self.assertTrue(t.close())
+
+    def test_player_volume_is_kept_after_closing_and_between_sessions(self):
+        with self.serve(self.video, "video/mp4") as server:
+            t = self.open(server, protocol="kitty")
+            try:
+                self.wait_frames(t)
+                t.send("\x1b[18~")
+                self.wait(t, "Mídia 1/1")
+                t.send("\n")
+                self.wait(t, "Reproduzindo")
+                t.send("\x1bOA" * 3)
+                self.wait(t, " 65%")
+                t.send("\x1b")
+                self.wait(t, "↑↓ mensagens")
+                path = Path(t.configuration.name, "papo-tui", "config.json")
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline and not path.exists():
+                    t.read(0.05)
+                    time.sleep(0.05)
+                self.assertTrue(path.exists(), "The player volume was not saved")
+                self.assertEqual(json.loads(path.read_text())["player_volume"], 65)
+                # A new session starts with the level kept in the profile.
+                second = self.open(
+                    server, protocol="kitty", environment={"XDG_CONFIG_HOME": t.configuration.name}
+                )
+                try:
+                    self.wait_frames(second)
+                    second.send("\x1b[18~")
+                    self.wait(second, "Mídia 1/1")
+                    second.send("\n")
+                    self.wait(second, " 65%")
+                    second.send("\x1bOA")
+                    self.wait(second, " 70%")
+                finally:
+                    self.assertTrue(second.close())
             finally:
                 self.assertTrue(t.close())
 

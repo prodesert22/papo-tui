@@ -30,6 +30,7 @@ add_library(
     src/net/rate_limit.c
     src/net/realtime/websocket.c
     src/config/app_mode.c
+    src/config/player_volume.c
     src/config/profiles.c
     src/platform/${PAPO_PLATFORM}/profiles_storage.c
     src/config/read_state.c

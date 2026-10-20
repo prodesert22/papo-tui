@@ -3,6 +3,7 @@
 #endif
 #include "ui/media/media.h"
 #include "config/app_mode.h"
+#include "config/player_volume.h"
 #include "net/clock.h"
 #include "net/http/download.h"
 #include "ui/components/button.h"
@@ -51,6 +52,7 @@ typedef struct {
     uint64_t token;
     int width, height;
     bool video;
+    double volume; /* Level applied when the player starts; negative keeps it. */
     graphics_terminal terminal;
     uint32_t image_id;
 } job;
@@ -147,6 +149,7 @@ static void *worker(void *context)
     const video_player_api *api = NULL;
     uint64_t last_frame = 0;
     bool force_frame = false;
+    bool apply_volume = false;
     for (;;) {
         g_mutex_lock(&v->lock);
         bool stop = v->stopping;
@@ -208,10 +211,19 @@ static void *worker(void *context)
                     continue;
                 }
                 api->set_wakeup(player, player_wakeup, v);
+                apply_volume = current.volume >= 0;
             }
         }
         if (player) {
             video_info info;
+            /* The level the user chose reaches the new player before its first
+             * frame, so the volume never restarts at the default. */
+            if (apply_volume) {
+                apply_volume = false;
+                controls.volume_absolute = true;
+                controls.volume_level = current.volume;
+                controls.volume = 0;
+            }
             api->update(player, &controls, &info);
             if (info.invalid) {
                 uint64_t token = current.token;
@@ -839,6 +851,7 @@ bool media_view_poll(media_view *v, history *h)
                                .width = v->modal_width,
                                .height = v->modal_height,
                                .video = true,
+                               .volume = player_volume_get(),
                                .image_id = v->modal_image.id};
                 if (!submit_job(v, &request)) {
                     v->modal_error = "Não foi possível preparar o player.";
@@ -1096,10 +1109,19 @@ bool media_view_key(media_view *v, int type, uint32_t key)
         --v->seek_commands;
     if (type == OK && (key == '>' || key == '.') && v->seek_commands < 3600)
         ++v->seek_commands;
-    if (type == KEY_CODE_YES && key == KEY_UP && v->volume_commands < 100)
-        v->volume_commands += 5;
-    if (type == KEY_CODE_YES && key == KEY_DOWN && v->volume_commands > -100)
-        v->volume_commands -= 5;
+    if (type == KEY_CODE_YES && (key == KEY_UP || key == KEY_DOWN)) {
+        /* The level belongs to the client, so it survives the player and the
+         * session; the player only applies what it receives. */
+        int level = player_volume_get() + (key == KEY_UP ? 5 : -5);
+        if (level < PLAYER_VOLUME_MIN)
+            level = PLAYER_VOLUME_MIN;
+        if (level > PLAYER_VOLUME_MAX)
+            level = PLAYER_VOLUME_MAX;
+        player_volume_set(level);
+        v->volume_absolute = true;
+        v->volume_level = level;
+        v->volume_commands = 0;
+    }
     g_cond_signal(&v->wake);
     g_mutex_unlock(&v->lock);
     return true;
@@ -1154,8 +1176,14 @@ bool media_view_click(media_view *v, int y, int x)
                     v->seek_position = fraction * v->duration;
                     v->seek_commands = 0;
                 } else if (action == MEDIA_CONTROL_VOLUME) {
+                    int level = (int)lround(fraction * 100);
+                    if (level < PLAYER_VOLUME_MIN)
+                        level = PLAYER_VOLUME_MIN;
+                    if (level > PLAYER_VOLUME_MAX)
+                        level = PLAYER_VOLUME_MAX;
+                    player_volume_set(level);
                     v->volume_absolute = true;
-                    v->volume_level = fraction * 100;
+                    v->volume_level = level;
                     v->volume_commands = 0;
                 }
                 g_cond_signal(&v->wake);

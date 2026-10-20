@@ -1019,7 +1019,7 @@ class R8Terminal(unittest.TestCase):
             path = t.configuration.name + "/papo-tui/config.json"
             with open(path) as f:
                 config = json.load(f)
-            self.assertEqual(config["version"], 5)
+            self.assertEqual(config["version"], 6)
             self.assertFalse(config["desktop_notifications"])
             self.assertFalse(config["notification_preview"])
             t.resize(14, 44)

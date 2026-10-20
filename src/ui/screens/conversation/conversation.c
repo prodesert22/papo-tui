@@ -181,6 +181,9 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
     bool redraw = true;
     draw_scope scope = DRAW_ALL;
     int result = HISTORY_ACCOUNT;
+    /* The player volume only reaches the profile once the player closes, so a
+     * running player never writes the file for every key press. */
+    int saved_volume = player_volume_get();
     while (!*interrupted) {
         if (ui->layout_failed)
             break;
@@ -225,6 +228,13 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             else if (scope == DRAW_EDITOR)
                 scope = DRAW_CONVERSATION;
             redraw = true;
+        }
+        if (!media_view_modal(ui->media) && connections->config) {
+            int level = player_volume_get();
+            if (level != saved_volume) {
+                saved_volume = level;
+                profiles_set_player_volume(connections->config, level);
+            }
         }
         icons_assets(ui->icons, history_assets(ui->model), media_view_cache(ui->media),
                      auth_context_generation(auth));
@@ -1082,6 +1092,12 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
     }
 finished:
     terminal_title_reset();
+    /* A session that ends with the player open still keeps the chosen level. */
+    if (connections->config) {
+        int level = player_volume_get();
+        if (level != saved_volume)
+            profiles_set_player_volume(connections->config, level);
+    }
     conversation_members_destroy(ui);
     conversation_attachments_close(ui);
     file_picker_destroy(ui->files);

@@ -135,6 +135,11 @@ int main(int argc, char **argv)
     } else if (strcmp(mode, "member-grouping") == 0 && argc == 3) {
         ok = (!strcmp(argv[2], "role") || !strcmp(argv[2], "status")) &&
              profiles_set_member_grouping(config, !strcmp(argv[2], "status"));
+    } else if (strcmp(mode, "volume") == 0 && argc == 3) {
+        char *end = NULL;
+        long level = strtol(argv[2], &end, 10);
+        ok = *argv[2] && end && !*end && level >= PLAYER_VOLUME_MIN && level <= PLAYER_VOLUME_MAX &&
+             profiles_set_player_volume(config, (int)level);
     } else if (strcmp(mode, "add") == 0 && argc == 5)
         ok = profiles_update(config, "", argv[2], argv[3], strcmp(argv[4], "allow") == 0, id);
     else if (strcmp(mode, "edit") == 0 && argc == 6)
@@ -204,6 +209,8 @@ int main(int argc, char **argv)
         json_object_set_new(result, "app_mode", json_string(app_mode_name(config->mode)));
     if (result)
         json_object_set_new(result, "members_by_status", json_boolean(config->members_by_status));
+    if (result)
+        json_object_set_new(result, "player_volume", json_integer(config->player_volume));
     json_decref(items);
     profiles_destroy(config);
     int status = emit(result);
