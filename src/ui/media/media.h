@@ -18,6 +18,8 @@ void media_view_idle(media_view *v);
 void media_view_suspend(media_view *v);
 void media_view_reset(media_view *v);
 bool media_view_poll(media_view *v, history *h);
+/* Milliseconds to wait for input: keep animation responsive without waking an idle view. */
+int media_view_input_delay(media_view *v);
 void media_view_measure(void *context, const message_media *item, int available_width, int *width,
                         int *height);
 /* History viewport in cells; invalidates measured image heights on changes. */

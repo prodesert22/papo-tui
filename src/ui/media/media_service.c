@@ -254,14 +254,37 @@ static bool player_changed(void *handle)
         g_variant_unref(v);
     return changed;
 }
-static bool player_render(void *handle, unsigned char *rgba, int w, int h)
+static bool player_render(void *handle, unsigned char *rgb, int w, int h)
 {
     if (w < 1 || h < 1 || (size_t)w * (size_t)h > VIDEO_FRAME_PIXELS)
         return false;
     GVariant *v = player_call(handle, MEDIA_RPC_VIDEO_RENDER, g_variant_new("(ii)", w, h));
-    bool ok = v && media_wire_copy(v, rgba, (size_t)w * (size_t)h * 4);
+    bool ok = v && media_wire_copy(v, rgb, (size_t)w * (size_t)h * 3);
     if (v)
         g_variant_unref(v);
+    return ok;
+}
+bool media_service_video_frame(void *handle, const video_controls *controls,
+                               const image_decode_request *request, bool force, video_info *info,
+                               graphics_image *image)
+{
+    memset(info, 0, sizeof(*info));
+    memset(image, 0, sizeof(*image));
+    GVariant *v =
+        player_call(handle, MEDIA_RPC_VIDEO_FRAME,
+                    g_variant_new("(@ayvb)", media_wire_bytes(controls, sizeof(*controls)),
+                                  media_wire_request(request), force));
+    if (!v)
+        return false;
+    bool ok = false;
+    if (g_variant_is_of_type(v, G_VARIANT_TYPE("(ayv)"))) {
+        GVariant *status, *encoded;
+        g_variant_get(v, "(@ayv)", &status, &encoded);
+        ok = media_wire_copy(status, info, sizeof(*info)) && media_wire_read_image(encoded, image);
+        g_variant_unref(status);
+        g_variant_unref(encoded);
+    }
+    g_variant_unref(v);
     return ok;
 }
 static void player_wakeup(void *handle, void (*wake)(void *), void *context)

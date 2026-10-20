@@ -60,6 +60,11 @@ class DistributionTests(unittest.TestCase):
         ffmpeg = next(x for x in manifest["modules"] if x["name"] == "ffmpeg")
         self.assertIn("--disable-gpl", ffmpeg["config-opts"])
         self.assertIn("--disable-nonfree", ffmpeg["config-opts"])
+        self.assertIn("--enable-vaapi", ffmpeg["config-opts"])
+        mpv = next(x for x in manifest["modules"] if x["name"] == "mpv")
+        self.assertIn("-Dvaapi=enabled", mpv["config-opts"])
+        self.assertIn("-Dvaapi-drm=enabled", mpv["config-opts"])
+        self.assertIn("--device=dri", manifest["finish-args"])
         libplacebo = next(x for x in manifest["modules"] if x["name"] == "libplacebo")
         self.assertEqual(
             libplacebo["build-options"]["env"]["PYTHONPATH"],
@@ -133,6 +138,7 @@ class DistributionTests(unittest.TestCase):
                 )
             setup = next(args for args, _ in calls if args[:2] == ["meson", "setup"])
             self.assertIn("-Dwin32-threads=enabled", setup)
+            self.assertIn("-Dd3d-hwaccel=enabled", setup)
             self.assertIn("--prefix=C:/Users/Pedro/Documents/papo-tui/build/release-deps", setup)
 
     def test_ncurses_pkg_config_uses_native_relocatable_paths(self):

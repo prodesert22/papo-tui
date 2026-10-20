@@ -44,6 +44,9 @@
   "tests/terminal/test_app_modes.py": {
     "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
   },
+  "tests/terminal/test_media_cadence.py": {
+    "windows": "POSIX media cadence fixtures; native ConPTY media lifecycle scenarios are registered separately"
+  },
   "tests/terminal/test_attachments.py": {
     "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
   },

@@ -47,6 +47,8 @@ void media_cache_begin(media_cache *cache);
 void media_resource_use_image(media_resource *resource, bool author, bool modal);
 void media_resource_use(media_resource *resource, bool modal);
 bool media_cache_poll(media_cache *cache, uint64_t now);
+/* Active frames/jobs need a shorter event-loop wait; inactive media never do. */
+bool media_cache_animating(const media_cache *cache);
 /* Borrowed until the next poll. Missing representations are queued once;
  * admission failure defers them until capacity becomes available. */
 const graphics_image *media_resource_image(media_resource *resource, bool author,

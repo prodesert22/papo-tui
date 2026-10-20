@@ -271,11 +271,13 @@ def build(entry, source, work, prefix, jobs, env):
             "--enable-zlib",
         ]
         if os.name == "nt":
-            options += ["--target-os=mingw32", "--cc=clang", "--cxx=clang++"]
+            options += ["--target-os=mingw32", "--cc=clang", "--cxx=clang++", "--enable-d3d11va"]
             if os.environ.get("MSYSTEM") == "CLANGARM64":
                 options += ["--arch=aarch64"]
             else:
                 options += ["--arch=x86_64"]
+        else:
+            options += ["--enable-vaapi"]
         run("sh", unix_path(source / "configure"), *options, cwd=binary)
         run("make", "-j", jobs, cwd=binary)
         run("make", "install", cwd=binary)
@@ -298,9 +300,15 @@ def build(entry, source, work, prefix, jobs, env):
                 "-Dbuild-date=false",
             ]
             if os.name == "nt":
-                options += ["-Dwasapi=enabled", "-Dwin32-threads=enabled"]
+                options += ["-Dwasapi=enabled", "-Dwin32-threads=enabled", "-Dd3d-hwaccel=enabled"]
             else:
-                options += ["-Dpulse=enabled", "-Dalsa=enabled"]
+                options += [
+                    "-Dpulse=enabled",
+                    "-Dalsa=enabled",
+                    "-Ddrm=enabled",
+                    "-Dvaapi=enabled",
+                    "-Dvaapi-drm=enabled",
+                ]
         elif name == "libsixel":
             options += ["-Dimg2sixel=disabled", "-Dsixel2png=disabled", "-Dtests=disabled"]
         elif name == "libsecret":

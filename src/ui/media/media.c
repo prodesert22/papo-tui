@@ -145,9 +145,9 @@ static void *worker(void *context)
     job current = {0};
     void *player = NULL;
     const video_player_api *api = NULL;
-    uint64_t last_frame = 0;
     bool force_frame = false;
     for (;;) {
+        gint64 frame_started = g_get_monotonic_time();
         g_mutex_lock(&v->lock);
         bool stop = v->stopping;
         bool pending = v->pending;
@@ -189,7 +189,6 @@ static void *worker(void *context)
             if (reuse) {
                 free_job(&current);
                 current = next;
-                last_frame = 0;
                 force_frame = true;
             } else {
                 current = next;
@@ -211,10 +210,17 @@ static void *worker(void *context)
             }
         }
         if (player) {
-            video_info info;
-            api->update(player, &controls, &info);
-            if (info.invalid) {
+            video_info info = {0};
+            graphics_image image = {0};
+            image_decode_request request = {.width = current.width,
+                                            .height = current.height,
+                                            .terminal = current.terminal,
+                                            .image_id = current.image_id};
+            if (!media_service_video_frame(player, &controls, &request, force_frame, &info,
+                                           &image) ||
+                info.invalid) {
                 uint64_t token = current.token;
+                graphics_image_free(&image);
                 api->close(player);
                 player = NULL;
                 free_job(&current);
@@ -235,49 +241,9 @@ static void *worker(void *context)
             v->duration = info.duration;
             v->volume = info.volume;
             g_mutex_unlock(&v->lock);
-            uint64_t now = 0;
-            if (info.width > 0 && info.height > 0 && net_now_ms(&now) && now - last_frame >= 33 &&
-                (force_frame || api->changed(player))) {
-                last_frame = now;
+            if (image.data) {
                 force_frame = false;
-                /* Fit the available modal area, preserving the display aspect ratio. */
-                double scale =
-                    fmin((double)current.width / info.width, (double)current.height / info.height);
-                int width = (int)fmax(1, info.width * scale);
-                int height = (int)fmax(1, info.height * scale);
-                int display_width = width, display_height = height;
-                if (current.terminal.protocol == GRAPHICS_KITTY) {
-                    /* Send at most the native frame (bounded for video), then
-                     * let Kitty enlarge it. Scaling to a large modal on the CPU
-                     * only increases transfer traffic without adding detail. */
-                    scale = fmin(1, fmin(scale, sqrt(VIDEO_KITTY_FRAME_PIXELS /
-                                                     ((double)info.width * info.height))));
-                    width = (int)fmax(1, info.width * scale);
-                    height = (int)fmax(1, info.height * scale);
-                }
-                size_t pixels = (size_t)width * (size_t)height;
-                unsigned char *rgba = malloc(pixels * 4), *rgb = malloc(pixels * 3);
-                graphics_image image = {0};
-                if (rgba && rgb) {
-                    if (api->render(player, rgba, width, height)) {
-                        for (size_t i = 0; i < pixels; ++i)
-                            memcpy(rgb + i * 3, rgba + i * 4, 3);
-                        if (graphics_image_encode_id(rgb, width, height, current.terminal,
-                                                     current.image_id, &image)) {
-                            image.source_width = info.width;
-                            image.source_height = info.height;
-                            if (current.terminal.protocol == GRAPHICS_KITTY) {
-                                image.columns =
-                                    (display_width + image.cell_width - 1) / image.cell_width;
-                                image.rows =
-                                    (display_height + image.cell_height - 1) / image.cell_height;
-                            }
-                            publish(v, current.token, &image, NULL, NULL);
-                        }
-                    }
-                }
-                free(rgba);
-                free(rgb);
+                publish(v, current.token, &image, NULL, NULL);
             }
         }
         g_mutex_lock(&v->lock);
@@ -287,11 +253,12 @@ static void *worker(void *context)
             if (!player)
                 g_cond_wait(&v->wake, &v->lock);
             else {
-                uint64_t now = 0;
-                int64_t delay = 50000;
-                if (net_now_ms(&now) && now - last_frame < 33)
-                    delay = (int64_t)(33 - (now - last_frame)) * 1000;
-                g_cond_wait_until(&v->wake, &v->lock, g_get_monotonic_time() + delay);
+                /* IPC cannot forward libmpv callbacks to this process. Poll at
+                 * 60 Hz while playing, counting work time in the interval;
+                 * there is only one pending publication, so slow terminals
+                 * always receive the latest frame instead of a growing queue. */
+                gint64 interval = v->paused && !force_frame ? 50000 : G_USEC_PER_SEC / 60;
+                g_cond_wait_until(&v->wake, &v->lock, frame_started + interval);
             }
         }
         g_mutex_unlock(&v->lock);
@@ -714,6 +681,15 @@ static bool modal_layout_update(media_view *v)
     v->modal_height = height;
     v->layout = layout;
     return true;
+}
+int media_view_input_delay(media_view *v)
+{
+    if (!v)
+        return 30;
+    g_mutex_lock(&v->lock);
+    bool paused = v->paused;
+    g_mutex_unlock(&v->lock);
+    return (v->modal_token && !paused) || media_cache_animating(v->store) ? 8 : 30;
 }
 bool media_view_poll(media_view *v, history *h)
 {

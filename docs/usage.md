@@ -532,6 +532,13 @@ images remain visible; the helper starts again when needed.
 Chafa colors depend on the terminal palette: truecolor terminals preserve RGB
 colors, while other terminals use the nearest available colors.
 
+Animated GIFs follow their frame timings, and videos can play at up to 60 FPS
+when processing speed and terminal throughput allow it. Chafa rendering uses
+multiple CPU threads when available, including in a TTY. Video decoding uses
+the GPU when a compatible codec and driver are available, and falls back to the
+CPU automatically. GIFs and character rendering continue to use the CPU.
+Kitty-compatible terminals use compressed graphics to reduce terminal traffic.
+
 ### Open media
 
 Image previews remain visible outside floating panels, including mention/emoji

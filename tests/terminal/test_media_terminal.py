@@ -112,9 +112,9 @@ class MediaTerminal(support.MediaTerminal):
                 placement = t.stream.placements[-1]
                 self.assertEqual((int(placement[b"w"]), int(placement[b"h"])), (480, 720))
                 self.assertEqual(placement[b"y"], b"0")
-                # The extra raster pixels only pad the last terminal cell;
-                # the Kitty placement must stop at exactly 720 actual pixels.
-                self.assertGreater(self.raster_size(t)[1], 720)
+                # Compressed Kitty rasters retain exactly the visible pixels,
+                # including when a terminal cell would require extra padding.
+                self.assertEqual(self.raster_size(t), (480, 720))
             finally:
                 self.assertTrue(t.close())
 
@@ -149,7 +149,7 @@ class MediaTerminal(support.MediaTerminal):
                         )
                         self.assertTrue(
                             all(
-                                int(header[b"s"]) == 16 and int(header[b"v"]) == 16
+                                int(header[b"s"]) == 16 and int(header[b"v"]) == 12
                                 for header, _ in t.stream.kitty_frames
                             )
                         )
@@ -242,7 +242,8 @@ class MediaTerminal(support.MediaTerminal):
                     self.wait_frames(t)
                     self.assertEqual(set(t.stream.protocols), {"kitty"})
                     header, pixels = t.stream.kitty_frames[-1]
-                    self.assertEqual(header[b"f"], b"32")
+                    self.assertEqual(header[b"f"], b"24")
+                    self.assertEqual(header[b"o"], b"z")
                     self.assertEqual(header[b"q"], b"2")
                     self.assertEqual(len(pixels), int(header[b"s"]) * int(header[b"v"]) * 4)
                     self.assertGreater(pixels[0], 230)
@@ -1426,7 +1427,7 @@ class MediaTerminal(support.MediaTerminal):
                     expected = (234 if protocol == "sixel" else 240, 176)
                     if protocol == "kitty":
                         self.wait_video_size(t, expected)
-                        self.assertEqual(self.raster_size(t), (32, 32))
+                        self.assertEqual(self.raster_size(t), (32, 24))
                         self.assert_blue_video_size(t, (234, 176))
                     else:
                         self.assertEqual(self.raster_size(t), expected)

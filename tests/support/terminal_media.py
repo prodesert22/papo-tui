@@ -8,6 +8,7 @@ from test_context import argument
 
 import os
 import base64
+import zlib
 import re
 import time
 import unittest
@@ -139,6 +140,34 @@ class GraphicsStream:
                         self.kitty_parts.append(data)
                     if values.get(b"m") == b"0":
                         pixels = base64.b64decode(b"".join(self.kitty_parts), validate=True)
+                        channels = int(self.kitty_header[b"f"]) // 8
+                        expected = (
+                            int(self.kitty_header[b"s"]) * int(self.kitty_header[b"v"]) * channels
+                        )
+                        if channels not in (3, 4) or not 0 < expected <= 64 * 1024 * 1024:
+                            raise AssertionError("Invalid Kitty raster dimensions or format")
+                        if self.kitty_header.get(b"o") == b"z":
+                            decoder = zlib.decompressobj()
+                            pixels = decoder.decompress(pixels, expected + 1)
+                            if not decoder.eof or decoder.unused_data:
+                                raise AssertionError(
+                                    "Incomplete Kitty ZLIB stream or trailing data"
+                                )
+                        if len(pixels) != expected:
+                            raise AssertionError(
+                                "Kitty payload does not match its raster dimensions"
+                            )
+                        # Pixel observers use canonical RGBA, independently of
+                        # transport packing. Keep the original wire header.
+                        if channels == 3:
+                            rgba = bytearray(expected // 3 * 4)
+                            rgba[::4], rgba[1::4], rgba[2::4] = (
+                                pixels[::3],
+                                pixels[1::3],
+                                pixels[2::3],
+                            )
+                            rgba[3::4] = b"\xff" * (expected // 3)
+                            pixels = bytes(rgba)
                         if self.kitty_control and not self.include_icons:
                             self.kitty_header = None
                             continue

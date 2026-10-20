@@ -367,9 +367,11 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             scope = DRAW_ALL;
         }
         uint32_t key;
-        int type = ui->paste
-                       ? text_paste_read(&ui->paste_data, &key, true, graphics_terminal_input, 30)
-                       : graphics_terminal_input(&key);
+        int input_delay = media_view_input_delay(ui->media);
+        timeout(input_delay);
+        int type = ui->paste ? text_paste_read(&ui->paste_data, &key, true, graphics_terminal_input,
+                                               input_delay)
+                             : graphics_terminal_input(&key);
         if (type == ERR)
             continue;
         if (type == KEY_CODE_YES && (key == TEXT_FOCUS_IN || key == TEXT_FOCUS_OUT)) {

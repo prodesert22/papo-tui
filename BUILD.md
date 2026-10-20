@@ -48,6 +48,12 @@ compiler, build tools and system libraries used by the dependency recipes.
 The recipes build ncurses, curl, Jansson, libunibreak, libsixel, Chafa, FFmpeg,
 libplacebo, libass, libmpv and libsecret in the private prefix.
 
+The media recipes enable VA-API decoding through DRM on Linux and D3D11VA on
+Windows. Hardware decoding needs a compatible driver on the runtime host;
+libmpv's `auto-copy` mode falls back to CPU decoding when it is unavailable.
+No desktop graphics context is required. Character conversion uses Chafa's
+bounded worker pool; no additional rendering library is needed.
+
 ### Debian and Ubuntu
 
 The package targets are **Ubuntu 24.04** and **Debian 13**.
@@ -58,7 +64,7 @@ sudo apt install build-essential cmake ninja-build pkg-config autoconf automake 
     python3 python3-venv python3-dev curl git ca-certificates libssl-dev zlib1g-dev \
     libncurses-dev ncurses-term libglib2.0-dev libpango1.0-dev libcairo2-dev \
     libfontconfig-dev libfreetype-dev libfribidi-dev libharfbuzz-dev libpulse-dev \
-    libasound2-dev libgcrypt20-dev libsecret-1-dev fonts-noto-color-emoji
+    libasound2-dev libgcrypt20-dev libsecret-1-dev libva-dev libdrm-dev fonts-noto-color-emoji
 ```
 
 ### Fedora
@@ -70,7 +76,7 @@ sudo dnf install gcc gcc-c++ make cmake ninja-build pkgconf-pkg-config autoconf 
     libtool nasm python3 python3-pip python3-devel curl git ca-certificates \
     openssl-devel zlib-devel ncurses-devel glib2-devel pango-devel cairo-devel \
     fontconfig-devel freetype-devel fribidi-devel harfbuzz-devel pulseaudio-libs-devel \
-    alsa-lib-devel libgcrypt-devel libsecret-devel google-noto-color-emoji-fonts
+    alsa-lib-devel libgcrypt-devel libsecret-devel libva-devel libdrm-devel google-noto-color-emoji-fonts
 ```
 
 ### RHEL 10
@@ -84,7 +90,7 @@ sudo dnf install gcc gcc-c++ make cmake ninja-build pkgconf-pkg-config autoconf 
     libtool nasm python3 python3-pip python3-devel curl git ca-certificates \
     openssl-devel zlib-ng-compat-devel ncurses-devel glib2-devel pango-devel cairo-devel \
     fontconfig-devel freetype-devel fribidi-devel harfbuzz-devel pulseaudio-libs-devel \
-    alsa-lib-devel libgcrypt-devel libsecret-devel
+    alsa-lib-devel libgcrypt-devel libsecret-devel libva-devel libdrm-devel
 ```
 
 Package availability follows the [RHEL 10 package manifest](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/10/html-single/package_manifest/index).
@@ -98,7 +104,7 @@ build Pango/GLib. Use the [Flatpak installation](docs/installation.md#rhel) ther
 ```sh
 sudo pacman -Syu --needed base-devel cmake ninja pkgconf autoconf automake libtool nasm \
     python python-pip curl git ca-certificates openssl zlib ncurses glib2 pango cairo \
-    fontconfig freetype2 fribidi harfbuzz libpulse alsa-lib libgcrypt libsecret noto-fonts-emoji
+    fontconfig freetype2 fribidi harfbuzz libpulse alsa-lib libgcrypt libsecret libva libdrm noto-fonts-emoji
 ```
 
 Arch development headers are included in the library packages. On Arch Linux
@@ -323,6 +329,19 @@ cases over 30 seconds remain visible for investigation and subdivision.
 Record cache state, CPU budget and profile alongside comparisons. Report the
 whole matrix's elapsed time and runner minutes as well as individual test times;
 a shorter job must not conceal omitted scenarios or failed attempts.
+
+For synthetic playback cadence and terminal traffic comparisons, keep a baseline
+binary with its matching `papo-backends` directory and run:
+
+```sh
+python tools/check_media_frame_rate.py --baseline /path/to/baseline/papo-tui \
+    --binary build/local/papo-tui --large --output build/performance/frame-rate.json
+```
+
+The report identifies source and viewport sizes, CPU affinity, binary hashes and
+keyboard observations. Graphics-protocol frames produce FPS measurements;
+sampled TTY cell changes are reported separately and are not exact frame counts.
+These are synthetic HTTP/PTY results, not visual inspection in a real emulator.
 CI sets `PAPO_TEST_REQUIRED=1`: an ignored case fails unless its exact ID and
 reason are declared for that platform in `tests/platforms.json`. Ad hoc local
 runs still report capability skips explicitly.

@@ -43,6 +43,8 @@ Press **F2**, or click the gear beside your name below the channels, to choose
 an application mode: **Normal** uses terminal graphics with a Chafa fallback;
 **Light** draws images and animated GIFs with Chafa characters and disables
 video; **Ultralight** uses text only and releases the media libraries.
+Video decoding can use compatible GPU drivers, with automatic CPU fallback;
+animated media also benefit from parallel Chafa processing in text terminals.
 
 ## Build
 

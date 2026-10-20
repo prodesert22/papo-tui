@@ -230,6 +230,14 @@ if(BUILD_TESTING)
     papo_set_tests_properties(media-terminal PROPERTIES TIMEOUT 420)
     papo_add_test(
         NAME
+        media-cadence-terminal
+        COMMAND
+        ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_media_cadence.py
+        $<TARGET_FILE:papo-tui>
+        ${FFMPEG_CLI})
+    papo_add_test(
+        NAME
         media-navigation-terminal
         COMMAND
         ${Python3_EXECUTABLE}
