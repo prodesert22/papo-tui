@@ -74,6 +74,7 @@ def module(entry):
             "--disable-autodetect",
             "--disable-network",
             "--enable-zlib",
+            "--enable-vaapi",
             "--libdir=/app/lib",
         ]
     else:
@@ -91,6 +92,9 @@ def module(entry):
                 "-Dgl=disabled",
                 "-Dbuild-date=false",
                 "-Dpulse=enabled",
+                "-Ddrm=enabled",
+                "-Dvaapi=enabled",
+                "-Dvaapi-drm=enabled",
             ]
         elif name == "libsixel":
             result["config-opts"] += [
@@ -177,6 +181,7 @@ def manifest(source, digest):
         "separate-locales": False,
         "finish-args": [
             "--share=network",
+            "--device=dri",
             "--socket=pulseaudio",
             "--talk-name=org.freedesktop.Notifications",
             "--talk-name=org.freedesktop.secrets",

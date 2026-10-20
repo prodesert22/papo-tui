@@ -1,14 +1,16 @@
+from test_context import main as test_main
+
+from test_context import argument
 import os
 from pathlib import Path
 import ssl
 import subprocess
-import sys
 import tempfile
 import unittest
 
 from mock_server import MockServer
 
-PROBE = sys.argv.pop(1)
+PROBE = argument(0)
 
 
 class WebSocketTests(unittest.TestCase):
@@ -159,4 +161,6 @@ class WebSocketTests(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

@@ -4,420 +4,33 @@ The responder verifies emitted protocol bytes and screen controls, not an
 actual emulator's pixel composition. Actual terminal evidence is separate.
 """
 
+from test_context import protocols, panels
+
+from test_context import main as test_main
+from terminal_media import FFMPEG
+
+
 import base64
 import json
 import re
 from pathlib import Path
 import subprocess
-import sys
 import tempfile
 import threading
 import time
-import unittest
 from wcwidth import wcswidth
 
-FFMPEG = sys.argv.pop(2)
 from history_mock import HistoryMock, STAMP, uuid  # noqa: E402 - path and test arguments are prepared above
-from mock_server import ChunkedBody  # noqa: E402 - path and test arguments are prepared above
-from test_terminal import Terminal, TerminalStream, wait_for_screen  # noqa: E402 - path and test arguments are prepared above
-import test_history_terminal as history_tests  # noqa: E402 - path and test arguments are prepared above
+from mock_server import ChunkedBody
+from terminal_support import wait_for_screen  # noqa: E402 - path and test arguments are prepared above
 
 
-def raster_dimensions(protocol, frame):
-    if protocol == "kitty":
-        return int(frame[b"s"]), int(frame[b"v"])
-    if protocol == "sixel":
-        raster = re.search(rb'"\d+;\d+;(\d+);(\d+)', frame)
-        if raster is None:
-            raise AssertionError("Missing Sixel raster dimensions")
-        return int(raster[1]), int(raster[2])
-    payload = base64.b64decode(frame.split(b":", 1)[1][:-1], validate=True)
-    offset = int.from_bytes(payload[4:8], "little")
-    count = int.from_bytes(payload[offset : offset + 2], "little")
-    tags = {
-        int.from_bytes(payload[pos : pos + 2], "little"): int.from_bytes(
-            payload[pos + 8 : pos + 12], "little"
-        )
-        for pos in range(offset + 2, offset + 2 + count * 12, 12)
-    }
-    return tags[256], tags[257]
+import terminal_media as support
 
 
-class GraphicsStream:
-    def __init__(self, screen, *, include_icons=True):
-        self.include_icons = include_icons
-        self.control_ids = set()
-        self.kitty_control = False
-        self.stream = TerminalStream(screen)
-        self.pending = b""
-        self.frames = []
-        self.frame_positions = []
-        self.protocols = []
-        self.kitty_frames = []
-        self.live_ids = set()
-        self.live_placements = set()
-        self.deleted_ids = []
-        self.placements = []
-        self.placement_positions = []
-        self.screen = screen
-        self.synchronizations = 0
-        self.kitty_header = None
-        self.kitty_parts = []
-
-    def is_control(self, width, height):
-        # The protocol responder uses 8x16 cells. Keep one-row navigation
-        # badges and the composer button out of attachment/player assertions.
-        y, x = self.screen.cursor.y, self.screen.cursor.x
-        return x == self.screen.columns - 7 or (
-            height == 16 and width <= 192 and (y == 1 or (self.screen.columns >= 80 and x < 24))
-        )
-
-    def feed(self, data):
-        self.synchronizations += data.count(b"\x1b[?2026h")
-        self.pending += data
-        while self.pending:
-            markers = (b"\x1bP", b"\x1b_G", b"\x1b]1337;")
-            positions = [self.pending.find(marker) for marker in markers]
-            start = min((position for position in positions if position >= 0), default=-1)
-            if start < 0:
-                keep = max(
-                    (
-                        n
-                        for marker in markers
-                        for n in range(1, len(marker))
-                        if self.pending.endswith(marker[:n])
-                    ),
-                    default=0,
-                )
-                size = len(self.pending) - keep
-                self.stream.feed(self.pending[:size])
-                self.pending = self.pending[size:]
-                return
-            if start:
-                self.stream.feed(self.pending[:start])
-                self.pending = self.pending[start:]
-            iterm = self.pending.startswith(b"\x1b]1337;")
-            terminator = b"\a" if iterm else b"\x1b\\"
-            end = self.pending.find(terminator, 2)
-            if end < 0:
-                return
-            sequence = self.pending[: end + len(terminator)]
-            self.pending = self.pending[end + len(terminator) :]
-            if iterm and not sequence.startswith(b"\x1b]1337;File="):
-                # OSC 1337 also carries the Kitty focus marker for shortcuts.
-                # Only File reports contain image pixels.
-                self.stream.feed(sequence)
-                continue
-            if sequence.startswith(b"\x1b_G"):
-                header, _, data = sequence[3:-2].partition(b";")
-                values = dict(field.split(b"=", 1) for field in header.split(b",") if b"=" in field)
-                if values.get(b"a") == b"d":
-                    image_id = int(values[b"i"])
-                    if image_id in self.control_ids and not self.include_icons:
-                        continue
-                    self.deleted_ids.append(image_id)
-                    if b"p" in values:
-                        self.live_placements.discard((image_id, int(values[b"p"])))
-                    else:
-                        self.live_placements = {
-                            pair for pair in self.live_placements if pair[0] != image_id
-                        }
-                    if not any(pair[0] == image_id for pair in self.live_placements):
-                        self.live_ids.discard(image_id)
-                elif values.get(b"a") == b"p":
-                    if int(values[b"i"]) in self.control_ids and not self.include_icons:
-                        continue
-                    self.placements.append(values)
-                    self.placement_positions.append((self.screen.cursor.y, self.screen.cursor.x))
-                    self.live_ids.add(int(values[b"i"]))
-                    self.live_placements.add((int(values[b"i"]), int(values[b"p"])))
-                elif values.get(b"a") in (b"T", b"t"):
-                    self.kitty_header = values
-                    self.kitty_parts = []
-                    # Media assertions concern attachment/embed/player pixels;
-                    # UI controls have separate image and placement assertions.
-                    self.kitty_control = self.is_control(*raster_dimensions("kitty", values))
-                    if self.kitty_control:
-                        self.control_ids.add(int(values[b"i"]))
-                elif self.kitty_header is not None:
-                    if data:
-                        self.kitty_parts.append(data)
-                    if values.get(b"m") == b"0":
-                        pixels = base64.b64decode(b"".join(self.kitty_parts), validate=True)
-                        if self.kitty_control and not self.include_icons:
-                            self.kitty_header = None
-                            continue
-                        self.kitty_frames.append((self.kitty_header, pixels))
-                        if self.kitty_header[b"a"] == b"T":
-                            self.live_ids.add(int(self.kitty_header[b"i"]))
-                        self.frames.append(pixels)
-                        self.frame_positions.append((self.screen.cursor.y, self.screen.cursor.x))
-                        self.protocols.append("kitty")
-                        self.kitty_header = None
-            else:
-                protocol = "iterm2" if iterm else "sixel"
-                if not self.include_icons and self.is_control(
-                    *raster_dimensions(protocol, sequence)
-                ):
-                    continue
-                self.frames.append(sequence)
-                self.frame_positions.append((self.screen.cursor.y, self.screen.cursor.x))
-                self.protocols.append(protocol)
-
-
-class MediaTerminal(unittest.TestCase):
-    wait = history_tests.HistoryTerminal.wait
-
-    @classmethod
-    def setUpClass(cls):
-        cls.assets = tempfile.TemporaryDirectory(prefix="papo-media-fixtures-")
-        cls.images = {}
-        for ext in ("png", "jpg", "webp", "gif"):
-            path = Path(cls.assets.name) / ("image." + ext)
-            subprocess.run(
-                [
-                    FFMPEG,
-                    "-v",
-                    "error",
-                    "-f",
-                    "lavfi",
-                    "-i",
-                    "color=c=red:s=16x12",
-                    "-frames:v",
-                    "1",
-                    "-threads",
-                    "1",
-                    "-y",
-                    str(path),
-                ],
-                check=True,
-                capture_output=True,
-            )
-            cls.images[ext] = path.read_bytes()
-        path = Path(cls.assets.name) / "tall.png"
-        subprocess.run(
-            [
-                FFMPEG,
-                "-v",
-                "error",
-                "-f",
-                "lavfi",
-                "-i",
-                "color=c=red:s=16x96",
-                "-frames:v",
-                "1",
-                "-threads",
-                "1",
-                "-y",
-                str(path),
-            ],
-            check=True,
-            capture_output=True,
-        )
-        cls.tall_image = path.read_bytes()
-        cls.large_images = {}
-        for shape, size in (("landscape", "1000x500"), ("portrait", "1000x1500")):
-            path = Path(cls.assets.name) / (shape + ".png")
-            subprocess.run(
-                [
-                    FFMPEG,
-                    "-v",
-                    "error",
-                    "-f",
-                    "lavfi",
-                    "-i",
-                    "testsrc2=size=" + size,
-                    "-frames:v",
-                    "1",
-                    "-threads",
-                    "1",
-                    "-y",
-                    str(path),
-                ],
-                check=True,
-                capture_output=True,
-            )
-            cls.large_images[shape] = path.read_bytes()
-        path = Path(cls.assets.name) / "animated.gif"
-        subprocess.run(
-            [
-                FFMPEG,
-                "-v",
-                "error",
-                "-f",
-                "lavfi",
-                "-i",
-                "color=red:s=16x12:d=0.2:r=5",
-                "-f",
-                "lavfi",
-                "-i",
-                "color=blue:s=16x12:d=0.2:r=5",
-                "-filter_complex",
-                "[0:v][1:v]concat=n=2:v=1:a=0",
-                "-frames:v",
-                "2",
-                "-loop",
-                "0",
-                "-threads",
-                "1",
-                "-y",
-                str(path),
-            ],
-            check=True,
-            capture_output=True,
-        )
-        cls.animated_gif = path.read_bytes()
-        path = Path(cls.assets.name) / "video.mp4"
-        subprocess.run(
-            [
-                FFMPEG,
-                "-v",
-                "error",
-                "-f",
-                "lavfi",
-                "-i",
-                "color=c=blue:s=32x24:r=10",
-                "-f",
-                "lavfi",
-                "-i",
-                "sine=frequency=440:sample_rate=44100",
-                "-t",
-                "3",
-                "-c:v",
-                "mpeg4",
-                "-c:a",
-                "aac",
-                "-movflags",
-                "+faststart",
-                "-threads",
-                "1",
-                "-y",
-                str(path),
-            ],
-            check=True,
-            capture_output=True,
-        )
-        cls.video = path.read_bytes()
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.assets.cleanup()
-
-    def open(self, server, sixel=True, environment=None, protocol=None, size=None, cell_width=8):
-        unset = ()
-        if protocol == "iterm2":
-            environment = dict(environment or {}, TERM_PROGRAM="iTerm.app", LC_TERMINAL="iTerm2")
-            unset = (
-                "KITTY_PID",
-                "KITTY_WINDOW_ID",
-                "KONSOLE_VERSION",
-                "VTE_VERSION",
-                "GHOSTTY_BIN_DIR",
-                "WEZTERM_EXECUTABLE",
-                "TMUX",
-                "STY",
-            )
-        t = Terminal(environment=environment, unset_environment=unset)
-        if size:
-            t.resize(*size)
-        if not hasattr(self, "terminals"):
-            self.terminals = []
-        self.terminals.append(t)
-        self.addCleanup(lambda: t.close() if t.process.poll() is None else None)
-        stream = GraphicsStream(t.screen, include_icons=getattr(self, "include_icons", False))
-        stream.feed(bytes(t.output))
-        t.stream = stream
-        if protocol == "kitty":
-            query = re.search(rb"\x1b_Gi=(\d+),s=1,v=1,a=q", t.output)
-            deadline = time.monotonic() + 5
-            while query is None and t.process.poll() is None and time.monotonic() < deadline:
-                t.read(0.03)
-                query = re.search(rb"\x1b_Gi=(\d+),s=1,v=1,a=q", t.output)
-            self.assertIsNotNone(
-                query,
-                f"Kitty query missing; exit={t.process.poll()}, output={bytes(t.output[-1000:])!r}",
-            )
-            t.send("\x1b_Gi=" + query[1].decode() + f";OK\x1b\\\x1b[?62;22c\x1b[6;16;{cell_width}t")
-        elif protocol == "iterm2":
-            t.send(f"\x1b[?62;22c\x1b[6;16;{cell_width}t")
-        elif sixel:
-            t.send(f"\x1b[?62;4;22c\x1b[6;16;{cell_width}t")
-        t.send(server.url + "\tjosé\tSynthetic!123\n")
-        self.wait(t, "geral")
-        t.send("\x1bOB\n")
-        self.wait(t, "Conversar em #geral")
-        return t
-
-    def tearDown(self):
-        for terminal in getattr(self, "terminals", []):
-            self.assertEqual(terminal.process.returncode, 0, "Client exited with an error")
-            for diagnostic in (b"AddressSanitizer", b"LeakSanitizer", b"runtime error:"):
-                self.assertNotIn(
-                    diagnostic, terminal.output, "Sanitizer diagnostic in client output"
-                )
-
-    def serve(self, content, mime, *, embed=False, slow=False, name="Fixture", chunked=None):
-        s = HistoryMock(count=1)
-        parent = s.route
-        s.messages[0]["attachments"] = (
-            []
-            if embed
-            else [
-                {
-                    "id": uuid(901),
-                    "mime_type": mime,
-                    "original_file_name": name,
-                    "size_bytes": len(content),
-                    "moderation_status": "clean",
-                }
-            ]
-        )
-
-        def route(method, path, body):
-            if "/attachments/" in path or "/embeds/" in path:
-                if slow:
-                    s.stopping.wait(2)
-                if embed:
-                    return 200, {
-                        "id": uuid(902),
-                        "image_data": base64.b64encode(content).decode(),
-                        "author_image_data": None,
-                    }
-                return 200, chunked if chunked is not None else content, None, None, mime
-            return parent(method, path, body)
-
-        s.api_handler = route
-        return s
-
-    def wait_frames(self, terminal, count=1):
-        deadline = time.monotonic() + 10
-        while len(terminal.stream.frames) < count and time.monotonic() < deadline:
-            terminal.read(0.03)
-        self.assertGreaterEqual(
-            len(terminal.stream.frames), count, "\n".join(terminal.screen.display)
-        )
-
-    def raster_size(self, terminal, index=-1):
-        stream = terminal.stream
-        if not stream.frames:
-            return 0, 0
-        frame = (
-            stream.kitty_frames[index][0]
-            if stream.protocols[index] == "kitty"
-            else stream.frames[index]
-        )
-        return raster_dimensions(stream.protocols[index], frame)
-
-    def wait_raster(self, terminal, predicate):
-        deadline = time.monotonic() + 10
-        while not predicate(*self.raster_size(terminal)) and time.monotonic() < deadline:
-            terminal.read(0.03)
-        size = self.raster_size(terminal)
-        self.assertTrue(predicate(*size), (size, "\n".join(terminal.screen.display)))
-        return size
-
+class MediaTerminal(support.MediaTerminal):
     def test_large_images_follow_history_and_modal_viewports(self):
-        for protocol in ("sixel", "kitty", "iterm2"):
+        for protocol in protocols("sixel", "kitty", "iterm2"):
             for shape, content in self.large_images.items():
                 embed = shape == "portrait"
                 with (
@@ -501,14 +114,14 @@ class MediaTerminal(unittest.TestCase):
                 placement = t.stream.placements[-1]
                 self.assertEqual((int(placement[b"w"]), int(placement[b"h"])), (480, 720))
                 self.assertEqual(placement[b"y"], b"0")
-                # The extra raster pixels only pad the last terminal cell;
-                # the Kitty placement must stop at exactly 720 actual pixels.
-                self.assertGreater(self.raster_size(t)[1], 720)
+                # Compressed Kitty rasters retain exactly the visible pixels,
+                # including when a terminal cell would require extra padding.
+                self.assertEqual(self.raster_size(t), (480, 720))
             finally:
                 self.assertTrue(t.close())
 
     def test_gif_plays_inline_at_native_size_without_attachment_metadata(self):
-        for protocol in ("sixel", "kitty", "iterm2"):
+        for protocol in protocols("sixel", "kitty", "iterm2"):
             with (
                 self.subTest(protocol=protocol),
                 tempfile.TemporaryDirectory() as directory,
@@ -538,7 +151,7 @@ class MediaTerminal(unittest.TestCase):
                         )
                         self.assertTrue(
                             all(
-                                int(header[b"s"]) == 16 and int(header[b"v"]) == 16
+                                int(header[b"s"]) == 16 and int(header[b"v"]) == 12
                                 for header, _ in t.stream.kitty_frames
                             )
                         )
@@ -631,7 +244,8 @@ class MediaTerminal(unittest.TestCase):
                     self.wait_frames(t)
                     self.assertEqual(set(t.stream.protocols), {"kitty"})
                     header, pixels = t.stream.kitty_frames[-1]
-                    self.assertEqual(header[b"f"], b"32")
+                    self.assertEqual(header[b"f"], b"24")
+                    self.assertEqual(header[b"o"], b"z")
                     self.assertEqual(header[b"q"], b"2")
                     self.assertEqual(len(pixels), int(header[b"s"]) * int(header[b"v"]) * 4)
                     self.assertGreater(pixels[0], 230)
@@ -689,7 +303,7 @@ class MediaTerminal(unittest.TestCase):
         from history_mock import CHANNEL
 
         self.include_icons = True
-        for protocol in ("kitty", "sixel", "iterm2"):
+        for protocol in protocols("kitty", "sixel", "iterm2"):
             with (
                 self.subTest(protocol=protocol),
                 self.serve(self.images["png"], "image/png") as server,
@@ -800,7 +414,7 @@ class MediaTerminal(unittest.TestCase):
     def test_notification_target_stays_centered_after_delayed_media_above_it_loads(self):
         from history_mock import CHANNEL
 
-        for protocol in ("kitty", "sixel", "iterm2"):
+        for protocol in protocols("kitty", "sixel", "iterm2"):
             with (
                 self.subTest(protocol=protocol),
                 self.serve(self.tall_image, "image/png") as server,
@@ -880,8 +494,8 @@ class MediaTerminal(unittest.TestCase):
                     self.assertTrue(terminal.close())
 
     def test_floating_panels_preserve_uncovered_attachment_pixels(self):
-        for protocol in ("kitty", "sixel", "iterm2"):
-            for key, title in (
+        for protocol in protocols("kitty", "sixel", "iterm2"):
+            for key, title in panels(
                 ("\x1b[15~", "Anexar arquivos"),
                 ("attachment-remove", "Remover anexo?"),
                 ("\x1bOS", "Emojis · Esc voltar"),
@@ -1109,7 +723,7 @@ class MediaTerminal(unittest.TestCase):
                         self.assertTrue(t.close())
 
     def test_visible_video_has_automatic_static_poster_and_reuses_download(self):
-        for protocol in ("kitty", "sixel", "iterm2"):
+        for protocol in protocols("kitty", "sixel", "iterm2"):
             with self.subTest(protocol=protocol), self.serve(self.video, "video/mp4") as server:
                 t = self.open(server, protocol=protocol, size=(64, 160))
                 try:
@@ -1203,7 +817,14 @@ class MediaTerminal(unittest.TestCase):
         release = threading.Event()
         body = ChunkedBody(self.video, pieces=12, delay=0.3, hold=release, content_length=True)
         with self.serve(self.video, "video/mp4", chunked=body) as server:
-            t = self.open(server, protocol="kitty", size=(64, 160))
+            # Match the Kitty responder's fixed palette. The PTY observer does
+            # not apply OSC 4 palette redefinitions from generic xterm mode.
+            t = self.open(
+                server,
+                protocol="kitty",
+                size=(64, 160),
+                environment={"KITTY_WINDOW_ID": "papo-test"},
+            )
             try:
                 self.wait(t, "▶ Fixture")
                 self.wait(t, "Carregando prévia do vídeo…")
@@ -1399,7 +1020,7 @@ class MediaTerminal(unittest.TestCase):
             self.assertEqual(list(Path(directory).iterdir()), [])
 
     def test_stationary_images_are_retained_across_focus_and_typing(self):
-        for protocol in ("sixel", "kitty", "iterm2"):
+        for protocol in protocols("sixel", "kitty", "iterm2"):
             with (
                 self.subTest(protocol=protocol),
                 self.serve(self.images["png"], "image/png") as server,
@@ -1645,7 +1266,7 @@ class MediaTerminal(unittest.TestCase):
                 self.assertTrue(t.close())
 
     def test_resize_repaints_images_that_already_fit_at_original_size(self):
-        for protocol in ("sixel", "kitty", "iterm2"):
+        for protocol in protocols("sixel", "kitty", "iterm2"):
             with (
                 self.subTest(protocol=protocol),
                 self.serve(self.images["png"], "image/png") as server,
@@ -1666,7 +1287,7 @@ class MediaTerminal(unittest.TestCase):
                     self.assertTrue(t.close())
 
     def test_cached_crops_scroll_without_a_loading_placeholder(self):
-        for protocol in ("sixel", "iterm2"):
+        for protocol in protocols("sixel", "iterm2"):
             with (
                 self.subTest(protocol=protocol),
                 self.serve(self.tall_image, "image/png") as server,
@@ -1981,34 +1602,8 @@ class MediaTerminal(unittest.TestCase):
                 self.assertTrue(t.close())
             self.assertEqual(list(Path(directory).iterdir()), [])
 
-    def assert_blue_video_size(self, terminal, expected):
-        header, pixels = terminal.stream.kitty_frames[-1]
-        width, height = int(header[b"s"]), int(header[b"v"])
-        blue = [i for i in range(width * height) if pixels[4 * i + 2] > 200 and pixels[4 * i] < 30]
-        self.assertTrue(blue, "Video frame contains no blue pixels")
-        columns = [i % width for i in blue]
-        rows = [i // width for i in blue]
-        content = (max(columns) - min(columns) + 1, max(rows) - min(rows) + 1)
-        placement = next(p for p in reversed(terminal.stream.placements) if p[b"i"] == header[b"i"])
-        if int(placement.get(b"c", 0)) and int(placement.get(b"r", 0)):
-            content = (
-                content[0] * int(placement[b"c"]) * 8 / int(placement[b"w"]),
-                content[1] * int(placement[b"r"]) * 16 / int(placement[b"h"]),
-            )
-        for actual, wanted, cell in zip(content, expected, (8, 16)):
-            self.assertAlmostEqual(actual, wanted, delta=cell)
-
-    def wait_video_size(self, terminal, expected):
-        deadline = time.monotonic() + 5
-        while time.monotonic() < deadline:
-            for placement in reversed(terminal.stream.placements[-5:]):
-                if (int(placement.get(b"c", 0)) * 8, int(placement.get(b"r", 0)) * 16) == expected:
-                    return
-            terminal.read(0.02)
-        self.fail(f"Video display did not reach {expected}: {terminal.stream.placements[-1:]}")
-
     def test_small_video_enlarges_to_fit_modal(self):
-        for protocol in ("sixel", "kitty", "iterm2"):
+        for protocol in protocols("sixel", "kitty", "iterm2"):
             with (
                 self.subTest(protocol=protocol),
                 self.serve(self.video, "video/mp4") as server,
@@ -2021,7 +1616,7 @@ class MediaTerminal(unittest.TestCase):
                     expected = (234 if protocol == "sixel" else 240, 176)
                     if protocol == "kitty":
                         self.wait_video_size(t, expected)
-                        self.assertEqual(self.raster_size(t), (32, 32))
+                        self.assertEqual(self.raster_size(t), (32, 24))
                         self.assert_blue_video_size(t, (234, 176))
                     else:
                         self.assertEqual(self.raster_size(t), expected)
@@ -2122,20 +1717,6 @@ class MediaTerminal(unittest.TestCase):
     def is_orange(cls, cell):
         red, green, blue = cls.cell_rgb(cell)
         return red > 200 and green > 130 and blue < 140
-
-    def player_controls(self, terminal):
-        deadline = time.monotonic() + 5
-        while time.monotonic() < deadline:
-            for row, line in enumerate(terminal.screen.display):
-                if "[⏸]" in line or "[▶]" in line:
-                    controls = list(re.finditer(r"\[([^]]*)\]", line))
-                    if len(controls) >= 3:
-                        return row, controls[:3]
-            terminal.read(0.03)
-        self.fail(
-            "Play/pause, timeline and volume controls are missing\n"
-            + "\n".join(terminal.screen.display)
-        )
 
     def test_player_bars_mouse_seek_volume_gradient_and_resize(self):
         with self.serve(self.video, "video/mp4") as server:
@@ -2569,4 +2150,4 @@ class MediaTerminal(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(2, verbosity=2)

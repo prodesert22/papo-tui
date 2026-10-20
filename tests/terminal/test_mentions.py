@@ -1,5 +1,7 @@
 """Mention picker and canonical wire text through the real TUI, synthetic peers."""
 
+from test_context import main as test_main
+
 import re
 import subprocess
 import time
@@ -7,7 +9,7 @@ import unittest
 from urllib.parse import urlsplit, parse_qs
 from history_mock import CHANNEL, OTHER, STAMP, uuid, assert_history_reads
 from realtime_mock import RealtimeMock
-from test_terminal import Terminal, BINARY
+from terminal_support import Terminal, BINARY
 
 
 class MentionServer(RealtimeMock):
@@ -626,4 +628,6 @@ class Mentions(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

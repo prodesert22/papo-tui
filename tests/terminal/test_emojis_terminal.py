@@ -1,7 +1,11 @@
 """Emoji picker, authenticated assets and retained pictures in a real PTY."""
 
+from test_context import protocols
+
+from test_context import main as test_main
+from terminal_emojis import encode_emoji_animation
+
 import base64
-import os
 import fcntl
 from datetime import datetime, timezone
 import signal
@@ -10,147 +14,15 @@ import struct
 import subprocess
 import termios
 import threading
-import time
-import unittest
-from urllib.parse import urlsplit, parse_qs
-import test_media_terminal as media_tests
-from history_mock import HistoryMock, CHANNEL, STAMP, uuid
-from realtime_mock import RealtimeMock
-from test_terminal import editor_region, editor_column
+import terminal_media as media_tests
+from history_mock import CHANNEL, STAMP, uuid
+from terminal_support import editor_region, editor_column
 
 
-def encode_emoji_animation(gif, format):
-    encoder, container = {
-        "GIF": ("gif", "gif"),
-        "WEBP": ("libwebp_anim", "webp"),
-        "PNG": ("apng", "apng"),
-    }[format]
-    if format == "WEBP":
-        decoders = subprocess.run(
-            [media_tests.FFMPEG, "-hide_banner", "-decoders"], capture_output=True, check=True
-        ).stdout.split()
-        if b"webp_anim" not in decoders:
-            raise unittest.SkipTest("Installed FFmpeg does not provide webp_anim")
-    return subprocess.run(
-        [
-            media_tests.FFMPEG,
-            "-v",
-            "error",
-            "-i",
-            "pipe:0",
-            "-c:v",
-            encoder,
-            "-frames:v",
-            "2",
-            "-threads",
-            "1",
-            "-f",
-            container,
-            "pipe:1",
-        ],
-        input=gif,
-        capture_output=True,
-        check=True,
-    ).stdout
+import terminal_emojis as support
 
 
-class EmojiTerminal(unittest.TestCase):
-    include_icons = True
-    wait = media_tests.MediaTerminal.wait
-    open = media_tests.MediaTerminal.open
-    tearDown = media_tests.MediaTerminal.tearDown
-
-    @classmethod
-    def setUpClass(cls):
-        media_tests.MediaTerminal.setUpClass()
-        cls.png = media_tests.MediaTerminal.images["png"]
-        cls.gif = media_tests.MediaTerminal.animated_gif
-
-    @classmethod
-    def tearDownClass(cls):
-        media_tests.MediaTerminal.tearDownClass()
-
-    def until(self, t, predicate, timeout=8):
-        deadline = time.monotonic() + timeout
-        while not predicate() and time.monotonic() < deadline:
-            t.read(0.03)
-        self.assertTrue(predicate(), "\n".join(t.screen.display))
-
-    def server(
-        self,
-        *,
-        content="Mensagem 0001",
-        count=1,
-        animated=False,
-        large=False,
-        status=200,
-        realtime=False,
-    ):
-        s = (RealtimeMock if realtime else HistoryMock)(count=count)
-        for m in s.messages:
-            m.update(content=content, created_at=datetime.now(timezone.utc).isoformat())
-        parent = s.route
-        blob = base64.b64encode(
-            (self.gif if animated else self.png)
-            + (b"x" * (600000 if animated else 120000) if large else b"")
-        ).decode()
-        s.emojis = [
-            {
-                "id": uuid(900 + i),
-                "name": f"gato{i}" if i else "gato 界",
-                "format": "GIF" if animated else "PNG",
-                "image_blob": blob,
-                "created_at": "2026-10-14T10:00:00.000000Z",
-            }
-            for i in range(26 if large else 1)
-        ]
-        avatar = base64.b64encode(
-            self.gif if animated else self.png + (b"x" * 900000 if large else b"")
-        ).decode()
-
-        def route(method, path, body):
-            url = urlsplit(path)
-            if url.path.endswith("/emojis"):
-                if status != 200:
-                    return status, None
-                cursor = parse_qs(url.query).get("last_id", [""])[0]
-                first = 25 if cursor else 0
-                return 200, {
-                    "emojis": s.emojis[first : first + 25],
-                    "has_more": first + 25 < len(s.emojis),
-                }
-            if url.path.endswith("/users/profile_batch"):
-                self.assertLessEqual(len(body["ids"]), 4)
-                self.assertEqual(len(body["ids"]), len(set(body["ids"])))
-                return 200, {
-                    "profiles": [
-                        {
-                            "id": id,
-                            "username": "Autor",
-                            "avatar_blob": avatar,
-                            "avatar_format": "GIF" if animated else "PNG",
-                        }
-                        for id in body["ids"]
-                    ]
-                }
-            return parent(method, path, body)
-
-        s.api_handler = route
-        return s
-
-    def avatar_positions(self, t):
-        images = {
-            int(h[b"i"])
-            for h, p in t.stream.kitty_frames
-            if h.get(b"s") == b"48" and h.get(b"v") == b"48"
-        }
-        # Enlarged body emojis are also 48 pixels; avatars occupy the gutter.
-        return {
-            (int(placement[b"i"]), int(placement[b"p"]))
-            for placement, position in zip(t.stream.placements, t.stream.placement_positions)
-            if int(placement[b"i"]) in images and position[1] in (3, 28)
-        } & t.stream.live_placements
-
+class EmojiTerminal(support.EmojiTerminal):
     def test_mention_and_notification_panels_retain_avatars_and_inline_emoji(self):
         for key, title in (
             ("@", "Menções"),
@@ -276,7 +148,7 @@ class EmojiTerminal(unittest.TestCase):
                 self.assertTrue(t.close())
 
     def test_picker_has_32_pixel_previews_labels_and_retains_uncovered_images(self):
-        for protocol in ("kitty", "sixel", "iterm2"):
+        for protocol in protocols("kitty", "sixel", "iterm2"):
             with self.subTest(protocol=protocol), self.server(content="Emoji 😀 :gato 界:") as s:
                 t = self.open(s, protocol=protocol, size=(48, 100))
                 try:
@@ -346,98 +218,6 @@ class EmojiTerminal(unittest.TestCase):
 
     def test_participants_retire_unicode_images_shared_with_history(self):
         self.check_participant_images(custom=False)
-
-    def check_participant_images(self, *, custom):
-        content = "Mensagem 0001 :gato 界:" if custom else "Mensagem 0001 😀"
-        for protocol in ("kitty", "sixel", "iterm2", "chafa") if custom else ("kitty",):
-            with self.subTest(protocol=protocol), self.server(content=content) as s:
-                emoji = dict(
-                    emoji_id=s.emojis[0]["id"] if custom else None,
-                    unicode=None if custom else "😀",
-                    count=2,
-                )
-                s.messages[0]["reactions"] = [emoji]
-                parent = s.api_handler
-
-                def route(method, path, body):
-                    if method == "GET" and urlsplit(path).path.endswith("/reactions"):
-                        return 200, {
-                            "message_id": s.messages[0]["id"],
-                            "reactions": [
-                                dict(
-                                    emoji,
-                                    users=[
-                                        dict(
-                                            id=uuid(1200 + i),
-                                            user_id=uuid(30 + i),
-                                            created_at=STAMP,
-                                        )
-                                        for i in range(2)
-                                    ],
-                                )
-                            ],
-                            "has_more": False,
-                        }
-                    return parent(method, path, body)
-
-                s.api_handler = route
-                t = self.open(s, protocol=protocol, sixel=protocol != "chafa", size=(32, 100))
-                try:
-                    self.wait(t, "Mensagem 0001")
-                    t.send("\x1b[18~")
-                    t.read(0.5)
-                    t.send("E")
-                    self.wait(t, "Quem reagiu")
-                    self.wait(t, "Fim da lista")
-                    header = next(
-                        i
-                        for i, line in enumerate(t.screen.display)
-                        if "Reações" in line and "Pessoas" in line
-                    )
-                    position = (header + 2, t.screen.display[header].index("Reações") + 1)
-
-                    def placements():
-                        return {
-                            (int(p[b"i"]), int(p[b"p"]))
-                            for p, point in zip(t.stream.placements, t.stream.placement_positions)
-                            if point == position
-                        } & t.stream.live_placements
-
-                    if protocol == "kitty":
-                        self.until(t, lambda: bool(placements()))
-                        t.read(0.5)
-                        panel_icons = placements()
-                        # A fallback and a newly encoded selection background
-                        # can use the same occurrence with different image IDs.
-                        # Include every image ever placed in the modal, so an
-                        # older shared image cannot escape the close assertion.
-                        panel_icons |= {
-                            (int(p[b"i"]), int(p[b"p"]))
-                            for p, point in zip(t.stream.placements, t.stream.placement_positions)
-                            if point == position
-                        }
-                    elif protocol != "chafa":
-                        self.until(t, lambda: position in t.stream.frame_positions)
-                    else:
-                        self.until(t, lambda: ":emoji:" not in t.screen.display[position[0]])
-                    row = t.screen.display[position[0]]
-                    self.assertNotIn(":gato 界:", row)
-                    self.assertNotIn(":emoji:", row)
-                    self.assertIn(" 2", row)
-                    t.send("\x1b")
-                    self.until(t, lambda: "Quem reagiu" not in "\n".join(t.screen.display))
-                    if protocol == "kitty":
-                        self.assertFalse(panel_icons & t.stream.live_placements)
-                    self.assertTrue(
-                        all(
-                            t.screen.buffer[position[0]][column].data == " "
-                            for column in range(position[1], position[1] + 2)
-                        ),
-                        repr(t.screen.display[position[0]]),
-                    )
-                    self.assertEqual(s.message_count, 0)
-                finally:
-                    self.assertTrue(t.close())
 
     def test_paging_large_base64_responses_and_no_repeat_reads(self):
         with self.server(content=":gato25:", large=True) as s:
@@ -533,7 +313,7 @@ class EmojiTerminal(unittest.TestCase):
                 self.assertTrue(t.close())
 
     def test_custom_gifs_animate_in_messages_and_picker_across_graphics_protocols(self):
-        for protocol in ("kitty", "sixel", "iterm2"):
+        for protocol in protocols("kitty", "sixel", "iterm2"):
             with (
                 self.subTest(protocol=protocol),
                 self.server(content="Emoji :gato 界: fim", animated=True) as server,
@@ -572,28 +352,8 @@ class EmojiTerminal(unittest.TestCase):
                 finally:
                     self.assertTrue(t.close())
 
-    def image_positions(self, t, protocol, size, start=0):
-        if protocol == "kitty":
-            images = {
-                int(h[b"i"])
-                for h, _ in t.stream.kitty_frames
-                if media_tests.raster_dimensions(protocol, h) == size
-            }
-            return {
-                position
-                for placement, position in zip(
-                    t.stream.placements[start:], t.stream.placement_positions[start:]
-                )
-                if int(placement[b"i"]) in images and position[1] >= 34
-            }
-        return {
-            position
-            for frame, position in zip(t.stream.frames[start:], t.stream.frame_positions[start:])
-            if media_tests.raster_dimensions(protocol, frame) == size and position[1] >= 34
-        }
-
     def test_emoji_only_messages_use_large_icons_and_keep_text_and_reactions_inline(self):
-        for protocol in ("kitty", "sixel", "iterm2"):
+        for protocol in protocols("kitty", "sixel", "iterm2"):
             with self.subTest(protocol=protocol), self.server(count=5, animated=True) as server:
                 for message in server.messages:
                     message["author_id"] = uuid(21)
@@ -670,7 +430,7 @@ class EmojiTerminal(unittest.TestCase):
                 self.assertTrue(t.close())
 
     def test_large_emojis_wrap_on_resize_and_crop_at_history_edges(self):
-        for protocol in ("kitty", "sixel", "iterm2"):
+        for protocol in protocols("kitty", "sixel", "iterm2"):
             with self.subTest(protocol=protocol), self.server(count=2, animated=True) as server:
                 for message in server.messages:
                     message["author_id"] = uuid(21)
@@ -1604,7 +1364,7 @@ class EmojiTerminal(unittest.TestCase):
                         for h, p in t.stream.kitty_frames
                     ),
                 )
-                t.send("\x1bOA")
+                t.send("\x1b[5~")
                 self.until(t, lambda: s.older_calls == 1)
                 self.until(t, lambda: "Agrupada 031" in t.screen.display[8])
                 self.assertNotIn("Apelido", "\n".join(t.screen.display[8:15]))
@@ -1702,17 +1462,5 @@ class EmojiTerminal(unittest.TestCase):
                     self.assertTrue(t.close())
 
 
-def load_tests(loader, tests, pattern):
-    partition = os.environ.get("PAPO_TEST_EMOJI_PARTITION")
-    if partition is None:
-        return tests
-    if partition not in ("0", "1"):
-        raise ValueError("PAPO_TEST_EMOJI_PARTITION must be 0 or 1")
-    # Keep the normal unittest order and every discovered case. CTest runs
-    # both disjoint halves; direct execution still runs the complete suite.
-    cases = [case for group in tests for case in group]
-    return unittest.TestSuite(cases[int(partition) :: 2])
-
-
 if __name__ == "__main__":
-    unittest.main(verbosity=2)
+    test_main(2, verbosity=2)

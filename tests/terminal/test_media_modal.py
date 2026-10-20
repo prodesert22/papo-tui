@@ -1,7 +1,9 @@
 """Modal interactions over a local PTY, without a server or session credentials."""
 
+from test_context import main as test_main
+
 import unittest
-from test_terminal import Terminal, wait_for_screen
+from terminal_support import Terminal, wait_for_screen
 
 
 class ModalTest(unittest.TestCase):
@@ -95,4 +97,6 @@ class ModalTest(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

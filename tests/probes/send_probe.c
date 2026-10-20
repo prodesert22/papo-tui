@@ -114,6 +114,7 @@ int main(int argc, char **argv)
         attachment_unref(file);
     }
     bool need_confirmation = false;
+    int exit_code = 0;
     unsigned count = 0;
     json_t *last_message = NULL;
     if (id) {
@@ -127,7 +128,7 @@ int main(int argc, char **argv)
             outbox_poll(box);
             if (!strcmp(mode, "append") || !strcmp(mode, "replace") || !strcmp(mode, "restore") ||
                 !strcmp(mode, "grapheme") || !strcmp(mode, "emoji-append") ||
-                !strcmp(mode, "cancel") || !strcmp(mode, "channels"))
+                !strcmp(mode, "channels"))
                 tick(session, box, 40);
             if (!strcmp(mode, "append") || !strcmp(mode, "emoji-append") ||
                 !strcmp(mode, "restore")) {
@@ -141,8 +142,25 @@ int main(int argc, char **argv)
                 outbox_set_draft(box, channel, "Outro rascunho");
             if (!strcmp(mode, "grapheme"))
                 outbox_set_draft(box, channel, "cafe\xcc\x81");
-            if (!strcmp(mode, "cancel"))
+            if (!strcmp(mode, "cancel")) {
+                const char *received = g_getenv("PAPO_SEND_RECEIVED_FILE");
+                uint64_t start, now;
+                if (!received || !net_now_ms(&start)) {
+                    exit_code = 2;
+                    goto cleanup;
+                }
+                /* The mock creates this marker after receiving the complete
+                 * multipart and holds its response until teardown. */
+                while (!g_file_test(received, G_FILE_TEST_EXISTS)) {
+                    tick(session, box, 1);
+                    if (!net_now_ms(&now) || now - start > 5000) {
+                        fputs("Timed out waiting for the mock's send receipt\n", stderr);
+                        exit_code = 2;
+                        goto cleanup;
+                    }
+                }
                 outbox_cancel(box, id);
+            }
             if (!strcmp(mode, "channels")) {
                 outbox_set_draft(box, second_channel, "Texto do canal B");
                 outbox_submit(box, second_channel, false, &second_id);
@@ -232,9 +250,10 @@ int main(int argc, char **argv)
     json_dumpf(result, stdout, JSON_COMPACT);
     putchar('\n');
     json_decref(result);
+cleanup:
     json_decref(last_message);
     outbox_destroy(box);
     auth_destroy(session);
     curl_global_cleanup();
-    return 0;
+    return exit_code;
 }

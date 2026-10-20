@@ -12,12 +12,13 @@ data/emoji/LICENSE.
 | libunibreak | Unicode segmentation | zlib |
 | GLib/GIO/GModule | Data structures, tasks, integration and modules | LGPL-2.1-or-later |
 | libsixel | Sixel encoding | MIT |
-| Chafa | Kitty/iTerm2 graphics protocols | LGPL-3.0-or-later |
+| Chafa | Terminal graphics and character rendering | LGPL-3.0-or-later |
 | Pango/Cairo | Text and emojis in images | LGPL-2.1-or-later / LGPL-2.1-or-later OR MPL-1.1 |
 | Fontconfig | Font discovery | MIT |
-| FFmpeg | Image decoding | LGPL-2.1-or-later in distributed configurations |
+| FFmpeg | Image decoding and video pixel conversion | LGPL-2.1-or-later in distributed configurations |
 | libmpv | Video and audio playback | LGPL-2.1-or-later in distributed configurations |
 | libplacebo / libass | libmpv dependencies | LGPL-2.1-or-later / ISC |
+| libva / libdrm | Linux hardware video decoding | MIT/X11 |
 | Noto Emoji | Emoji font | OFL-1.1 |
 
 Packages that bundle libraries must include their exact licenses and publish

@@ -119,7 +119,7 @@ target_link_libraries(
 add_library(papo_video_player MODULE src/ui/media/video_player.c)
 target_include_directories(papo_video_player PRIVATE src)
 target_link_libraries(papo_video_player PRIVATE PkgConfig::NCURSES PkgConfig::GMODULE
-                                                PkgConfig::MPV)
+                                                PkgConfig::MPV PkgConfig::SWSCALE PkgConfig::AVUTIL)
 foreach(target papo_image_codec papo_video_player)
     set_target_properties(
         ${target}
@@ -150,6 +150,7 @@ target_compile_options(papo-media-worker PRIVATE -Wall -Wextra -Wpedantic -Werro
 target_link_libraries(
     papo-media-worker
     PRIVATE papo_platform
+            PkgConfig::GIO
             PkgConfig::NCURSES
             PkgConfig::GMODULE
             PkgConfig::PANGO

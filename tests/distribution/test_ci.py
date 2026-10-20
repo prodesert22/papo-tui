@@ -7,7 +7,6 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
-import threading
 import unittest
 from unittest.mock import patch
 
@@ -18,27 +17,21 @@ import ci_linux  # noqa: E402
 
 
 class BuildOrchestration(unittest.TestCase):
-    def test_variants_share_preparation_run_concurrently_and_retain_failure(self):
-        gate = threading.Barrier(2)
-        lock = threading.Lock()
+    def test_variants_prepare_once_and_run_sequentially_without_hiding_failure(self):
         attempts = []
         active = peak = 0
 
-        def variant(directory, prefix, mode, jobs, test_jobs, log):
+        def variant(directory, prefix, mode, jobs, test_jobs, log, **options):
             nonlocal active, peak
-            with lock:
-                active += 1
-                peak = max(peak, active)
-                attempts.append((directory.name, jobs, test_jobs))
+            active += 1
+            peak = max(peak, active)
+            attempts.append((directory.name, jobs, test_jobs))
             try:
-                if mode != "coverage":
-                    gate.wait(timeout=5)
                 log.write(mode + "\n")
                 if mode == "release":
                     raise subprocess.CalledProcessError(1, ["synthetic compiler"])
             finally:
-                with lock:
-                    active -= 1
+                active -= 1
 
         with (
             tempfile.TemporaryDirectory() as directory,
@@ -67,9 +60,9 @@ class BuildOrchestration(unittest.TestCase):
                 ci_build.main()
             self.assertEqual(result.exception.code, 1)
             self.assertEqual(prepare.call_count, 2)  # bootstrap and resources, once each
-            self.assertEqual(peak, 2)
+            self.assertEqual(peak, 1)
             self.assertEqual(
-                sorted(attempts), [(name, 1, 2) for name in ("coverage", "release", "sanitizers")]
+                sorted(attempts), [(name, 2, 4) for name in ("coverage", "release", "sanitizers")]
             )
             self.assertEqual(len(list((Path(directory) / "ci-logs").glob("*.log"))), 3)
 
@@ -100,14 +93,14 @@ class BuildOrchestration(unittest.TestCase):
                 self.assertEqual(result.exception.code, 1)
                 assemble.assert_not_called()
             logs = root / "build/release-tasks/logs"
-            report = json.loads((logs / "timings.json").read_text())
+            report = json.loads((logs / "timings.json").read_text(encoding="utf-8"))
             self.assertEqual({row["target"] for row in report}, set(ci_linux.TARGETS))
             self.assertEqual(sum(row["exit_code"] != 0 for row in report), 1)
             self.assertEqual(
                 next(row["exit_code"] for row in report if row["target"] == "fedora"), 9
             )
             for name in ci_linux.TARGETS:
-                self.assertIn(name, (logs / (name + ".log")).read_text())
+                self.assertIn(name, (logs / (name + ".log")).read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

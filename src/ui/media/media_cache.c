@@ -38,7 +38,7 @@ struct variant {
     image_decode_request request;
     graphics_image image;
     task *job;
-    uint64_t used, presented;
+    uint64_t used;
     size_t frame;
     bool pinned, failed, visible;
 };
@@ -676,7 +676,6 @@ static bool collect(media_cache *c)
                     shared.stats.memory += o->frames->bytes + sizeof(animation);
                     for (variant *v = o->variants; v; v = v->next) {
                         v->frame = SIZE_MAX;
-                        v->presented = 0;
                         v->failed = false;
                     }
                 }
@@ -698,7 +697,6 @@ static bool collect(media_cache *c)
                     memset(&t->image, 0, sizeof(t->image));
                     shared.stats.memory += graphics_image_bytes(&v->image);
                     v->frame = t->request.frame;
-                    v->presented = c->now;
                 }
             }
         }
@@ -1026,6 +1024,25 @@ static bool maintain(uint64_t now)
     }
     return changed;
 }
+bool media_cache_animating(const media_cache *c)
+{
+    if (!c)
+        return false;
+    if (c->tasks)
+        return true;
+    GHashTableIter iter;
+    gpointer value;
+    g_hash_table_iter_init(&iter, c->objects);
+    while (g_hash_table_iter_next(&iter, NULL, &value)) {
+        const image_object *o = value;
+        if (!o->pinned || !o->frames || o->frames->count < 2)
+            continue;
+        for (const variant *v = o->variants; v; v = v->next)
+            if (v->pinned && !v->request.first_frame)
+                return true;
+    }
+    return false;
+}
 bool media_cache_poll(media_cache *c, uint64_t now)
 {
     note_released(media_process_released_bytes());
@@ -1053,7 +1070,9 @@ bool media_cache_poll(media_cache *c, uint64_t now)
             media_download_cancel(d);
             r->state = RESOURCE_NEW;
         } else {
-            media_download_poll(d);
+            /* Download progress also changes paused-player controls, even
+             * when there is no new video frame to trigger a redraw. */
+            changed |= media_download_poll(d);
             media_state state = media_download_state(d);
             if (r->stream_path && c->stream) {
                 media_stream_progress(c->stream, r->stream_path, media_download_bytes(d),
@@ -1378,9 +1397,10 @@ const graphics_image *media_resource_image(media_resource *r, bool author,
             g_thread_pool_move_to_front(shared.pool, v->job);
     }
     size_t frame = request.first_frame ? 0 : animation_frame_at(o->frames, o->epoch, now);
-    if (!o->job && !enlarge && !v->job && !v->failed &&
-        (!v->image.data || (frame != v->frame && now - v->presented >= 67))) {
+    if (!o->job && !enlarge && !v->job && !v->failed && (!v->image.data || frame != v->frame)) {
         size_t workspace = (size_t)request.width * request.height * 7 + IMAGE_PIXEL_PADDING * 2;
+        if (request.terminal.protocol == GRAPHICS_KITTY)
+            workspace += (size_t)request.width * request.height * 3 + 64U * 1024U;
         if (request.region && (request.left || request.right))
             workspace += (size_t)request.width * request.height * 3 + IMAGE_PIXEL_PADDING;
         if (o->frames && request.cover) {

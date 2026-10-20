@@ -48,6 +48,12 @@ compiler, build tools and system libraries used by the dependency recipes.
 The recipes build ncurses, curl, Jansson, libunibreak, libsixel, Chafa, FFmpeg,
 libplacebo, libass, libmpv and libsecret in the private prefix.
 
+The media recipes enable VA-API decoding through DRM on Linux and D3D11VA on
+Windows. Hardware decoding needs a compatible driver on the runtime host;
+libmpv's `auto-copy` mode falls back to CPU decoding when it is unavailable.
+No desktop graphics context is required. Character conversion uses Chafa's
+bounded worker pool; no additional rendering library is needed.
+
 ### Debian and Ubuntu
 
 The package targets are **Ubuntu 24.04** and **Debian 13**.
@@ -58,7 +64,7 @@ sudo apt install build-essential cmake ninja-build pkg-config autoconf automake 
     python3 python3-venv python3-dev curl git ca-certificates libssl-dev zlib1g-dev \
     libncurses-dev ncurses-term libglib2.0-dev libpango1.0-dev libcairo2-dev \
     libfontconfig-dev libfreetype-dev libfribidi-dev libharfbuzz-dev libpulse-dev \
-    libasound2-dev libgcrypt20-dev libsecret-1-dev fonts-noto-color-emoji
+    libasound2-dev libgcrypt20-dev libsecret-1-dev libva-dev libdrm-dev fonts-noto-color-emoji
 ```
 
 ### Fedora
@@ -70,7 +76,7 @@ sudo dnf install gcc gcc-c++ make cmake ninja-build pkgconf-pkg-config autoconf 
     libtool nasm python3 python3-pip python3-devel curl git ca-certificates \
     openssl-devel zlib-devel ncurses-devel glib2-devel pango-devel cairo-devel \
     fontconfig-devel freetype-devel fribidi-devel harfbuzz-devel pulseaudio-libs-devel \
-    alsa-lib-devel libgcrypt-devel libsecret-devel google-noto-color-emoji-fonts
+    alsa-lib-devel libgcrypt-devel libsecret-devel libva-devel libdrm-devel google-noto-color-emoji-fonts
 ```
 
 ### RHEL 10
@@ -84,7 +90,7 @@ sudo dnf install gcc gcc-c++ make cmake ninja-build pkgconf-pkg-config autoconf 
     libtool nasm python3 python3-pip python3-devel curl git ca-certificates \
     openssl-devel zlib-ng-compat-devel ncurses-devel glib2-devel pango-devel cairo-devel \
     fontconfig-devel freetype-devel fribidi-devel harfbuzz-devel pulseaudio-libs-devel \
-    alsa-lib-devel libgcrypt-devel libsecret-devel
+    alsa-lib-devel libgcrypt-devel libsecret-devel libva-devel libdrm-devel
 ```
 
 Package availability follows the [RHEL 10 package manifest](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/10/html-single/package_manifest/index).
@@ -98,7 +104,7 @@ build Pango/GLib. Use the [Flatpak installation](docs/installation.md#rhel) ther
 ```sh
 sudo pacman -Syu --needed base-devel cmake ninja pkgconf autoconf automake libtool nasm \
     python python-pip curl git ca-certificates openssl zlib ncurses glib2 pango cairo \
-    fontconfig freetype2 fribidi harfbuzz libpulse alsa-lib libgcrypt libsecret noto-fonts-emoji
+    fontconfig freetype2 fribidi harfbuzz libpulse alsa-lib libgcrypt libsecret libva libdrm noto-fonts-emoji
 ```
 
 Arch development headers are included in the library packages. On Arch Linux
@@ -185,7 +191,7 @@ same configure, build and tests as the native Windows CI:
 git clone https://github.com/prodesert22/papo-tui.git
 cd papo-tui
 py -3.13 -m venv build/test-env
-build/test-env/Scripts/python.exe -m pip install -r requirements-dev.txt
+build/test-env/Scripts/python.exe -m pip install --require-hashes -r requirements/ci-windows-py313.txt
 export PATH="$PWD/build/test-env/Scripts:$PATH"
 export PAPO_SYSTEM_BIN="$(cygpath -w "$MINGW_PREFIX/bin")"
 python dist/build.py --build build/release --prefix build/release-deps
@@ -218,21 +224,144 @@ the private FFmpeg libraries: `sudo apt install ffmpeg` on Debian/Ubuntu,
 Arch. On RHEL, the executable must come from a repository that supplies it for
 your RHEL version; the native binary build above does not require it.
 
-From the Linux build shell, enable tests in a separate tree:
+Use **CPython 3.13** and the matching committed lock for the same Python
+packages as CI. On Linux, from the dependency build shell:
 
 ```sh
-python -m pip install -r requirements-dev.txt
-cmake -S . -B build/test -G Ninja -DCMAKE_BUILD_TYPE=Debug \
-    -DCMAKE_PREFIX_PATH="$PWD/build/release-deps" \
-    -DPython3_EXECUTABLE="$PWD/build/build-env/bin/python" -DBUILD_TESTING=ON
-cmake --build build/test --parallel 2
-ctest --test-dir build/test --output-on-failure
+python3.13 -m venv build/test-env
+build/test-env/bin/python -m pip install --require-hashes -r requirements/ci-linux-py313.txt
+build/test-env/bin/python dist/build.py --build build/ci --prefix build/release-deps --variants release
+```
+
+On Windows, use native CPython 3.13 in the selected MSYS2 shell and install
+`requirements/ci-windows-py313.txt` into `build/test-env`. Run the same
+`dist/build.py` command with `build/test-env/Scripts/python.exe`. The four
+native OS/architecture combinations run on every PR. Sanitizers and coverage
+use separate Linux x86_64 jobs; CI never multiplies build and test concurrency
+by starting three variants on one runner.
+
+### Select or reproduce a test
+
+Every unittest method has a stable CTest name. Graphics scenarios additionally
+identify their protocol and, for panel composition, their panel. List configured
+cases without downloading dependencies, compiling or executing them:
+
+```sh
+build/test-env/bin/python dist/build.py --build build/ci/release --list-tests
+build/test-env/bin/python dist/build.py --build build/ci/release --test-only --suite terminal --test-jobs 2
+build/test-env/bin/python dist/build.py --build build/ci/release --test-only --case 'emojis-terminal/EmojiTerminal.test_grouping_survives_prepend_scroll_and_resize'
+```
+
+Categories are `unit`, `integration`, `terminal`, `media`, `contract` and
+`lifecycle`; `all` runs the profile's default selection. Release runs all
+applicable cases, sanitizers run unit/integration/lifecycle cases, and coverage
+runs unit/integration cases. Add `--full-instrumentation` to execute the entire
+suite with sanitizers or coverage; the scheduled CI does this automatically.
+`--suite all` with that option also reproduces the full instrumented suite.
+`--jobs` limits compilation and `--test-jobs` limits concurrent test processes.
+Multiple local `--variants release,sanitizers,coverage` execute sequentially.
+For separate compilation and test stages, run the build command with
+`--build-only`, then repeat it with `--test-only`. CI saves verified dependencies
+between these stages, so test failures preserve the compiled dependency cache.
+
+CTest remains available directly:
+
+```sh
+ctest --test-dir build/ci/release --output-on-failure --parallel 2 --output-junit results.xml
+ctest --test-dir build/ci/release --output-on-failure --repeat until-fail:10 -R 'test_grouping_survives_prepend_scroll_and_resize'
 python tools/quality.py
 ```
 
-Windows tests already run through `dist/build.py`; rerun with
-`ctest --test-dir build/release --output-on-failure` in the same MSYS2 shell.
-Keep reports, logs and generated files under `build/` and use synthetic accounts.
+A test's `send()` delivers input; it does not establish that rendering or a
+network operation has finished. Shared terminal helpers belong in
+`tests/support`, with explicit waits for visible state or mock events. Test
+modules must be importable without consuming arguments or starting services.
+Register probe shutdown with the mock's `client_cleanup` so the client can
+finish its HTTP/WS close handshake before the server and handlers stop.
+New Python scenarios must appear exactly once in the CTest inventory. Platform
+exclusions require a reason in `tests/platforms.json`; missing dependencies in
+a required CI profile are failures. `tools/check_test_inventory.py --build`
+checks discovery against actual registrations before the shared runner tests.
+
+Static analysis uses **Clang 18** explicitly, independent of the system's default
+Clang. Install `clang-tidy-18` and run `python tools/analyze.py --build
+build/ci/release`. To use an equivalent executable elsewhere, pass
+`--clang-tidy /absolute/path/to/clang-tidy` and record its version. Analyzer
+upgrades require their own reviewed validation.
+
+### Reports and timing
+
+Each build's `ci-logs` contains stage timings, environment information, inventory,
+JUnit results, a timing summary and all scenarios above **30 seconds**. Failed
+Python cases also save safely escaped terminal output, the screen and HTTP
+methods/paths under `Testing/Temporary/cases`. Credentials and cookies are
+redacted. GitHub uploads these reports even when a job fails.
+`preparation.json` measures dependency/resource preparation; `build-stages.json`
+and `stages.json` distinguish compilation from test execution in split stages.
+
+Synthetic FFmpeg media is prepared once per tool identity, verified by hashes,
+and copied into each case's private directory. Test fonts are downloaded from
+verified sources; raster tests use their own Fontconfig configuration. Initial
+resource downloads need network access; mock HTTP tests use loopback servers.
+Linux CI generates `pt_BR.UTF-8` for the decimal-locale scenario. For an existing
+Linux test host, install its locale data and run `sudo localedef -i pt_BR -f UTF-8
+pt_BR.UTF-8` if none of `pt_BR.UTF-8`, `de_DE.UTF-8` or `fr_FR.UTF-8` is available.
+The FFmpeg CLI needs the `libwebp_anim` encoder to generate animated fixtures;
+the application's own libraries perform the decoding checks.
+PTY and graphics protocol results do not establish visual correctness in a real
+emulator. Keep real-emulator visual evidence separate under `build/`.
+
+To compare completed timing reports, use:
+
+```sh
+python tools/test_report.py --compare build/run-1/ci-logs/timings.json build/run-2/ci-logs/timings.json build/run-3/ci-logs/timings.json
+```
+
+To record the whole GitHub matrix after an attempt finishes, authenticate `gh`
+and run `python tools/ci_timings.py RUN_ID --attempt ATTEMPT`. The report includes
+elapsed workflow time, summed job time, each job result and the exact commit;
+reports remain under `build/ci-reports`.
+
+The periodic permission-reconciliation scenario deliberately exercises a real
+30-second interval. Its reason is recorded in `tests/time_budgets.json`; other
+cases over 30 seconds remain visible for investigation and subdivision.
+
+Record cache state, CPU budget and profile alongside comparisons. Report the
+whole matrix's elapsed time and runner minutes as well as individual test times;
+a shorter job must not conceal omitted scenarios or failed attempts.
+
+For synthetic playback cadence and terminal traffic comparisons, keep a baseline
+binary with its matching `papo-backends` directory and run:
+
+```sh
+python tools/check_media_frame_rate.py --baseline /path/to/baseline/papo-tui \
+    --binary build/local/papo-tui --large --output build/performance/frame-rate.json
+```
+
+The report identifies source and viewport sizes, CPU affinity, binary hashes and
+keyboard observations. Graphics-protocol frames produce FPS measurements;
+sampled TTY cell changes are reported separately and are not exact frame counts.
+These are synthetic HTTP/PTY results, not visual inspection in a real emulator.
+CI sets `PAPO_TEST_REQUIRED=1`: an ignored case fails unless its exact ID and
+reason are declared for that platform in `tests/platforms.json`. Ad hoc local
+runs still report capability skips explicitly.
+
+### Update test dependencies
+
+`requirements-dev.txt` is the input; the native CI locks include transitive
+versions and hashes. Use the maintained uv resolver for Linux/Windows markers
+without depending on the host's default Python encoding or package environment:
+
+```sh
+python -m pip install -r requirements/lock-tools.txt
+python tools/lock_requirements.py
+```
+
+Review both generated locks and validate them on all four native targets. The
+lock generator is a development tool; it adds no runtime dependency to Papo TUI.
+Keep the C dependency recipes and resource manifests synchronized with their
+hashes. A cached compiled dependency is revalidated against its source, recipe,
+compiler, architecture and installation prefix before reuse.
 
 | CMake option | Effect |
 | --- | --- |

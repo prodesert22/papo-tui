@@ -21,11 +21,11 @@ class ContractTests(unittest.TestCase):
         cls.folder = ROOT / "tests/fixtures/contract"
 
     def test_all_rest_fixtures_match_their_expected_contract_result(self):
-        manifest = json.loads((self.folder / "manifest.json").read_text())
+        manifest = json.loads((self.folder / "manifest.json").read_text(encoding="utf-8"))
         self.assertEqual(len({case["name"] for case in manifest}), len(manifest))
         for case in manifest:
             with self.subTest(case=case["name"]):
-                payload = json.loads((self.folder / case["file"]).read_text())
+                payload = json.loads((self.folder / case["file"]).read_text(encoding="utf-8"))
                 if case["kind"] == "request":
                     pointer = self.contract.request_schema(
                         case["path"], case["method"], case["media"]
@@ -40,7 +40,11 @@ class ContractTests(unittest.TestCase):
         all_ids = None
         for order in ("asc", "desc"):
             pages = [
-                json.loads((self.folder / f"history_{order}_page_{number}.json").read_text())
+                json.loads(
+                    (self.folder / f"history_{order}_page_{number}.json").read_text(
+                        encoding="utf-8"
+                    )
+                )
                 for number in (1, 2)
             ]
             self.assertEqual(len(pages[0]["messages"]), 100)
@@ -73,7 +77,7 @@ class ContractTests(unittest.TestCase):
             all_ids = set(ids)
 
     def test_websocket_examples_include_partial_and_unknown_events(self):
-        events = json.loads((self.folder / "websocket_events.json").read_text())
+        events = json.loads((self.folder / "websocket_events.json").read_text(encoding="utf-8"))
         for event in events:
             with self.subTest(event=event["type"]):
                 known, errors = validate_event(self.contract, event)
@@ -118,7 +122,7 @@ class ContractTests(unittest.TestCase):
             target = Path(folder) / "contract/inventory.md"
             with patch("sys.argv", ["inventory", "--output", str(target)]):
                 inventory_main()
-            self.assertEqual(target.read_text(), render())
+            self.assertEqual(target.read_text(encoding="utf-8"), render())
             with patch("sys.argv", ["inventory", "--check", "--output", str(target)]):
                 inventory_main()
             target.write_text("stale")
@@ -278,8 +282,8 @@ class ProbeTests(unittest.TestCase):
     def test_history_rejects_duplicate_messages_inside_second_page(self):
         probe = Probe("http://127.0.0.1:8080")
         folder = ROOT / "tests/fixtures/contract"
-        first = json.loads((folder / "history_asc_page_1.json").read_text())
-        following = json.loads((folder / "history_asc_page_2.json").read_text())
+        first = json.loads((folder / "history_asc_page_1.json").read_text(encoding="utf-8"))
+        following = json.loads((folder / "history_asc_page_2.json").read_text(encoding="utf-8"))
         following["messages"][1] = following["messages"][0]
         with (
             probe.session() as session,

@@ -1,14 +1,16 @@
+from test_context import main as test_main
+
+from test_context import argument
 import json
 import os
 import select
 import subprocess
-import sys
 import time
 import unittest
 from realtime_mock import RealtimeMock
 from history_mock import CHANNEL, OTHER, uuid, STAMP
 
-BINARY = sys.argv.pop(1)
+BINARY = argument(0)
 
 
 class Observer:
@@ -450,4 +452,6 @@ class RealtimeTests(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

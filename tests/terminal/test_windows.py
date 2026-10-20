@@ -1,5 +1,7 @@
 """Windows end-to-end scenarios use the same observed TUI and synthetic HTTP."""
 
+from test_context import main as test_main
+
 import time
 import ctypes
 import json
@@ -7,7 +9,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from history_mock import HistoryMock
-from test_terminal import Terminal, TerminalStreamTests  # noqa: F401 - shared observer regression tests
+from terminal_support import Terminal
 
 
 class WindowsTerminalTests(unittest.TestCase):
@@ -79,13 +81,13 @@ class WindowsTerminalTests(unittest.TestCase):
                     paths = list((root / "state/papo-tui").glob("session-*.json"))
                     if paths:
                         marker = paths[0]
-                        state = json.loads(marker.read_text())
+                        state = json.loads(marker.read_text(encoding="utf-8"))
                         if state.get("restore_allowed"):
                             break
                     first.read(0.03)
                 self.assertIsNotNone(marker)
                 target = "PapoTUI/" + marker.stem.removeprefix("session-")
-                self.assertTrue(json.loads(marker.read_text())["restore_allowed"])
+                self.assertTrue(json.loads(marker.read_text(encoding="utf-8"))["restore_allowed"])
                 self.assertTrue(first.close())
                 second = Terminal(environment=env)
                 terminals.append(second)
@@ -97,14 +99,14 @@ class WindowsTerminalTests(unittest.TestCase):
                 second.send("\x0c")
                 self.wait(second, "Você saiu da conta")
                 self.assertTrue(second.close())
-                self.assertFalse(json.loads(marker.read_text())["restore_allowed"])
+                self.assertFalse(json.loads(marker.read_text(encoding="utf-8"))["restore_allowed"])
                 third = Terminal(environment=env)
                 terminals.append(third)
                 self.wait(third, "URL do servidor")
                 self.assertNotIn("geral", "\n".join(third.screen.display))
                 for path in root.rglob("*.json"):
-                    self.assertNotIn("Synthetic!123", path.read_text())
-                    self.assertNotIn("user-fixture", path.read_text())
+                    self.assertNotIn("Synthetic!123", path.read_text(encoding="utf-8"))
+                    self.assertNotIn("user-fixture", path.read_text(encoding="utf-8"))
             finally:
                 for terminal in terminals:
                     if terminal.process.poll() is None:
@@ -125,4 +127,6 @@ class WindowsTerminalTests(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

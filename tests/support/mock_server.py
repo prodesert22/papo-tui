@@ -7,6 +7,11 @@ from datetime import datetime, timedelta, timezone
 import base64
 import hashlib
 import threading
+import socket
+import traceback
+import sys
+from contextlib import ExitStack
+from test_context import servers
 import time
 import websocket
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -28,6 +33,56 @@ class ChunkedBody:
         self.started = None
         self.finished = None
         self.sent = 0
+
+
+class FixtureHTTPServer(ThreadingHTTPServer):
+    """Propagate handler failures and bound shutdown, including active WS peers."""
+
+    daemon_threads = True
+
+    def __init__(self, *args):
+        self.failures = []
+        self.handlers = set()
+        self.connections = set()
+        self.guard = threading.Lock()
+        super().__init__(*args)
+
+    def handle_error(self, request, client_address):
+        self.failures.append(traceback.format_exc())
+
+    def process_request_thread(self, request, address):
+        with self.guard:
+            self.handlers.add(threading.current_thread())
+            self.connections.add(request)
+        try:
+            super().process_request_thread(request, address)
+        finally:
+            with self.guard:
+                self.handlers.discard(threading.current_thread())
+                self.connections.discard(request)
+
+    def finish_handlers(self):
+        with self.guard:
+            connections = list(self.connections)
+            handlers = list(self.handlers)
+        for connection in connections:
+            try:
+                connection.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            connection.close()
+        deadline = time.monotonic() + 5
+        for handler in handlers:
+            handler.join(max(0, deadline - time.monotonic()))
+        live = [handler for handler in handlers if handler.is_alive()]
+        if live:
+            frames = sys._current_frames()
+            stacks = [
+                "".join(traceback.format_stack(frames[handler.ident]))
+                for handler in live
+                if handler.ident in frames
+            ]
+            raise RuntimeError("Synthetic HTTP handler failed to stop:\n" + "\n".join(stacks))
 
 
 class MockServer:
@@ -57,6 +112,7 @@ class MockServer:
         self.websocket_hook = None  # Optional controlled realtime fixture.
         self.message_hook = None
         self.stopping = threading.Event()
+        self.client_cleanup = ExitStack()
         outer = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -413,7 +469,7 @@ class MockServer:
                     self.respond(401)
                     return
                 scenario = outer.scenario
-                if scenario in ("send-delayed", "send-cancel"):
+                if scenario == "send-delayed":
                     outer.stopping.wait(0.3)
                 codes = {
                     "send-validation": 400,
@@ -450,6 +506,8 @@ class MockServer:
                 outer.sent_messages.append(message)
                 if outer.message_hook:
                     outer.message_hook(message)
+                if scenario == "send-cancel":
+                    outer.stopping.wait()
                 if scenario == "send-timeout":
                     outer.stopping.wait(16)
                 if scenario == "send-drop" or (
@@ -580,11 +638,14 @@ class MockServer:
                     connection.connected = False
                     outer.ws_connected.clear()
 
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.server = FixtureHTTPServer(("127.0.0.1", 0), Handler)
         self.secure = tls_context is not None
         if tls_context:
             self.server.socket = tls_context.wrap_socket(self.server.socket, server_side=True)
-        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread = threading.Thread(
+            target=lambda: self.server.serve_forever(poll_interval=0.01), daemon=True
+        )
+        servers.append(self)
 
     @property
     def url(self):
@@ -595,7 +656,21 @@ class MockServer:
         return self
 
     def __exit__(self, *_args):
-        self.stopping.set()
-        self.server.shutdown()
-        self.server.server_close()
-        self.thread.join()
+        try:
+            # Clients must complete their close handshake while HTTP/WS is
+            # still served, before the fixture tears down active handlers.
+            self.client_cleanup.close()
+        finally:
+            self.stopping.set()
+            self.server.shutdown()
+            try:
+                self.server.finish_handlers()
+            finally:
+                self.server.server_close()
+                self.thread.join(timeout=5)
+        if self.thread.is_alive():
+            raise RuntimeError("Synthetic HTTP server failed to stop")
+        if self.server.failures and not _args[0]:
+            raise AssertionError(
+                "Synthetic HTTP handler failed:\n" + "\n".join(self.server.failures)
+            )

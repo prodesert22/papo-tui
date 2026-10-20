@@ -1,9 +1,11 @@
 """R6 editor adapter on a real PTY; the product route is owned by R5."""
 
+from test_context import main as test_main
+
 import time
 import unittest
 from mock_server import MockServer
-from test_terminal import Terminal
+from terminal_support import Terminal
 
 
 class SendTerminal(unittest.TestCase):
@@ -105,4 +107,6 @@ class SendTerminal(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

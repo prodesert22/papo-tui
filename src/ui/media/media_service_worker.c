@@ -3,6 +3,7 @@
 #include "ui/media/media_wire.h"
 #include "ui/media/resources.h"
 #include <chafa.h>
+#include <math.h>
 #include <signal.h>
 #include <stdatomic.h>
 #include <stdio.h>
@@ -43,6 +44,59 @@ static bool cancelled(void *context)
 static void *player;
 static uint64_t player_id;
 static const video_player_api *video;
+/* Serialized by video_lock, retained across frames and released with the player. */
+static unsigned char *video_pixels;
+static size_t video_capacity;
+static void release_player(void)
+{
+    if (player && video)
+        video->close(player);
+    player = NULL;
+    free(video_pixels);
+    video_pixels = NULL;
+    video_capacity = 0;
+}
+static bool encode_video_frame(const image_decode_request *request, const video_info *info,
+                               bool force, graphics_image *image)
+{
+    bool changed = video->changed(player);
+    if (info->invalid || info->width < 1 || info->height < 1 || (!force && !changed))
+        return true;
+    double scale =
+        fmin((double)request->width / info->width, (double)request->height / info->height);
+    int display_width = (int)fmax(1, info->width * scale);
+    int display_height = (int)fmax(1, info->height * scale);
+    if (request->terminal.protocol == GRAPHICS_KITTY) {
+        /* Kitty's compositor enlarges the bounded native raster on the GPU. */
+        scale = fmin(
+            1, fmin(scale, sqrt(VIDEO_KITTY_FRAME_PIXELS / ((double)info->width * info->height))));
+    }
+    int width = (int)fmax(1, info->width * scale);
+    int height = (int)fmax(1, info->height * scale);
+    if ((size_t)width > VIDEO_FRAME_PIXELS / (size_t)height)
+        return false;
+    size_t pixels = (size_t)width * height;
+    size_t bytes = pixels * 3 + IMAGE_PIXEL_PADDING;
+    if (bytes > video_capacity) {
+        unsigned char *rgb = calloc(1, bytes);
+        if (!rgb)
+            return false;
+        free(video_pixels);
+        video_pixels = rgb;
+        video_capacity = bytes;
+    }
+    if (!video->render(player, video_pixels, width, height) ||
+        !graphics_image_encode_id(video_pixels, width, height, request->terminal, request->image_id,
+                                  image))
+        return false;
+    image->source_width = info->width;
+    image->source_height = info->height;
+    if (request->terminal.protocol == GRAPHICS_KITTY) {
+        image->columns = (display_width + image->cell_width - 1) / image->cell_width;
+        image->rows = (display_height + image->cell_height - 1) / image->cell_height;
+    }
+    return true;
+}
 static GVariant *execute(unsigned op, GVariant *payload)
 {
     graphics_image image = {0};
@@ -105,14 +159,12 @@ static GVariant *execute(unsigned op, GVariant *payload)
         video = media_video_backend();
         if (!video)
             failure = "video-module";
-        if (player && video)
-            video->close(player);
-        player = NULL;
+        release_player();
         if (video)
             player = video->open(g_variant_get_string(payload, NULL));
         if (player)
             result = g_variant_new_uint64(player_id = current_job->id);
-    } else if (op >= MEDIA_RPC_VIDEO_CLOSE && op <= MEDIA_RPC_VIDEO_RENDER) {
+    } else if (op >= MEDIA_RPC_VIDEO_CLOSE && op <= MEDIA_RPC_VIDEO_FRAME) {
         if (!g_variant_is_of_type(payload, G_VARIANT_TYPE("(tv)")))
             goto done;
         guint64 id;
@@ -120,9 +172,28 @@ static GVariant *execute(unsigned op, GVariant *payload)
         if (!player || !video || id != player_id)
             goto done;
         if (op == MEDIA_RPC_VIDEO_CLOSE) {
-            video->close(player);
-            player = NULL;
+            release_player();
             result = g_variant_new_boolean(true);
+        } else if (op == MEDIA_RPC_VIDEO_FRAME) {
+            if (!g_variant_is_of_type(a, G_VARIANT_TYPE("(ayvb)")))
+                goto done;
+            GVariant *controls_data;
+            gboolean force;
+            g_variant_get(a, "(@ayvb)", &controls_data, &b, &force);
+            video_controls controls = {0};
+            bool valid = media_wire_copy(controls_data, &controls, sizeof(controls)) &&
+                         media_wire_read_request(b, &request, &path) &&
+                         graphics_image_capacity(request.width, request.height) &&
+                         request.terminal.protocol != GRAPHICS_TEXT &&
+                         request.terminal.cell_width > 0 && request.terminal.cell_height > 0;
+            g_variant_unref(controls_data);
+            if (!valid)
+                goto done;
+            video_info info = {0};
+            video->update(player, &controls, &info);
+            if (encode_video_frame(&request, &info, force, &image))
+                result = g_variant_new("(@ayv)", media_wire_bytes(&info, sizeof(info)),
+                                       media_wire_image(&image));
         } else if (op == MEDIA_RPC_VIDEO_UPDATE) {
             video_controls controls = {0};
             video_info info = {0};
@@ -136,11 +207,11 @@ static GVariant *execute(unsigned op, GVariant *payload)
             int w, h;
             g_variant_get(a, "(ii)", &w, &h);
             if (w > 0 && h > 0 && (size_t)w * (size_t)h <= VIDEO_FRAME_PIXELS) {
-                size_t size = (size_t)w * (size_t)h * 4;
-                unsigned char *rgba = malloc(size);
-                if (rgba && video->render(player, rgba, w, h))
-                    result = media_wire_bytes(rgba, size);
-                free(rgba);
+                size_t size = (size_t)w * (size_t)h * 3;
+                unsigned char *rgb = calloc(1, size + IMAGE_PIXEL_PADDING);
+                if (rgb && video->render(player, rgb, w, h))
+                    result = media_wire_bytes(rgb, size);
+                free(rgb);
             }
         }
     } else if (op == MEDIA_RPC_DETECT) {
@@ -171,7 +242,7 @@ static void run_job(gpointer data, gpointer unused)
     worker_job *job = data;
     current_job = job;
     bool is_video =
-        job->operation >= MEDIA_RPC_VIDEO_OPEN && job->operation <= MEDIA_RPC_VIDEO_RENDER;
+        job->operation >= MEDIA_RPC_VIDEO_OPEN && job->operation <= MEDIA_RPC_VIDEO_FRAME;
     if (is_video)
         g_mutex_lock(&video_lock);
     failure = NULL;
@@ -208,7 +279,9 @@ int main(void)
     signal(SIGPIPE, SIG_DFL);
 #endif
     media_resources_init();
-    chafa_set_n_threads(1);
+    /* Chafa supplies SIMD and parallel raster processing. Cap each canvas at
+     * four threads alongside the existing four-job media pool. */
+    chafa_set_n_threads((int)MIN(g_get_num_processors(), 4U));
     jobs = g_hash_table_new(g_int64_hash, g_int64_equal);
     GError *error = NULL;
     GThreadPool *pool = g_thread_pool_new(run_job, NULL, 4, true, &error);
@@ -282,8 +355,7 @@ int main(void)
     }
     atomic_store(&stopping, true);
     g_thread_pool_free(pool, false, true);
-    if (player && video)
-        video->close(player);
+    release_player();
     g_hash_table_destroy(jobs);
     return 0;
 }

@@ -1,9 +1,11 @@
 """Edit/delete interactions through the actual TUI and synthetic backend."""
 
+from test_context import main as test_main
+
 import unittest
 from history_mock import CHANNEL, uuid
 from interaction_mock import InteractionMock
-import test_message_interactions as interactions
+import terminal_interactions as interactions
 
 
 class MessageMutations(unittest.TestCase):
@@ -327,4 +329,6 @@ class MessageMutations(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

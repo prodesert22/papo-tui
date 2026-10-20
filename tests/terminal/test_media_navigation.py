@@ -1,13 +1,17 @@
 """Message media navigation with synthetic HTTP and PTY graphics responders."""
 
+from test_context import protocols
+
+from test_context import main as test_main
+
 import base64
 import json
 from pathlib import Path
 import tempfile
 import unittest
 
-import test_media_terminal as media
-from test_terminal import wait_for_screen
+import terminal_media as media
+from terminal_support import wait_for_screen
 
 
 def wait_identity(terminal, identity):
@@ -41,7 +45,7 @@ class MediaNavigation(unittest.TestCase):
         self.addCleanup(self.helper.tearDown)
 
     def test_enter_on_embed_cover_opens_video_player(self):
-        for protocol in ("kitty", "sixel", "iterm2"):
+        for protocol in protocols("kitty", "sixel", "iterm2"):
             with (
                 self.subTest(protocol=protocol),
                 self.helper.serve(
@@ -76,7 +80,16 @@ class MediaNavigation(unittest.TestCase):
                     t.send("\x1bOC\x1bOD")
                     self.helper.wait(t, "0 / 3 s")
                     self.assertNotIn("imagens", "\n".join(t.screen.display))
+                    # Reopening may reuse a player the worker has not closed
+                    # yet. Give both reused and fresh players a playing state.
+                    t.send(" ")
+                    self.helper.wait(t, "Reproduzindo")
                     t.send("\x1b")
+                    wait_for_screen(
+                        t,
+                        lambda: "Mídia · Esc:" not in "\n".join(t.screen.display),
+                        "The player must close before selecting another media entry",
+                    )
                     self.helper.wait(t, "Mídia 1/2")
                     # The explicit player entry continues to work and reuses the download.
                     t.send("\x1bOC\n")
@@ -217,4 +230,6 @@ class MediaNavigation(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        2,
+    )

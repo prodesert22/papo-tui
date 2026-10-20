@@ -1,21 +1,23 @@
 """App modes through a PTY and synthetic HTTP; never uses personal configuration."""
 
+from test_context import main as test_main, panels
+
+from test_context import argument
+
 import json
 import os
 from pathlib import Path
 import shutil
 import signal
 import subprocess
-import sys
 import tempfile
 import time
 import unittest
 
-BINARY, FFMPEG = map(Path, sys.argv[1:3])
-sys.argv = [sys.argv[0], str(BINARY), str(FFMPEG), *sys.argv[3:]]
-import test_media_terminal as media  # noqa: E402 - prepare test arguments before import
-import test_terminal  # noqa: E402
-import test_emojis_terminal as emoji_tests  # noqa: E402
+BINARY, FFMPEG = (Path(argument(i)) for i in range(2))
+import terminal_media as media  # noqa: E402 - prepare test arguments before import
+import terminal_support as test_terminal  # noqa: E402
+import terminal_emojis as emoji_tests  # noqa: E402
 from history_mock import uuid  # noqa: E402
 from interaction_mock import InteractionMock  # noqa: E402
 
@@ -69,7 +71,7 @@ class AppModes(unittest.TestCase):
         t.send("\x1bOQ")
         self.helper.wait(t, "Configurações")
         current = (
-            json.loads(self.config.read_text()).get("app_mode", "normal")
+            json.loads(self.config.read_text(encoding="utf-8")).get("app_mode", "normal")
             if self.config.exists()
             else "normal"
         )
@@ -87,7 +89,8 @@ class AppModes(unittest.TestCase):
         self.wait(
             t,
             lambda: (
-                self.config.exists() and json.loads(self.config.read_text()).get("app_mode") == mode
+                self.config.exists()
+                and json.loads(self.config.read_text(encoding="utf-8")).get("app_mode") == mode
             ),
         )
 
@@ -95,7 +98,7 @@ class AppModes(unittest.TestCase):
         found = []
         for task in Path(f"/proc/{t.process.pid}/task").iterdir():
             try:
-                pids = (task / "children").read_text().split()
+                pids = (task / "children").read_text(encoding="utf-8").split()
             except FileNotFoundError:
                 continue
             for pid in pids:
@@ -107,7 +110,7 @@ class AppModes(unittest.TestCase):
         return list(set(found))
 
     def assert_no_media_libs(self, t):
-        maps = Path(f"/proc/{t.process.pid}/maps").read_text()
+        maps = Path(f"/proc/{t.process.pid}/maps").read_text(encoding="utf-8")
         for name in ("libchafa.", "libsixel.", "libpango", "libcairo.", "libavcodec.", "libmpv."):
             self.assertNotIn(name, maps)
 
@@ -238,7 +241,7 @@ class AppModes(unittest.TestCase):
             try:
                 for mode in ("normal", "light", "normal", "ultralight"):
                     with self.subTest(mode=mode):
-                        if json.loads(self.config.read_text())["app_mode"] != mode:
+                        if json.loads(self.config.read_text(encoding="utf-8"))["app_mode"] != mode:
                             self.choose(t, mode)
                         self.helper.wait(t, "Emoji ")
                         if mode == "ultralight":
@@ -423,11 +426,21 @@ class AppModes(unittest.TestCase):
             try:
                 t.send("draft remains")
                 t.send("\x1bOQ\t\x1bOB\x1bOB\t\x1bOC\x1bOA\x1bOA\n\t\n")
-                self.wait(t, lambda: json.loads(self.config.read_text())["app_mode"] == "light")
+                self.wait(
+                    t,
+                    lambda: (
+                        json.loads(self.config.read_text(encoding="utf-8"))["app_mode"] == "light"
+                    ),
+                )
                 self.helper.wait(t, "draft remains")
                 # General: Up from Save returns to the highlighted mode.
                 t.send("\x1bOQ\t\t\x1bOA\x1bOA\n\t\n")
-                self.wait(t, lambda: json.loads(self.config.read_text())["app_mode"] == "normal")
+                self.wait(
+                    t,
+                    lambda: (
+                        json.loads(self.config.read_text(encoding="utf-8"))["app_mode"] == "normal"
+                    ),
+                )
                 # Placeholder: Up from Cancel returns to the section selector.
                 t.send("\x1bOQ\x1bOC\n\x1bOC\x1bOA\x1bOD")
                 self.helper.wait(t, "Ultralight")
@@ -445,7 +458,9 @@ class AppModes(unittest.TestCase):
                 self.helper.wait(t, "Vídeos desativados")
                 self.assertFalse(any("/attachments/" in req[1] for req in server.requests))
                 for pid in self.children(t):
-                    self.assertNotIn("libmpv.", Path(f"/proc/{pid}/maps").read_text())
+                    self.assertNotIn(
+                        "libmpv.", Path(f"/proc/{pid}/maps").read_text(encoding="utf-8")
+                    )
             finally:
                 self.assertTrue(t.close())
 
@@ -520,7 +535,7 @@ class AppModes(unittest.TestCase):
             capture_output=True,
         ).stdout
         for mode in ("normal", "light"):
-            for key, title in (
+            for key, title in panels(
                 ("\x1b[15~", "Anexar arquivos"),
                 ("attachment-remove", "Remover anexo?"),
                 ("\x1bOS", "Emojis · Esc voltar"),
@@ -810,7 +825,7 @@ class AppModes(unittest.TestCase):
                 self.assertEqual(t.stream.frames, [])
                 self.assertTrue(
                     any(
-                        "libmpv." in Path(f"/proc/{pid}/maps").read_text()
+                        "libmpv." in Path(f"/proc/{pid}/maps").read_text(encoding="utf-8")
                         for pid in self.children(t)
                     )
                 )
@@ -844,7 +859,9 @@ class AppModes(unittest.TestCase):
                 self.assertTrue(t.close())
             restarted = self.open(server)
             try:
-                self.assertEqual(json.loads(self.config.read_text())["app_mode"], "light")
+                self.assertEqual(
+                    json.loads(self.config.read_text(encoding="utf-8"))["app_mode"], "light"
+                )
                 self.assertNotIn(b"\x1b_G", restarted.output)
             finally:
                 self.assertTrue(restarted.close())
@@ -861,10 +878,10 @@ class AppModes(unittest.TestCase):
                 t.resize(22, 44)
                 self.helper.wait(t, "Configurações")
                 t.send("\x1b")
-                self.assertEqual(json.loads(self.config.read_text())["version"], 1)
+                self.assertEqual(json.loads(self.config.read_text(encoding="utf-8"))["version"], 1)
                 t.resize(24, 80)
                 self.choose(t, "ultralight")
-                self.assertEqual(json.loads(self.config.read_text())["version"], 6)
+                self.assertEqual(json.loads(self.config.read_text(encoding="utf-8"))["version"], 6)
             finally:
                 self.assertTrue(t.close())
 
@@ -922,4 +939,6 @@ class AppModes(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        2,
+    )

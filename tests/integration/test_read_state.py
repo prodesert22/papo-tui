@@ -1,16 +1,19 @@
 """Restart/concurrent-process read receipts, entirely offline and synthetic."""
 
+from test_context import main as test_main
+
+from test_context import argument
+
 import concurrent.futures
 import fcntl
 import json
 import os
 from pathlib import Path
 import subprocess
-import sys
 import tempfile
 import unittest
 
-PROBE = sys.argv.pop(1)
+PROBE = argument(0)
 
 
 def uuid(n):
@@ -55,7 +58,7 @@ class ReadState(unittest.TestCase):
         self.assertEqual(self.load(), messages)
         self.assertEqual(self.path.stat().st_mode & 0o7777, 0o600)
         self.assertEqual(self.path.parent.stat().st_mode & 0o7777, 0o700)
-        stored = json.loads(self.path.read_text())
+        stored = json.loads(self.path.read_text(encoding="utf-8"))
         context = stored["contexts"][0]
         self.assertEqual(set(context), {"url", "user_id", "messages"})
         self.assertEqual(set(context["messages"][uuid(10)]), {"id", "created_at"})
@@ -129,11 +132,13 @@ class ReadState(unittest.TestCase):
         self.assertFalse(self.save({uuid(n): cursor(n) for n in range(1001)}))
         for n in range(66):
             self.assertTrue(self.save({uuid(10): cursor(103)}, user=uuid(n + 1)))
-        stored = json.loads(self.path.read_text())
+        stored = json.loads(self.path.read_text(encoding="utf-8"))
         self.assertEqual(len(stored["contexts"]), 64)
         self.assertEqual(self.load(user=uuid(1)), {})
         self.assertEqual(self.load(user=uuid(66)), {uuid(10): cursor(103)})
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

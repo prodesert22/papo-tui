@@ -1,11 +1,75 @@
 #include "ui/media/graphics.h"
 #include "ui/media/sixel.h"
 #include <chafa.h>
+#include <gio/gio.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 static atomic_uint_fast64_t next_revision = 1;
+static bool kitty_compressed(const unsigned char *pixels, graphics_image *out)
+{
+    size_t raw = (size_t)out->width * out->height * 3;
+    /* GIO supplies the ZLIB codec. A bounded spare block covers expansion;
+     * unusual conversion failures fall back to Chafa's existing transport. */
+    unsigned char *compressed = malloc(raw + 64U * 1024U);
+    if (!compressed)
+        return false;
+    GZlibCompressor *codec = g_zlib_compressor_new(G_ZLIB_COMPRESSOR_FORMAT_ZLIB, 1);
+    gsize consumed = 0, written = 0;
+    GConverterResult result =
+        g_converter_convert(G_CONVERTER(codec), pixels, raw, compressed, raw + 64U * 1024U,
+                            G_CONVERTER_INPUT_AT_END, &consumed, &written, NULL);
+    g_object_unref(codec);
+    if (result != G_CONVERTER_FINISHED || consumed != raw || written >= raw) {
+        free(compressed);
+        return false;
+    }
+    /* 3072 input bytes become at most 4096 base64 bytes per protocol chunk.
+     * No full-size base64 copy is kept alongside the encoded output. */
+    size_t chunks = (written + 3071) / 3072;
+    size_t capacity = (written + 2) / 3 * 4 + chunks * 32 + 256;
+    if (capacity > graphics_image_capacity(out->width, out->height)) {
+        free(compressed);
+        return false;
+    }
+    char *data = malloc(capacity);
+    if (!data) {
+        free(compressed);
+        return false;
+    }
+    int header =
+        snprintf(data, capacity, "\033_Ga=t,f=24,s=%d,v=%d,c=%d,r=%d,i=%u,o=z,m=1,q=2,C=1;\033\\",
+                 out->width, out->height, out->columns, out->rows, out->id);
+    size_t at = header > 0 ? (size_t)header : capacity;
+    for (size_t offset = 0; offset < written && at < capacity; offset += 3072) {
+        size_t count = MIN((size_t)written - offset, 3072U);
+        char *encoded = g_base64_encode(compressed + offset, count);
+        size_t length = strlen(encoded);
+        header = snprintf(data + at, capacity - at, "\033_Gm=%d;", offset + count < written);
+        if (header < 0 || (size_t)header >= capacity - at ||
+            length + 2 >= capacity - at - (size_t)header) {
+            g_free(encoded);
+            at = capacity;
+            break;
+        }
+        at += (size_t)header;
+        memcpy(data + at, encoded, length);
+        g_free(encoded);
+        at += length;
+        memcpy(data + at, "\033\\", 2);
+        at += 2;
+    }
+    free(compressed);
+    if (at >= capacity) {
+        free(data);
+        return false;
+    }
+    data[at] = 0;
+    out->data = data;
+    out->length = at;
+    return true;
+}
 bool graphics_image_encode(const unsigned char *pixels, int width, int height, graphics_terminal t,
                            graphics_image *out)
 {
@@ -28,6 +92,8 @@ bool graphics_image_encode_id(const unsigned char *pixels, int width, int height
     out->cell_height = t.cell_height;
     out->columns = (width + t.cell_width - 1) / t.cell_width;
     out->rows = (height + t.cell_height - 1) / t.cell_height;
+    if (t.protocol == GRAPHICS_KITTY && kitty_compressed(pixels, out))
+        return true;
     if (t.protocol == GRAPHICS_CHAFA) {
         ChafaCanvasConfig *config = chafa_canvas_config_new();
         chafa_canvas_config_set_pixel_mode(config, CHAFA_PIXEL_MODE_SYMBOLS);

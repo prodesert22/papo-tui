@@ -1,10 +1,12 @@
 """R7 through the actual conversation screen in a pseudoterminal."""
 
+from test_context import main as test_main
+
 import time
 import unittest
 from realtime_mock import RealtimeMock
 from history_mock import CHANNEL, uuid, STAMP, assert_history_reads
-import test_send_product as product
+import terminal_send as product
 
 
 class RealtimeTerminal(unittest.TestCase):
@@ -219,4 +221,6 @@ class RealtimeTerminal(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )
