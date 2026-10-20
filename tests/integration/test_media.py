@@ -1,15 +1,18 @@
 """Synthetic authenticated binary transport, not backend observations."""
 
+from test_context import main as test_main
+
+from test_context import argument
+
 import os
 import ssl
 import subprocess
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 from mock_server import MockServer
 
-BINARY = sys.argv.pop(1)
+BINARY = argument(0)
 ID = "00000000-0000-4000-8000-000000000901"
 
 
@@ -207,4 +210,6 @@ class MediaTests(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

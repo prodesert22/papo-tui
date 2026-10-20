@@ -1,5 +1,7 @@
 """Member drawer and actions through the real TUI and synthetic REST/WS."""
 
+from test_context import main as test_main
+
 import base64
 import json
 import os
@@ -12,8 +14,8 @@ import unittest
 from history_mock import uuid
 from member_mock import MemberMock, AUTHOR
 from r8_mock import dm
-from test_terminal import Terminal
-import test_message_interactions as interactions
+from terminal_support import Terminal
+import terminal_interactions as interactions
 
 
 class Members(unittest.TestCase):
@@ -31,6 +33,7 @@ class Members(unittest.TestCase):
             interactions.MessageInteractions.click(self, terminal, text)
 
     right_click = interactions.MessageInteractions.right_click
+    resize = interactions.MessageInteractions.resize
 
     def open(self, server, *, columns=120, mode="ultralight", environment=None):
         terminal = Terminal(environment=environment)
@@ -55,6 +58,20 @@ class Members(unittest.TestCase):
         terminal.send("/" + text + "\n")
         self.settled(terminal, lambda: "Membros (1)" in self.screen(terminal))
 
+    def select_member(self, terminal, name):
+        self.search(terminal, name)
+        terminal.send("/\x15\n")
+        self.wait(terminal, "Membros (6)")
+        # The count is drawn before the rows. A filtered member can still be
+        # visible at its old position while the unfiltered drawer is repainting.
+        self.settled(
+            terminal,
+            lambda: all(
+                member in self.screen(terminal)
+                for member in ("Álice", "Bia", "Carol", "Dani", "Zed", "Você")
+            ),
+        )
+
     def menu(self, terminal, text="Bia", *, mouse=False):
         self.search(terminal, "bob" if text == "Bia" else text)
         if mouse:
@@ -70,13 +87,20 @@ class Members(unittest.TestCase):
             terminal.send("rascunho preservado")
             self.drawer(terminal)
             self.wait(terminal, "Comunidade")
+            self.settled(
+                terminal,
+                lambda: (
+                    "Bia" in self.screen(terminal)
+                    and "Carregando usuários" not in self.screen(terminal)
+                ),
+            )
             # Bia belongs to two roles but appears only under the first.
             rows = [line for line in terminal.screen.display if "Bia" in line]
             self.assertEqual(len(rows), 1)
             self.click(terminal, "Agrupar: Cargo")
             self.wait(terminal, "Agrupar: Status")
             path = Path(terminal.configuration.name, "papo-tui", "config.json")
-            self.assertTrue(json.loads(path.read_text())["members_by_status"])
+            self.assertTrue(json.loads(path.read_text(encoding="utf-8"))["members_by_status"])
             server.emit(
                 dict(
                     type="presence_sync",
@@ -86,7 +110,7 @@ class Members(unittest.TestCase):
             self.wait(terminal, "Online")
             self.search(terminal, "@BOB")
             self.wait(terminal, "Bia")
-            terminal.resize(26, 60)
+            self.resize(terminal, 26, 60)
             self.wait(terminal, "Membros (1)")
             terminal.send("\x1b[21~")
             self.wait(terminal, "rascunho preservado")
@@ -111,16 +135,27 @@ class Members(unittest.TestCase):
             self.wait(terminal, "Foco: Membros")
             terminal.send("\x1b[21~")
             self.settled(terminal, lambda: "Membros (" not in self.screen(terminal))
-            terminal.resize(26, 70)
-            self.wait(terminal, "🔍")
-            self.wait(terminal, "🖈")
-            self.wait(terminal, "👤")
+            self.resize(terminal, 26, 70)
+            self.wait(terminal, "Foco: Membros")
             terminal.send("\n")
             self.wait(terminal, "Membros (6)")
             terminal.send("\x1bOD")
             self.wait(terminal, "Foco: Membros")
+            self.settled(terminal, lambda: "Membros (" not in self.screen(terminal))
             self.assertNotIn("Membros (", self.screen(terminal))
             self.assertNotIn("👤", terminal.screen.display[1])
+
+    @unittest.skipIf(
+        os.name == "nt",
+        "Native ncurses wchar_t cannot draw supplementary-plane header icons; navigation is tested separately",
+    )
+    def test_header_icons_remain_visible_at_narrow_sizes(self):
+        with MemberMock() as server:
+            terminal = self.open(server)
+            self.click(terminal, "Conversar em #geral")
+            self.resize(terminal, 26, 70)
+            for glyph in ("🔍", "🖈", "👤"):
+                self.wait(terminal, glyph)
 
     def test_first_menu_uses_loaded_member_data_and_has_no_empty_bottom_rows(self):
         with MemberMock() as server:
@@ -144,6 +179,9 @@ class Members(unittest.TestCase):
                 if "Gerar link de reset de senha" in line
             )
             column = terminal.screen.display[row].index("Gerar link de reset de senha") - 2
+            self.settled(
+                terminal, lambda: terminal.screen.buffer[row + 1][column].data in ("m", "└")
+            )
             self.assertIn(terminal.screen.buffer[row + 1][column].data, ("m", "└"))
 
     def test_slow_initial_block_list_updates_without_input_and_first_click_works(self):
@@ -174,7 +212,7 @@ class Members(unittest.TestCase):
         with MemberMock() as server:
             terminal = self.open(server)
             self.drawer(terminal)
-            terminal.send("\x1bOF")
+            self.select_member(terminal, "Zed")
             self.wait(terminal, "Zed")
             target_row = next(i for i, line in enumerate(terminal.screen.display) if "Zed" in line)
             terminal.send("m")
@@ -253,8 +291,12 @@ class Members(unittest.TestCase):
         with MemberMock() as server:
             terminal = self.open(server)
             self.drawer(terminal)
-            terminal.send("\x1bOF\x12")
-            self.wait(terminal, "Membros (6)")
+            self.select_member(terminal, "Zed")
+            next(member for member in server.members if member["nickname"] == "Zed")["nickname"] = (
+                "Zed updated"
+            )
+            terminal.send("\x12")
+            self.wait(terminal, "Zed updated")
             terminal.send("m")
             self.wait(terminal, "Desbanir")
             self.assertIn("Zed", self.screen(terminal))
@@ -387,11 +429,26 @@ class Members(unittest.TestCase):
             self.menu(terminal)
             self.wait(terminal, "Banir")
             server.user_roles = []
+            event_start = len(server.requests)
             server.emit(dict(type="role_remove", user_id=uuid(1), role_id=server.roles[0]["id"]))
             self.settled(terminal, lambda: "Gerar link" not in self.screen(terminal))
             self.assertIn("Bloquear", self.screen(terminal))
+            # Role events reconcile role definitions and identity over REST.
+            # Observe those reads before measuring requests caused by the menu.
+            self.settled(
+                terminal,
+                lambda: all(
+                    any(path.endswith(endpoint) for _, path, *_ in server.requests[event_start:])
+                    for endpoint in ("/roles", "/auth/whoami")
+                ),
+            )
+            for endpoint in ("/roles", "/auth/whoami"):
+                self.assertEqual(
+                    sum(path.endswith(endpoint) for _, path, *_ in server.requests[event_start:]),
+                    1,
+                )
             terminal.send("\x1b")
-            terminal.read(0.3)
+            self.settled(terminal, lambda: "Ver perfil" not in self.screen(terminal))
             before = len(server.requests)
             self.right_click(terminal, "Bia")
             self.wait(terminal, "Ver perfil")
@@ -467,6 +524,7 @@ class Members(unittest.TestCase):
             terminal = self.open(server)
             self.drawer(terminal)
             self.search(terminal, "bob")
+            self.wait(terminal, "Bia")
             row = next(i for i, line in enumerate(terminal.screen.display) if "Bia" in line)
             self.assertEqual(terminal.screen.buffer[row][92].data, "B")
             self.assertNotIn("👤", terminal.screen.display[row])
@@ -509,6 +567,7 @@ class Members(unittest.TestCase):
             terminal.send("m\n")
             self.settled(terminal, lambda: server.dm_closes == [uuid(3001)])
             self.wait(terminal, "Mensagem direta")
+            self.settled(terminal, lambda: "Carol ·" not in self.screen(terminal))
             self.assertNotIn("Carol ·", self.screen(terminal))
             self.assertEqual(len(server.dms), 1)
 
@@ -520,32 +579,50 @@ class Members(unittest.TestCase):
                 terminal = self.open(server)
                 self.drawer(terminal)
                 terminal.send("\x1b[21~")
+                self.settled(terminal, lambda: "Membros (" not in self.screen(terminal))
                 self.click(terminal, "[DMs]")
                 self.wait(terminal, "Carol ·")
                 terminal.send("\x1bOH")
-                terminal.read(0.1)
 
                 def style(name):
                     row = next(
-                        i
-                        for i, line in enumerate(terminal.screen.display)
-                        if name + " ·" in line[:24]
+                        (
+                            i
+                            for i, line in enumerate(terminal.screen.display)
+                            if name + " ·" in line[:24]
+                        ),
+                        None,
                     )
+                    if row is None:
+                        return None
                     cell = terminal.screen.buffer[row][2]
                     return cell.fg, cell.bg, cell.bold, cell.reverse
 
+                def home_selected():
+                    first, second = style("Carol"), style("Bia")
+                    return bool(
+                        first
+                        and second
+                        and first[0] == second[0] == "ff0000"
+                        and first[2]
+                        and not second[2]
+                    )
+
+                self.settled(terminal, home_selected)
                 carol, bia = style("Carol"), style("Bia")
                 self.assertEqual(carol[0], bia[0])  # Both have the same role.
                 self.assertEqual(carol[0], "ff0000")
                 self.assertNotEqual(carol[1:], bia[1:], "Selected DM needs a visible highlight")
                 before = sum("/messages" in path for _, path, *_ in server.requests)
                 terminal.send(down)
-                self.settled(terminal, lambda: style("Bia")[1:] == carol[1:])
+                # ConPTY can deliver the first changed row before the second.
+                # Observe the highlight and its removal together in one frame.
+                self.settled(terminal, lambda: style("Bia") == carol and style("Carol") == bia)
                 self.assertEqual(style("Carol")[1:], bia[1:])
                 self.assertEqual(style("Carol")[0], carol[0])
                 self.assertEqual(style("Bia")[0], bia[0])
                 terminal.send(up)
-                self.settled(terminal, lambda: style("Carol")[1:] == carol[1:])
+                self.settled(terminal, lambda: style("Carol") == carol and style("Bia") == bia)
                 self.assertEqual(style("Bia")[1:], bia[1:])
                 self.assertEqual(
                     sum("/messages" in path for _, path, *_ in server.requests), before
@@ -558,7 +635,7 @@ class Members(unittest.TestCase):
                 terminal = self.open(server)
                 self.drawer(terminal)
                 self.search(terminal, "bob")
-                terminal.resize(36, columns)
+                self.resize(terminal, 36, columns)
                 self.wait(terminal, "Bia")
                 row = next(i for i, line in enumerate(terminal.screen.display) if "Bia" in line)
                 column = terminal.screen.display[row].index("Bia")
@@ -582,7 +659,7 @@ class Members(unittest.TestCase):
                 terminal = self.open(server)
                 self.click(terminal, "[DMs]")
                 self.wait(terminal, "Carol ·")
-                terminal.resize(36, columns)
+                self.resize(terminal, 36, columns)
                 self.wait(terminal, "Carol ·")
                 row = next(i for i, line in enumerate(terminal.screen.display) if "Carol ·" in line)
                 column = terminal.screen.display[row].index("Carol")
@@ -685,12 +762,14 @@ class Members(unittest.TestCase):
             )
             self.settled(terminal, lambda: terminal.screen.cursor.y == row)
             terminal.send("\x1b")
+            self.settled(terminal, lambda: "filtro exclusivo" not in self.screen(terminal))
             self.wait(terminal, "Membros (6)")
             self.assertNotIn("filtro exclusivo", self.screen(terminal))
             terminal.send("\x1bOQ")
             self.wait(terminal, "Configurações")
             self.settled(terminal, lambda: terminal.screen.cursor.hidden)
             terminal.send("\x1b")
+            self.settled(terminal, lambda: "Configurações" not in self.screen(terminal))
             self.settled(terminal, lambda: not terminal.screen.cursor.hidden)
 
     def test_profile_and_block_read_failures_can_be_retried(self):
@@ -725,4 +804,6 @@ class Members(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

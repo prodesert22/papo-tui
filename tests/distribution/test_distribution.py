@@ -27,7 +27,7 @@ spec.loader.exec_module(flatpak)
 
 class DistributionTests(unittest.TestCase):
     def test_checksums_and_unique_sources(self):
-        lock = json.loads((ROOT / "dist/dependencies.json").read_text())
+        lock = json.loads((ROOT / "dist/dependencies.json").read_text(encoding="utf-8"))
         self.assertEqual(len(lock["sources"]), len({x["name"] for x in lock["sources"]}))
         for entry in lock["sources"]:
             self.assertRegex(entry["sha256"], r"^[a-f0-9]{64}$")
@@ -36,7 +36,9 @@ class DistributionTests(unittest.TestCase):
             self.assertNotIn("continuous", entry["url"])
 
     def test_ncurses_source_is_shared_by_linux_windows_and_flatpak(self):
-        sources = json.loads((ROOT / "dist/dependencies.json").read_text())["sources"]
+        sources = json.loads((ROOT / "dist/dependencies.json").read_text(encoding="utf-8"))[
+            "sources"
+        ]
         ncurses = next(entry for entry in sources if entry["name"] == "ncurses")
         self.assertEqual(ncurses["version"], "6.6")
         self.assertTrue({"posix", "nt"} <= set(ncurses.get("platforms", ("posix", "nt"))))
@@ -72,7 +74,9 @@ class DistributionTests(unittest.TestCase):
             [x["name"] for x in manifest["modules"]].index("libplacebo"),
         )
         self.assertIn("/lib/python3/site-packages/jinja2", manifest["cleanup"])
-        locked = json.loads((ROOT / "dist/dependencies.json").read_text())["sources"]
+        locked = json.loads((ROOT / "dist/dependencies.json").read_text(encoding="utf-8"))[
+            "sources"
+        ]
         modules = {x["name"]: x for x in manifest["modules"]}
         for entry in locked:
             if "posix" not in entry.get("platforms", ["posix"]):
@@ -81,9 +85,9 @@ class DistributionTests(unittest.TestCase):
             self.assertEqual(
                 modules[entry["name"]]["sources"][0]["dest-filename"], entry["archive"]
             )
-        flatpak_tools = json.loads((ROOT / "dist/flatpak/build-dependencies.json").read_text())[
-            "sources"
-        ]
+        flatpak_tools = json.loads(
+            (ROOT / "dist/flatpak/build-dependencies.json").read_text(encoding="utf-8")
+        )["sources"]
         for entry in flatpak_tools:
             self.assertRegex(entry["sha256"], r"^[a-f0-9]{64}$")
             self.assertEqual(
@@ -97,9 +101,9 @@ class DistributionTests(unittest.TestCase):
             encoder = source / "src/encoder.c"
             encoder.write_text('#include "rgblookup.h"\nvoid encode(void) { nanosleep(0, 0); }\n')
             bootstrap.patch_windows_libsixel(source)
-            first = encoder.read_text()
+            first = encoder.read_text(encoding="utf-8")
             bootstrap.patch_windows_libsixel(source)
-            self.assertEqual(encoder.read_text(), first)
+            self.assertEqual(encoder.read_text(encoding="utf-8"), first)
             self.assertIn("CreateWaitableTimer", first)
             self.assertIn("#define nanosleep sixel_windows_nanosleep", first)
 
@@ -155,7 +159,7 @@ class DistributionTests(unittest.TestCase):
                 )
                 self.assertIn("-I" + str(prefix / "include"), flags)
                 self.assertIn("-L" + str(prefix / "lib"), flags)
-                self.assertNotIn("/d/cache/deps", (pc / (name + ".pc")).read_text())
+                self.assertNotIn("/d/cache/deps", (pc / (name + ".pc")).read_text(encoding="utf-8"))
 
     def test_archive_rejects_traversal_and_external_symlinks(self):
         for name, link in [
@@ -188,6 +192,32 @@ class DistributionTests(unittest.TestCase):
             self.assertEqual(target.read_bytes(), b"existing")
             self.assertFalse((root / "target.part").exists())
 
+    def test_dependency_kit_only_contains_declared_release_fonts(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "dist/patches").mkdir(parents=True)
+            (root / "build/resources/test-fonts").mkdir(parents=True)
+            (root / "build/resources/NotoColorEmoji.ttf").write_bytes(b"release font")
+            (root / "build/resources/test-fonts/NotoSans.ttf").write_bytes(b"test font")
+            (root / "dist/dependencies.json").write_text('{"sources": []}', encoding="utf-8")
+            (root / "dist/resources.json").write_text(
+                '{"files": [{"name": "NotoColorEmoji.ttf"}]}', encoding="utf-8"
+            )
+            for name in ("bootstrap.py", "resources.py"):
+                (root / "dist" / name).write_text("# synthetic fixture", encoding="utf-8")
+            with (
+                patch.object(package, "ROOT", root),
+                patch.object(package, "collect"),
+                patch.object(package.shutil, "which", return_value=None),
+            ):
+                archive = package.dependency_sources(
+                    root, "0.1.0", "x86_64", "test", root / "prefix", root / "cache", root / "stage"
+                )
+            with tarfile.open(archive) as source:
+                files = source.getnames()
+                self.assertIn("dependency-sources/font-resources/NotoColorEmoji.ttf", files)
+                self.assertFalse(any("test-fonts" in name for name in files))
+
     def test_source_archive_marks_container_checkout_safe(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
@@ -206,7 +236,7 @@ class DistributionTests(unittest.TestCase):
     def test_semver_and_incomplete_assets_fail_closed(self):
         match = re.search(
             r"project\(\s*papo_tui\s+VERSION\s+([^\s)]+)",
-            (ROOT / "CMakeLists.txt").read_text(),
+            (ROOT / "CMakeLists.txt").read_text(encoding="utf-8"),
         )
         self.assertIsNotNone(match)
         version = match.group(1)
@@ -224,7 +254,7 @@ class DistributionTests(unittest.TestCase):
             for name in release.assets(version):
                 (root / name).write_bytes(name.encode())
             release.check_assets(root, version)
-            for line in (root / "SHA256SUMS").read_text().splitlines():
+            for line in (root / "SHA256SUMS").read_text(encoding="utf-8").splitlines():
                 digest, name = line.split("  ", 1)
                 self.assertEqual(digest, hashlib.sha256((root / name).read_bytes()).hexdigest())
 

@@ -1,9 +1,11 @@
 """R4 controls, masking and session recovery through a real pseudoterminal."""
 
+from test_context import main as test_main
+
 import time
 import unittest
 from mock_server import MockServer
-from test_terminal import Terminal
+from terminal_support import Terminal
 
 
 class SessionTerminal(unittest.TestCase):
@@ -344,4 +346,6 @@ class SessionTerminal(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

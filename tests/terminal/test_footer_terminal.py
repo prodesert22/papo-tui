@@ -1,10 +1,12 @@
 """Contextual footer through the real TUI with synthetic HTTP/WebSocket peers."""
 
+from test_context import main as test_main
+
 import time
 import unittest
 from history_mock import CHANNEL
 from realtime_mock import RealtimeMock
-from test_terminal import Terminal, wait_for_screen
+from terminal_support import Terminal, wait_for_screen
 
 
 class FooterTerminal(unittest.TestCase):
@@ -136,4 +138,6 @@ class FooterTerminal(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

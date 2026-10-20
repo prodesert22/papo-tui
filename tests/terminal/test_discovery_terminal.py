@@ -1,5 +1,7 @@
 """Pinned/search UI against synthetic HTTP/WS using a local terminal transport."""
 
+from test_context import main as test_main
+
 import time
 import os
 from pathlib import Path
@@ -8,7 +10,7 @@ import unittest
 from urllib.parse import parse_qs, urlsplit
 from discovery_mock import DiscoveryMock
 from history_mock import CHANNEL, uuid
-import test_r8_terminal as r8
+import terminal_discovery as r8
 
 
 class DiscoveryTerminal(unittest.TestCase):
@@ -109,6 +111,12 @@ class DiscoveryTerminal(unittest.TestCase):
             self.assertNotIn("Anexar arquivos", "\n".join(t.screen.display))
 
     def click(self, t, label):
+        # Functional scenarios use documented shortcuts when the native Windows
+        # wchar_t cannot represent a supplementary-plane header icon.
+        if os.name == "nt" and label in ("🖈", "🔍"):
+            t.send("\x1b[19~" if label == "🖈" else "\x1bOR")
+            self.wait(t, "Mensagens fixadas" if label == "🖈" else "Buscar mensagens no servidor")
+            return
         self.wait(t, label)
         t.read(0.08)
         row = next(i for i, line in enumerate(t.screen.display) if label in line)
@@ -341,6 +349,7 @@ class DiscoveryTerminal(unittest.TestCase):
                 while len(server.search_calls) < 2 and time.monotonic() < deadline:
                     t.read(0.03)
                 self.assertEqual(len(server.search_calls), 2)
+                self.until(t, lambda: "Detalhes da mensagem" not in "\n".join(t.screen.display))
                 self.assertNotIn("Detalhes da mensagem", "\n".join(t.screen.display))
 
     def test_pin_detail_arrows_select_go_and_unpin_without_activating(self):
@@ -367,6 +376,7 @@ class DiscoveryTerminal(unittest.TestCase):
                 self.assertEqual(self.button_style(t, "[Ir para mensagem]"), focused)
                 self.assertEqual(self.button_style(t, "[Desafixar]"), normal)
                 t.send("\n")
+                self.until(t, lambda: "Detalhes da mensagem" not in "\n".join(t.screen.display))
                 self.assertNotIn("Detalhes da mensagem", "\n".join(t.screen.display))
                 self.assertEqual(server.pin_calls, [])
                 t.send("\x1b[19~")
@@ -496,14 +506,22 @@ class DiscoveryTerminal(unittest.TestCase):
             t.send("bob\n")
             self.wait(t, "Menciona: Bia")
             self.click(t, "Contém link")
+            self.wait(t, "[x] Contém link")
             self.click(t, "Data inicial:")
             t.send("2026-10-12")
+            self.wait(t, "Data inicial: 2026-10-12")
             self.click(t, "Data final:")
             t.send("2026-10-13")
+            self.wait(t, "Data final:   2026-10-13")
             self.click(t, "Anexos: Qualquer")
             self.click(t, "Anexos: Com anexos")
+            self.wait(t, "Anexos: Sem anexos")
             self.click(t, "Ordem: Mais recentes")
+            # Mouse reports can be coalesced while the previous action is still
+            # pending. Observe its new state before clicking an existing button.
+            self.wait(t, "Ordem: Mais antigas")
             self.click(t, "[Aplicar]")
+            self.wait(t, "Buscar mensagens no servidor")
             self.assertEqual(server.search_calls, [])
             self.click(t, "[Buscar]")
             self.wait(t, "0 resultado(s)")
@@ -555,4 +573,6 @@ class DiscoveryTerminal(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

@@ -1,59 +1,37 @@
 """R6 through the actual login/conversation screen with synthetic HTTP data."""
 
-import os
-import time
-import unittest
+from test_context import main as test_main
+
 from history_mock import HistoryMock, CHANNEL
-from test_terminal import Terminal, editor_region, editor_column
-from wcwidth import wcswidth
+from terminal_support import editor_region, editor_column, wait_for_screen
 
 
-class SendProduct(unittest.TestCase):
-    def screen(self, terminal):
-        return "\n".join(terminal.screen.display)
+import terminal_send as support
 
-    def wait(self, terminal, text):
-        deadline = time.monotonic() + 8
-        while text not in self.screen(terminal) and time.monotonic() < deadline:
-            terminal.read(0.03)
-        self.assertIn(text, self.screen(terminal))
 
-    def click(self, terminal, text):
-        self.wait(terminal, text)
-        for row, line in enumerate(terminal.screen.display):
-            if text in line:
-                terminal.click(row, wcswidth(line[: line.index(text)]) + 1)
-                return
-        self.fail("Missing control: " + text)
-
-    def open(self, server, *, environment=None):
-        terminal = Terminal(environment=environment)
-        if os.name == "nt":
-            # Register before login assertions, which may fail before returning
-            # the terminal to a caller's try/finally block.
-            self.addCleanup(terminal.close)
-        terminal.send(server.url + "\tjosé\tSynthetic!123\n")
-        self.wait(terminal, "geral")
-        terminal.send("\x1bOB\n")
-        self.wait(terminal, "# geral · Histórico")
-        self.wait(terminal, "Conversar em #geral")
-        return terminal
-
-    def editor_text(self, terminal):
-        # Editor input is separated from message history and status lines.
-        rows = terminal.screen.display
-        first, end = editor_region(terminal)
-        return "\n".join(rows[first:end])
-
+class SendProduct(support.SendProduct):
     def test_confirmed_message_merges_without_get_and_keeps_later_edits(self):
         with HistoryMock(count=0) as server:
             server.scenario = "send-delayed"
             terminal = self.open(server)
             try:
+                # The editor can appear before the initial history GET starts.
+                # Observe its applied response before counting reads or sending.
+                self.wait(terminal, "Nenhuma mensagem neste canal.")
                 before = len([r for r in server.requests if r[0] == "GET" and "/messages" in r[1]])
+                self.assertEqual(before, 1)
                 terminal.send("Olá, ação!\x0esegunda linha\n")
                 terminal.send(" continuação")
                 self.wait(terminal, "Mensagem confirmada")
+                wait_for_screen(
+                    terminal,
+                    lambda: (
+                        "continuação" in self.editor_text(terminal)
+                        and "Olá" not in self.editor_text(terminal)
+                        and "Olá, ação!" in self.screen(terminal)
+                    ),
+                    "Confirmation and the later draft were not rendered together",
+                )
                 self.assertEqual(server.sent_messages[0]["content"], "Olá, ação!\nsegunda linha")
                 self.assertEqual(server.sent_messages[0]["channel_id"], CHANNEL)
                 self.assertEqual(server.message_count, 1)
@@ -69,6 +47,11 @@ class SendProduct(unittest.TestCase):
                 self.wait(terminal, "segunda linha")
                 self.assertEqual(self.screen(terminal).count("Olá, ação!"), 1)
                 terminal.resize(14, 44)
+                wait_for_screen(
+                    terminal,
+                    lambda: "continuação" in self.editor_text(terminal),
+                    "Resized editor did not preserve the later draft",
+                )
                 self.assertIn("continuação", self.editor_text(terminal))
                 self.assertNotIn(b"Synthetic!123", terminal.output)
             finally:
@@ -252,4 +235,4 @@ class SendProduct(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(1, verbosity=2)

@@ -1,5 +1,7 @@
 """Member colors through ncurses, using synthetic REST and WebSocket peers."""
 
+from test_context import main as test_main
+
 import copy
 import unittest
 from wcwidth import wcswidth
@@ -7,8 +9,8 @@ from urllib.parse import urlsplit
 
 from history_mock import STAMP, uuid
 from interaction_mock import InteractionMock
-import test_message_interactions as interactions
-from test_terminal import Terminal
+import terminal_interactions as interactions
+from terminal_support import Terminal
 
 RED, GREEN = uuid(400), uuid(401)
 
@@ -186,4 +188,6 @@ class MemberColors(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

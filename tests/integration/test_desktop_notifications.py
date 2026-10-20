@@ -1,16 +1,19 @@
 """Desktop notification behavior on a private D-Bus, never the personal daemon."""
 
+from test_context import main as test_main
+
+from test_context import argument
+
 import json
 import os
 import select
 import subprocess
-import sys
 import time
 import unittest
 
-FAKE = sys.argv.pop(2)
+FAKE = argument(1)
 from r8_mock import R8Mock, AUTHOR, uuid  # noqa: E402 - path and test arguments are prepared above
-from test_terminal import Terminal  # noqa: E402 - path and test arguments are prepared above
+from terminal_support import Terminal  # noqa: E402 - path and test arguments are prepared above
 
 
 class DesktopTests(unittest.TestCase):
@@ -175,4 +178,6 @@ class DesktopTests(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        2,
+    )

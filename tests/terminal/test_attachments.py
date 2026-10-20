@@ -1,13 +1,15 @@
 """Attachments through the real TUI; clipboard helpers and HTTP are synthetic."""
 
+from test_context import main as test_main
+
 import os
 from pathlib import Path
 import tempfile
 import unittest
 from wcwidth import wcswidth
 from history_mock import HistoryMock
-import test_send_product as product
-from test_terminal import editor_region
+import terminal_send as product
+from terminal_support import editor_region
 
 
 class Attachments(unittest.TestCase):
@@ -164,7 +166,7 @@ class Attachments(unittest.TestCase):
                 self.click(terminal, "Cancelar")
                 self.assertNotIn("Remover anexo?", self.screen(terminal))
                 self.assertIn("mouse.txt 🗙]", self.screen(terminal))
-                self.assertEqual(source.read_text(), "original")
+                self.assertEqual(source.read_text(encoding="utf-8"), "original")
             finally:
                 self.assertTrue(terminal.close())
 
@@ -181,7 +183,7 @@ class Attachments(unittest.TestCase):
             finally:
                 self.assertTrue(terminal.close())
             self.assertEqual(list(temporary.glob("papo-attachment-*")), [])
-            self.assertEqual(source.read_text(), "private staged draft")
+            self.assertEqual(source.read_text(encoding="utf-8"), "private staged draft")
 
     def test_attachments_stay_with_their_conversation_draft(self):
         with tempfile.TemporaryDirectory() as folder, HistoryMock(count=0) as server:
@@ -295,4 +297,6 @@ class Attachments(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

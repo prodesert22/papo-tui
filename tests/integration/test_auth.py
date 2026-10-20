@@ -1,11 +1,13 @@
+from test_context import main as test_main
+
+from test_context import argument
 import subprocess
 import os
-import sys
 import unittest
 
 from mock_server import MockServer
 
-PROBE = sys.argv.pop(1)
+PROBE = argument(0)
 
 
 class AuthTests(unittest.TestCase):
@@ -162,4 +164,6 @@ class AuthTests(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

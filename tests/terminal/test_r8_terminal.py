@@ -1,51 +1,19 @@
 """Full R8 UI with synthetic HTTP/WS fixtures."""
 
+from test_context import main as test_main
+
 import json
 from pathlib import Path
 import tempfile
 import time
-import unittest
 from r8_mock import R8Mock, DM, AUTHOR, uuid
 from history_mock import CHANNEL, OTHER
-from test_terminal import Terminal
 
 
-class R8Terminal(unittest.TestCase):
-    def notification_target(self, server, count, index):
-        server.count = count
-        server.messages = [server.message(i) for i in range(1, count + 1)]
-        target = server.messages[index - 1]
-        server.notifications[0].update(
-            message_id=target["id"],
-            channel_id=target["channel_id"],
-            message_content="Notificação de destino",
-            author_id=target["author_id"],
-        )
-        return target
+import terminal_discovery as support
 
-    def open_notification_target(self, terminal):
-        terminal.send("\x1b[20~")
-        self.wait(terminal, "Notificação de destino")
-        terminal.send("\n")
-        self.wait(terminal, "Detalhes da notificação")
-        row = next(
-            i for i, line in enumerate(terminal.screen.display) if "[Abrir conversa]" in line
-        )
-        terminal.click(row, terminal.screen.display[row].index("[Abrir conversa]") + 2)
 
-    def assert_centered_target(self, terminal, content):
-        self.wait(terminal, content)
-        self.wait(terminal, "↑↓ mensagens")
-        terminal.read(0.2)
-        row = next(i for i, line in enumerate(terminal.screen.display) if content in line)
-        # At 100x32, the history viewport is rows 8..22 and its border is x=27.
-        self.assertLessEqual(abs(row - 15), 2, "Target must be centered in history")
-        self.assertIn(terminal.screen.buffer[row][27].data, ("x", "│"))
-        text_column = terminal.screen.display[row].index(content)
-        self.assertNotEqual(
-            terminal.screen.buffer[row][27].fg, terminal.screen.buffer[row][text_column].fg
-        )
-
+class R8Terminal(support.R8Terminal):
     def test_notification_opens_centers_and_highlights_first_page_and_loaded_target(self):
         for already_open in (False, True):
             with self.subTest(already_open=already_open), R8Mock(count=1) as server:
@@ -65,7 +33,7 @@ class R8Terminal(unittest.TestCase):
                 self.assertEqual(server.marked, [[uuid(4001)]])
 
     def test_notification_opens_old_webhook_target_from_another_channel(self):
-        from history_mock import CHANNEL, OTHER
+        from history_mock import OTHER
 
         with R8Mock(count=1) as server:
             target = self.notification_target(server, 320, 40)
@@ -94,7 +62,6 @@ class R8Terminal(unittest.TestCase):
             self.assertEqual(sum(OTHER in path for path in reads), 1)
 
     def test_notification_resolves_active_webhook_name_and_keeps_it_after_partial_event(self):
-        from history_mock import CHANNEL
 
         with R8Mock(count=1) as server:
             target = self.notification_target(server, 220, 40)
@@ -126,7 +93,6 @@ class R8Terminal(unittest.TestCase):
             )
 
     def test_notification_target_stays_centered_when_content_above_changes(self):
-        from history_mock import CHANNEL
 
         with R8Mock(count=1) as server:
             target = self.notification_target(server, 320, 40)
@@ -693,34 +659,6 @@ class R8Terminal(unittest.TestCase):
             self.wait(terminal, "[Comunidade 100]")
             self.assertNotIn("+", terminal.screen.display[1].split("]", 1)[0])
 
-    def wait(self, t, text):
-        end = time.monotonic() + 7
-        while text not in "\n".join(t.screen.display) and time.monotonic() < end:
-            t.read(0.03)
-        self.assertIn(text, "\n".join(t.screen.display))
-
-    def assert_initial_history_only(self, server, channel=CHANNEL):
-        reads = [r[1] for r in server.requests if "/messages" in r[1]]
-        self.assertEqual(len(reads), 1)
-        self.assertIn(channel, reads[0])
-
-    def login(self, server, **kwargs):
-        before = sum("/messages" in r[1] for r in server.requests)
-        t = Terminal(**kwargs)
-        self.addCleanup(t.close)
-        t.send(server.url + "\tjosé\tSynthetic!123\n")
-        self.wait(t, "[Canais]")
-        self.wait(t, "[DMs]")
-        self.wait(t, "Categoria")
-        end = time.monotonic() + 5
-        while (
-            sum("/messages" in r[1] for r in server.requests) == before and time.monotonic() < end
-        ):
-            t.read(0.03)
-        self.assertEqual(sum("/messages" in r[1] for r in server.requests), before + 1)
-        t.read(0.1)
-        return t
-
     def test_black_background_and_sidebar_focus_include_both_buttons(self):
         with R8Mock(count=0) as server:
             t = self.login(server, environment={"KITTY_WINDOW_ID": "r8-theme-fixture"})
@@ -778,7 +716,6 @@ class R8Terminal(unittest.TestCase):
             badge(False)
 
     def test_history_read_clears_even_if_backend_cursor_lags_but_failed_get_does_not(self):
-        from history_mock import CHANNEL
 
         for case in ("empty", "header-only", "denied", "cursor-write-failed"):
             with self.subTest(case=case), R8Mock(count=3) as server:
@@ -826,7 +763,6 @@ class R8Terminal(unittest.TestCase):
                     )
 
     def test_cursor_dots_overlay_buttons_and_long_names_and_ignore_notification_read(self):
-        from history_mock import CHANNEL
 
         with R8Mock() as server:
             # Open the other channel initially so the long-named channel stays unread.
@@ -950,7 +886,8 @@ class R8Terminal(unittest.TestCase):
                 path = Path(state) / "papo-tui/read-cursors.json"
                 if (
                     path.exists()
-                    and len(json.loads(path.read_text())["contexts"][0]["messages"]) == 2
+                    and len(json.loads(path.read_text(encoding="utf-8"))["contexts"][0]["messages"])
+                    == 2
                 ):
                     break
             self.assertTrue(path.exists())
@@ -1167,4 +1104,4 @@ class R8Terminal(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(1, verbosity=2)

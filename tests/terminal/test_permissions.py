@@ -1,5 +1,7 @@
 """Permission changes through the real TUI with synthetic HTTP and WS data."""
 
+from test_context import main as test_main
+
 import time
 import threading
 import unittest
@@ -7,7 +9,7 @@ from urllib.parse import urlsplit
 
 from history_mock import CHANNEL, OTHER, uuid
 from interaction_mock import InteractionMock
-import test_message_interactions as interactions
+import terminal_interactions as interactions
 
 ROLE = uuid(400)
 READ_ROLE = uuid(401)
@@ -167,6 +169,10 @@ class PermissionsTerminal(unittest.TestCase):
             terminal = self.open(server)
             try:
                 terminal.send("Draft survives access changes")
+                self.settled(
+                    terminal,
+                    lambda: "Draft survives access changes" in self.editor_text(terminal),
+                )
                 server.role(READ_ROLE, False)
                 self.settled(
                     terminal, lambda: "Mensagem 0002" not in self.screen(terminal), seconds=3
@@ -202,4 +208,6 @@ class PermissionsTerminal(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

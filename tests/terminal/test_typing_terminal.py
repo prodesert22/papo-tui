@@ -1,11 +1,13 @@
 """Typing through the real TUI with synthetic, contract-shaped WS/REST peers."""
 
+from test_context import main as test_main
+
 import time
 import unittest
 from urllib.parse import urlsplit
 from history_mock import CHANNEL, OTHER, uuid, assert_history_reads
 from realtime_mock import RealtimeMock
-from test_terminal import Terminal
+from terminal_support import Terminal
 
 
 class TypingServer(RealtimeMock):
@@ -251,4 +253,6 @@ class TypingTerminal(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

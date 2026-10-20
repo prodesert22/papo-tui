@@ -1,5 +1,9 @@
 """PTY/protocol evidence for member panels; not real-emulator visual inspection."""
 
+from test_context import protocols
+
+from test_context import main as test_main
+
 import base64
 import hashlib
 import subprocess
@@ -9,9 +13,9 @@ from urllib.parse import urlsplit
 import unittest
 
 # This import consumes the binary and ffmpeg arguments, as in the media suite.
-import test_media_terminal as media
+import terminal_media as media
 from member_mock import MemberMock, AUTHOR
-import test_message_interactions as interactions
+import terminal_interactions as interactions
 
 
 class MemberMedia(unittest.TestCase):
@@ -95,7 +99,7 @@ class MemberMedia(unittest.TestCase):
         ]
 
     def test_drawer_menu_profile_resize_and_close_preserve_uncovered_media(self):
-        for protocol in ("kitty", "sixel", "iterm2"):
+        for protocol in protocols("kitty", "sixel", "iterm2"):
             with self.subTest(protocol=protocol), self.fixture() as server:
                 helper = media.MediaTerminal()
                 helper.include_icons = True
@@ -219,7 +223,7 @@ class MemberMedia(unittest.TestCase):
                 helper.tearDown()
 
     def test_drawer_avatars_remain_square_with_tall_terminal_cells(self):
-        for protocol in ("kitty", "sixel", "iterm2"):
+        for protocol in protocols("kitty", "sixel", "iterm2"):
             with self.subTest(protocol=protocol), self.fixture() as server:
                 helper = media.MediaTerminal()
                 helper.include_icons = True
@@ -334,4 +338,6 @@ class MemberMedia(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        2,
+    )

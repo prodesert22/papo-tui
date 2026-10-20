@@ -1,12 +1,14 @@
 """Terminal window titles from synthetic conversations and unread mentions."""
 
+from test_context import main as test_main
+
 import os
 import re
 import unittest
 
 from history_mock import CHANNEL, OTHER, uuid
 from r8_mock import AUTHOR, R8Mock
-from test_terminal import Terminal, wait_for_screen
+from terminal_support import Terminal, wait_for_screen
 from wcwidth import wcswidth
 
 
@@ -144,4 +146,6 @@ class TerminalTitle(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

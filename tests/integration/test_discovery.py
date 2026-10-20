@@ -1,12 +1,14 @@
 """Discovery owner against synthetic HTTP data, including failures/cancellation."""
 
+from test_context import main as test_main
+
 import json
 import time
 import unittest
 from discovery_mock import DiscoveryMock
 from history_mock import CHANNEL, OTHER, uuid
 from r8_mock import DM
-from test_r8 import Observer
+from r8_observer import Observer
 
 
 class DiscoveryTests(unittest.TestCase):
@@ -272,4 +274,6 @@ class DiscoveryTests(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )
