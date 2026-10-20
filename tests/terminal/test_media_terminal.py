@@ -303,7 +303,7 @@ class MediaTerminal(unittest.TestCase):
     def tearDownClass(cls):
         cls.assets.cleanup()
 
-    def open(self, server, sixel=True, environment=None, protocol=None, size=None):
+    def open(self, server, sixel=True, environment=None, protocol=None, size=None, cell_width=8):
         unset = ()
         if protocol == "iterm2":
             environment = dict(environment or {}, TERM_PROGRAM="iTerm.app", LC_TERMINAL="iTerm2")
@@ -337,11 +337,11 @@ class MediaTerminal(unittest.TestCase):
                 query,
                 f"Kitty query missing; exit={t.process.poll()}, output={bytes(t.output[-1000:])!r}",
             )
-            t.send("\x1b_Gi=" + query[1].decode() + ";OK\x1b\\\x1b[?62;22c\x1b[6;16;8t")
+            t.send("\x1b_Gi=" + query[1].decode() + f";OK\x1b\\\x1b[?62;22c\x1b[6;16;{cell_width}t")
         elif protocol == "iterm2":
-            t.send("\x1b[?62;22c\x1b[6;16;8t")
+            t.send(f"\x1b[?62;22c\x1b[6;16;{cell_width}t")
         elif sixel:
-            t.send("\x1b[?62;4;22c\x1b[6;16;8t")
+            t.send(f"\x1b[?62;4;22c\x1b[6;16;{cell_width}t")
         t.send(server.url + "\tjosé\tSynthetic!123\n")
         self.wait(t, "geral")
         t.send("\x1bOB\n")

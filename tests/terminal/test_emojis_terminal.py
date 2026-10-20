@@ -617,7 +617,7 @@ class EmojiTerminal(unittest.TestCase):
                     text_row = next(
                         i for i, line in enumerate(t.screen.display) if "Texto " in line
                     )
-                    expected = {(reaction_row - 3, x) for x in (34, 41, 48)}
+                    expected = {(reaction_row - 3, x) for x in (34, 40, 46)}
                     self.assertTrue(expected <= self.image_positions(t, protocol, (48, 48)))
                     self.until(
                         t, lambda: (reaction_row, 35) in self.image_positions(t, protocol, (16, 16))
@@ -642,6 +642,32 @@ class EmojiTerminal(unittest.TestCase):
                     self.assertEqual(server.message_count, 0)
                 finally:
                     self.assertTrue(t.close())
+
+    def test_large_emoji_tiles_fill_the_cell_width(self):
+        # A 9-pixel cell makes 48 nominal pixels span six cells. The preview
+        # must grow to 54 pixels so adjacent emojis have no sub-cell gap.
+        with self.server(content=":gato 界: :gato 界:") as server:
+            t = self.open(server, protocol="kitty", size=(48, 120), cell_width=9)
+            try:
+
+                def preview_positions():
+                    return {
+                        position
+                        for placement, position in zip(
+                            t.stream.placements, t.stream.placement_positions
+                        )
+                        if placement.get(b"w") == b"54"
+                        and placement.get(b"h") == b"54"
+                        and position[1] >= 34
+                    }
+
+                self.until(t, lambda: len(preview_positions()) >= 2)
+                positions = sorted(preview_positions(), key=lambda p: p[1])
+                self.assertEqual(positions[0][0], positions[1][0])
+                self.assertEqual(positions[1][1] - positions[0][1], 6)
+                self.assertEqual(server.message_count, 0)
+            finally:
+                self.assertTrue(t.close())
 
     def test_large_emojis_wrap_on_resize_and_crop_at_history_edges(self):
         for protocol in ("kitty", "sixel", "iterm2"):

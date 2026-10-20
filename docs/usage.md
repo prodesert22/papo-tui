@@ -287,10 +287,12 @@ messages, reactions, the editor and emoji selectors. Light shows their first fra
 as a static image; attached animations can still play. Ultralight keeps emojis as text.
 Animated WebP requires an FFmpeg build with the `webp_anim` decoder.
 
-Messages containing only rendered emojis use larger 48×48 previews and taller
-rows, wrapping to fit the conversation. Messages with text and reaction buttons
-keep their usual emoji size. Light keeps enlarged server emojis static and uses
-native Unicode emojis; Ultralight keeps the text layout.
+Messages containing only rendered emojis use larger previews (about 48×48
+pixels) and taller rows, wrapping to fit the conversation. Adjacent enlarged
+previews sit directly next to each other and fill the terminal cell grid.
+Messages with text and reaction buttons keep their usual emoji size. Light keeps
+enlarged server emojis static and uses native Unicode emojis; Ultralight keeps
+the text layout.
 
 ## Permissions and access
 

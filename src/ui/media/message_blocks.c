@@ -346,12 +346,12 @@ static bool emoji_content(message_blocks *b, const char *value, int width, bool 
         g_free(points);
         return true;
     }
-    int pixels = MESSAGE_EMOJI_PIXELS;
-    int columns = (pixels + terminal.cell_width - 1) / terminal.cell_width;
-    if (columns > width) {
-        pixels = width * terminal.cell_width;
+    int columns = (MESSAGE_EMOJI_PIXELS + terminal.cell_width - 1) / terminal.cell_width;
+    if (columns > width)
         columns = width;
-    }
+    /* Fill the whole cell span so adjacent emojis touch even when the cell
+     * width does not divide the nominal 48-pixel preview. */
+    int pixels = columns * terminal.cell_width;
     int rows = (pixels + terminal.cell_height - 1) / terminal.cell_height;
     size_t line = b->count;
     int x = 0;
@@ -401,7 +401,7 @@ static bool emoji_content(message_blocks *b, const char *value, int width, bool 
                 (message_icon_region){.id = id, .x = x, .pixels = pixels, .row = sub, .offset = at};
             snprintf(icon->key, sizeof(icon->key), "content");
         }
-        x += columns + 1;
+        x += columns;
         at += consumed;
     }
     g_free(points);

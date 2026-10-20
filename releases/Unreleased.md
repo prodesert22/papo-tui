@@ -30,3 +30,5 @@
   Message text uses the full drawable width instead of reserving a cell that
   only the editor cursor needs, and trailing spaces that overflow a line are
   dropped instead of wrapping alone.
+- Emoji-only messages place their enlarged previews directly next to each
+  other; the extra blank cell between adjacent emojis was removed.
