@@ -62,6 +62,15 @@ class Members(unittest.TestCase):
         self.search(terminal, name)
         terminal.send("/\x15\n")
         self.wait(terminal, "Membros (6)")
+        # The count is drawn before the rows. A filtered member can still be
+        # visible at its old position while the unfiltered drawer is repainting.
+        self.settled(
+            terminal,
+            lambda: all(
+                member in self.screen(terminal)
+                for member in ("Álice", "Bia", "Carol", "Dani", "Zed", "Você")
+            ),
+        )
 
     def menu(self, terminal, text="Bia", *, mouse=False):
         self.search(terminal, "bob" if text == "Bia" else text)

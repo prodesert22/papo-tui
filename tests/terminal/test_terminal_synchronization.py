@@ -230,6 +230,13 @@ class TerminalSynchronization(unittest.TestCase):
             "test_keyboard_menu_stays_next_to_selected_message_after_scroll_and_resize",
         )
 
+    def test_member_selection_waits_for_unfiltered_rows(self):
+        members = importlib.import_module("test_members")
+        self.exercise(
+            members.Members,
+            "test_keyboard_member_menu_opens_beside_selected_member",
+        )
+
     def test_footer_waits_for_resize(self):
         for method in unittest.defaultTestLoader.getTestCaseNames(
             test_footer_terminal.FooterTerminal
