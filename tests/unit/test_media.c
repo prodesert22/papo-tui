@@ -544,6 +544,55 @@ static void attachment_mime_types(void)
     }
     app_mode_set(APP_MODE_NORMAL);
 }
+static void attachment_video_extensions(void)
+{
+    const struct {
+        const char *mime, *name, *label;
+        bool media, video;
+    } fixtures[] = {{"application/octet-stream", "movie.mp4", "Vídeo: ", true, true},
+                    {"application/octet-stream", "movie.MOV", "Vídeo: ", true, true},
+                    {"application/octet-stream", "clip.webm", "Vídeo: ", true, true},
+                    {"application/octet-stream", "notes.txt", "Anexo: ", false, false},
+                    {"application/octet-stream", "movie", "Anexo: ", false, false},
+                    {"application/octet-stream", "movie.", "Anexo: ", false, false},
+                    {"application/octet-stream", "photo.png", "Anexo: ", false, false},
+                    {"application/ogg", "clip.ogv", "Vídeo: ", true, true},
+                    {"video/avi", "clip.avi", "Vídeo: ", true, true},
+                    {"image/png", "clip.mp4", "Imagem: ", true, false},
+                    {"audio/mpeg", "song.mp3", "Anexo: ", false, false}};
+    for (size_t f = 0; f < sizeof(fixtures) / sizeof(fixtures[0]); ++f) {
+        json_t *attachment =
+            json_pack("{s:s,s:s,s:s}", "id", "00000000-0000-4000-8000-000000000002", "mime_type",
+                      fixtures[f].mime, "original_file_name", fixtures[f].name);
+        assert(attachment);
+        json_t *m = json_pack("{s:s,s:[o]}", "id", "00000000-0000-4000-8000-000000000001",
+                              "attachments", attachment);
+        assert(m);
+        for (int mode = APP_MODE_NORMAL; mode <= APP_MODE_ULTRALIGHT; ++mode) {
+            app_mode_set((app_mode)mode);
+            for (int graphics = 0; graphics < 2; ++graphics) {
+                message_blocks blocks;
+                assert(message_blocks_build(&blocks, m, "Sender", "", 80, graphics != 0));
+                assert(blocks.media_count ==
+                       (size_t)(fixtures[f].media && mode != APP_MODE_ULTRALIGHT));
+                if (blocks.media_count)
+                    assert(blocks.media[0].video == fixtures[f].video);
+                if (mode == APP_MODE_ULTRALIGHT) {
+                    bool labeled = false;
+                    for (size_t r = 0; r < blocks.count; ++r)
+                        for (int k = 0; k < blocks.rows[r].count; ++k)
+                            labeled |= blocks.rows[r].segments[k].text &&
+                                       !strncmp(blocks.rows[r].segments[k].text, fixtures[f].label,
+                                                strlen(fixtures[f].label));
+                    assert(labeled);
+                }
+                message_blocks_free(&blocks);
+            }
+        }
+        json_decref(m);
+    }
+    app_mode_set(APP_MODE_NORMAL);
+}
 static size_t content_rows(const message_blocks *b)
 {
     size_t rows = 0;
@@ -652,6 +701,7 @@ int main(void)
     assert(setlocale(LC_ALL, "C.UTF-8"));
     init_graphemebreak();
     attachment_mime_types();
+    attachment_video_extensions();
     exact_width_content();
     video_preview_layout();
     reactions_and_replies();

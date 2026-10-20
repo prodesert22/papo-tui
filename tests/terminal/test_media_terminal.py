@@ -352,7 +352,7 @@ class MediaTerminal(unittest.TestCase):
                     diagnostic, terminal.output, "Sanitizer diagnostic in client output"
                 )
 
-    def serve(self, content, mime, *, embed=False, slow=False):
+    def serve(self, content, mime, *, embed=False, slow=False, name="Fixture"):
         s = HistoryMock(count=1)
         parent = s.route
         s.messages[0]["attachments"] = (
@@ -362,7 +362,7 @@ class MediaTerminal(unittest.TestCase):
                 {
                     "id": uuid(901),
                     "mime_type": mime,
-                    "original_file_name": "Fixture",
+                    "original_file_name": name,
                     "size_bytes": len(content),
                     "moderation_status": "clean",
                 }
@@ -1169,6 +1169,29 @@ class MediaTerminal(unittest.TestCase):
                     self.wait(t, "↑↓ mensagens")
                 finally:
                     self.assertTrue(t.close())
+
+    def test_video_attachment_reported_as_a_generic_type_keeps_poster_and_player(self):
+        # The server detects the type from the file's magic bytes, so a valid
+        # video can arrive as a generic binary type.
+        with self.serve(self.video, "application/octet-stream", name="movie.mp4") as server:
+            t = self.open(server, protocol="kitty", size=(64, 160))
+            try:
+                self.wait_frames(t)
+                self.wait(t, "▶ movie.mp4")
+                display = "\n".join(t.screen.display)
+                self.assertNotIn("Anexo:", display)
+                self.assertNotIn("Tipo:", display)
+                count = len(t.stream.frames)
+                t.read(0.3)
+                self.assertEqual(len(t.stream.frames), count, "Poster must remain static")
+                t.send("\x1b[18~")
+                self.wait(t, "Mídia 1/1")
+                t.send("\n")
+                self.wait(t, "Reproduzindo")
+                t.send("\x1b")
+                self.wait(t, "↑↓ mensagens")
+            finally:
+                self.assertTrue(t.close())
 
     def test_kitty_video_pause_seek_resize_and_cleanup(self):
         with (

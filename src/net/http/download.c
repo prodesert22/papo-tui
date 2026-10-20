@@ -180,6 +180,18 @@ bool media_download_avatar_request(media_download *m, const char *reference)
     return begin_request(m, auth_avatar_easy(m->auth, reference), AUTH_MEDIA_ATTACHMENT, false,
                          true);
 }
+/* The embed relay keeps the documented allowlist. An attachment carries the
+ * type the server detected from the file's magic bytes, which recognizes only
+ * a few containers; the remaining videos are served as a generic binary
+ * type and the decoder decides whether the bytes are playable. */
+static bool video_type(const media_download *m)
+{
+    if (m->kind == AUTH_MEDIA_VIDEO)
+        return !strcmp(m->mime, "video/mp4") || !strcmp(m->mime, "video/webm") ||
+               !strcmp(m->mime, "video/ogg");
+    return g_str_has_prefix(m->mime, "video/") || !strcmp(m->mime, "application/octet-stream") ||
+           !strcmp(m->mime, "application/ogg");
+}
 static void finish(media_download *m, CURLcode result)
 {
     curl_easy_getinfo(m->easy, CURLINFO_RESPONSE_CODE, &m->status);
@@ -195,8 +207,7 @@ static void finish(media_download *m, CURLcode result)
     bool written = m->file && fflush(m->file) == 0 && !ferror(m->file);
     release_transfer(m);
     bool type = m->kind == AUTH_MEDIA_EMBED ? !strcmp(m->mime, "application/json")
-                : m->video ? (!strcmp(m->mime, "video/mp4") || !strcmp(m->mime, "video/webm") ||
-                              !strcmp(m->mime, "video/ogg"))
+                : m->video ? video_type(m)
                            : (!strcmp(m->mime, "image/png") || !strcmp(m->mime, "image/jpeg") ||
                               !strcmp(m->mime, "image/webp") || !strcmp(m->mime, "image/gif"));
     if (result == CURLE_OK && m->status == 200 && written && type && m->bytes) {

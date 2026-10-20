@@ -106,6 +106,31 @@ class MediaTests(unittest.TestCase):
         with self.server(mime="application/json", body=b'{"image_data":null}') as server:
             self.assertIn("ready=1", self.probe(server, "embed"))
 
+    def test_attachment_video_accepts_the_types_the_server_reports(self):
+        # The server detects the type from the file's magic bytes, so a valid
+        # video can arrive as a generic binary type.
+        for mime in (
+            "video/mp4",
+            "video/webm",
+            "video/ogg",
+            "video/avi",
+            "application/octet-stream",
+            "application/ogg",
+        ):
+            with self.subTest(mime=mime), self.server(mime=mime) as server:
+                self.assertIn("ready=1", self.probe(server, "attachment-video"))
+        for mime in ("text/html", "image/png", "application/pdf"):
+            with self.subTest(mime=mime), self.server(mime=mime) as server:
+                self.assertIn("failed=1", self.probe(server, "attachment-video"))
+
+    def test_embed_video_keeps_the_documented_allowlist(self):
+        for mime in ("video/mp4", "video/webm", "video/ogg"):
+            with self.subTest(mime=mime), self.server(mime=mime) as server:
+                self.assertIn("ready=1", self.probe(server, "video"))
+        for mime in ("application/octet-stream", "video/avi", "text/html"):
+            with self.subTest(mime=mime), self.server(mime=mime) as server:
+                self.assertIn("failed=1", self.probe(server, "video"))
+
     def test_public_webhook_avatar_has_no_cookie_and_uses_global_budget(self):
         with self.server() as server:
             output = self.probe(server, "avatar")

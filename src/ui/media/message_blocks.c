@@ -21,6 +21,34 @@ static const char *str(const json_t *obj, const char *key)
     const char *s = json_string_value(json_object_get(obj, key));
     return s ? s : "";
 }
+/* The server reports the MIME type it detected from the file's magic bytes.
+ * That detection recognizes only a few containers, so a valid video can
+ * arrive as a generic binary type. The file name extension is the remaining
+ * hint available before the bytes are downloaded. */
+static bool video_extension(const char *name)
+{
+    static const char *const extensions[] = {".mp4", ".m4v", ".mov",  ".mkv",  ".webm", ".ogv",
+                                             ".avi", ".3gp", ".3g2",  ".mpg",  ".mpeg", ".mpe",
+                                             ".wmv", ".flv", ".f4v",  ".m2ts", ".mts",  ".vob",
+                                             ".asf", ".rm",  ".rmvb", ".divx", ".mxf"};
+    const char *dot = strrchr(name, '.');
+    if (!dot || !dot[1])
+        return false;
+    for (size_t i = 0; i < sizeof(extensions) / sizeof(*extensions); ++i)
+        if (!g_ascii_strcasecmp(dot, extensions[i]))
+            return true;
+    return false;
+}
+/* An image or an audio file keeps its reported type; any other attachment is
+ * a video when its name carries a known video container extension. */
+static bool attachment_is_video(const char *mime, const char *name)
+{
+    if (g_str_has_prefix(mime, "video/"))
+        return true;
+    if (g_str_has_prefix(mime, "image/") || g_str_has_prefix(mime, "audio/"))
+        return false;
+    return video_extension(name);
+}
 bool message_same_author(const json_t *previous, const json_t *message)
 {
     if (!json_is_object(previous) || !json_is_object(message) ||
@@ -815,7 +843,7 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
         if (app_mode_get() == APP_MODE_ULTRALIGHT) {
             const char *kind = !strcmp(mime, "image/gif")         ? "GIF"
                                : g_str_has_prefix(mime, "image/") ? "Imagem"
-                               : g_str_has_prefix(mime, "video/") ? "Vídeo"
+                               : attachment_is_video(mime, name)  ? "Vídeo"
                                                                   : "Anexo";
             json_t *size = json_object_get(item, "size_bytes");
             size_t length = strlen(name);
@@ -835,7 +863,7 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
                 goto error;
             continue;
         }
-        bool video = g_str_has_prefix(mime, "video/");
+        bool video = attachment_is_video(mime, name);
         bool image = g_str_has_prefix(mime, "image/");
         if (!graphics || (!image && !video)) {
             if (!labeled(b, key, "Anexo: ", name, width, true, false, 0))

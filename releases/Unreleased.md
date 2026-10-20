@@ -1,5 +1,11 @@
 # Unreleased
 
+- Video attachments keep their cover and their player when the server reports
+  a generic file type for them. The server detects an attachment's type from
+  the file contents and recognizes only some video containers, so files such
+  as `.mp4`, `.mov`, `.mkv`, `.webm` or `.avi` could appear as a plain
+  attachment with no preview and no way to open the player. They are now
+  recognized by the file name as well.
 - Ctrl+Backspace deletes the previous word in GNOME Terminal and other
   terminals that distinguish it from Backspace. Ctrl+W also deletes the
   previous word; Backspace still deletes one character.

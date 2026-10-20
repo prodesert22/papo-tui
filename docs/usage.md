@@ -548,6 +548,12 @@ to generate a static cover; they do not play or produce sound in the history.
 This consumes bandwidth even before you open the player. The player reuses the
 download while it remains cached.
 
+The server reports the type of an attachment from the file's own contents, and
+that check recognizes only some video containers. A video whose type is reported
+as a generic binary file is still recognized by its file name, so `.mp4`, `.mov`,
+`.mkv`, `.webm`, `.avi` and other common containers keep their cover and their
+player instead of appearing as a plain attachment.
+
 Videos finish downloading before playback starts. Press Esc or click outside
 the media window to close it or cancel loading.
 
