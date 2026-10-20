@@ -244,6 +244,13 @@ class TerminalSynchronization(unittest.TestCase):
             "test_dm_arrows_visibly_move_selection_without_changing_role_colors",
         )
 
+    def test_send_merge_waits_for_initial_history_and_later_draft(self):
+        sending = importlib.import_module("test_send_product")
+        self.exercise(
+            sending.SendProduct,
+            "test_confirmed_message_merges_without_get_and_keeps_later_edits",
+        )
+
     def test_footer_waits_for_resize(self):
         for method in unittest.defaultTestLoader.getTestCaseNames(
             test_footer_terminal.FooterTerminal

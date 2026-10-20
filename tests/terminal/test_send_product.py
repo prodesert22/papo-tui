@@ -3,7 +3,7 @@
 from test_context import main as test_main
 
 from history_mock import HistoryMock, CHANNEL
-from terminal_support import editor_region, editor_column
+from terminal_support import editor_region, editor_column, wait_for_screen
 
 
 import terminal_send as support
@@ -15,10 +15,23 @@ class SendProduct(support.SendProduct):
             server.scenario = "send-delayed"
             terminal = self.open(server)
             try:
+                # The editor can appear before the initial history GET starts.
+                # Observe its applied response before counting reads or sending.
+                self.wait(terminal, "Nenhuma mensagem neste canal.")
                 before = len([r for r in server.requests if r[0] == "GET" and "/messages" in r[1]])
+                self.assertEqual(before, 1)
                 terminal.send("Olá, ação!\x0esegunda linha\n")
                 terminal.send(" continuação")
                 self.wait(terminal, "Mensagem confirmada")
+                wait_for_screen(
+                    terminal,
+                    lambda: (
+                        "continuação" in self.editor_text(terminal)
+                        and "Olá" not in self.editor_text(terminal)
+                        and "Olá, ação!" in self.screen(terminal)
+                    ),
+                    "Confirmation and the later draft were not rendered together",
+                )
                 self.assertEqual(server.sent_messages[0]["content"], "Olá, ação!\nsegunda linha")
                 self.assertEqual(server.sent_messages[0]["channel_id"], CHANNEL)
                 self.assertEqual(server.message_count, 1)
@@ -34,6 +47,11 @@ class SendProduct(support.SendProduct):
                 self.wait(terminal, "segunda linha")
                 self.assertEqual(self.screen(terminal).count("Olá, ação!"), 1)
                 terminal.resize(14, 44)
+                wait_for_screen(
+                    terminal,
+                    lambda: "continuação" in self.editor_text(terminal),
+                    "Resized editor did not preserve the later draft",
+                )
                 self.assertIn("continuação", self.editor_text(terminal))
                 self.assertNotIn(b"Synthetic!123", terminal.output)
             finally:
