@@ -1,5 +1,11 @@
 # Unreleased
 
+- Videos start playing while they are still downloading, both for attachments
+  served by the instance and for videos opened through embed relays. The player
+  status line shows the transfer progress, for example **Baixando 42%**
+  (Downloading 42%), until the whole file arrives. Seeking covers only the part
+  already downloaded; MP4 files whose index is stored at the end of the file
+  still wait for the complete download before playback starts.
 - The player keeps the volume you choose. Closing the player no longer resets
   the volume to its default: the next video starts with the level you set, and
   the level is saved in the configuration file so it survives closing the

@@ -177,6 +177,7 @@ add_library(
     src/ui/media/resources.c
     src/ui/media/media.c
     src/ui/media/media_cache.c
+    src/ui/media/media_stream.c
     src/ui/media/media_process.c
     src/ui/media/media_service.c
     src/ui/media/media_wire.c

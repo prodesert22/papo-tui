@@ -92,6 +92,7 @@ struct media_view {
     message_media *gallery; /* Owned metadata; resources stay in the shared cache. */
     size_t gallery_count, gallery_index, image_count;
     uint64_t modal_token;
+    char *modal_source; /* First source this player session used, kept across resizes. */
     graphics_image modal_image;
     const char *modal_error;
 };
@@ -387,6 +388,8 @@ static void close_modal(media_view *v)
     v->modal = MODAL_NONE;
     v->modal_entry = -1;
     v->modal_token = 0;
+    free(v->modal_source);
+    v->modal_source = NULL;
     v->modal_error = NULL;
     v->info_open = v->info_focused = false;
     v->info_scroll = v->info_rows = 0;
@@ -801,7 +804,17 @@ bool media_view_poll(media_view *v, history *h)
     if (v->result_ready) {
         if (v->modal_token && v->result_token == v->modal_token) {
             if (v->result_error) {
-                v->modal_error = v->result_error;
+                media_resource *resource = v->modal_entry >= 0 && v->modal_entry < CACHE_COUNT
+                                               ? v->cache[v->modal_entry].resource
+                                               : NULL;
+                /* Only a failed transfer or ingest replaces the player's own
+                 * message; a ready-but-undecodable video keeps that message. */
+                const char *failure =
+                    media_resource_failed(resource)
+                        ? media_resource_error(
+                              resource, !strcmp(v->cache[v->modal_entry].item.role, "author"))
+                        : NULL;
+                v->modal_error = failure ? failure : v->result_error;
                 v->modal = MODAL_ERROR;
             } else {
                 clear_modal_image(v);
@@ -831,7 +844,13 @@ bool media_view_poll(media_view *v, history *h)
             return true;
         }
         if (e->item.video) {
-            const char *path = media_resource_path(e->resource);
+            const char *current = media_resource_source(e->resource);
+            /* Keep the source the session started with: a download opened
+             * through the bridge must not reload the player (losing pause and
+             * position) when the file becomes available locally. */
+            if (current && !v->modal_source)
+                v->modal_source = strdup(current);
+            const char *path = v->modal_source ? v->modal_source : current;
             if (path && !v->modal_token && v->modal_width > 0 && v->modal_height > 0) {
                 /* Cover RGB/RGBA working buffers and three encoded frames (the
                  * displayed frame, pending result and next publication). Keep the
@@ -1094,6 +1113,8 @@ bool media_view_key(media_view *v, int type, uint32_t key)
         v->cache[v->modal_entry].item = v->selected_item;
         v->modal = MODAL_LOADING;
         v->modal_token = 0;
+        free(v->modal_source);
+        v->modal_source = NULL;
         return true;
     }
     g_mutex_lock(&v->lock);
@@ -1297,6 +1318,21 @@ static void draw_control_track(WINDOW *w, int row, int x, int width, double frac
     }
 }
 
+static bool modal_download(media_view *v, size_t *available, size_t *total)
+{
+    *available = 0;
+    *total = 0;
+    if (!v || v->modal_entry < 0 || v->modal_entry >= CACHE_COUNT)
+        return false;
+    return media_resource_progress(v->cache[v->modal_entry].resource, available, total);
+}
+static unsigned download_percent(size_t available, size_t total)
+{
+    if (!total)
+        return 0;
+    size_t percent = available * 100 / total;
+    return (unsigned)MIN(percent, 100U);
+}
 static void draw_video_controls(media_view *v, WINDOW *w)
 {
     video_info info;
@@ -1332,11 +1368,21 @@ static void draw_video_controls(media_view *v, WINDOW *w)
             text_label(w, controls.row, controls.percent_x, 4, percent);
         }
     }
-    char status[256];
+    char status[256], progress[48] = "";
+    size_t available = 0, total = 0;
+    if (modal_download(v, &available, &total)) {
+        if (total)
+            snprintf(progress, sizeof(progress), " · Baixando %u%%",
+                     download_percent(available, total));
+        else
+            snprintf(progress, sizeof(progress), " · Baixando %.1f MB",
+                     (double)available / (1024.0 * 1024.0));
+    }
     snprintf(status, sizeof(status),
-             "%s · %.0f / %.0f s%s%s · Espaço pausa · ←→ 5s · ,/. 1s · ↑↓ volume · m",
+             "%s · %.0f / %.0f s%s%s%s · Espaço pausa · ←→ 5s · ,/. 1s · ↑↓ volume · m",
              info.paused ? "Pausado" : "Reproduzindo", info.position, info.duration,
-             info.muted ? " · Mudo" : "", info.audio_missing ? " · Sem dispositivo de áudio" : "");
+             info.muted ? " · Mudo" : "", info.audio_missing ? " · Sem dispositivo de áudio" : "",
+             progress);
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     text_label(w, v->layout.height - 2, 3, v->layout.area_width, status);
 }
@@ -1400,7 +1446,14 @@ void media_view_draw(media_view *v)
                                     : BUTTON_NORMAL,
                     BUTTON_PANEL);
         if (v->modal == MODAL_LOADING) {
-            text_label(w, 3, 3, image_width, "Carregando mídia…");
+            char loading[96];
+            size_t available = 0, total = 0;
+            if (modal_download(v, &available, &total) && total)
+                snprintf(loading, sizeof(loading), "Carregando mídia… %u%%",
+                         download_percent(available, total));
+            else
+                snprintf(loading, sizeof(loading), "Carregando mídia…");
+            text_label(w, 3, 3, image_width, loading);
         } else if (v->modal == MODAL_ERROR) {
             text_label(w, 3, 3, image_width,
                        v->modal_error ? v->modal_error : "Mídia indisponível.");

@@ -6,6 +6,7 @@ foreach(
     spec IN
     ITEMS
         "media-wire-test|tests/unit/test_media_wire.c|papo_media|media-wire-boundaries"
+        "media-stream-test|tests/unit/test_media_stream.c|papo_media|media-stream-boundaries"
         "media-service-test|tests/integration/test_media_service.c|papo_media|media-service-integration"
         "permissions-test|tests/unit/test_permissions.c|papo_auth|permissions-unit"
         "rate-limit-test|tests/unit/test_rate_limit.c|papo_auth|request-rate-limit"

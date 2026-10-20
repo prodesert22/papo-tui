@@ -545,8 +545,8 @@ choosers, message context menus, notifications and reaction dialogs.
 Click a media preview to open it, or use F7, select the message and media, then
 press Enter. In Normal mode, visible video attachments download automatically in the background
 to generate a static cover; they do not play or produce sound in the history.
-This consumes bandwidth even before you open the player. The player reuses the
-download while it remains cached.
+This consumes bandwidth even before you open the player. Opening the player
+reuses that same download, whether it is still running or already cached.
 
 The server reports the type of an attachment from the file's own contents, and
 that check recognizes only some video containers. A video whose type is reported
@@ -554,8 +554,18 @@ as a generic binary file is still recognized by its file name, so `.mp4`, `.mov`
 `.mkv`, `.webm`, `.avi` and other common containers keep their cover and their
 player instead of appearing as a plain attachment.
 
-Videos finish downloading before playback starts. Press Esc or click outside
-the media window to close it or cancel loading.
+Videos start playing as soon as the first part arrives, while the rest of the
+download continues. While that happens, the player status line adds the transfer
+progress, for example **Baixando 42%** (Downloading 42%), and removes it when the
+whole file is available.
+
+Some files can still start only after the download finishes: MP4 files whose
+index is stored at the end of the file — usually videos that were not prepared
+for streaming — cannot be parsed before their last bytes arrive. Seeking only
+covers the part already downloaded, so seeking forward may wait until the
+transfer reaches the requested position.
+
+Press Esc or click outside the media window to close it or cancel loading.
 
 The client accepts downloads up to 32 MiB per attached image, 16 MiB per avatar
 and 256 MiB per video. Larger files show **Mídia excede o limite de tamanho.**
@@ -596,7 +606,9 @@ switching back to an image already seen does not download it again.
 
 When a message carries an embed with a video, pressing Enter on the embed cover
 opens the video player directly. The **Abrir player** entry keeps working as
-before and reuses the download already made for the cover.
+before and reuses the download already made for the cover. Videos served by the
+embed relay also play while they download, under the same limits described
+above.
 
 ## Troubleshooting
 

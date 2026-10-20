@@ -18,6 +18,7 @@ from wcwidth import wcswidth
 
 FFMPEG = sys.argv.pop(2)
 from history_mock import HistoryMock, STAMP, uuid  # noqa: E402 - path and test arguments are prepared above
+from mock_server import ChunkedBody  # noqa: E402 - path and test arguments are prepared above
 from test_terminal import Terminal, TerminalStream, wait_for_screen  # noqa: E402 - path and test arguments are prepared above
 import test_history_terminal as history_tests  # noqa: E402 - path and test arguments are prepared above
 
@@ -286,6 +287,8 @@ class MediaTerminal(unittest.TestCase):
                 "mpeg4",
                 "-c:a",
                 "aac",
+                "-movflags",
+                "+faststart",
                 "-threads",
                 "1",
                 "-y",
@@ -353,7 +356,7 @@ class MediaTerminal(unittest.TestCase):
                     diagnostic, terminal.output, "Sanitizer diagnostic in client output"
                 )
 
-    def serve(self, content, mime, *, embed=False, slow=False, name="Fixture"):
+    def serve(self, content, mime, *, embed=False, slow=False, name="Fixture", chunked=None):
         s = HistoryMock(count=1)
         parent = s.route
         s.messages[0]["attachments"] = (
@@ -380,7 +383,7 @@ class MediaTerminal(unittest.TestCase):
                         "image_data": base64.b64encode(content).decode(),
                         "author_image_data": None,
                     }
-                return 200, content, None, None, mime
+                return 200, chunked if chunked is not None else content, None, None, mime
             return parent(method, path, body)
 
         s.api_handler = route
@@ -1189,6 +1192,84 @@ class MediaTerminal(unittest.TestCase):
                 self.wait(t, "Mídia 1/1")
                 t.send("\n")
                 self.wait(t, "Reproduzindo")
+                t.send("\x1b")
+                self.wait(t, "↑↓ mensagens")
+            finally:
+                self.assertTrue(t.close())
+
+    def test_video_plays_while_the_attachment_still_downloads(self):
+        # The loopback bridge must expose the growing attachment before the
+        # transfer ends, with the authenticated request staying in the client.
+        release = threading.Event()
+        body = ChunkedBody(self.video, pieces=12, delay=0.3, hold=release)
+        with self.serve(self.video, "video/mp4", chunked=body) as server:
+            t = self.open(server, protocol="kitty", size=(64, 160))
+            try:
+                self.wait(t, "▶ Fixture")
+                self.wait(t, "Carregando prévia do vídeo…")
+                t.send("\x1b[18~")
+                self.wait(t, "Mídia 1/1")
+                t.send("\n")
+                self.wait(t, "Carregando mídia")
+                self.assertIsNone(body.started, "Fixture responded before the client opened it")
+                release.set()
+                self.wait(t, "Reproduzindo")
+                self.assertIsNone(
+                    body.finished,
+                    "Player showed its first frame only after the whole download",
+                )
+                self.assertGreater(body.sent, 0)
+                self.wait(t, "Baixando")
+                wait_for_screen(
+                    t,
+                    lambda: body.finished is not None,
+                    "Attachment download did not finish while the player was open",
+                )
+                wait_for_screen(
+                    t,
+                    lambda: "Baixando" not in "\n".join(t.screen.display),
+                    "Download progress remained after the transfer completed",
+                )
+                self.assertGreater(len(t.stream.frames), 1)
+                self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), 1)
+                t.send("\x1b")
+                self.wait(t, "↑↓ mensagens")
+            finally:
+                self.assertTrue(t.close())
+
+    def test_embed_video_plays_while_the_relay_still_downloads(self):
+        # Embed videos use the /embeds/{id}/video relay while the client keeps
+        # the cookie and rate budget; the local bridge only republishes bytes.
+        release = threading.Event()
+        body = ChunkedBody(self.video, pieces=12, delay=0.3, hold=release)
+        with self.serve(self.video, "video/mp4", chunked=body) as server:
+            server.messages[0]["attachments"] = []
+            server.messages[0]["embeds"] = [
+                {
+                    "id": uuid(902),
+                    "source_type": "link",
+                    "url": "https://example.invalid/video",
+                    "video": {"mime_type": "video/mp4"},
+                }
+            ]
+            t = self.open(server, protocol="kitty", size=(64, 160))
+            try:
+                self.wait(t, "▶ Abrir player")
+                t.send("\x1b[18~")
+                self.wait(t, "Mídia 1/1")
+                t.send("\n")
+                self.wait(t, "Carregando mídia")
+                self.assertIsNone(body.started)
+                release.set()
+                self.wait(t, "Reproduzindo")
+                self.assertIsNone(body.finished, "Embed video waited for the whole relay")
+                wait_for_screen(
+                    t,
+                    lambda: body.finished is not None,
+                    "Embed video relay did not finish while the player was open",
+                )
+                self.assertGreater(len(t.stream.frames), 1)
+                self.assertEqual(sum("/embeds/" in r[1] for r in server.requests), 1)
                 t.send("\x1b")
                 self.wait(t, "↑↓ mensagens")
             finally:

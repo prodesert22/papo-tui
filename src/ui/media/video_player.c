@@ -34,6 +34,31 @@ static void close_player(void *context)
         mpv_terminate_destroy(p->handle);
     free(p);
 }
+/* Only the loopback media bridge may use HTTP; every other input keeps the
+ * file-only policy. The bridge binds 127.0.0.1 and serves one random token. */
+static bool loopback_url(const char *path)
+{
+    static const char prefix[] = "http://127.0.0.1:";
+    if (!path || strncmp(path, prefix, sizeof(prefix) - 1))
+        return false;
+    const char *p = path + sizeof(prefix) - 1;
+    unsigned port = 0, digits = 0;
+    while (g_ascii_isdigit(*p)) {
+        port = port * 10U + (unsigned)(*p - '0');
+        ++p;
+        if (++digits > 5)
+            return false;
+    }
+    if (!digits || port < 1 || port > 65535 || *p != '/')
+        return false;
+    ++p;
+    if (strlen(p) != 32)
+        return false;
+    for (unsigned i = 0; i < 32; ++i)
+        if (!g_ascii_isxdigit(p[i]))
+            return false;
+    return true;
+}
 static void *open_player(const char *path)
 {
     video_player *p = calloc(1, sizeof(*p));
@@ -55,7 +80,9 @@ static void *open_player(const char *path)
                                 {"audio-fallback-to-null", "yes"},
                                 {"vd-lavc-o", "max_pixels=16777216"},
                                 {"demuxer", "lavf"},
-                                {"demuxer-lavf-o", "protocol_whitelist=file"},
+                                {"demuxer-lavf-o", loopback_url(path)
+                                                       ? "protocol_whitelist=\"file,http\""
+                                                       : "protocol_whitelist=file"},
                                 {"volume", "50"}};
     for (size_t i = 0; i < sizeof(options) / sizeof(options[0]); ++i) {
         int result = mpv_set_option_string(p->handle, options[i][0], options[i][1]);

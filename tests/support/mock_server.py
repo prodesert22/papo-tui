@@ -12,6 +12,19 @@ import websocket
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
+class ChunkedBody:
+    """Synthetic progressive response body for media streaming fixtures."""
+
+    def __init__(self, data, pieces=12, delay=0.3, hold=None):
+        size = max(1, (len(data) + pieces - 1) // pieces)
+        self.pieces = [data[offset : offset + size] for offset in range(0, len(data), size)]
+        self.delay = delay
+        self.hold = hold
+        self.started = None
+        self.finished = None
+        self.sent = 0
+
+
 class MockServer:
     def __init__(self, scenario="public", tls_context=None, secure_cookie=False, username="josé"):
         self.scenario = scenario
@@ -52,6 +65,29 @@ class MockServer:
                 pass
 
             def respond(self, status, body=None, cookie=None, retry_after=None, content_type=None):
+                if isinstance(body, ChunkedBody):
+                    if body.hold is not None:
+                        body.hold.wait(15)
+                    self.send_response(status)
+                    self.send_header("Content-Type", content_type or "application/octet-stream")
+                    self.send_header("Transfer-Encoding", "chunked")
+                    self.end_headers()
+                    body.started = time.monotonic()
+                    body.sent = 0
+                    try:
+                        for index, piece in enumerate(body.pieces):
+                            if index:
+                                time.sleep(body.delay)
+                            self.wfile.write(b"%x\r\n" % len(piece) + piece + b"\r\n")
+                            self.wfile.flush()
+                            body.sent += len(piece)
+                        self.wfile.write(b"0\r\n\r\n")
+                        self.wfile.flush()
+                    except (BrokenPipeError, ConnectionResetError):
+                        pass
+                    finally:
+                        body.finished = time.monotonic()
+                    return
                 if status >= 400:
                     body = {
                         "type": "https://papo.invalid/errors/test",

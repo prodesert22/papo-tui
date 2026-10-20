@@ -21,7 +21,7 @@ struct media_download {
     char id[65], mime[80];
     auth_media_kind kind;
     media_state state;
-    size_t bytes, limit;
+    size_t bytes, limit, total;
     uint64_t generation;
     unsigned retry_after;
     long status;
@@ -69,6 +69,7 @@ void media_download_cancel(media_download *m)
     }
     m->state = MEDIA_IDLE;
     m->bytes = 0;
+    m->total = 0;
 }
 media_download *media_download_create(auth_client *auth)
 {
@@ -155,6 +156,9 @@ static bool begin_request(media_download *m, CURL *easy, auth_media_kind kind, b
         media_download_cancel(m);
         return false;
     }
+    /* A progressive reader serves the file while the transfer is still
+     * running, so every written chunk must reach the file immediately. */
+    setvbuf(m->file, NULL, _IONBF, 0);
     if (curl_easy_setopt(m->easy, CURLOPT_WRITEFUNCTION, receive) != CURLE_OK ||
         curl_easy_setopt(m->easy, CURLOPT_WRITEDATA, m) != CURLE_OK ||
         curl_easy_setopt(m->easy, CURLOPT_HEADERFUNCTION, header) != CURLE_OK ||
@@ -265,6 +269,12 @@ bool media_download_poll(media_download *m)
         finish(m, CURLE_RECV_ERROR);
         return true;
     }
+    if (!m->total) {
+        curl_off_t length = -1;
+        if (curl_easy_getinfo(m->easy, CURLINFO_CONTENT_LENGTH_DOWNLOAD_T, &length) == CURLE_OK &&
+            length > 0)
+            m->total = (size_t)length;
+    }
     CURLMsg *message;
     while ((message = curl_multi_info_read(m->multi, &remaining)))
         if (message->msg == CURLMSG_DONE) {
@@ -280,6 +290,17 @@ media_state media_download_state(const media_download *m)
 size_t media_download_bytes(const media_download *m)
 {
     return m ? m->bytes : 0;
+}
+/* Borrowed private temporary path while the transfer owns it. */
+const char *media_download_path(const media_download *m)
+{
+    return m && m->path && (m->state == MEDIA_WAITING || m->state == MEDIA_DOWNLOADING) ? m->path
+                                                                                        : NULL;
+}
+/* Expected body length announced by the response, or zero when unknown. */
+size_t media_download_total(const media_download *m)
+{
+    return m ? m->total : 0;
 }
 const char *media_download_error(const media_download *m)
 {
