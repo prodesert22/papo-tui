@@ -564,32 +564,50 @@ class Members(unittest.TestCase):
                 terminal = self.open(server)
                 self.drawer(terminal)
                 terminal.send("\x1b[21~")
+                self.settled(terminal, lambda: "Membros (" not in self.screen(terminal))
                 self.click(terminal, "[DMs]")
                 self.wait(terminal, "Carol ·")
                 terminal.send("\x1bOH")
-                terminal.read(0.1)
 
                 def style(name):
                     row = next(
-                        i
-                        for i, line in enumerate(terminal.screen.display)
-                        if name + " ·" in line[:24]
+                        (
+                            i
+                            for i, line in enumerate(terminal.screen.display)
+                            if name + " ·" in line[:24]
+                        ),
+                        None,
                     )
+                    if row is None:
+                        return None
                     cell = terminal.screen.buffer[row][2]
                     return cell.fg, cell.bg, cell.bold, cell.reverse
 
+                def home_selected():
+                    first, second = style("Carol"), style("Bia")
+                    return bool(
+                        first
+                        and second
+                        and first[0] == second[0] == "ff0000"
+                        and first[2]
+                        and not second[2]
+                    )
+
+                self.settled(terminal, home_selected)
                 carol, bia = style("Carol"), style("Bia")
                 self.assertEqual(carol[0], bia[0])  # Both have the same role.
                 self.assertEqual(carol[0], "ff0000")
                 self.assertNotEqual(carol[1:], bia[1:], "Selected DM needs a visible highlight")
                 before = sum("/messages" in path for _, path, *_ in server.requests)
                 terminal.send(down)
-                self.settled(terminal, lambda: style("Bia")[1:] == carol[1:])
+                # ConPTY can deliver the first changed row before the second.
+                # Observe the highlight and its removal together in one frame.
+                self.settled(terminal, lambda: style("Bia") == carol and style("Carol") == bia)
                 self.assertEqual(style("Carol")[1:], bia[1:])
                 self.assertEqual(style("Carol")[0], carol[0])
                 self.assertEqual(style("Bia")[0], bia[0])
                 terminal.send(up)
-                self.settled(terminal, lambda: style("Carol")[1:] == carol[1:])
+                self.settled(terminal, lambda: style("Carol") == carol and style("Bia") == bia)
                 self.assertEqual(style("Bia")[1:], bia[1:])
                 self.assertEqual(
                     sum("/messages" in path for _, path, *_ in server.requests), before

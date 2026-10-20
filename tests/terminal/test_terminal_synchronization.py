@@ -237,6 +237,13 @@ class TerminalSynchronization(unittest.TestCase):
             "test_keyboard_member_menu_opens_beside_selected_member",
         )
 
+    def test_dm_selection_waits_for_both_row_styles(self):
+        members = importlib.import_module("test_members")
+        self.exercise(
+            members.Members,
+            "test_dm_arrows_visibly_move_selection_without_changing_role_colors",
+        )
+
     def test_footer_waits_for_resize(self):
         for method in unittest.defaultTestLoader.getTestCaseNames(
             test_footer_terminal.FooterTerminal
