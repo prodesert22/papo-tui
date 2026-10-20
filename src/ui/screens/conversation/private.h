@@ -97,6 +97,8 @@ typedef struct {
         reactor_users_focus;
     char selected_message[37], action_channel[37], reaction_target[37];
     char dm_context_id[37];
+    char channel_context_id[37];
+    int channel_menu; /* 0 context actions, 1 mute duration, 2 notifications. */
     char centered_message[37];
     char notification_channel[37], notification_message[37];
     char notification_time[65];

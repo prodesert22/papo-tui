@@ -138,5 +138,8 @@
         "Members.test_reset_link_copy_uses_the_exact_url_without_accessing_personal_clipboard": "This case observes the Linux terminal clipboard fallback"
       }
     }
+  },
+  "tests/terminal/test_channel_preferences.py": {
+    "windows": "POSIX PTY/graphics channel-menu fixtures; portable mute persistence is checked natively by channel-mutes-unit"
   }
 }

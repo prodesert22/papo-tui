@@ -72,6 +72,38 @@ the message may already have reached the server.
 To open messages in a voice channel, select it in the channel list and press
 **Shift+Enter** or **F4**. Voice calls are not available yet.
 
+## Channel notifications and muting
+
+Focus the channel list and press **m** or **M**, or **right-click a channel**, to
+open its context menu. This also works on a channel you are not reading; opening
+the menu does not load that channel's messages. Categories have no context menu.
+Use ↑/↓ and Enter, or click an option. In a submenu, ← or Esc returns to the
+channel menu; m/M closes it. Closing a menu preserves your draft.
+
+- **Silenciar canal…** (Mute channel) offers **10 minutos**, **30 minutos**,
+  **1 hora**, **4 horas**, **12 horas**, **24 horas**, and **Até eu reativar**
+  (until you reactivate it). A muted channel shows **(silenciado)** in the list;
+  its menu offers **Reativar canal** (Reactivate channel).
+- **Notificações…** (Notifications) offers **Todas as mensagens** (All messages),
+  **Apenas menções** (Mentions only), and **Nada** (None). The checked option is
+  the confirmed server preference. Mentions include direct mentions, replies to
+  your messages and `@everyone`, following the server's rules. The default is
+  mentions only when the server has no saved preference.
+
+Muting pauses this client's system notifications and channel/server activity
+indicators for that channel. It does not mark messages or notifications read,
+change the server's notification preference, or affect another client. Mutes are
+saved separately for each account and instance and survive restarting the
+application. Timed mutes expire automatically, including while you are offline;
+indefinite mutes last until you choose Reactivate channel.
+
+Notification preferences are saved on the server. A failed or uncertain save
+shows an error and is never repeated automatically. Refresh the channels with
+Ctrl+R before making another choice when the result is uncertain. If the local
+mute file is damaged, inaccessible, or the client detects a conflicting change
+from another process, it preserves the file and reports that the mute could not
+be saved; fix the file or restart the application after resolving the conflict.
+
 ## Server members and profiles
 
 The conversation header has **🔍** (Search), **📌** (Pinned messages) and **👤**
@@ -190,6 +222,7 @@ reappear. Pending sends must finish before you close that DM.
 | `e` during message navigation | Open the reaction picker |
 | Shift+E during message navigation | Show who reacted |
 | Right-click a message | Open its context menu directly |
+| m / M in the channel list, or right-click a channel | Open channel mute and notification settings |
 | ↑ in the focused, empty editor | Edit your newest message in loaded history |
 | Enter while editing a message | Save the edit |
 | Esc while editing a message | Cancel editing and restore the send draft |
@@ -254,6 +287,9 @@ unread activity without a confirmed mention.
 Counts cover loaded previews, which can be truncated, rather than a server-wide
 total. Opening a notification clears its mention badge after confirmation.
 The server dot also covers notifications with missing mention metadata.
+Old notification records covered by a successful conversation read no longer
+keep the activity dot lit; they remain in the notification center until marked
+read there. Delayed copies of already-read messages do not restore the dot.
 The unread-message dot remains until the conversation is read. Webhook names
 come from their message and remain available when later events omit attribution.
 If an author is missing from a notification in the active conversation, its

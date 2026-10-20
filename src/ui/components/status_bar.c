@@ -144,6 +144,10 @@ void status_bar_draw(status_bar *bar, WINDOW *window, int row, const char *full,
     }
     if (overflow_width && overflow_width + 3 >= budget)
         overflow_width = 0;
+    if (overflow_width && bar->connection_critical && first + 1 == count &&
+        ordered[first] == STATUS_CONNECTION &&
+        overflow_width + 3 + cells(bar->notices[STATUS_CONNECTION].compact) > budget)
+        overflow_width = 0; /* Preserve the critical label before an older-notice count. */
     int widths[STATUS_CONTEXT_COUNT] = {0};
     const char *labels[STATUS_CONTEXT_COUNT] = {0};
     int used = overflow_width + (overflow_width ? 3 : 0);

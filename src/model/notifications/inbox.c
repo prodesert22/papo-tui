@@ -2,15 +2,20 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 #include "model/notifications/inbox.h"
+#include "config/channel_mutes.h"
 #include "model/conversation/history.h"
 #include "net/auth/session_time.h"
 #include "net/clock.h"
+#include <glib.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 enum operation { NONE, DMS, RECENT, OLDER, NEWER, OPEN, CLOSE, READ, RESOLVE };
 struct inbox {
+    channel_mutes *mutes;
+    char mute_url[2049], mute_user[37];
+    json_t *conversation_reads;
     auth_client *auth;
     json_t *dms, *notifications, *events, *presence, *seen, *viewed, *messages, *alerts, *reads,
         *batch, *journal, *fresh, *unseen, *previews;
@@ -160,8 +165,10 @@ inbox *inbox_create(auth_client *auth)
     b->journal = json_array();
     b->unseen = json_object();
     b->previews = json_object();
+    b->conversation_reads = json_object();
     if (!b->dms || !b->notifications || !b->events || !b->presence || !b->seen || !b->viewed ||
-        !b->messages || !b->alerts || !b->reads || !b->journal || !b->unseen || !b->previews) {
+        !b->messages || !b->alerts || !b->reads || !b->journal || !b->unseen || !b->previews ||
+        !b->conversation_reads) {
         inbox_destroy(b);
         return NULL;
     }
@@ -186,6 +193,8 @@ void inbox_destroy(inbox *b)
     json_decref(b->fresh);
     json_decref(b->unseen);
     json_decref(b->previews);
+    json_decref(b->conversation_reads);
+    channel_mutes_destroy(b->mutes);
     free(b);
 }
 void inbox_reset(inbox *b)
@@ -202,6 +211,10 @@ void inbox_reset(inbox *b)
     json_object_clear(b->messages);
     json_object_clear(b->unseen);
     json_object_clear(b->previews);
+    json_object_clear(b->conversation_reads);
+    channel_mutes_destroy(b->mutes);
+    b->mutes = NULL;
+    b->mute_url[0] = b->mute_user[0] = 0;
     b->presence_partial = b->open_cancelled = false;
     json_decref(b->batch);
     b->batch = NULL;
@@ -846,6 +859,92 @@ size_t inbox_unread(const inbox *b)
     json_array_foreach(b->events, i, v) if (!json_is_true(json_object_get(v, "_viewed")))++ n;
     return n;
 }
+static uint64_t wall_seconds(void)
+{
+    return (uint64_t)(g_get_real_time() / G_USEC_PER_SEC);
+}
+bool inbox_preferences_poll(inbox *b)
+{
+    if (!auth_has_session(b->auth))
+        return false;
+    const char *url = auth_instance_url(b->auth), *user = auth_user_id(b->auth);
+    bool changed = false;
+    if (strcmp(url, b->mute_url) || strcmp(user, b->mute_user)) {
+        channel_mutes_destroy(b->mutes);
+        b->mutes = channel_mutes_create(url, user);
+        snprintf(b->mute_url, sizeof(b->mute_url), "%s", url);
+        snprintf(b->mute_user, sizeof(b->mute_user), "%s", user);
+        changed = true;
+    }
+    changed |= channel_mutes_expire(b->mutes, wall_seconds());
+    if (changed)
+        ++b->revision;
+    return changed;
+}
+bool inbox_conversation_muted(const inbox *b, const char *channel)
+{
+    return b && channel_mutes_active(b->mutes, channel, wall_seconds());
+}
+bool inbox_mute_conversation(inbox *b, const char *channel, int seconds)
+{
+    inbox_preferences_poll(b);
+    if (!auth_has_session(b->auth) ||
+        !channel_mutes_set(b->mutes, channel, seconds, wall_seconds()))
+        return false;
+    ++b->revision;
+    return true;
+}
+static bool read_covers(const inbox *b, const char *channel, const char *id, const char *time)
+{
+    json_t *cursor = json_object_get(b->conversation_reads, channel);
+    if (!cursor)
+        return false;
+    if (!strcmp(s(cursor, "id"), id))
+        return true;
+    uint64_t ignored;
+    if (!session_time_parse(time, &ignored))
+        return false;
+    int order = compare_time(s(cursor, "created_at"), time);
+    return order > 0 || (!order && strcmp(s(cursor, "id"), id) >= 0);
+}
+void inbox_read_through(inbox *b, const char *channel, const json_t *cursor)
+{
+    uint64_t ignored;
+    if (!history_uuid(channel) || !uuid_field(cursor, "id") ||
+        !session_time_parse(s(cursor, "created_at"), &ignored) ||
+        read_covers(b, channel, s(cursor, "id"), s(cursor, "created_at")))
+        return;
+    json_t *copy = json_deep_copy(cursor);
+    if (!copy || !bounded_key(b->conversation_reads, channel, copy)) {
+        json_decref(copy);
+        return;
+    }
+    json_decref(copy);
+    json_t *mark = json_object_get(b->unseen, channel);
+    if (mark && read_covers(b, channel, s(mark, "id"), s(mark, "created_at")))
+        json_object_del(b->unseen, channel);
+    ++b->revision;
+}
+static bool badge_eligible(const inbox *b, const json_t *n, bool event)
+{
+    if (json_is_true(json_object_get(n, event ? "_viewed" : "read")))
+        return false;
+    const char *id = s(n, "message_id");
+    const char *channel = event ? inbox_message_channel(b, id) : s(n, "channel_id");
+    json_t *preview = json_object_get(b->previews, id);
+    const char *time = *s(preview, "created_at") ? s(preview, "created_at") : s(n, "created_at");
+    return !inbox_conversation_muted(b, channel) && !read_covers(b, channel, id, time);
+}
+bool inbox_has_activity(const inbox *b)
+{
+    for (int event = 0; event < 2; ++event) {
+        size_t i;
+        json_t *n;
+        json_array_foreach(event ? b->events : b->notifications, i,
+                           n) if (badge_eligible(b, n, event)) return true;
+    }
+    return false;
+}
 json_t *inbox_message_preview(const inbox *b, const char *id)
 {
     return json_object_get(b->previews, id);
@@ -860,7 +959,7 @@ size_t inbox_unread_mentions(const inbox *b, const char *channel)
         json_t *n;
         json_array_foreach(items, i, n)
         {
-            if (json_is_true(json_object_get(n, event ? "_viewed" : "read")))
+            if (!badge_eligible(b, n, event))
                 continue;
             const char *destination =
                 event ? inbox_message_channel(b, s(n, "message_id")) : s(n, "channel_id");
@@ -933,7 +1032,9 @@ void inbox_read_conversation(inbox *b, const char *id)
 }
 bool inbox_conversation_unseen(const inbox *b, const char *id)
 {
-    return json_object_get(b->unseen, id) != NULL;
+    json_t *mark = json_object_get(b->unseen, id);
+    return mark && !inbox_conversation_muted(b, id) &&
+           !read_covers(b, id, s(mark, "id"), s(mark, "created_at"));
 }
 bool inbox_message_viewed(const inbox *b, const char *id)
 {
@@ -941,7 +1042,13 @@ bool inbox_message_viewed(const inbox *b, const char *id)
 }
 size_t inbox_unseen_conversations(const inbox *b)
 {
-    return json_object_size(b->unseen);
+    size_t count = 0;
+    const char *channel;
+    json_t *mark;
+    json_object_foreach(b->unseen, channel, mark) if (!inbox_conversation_muted(b, channel) &&
+                                                      !read_covers(b, channel, s(mark, "id"),
+                                                                   s(mark, "created_at")))++ count;
+    return count;
 }
 const char *inbox_notice(const inbox *b)
 {
@@ -959,12 +1066,14 @@ const char *inbox_message_channel(const inbox *b, const char *id)
 }
 json_t *inbox_take_alert(inbox *b)
 {
-    json_t *e = json_array_get(b->alerts, 0);
-    if (!e)
-        return NULL;
-    json_incref(e);
-    json_array_remove(b->alerts, 0);
-    return e;
+    while (json_array_size(b->alerts)) {
+        json_t *e = json_incref(json_array_get(b->alerts, 0));
+        json_array_remove(b->alerts, 0);
+        if (badge_eligible(b, e, true))
+            return e;
+        json_decref(e);
+    }
+    return NULL;
 }
 uint64_t inbox_revision(const inbox *b)
 {

@@ -43,15 +43,6 @@ static int notification_badge(view *ui, WINDOW *window, int row, int column, siz
         wattrset(window, previous);
     return width;
 }
-static bool instance_unread(history *h)
-{
-    if (inbox_unseen_conversations(history_inbox(h)))
-        return true;
-    for (size_t i = 0; i < history_channel_count(h); ++i)
-        if (history_channel_unread(h, history_channel(h, i)))
-            return true;
-    return false;
-}
 static int server_badge(view *ui, WINDOW *window, int row, int column, size_t count, int pair)
 {
     graphics_protocol protocol = graphics_terminal_get().protocol;
@@ -86,7 +77,7 @@ int conversation_tab_width(view *ui, size_t index, int available)
     int width = text_label(NULL, 0, 0, 128, ui->connections->items[index].name) + 4;
     inbox *box = history_inbox(ui->connections->items[index].model);
     size_t mentions = inbox_unread_mentions(box, NULL);
-    if (inbox_unread(box) || instance_unread(ui->connections->items[index].model))
+    if (history_instance_unread(ui->connections->items[index].model))
         width += 1 + server_badge(ui, NULL, 0, 0, mentions, 0);
     return width > available ? available : width;
 }
@@ -134,7 +125,7 @@ void conversation_draw_tabs(view *ui, auth_client *auth)
         char label[192];
         inbox *box = history_inbox(ui->connections->items[i].model);
         size_t mentions = inbox_unread_mentions(box, NULL);
-        bool notified = inbox_unread(box) || instance_unread(ui->connections->items[i].model);
+        bool notified = history_instance_unread(ui->connections->items[i].model);
         int badge_width = notified ? server_badge(ui, NULL, 0, 0, mentions, 0) : 0;
         snprintf(label, sizeof(label), "%c%s",
                  selected ? '['
@@ -317,7 +308,9 @@ void conversation_draw_footer(view *ui)
         shorter = "↑↓ rolar · ←→ colunas · Enter · Esc";
         minimal = "↑↓ · ←→ · Enter · Esc";
     } else if (ui->context_open) {
-        full = shorter = "↑↓ escolher · Enter confirmar · m/Esc fechar";
+        full = shorter = *ui->channel_context_id && ui->channel_menu
+                             ? "↑↓ escolher · Enter confirmar · ←/Esc voltar · m fechar"
+                             : "↑↓ escolher · Enter confirmar · m/Esc fechar";
         minimal = "↑↓ · Enter · m/Esc";
     } else if (media_view_modal(ui->media)) {
         full = shorter = minimal = "Esc: voltar da mídia";
@@ -356,10 +349,10 @@ void conversation_draw_footer(view *ui)
     } else if (ui->focus == CHANNEL_LIST) {
         bool voice = !strcmp(
             conversation_str(conversation_list_channel(ui, ui->highlighted), "type"), "voice");
-        full = voice ? "↑↓ canais · Shift+Enter/F4 histórico · Enter voz (em breve) · ↑ topo"
-                     : "↑↓ canais · Enter/→ abrir · ↑ topo · Ctrl+R atualizar";
-        shorter = voice ? "↑↓ canais · Shift+Enter/F4 histórico · ↑ topo"
-                        : "↑↓ canais · Enter abrir · ↑ topo";
+        full = voice ? "↑↓ canais · Shift+Enter/F4 histórico · m menu · ↑ topo"
+                     : "↑↓ canais · Enter/→ abrir · m menu · Ctrl+R atualizar";
+        shorter = voice ? "↑↓ canais · Shift+Enter/F4 histórico · m menu"
+                        : "↑↓ canais · Enter abrir · m menu";
         minimal = voice ? "Shift+Enter/F4 histórico" : "↑↓ · Enter";
     } else if (*ui->edit_message && ui->focus == MESSAGE_INPUT) {
         full = shorter = "Enter editar · Shift+Enter linha · Esc cancelar edição";
@@ -567,7 +560,9 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                 if (!c)
                     break;
                 const char *type = conversation_str(c, "type");
-                bool unread = history_channel_unread(ui->model, c);
+                bool muted =
+                    inbox_conversation_muted(history_inbox(ui->model), conversation_str(c, "id"));
+                bool unread = !muted && history_channel_unread(ui->model, c);
                 char label[2200];
                 snprintf(label, sizeof(label), "%s%s%s",
                          !strcmp(type, "category") ? "── "
@@ -582,6 +577,8 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                                                               conversation_str(user, "id"))),
                              (long long)json_integer_value(json_object_get(c, "unread_count")));
                 }
+                if (muted)
+                    g_strlcat(label, " (silenciado)", sizeof(label));
                 bool selected = index == ui->highlighted && conversation_list_selectable(ui, index);
                 size_t mentions =
                     inbox_unread_mentions(history_inbox(ui->model), conversation_str(c, "id"));

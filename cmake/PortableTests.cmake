@@ -1,5 +1,8 @@
 # Portable declarations are shared; OS adapters register their own additional scenarios.
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
+add_executable(channel-mutes-test tests/unit/test_channel_mutes.c)
+target_link_libraries(channel-mutes-test PRIVATE papo_auth)
+papo_add_test(NAME channel-mutes-unit COMMAND channel-mutes-test)
 papo_add_test(NAME terminal-windows-lifecycle COMMAND ${Python3_EXECUTABLE}
               ${PROJECT_SOURCE_DIR}/tests/unit/test_terminal_windows.py)
 add_executable(media-wire-test tests/unit/test_media_wire.c)

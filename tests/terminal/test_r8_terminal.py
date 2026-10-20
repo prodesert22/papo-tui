@@ -1020,6 +1020,16 @@ class R8Terminal(support.R8Terminal):
             self.wait(t, "Tempo real conectado")
             t.resize(14, 44)
             server.revoked = False
+            route = server.api_handler
+
+            def disconnected(method, path, body):
+                if method == "GET" and path.endswith("/ws"):
+                    return 503, None
+                return route(method, path, body)
+
+            # Keep the fixture offline through the assertion: an immediate
+            # successful reconnect can replace the transient footer notice.
+            server.api_handler = disconnected
             server.disconnect()
             self.wait(t, "Desconectado")
             self.assertIn("Desconectado", t.screen.display[-2])

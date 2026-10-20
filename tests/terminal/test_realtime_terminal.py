@@ -118,6 +118,7 @@ class RealtimeTerminal(unittest.TestCase):
             try:
                 terminal.send("\x1bOH")
                 self.wait(terminal, "Mensagem 0001")
+                self.wait(terminal, "Apelido")
                 before = terminal.screen.display[8:12]
                 m = server.message(51)
                 m["content"] = "Novidade fora da leitura"
@@ -139,8 +140,16 @@ class RealtimeTerminal(unittest.TestCase):
             try:
                 terminal.send("Rascunho preservado")
                 server.offline = True
+                route = server.api_handler
+
+                def unavailable(method, path, body):
+                    if server.offline and method == "GET" and path.endswith("/ws"):
+                        return 503, None
+                    return route(method, path, body)
+
+                server.api_handler = unavailable
                 server.disconnect()
-                self.wait(terminal, "Reconectando")
+                self.wait(terminal, "Desconectado")
                 terminal.send(" durante a queda")
                 terminal.resize(22, 60)
                 self.assertIn("Rascunho preservado", self.editor_text(terminal))

@@ -72,7 +72,8 @@ bool conversation_list_notified(view *ui, bool dms)
 {
     for (size_t i = 0; i < history_channel_count(ui->model); ++i) {
         json_t *channel = history_channel(ui->model, i);
-        if (json_is_true(json_object_get(channel, "_dm")) == dms &&
+        if (!inbox_conversation_muted(history_inbox(ui->model), conversation_str(channel, "id")) &&
+            json_is_true(json_object_get(channel, "_dm")) == dms &&
             (history_channel_unread(ui->model, channel) ||
              inbox_unread_mentions(history_inbox(ui->model), conversation_str(channel, "id"))))
             return true;

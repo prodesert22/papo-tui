@@ -222,7 +222,9 @@ bool instances_poll(instance_connections *connections, auth_client *active)
                 event = json_array_get(item->alerts, j);
                 const char *message = json_string_value(json_object_get(event, "message_id"));
                 const char *channel = inbox_message_channel(box, message);
-                if (inbox_message_viewed(box, message))
+                const char *mode = history_channel_notifications(item->model, channel);
+                if (inbox_message_viewed(box, message) || inbox_conversation_muted(box, channel) ||
+                    (mode && !strcmp(mode, "off")))
                     continue;
                 if (connections->visible_auth == auth && *channel &&
                     !strcmp(channel, connections->visible_channel) && text_terminal_focused())

@@ -13,6 +13,7 @@ import unittest
 
 FAKE = argument(1)
 from r8_mock import R8Mock, AUTHOR, uuid  # noqa: E402 - path and test arguments are prepared above
+from channel_preferences import ChannelPreferencesMock  # noqa: E402 - shared fixture
 from terminal_support import Terminal  # noqa: E402 - path and test arguments are prepared above
 
 
@@ -175,6 +176,57 @@ class DesktopTests(unittest.TestCase):
             self.assertFalse(select.select([self.daemon.stdout], [], [], 0)[0])
             server.emit(self.event(2))
             self.receive(t)
+
+    def test_channel_mute_and_off_suppress_alerts_and_reactivation_resumes_new_events(self):
+        with ChannelPreferencesMock() as server:
+            t = self.login(server)
+            t.resize(30, 120)
+            t.wait_text("Conversar em #geral")
+
+            def menu():
+                t.send("\x1b[<2;5;8M\x1b[<2;5;8m")
+                t.wait_text("Notificações…")
+
+            def emit(n, content):
+                message = dict(server.message(n + 3), content=content)
+                server.emit(dict(message, type="message"))
+                server.emit(dict(self.event(n, content), message_id=message["id"]))
+
+            def setting(index):
+                menu()
+                t.send("\x1bOB\n")
+                t.wait_text("Todas as mensagens")
+                row, line = next(
+                    (y, line)
+                    for y, line in enumerate(t.screen.display)
+                    if "Todas as mensagens" in line
+                )
+                t.click(row + index, line.index("Todas as mensagens"))
+                t.wait_text("Notificações do canal atualizadas")
+
+            menu()
+            t.send("\n")
+            t.wait_text("10 minutos")
+            t.send("\n")
+            t.wait_text("Canal silenciado neste cliente")
+            t.send("\x1b[O")
+            emit(1, "Muted notification")
+            t.read(2.5)
+            self.assertFalse(select.select([self.daemon.stdout], [], [], 0)[0])
+            menu()
+            t.wait_text("Reativar canal")
+            t.send("\n")
+            t.wait_text("Canal reativado")
+            emit(2, "Fresh after reactivation")
+            self.assertEqual(self.receive(t)["body"], "Fresh after reactivation")
+            setting(2)
+            emit(3, "Disabled notification")
+            t.read(2.5)
+            self.assertFalse(select.select([self.daemon.stdout], [], [], 0)[0])
+            setting(0)
+            emit(4, "Fresh all messages")
+            self.assertEqual(self.receive(t)["body"], "Fresh all messages")
+            self.assertEqual(server.marked, [])
 
 
 if __name__ == "__main__":

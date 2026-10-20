@@ -34,12 +34,14 @@ add_library(
     src/config/profiles.c
     src/platform/${PAPO_PLATFORM}/profiles_storage.c
     src/config/read_state.c
+    src/config/channel_mutes.c
     src/platform/${PAPO_PLATFORM}/read_storage.c
     src/model/conversation/discovery.c
     src/model/conversation/members.c
     src/model/conversation/directory.c
     src/model/conversation/events.c
     src/model/conversation/history.c
+    src/model/conversation/channel_settings.c
     src/model/conversation/interactions.c
     src/model/conversation/pagination.c
     src/model/notifications/inbox.c)

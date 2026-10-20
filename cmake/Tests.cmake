@@ -230,6 +230,14 @@ if(BUILD_TESTING)
     papo_set_tests_properties(media-terminal PROPERTIES TIMEOUT 420)
     papo_add_test(
         NAME
+        channel-preferences-terminal
+        COMMAND
+        ${Python3_EXECUTABLE}
+        ${PROJECT_SOURCE_DIR}/tests/terminal/test_channel_preferences.py
+        $<TARGET_FILE:papo-tui>
+        ${FFMPEG_CLI})
+    papo_add_test(
+        NAME
         media-cadence-terminal
         COMMAND
         ${Python3_EXECUTABLE}

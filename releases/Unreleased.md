@@ -43,3 +43,10 @@
 
 - Reorganize CI into isolated native and instrumented jobs, with individual scenario reports and reproducible test dependencies to diagnose failures and reduce validation time.
 - Keep static analysis on an explicit Clang 18 toolchain and verify message-navigation state before accessing its actions.
+
+## Channel notifications
+
+- Open a channel menu with m/M or a right-click to mute it for 10 or 30 minutes, 1, 4, 12 or 24 hours, or until reactivated, and choose all messages, mentions only or no notifications. Timed mutes are saved locally per account and instance.
+- Clear stale server activity indicators once their conversations have been read, while preserving unread notification records in the notification center.
+- Keep disconnection notices readable in narrow terminals when notification and other status messages compete for space.
+- Preserve channel history errors during background channel refreshes so the reason for a failed read remains visible and can be retried.

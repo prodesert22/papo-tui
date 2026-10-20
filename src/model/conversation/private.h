@@ -27,7 +27,8 @@ enum request_kind {
     INBOX,
     ACTIONS,
     DISCOVERY,
-    MEMBERS
+    MEMBERS,
+    CHANNEL_SETTINGS
 };
 #define TYPING_LIMIT 128U
 #define TYPING_TIMEOUT_MS 6000U
@@ -58,6 +59,8 @@ struct history {
     auth_client *auth;
     chat_assets *assets;
     inbox *inbox;
+    char notification_channel[37], notification_mode[14];
+    bool notification_queued;
     bool r8, active;
     uint64_t activity_sent;
     char read_attempt[37], read_visible[37];
@@ -151,6 +154,10 @@ void history_internal_actions_destroy(history *h);
 bool history_internal_actions_dispatch(history *h, bool foreground);
 void history_internal_actions_response(history *h, json_t *body, long code, bool uncertain);
 void history_internal_actions_users(history *h, json_t *ids, json_t *seen);
+bool history_internal_channel_settings_dispatch(history *h);
+void history_internal_channel_settings_response(history *h, json_t *body, long code,
+                                                bool uncertain);
+void history_internal_notification_reads(history *h);
 void history_internal_reference_event(history *h, const json_t *event);
 bool history_internal_react_event(history *h, const json_t *event);
 #endif
