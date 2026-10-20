@@ -13,13 +13,18 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
 class ChunkedBody:
-    """Synthetic progressive response body for media streaming fixtures."""
+    """Synthetic progressive response body for media streaming fixtures.
 
-    def __init__(self, data, pieces=12, delay=0.3, hold=None):
+    With ``content_length=True`` the body is sent in the same progressive
+    pieces but announces its total size instead of using chunked encoding.
+    """
+
+    def __init__(self, data, pieces=12, delay=0.3, hold=None, content_length=False):
         size = max(1, (len(data) + pieces - 1) // pieces)
         self.pieces = [data[offset : offset + size] for offset in range(0, len(data), size)]
         self.delay = delay
         self.hold = hold
+        self.content_length = content_length
         self.started = None
         self.finished = None
         self.sent = 0
@@ -70,7 +75,12 @@ class MockServer:
                         body.hold.wait(15)
                     self.send_response(status)
                     self.send_header("Content-Type", content_type or "application/octet-stream")
-                    self.send_header("Transfer-Encoding", "chunked")
+                    if body.content_length:
+                        self.send_header(
+                            "Content-Length", str(sum(len(piece) for piece in body.pieces))
+                        )
+                    else:
+                        self.send_header("Transfer-Encoding", "chunked")
                     self.end_headers()
                     body.started = time.monotonic()
                     body.sent = 0
@@ -78,11 +88,15 @@ class MockServer:
                         for index, piece in enumerate(body.pieces):
                             if index:
                                 time.sleep(body.delay)
-                            self.wfile.write(b"%x\r\n" % len(piece) + piece + b"\r\n")
+                            if body.content_length:
+                                self.wfile.write(piece)
+                            else:
+                                self.wfile.write(b"%x\r\n" % len(piece) + piece + b"\r\n")
                             self.wfile.flush()
                             body.sent += len(piece)
-                        self.wfile.write(b"0\r\n\r\n")
-                        self.wfile.flush()
+                        if not body.content_length:
+                            self.wfile.write(b"0\r\n\r\n")
+                            self.wfile.flush()
                     except (BrokenPipeError, ConnectionResetError):
                         pass
                     finally:

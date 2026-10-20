@@ -1297,24 +1297,37 @@ static double control_fraction(double value)
 }
 
 static void draw_control_track(WINDOW *w, int row, int x, int width, double fraction, bool timeline,
-                               bool muted, bool known)
+                               bool muted, bool known, double downloaded)
 {
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     mvwaddch(w, row, x - 1, '[');
     mvwaddch(w, row, x + width, ']');
     int marker = (int)(fraction * (width - 1));
     int filled = (int)ceil(fraction * width);
+    double bounded = fmin(1, fmax(0, downloaded));
+    int ready = (int)ceil(bounded * width);
     for (int i = 0; i < width; ++i) {
+        if (timeline) {
+            bool playhead = known && i == marker;
+            bool played = known && i < marker;
+            bool buffered = i < ready;
+            /* Keep the played interval orange so the current position stays
+             * visible; the downloaded part ahead of it is white and the
+             * remaining part is gray. */
+            int pair = playhead || played ? THEME_PANEL_ACCENT
+                       : buffered         ? THEME_PANEL_BRIGHT
+                                          : THEME_PANEL_MUTED;
+            wattrset(w, COLOR_PAIR(pair));
+            mvwaddnwstr(w, row, x + i, playhead ? L"●" : (played || buffered) ? L"━" : L"─", 1);
+            continue;
+        }
         int percent = width > 1 ? i * 100 / (width - 1) : 100;
-        if (!timeline && percent > (int)lround(fraction * 100))
+        if (percent > (int)lround(fraction * 100))
             percent = (int)lround(fraction * 100);
-        bool active = known && (timeline ? i <= marker : i < filled);
-        int pair = !active    ? THEME_PANEL_MUTED
-                   : timeline ? THEME_PANEL_ACCENT
-                              : theme_volume_pair(percent);
+        bool active = known && i < filled;
+        int pair = active ? theme_volume_pair(percent) : THEME_PANEL_MUTED;
         wattrset(w, COLOR_PAIR(pair) | (muted ? A_DIM : 0));
-        const wchar_t *cell = !active ? L"─" : timeline ? (i == marker ? L"●" : L"━") : L"█";
-        mvwaddnwstr(w, row, x + i, cell, 1);
+        mvwaddnwstr(w, row, x + i, active ? L"█" : L"─", 1);
     }
 }
 
@@ -1353,14 +1366,24 @@ static void draw_video_controls(media_view *v, WINDOW *w)
         bool known = isfinite(info.duration) && info.duration > 0;
         double position = known ? control_fraction(info.position / info.duration) : 0;
         double volume = control_fraction(info.volume / 100);
+        size_t available = 0, total = 0;
+        bool downloading = modal_download(v, &available, &total);
+        /* The timeline keeps the played interval orange, marks the bytes
+         * already on disk ahead of it in white and the rest in gray. Without a
+         * known length, the played part is the only safe lower bound for what
+         * is already buffered. */
+        double downloaded = downloading
+                                ? (total ? control_fraction((double)available / (double)total)
+                                         : (known ? position : 0.0))
+                                : 1.0;
         draw_control_track(w, controls.row, controls.timeline_x, controls.timeline_width, position,
-                           true, false, known);
+                           true, false, known, downloaded);
         if (controls.volume_label_x >= 0) {
             wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
             mvwaddch(w, controls.row, controls.volume_label_x, 'V');
         }
         draw_control_track(w, controls.row, controls.volume_x, controls.volume_width, volume, false,
-                           info.muted, true);
+                           info.muted, true, 1.0);
         if (controls.percent_x >= 0) {
             char percent[8];
             snprintf(percent, sizeof(percent), "%3d%%", (int)lround(volume * 100));
@@ -1368,21 +1391,11 @@ static void draw_video_controls(media_view *v, WINDOW *w)
             text_label(w, controls.row, controls.percent_x, 4, percent);
         }
     }
-    char status[256], progress[48] = "";
-    size_t available = 0, total = 0;
-    if (modal_download(v, &available, &total)) {
-        if (total)
-            snprintf(progress, sizeof(progress), " · Baixando %u%%",
-                     download_percent(available, total));
-        else
-            snprintf(progress, sizeof(progress), " · Baixando %.1f MB",
-                     (double)available / (1024.0 * 1024.0));
-    }
+    char status[256];
     snprintf(status, sizeof(status),
-             "%s · %.0f / %.0f s%s%s%s · Espaço pausa · ←→ 5s · ,/. 1s · ↑↓ volume · m",
+             "%s · %.0f / %.0f s%s%s · Espaço pausa · ←→ 5s · ,/. 1s · ↑↓ volume · m",
              info.paused ? "Pausado" : "Reproduzindo", info.position, info.duration,
-             info.muted ? " · Mudo" : "", info.audio_missing ? " · Sem dispositivo de áudio" : "",
-             progress);
+             info.muted ? " · Mudo" : "", info.audio_missing ? " · Sem dispositivo de áudio" : "");
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     text_label(w, v->layout.height - 2, 3, v->layout.area_width, status);
 }

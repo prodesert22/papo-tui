@@ -1201,7 +1201,7 @@ class MediaTerminal(unittest.TestCase):
         # The loopback bridge must expose the growing attachment before the
         # transfer ends, with the authenticated request staying in the client.
         release = threading.Event()
-        body = ChunkedBody(self.video, pieces=12, delay=0.3, hold=release)
+        body = ChunkedBody(self.video, pieces=12, delay=0.3, hold=release, content_length=True)
         with self.serve(self.video, "video/mp4", chunked=body) as server:
             t = self.open(server, protocol="kitty", size=(64, 160))
             try:
@@ -1218,17 +1218,59 @@ class MediaTerminal(unittest.TestCase):
                     body.finished,
                     "Player showed its first frame only after the whole download",
                 )
-                self.assertGreater(body.sent, 0)
-                self.wait(t, "Baixando")
+                t.send(" ")
+                self.wait(t, "Pausado")
+                wait_for_screen(
+                    t,
+                    lambda: (
+                        len(self.video) // 4 <= body.sent < len(self.video)
+                        and body.finished is None
+                        and self.timeline_cells(t) is not None
+                    ),
+                    "Attachment did not expose a partial download",
+                )
+                self.assertNotIn("Baixando", "\n".join(t.screen.display))
+                cells = self.timeline_cells(t)
+                orange = white = gray = 0
+                for cell in cells:
+                    red, green, blue = self.cell_rgb(cell)
+                    if cell.data == "●":
+                        self.assertTrue(self.is_orange(cell), "playhead lost its orange color")
+                        orange += 1
+                    elif cell.data == "━":
+                        if self.is_orange(cell):
+                            orange += 1
+                        else:
+                            self.assertGreaterEqual(
+                                min(red, green, blue),
+                                240,
+                                "downloaded timeline is not white",
+                            )
+                            white += 1
+                    elif cell.data == "─":
+                        self.assertLessEqual(
+                            max(red, green, blue), 200, "pending timeline is not gray"
+                        )
+                        gray += 1
+                    else:
+                        self.fail(f"Unexpected timeline cell {cell.data!r}")
+                self.assertGreater(orange, 0, "\n".join(t.screen.display))
+                self.assertGreater(white, 0, "\n".join(t.screen.display))
+                self.assertGreater(gray, 0, "\n".join(t.screen.display))
                 wait_for_screen(
                     t,
                     lambda: body.finished is not None,
                     "Attachment download did not finish while the player was open",
                 )
+
+                def timeline_has_no_pending():
+                    cells = self.timeline_cells(t)
+                    return cells is not None and all(cell.data != "─" for cell in cells)
+
                 wait_for_screen(
                     t,
-                    lambda: "Baixando" not in "\n".join(t.screen.display),
-                    "Download progress remained after the transfer completed",
+                    timeline_has_no_pending,
+                    "Downloaded timeline kept gray cells",
                 )
                 self.assertGreater(len(t.stream.frames), 1)
                 self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), 1)
@@ -2060,6 +2102,27 @@ class MediaTerminal(unittest.TestCase):
                     finally:
                         self.assertTrue(t.close())
 
+    def timeline_cells(self, terminal):
+        for row, line in enumerate(terminal.screen.display):
+            if "[⏸]" in line or "[▶]" in line:
+                controls = list(re.finditer(r"\[([^]]*)\]", line))
+                if len(controls) >= 3:
+                    timeline = controls[1]
+                    return [
+                        terminal.screen.buffer[row][x]
+                        for x in range(timeline.start() + 1, timeline.end() - 1)
+                    ]
+        return None
+
+    @staticmethod
+    def cell_rgb(cell):
+        return tuple(int(cell.fg[i : i + 2], 16) for i in (0, 2, 4))
+
+    @classmethod
+    def is_orange(cls, cell):
+        red, green, blue = cls.cell_rgb(cell)
+        return red > 200 and green > 130 and blue < 140
+
     def player_controls(self, terminal):
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
@@ -2081,13 +2144,44 @@ class MediaTerminal(unittest.TestCase):
                 t.send("Rascunho controles\x1b\x1b[18~\n")
                 self.wait_frames(t, 2)
                 row, controls = self.player_controls(t)
+
+                def no_pending_cells():
+                    cells = self.timeline_cells(t)
+                    return cells is not None and all(cell.data != "─" for cell in cells)
+
+                wait_for_screen(t, no_pending_cells, "Attachment did not finish downloading")
                 t.click(row, controls[0].start() + 1)
                 self.wait(t, "Pausado")
                 row, controls = self.player_controls(t)
                 t.click(row, controls[1].end() - 1)
                 self.wait(t, "3 / 3 s")
+
+                def playhead_at_end():
+                    cells = self.timeline_cells(t)
+                    return cells is not None and cells[-1].data == "●"
+
+                wait_for_screen(t, playhead_at_end, "Playhead did not move to the end")
+                cells = self.timeline_cells(t)
+                self.assertTrue(self.is_orange(cells[-1]))
+                for cell in cells[:-1]:
+                    self.assertEqual(cell.data, "━")
+                    self.assertTrue(self.is_orange(cell), "played timeline is not orange")
                 t.click(row, controls[1].start())
                 self.wait(t, "0 / 3 s")
+
+                def playhead_at_start():
+                    cells = self.timeline_cells(t)
+                    return cells is not None and cells[0].data == "●"
+
+                wait_for_screen(t, playhead_at_start, "Playhead did not move to the start")
+                cells = self.timeline_cells(t)
+                self.assertTrue(self.is_orange(cells[0]))
+                for cell in cells[1:]:
+                    self.assertEqual(cell.data, "━")
+                    red, green, blue = self.cell_rgb(cell)
+                    self.assertGreaterEqual(
+                        min(red, green, blue), 240, "downloaded timeline is not white"
+                    )
                 t.click(row, controls[0].start() + 1)
                 self.wait(t, "Reproduzindo")
                 row, controls = self.player_controls(t)

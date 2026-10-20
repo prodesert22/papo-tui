@@ -555,9 +555,10 @@ as a generic binary file is still recognized by its file name, so `.mp4`, `.mov`
 player instead of appearing as a plain attachment.
 
 Videos prepared for streaming start playing as soon as the first part arrives,
-while the rest of the download continues. While that happens, the player status
-line adds the transfer progress, for example **Baixando 42%** (Downloading 42%),
-and removes it when the whole file is available.
+while the rest of the download continues. The player timeline keeps the played
+part in orange, shows the downloaded part ahead of the playhead in white, and
+the part still pending in gray. The orange playhead keeps marking the current
+position.
 
 Seeking is enabled after the download finishes. To seek a video that started
 while it was still downloading, let the transfer finish and reopen the player;

@@ -143,6 +143,7 @@ void theme_init(ui_theme *theme)
     init_extended_pair(THEME_PANEL, colors[TEXT], colors[SURFACE]);
     init_extended_pair(THEME_PANEL_MUTED, colors[SECONDARY], colors[SURFACE]);
     init_extended_pair(THEME_PANEL_ACCENT, colors[ORANGE], colors[SURFACE]);
+    init_extended_pair(THEME_PANEL_BRIGHT, colors[PROFILE_WHITE], colors[SURFACE]);
     init_extended_pair(THEME_PANEL_ACTIVE, colors[ORANGE], colors[WARM]);
     init_extended_pair(THEME_BORDER, colors[RULE], colors[BACKGROUND]);
     init_extended_pair(THEME_FOCUS_AREA, colors[TEXT], colors[RAISED]);
