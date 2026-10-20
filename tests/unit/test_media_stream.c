@@ -111,6 +111,25 @@ static char *temp_file(FILE **file)
     return path;
 }
 
+static void box(FILE *file, const char *type, size_t size)
+{
+    unsigned char header[8] = {(unsigned char)(size >> 24), (unsigned char)(size >> 16),
+                               (unsigned char)(size >> 8), (unsigned char)size};
+    memcpy(header + 4, type, 4);
+    assert(fwrite(header, 1, sizeof(header), file) == sizeof(header));
+}
+
+static void fill(FILE *file, size_t count, char value)
+{
+    char block[256];
+    memset(block, value, sizeof(block));
+    while (count) {
+        size_t piece = count < sizeof(block) ? count : sizeof(block);
+        assert(fwrite(block, 1, piece, file) == piece);
+        count -= piece;
+    }
+}
+
 int main(void)
 {
     FILE *file = NULL;
@@ -132,20 +151,35 @@ int main(void)
     assert(media_stream_url(server, path) == url);
     media_stream_progress(server, path, sizeof(first), 3000);
 
-    /* The response starts before the transfer ends and keeps the announced
-     * length, so the player can seek inside the downloaded part. */
+    /* The body starts before the transfer ends and is delivered sequentially.
+     * No ranges are advertised while the file grows, otherwise FFmpeg seeks
+     * to the end of the MP4 and waits for the whole download. */
     GSocketConnection *connection = connect_url(url);
     assert(connection);
     GInputStream *in = g_io_stream_get_input_stream(G_IO_STREAM(connection));
-    request(connection, token, NULL);
+    request(connection, token, "bytes=0-");
     char *head = read_headers(in);
     assert(strstr(head, "HTTP/1.1 200 OK"));
     assert(strstr(head, "Content-Length: 3000"));
-    assert(strstr(head, "Accept-Ranges: bytes"));
+    assert(!strstr(head, "Accept-Ranges"));
     g_free(head);
     char received[3000];
     assert(read_exact(in, received, sizeof(first)));
     assert(!memcmp(received, first, sizeof(first)));
+
+    /* A tail request before the bytes exist must not wait for the rest of the
+     * transfer: it is answered as a sequential body from the start. */
+    GSocketConnection *probe = connect_url(url);
+    assert(probe);
+    GInputStream *probe_in = g_io_stream_get_input_stream(G_IO_STREAM(probe));
+    request(probe, token, "bytes=2000-");
+    char *probe_head = read_headers(probe_in);
+    assert(strstr(probe_head, "HTTP/1.1 200 OK"));
+    assert(strstr(probe_head, "Content-Length: 3000"));
+    assert(!strstr(probe_head, "Accept-Ranges"));
+    assert(!strstr(probe_head, "Content-Range"));
+    g_free(probe_head);
+    close_connection(probe);
 
     assert(fwrite(second, 1, sizeof(second), file) == sizeof(second));
     assert(fflush(file) == 0);
@@ -243,6 +277,94 @@ int main(void)
     assert(!memcmp(end, "\r\n", 2));
     close_connection(connection);
 
+    /* MP4 with the index after the media data keeps ranges while it grows:
+     * it cannot render before the tail arrives, so the player waits for it. */
+    FILE *nonfast = NULL;
+    char *nonfast_path = temp_file(&nonfast);
+    box(nonfast, "ftyp", 24);
+    fill(nonfast, 16, 'f');
+    box(nonfast, "mdat", 3000);
+    fill(nonfast, 2000, 'm');
+    assert(fflush(nonfast) == 0);
+    const char *nonfast_url = media_stream_publish(server, nonfast_path, 3124);
+    assert(nonfast_url);
+    const char *nonfast_token = strrchr(nonfast_url, '/') + 1;
+    media_stream_progress(server, nonfast_path, 2032, 3124);
+    connection = connect_url(nonfast_url);
+    assert(connection);
+    in = g_io_stream_get_input_stream(G_IO_STREAM(connection));
+    request(connection, nonfast_token, "bytes=0-");
+    head = read_headers(in);
+    assert(strstr(head, "HTTP/1.1 206 Partial Content"));
+    assert(strstr(head, "Accept-Ranges: bytes"));
+    assert(strstr(head, "Content-Length: 3124"));
+    assert(strstr(head, "Content-Range: bytes 0-3123/3124"));
+    g_free(head);
+    close_connection(connection);
+
+    connection = connect_url(nonfast_url);
+    assert(connection);
+    in = g_io_stream_get_input_stream(G_IO_STREAM(connection));
+    request(connection, nonfast_token, "bytes=3024-");
+    head = read_headers(in);
+    assert(strstr(head, "HTTP/1.1 206 Partial Content"));
+    assert(strstr(head, "Content-Range: bytes 3024-3123/3124"));
+    assert(strstr(head, "Content-Length: 100"));
+    g_free(head);
+    /* Complete the mdat and append the moov box; the pending tail request
+     * wakes and receives the index. */
+    fill(nonfast, 992, 'm');
+    box(nonfast, "moov", 100);
+    fill(nonfast, 92, 'o');
+    assert(fflush(nonfast) == 0);
+    media_stream_progress(server, nonfast_path, 3124, 3124);
+    media_stream_finish(server, nonfast_path);
+    char moov[100];
+    assert(read_exact(in, moov, sizeof(moov)));
+    assert(!memcmp(moov + 4, "moov", 4));
+    close_connection(connection);
+
+    /* Fast-start MP4 (moov before mdat) is served sequentially while it grows,
+     * so a tail probe cannot block the first frame. */
+    FILE *faststart = NULL;
+    char *faststart_path = temp_file(&faststart);
+    box(faststart, "ftyp", 24);
+    fill(faststart, 16, 'f');
+    box(faststart, "moov", 100);
+    fill(faststart, 92, 'o');
+    box(faststart, "mdat", 3000);
+    fill(faststart, 2000, 'm');
+    assert(fflush(faststart) == 0);
+    const char *faststart_url = media_stream_publish(server, faststart_path, 3124);
+    assert(faststart_url);
+    const char *faststart_token = strrchr(faststart_url, '/') + 1;
+    media_stream_progress(server, faststart_path, 2132, 3124);
+    connection = connect_url(faststart_url);
+    assert(connection);
+    in = g_io_stream_get_input_stream(G_IO_STREAM(connection));
+    request(connection, faststart_token, "bytes=0-");
+    head = read_headers(in);
+    assert(strstr(head, "HTTP/1.1 200 OK"));
+    assert(!strstr(head, "Accept-Ranges"));
+    assert(strstr(head, "Content-Length: 3124"));
+    g_free(head);
+    close_connection(connection);
+
+    fill(faststart, 992, 'm');
+    assert(fflush(faststart) == 0);
+    media_stream_progress(server, faststart_path, 3124, 3124);
+    media_stream_finish(server, faststart_path);
+    connection = connect_url(faststart_url);
+    assert(connection);
+    in = g_io_stream_get_input_stream(G_IO_STREAM(connection));
+    request(connection, faststart_token, "bytes=1000-");
+    head = read_headers(in);
+    assert(strstr(head, "HTTP/1.1 206 Partial Content"));
+    assert(strstr(head, "Accept-Ranges: bytes"));
+    assert(strstr(head, "Content-Range: bytes 1000-3123/3124"));
+    g_free(head);
+    close_connection(connection);
+
     /* Withdrawing closes the token: an old URL must not expose the bytes. */
     char *old_url = g_strdup(url);
     char old_token[33];
@@ -259,13 +381,21 @@ int main(void)
     close_connection(connection);
     g_free(old_url);
     media_stream_withdraw(server, chunked_path);
+    media_stream_withdraw(server, nonfast_path);
+    media_stream_withdraw(server, faststart_path);
 
     media_stream_server_destroy(server);
     fclose(file);
     fclose(chunked_file);
+    fclose(nonfast);
+    fclose(faststart);
     g_unlink(path);
     g_unlink(chunked_path);
+    g_unlink(nonfast_path);
+    g_unlink(faststart_path);
     g_free(path);
     g_free(chunked_path);
+    g_free(nonfast_path);
+    g_free(faststart_path);
     return 0;
 }

@@ -10,8 +10,10 @@
  * policy and the global request budget); this server only republishes the
  * bytes already written to the private temporary file to the local player.
  * The URL carries an unguessable token, the listener is bound to 127.0.0.1
- * and no credential crosses it. Responses are streamed as the file grows,
- * with byte ranges served from the part already downloaded. */
+ * and no credential crosses it. Files that can be parsed from the beginning
+ * are streamed sequentially while they grow; MP4 files whose index is stored
+ * at the end keep byte ranges and wait for the missing tail. Once complete,
+ * every file serves ranges. */
 typedef struct media_stream_server media_stream_server;
 
 media_stream_server *media_stream_server_create(void);

@@ -554,16 +554,18 @@ as a generic binary file is still recognized by its file name, so `.mp4`, `.mov`
 `.mkv`, `.webm`, `.avi` and other common containers keep their cover and their
 player instead of appearing as a plain attachment.
 
-Videos start playing as soon as the first part arrives, while the rest of the
-download continues. While that happens, the player status line adds the transfer
-progress, for example **Baixando 42%** (Downloading 42%), and removes it when the
-whole file is available.
+Videos prepared for streaming start playing as soon as the first part arrives,
+while the rest of the download continues. While that happens, the player status
+line adds the transfer progress, for example **Baixando 42%** (Downloading 42%),
+and removes it when the whole file is available.
+
+Seeking is enabled after the download finishes. To seek a video that started
+while it was still downloading, let the transfer finish and reopen the player;
+it will then use the local copy.
 
 Some files can still start only after the download finishes: MP4 files whose
 index is stored at the end of the file — usually videos that were not prepared
-for streaming — cannot be parsed before their last bytes arrive. Seeking only
-covers the part already downloaded, so seeking forward may wait until the
-transfer reaches the requested position.
+for streaming — cannot be parsed before their last bytes arrive.
 
 Press Esc or click outside the media window to close it or cancel loading.
 
@@ -635,9 +637,11 @@ above.
   has no supported graphics protocol; Light always uses Chafa.
 - **Emoji pictures are missing:** install the Noto Color Emoji font and restart
   the application.
-- **Video is still loading:** playback starts after the download finishes.
-  Check the connection if it does not progress. Press Esc to cancel; if an
-  error appears, press Enter in the media window to retry.
+- **Video is still loading:** the player status line shows the transfer
+  progress. Videos prepared for streaming start before the download ends;
+  files whose index is at the end start only when it finishes. If progress
+  stops, check the connection. Press Esc to cancel; if an error appears,
+  press Enter in the media window to retry.
 - **Video plays without sound:** press `m` to unmute, raise the volume in the
   player and check the system's audio output. If no audio device is available,
   playback can continue without sound.

@@ -6,6 +6,7 @@
 #include <gio/gio.h>
 #include <glib.h>
 #include <glib/gstdio.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -166,6 +167,55 @@ static void respond_error(GOutputStream *out, const char *status, const char *ex
         write_all(out, response, (size_t)MIN((size_t)length, sizeof(response) - 1));
 }
 
+static uint32_t box_size32(const unsigned char *data)
+{
+    return ((uint32_t)data[0] << 24) | ((uint32_t)data[1] << 16) | ((uint32_t)data[2] << 8) |
+           (uint32_t)data[3];
+}
+
+static uint64_t box_size64(const unsigned char *data)
+{
+    return ((uint64_t)box_size32(data) << 32) | box_size32(data + 4);
+}
+
+/* True when the player can consume the file sequentially from the start:
+ * non-ISO-BMFF media and MP4 files whose `moov` box precedes `mdat`. Such a
+ * file must not advertise ranges while it grows, because FFmpeg then probes
+ * the end of the MP4 before rendering. Returns false for MP4 files whose
+ * index sits after the media data; those keep range support and wait for the
+ * tail, since they cannot start before parsing it. */
+static bool sequential_start(FILE *file, size_t available)
+{
+    unsigned char head[64];
+    size_t got = MIN(available, sizeof(head));
+    if (got < 8 || fseek(file, 0, SEEK_SET) != 0 || fread(head, 1, got, file) != got)
+        return true; /* Unknown layout: prefer early playback. */
+    if (memcmp(head + 4, "ftyp", 4))
+        return true; /* Not an ISO BMFF/MP4 file. */
+    size_t offset = 0;
+    while (offset + 8 <= got) {
+        uint64_t size = box_size32(head + offset);
+        const unsigned char *type = head + offset + 4;
+        size_t header = 8;
+        if (size == 1) {
+            if (offset + 16 > got)
+                return true;
+            size = box_size64(head + offset + 8);
+            header = 16;
+        } else if (size == 0) {
+            return true; /* The box runs to EOF; there is no later index. */
+        }
+        if (!memcmp(type, "moov", 4))
+            return true;
+        if (!memcmp(type, "mdat", 4))
+            return false;
+        if (size < header || size > SIZE_MAX - offset)
+            return true;
+        offset += (size_t)size;
+    }
+    return true; /* Not enough box headers yet: prefer early playback. */
+}
+
 static void serve_connection(stream_connection *connection)
 {
     media_stream_server *server = connection->server;
@@ -212,11 +262,48 @@ static void serve_connection(stream_connection *connection)
         stream_release(stream);
         return;
     }
-    size_t total = 0;
+    size_t total = 0, available = 0;
+    bool complete = false;
     g_mutex_lock(&server->lock);
     total = stream->total;
+    available = stream->available;
+    complete = stream->complete;
     g_mutex_unlock(&server->lock);
-    if (total && start >= total) {
+    bool known = total > 0;
+    bool sequential = true;
+    if (known && !complete) {
+        /* Wait for the first box headers before choosing the range policy; a
+         * player needs them anyway, and cancellation wakes the wait. */
+        while (available < 64 && !complete) {
+            g_mutex_lock(&server->lock);
+            for (;;) {
+                if (stream->withdrawn || server->stopping)
+                    break;
+                if (stream->available >= 64 || stream->complete)
+                    break;
+                gint64 deadline = g_get_monotonic_time() + STREAM_WAIT_MS * G_TIME_SPAN_MILLISECOND;
+                g_cond_wait_until(&server->wake, &server->lock, deadline);
+            }
+            bool stop = stream->withdrawn || server->stopping;
+            available = stream->available;
+            complete = stream->complete;
+            g_mutex_unlock(&server->lock);
+            if (stop) {
+                fclose(file);
+                stream_release(stream);
+                return;
+            }
+        }
+        if (!complete)
+            sequential = sequential_start(file, available);
+    }
+    /* MP4 files whose index follows the media data keep range support and wait
+     * for the tail they need. Everything else is served sequentially while it
+     * grows, so an automatic tail probe cannot stall playback. Once complete,
+     * every file can serve ranges. */
+    bool ranges = known && (complete || !sequential);
+    bool partial = range && ranges;
+    if (partial && start >= total) {
         char extra[64];
         g_snprintf(extra, sizeof(extra), "Content-Range: bytes */%zu\r\n", total);
         respond_error(out, "416 Range Not Satisfiable", extra);
@@ -224,15 +311,16 @@ static void serve_connection(stream_connection *connection)
         stream_release(stream);
         return;
     }
-    bool known = total > 0;
-    bool partial = range && known;
+    if (!partial)
+        start = 0;
     GString *heads = g_string_new(NULL);
     g_string_append_printf(heads, "HTTP/1.1 %s\r\n", partial ? "206 Partial Content" : "200 OK");
     g_string_append(heads, "Content-Type: application/octet-stream\r\n");
     g_string_append(heads, "Cache-Control: no-store\r\n");
     g_string_append(heads, "Connection: close\r\n");
     if (known) {
-        g_string_append(heads, "Accept-Ranges: bytes\r\n");
+        if (ranges)
+            g_string_append(heads, "Accept-Ranges: bytes\r\n");
         g_string_append_printf(heads, "Content-Length: %zu\r\n", total - start);
         if (partial)
             g_string_append_printf(heads, "Content-Range: bytes %zu-%zu/%zu\r\n", start, total - 1,
