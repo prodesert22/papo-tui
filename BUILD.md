@@ -382,7 +382,7 @@ on the build host.
 
 ## Packaging and releases
 
-All examples below use the current version **0.4.0** and **x86_64**. For ARM64,
+All examples below use the current version **0.5.0** and **x86_64**. For ARM64,
 run on an ARM64 build host and replace the architecture argument with
 **aarch64**. The `--arch` option checks the built binaries; it does not set up
 cross-compilation. Use a separate native build for each OS/architecture.
@@ -421,7 +421,7 @@ The setup script installs development/packaging tools and enables Debian source
 repositories for source collection. Fedora uses `dnf5-plugins` for source RPM
 downloads. The build script prepares locked dependencies and font resources,
 enables `PAPO_RELEASE_BUILD` and `PAPO_BUNDLE_RUNTIME`, compiles and runs CTest.
-The version command should print **papo-tui 0.4.0**.
+The version command should print **papo-tui 0.5.0**.
 
 Use the same Python environment for the following commands. Run packaging as
 your regular user; the Arch recipe's makepkg refuses root. Each command writes
@@ -435,7 +435,7 @@ After the packaging build on **Ubuntu 24.04**:
 ```sh
 python dist/package.py --build build/package --output build/artifacts \
     --formats deb --arch x86_64 --flavor ubuntu --dependency-prefix build/release-deps
-sudo apt install ./build/artifacts/papo-tui-0.4.0-ubuntu-x86_64.deb
+sudo apt install ./build/artifacts/papo-tui-0.5.0-ubuntu-x86_64.deb
 papo-tui --version
 ```
 
@@ -444,7 +444,7 @@ On **Debian 13**, build in Debian and use:
 ```sh
 python dist/package.py --build build/package --output build/artifacts \
     --formats deb --arch x86_64 --flavor debian --dependency-prefix build/release-deps
-sudo apt install ./build/artifacts/papo-tui-0.4.0-debian-x86_64.deb
+sudo apt install ./build/artifacts/papo-tui-0.5.0-debian-x86_64.deb
 papo-tui --version
 ```
 
@@ -455,7 +455,7 @@ After the packaging build on **Fedora 44**:
 ```sh
 python dist/package.py --build build/package --output build/artifacts \
     --formats rpm --arch x86_64 --flavor fedora --dependency-prefix build/release-deps
-sudo dnf install ./build/artifacts/papo-tui-0.4.0-fedora-x86_64.rpm
+sudo dnf install ./build/artifacts/papo-tui-0.5.0-fedora-x86_64.rpm
 papo-tui --version
 ```
 
@@ -478,11 +478,11 @@ python dist/package.py --build build/package --output build/artifacts \
     --formats arch --arch x86_64 --flavor ubuntu --dependency-prefix build/release-deps
 ```
 
-Copy **build/artifacts/papo-tui-0.4.0-arch-x86_64.pkg.tar.zst** to the matching
+Copy **build/artifacts/papo-tui-0.5.0-arch-x86_64.pkg.tar.zst** to the matching
 Arch system and install it with:
 
 ```sh
-sudo pacman -U ./papo-tui-0.4.0-arch-x86_64.pkg.tar.zst
+sudo pacman -U ./papo-tui-0.5.0-arch-x86_64.pkg.tar.zst
 papo-tui --version
 ```
 
@@ -496,8 +496,8 @@ After the common packaging build on **Ubuntu 24.04**:
 ```sh
 python dist/package.py --build build/package --output build/artifacts \
     --formats appimage --arch x86_64 --flavor ubuntu --dependency-prefix build/release-deps
-chmod +x build/artifacts/PapoTUI-0.4.0-linux-x86_64.AppImage
-APPIMAGE_EXTRACT_AND_RUN=1 ./build/artifacts/PapoTUI-0.4.0-linux-x86_64.AppImage --version
+chmod +x build/artifacts/PapoTUI-0.5.0-linux-x86_64.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 ./build/artifacts/PapoTUI-0.5.0-linux-x86_64.AppImage --version
 ```
 
 The tool downloads and verifies the appimagetool pinned in `dist/tools.json`.
@@ -520,7 +520,7 @@ flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/fl
 flatpak install --user flathub org.freedesktop.Platform//26.08 org.freedesktop.Sdk//26.08
 export GITHUB_REPOSITORY=prodesert22/papo-tui
 export PYTHON="$PWD/build/package-env/bin/python"
-dbus-run-session -- sh dist/flatpak/build.sh x86_64 0.4.0
+dbus-run-session -- sh dist/flatpak/build.sh x86_64 0.5.0
 ```
 
 On Fedora install the host tools with
@@ -531,12 +531,12 @@ packaging build. The recipe installs the generated application for smoke tests
 and uninstalls it afterward; use a separate build account if the application
 is already installed in your account.
 
-Outputs are **build/artifacts/papo-tui-0.4.0-flatpak-x86_64.flatpak** and the
+Outputs are **build/artifacts/papo-tui-0.5.0-flatpak-x86_64.flatpak** and the
 corresponding **-sources.tar.gz**, plus the application source archive. To use
 the resulting bundle after the tests:
 
 ```sh
-flatpak install --user ./build/artifacts/papo-tui-0.4.0-flatpak-x86_64.flatpak
+flatpak install --user ./build/artifacts/papo-tui-0.5.0-flatpak-x86_64.flatpak
 flatpak run io.github.prodesert22.PapoTUI
 ```
 
@@ -551,7 +551,7 @@ python dist/package.py --build build/release --output build/artifacts \
     --formats zip --arch x86_64 --flavor windows --dependency-prefix build/release-deps
 ```
 
-The result is **build/artifacts/papo-tui-0.4.0-windows-x86_64.zip**. It contains
+The result is **build/artifacts/papo-tui-0.5.0-windows-x86_64.zip**. It contains
 the executable, DLLs, terminal/font data and `papo-backends`; extract the whole
 ZIP before running `papo-tui.exe` from PowerShell.
 
@@ -562,10 +562,10 @@ checksum-verified Inno Setup into `build/inno`, then package:
 export ISCC="$(python dist/windows/tools.py | tail -1)"
 python dist/package.py --build build/release --output build/artifacts \
     --formats zip,installer --arch x86_64 --flavor windows --dependency-prefix build/release-deps
-python dist/windows/verify.py --artifacts build/artifacts --version 0.4.0 --arch x86_64
+python dist/windows/verify.py --artifacts build/artifacts --version 0.5.0 --arch x86_64
 ```
 
-The installer is **build/artifacts/papo-tui-0.4.0-windows-x86_64-setup.exe**.
+The installer is **build/artifacts/papo-tui-0.5.0-windows-x86_64-setup.exe**.
 The verification command extracts/tests the ZIP and checks installer
 installation, upgrade and removal in a temporary directory. Use
 `--formats installer` to generate only setup; the verification command requires
@@ -588,7 +588,7 @@ export GITHUB_REPOSITORY=prodesert22/papo-tui
 export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
 docker info
 python dist/ci_linux.py --prepare
-python dist/ci_linux.py --arch x86_64 --version 0.4.0 --jobs 4 --workers 2
+python dist/ci_linux.py --arch x86_64 --version 0.5.0 --jobs 4 --workers 2
 ```
 
 Install Docker using its [Ubuntu instructions](https://docs.docker.com/engine/install/ubuntu/).
@@ -603,7 +603,7 @@ architectures into one directory, validate the complete release and create
 **SHA256SUMS**:
 
 ```sh
-python dist/release.py v0.4.0 --assets build/artifacts
+python dist/release.py v0.5.0 --assets build/artifacts
 ```
 
 This final check requires the complete asset set, including source archives;

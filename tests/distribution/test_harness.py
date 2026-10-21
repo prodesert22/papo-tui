@@ -39,10 +39,29 @@ class HarnessTests(unittest.TestCase):
     def test_graphics_discovery_covers_each_protocol_and_panel_exactly_once(self):
         script = ROOT / "tests/terminal/test_media_terminal.py"
         cases = [case for case in discover(script) if "floating_panels" in case]
-        self.assertEqual(len(cases), 33)
+        panels = {
+            "ajuda-do-contexto",
+            "ajuda-global",
+            "anexar-arquivos",
+            "remover-anexo",
+            "emojis-esc-voltar",
+            "quem-reagiu",
+            "mencoes",
+            "notificacoes",
+            "buscar-mensagens-no-servidor",
+            "filtros-da-busca",
+            "mensagens-fixadas",
+            "detalhes-da-mensagem",
+            "ir-para-mensagem",
+        }
+        expected = {
+            "MediaTerminal.test_floating_panels_preserve_uncovered_attachment_pixels"
+            f"[{protocol},panel={panel}]"
+            for protocol in ("kitty", "sixel", "iterm2")
+            for panel in panels
+        }
+        self.assertEqual(set(cases), expected)
         self.assertEqual(len(cases), len(set(cases)))
-        for protocol in ("kitty", "sixel", "iterm2"):
-            self.assertEqual(sum("[" + protocol + "," in case for case in cases), 11)
 
     def test_handler_assertion_fails_main_thread_and_server_stops(self):
         server = MockServer()
