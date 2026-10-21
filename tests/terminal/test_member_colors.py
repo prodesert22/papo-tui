@@ -140,7 +140,7 @@ class MemberColors(unittest.TestCase):
                 self.assert_color(terminal, "Red Member", "ffffff")
                 terminal.resize(28, 90)
                 self.assert_color(terminal, "Red Member", "ffffff")
-                terminal.send("\x1b\x15\x1b[21~")
+                terminal.send("\x1b\x03\x15")
                 self.wait(terminal, "Membros (")
                 self.assert_color(terminal, "White Member", "ffffff")
                 self.assert_color(terminal, "Green Member", "00ff00")

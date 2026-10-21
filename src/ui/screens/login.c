@@ -7,6 +7,7 @@
 #include "net/auth/client.h"
 #include "platform/unicode.h"
 #include "ui/components/button.h"
+#include "ui/components/help.h"
 #include "ui/components/terminal_title.h"
 #include "ui/components/theme.h"
 #include "ui/input/mouse.h"
@@ -48,6 +49,7 @@
 #define KEY_PASTE_END (KEY_MAX + 2)
 
 typedef struct {
+    help_modal help;
     WINDOW *card;
     WINDOW *header;
     WINDOW *body;
@@ -258,7 +260,7 @@ static void draw(login_ui *ui, auth_client *client)
         erase();
         text(stdscr, 0, 0, COLS, "Amplie o terminal para 44 colunas e 22 linhas.");
         if (LINES > 1)
-            text(stdscr, 1, 0, COLS, "Ctrl+Q: sair");
+            text(stdscr, 1, 0, COLS, UI_HELP_HINT);
         curs_set(0);
         refresh();
         return;
@@ -398,14 +400,10 @@ static void draw(login_ui *ui, auth_client *client)
     else if (ready && !*remaining)
         text(ui->footer, 3, 2, ui->width - 8, session_store_notice(connections->sessions));
     wattrset(ui->footer, COLOR_PAIR(THEME_MUTED));
-    if (ready) {
-        button_draw(ui->footer, 4, 0, 13, "[Canais / F6]",
+    if (ready)
+        button_draw(ui->footer, 4, 0, 13, "[Canais]",
                     ui->focus == CHAT_FOCUS ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_CANVAS);
-        text(ui->footer, 4, 13, ui->width - 17, "  Ctrl+R: sessão · Ctrl+P");
-    } else
-        text(ui->footer, 4, 0, ui->width - 4,
-             ui->width >= 64 ? "Ctrl+N: cadastro · Ctrl+R: sessão · Ctrl+P: perfis · Ctrl+Q"
-                             : "Ctrl+N · Ctrl+R · Ctrl+P · Ctrl+Q");
+    text(ui->footer, 4, ready ? 15 : 0, ui->width - (ready ? 19 : 4), UI_HELP_HINT);
     for (int i = 0; i < FIELD_COUNT; ++i)
         if (ui->fields[i]) {
             wattrset(ui->input,
@@ -425,8 +423,9 @@ static void draw(login_ui *ui, auth_client *client)
     wnoutrefresh(ui->body);
     wnoutrefresh(ui->footer);
     wnoutrefresh(ui->input);
+    help_draw(&ui->help);
     doupdate();
-    curs_set(ui->focus < FIELD_COUNT && !busy && !ready ? 1 : 0);
+    curs_set(!ui->help.open && ui->focus < FIELD_COUNT && !busy && !ready ? 1 : 0);
 }
 
 static void select_focus(login_ui *ui, int selected)
@@ -972,7 +971,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
                 json_decref(auth_take_response(client, NULL, NULL));
         }
         if (!before_session && auth_has_session(client)) {
-            /* Only a new login opens channels. Returning with F6 or verifying
+            /* Only a new login opens channels. Returning from conversations or verifying
              * an existing session after renewal must keep the account view. */
             if (!ui.session_present)
                 ui.open_chat = true;
@@ -1013,7 +1012,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
             graphics_terminal_probe();
             redraw = false;
         }
-        if (ui.open_chat && auth_has_session(client) && !ui.paste) {
+        if (ui.open_chat && !ui.help.open && auth_has_session(client) && !ui.paste) {
             int action = open_history(&ui, &client, &config);
             if (action < 0)
                 result = 1;
@@ -1047,8 +1046,12 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         if (type == KEY_CODE_YES && key == KEY_PASTE_END) {
             static const size_t limits[FIELD_COUNT] = {2048, 256, 1024, 1024, 1024};
             ui.paste = false;
-            if (ui.focus < FIELD_COUNT && !auth_busy(client) && !auth_has_session(client) &&
-                !(ui.profile_active && ui.focus == 0)) {
+            if (ui.help.open) {
+                help_paste(&ui.help, &ui.paste_data);
+                continue;
+            }
+            if (!ui.help.open && ui.focus < FIELD_COUNT && !auth_busy(client) &&
+                !auth_has_session(client) && !(ui.profile_active && ui.focus == 0)) {
                 text_buffer *buffer = &ui.values[ui.focus];
                 size_t lo = buffer->cursor, hi = lo;
                 text_selection(buffer, &lo, &hi);
@@ -1063,6 +1066,21 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
                 text_paste_cancel(&ui.paste_data);
             continue;
         }
+        if (!ui.paste && type == OK && key == 17)
+            break;
+        if (!ui.paste && help_key(&ui.help, type, key))
+            continue;
+        if (!ui.paste &&
+            (shortcut_is(type, key, SHORTCUT_HELP) || shortcut_is(type, key, SHORTCUT_HELP_ALL))) {
+            help_open(&ui.help,
+                      (auth_has_session(client) ? HELP_ACCOUNT : HELP_LOGIN) |
+                          (ui.focus < FIELD_COUNT && !auth_has_session(client)
+                               ? HELP_FIELDS | HELP_FIELD_CLEAR
+                               : 0),
+                      auth_has_session(client) ? "Conta e sessão" : "Login e cadastro",
+                      shortcut_is(type, key, SHORTCUT_HELP_ALL));
+            continue;
+        }
         if (!ui.paste && type == KEY_CODE_YES && key == TEXT_COPY) {
             if (ui.focus < FIELD_COUNT && !auth_busy(client) && !auth_has_session(client))
                 clipboard_copy(&ui.values[ui.focus]);
@@ -1074,7 +1092,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         bool chat_enter = (type == OK && (key == '\n' || key == '\r')) ||
                           (type == KEY_CODE_YES && key == KEY_ENTER);
         if (!ui.paste && auth_has_session(client) &&
-            (ui.open_chat || (type == KEY_CODE_YES && key == KEY_F(6)) ||
+            (ui.open_chat || shortcut_is(type, key, SHORTCUT_ACCOUNT) ||
              (ui.focus == CHAT_FOCUS && chat_enter))) {
             int action = open_history(&ui, &client, &config);
             if (action < 0)
@@ -1152,6 +1170,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
             continue;
         edit_field(&ui, type, key);
     }
+    help_destroy(&ui.help);
     destroy_layout(&ui);
     erase_text((char *)ui.saved, sizeof(ui.saved));
     erase_text((char *)ui.values, sizeof(ui.values));

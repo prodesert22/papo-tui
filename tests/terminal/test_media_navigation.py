@@ -71,7 +71,7 @@ class MediaNavigation(unittest.TestCase):
                 t = self.helper.open(server, protocol=protocol)
                 try:
                     self.helper.wait_frames(t)
-                    t.send("Preserved draft\x1b[18~")
+                    t.send("Preserved draft\x0b")
                     self.helper.wait(t, "Mídia 1/2")
                     t.send("\n")
                     self.helper.wait(t, "Reproduzindo")
@@ -183,7 +183,7 @@ class MediaNavigation(unittest.TestCase):
                         size=(38, 100),
                     )
                     try:
-                        t.send("Gallery draft\x1b[18~\n")
+                        t.send("Gallery draft\x0b\n")
                         self.helper.wait(t, "1/3 ·")
                         t.send("i")
                         self.helper.wait(t, "Propriedades")

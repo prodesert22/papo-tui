@@ -42,7 +42,7 @@ class Members(unittest.TestCase):
         terminal.send(server.url + "\tjosé\tSynthetic!123\n")
         self.wait(terminal, "Conversar em #geral")
         # Choose the textual mode so assertions do not depend on a font.
-        terminal.send("\x1bOQ")
+        terminal.send("\x13")
         self.wait(terminal, "Configurações")
         terminal.send("\t" + "\x1bOB" * (2 if mode == "ultralight" else 1) + "\n\t\n")
         self.settled(terminal, lambda: "Configurações" not in self.screen(terminal))
@@ -50,7 +50,7 @@ class Members(unittest.TestCase):
         return terminal
 
     def drawer(self, terminal):
-        terminal.send("\x1b[21~")
+        terminal.send("\x15")
         self.wait(terminal, "Membros (")
         self.wait(terminal, "Equipe")
 
@@ -60,7 +60,7 @@ class Members(unittest.TestCase):
 
     def select_member(self, terminal, name):
         self.search(terminal, name)
-        terminal.send("/\x15\n")
+        terminal.send("/\x03\n")
         self.wait(terminal, "Membros (6)")
         # The count is drawn before the rows. A filtered member can still be
         # visible at its old position while the unfiltered drawer is repainting.
@@ -112,7 +112,7 @@ class Members(unittest.TestCase):
             self.wait(terminal, "Bia")
             self.resize(terminal, 26, 60)
             self.wait(terminal, "Membros (1)")
-            terminal.send("\x1b[21~")
+            terminal.send("\x15")
             self.wait(terminal, "rascunho preservado")
 
     def test_header_icons_and_arrow_path_to_members_at_wide_and_narrow_sizes(self):
@@ -133,7 +133,7 @@ class Members(unittest.TestCase):
             self.wait(terminal, "Buscar mensagens no servidor")
             terminal.send("\x1b\x1bOC\x1bOC")
             self.wait(terminal, "Foco: Membros")
-            terminal.send("\x1b[21~")
+            terminal.send("\x15")
             self.settled(terminal, lambda: "Membros (" not in self.screen(terminal))
             self.resize(terminal, 26, 70)
             self.wait(terminal, "Foco: Membros")
@@ -311,12 +311,12 @@ class Members(unittest.TestCase):
             self.wait(terminal, "Confirmar")
             terminal.send("\t\n")
             self.settled(terminal, lambda: len(server.member_calls) == 1)
-            terminal.send("\x1b[21~")
+            terminal.send("\x15")
             self.settled(terminal, lambda: "Membros (" not in self.screen(terminal))
             self.click(terminal, "Conversar em #geral")
             terminal.send("rascunho durante reset")
             self.wait(terminal, "rascunho durante reset")
-            terminal.send("\x1b[21~")
+            terminal.send("\x15")
             self.wait(terminal, "Membros (1)")
             self.assertNotIn("/passwordchange/", self.screen(terminal))
             self.assertEqual(len(server.member_calls), 1)
@@ -409,7 +409,7 @@ class Members(unittest.TestCase):
             self.assertNotIn("Gerar link", self.screen(terminal))
             self.assertNotIn("Banir", self.screen(terminal))
             self.assertNotIn("Desbanir", self.screen(terminal))
-            terminal.send("\x1b/\x15josé\n")
+            terminal.send("\x1b/\x03josé\n")
             self.settled(
                 terminal,
                 lambda: "Membros (1)" in self.screen(terminal) and "Você" in self.screen(terminal),
@@ -563,7 +563,7 @@ class Members(unittest.TestCase):
                     conversation["user"]["roles"] = [server.roles[0]]
                 terminal = self.open(server)
                 self.drawer(terminal)
-                terminal.send("\x1b[21~")
+                terminal.send("\x15")
                 self.click(terminal, "[DMs]")
                 self.wait(terminal, "Carol ·")
                 terminal.send("\x1bOH")
@@ -719,7 +719,7 @@ class Members(unittest.TestCase):
             self.drawer(terminal)
             terminal.send("/")
             self.settled(terminal, lambda: not terminal.screen.cursor.hidden)
-            terminal.send("\x1b[20~")
+            terminal.send("\x04")
             self.wait(terminal, "Notificações")
             self.settled(terminal, lambda: terminal.screen.cursor.hidden)
             terminal.send("\t\t\tfiltro exclusivo")
@@ -732,7 +732,7 @@ class Members(unittest.TestCase):
             self.settled(terminal, lambda: "filtro exclusivo" not in self.screen(terminal))
             self.wait(terminal, "Membros (6)")
             self.assertNotIn("filtro exclusivo", self.screen(terminal))
-            terminal.send("\x1bOQ")
+            terminal.send("\x13")
             self.wait(terminal, "Configurações")
             self.settled(terminal, lambda: terminal.screen.cursor.hidden)
             terminal.send("\x1b")

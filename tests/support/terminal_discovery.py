@@ -20,7 +20,7 @@ class R8Terminal(unittest.TestCase):
         return target
 
     def open_notification_target(self, terminal):
-        terminal.send("\x1b[20~")
+        terminal.send("\x04")
         self.wait(terminal, "Notificação de destino")
         terminal.send("\n")
         self.wait(terminal, "Detalhes da notificação")
@@ -31,7 +31,7 @@ class R8Terminal(unittest.TestCase):
 
     def assert_centered_target(self, terminal, content):
         self.wait(terminal, content)
-        self.wait(terminal, "↑↓ mensagens")
+        self.wait(terminal, "Foco: Seleção")
         terminal.read(0.2)
         row = next(i for i, line in enumerate(terminal.screen.display) if content in line)
         # At 100x32, the history viewport is rows 8..22 and its border is x=27.

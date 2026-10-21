@@ -52,6 +52,8 @@ void text_input_init(void)
                     key = TEXT_CONTROL_BASE + (ascii & 31);
                 if (modifier == 6 && (ascii == 'c' || ascii == 'C'))
                     key = TEXT_COPY;
+                if (ascii == '/')
+                    key = TEXT_CONTROL_BASE + 31; /* Ctrl+/ has the legacy Ctrl+_ value. */
                 char sequence[32];
                 snprintf(sequence, sizeof(sequence), "\033[%d;%du", ascii, modifier + locks);
                 define_key(sequence, key);

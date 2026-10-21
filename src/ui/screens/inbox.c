@@ -125,6 +125,10 @@ bool r8_modal_is_open(const r8_modal *m)
     return m && m->open &&
            ((m->kind != R8_PINNED && m->kind != R8_SEARCH) || message_browser_is_open(m->browser));
 }
+r8_modal_kind r8_modal_type(const r8_modal *m)
+{
+    return m->kind;
+}
 static json_t *notification(r8_modal *m, size_t index, bool *event)
 {
     *event = m->rows[index].event;
@@ -698,8 +702,6 @@ bool r8_modal_key(r8_modal *m, int type, uint32_t key)
         activate(m);
         return true;
     }
-    if (m->kind == R8_HELP)
-        return true;
     if (m->detail) {
         if (type == KEY_CODE_YES && (key == KEY_DOWN || key == KEY_NPAGE))
             m->detail_scroll += key == KEY_DOWN ? 1 : 5;
@@ -884,7 +886,6 @@ WINDOW *r8_modal_draw(r8_modal *m)
     const char *title = m->choosing_conversation
                             ? (m->choice_kind == 2 ? "Selecionar DM" : "Selecionar canal")
                         : m->kind == R8_USERS ? "Nova DM"
-                        : m->kind == R8_HELP  ? "Ajuda"
                         : m->prefs            ? "Preferências"
                         : m->detail           ? "Detalhes da notificação"
                                               : "Notificações";
@@ -893,19 +894,6 @@ WINDOW *r8_modal_draw(r8_modal *m)
     wattrset(w, COLOR_PAIR(THEME_PANEL));
     if (m->choosing_conversation) {
         choices_draw(m, w, width, height);
-    } else if (m->kind == R8_HELP) {
-        const char *lines[] = {"Tab/Shift+Tab: percorrer áreas",
-                               "Canais/DMs: ←→ escolher, Enter ativar",
-                               "↑↓: navegar · Enter: abrir texto/DM",
-                               "Voz: Shift+Enter/F4 abre histórico",
-                               "F2: configurações · F9: notificações · F10: membros",
-                               "F3: buscar mensagens · F8: mensagens fixadas",
-                               "Ctrl+D na lista DMs: fechar conversa",
-                               "Ctrl+R: atualizar ou reconectar",
-                               "F6: conta · Ctrl+L: sair da conta",
-                               "Esc: voltar · Ctrl+Q: sair"};
-        for (size_t i = 0; i < sizeof(lines) / sizeof(lines[0]) && (int)i + 3 < height - 2; ++i)
-            text_label(w, (int)i + 3, 2, width - 4, lines[i]);
     } else if (m->prefs) {
         button_draw(w, 3, 2, width - 4,
                     m->config && m->config->desktop_notifications ? "[x] Avisos no desktop"

@@ -221,7 +221,8 @@ add_executable(
     src/ui/screens/message_browser.c
     src/ui/screens/inbox.c
     src/ui/screens/profiles.c
-    src/ui/components/button.c)
+    src/ui/components/button.c
+    src/ui/components/help.c)
 target_sources(papo-tui PRIVATE src/ui/components/file_picker.c)
 target_compile_definitions(papo-tui
                            PRIVATE PAPO_NATIVE_FILE_DIALOGS=$<BOOL:${PAPO_NATIVE_FILE_DIALOGS}>)

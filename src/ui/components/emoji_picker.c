@@ -5,6 +5,7 @@
 #include "model/text/emoji_catalog.h"
 #include "model/text/emoji_usage.h"
 #include "ui/components/theme.h"
+#include "ui/input/shortcuts.h"
 #include <glib.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -401,11 +402,11 @@ bool emoji_picker_key(emoji_picker *p, text_buffer *editor, int type, uint32_t k
     }
     if (!emoji_picker_open(p))
         return false;
-    if ((type == OK && key == 27) || (type == KEY_CODE_YES && key == KEY_F(4))) {
+    if ((type == OK && key == 27) || (shortcut_is(type, key, SHORTCUT_EMOJIS))) {
         emoji_picker_close(p);
         return true;
     }
-    if (type == KEY_CODE_YES && key == KEY_F(5)) {
+    if (type == OK && key == 18) {
         chat_assets_emojis_request(p->assets, true);
         return true;
     }
@@ -619,8 +620,8 @@ void emoji_picker_draw(emoji_picker *p)
                                         : "");
     text_label(w, height - 2, 2, width - 4,
                p->server     ? chat_assets_notice(p->assets)
-               : p->reaction ? "↑↓←→ escolher · Enter reagir · F5 atualizar"
-                             : "↑↓←→ escolher · Enter inserir · F5 atualizar");
+               : p->reaction ? "↑↓←→ escolher · Enter reagir · Ctrl+R atualizar"
+                             : "↑↓←→ escolher · Enter inserir · Ctrl+R atualizar");
     wnoutrefresh(w);
     if (p->focus == 0) {
         curs_set(1);

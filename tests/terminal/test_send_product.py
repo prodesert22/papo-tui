@@ -50,9 +50,9 @@ class SendProduct(support.SendProduct):
                 self.assertIn("Primeiro", self.editor_text(terminal))
                 terminal.send("X")
                 self.assertIn("PrimeiXro", self.editor_text(terminal))
-                terminal.send("\x1b[17~")
-                self.wait(terminal, "[Canais / F6]")
-                terminal.send("\x1b[17~")
+                terminal.send("\x14")
+                self.wait(terminal, "[Canais]")
+                terminal.send("\x14")
                 self.wait(terminal, "geral")
                 terminal.send("\x1bOB\n")
                 self.wait(terminal, "# geral · Histórico")
@@ -92,7 +92,7 @@ class SendProduct(support.SendProduct):
                 self.wait(terminal, "Sem permissão")
                 self.assertIn("Texto preservado", self.editor_text(terminal))
                 server.scenario = "public"
-                terminal.send("\x14")
+                terminal.send("\x19")
                 self.wait(terminal, "Mensagem confirmada")
                 self.assertEqual(server.message_count, 2)
                 self.assertNotIn("Texto preservado", self.editor_text(terminal))
@@ -104,7 +104,7 @@ class SendProduct(support.SendProduct):
             server.scenario = "send-delayed"
             terminal = self.open(server)
             try:
-                terminal.send("Texto capturado\n\x15Novo rascunho")
+                terminal.send("Texto capturado\n\x03Novo rascunho")
                 self.wait(terminal, "Mensagem confirmada")
                 self.assertEqual(server.sent_messages[0]["content"], "Texto capturado")
                 self.assertIn("Novo rascunho", self.editor_text(terminal))
@@ -146,11 +146,11 @@ class SendProduct(support.SendProduct):
                 self.wait(terminal, "Reenviar mensagem?")
                 terminal.send("\n")  # Default is Cancelar, never another POST.
                 self.assertEqual(server.message_count, 1)
-                terminal.send("\x14")
+                terminal.send("\x19")
                 self.wait(terminal, "Reenviar mensagem?")
                 terminal.send("\x1b")
                 self.assertEqual(server.message_count, 1)
-                terminal.send("\x14\x1bOC\n")
+                terminal.send("\x19\x1bOC\n")
                 self.wait(terminal, "Mensagem confirmada")
                 self.assertEqual(server.message_count, 2)
                 self.assertNotIn("Mensagem incerta", self.editor_text(terminal))
@@ -163,7 +163,7 @@ class SendProduct(support.SendProduct):
             try:
                 terminal.send("   \n")
                 self.assertEqual(server.message_count, 0)
-                terminal.send("\x15\x1b[200~Ação\r\nsegunda linha\x11\x1b[201~")
+                terminal.send("\x03\x1b[200~Ação\r\nsegunda linha\x11\x1b[201~")
                 self.assertEqual(server.message_count, 0)
                 terminal.resize(22, 44)
                 self.assertIn("segunda linha", self.editor_text(terminal))

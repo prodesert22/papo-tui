@@ -5,7 +5,8 @@
 #include "model/conversation/history.h"
 #include "ui/input/text.h"
 typedef struct r8_modal r8_modal;
-typedef enum { R8_NOTIFICATIONS, R8_USERS, R8_HELP, R8_PINNED, R8_SEARCH } r8_modal_kind;
+typedef enum { R8_NOTIFICATIONS, R8_USERS, R8_PINNED, R8_SEARCH } r8_modal_kind;
+r8_modal_kind r8_modal_type(const r8_modal *m);
 r8_modal *r8_modal_create(history *h, auth_client *auth, profile_config *config);
 void r8_modal_destroy(r8_modal *m);
 void r8_modal_open(r8_modal *m, r8_modal_kind kind);

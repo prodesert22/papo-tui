@@ -79,7 +79,7 @@ class MessageMutations(unittest.TestCase):
                 terminal.resize(32, 140)
                 terminal.send("Preserved draft\x1bOA")
                 self.assertNotIn("Editando mensagem", self.screen(terminal))
-                terminal.send("\x1b[18~m")
+                terminal.send("\x0bm")
                 self.wait(terminal, "Editar mensagem")
                 self.wait(terminal, "Excluir mensagem")
                 terminal.send("\x1bOB" * 3 + "\n")
@@ -217,7 +217,7 @@ class MessageMutations(unittest.TestCase):
             server.mutation_broadcast = False
             terminal = self.open(server)
             try:
-                terminal.send("Preserved draft\x1b[18~m")
+                terminal.send("Preserved draft\x0bm")
                 self.wait(terminal, "Excluir mensagem")
                 terminal.send("\x1bOB" * 4 + "\n")
                 self.wait(terminal, "Excluir mensagem?")

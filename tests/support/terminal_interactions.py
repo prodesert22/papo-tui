@@ -59,7 +59,7 @@ class MessageInteractions(unittest.TestCase):
         self._mock_server = server
         terminal = product.SendProduct.open(self, server)
         try:
-            terminal.send("\x1bOQ")
+            terminal.send("\x13")
             self.wait(terminal, "Configurações")
             self.wait(terminal, "(*) Normal")
             terminal.send("\t\x1bOB\n\t\n")

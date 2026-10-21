@@ -50,3 +50,9 @@
 - Clear stale server activity indicators once their conversations have been read, while preserving unread notification records in the notification center.
 - Keep disconnection notices readable in narrow terminals when notification and other status messages compete for space.
 - Preserve channel history errors during background channel refreshes so the reason for a failed read remains visible and can be retried.
+
+## Navigation and help
+
+- Open contextual help with Ctrl+G or F1, or global help with Ctrl+/. Both dialogs show a scrollable key-combination/action table with borders and row/column dividers, include mouse buttons, work on narrow screens and preserve the underlying panel, draft and focus. Global help includes an instant, case-insensitive search for key combinations, actions and area names.
+- Move navigation shortcut listings into help. The footer now shows only the help hint beside operational notices.
+- Replace F2–F10 application commands with Ctrl shortcuts: Ctrl+S settings, Ctrl+F search, Ctrl+B pinned messages, Ctrl+U members, Ctrl+D notifications, Ctrl+O attachments or selected-channel history, Ctrl+E emojis, Ctrl+T account, Ctrl+K message selection and Ctrl+Y retry-send/identify-server. Ctrl+Space opens focused context menus; Ctrl+W closes a selected DM. Text editing, newline, copy/paste and refresh controls remain available.

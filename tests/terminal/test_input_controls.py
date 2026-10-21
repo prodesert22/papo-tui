@@ -653,8 +653,8 @@ class InputControls(unittest.TestCase):
             # emit it. Check the actual mode request as well as live highlight.
             last_mouse_enable = bytes(t.output).rfind(b"\x1b[?1006;1000h")
             self.assertIn(b"\x1b[?1002h", t.output[last_mouse_enable:])
-            t.send("\x1b[17;129~")
-            self.wait(t, "[Canais / F6]")
+            t.send("\x1b[116;133u")
+            self.wait(t, "[Canais]")
             self.assertIn(b"\x1b[?1002h", t.output[bytes(t.output).rfind(b"\x1b[?1006;1000h") :])
             t.send("\x1b[113;5u")
             t.process.wait(timeout=5)

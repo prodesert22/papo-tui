@@ -68,7 +68,7 @@ class MediaTerminal(support.MediaTerminal):
                             )
                         count = len(t.stream.frames)
                         placements = len(t.stream.placements)
-                        t.send("\x1b[18~\n")
+                        t.send("\x0b\n")
                         self.wait(t, "[Info]")
                         if protocol == "kitty":
                             deadline = time.monotonic() + 10
@@ -137,7 +137,7 @@ class MediaTerminal(support.MediaTerminal):
                         "Anexo:",
                         "Tipo: image/gif",
                         "Moderação:",
-                        "[Imagem / F7]",
+                        "[Imagem]",
                         "Fixture",
                     ):
                         self.assertNotIn(metadata, display)
@@ -274,7 +274,7 @@ class MediaTerminal(support.MediaTerminal):
                 self.wait_frames(
                     t
                 )  # Identical bytes share one encoded image across two placements.
-                t.send("Draft preserved\x1b[18~")
+                t.send("Draft preserved\x0b")
                 self.wait(t, "Mídia 1/2")
                 self.assertNotIn("Escolha uma mídia", "\n".join(t.screen.display))
                 t.send("\x1bOC")
@@ -453,7 +453,7 @@ class MediaTerminal(support.MediaTerminal):
                 server.api_handler = route
                 terminal = self.open(server, protocol=protocol, size=(32, 100))
                 try:
-                    terminal.send("\x1b[20~")
+                    terminal.send("\x04")
                     self.wait(terminal, "Destino com mídia tardia")
                     terminal.send("\n")
                     self.wait(terminal, "Detalhes da notificação")
@@ -496,17 +496,19 @@ class MediaTerminal(support.MediaTerminal):
     def test_floating_panels_preserve_uncovered_attachment_pixels(self):
         for protocol in protocols("kitty", "sixel", "iterm2"):
             for key, title in panels(
-                ("\x1b[15~", "Anexar arquivos"),
+                ("\x07", "Ajuda do contexto"),
+                ("\x1f", "Ajuda global"),
+                ("\x0f", "Anexar arquivos"),
                 ("attachment-remove", "Remover anexo?"),
-                ("\x1bOS", "Emojis · Esc voltar"),
-                ("\x1b[18~E", "Quem reagiu"),
+                ("\x05", "Emojis · Esc voltar"),
+                ("\x0bE", "Quem reagiu"),
                 ("@", "Menções"),
-                ("\x1b[20~", "Notificações"),
-                ("\x1bOR", "Buscar mensagens no servidor"),
-                ("\x1bOR\t\t\n", "Filtros da busca"),
-                ("\x1b[19~", "Mensagens fixadas"),
-                ("\x1b[19~", "Detalhes da mensagem"),
-                ("\x1b[19~", "Ir para mensagem"),
+                ("\x04", "Notificações"),
+                ("\x06", "Buscar mensagens no servidor"),
+                ("\x06\t\t\n", "Filtros da busca"),
+                ("\x02", "Mensagens fixadas"),
+                ("\x02", "Detalhes da mensagem"),
+                ("\x02", "Ir para mensagem"),
             ):
                 with (
                     self.subTest(protocol=protocol, modal=title),
@@ -555,7 +557,7 @@ class MediaTerminal(support.MediaTerminal):
                     try:
                         self.wait_raster(t, lambda w, h: w > 600 and h > 300)
                         if key == "attachment-remove":
-                            t.send("\x1b[15~")
+                            t.send("\x0f")
                             self.wait(t, "Anexar arquivos")
                             t.send("\x03" + str(Path(self.assets.name) / "landscape.png") + "\n")
                             self.wait(t, "landscape.png 🗙]")
@@ -576,6 +578,8 @@ class MediaTerminal(support.MediaTerminal):
                         top = next(i for i, line in enumerate(display) if title in line)
                         if title in (
                             "Notificações",
+                            "Ajuda do contexto",
+                            "Ajuda global",
                             "Remover anexo?",
                             "Buscar mensagens no servidor",
                             "Filtros da busca",
@@ -665,6 +669,8 @@ class MediaTerminal(support.MediaTerminal):
                         if title in (
                             "Menções",
                             "Notificações",
+                            "Ajuda do contexto",
+                            "Ajuda global",
                             "Anexar arquivos",
                             "Remover anexo?",
                             "Buscar mensagens no servidor",
@@ -739,10 +745,10 @@ class MediaTerminal(support.MediaTerminal):
                     poster_ids = t.stream.live_ids.copy()
                     for key, title in (
                         ("@", "Menções"),
-                        ("\x1b[20~", "Notificações"),
-                        ("\x1bOR", "Buscar mensagens no servidor"),
-                        ("\x1bOR\t\t\n", "Filtros da busca"),
-                        ("\x1b[19~", "Mensagens fixadas"),
+                        ("\x04", "Notificações"),
+                        ("\x06", "Buscar mensagens no servidor"),
+                        ("\x06\t\t\n", "Filtros da busca"),
+                        ("\x02", "Mensagens fixadas"),
                     ):
                         t.send(key)
                         self.wait(t, title)
@@ -767,15 +773,15 @@ class MediaTerminal(support.MediaTerminal):
                                 ),
                                 "Search panel did not close",
                             )
-                    t.send("\x1b[18~")
+                    t.send("\x0b")
                     self.wait(t, "Mídia 1/1")
                     self.assertNotIn("[Info]", "\n".join(t.screen.display))
                     t.send("\n")
                     self.wait(t, "Reproduzindo")
-                    t.send("\x1b[19~")
+                    t.send("\x02")
                     self.wait(t, "Propriedades")
                     self.assertNotIn("Mensagens fixadas", "\n".join(t.screen.display))
-                    t.send("\x1b[19~")
+                    t.send("\x02")
                     wait_for_screen(
                         t,
                         lambda: "Propriedades" not in "\n".join(t.screen.display),
@@ -784,7 +790,7 @@ class MediaTerminal(support.MediaTerminal):
                     self.assertNotIn("Propriedades", "\n".join(t.screen.display))
                     self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), 1)
                     t.send("\x1b")
-                    self.wait(t, "↑↓ mensagens")
+                    self.wait(t, "Foco: Seleção")
                 finally:
                     self.assertTrue(t.close())
 
@@ -802,12 +808,12 @@ class MediaTerminal(support.MediaTerminal):
                 count = len(t.stream.frames)
                 t.read(0.3)
                 self.assertEqual(len(t.stream.frames), count, "Poster must remain static")
-                t.send("\x1b[18~")
+                t.send("\x0b")
                 self.wait(t, "Mídia 1/1")
                 t.send("\n")
                 self.wait(t, "Reproduzindo")
                 t.send("\x1b")
-                self.wait(t, "↑↓ mensagens")
+                self.wait(t, "Foco: Seleção")
             finally:
                 self.assertTrue(t.close())
 
@@ -828,7 +834,7 @@ class MediaTerminal(support.MediaTerminal):
             try:
                 self.wait(t, "▶ Fixture")
                 self.wait(t, "Carregando prévia do vídeo…")
-                t.send("\x1b[18~")
+                t.send("\x0b")
                 self.wait(t, "Mídia 1/1")
                 t.send("\n")
                 self.wait(t, "Carregando mídia")
@@ -896,7 +902,7 @@ class MediaTerminal(support.MediaTerminal):
                 self.assertGreater(len(t.stream.frames), 1)
                 self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), 1)
                 t.send("\x1b")
-                self.wait(t, "↑↓ mensagens")
+                self.wait(t, "Foco: Seleção")
             finally:
                 self.assertTrue(t.close())
 
@@ -918,7 +924,7 @@ class MediaTerminal(support.MediaTerminal):
             t = self.open(server, protocol="kitty", size=(64, 160))
             try:
                 self.wait(t, "▶ Abrir player")
-                t.send("\x1b[18~")
+                t.send("\x0b")
                 self.wait(t, "Mídia 1/1")
                 t.send("\n")
                 self.wait(t, "Carregando mídia")
@@ -934,7 +940,7 @@ class MediaTerminal(support.MediaTerminal):
                 self.assertGreater(len(t.stream.frames), 1)
                 self.assertEqual(sum("/embeds/" in r[1] for r in server.requests), 1)
                 t.send("\x1b")
-                self.wait(t, "↑↓ mensagens")
+                self.wait(t, "Foco: Seleção")
             finally:
                 self.assertTrue(t.close())
 
@@ -943,14 +949,14 @@ class MediaTerminal(support.MediaTerminal):
             t = self.open(server, protocol="kitty")
             try:
                 self.wait_frames(t)
-                t.send("\x1b[18~")
+                t.send("\x0b")
                 self.wait(t, "Mídia 1/1")
                 t.send("\n")
                 self.wait(t, "Reproduzindo")
                 t.send("\x1bOA" * 3)
                 self.wait(t, " 65%")
                 t.send("\x1b")
-                self.wait(t, "↑↓ mensagens")
+                self.wait(t, "Foco: Seleção")
                 path = Path(t.configuration.name, "papo-tui", "config.json")
                 deadline = time.monotonic() + 5
                 while time.monotonic() < deadline and not path.exists():
@@ -964,7 +970,7 @@ class MediaTerminal(support.MediaTerminal):
                 )
                 try:
                     self.wait_frames(second)
-                    second.send("\x1b[18~")
+                    second.send("\x0b")
                     self.wait(second, "Mídia 1/1")
                     second.send("\n")
                     self.wait(second, " 65%")
@@ -983,7 +989,7 @@ class MediaTerminal(support.MediaTerminal):
             t = self.open(server, protocol="kitty", environment={"TMPDIR": directory})
             try:
                 self.wait_frames(t)
-                t.send("Rascunho Kitty\x1b\x1b[18~\n")
+                t.send("Rascunho Kitty\x1b\x0b\n")
                 self.wait_frames(t, 2)
                 self.wait(t, "Reproduzindo")
                 self.assertEqual(set(t.stream.protocols), {"kitty"})
@@ -1003,6 +1009,16 @@ class MediaTerminal(support.MediaTerminal):
                     {player_id},
                 )
                 self.assertNotIn(player_id, t.stream.deleted_ids)
+                t.send("\x07")
+                self.wait(t, "Ajuda do contexto")
+                self.wait(t, "Player de vídeo")
+                self.wait(t, "Pausar ou continuar")
+                # Help absorbs playback commands and restores the paused player.
+                t.send(" m\x1f")
+                self.wait(t, "Ajuda global")
+                t.send("\x1b")
+                self.wait(t, "Pausado")
+                self.assertIn(player_id, t.stream.live_ids)
                 self.assertGreater(t.stream.synchronizations, 0)
                 frames = len(t.stream.frames)
                 t.resize(28, 100)
@@ -1102,12 +1118,12 @@ class MediaTerminal(support.MediaTerminal):
                 self.assertTrue({header[b"i"] for header, _ in t.stream.kitty_frames} - old_ids)
                 self.assertEqual(sum("/messages" in r[1] for r in server.requests), 1)
                 t.send("Preserved draft")
-                t.send("\x1b[17~")
-                self.wait(t, "[Canais / F6]")
+                t.send("\x14")
+                self.wait(t, "[Canais]")
                 content = self.images["png"]
                 server.emit(event)
                 t.read(0.2)
-                t.send("\x1b[17~")
+                t.send("\x14")
                 self.wait(t, "geral")
                 t.send("\x1bOB\n")
                 self.wait(t, "Preserved draft")
@@ -1321,7 +1337,7 @@ class MediaTerminal(support.MediaTerminal):
             t = self.open(server, protocol="kitty")
             try:
                 self.wait_frames(t)
-                t.send("\x1b[18~\n")
+                t.send("\x0b\n")
                 self.wait(t, "[Info]")
                 self.wait(t, "Imagem")
                 self.wait_raster(t, lambda w, h: w >= 232 and h >= 176)
@@ -1334,6 +1350,16 @@ class MediaTerminal(support.MediaTerminal):
                 self.assertIn("Canais", "\n".join(t.screen.display))
                 frames = len(t.stream.frames)
                 image_id = t.stream.placements[-1][b"i"]
+                t.send("\x07")
+                self.wait(t, "Ajuda do contexto")
+                self.wait(t, "Visualizador de mídia")
+                self.wait(t, "Trocar a imagem")
+                self.assertNotIn("Pausar ou continuar", "\n".join(t.screen.display))
+                t.send("\x1b")
+                self.wait(t, "[Info]")
+                self.wait_frames(t, frames + 1)
+                self.assertEqual(t.stream.placements[-1][b"i"], image_id)
+                frames = len(t.stream.frames)
                 t.click(4, 33)
                 self.wait(t, "Propriedades")
                 t.read(0.15)
@@ -1430,7 +1456,7 @@ class MediaTerminal(support.MediaTerminal):
                 self.assertLessEqual(tags[256], 640)
                 self.assertLessEqual(tags[257], 360)
                 self.assertGreater(payload[tags[273]], 230)
-                t.send("\x1b[18~\n")
+                t.send("\x0b\n")
                 self.wait_frames(t, 2)
                 t.send("\x1b")
                 self.wait(t, "Conversar em #")
@@ -1440,7 +1466,7 @@ class MediaTerminal(support.MediaTerminal):
             t = self.open(server, protocol="iterm2")
             try:
                 self.wait(t, "Mensagem 0001")
-                t.send("\x1b[18~\n")
+                t.send("\x0b\n")
                 self.wait_frames(t, 2)
                 self.wait(t, "Reproduzindo")
                 t.send(" ")
@@ -1472,7 +1498,7 @@ class MediaTerminal(support.MediaTerminal):
                     self.assertEqual(len(t.stream.frames), frames, "Navigation redrew the image")
                 t.send("\x1bOH\x1bOB\n")
                 self.wait(t, "Rascunho com imagem")
-                t.send("\x1b[18~\n")
+                t.send("\x0b\n")
                 self.wait(t, "Imagem")
                 self.wait_frames(t, frames + 1)
                 self.assertEqual(
@@ -1528,7 +1554,7 @@ class MediaTerminal(support.MediaTerminal):
                 display = "\n".join(t.screen.display)
                 self.assertEqual(display.count("Info"), 1)
                 self.assertNotIn("Avatar do autor", display)
-                self.assertNotIn("[Imagem / F7]", display)
+                self.assertNotIn("[Imagem]", display)
                 self.assertNotIn("https://example.com", display)
                 self.assertNotIn("Sem conteúdo textual", display)
                 self.assertNotIn("Rodapé:", display)
@@ -1575,7 +1601,7 @@ class MediaTerminal(support.MediaTerminal):
             t = self.open(server, environment={"TMPDIR": directory})
             try:
                 self.wait(t, "▶ Fixture")
-                t.send("\x1b[18~\n")
+                t.send("\x0b\n")
                 self.wait(t, "Carregando mídia")
                 t.send("\x1b")
                 self.wait(t, "Conversar em #geral")
@@ -1610,7 +1636,7 @@ class MediaTerminal(support.MediaTerminal):
             ):
                 t = self.open(server, protocol=protocol)
                 try:
-                    t.send("Rascunho\x1b\x1b[18~\n")
+                    t.send("Rascunho\x1b\x0b\n")
                     self.wait_frames(t, 2)
                     # Fit the 4:3 video; Kitty/iTerm2 pad the final terminal cell.
                     expected = (234 if protocol == "sixel" else 240, 176)
@@ -1676,7 +1702,7 @@ class MediaTerminal(support.MediaTerminal):
                     t = self.open(server, protocol="kitty")
                     try:
                         self.wait_frames(t)
-                        t.send("\x1b[18~\n")
+                        t.send("\x0b\n")
                         self.wait_frames(t, 2)
                         scale = min(320 / original[0], 176 / original[1])
                         expected = tuple(max(1, int(n * scale)) for n in original)
@@ -1722,7 +1748,7 @@ class MediaTerminal(support.MediaTerminal):
         with self.serve(self.video, "video/mp4") as server:
             t = self.open(server, protocol="kitty", environment={"KITTY_WINDOW_ID": "papo-test"})
             try:
-                t.send("Rascunho controles\x1b\x1b[18~\n")
+                t.send("Rascunho controles\x1b\x0b\n")
                 self.wait_frames(t, 2)
                 row, controls = self.player_controls(t)
 
@@ -1875,7 +1901,7 @@ class MediaTerminal(support.MediaTerminal):
             try:
                 self.assertIn(b"\x1b[?1006", bytes(t.output))
                 self.wait(t, "▶ Fixture")
-                t.send("\x1b[18~\n")
+                t.send("\x0b\n")
                 self.wait_frames(t, 2)
                 row, controls = self.player_controls(t)
                 # Release is a distinct packet, as with a real held click. Input
@@ -1925,7 +1951,7 @@ class MediaTerminal(support.MediaTerminal):
                 self.wait(t, "▶ Fixture")
                 t.send("Rascunho")
                 t.send("\x1b")
-                t.send("\x1b[18~\n")
+                t.send("\x0b\n")
                 self.wait_frames(t, 2)
                 self.wait(t, "Reproduzindo")
                 t.send(" ")
@@ -1974,7 +2000,7 @@ class MediaTerminal(support.MediaTerminal):
             t = self.open(server, protocol="kitty")
             try:
                 t.resize(34, 140)
-                t.send("\x1b[18~\n")
+                t.send("\x0b\n")
                 self.wait_frames(t, 2)
                 t.send(" ")
                 self.wait(t, "Pausado")
@@ -2036,7 +2062,7 @@ class MediaTerminal(support.MediaTerminal):
                 # Finish the failed cover before opening the player: both paths
                 # must share the downloaded file even when its decode fails.
                 self.wait(t, "Imagem inválida")
-                t.send("Rascunho retry\x1b\x1b[18~\n")
+                t.send("Rascunho retry\x1b\x0b\n")
                 self.wait(t, "Vídeo inválido ou codec indisponível")
                 self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), 1)
                 parent = server.api_handler
@@ -2069,8 +2095,8 @@ class MediaTerminal(support.MediaTerminal):
             t = self.open(server)
             try:
                 self.wait_frames(t)
-                t.send("\x1b[18~")
-                self.wait(t, "↑↓ mensagens")
+                t.send("\x0b")
+                self.wait(t, "Foco: Seleção")
                 t.send("\n")
                 self.wait_frames(t, 2)
                 self.wait(t, "Pausado")

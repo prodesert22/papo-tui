@@ -83,7 +83,7 @@ class PermissionsTerminal(unittest.TestCase):
                 return route(method, path, body)
 
             try:
-                terminal.send("\x1b[17~")
+                terminal.send("\x14")
                 self.wait(terminal, "[Renovar]")
                 server.api_handler = delayed
                 server.role(ROLE, True)

@@ -323,7 +323,7 @@ class Persistence(unittest.TestCase):
         with HistoryMock() as server:
             t = self.login(server)
             self.control("Mode", "slow")
-            t.send("\x1b[17~")
+            t.send("\x14")
             self.wait(t, "[Renovar]")
             t.send("\x12")
             deadline = time.monotonic() + 5
@@ -366,7 +366,7 @@ class Persistence(unittest.TestCase):
             t = self.login(server)
             file = next(Path(self.env["XDG_STATE_HOME"]).glob("papo-tui/session-*.json"))
             file.chmod(0o644)
-            t.send("\x1b[17~")
+            t.send("\x14")
             self.wait(t, "[Renovar]")
             t.send("\x12")
             self.wait(t, "proteger")

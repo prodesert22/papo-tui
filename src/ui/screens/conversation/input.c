@@ -173,7 +173,7 @@ void conversation_open_channel(view *ui, bool voice_history)
     bool voice = !strcmp(conversation_str(channel, "type"), "voice");
     if (voice && !voice_history) {
         conversation_set_focus(ui, CHANNEL_LIST);
-        ui->feedback = "Voz em breve. Shift+Enter/F4 abre o histórico.";
+        ui->feedback = "Voz em breve. Shift+Enter/Ctrl+O abre o histórico.";
         return;
     }
     if (voice)

@@ -20,7 +20,7 @@ class Attachments(unittest.TestCase):
     editor_text = product.SendProduct.editor_text
 
     def add_file(self, terminal, path):
-        terminal.send("\x1b[15~")
+        terminal.send("\x0f")
         self.wait(terminal, "Anexar arquivos")
         terminal.send("\x03" + str(path) + "\n")
         self.wait(terminal, path.name + " 🗙]")

@@ -68,7 +68,7 @@ class AppModes(unittest.TestCase):
         self.assertTrue(predicate(), "\n".join(t.screen.display))
 
     def choose(self, t, mode):
-        t.send("\x1bOQ")
+        t.send("\x13")
         self.helper.wait(t, "Configurações")
         current = (
             json.loads(self.config.read_text(encoding="utf-8")).get("app_mode", "normal")
@@ -425,7 +425,7 @@ class AppModes(unittest.TestCase):
             t = self.open(server)
             try:
                 t.send("draft remains")
-                t.send("\x1bOQ\t\x1bOB\x1bOB\t\x1bOC\x1bOA\x1bOA\n\t\n")
+                t.send("\x13\t\x1bOB\x1bOB\t\x1bOC\x1bOA\x1bOA\n\t\n")
                 self.wait(
                     t,
                     lambda: (
@@ -434,7 +434,7 @@ class AppModes(unittest.TestCase):
                 )
                 self.helper.wait(t, "draft remains")
                 # General: Up from Save returns to the highlighted mode.
-                t.send("\x1bOQ\t\t\x1bOA\x1bOA\n\t\n")
+                t.send("\x13\t\t\x1bOA\x1bOA\n\t\n")
                 self.wait(
                     t,
                     lambda: (
@@ -442,7 +442,7 @@ class AppModes(unittest.TestCase):
                     ),
                 )
                 # Placeholder: Up from Cancel returns to the section selector.
-                t.send("\x1bOQ\x1bOC\n\x1bOC\x1bOA\x1bOD")
+                t.send("\x13\x1bOC\n\x1bOC\x1bOA\x1bOD")
                 self.helper.wait(t, "Ultralight")
                 t.send("\x1b")
             finally:
@@ -454,7 +454,7 @@ class AppModes(unittest.TestCase):
             t = self.open(server)
             try:
                 self.helper.wait(t, "Fixture")
-                t.send("\x1b[18~\n")
+                t.send("\x0b\n")
                 self.helper.wait(t, "Vídeos desativados")
                 self.assertFalse(any("/attachments/" in req[1] for req in server.requests))
                 for pid in self.children(t):
@@ -478,7 +478,7 @@ class AppModes(unittest.TestCase):
                     t = self.open(server, size=(32, 100))
                     try:
                         self.helper.wait(t, "Mensagem 0001")
-                        t.send("draft stays\x1b[18~E")
+                        t.send("draft stays\x0bE")
                         self.helper.wait(t, "Quem reagiu")
                         self.helper.wait(t, "Pessoas")
                         self.wait(
@@ -487,7 +487,7 @@ class AppModes(unittest.TestCase):
                                 r[1].split("?")[0].endswith("/reactions") for r in server.requests
                             ),
                         )
-                        t.send("\x1bOQ")
+                        t.send("\x13")
                         self.helper.wait(t, "Configurações")
                         self.assertNotIn("Quem reagiu", "\n".join(t.screen.display))
                         t.send("\x1br")
@@ -496,7 +496,7 @@ class AppModes(unittest.TestCase):
                         self.assertNotIn("Respondendo a", "\n".join(t.screen.display))
                         t.send(" tail")
                         self.helper.wait(t, "draft stays tail")
-                        t.send("\x1b[18~e")
+                        t.send("\x0be")
                         self.helper.wait(t, "Reagir · Esc voltar")
                         self.choose(t, destination)
                         self.assertNotIn("Reagir · Esc voltar", "\n".join(t.screen.display))
@@ -536,16 +536,18 @@ class AppModes(unittest.TestCase):
         ).stdout
         for mode in ("normal", "light"):
             for key, title in panels(
-                ("\x1b[15~", "Anexar arquivos"),
+                ("\x07", "Ajuda do contexto"),
+                ("\x1f", "Ajuda global"),
+                ("\x0f", "Anexar arquivos"),
                 ("attachment-remove", "Remover anexo?"),
-                ("\x1bOS", "Emojis · Esc voltar"),
+                ("\x05", "Emojis · Esc voltar"),
                 ("E", "Quem reagiu"),
                 ("@", "Menções"),
-                ("\x1b[20~", "Notificações"),
-                ("\x1bOR", "Buscar mensagens no servidor"),
-                ("\x1bOR\t\t\n", "Filtros da busca"),
-                ("\x1b[19~", "Mensagens fixadas"),
-                ("\x1b[19~", "Ir para mensagem"),
+                ("\x04", "Notificações"),
+                ("\x06", "Buscar mensagens no servidor"),
+                ("\x06\t\t\n", "Filtros da busca"),
+                ("\x02", "Mensagens fixadas"),
+                ("\x02", "Ir para mensagem"),
             ):
                 with self.subTest(mode=mode, modal=title):
                     self.seed(mode)
@@ -590,10 +592,10 @@ class AppModes(unittest.TestCase):
 
                             self.wait(t, lambda: len(red_cells()) > 200)
                             if key == "E":
-                                t.send("\x1b[18~")
+                                t.send("\x0b")
                                 self.wait(t, lambda: len(red_cells()) > 200)
                             if key == "attachment-remove":
-                                t.send("\x1b[15~")
+                                t.send("\x0f")
                                 self.helper.wait(t, "Anexar arquivos")
                                 t.send(
                                     "\x03"
@@ -614,6 +616,8 @@ class AppModes(unittest.TestCase):
                             title_x = t.screen.display[top].index(title)
                             if title in (
                                 "Notificações",
+                                "Ajuda do contexto",
+                                "Ajuda global",
                                 "Remover anexo?",
                                 "Buscar mensagens no servidor",
                                 "Filtros da busca",
@@ -666,6 +670,8 @@ class AppModes(unittest.TestCase):
                             if title in (
                                 "Menções",
                                 "Notificações",
+                                "Ajuda do contexto",
+                                "Ajuda global",
                                 "Anexar arquivos",
                                 "Remover anexo?",
                                 "Buscar mensagens no servidor",
@@ -709,7 +715,7 @@ class AppModes(unittest.TestCase):
             t = self.open(server, size=(48, 160))
             try:
                 self.helper.wait(t, "Fixture")
-                t.send("\x1b[15~")
+                t.send("\x0f")
                 self.helper.wait(t, "Anexar arquivos")
                 t.send("\x03" + str(source) + "\n")
                 self.helper.wait(t, "attachment.txt 🗙]")
@@ -744,7 +750,7 @@ class AppModes(unittest.TestCase):
             server.api_handler = route
             t = self.open(server, size=(32, 100))
             try:
-                t.send("\x1b[19~")
+                t.send("\x02")
                 self.helper.wait(t, "Mensagens fixadas")
                 self.helper.wait(t, "1 resultado(s)")
                 t.send("\n")
@@ -755,7 +761,7 @@ class AppModes(unittest.TestCase):
                 self.helper.wait(t, "Localizando mensagem…")
                 t.send("\x1b")
                 self.helper.wait(t, "Detalhes da mensagem")
-                t.send("\x1b\x1b\x1bOR")
+                t.send("\x1b\x1b\x06")
                 self.helper.wait(t, "Buscar mensagens no servidor")
                 t.send("\t\t\n")
                 self.helper.wait(t, "Filtros da busca")
@@ -807,7 +813,7 @@ class AppModes(unittest.TestCase):
                 self.assertTrue(red_cells())
                 self.assertEqual(self.children(t), [])
                 t.send("\x1b")
-                t.send("\x1b[18~\n")
+                t.send("\x0b\n")
                 self.helper.wait(t, "[Info]")
                 self.wait(t, lambda: bool(self.children(t)))
                 self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), requests)
@@ -820,7 +826,7 @@ class AppModes(unittest.TestCase):
             t = self.open(server)
             try:
                 self.helper.wait(t, "Fixture")
-                t.send("rascunho do vídeo\x1b\x1b[18~\n")
+                t.send("rascunho do vídeo\x1b\x0b\n")
                 self.helper.wait(t, "Reproduzindo")
                 self.assertEqual(t.stream.frames, [])
                 self.assertTrue(

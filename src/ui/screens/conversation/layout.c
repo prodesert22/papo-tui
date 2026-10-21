@@ -389,7 +389,7 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
                                         icon->offset);
                     }
                 }
-                if (observed && !emoji_picker_open(ui->emojis) &&
+                if (observed && !ui->help.open && !emoji_picker_open(ui->emojis) &&
                     !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
                     !media_view_modal(ui->media) && !ui->context_open && !ui->reactors_open &&
                     !conversation_members_modal(ui) &&

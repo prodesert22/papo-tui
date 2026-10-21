@@ -268,20 +268,19 @@ class PosixTerminal:
         return self.screen.cursor.y, self.screen.cursor.x
 
     def return_to_account(self):
-        """Explicitly return with F6 for tests of account-only controls."""
+        """Explicitly return with Ctrl+T for tests of account-only controls."""
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
             display = "\n".join(self.screen.display)
-            if "[+ Adicionar]" in display and ("F6: conta" in display or "[Conversa]" in display):
-                self.send("\x1b[17~")
+            if "[+ Adicionar]" in display and ("Foco:" in display or "[Conversa]" in display):
+                self.send("\x14")
                 deadline = time.monotonic() + 5
                 while (
-                    "[Canais / F6]" not in "\n".join(self.screen.display)
-                    and time.monotonic() < deadline
+                    "[Canais]" not in "\n".join(self.screen.display) and time.monotonic() < deadline
                 ):
                     self.read(0.03)
-                if "[Canais / F6]" not in "\n".join(self.screen.display):
-                    raise AssertionError("F6 did not return to the account screen")
+                if "[Canais]" not in "\n".join(self.screen.display):
+                    raise AssertionError("Ctrl+T did not return to the account screen")
                 return
             self.read(0.03)
         raise AssertionError("Expected an authenticated account or channel screen")

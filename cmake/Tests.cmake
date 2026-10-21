@@ -227,6 +227,9 @@ if(BUILD_TESTING)
         $<TARGET_FILE:papo-tui>
         ${FFMPEG_CLI})
     papo_set_tests_properties(media-integration PROPERTIES TIMEOUT 120)
+    papo_add_test(
+        NAME navigation-help-terminal COMMAND ${Python3_EXECUTABLE}
+        ${PROJECT_SOURCE_DIR}/tests/terminal/test_navigation_help.py $<TARGET_FILE:papo-tui>)
     papo_set_tests_properties(media-terminal PROPERTIES TIMEOUT 420)
     papo_add_test(
         NAME

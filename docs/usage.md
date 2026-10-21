@@ -70,11 +70,11 @@ recovery. If a send remains unconfirmed, check the history before resending:
 the message may already have reached the server.
 
 To open messages in a voice channel, select it in the channel list and press
-**Shift+Enter** or **F4**. Voice calls are not available yet.
+**Shift+Enter** or **Ctrl+O**. Voice calls are not available yet.
 
 ## Channel notifications and muting
 
-Focus the channel list and press **m** or **M**, or **right-click a channel**, to
+Focus the channel list and press **Ctrl+Space**, **m** or **M**, or **right-click a channel**, to
 open its context menu. This also works on a channel you are not reading; opening
 the menu does not load that channel's messages. Categories have no context menu.
 Use ↑/↓ and Enter, or click an option. In a submenu, ← or Esc returns to the
@@ -113,11 +113,11 @@ Enter to open one. ↓ returns to the history; on 👤, it enters an open member
 drawer. ↑ goes to server tabs. From the channel/DM selector buttons, → after
 DMs also reaches Search. Tab and Shift+Tab include all three controls.
 
-Press **F10** or click **👤** beside the pinned-message button to open the member
+Press **Ctrl+U** or click **👤** beside the pinned-message button to open the member
 drawer on the right. It reserves space beside the conversation when the terminal is wide
 enough and overlays the right side on narrower screens. Closing or resizing it
-preserves your draft and reading position. The conversation footer includes
-**F10 membros** (Members), shortened to **F10** when space is limited.
+preserves your draft and reading position. Use contextual help for the member controls; the footer keeps only **Ctrl+G: ajuda**
+(Open help) beside operational notices.
 
 Each member shows an avatar (or their centered first initial), display name and
 presence dot: green for online, yellow for away, red for busy and gray for offline. A text label also identifies
@@ -136,9 +136,9 @@ then press Enter to return to the list. Search ignores case and operates on
 loaded members; loading and partial-list notices identify incomplete results.
 Use Tab/Shift+Tab to move between search, grouping and results. Use ↑/↓,
 Home/End or PageUp/PageDown to select people, or use the mouse. Press **Ctrl+R**
-to refresh the list and **Esc** or **F10** to close the drawer.
+to refresh the list and **Esc** or **Ctrl+U** to close the drawer.
 
-Press **m** on the selected member, or **right-click a member**, to open their
+Press **Ctrl+Space** or **m** on the selected member, or **right-click a member**, to open their
 context menu. It sits to the left of the drawer, or above/below the selected row
 on narrow screens, keeping the member's name visible. Navigate with ↑/↓ and
 Enter, or click an option:
@@ -184,14 +184,53 @@ editor. Switching the list or moving its selection does not load other histories
 
 Press **m** on a selected DM, or right-click its entry, to open a menu with
 **Fechar DM** (Close DM). Enter or a click closes that conversation in your list;
-Esc or m dismisses the menu. **Ctrl+D** in the DM list also closes the selected
+Esc or m dismisses the menu. **Ctrl+W** in the DM list also closes the selected
 conversation. The menu keeps the recipient's name visible. Closing preserves its remote history; a new message can make it
 reappear. Pending sends must finish before you close that DM.
+
+## Navigation help
+
+The footer shows only **Ctrl+G: ajuda** (Open contextual help), alongside
+connection, delivery and other operational notices. Click that hint or press
+**Ctrl+G** to open **Ajuda do contexto** (Contextual help). The table has
+**Combinação de teclas** (Key combination) and **Função** (Action) columns.
+Borders and horizontal dividers separate the header, columns and entries.
+It lists the controls for the focused editor, history, channel/DM list, member
+list or open panel. F1 is also available for contextual help.
+
+Press **Ctrl+/** to open **Ajuda global** (Global help), which lists all
+keyboard and mouse controls with their area of use. The contextual dialog's
+**Todos os atalhos** (All shortcuts) button opens the global dialog;
+**Ajuda do contexto** returns to the focused-area reference.
+
+The global dialog opens with **Buscar** (Search) focused. Type to filter key
+combinations, functions and area names; matching ignores letter case. Ctrl+F
+or clicking the field returns to search. Ctrl+U or Ctrl+C clears it, restoring
+all entries. Terminal text paste is supported in this field. No matches shows
+**Nenhum atalho encontrado.** (No shortcut found). The query stays in place when
+switching between the two help dialogs and resets when help is reopened.
+Tab/Shift+Tab cycle through search, the table and the buttons. Enter in search
+focuses the table; ↑/↓ and PageUp/PageDown scroll results. Home/End move the
+cursor in search or jump through results when the table has focus.
+
+Use ↑/↓, PageUp/PageDown, Home/End or the wheel to scroll either table. Tab and
+Shift+Tab select its buttons; Enter activates the selected button. Esc or
+**Fechar** (Close) returns to the underlying screen with its draft and focus
+preserved. Help consumes typing, pasted text and unrelated shortcuts so they
+cannot trigger actions underneath it. Ctrl+Q still quits.
+
+Application commands use Ctrl combinations. F2–F10 no longer activate the old
+commands. Ctrl+H is reserved for Backspace; Ctrl+I and Ctrl+M remain Tab and
+Enter. Ctrl+N still inserts a new line in the conversation editor. Terminals
+that do not report Ctrl+/ can reach global help through contextual help's
+**Todos os atalhos** button.
 
 ## Keyboard and mouse
 
 | Control | Action |
 | --- | --- |
+| Ctrl+G / F1 | Open contextual help for the focused area or panel |
+| Ctrl+/ | Open global help with every keyboard and mouse control |
 | Tab / Shift+Tab | Move focus |
 | Esc | Close a modal, go back or cancel a connection |
 | Ctrl+Q | Quit |
@@ -201,28 +240,28 @@ reappear. Pending sends must finish before you close that DM.
 | PageUp / PageDown in the editor | Scroll the conversation one line per press; Shift+PageUp/PageDown scroll a page where the terminal reports the modified key |
 | Home / End in history | Go to the start of loaded history / recent messages |
 | Ctrl+R | Refresh or retry a request/connection |
-| Ctrl+T | Retry the last failed send |
-| F6 | Open the account screen |
-| F2 | Open application settings |
+| Ctrl+Y | Retry the last failed send |
+| Ctrl+T | Open the account screen |
+| Ctrl+S | Open application settings |
 | Ctrl+L in a conversation | Sign out of the current account |
-| F10 / 👤 beside 📌/🖈 | Open or close the server member drawer |
-| F9 | Open the notification center and preferences |
-| F3 | Search messages on the current server |
-| F8 outside the media player | Open pinned messages in the current conversation |
-| F4 in the editor | Choose an emoji |
-| F5 or Anexar | Choose files to attach |
+| Ctrl+U / 👤 beside 📌/🖈 | Open or close the server member drawer |
+| Ctrl+D | Open the notification center and preferences |
+| Ctrl+F | Search messages on the current server |
+| Ctrl+B outside the media player | Open pinned messages in the current conversation |
+| Ctrl+E in the editor | Choose an emoji |
+| Ctrl+O or Anexar | Choose files to attach |
 | Ctrl+V in a conversation | Paste copied files, an image, or text from the local clipboard |
-| Shift+Enter or F4 on a voice channel in the channel list | Open its message history |
-| F7 in a conversation | Enter or leave message navigation |
+| Shift+Enter or Ctrl+O on a voice channel in the channel list | Open its message history |
+| Ctrl+K in a conversation | Enter or leave message navigation |
 | ↑ / ↓ during message navigation | Select the previous / next message |
 | ← / → during message navigation | Select media within the message |
 | Enter during message navigation | Open selected media |
-| `m` during message navigation | Open or close the selected message's context menu |
+| Ctrl+Space or `m` during message navigation | Open or close the selected message's context menu |
 | `r` or `R` during message navigation | Reply to the selected message and focus the editor |
 | `e` during message navigation | Open the reaction picker |
 | Shift+E during message navigation | Show who reacted |
 | Right-click a message | Open its context menu directly |
-| m / M in the channel list, or right-click a channel | Open channel mute and notification settings |
+| Ctrl+Space, m / M in the channel list, or right-click a channel | Open channel mute and notification settings |
 | ↑ in the focused, empty editor | Edit your newest message in loaded history |
 | Enter while editing a message | Save the edit |
 | Esc while editing a message | Cancel editing and restore the send draft |
@@ -232,7 +271,7 @@ reappear. Pending sends must finish before you close that DM.
 Type `@` in the editor to choose a person to mention; confirm with Tab or Enter.
 After closing the chooser, Enter sends the message.
 
-Press F9 to open notifications. Type in **Buscar** (Search) to match message text,
+Press Ctrl+D to open notifications. Type in **Buscar** (Search) to match message text,
 displayed mentions, authors or conversation names. Click the filter on the next
 row, or use ←/→ from the results, to choose **Todos** (All), **Canais** (Channels)
 or **DMs**. Changing the category keeps you in the notification list. Press Enter
@@ -312,7 +351,7 @@ Counts are saved per account and instance in the user configuration directory,
 under `papo-tui/emoji-usage/`; if it cannot be written, ranking lasts for the
 current run.
 
-F4 opens the full emoji picker. Each tile shows a 32×32 preview with its name
+Ctrl+E opens the full emoji picker. Each tile shows a 32×32 preview with its name
 below. Use ↓ to move from search to the Unicode/Servidor buttons, then ↓ again
 to enter the grid. From its first row, ↑ returns to the buttons; ↑ again returns
 to search. Use ←/→ to switch emoji sources while the buttons have focus.
@@ -356,10 +395,10 @@ in this client yet.
 
 ## Messages, editing, replies and reactions
 
-Press **F7** to select a message with a highlighted border. Use ↑/↓ to move
+Press **Ctrl+K** to select a message with a highlighted border. Use ↑/↓ to move
 between messages; older or newer pages load as needed. Use ←/→ to select
 media within the message, then Enter to open it. The border shows the selected
-media number. Press Esc or F7 to return to your previous focus. Closing the
+media number. Press Esc or Ctrl+K to return to your previous focus. Closing the
 media viewer returns to the selected message.
 
 Right-click any visible message to open its context menu immediately, or
@@ -427,7 +466,7 @@ run, including manual send retries. Confirmed sends clear their reply target.
 ## Send files and pasted images
 
 Click **📎** to the left of the emoji button, focus it with Tab and press Enter,
-or press **F5**. Both buttons have a filled background; the focused button changes
+or press **Ctrl+O**. Both buttons have a filled background; the focused button changes
 color. While either button has focus, Left or Right switches between them.
 The application opens the system file dialog when available. Otherwise, a
 terminal file picker opens. Builds with native dialogs disabled open this
@@ -462,7 +501,7 @@ folders and remote file URLs are not attached. Pasting a plain-text path keeps
 it as text. On Linux, native clipboard access requires `wl-paste` from
 wl-clipboard under Wayland, or `xclip` under X11. Windows uses the native clipboard.
 SSH sessions and sandboxed installations without clipboard access can use
-📎/F5 for files and the terminal's text paste command. A terminal that
+📎/Ctrl+O for files and the terminal's text paste command. A terminal that
 intercepts Ctrl+V must be configured to pass it to the application for native
 file/image pasting. In Kitty, add or replace the Papo-specific Ctrl+V mapping
 in `kitty.conf` with:
@@ -481,12 +520,12 @@ files per message**, **512 MiB** of temporary attachment data across drafts and
 pending sends, and **64 MiB** per clipboard image. The server can reject uploads
 under its own policy. Read failures or insufficient temporary space show a
 notice; prepared files and your text remain available. Failed sends require an
-explicit retry with Ctrl+T. If the result is uncertain, check history before
+explicit retry with Ctrl+Y. If the result is uncertain, check history before
 confirming a retry, which can duplicate the message.
 
 ## Pinned messages and server search
 
-Click **Fixadas** (Pinned) in the conversation header, or press **F8** outside
+Click **Fixadas** (Pinned) in the conversation header, or press **Ctrl+B** outside
 of the media player, to list that conversation's pinned messages. Type in
 **Buscar** (Search) to filter their text, author name or username. Filtering
 is local and ignores letter case. Use arrow keys, PageUp/PageDown, Home/End
@@ -501,7 +540,7 @@ The server remains authoritative; a conversation can have at most 100 pins.
 Pinning and unpinning are not repeated automatically after
 an error or an uncertain response. Check the refreshed list before retrying.
 
-Click **Buscar** (Search) in the conversation header, or press **F3**, to
+Click **Buscar** (Search) in the conversation header, or press **Ctrl+F**, to
 search messages on the current instance. Type message content and press
 **Enter**, or click **Buscar**, to query the server. Typing alone does not
 send requests. The initial scope is the whole server, with newest results
@@ -555,11 +594,11 @@ notifications read. Opening the actual conversation has its normal read behavior
 
 ### Application modes
 
-Press **F2**, or click the gear beside your name in the box below the channel
+Press **Ctrl+S**, or click the gear beside your name in the box below the channel
 list, to open **Configurações** (Settings). In **Geral** (General), use ↓ to
 reach the modes, ↑/↓ to select one and Space or Enter to mark it. Select
 **Salvar e aplicar** (Save and apply) to apply and remember your choice.
-**Cancelar** (Cancel), Esc or F2 closes the window without applying changes.
+**Cancelar** (Cancel), Esc or Ctrl+S closes the window without applying changes.
 From either bottom button, ↑ returns to the mode list. Use ←/→ on the section
 selector to browse the other sections; these are placeholders for future
 settings and currently change nothing.
@@ -587,7 +626,7 @@ Kitty-compatible terminals use compressed graphics to reduce terminal traffic.
 Image previews remain visible outside floating panels, including mention/emoji
 choosers, message context menus, notifications and reaction dialogs.
 
-Click a media preview to open it, or use F7, select the message and media, then
+Click a media preview to open it, or use Ctrl+K, select the message and media, then
 press Enter. In Normal mode, visible video attachments download automatically in the background
 to generate a static cover; they do not play or produce sound in the history.
 This consumes bandwidth even before you open the player. Opening the player
@@ -640,7 +679,7 @@ configuration file as the server profiles, next to the application mode.
 Videos scale up or down to fit the player, preserving their aspect ratio without
 cropping. Their size adjusts when you resize the terminal.
 
-Click **Info**, or press `i` or F8, to show or hide the media properties.
+Click **Info**, or press `i` or Ctrl+B, to show or hide the media properties.
 Use PageUp/PageDown or the mouse wheel over the properties panel to scroll it.
 
 ### Browse the images of a message
@@ -678,7 +717,7 @@ above.
   HTTP only on `localhost`, `127.0.0.1` and `[::1]`.
 - **Request limit:** wait for the indicated period and try again.
   Sends are not retried automatically.
-- **Images do not appear:** check the application mode in F2. Ultralight shows
+- **Images do not appear:** check the application mode in Ctrl+S. Ultralight shows
   attachment descriptions only. Normal falls back to Chafa when the terminal
   has no supported graphics protocol; Light always uses Chafa.
 - **Emoji pictures are missing:** install the Noto Color Emoji font and restart
@@ -701,7 +740,7 @@ above.
   the application.
 - **Shift+Enter sends instead of adding a line:** use a terminal that supports
   reporting modified Enter, such as Kitty. If the terminal cannot distinguish
-  it from Enter, use Ctrl+N to insert a new line, or F4 in the channel list to
+  it from Enter, use Ctrl+N to insert a new line, or Ctrl+O in the channel list to
   open a voice channel's messages.
 - **Ctrl+Backspace deletes only one character:** some terminals send the same
   code for Backspace and Ctrl+Backspace. Use Ctrl+W to delete the word before

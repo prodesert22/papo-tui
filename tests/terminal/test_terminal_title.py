@@ -66,7 +66,7 @@ class TerminalTitle(unittest.TestCase):
             self.click(terminal, "[DMs]")
             self.click(terminal, "Bia ·")
             self.title(terminal, "DM com Bia | Comunidade (2)")
-            terminal.send("\x1b[20~\n")
+            terminal.send("\x04\n")
             self.wait(terminal, "Detalhes da notificação")
             self.title(terminal, "DM com Bia | Comunidade (1)")
             terminal.send("\x1b\x1bOB\n")

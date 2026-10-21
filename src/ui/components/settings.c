@@ -2,6 +2,7 @@
 #include "ui/components/button.h"
 #include "ui/components/theme.h"
 #include "ui/input/mouse.h"
+#include "ui/input/shortcuts.h"
 #include "ui/input/text.h"
 #include <string.h>
 static const char *sections[] = {"Geral", "Aparência", "Áudio", "Acessibilidade", "Atalhos"};
@@ -41,7 +42,7 @@ void settings_draw(app_settings *s)
     wattrset(w, COLOR_PAIR(THEME_BORDER));
     box(w, 0, 0);
     wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
-    text_label(w, 1, 2, width - 4, "Configurações · F2");
+    text_label(w, 1, 2, width - 4, "Configurações");
     wattrset(w, COLOR_PAIR(s->focus == 0 ? THEME_FOCUSED : THEME_PANEL_ACCENT) |
                     (!has_colors() && s->focus == 0 ? A_REVERSE : 0));
     char label[160];
@@ -108,7 +109,7 @@ void settings_key(app_settings *s, profile_config *config, int type, uint32_t ke
         settings_close(s);
         return;
     }
-    if (type == KEY_CODE_YES && key == KEY_F(2)) {
+    if (shortcut_is(type, key, SHORTCUT_SETTINGS)) {
         settings_close(s);
         return;
     }

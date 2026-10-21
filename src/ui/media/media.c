@@ -8,6 +8,7 @@
 #include "net/http/download.h"
 #include "ui/components/button.h"
 #include "ui/components/theme.h"
+#include "ui/input/shortcuts.h"
 #include "ui/input/text.h"
 #include "ui/media/graphics.h"
 #include "ui/media/image_decode.h"
@@ -1021,12 +1022,24 @@ bool media_view_modal(const media_view *v)
 {
     return v && v->modal != MODAL_NONE;
 }
+media_context media_view_context(const media_view *v)
+{
+    if (!v || v->modal == MODAL_NONE)
+        return MEDIA_CONTEXT_NONE;
+    if (v->modal == MODAL_LIST)
+        return MEDIA_CONTEXT_LIST;
+    if (v->modal == MODAL_ERROR)
+        return MEDIA_CONTEXT_ERROR;
+    if (v->modal == MODAL_LOADING)
+        return MEDIA_CONTEXT_LOADING;
+    return v->selected_item.video ? MEDIA_CONTEXT_VIDEO : MEDIA_CONTEXT_IMAGE;
+}
 bool media_view_key(media_view *v, int type, uint32_t key)
 {
     if (!v)
         return false;
     if (!media_view_modal(v)) {
-        if (type != KEY_CODE_YES || key != KEY_F(7))
+        if (!shortcut_is(type, key, SHORTCUT_MESSAGES))
             return false;
         if (!v->visible_count) {
             v->modal = MODAL_ERROR;
@@ -1059,7 +1072,7 @@ bool media_view_key(media_view *v, int type, uint32_t key)
         return true;
     }
     if (v->modal != MODAL_LIST) {
-        bool toggle = (type == OK && key == 'i') || (type == KEY_CODE_YES && key == KEY_F(8));
+        bool toggle = (type == OK && key == 'i') || shortcut_is(type, key, SHORTCUT_PINNED);
         if ((type == OK && key == '\t') || (type == KEY_CODE_YES && key == KEY_BTAB)) {
             v->info_focused = !v->info_focused;
             return true;
@@ -1070,7 +1083,7 @@ bool media_view_key(media_view *v, int type, uint32_t key)
         if (toggle) {
             v->info_open = !v->info_open;
             v->info_scroll = 0;
-            if (key == 'i' || key == KEY_F(8))
+            if (key == 'i' || shortcut_is(type, key, SHORTCUT_PINNED))
                 v->info_focused = false;
             return true;
         }
@@ -1475,7 +1488,14 @@ void media_view_prepare(media_view *v)
     if (media_view_modal(v)) {
         if (v->window && v->modal == MODAL_PLAYING && modal_layout_update(v)) {
             /* Recalculate after a decode result changes the raster dimensions. */
-            if (v->selected_item.video && v->modal_image.protocol == GRAPHICS_KITTY)
+            if (!v->selected_item.video && media_cache_overlay_count(v->store) &&
+                v->modal_entry >= 0 && v->modal_entry < CACHE_COUNT) {
+                cache_entry *e = &v->cache[v->modal_entry];
+                image_decode_request request = {.terminal = graphics_terminal_get()};
+                media_resource_place_image(e->resource, !strcmp(e->item.role, "author"), request,
+                                           &v->modal_image, v->modal_image.id, e->fragments,
+                                           v->layout.image_y, v->layout.image_x, 0, 0, 0);
+            } else if (v->selected_item.video && v->modal_image.protocol == GRAPHICS_KITTY)
                 graphics_image_place_scaled(&v->modal_image, v->layout.image_y, v->layout.image_x);
             else
                 graphics_image_place(&v->modal_image, v->layout.image_y, v->layout.image_x, 0, 0);

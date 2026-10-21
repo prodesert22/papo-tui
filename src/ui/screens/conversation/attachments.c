@@ -178,7 +178,7 @@ bool conversation_attachments_poll(view *ui, auth_client *auth)
                 g_strlcpy(ui->attachment_notice,
                           g_error_matches(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED)
                               ? error->message
-                              : "Não foi possível colar. Use 📎/F5 ou a colagem do terminal.",
+                              : "Não foi possível colar. Use 📎/Ctrl+O ou a colagem do terminal.",
                           sizeof(ui->attachment_notice));
                 ui->feedback = ui->attachment_notice;
             }

@@ -139,6 +139,9 @@
       }
     }
   },
+  "tests/terminal/test_navigation_help.py": {
+    "windows": "POSIX PTY help fixtures; shared Ctrl decoding and modal controls are additionally exercised by native ConPTY suites"
+  },
   "tests/terminal/test_channel_preferences.py": {
     "windows": "POSIX PTY/graphics channel-menu fixtures; portable mute persistence is checked natively by channel-mutes-unit"
   }

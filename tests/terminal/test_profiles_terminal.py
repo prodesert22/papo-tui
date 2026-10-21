@@ -12,7 +12,7 @@ from mock_server import MockServer
 from terminal_support import Terminal
 
 UP, DOWN, LEFT, RIGHT = "\x1bOA", "\x1bOB", "\x1bOD", "\x1bOC"
-HOME, END, PGUP, PGDOWN, F5 = "\x1bOH", "\x1bOF", "\x1b[5~", "\x1b[6~", "\x1b[15~"
+HOME, END, PGUP, PGDOWN, IDENTIFY = "\x1bOH", "\x1bOF", "\x1b[5~", "\x1b[6~", "\x19"
 
 
 class ProfileTerminalTests(unittest.TestCase):
@@ -142,20 +142,20 @@ class ProfileTerminalTests(unittest.TestCase):
         self.wait(terminal, "> Perfil 29")
         terminal.resize(30, 100)
         terminal.send(HOME + LEFT)
-        self.wait(terminal, "↑↓: perfis")
+        self.wait(terminal, "Ctrl+G: ajuda")
         terminal.send(UP + LEFT + LEFT)
-        self.wait(terminal, "←→: opções")
+        self.wait(terminal, "Ctrl+G: ajuda")
         self.assertIn("Perfil 00", self.screen(terminal))
         terminal.send(RIGHT + RIGHT)
         self.wait(terminal, "Adicionar uma instância")
         terminal.send(LEFT + DOWN + RIGHT + LEFT + LEFT)
-        self.wait(terminal, "←→: ações")
+        self.wait(terminal, "Ctrl+G: ajuda")
         first = self.glyph(terminal, "[Selecionar]")
         terminal.send(RIGHT * 4 + RIGHT)
         self.assertEqual(self.glyph(terminal, "[Identificar]").fg, first.fg)
         self.assertEqual(self.glyph(terminal, "[Identificar]").bg, first.bg)
         terminal.send(UP + DOWN + "\n")
-        self.wait(terminal, "←→: ações")
+        self.wait(terminal, "Ctrl+G: ajuda")
         self.assertIn("> Perfil 01", self.screen(terminal))
 
     def test_cancel_add_keeps_footer_and_shortcuts_disabled(self):
@@ -231,7 +231,7 @@ class ProfileTerminalTests(unittest.TestCase):
             self.assertEqual(self.path.read_bytes(), before)
             terminal.send("\x1b")
             server.scenario = "public"
-            terminal.send(F5)
+            terminal.send(IDENTIFY)
             self.wait(terminal, "Pública")
             terminal.send("\x05\t\x15" + server.url + "/new-prefix\n\n")
             self.wait(terminal, "Editar perfil", absent=True)
@@ -325,7 +325,7 @@ class ProfileTerminalTests(unittest.TestCase):
         self.seed(["http://127.0.0.1:9/papo", "http://127.0.0.1:9/other"])
         terminal = self.terminal(terminal_type="vt100")
         terminal.send(DOWN + RIGHT + RIGHT)
-        self.wait(terminal, "←→: ações")
+        self.wait(terminal, "Ctrl+G: ajuda")
         self.assertTrue(self.glyph(terminal, "[Editar]").reverse)
         self.assertFalse(self.glyph(terminal, "[Selecionar]").reverse)
         terminal.send(UP)

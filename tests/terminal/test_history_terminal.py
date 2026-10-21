@@ -7,7 +7,7 @@ import resource
 import threading
 import time
 from history_mock import HistoryMock, CHANNEL, OTHER, VOICE, uuid
-from terminal_support import Terminal, TerminalStream
+from terminal_support import Terminal, TerminalStream, wait_for_screen
 
 
 import terminal_history as support
@@ -89,7 +89,12 @@ class HistoryTerminal(support.HistoryTerminal):
                 terminal.click(6, 4)
                 self.assertIn("Foco: Histórico", terminal.screen.display[2])
                 terminal.send("\x1bOD")  # history -> channels
-                self.wait(terminal, "↑↓ · Enter")
+                self.wait(terminal, "Foco: Canais")
+                wait_for_screen(
+                    terminal,
+                    lambda: terminal.screen.buffer[7][2].fg != terminal.screen.buffer[10][2].fg,
+                    "Focused channel highlight did not arrive",
+                )
                 selected = terminal.screen.buffer[7][2].fg
 
                 def highlighted(row):
@@ -133,7 +138,7 @@ class HistoryTerminal(support.HistoryTerminal):
                 try:
                     terminal.send(server.url + "\tjosé\tSynthetic!123\n")
                     self.wait(terminal, "Categoria" if categories else "Nenhum canal disponível")
-                    terminal.send("\x1bOB\x1bOH\x1bOF\x1b[5~\x1b[6~\n\x1bOC\x1bOS")
+                    terminal.send("\x1bOB\x1bOH\x1bOF\x1b[5~\x1b[6~\n\x1bOC\x05")
                     terminal.click(6, 4)
                     terminal.read(0.2)
                     self.assertFalse(any("/messages" in r[1] for r in server.requests))
@@ -150,9 +155,7 @@ class HistoryTerminal(support.HistoryTerminal):
                 terminal.send("Rascunho preservado\x1b\x1bOH\x1bOD")
                 self.wait(terminal, "Mensagem 0151")
                 self.wait(terminal, "Foco: Canais")
-                # ncurses emits the footer after the conversation cells. Wait
-                # for the complete focus transition before recording colors.
-                self.wait(terminal, "↑↓ · Enter")
+                # Finish asynchronous paints before recording navigation colors.
                 # Author metadata can arrive after the page. Finish that
                 # asynchronous paint before observing navigation-only changes.
                 self.wait(terminal, "Apelido")
@@ -351,13 +354,13 @@ class HistoryTerminal(support.HistoryTerminal):
                 self.wait(t, "geral")
                 self.wait(t, "Mensagem 0250")
                 self.assertEqual(sum("/messages" in r[1] for r in server.requests), 1)
-                t.send("\x1b[17~")
+                t.send("\x14")
                 self.wait(t, "[Renovar]")
                 t.send("\x12")
                 self.wait(t, "[Renovar]")
                 t.read(0.3)
                 self.assertEqual(server.refresh_count, 1)
-                self.assertIn("[Canais / F6]", "\n".join(t.screen.display))
+                self.assertIn("[Canais]", "\n".join(t.screen.display))
                 self.assertNotIn("[+ Adicionar]", "\n".join(t.screen.display))
                 t.send("\n")
                 self.wait(t, "Você saiu da conta")
@@ -678,9 +681,9 @@ class HistoryTerminal(support.HistoryTerminal):
                 t.send("\x1bOB\n")
                 self.wait(t, "Conteúdo do outro canal")
                 t.resize(24, 80)
-                t.send("\x1b[17~")
-                self.wait(t, "[Canais / F6]")
-                t.send("\x1b[17~")
+                t.send("\x14")
+                self.wait(t, "[Canais]")
+                t.send("\x14")
                 self.wait(t, "geral")
                 t.send("\x10")
                 self.wait(t, "Selecione um perfil")

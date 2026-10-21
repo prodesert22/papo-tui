@@ -158,7 +158,7 @@ clipboard_content *platform_read_clipboard(GCancellable *cancel, GError **error)
     bool wayland = g_getenv("WAYLAND_DISPLAY") && *g_getenv("WAYLAND_DISPLAY");
     if (!wayland && (!g_getenv("DISPLAY") || !*g_getenv("DISPLAY"))) {
         g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
-                            "Clipboard indisponível; use Anexar/F3 ou a colagem do terminal.");
+                            "Clipboard indisponível; use Anexar/Ctrl+O ou a colagem do terminal.");
         return NULL;
     }
     const char *wl[] = {"wl-paste", "--list-types", NULL};

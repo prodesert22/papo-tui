@@ -1,3 +1,4 @@
+#include "ui/input/shortcuts.h"
 #include "ui/screens/conversation/private.h"
 
 enum { SHOW_REACTORS, ADD_REACTION, REPLY, ORIGINAL, EDIT_MESSAGE, DELETE_MESSAGE, PIN_MESSAGE };
@@ -547,7 +548,7 @@ bool conversation_interactions_key(view *ui, int type, uint32_t key)
         ui->feedback = "Nenhuma mensagem própria no histórico carregado para editar.";
         return true;
     }
-    if (type == KEY_CODE_YES && key == KEY_F(7)) {
+    if (shortcut_is(type, key, SHORTCUT_MESSAGES)) {
         ui->centered_message[0] = 0;
         if (!ui->body)
             return true;

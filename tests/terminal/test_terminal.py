@@ -63,10 +63,10 @@ class TerminalTests(unittest.TestCase):
             terminal.resize(2, 18)
             wait_for_screen(
                 terminal,
-                lambda: terminal.screen.display[1].rstrip() == "Ctrl+Q: sair",
+                lambda: terminal.screen.display[1].rstrip() == "Ctrl+G: ajuda",
                 "Minimal login frame did not arrive",
             )
-            self.assertEqual(terminal.screen.display[1].rstrip(), "Ctrl+Q: sair")
+            self.assertEqual(terminal.screen.display[1].rstrip(), "Ctrl+G: ajuda")
             terminal.resize(22, 44)
             self.assertEqual(terminal.wait_cursor(8, 14), (8, 14))
             self.assertIn("ação界語", terminal.screen.display[8])

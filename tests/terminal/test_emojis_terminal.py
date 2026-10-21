@@ -25,11 +25,13 @@ import terminal_emojis as support
 class EmojiTerminal(support.EmojiTerminal):
     def test_mention_and_notification_panels_retain_avatars_and_inline_emoji(self):
         for key, title in (
+            ("\x07", "Ajuda do contexto"),
+            ("\x1f", "Ajuda global"),
             ("@", "Menções"),
-            ("\x1b[20~", "Notificações"),
-            ("\x1bOR", "Buscar mensagens no servidor"),
-            ("\x1bOR\t\t\n", "Filtros da busca"),
-            ("\x1b[19~", "Mensagens fixadas"),
+            ("\x04", "Notificações"),
+            ("\x06", "Buscar mensagens no servidor"),
+            ("\x06\t\t\n", "Filtros da busca"),
+            ("\x02", "Mensagens fixadas"),
         ):
             with self.subTest(panel=title), self.server(content="Emoji 😀") as server:
                 parent = server.api_handler
@@ -42,7 +44,9 @@ class EmojiTerminal(support.EmojiTerminal):
                     return parent(method, path, body)
 
                 server.api_handler = route
-                t = self.open(server, protocol="kitty", size=(48, 160))
+                help_panel = title.startswith("Ajuda")
+                # Keep the avatar and inline emoji above the centered help panel.
+                t = self.open(server, protocol="kitty", size=(68, 180) if help_panel else (48, 160))
                 try:
                     t.send("draft ")
                     self.until(t, lambda: bool(self.avatar_positions(t)))
@@ -61,7 +65,7 @@ class EmojiTerminal(support.EmojiTerminal):
                     t.send("\x12")
                     self.wait(t, title)
                     self.until(t, lambda: images <= t.stream.live_ids)
-                    t.resize(52, 164)
+                    t.resize(*((72, 184) if help_panel else (52, 164)))
                     self.wait(t, title)
                     self.until(t, lambda: images <= t.stream.live_ids)
                     t.send("\x1b")
@@ -74,7 +78,7 @@ class EmojiTerminal(support.EmojiTerminal):
         with self.server() as s:
             t = self.open(s, protocol="kitty")
             try:
-                t.send("antes depois\x1b[1;5D\x1bOS")
+                t.send("antes depois\x1b[1;5D\x05")
                 self.wait(t, "Emojis · Esc voltar")
                 t.send("family: man, woman, girl, boy")
                 self.wait(t, "família")
@@ -114,7 +118,7 @@ class EmojiTerminal(support.EmojiTerminal):
         with self.server() as s:
             t = self.open(s, sixel=False)
             try:
-                t.send("\x1bOS\x1bOB\x1bOC")
+                t.send("\x05\x1bOB\x1bOC")
                 self.wait(t, "1 emojis do servidor")
                 # Search -> tabs -> first tile -> tabs -> search.
                 t.send("\x1bOB\x1bOA\x1bOD\x1bOArocket\n")
@@ -132,7 +136,7 @@ class EmojiTerminal(support.EmojiTerminal):
             try:
                 t.send(":rocket")
                 self.wait(t, "Emojis · mais usados")
-                t.send("\x1bOS")
+                t.send("\x05")
                 self.wait(t, "Emojis · Esc voltar")
                 t.send("\x1b")
                 t.read(0.3)
@@ -154,7 +158,7 @@ class EmojiTerminal(support.EmojiTerminal):
                 try:
                     self.until(t, lambda: bool(t.stream.frames))
                     avatars = self.avatar_positions(t) if protocol == "kitty" else set()
-                    t.send("\x1bOS\t\x1bOC")
+                    t.send("\x05\t\x1bOC")
                     self.wait(t, "1 emojis do servidor")
                     if protocol == "kitty":
                         self.until(
@@ -225,7 +229,7 @@ class EmojiTerminal(support.EmojiTerminal):
             try:
                 self.until(t, lambda: sum("/emojis?" in r[1] for r in s.requests) == 2)
                 self.until(t, lambda: bool(t.stream.frames))
-                t.send("\x1bOS\t\x1bOC")
+                t.send("\x05\t\x1bOC")
                 self.wait(t, "26 emojis do servidor")
                 t.send("\x1b")
                 self.until(t, lambda: any("/users/profile_batch" in r[1] for r in s.requests))
@@ -338,7 +342,7 @@ class EmojiTerminal(support.EmojiTerminal):
                         }
 
                     self.until(t, lambda: len(pixels((16, 16))) >= 2)
-                    t.send("\x1bOS\t\x1bOC")
+                    t.send("\x05\t\x1bOC")
                     self.wait(t, "1 emojis do servidor")
                     self.until(t, lambda: len(pixels((32, 32))) >= 2)
                     t.resize(44, 110)
@@ -392,7 +396,7 @@ class EmojiTerminal(support.EmojiTerminal):
                             if pos in expected
                         }
                         self.until(t, lambda: images <= t.stream.live_ids)
-                    t.send("\x1bOS\t\x1bOC")
+                    t.send("\x05\t\x1bOC")
                     self.wait(t, "1 emojis do servidor")
                     if protocol == "kitty":
                         self.until(t, lambda: images <= t.stream.live_ids)
@@ -572,7 +576,7 @@ class EmojiTerminal(support.EmojiTerminal):
                         self.until(t, lambda: len(actual_pixels(False)) > 1)
                         self.until(t, lambda: len(actual_pixels(True)) > 1)
                         self.assertNotIn(":gato 界:", "\n".join(t.screen.display))
-                        t.send("\x1bOS\t\x1bOC")
+                        t.send("\x05\t\x1bOC")
                         self.wait(t, "1 emojis do servidor")
                         self.until(t, lambda: ":emoji:" not in "\n".join(t.screen.display))
                         self.until(
@@ -624,7 +628,7 @@ class EmojiTerminal(support.EmojiTerminal):
         with self.server(status=429) as s:
             t = self.open(s, sixel=False)
             try:
-                t.send("\x1b[200~" + "x" * 2048 + "\x1b[201~\x1bOS")
+                t.send("\x1b[200~" + "x" * 2048 + "\x1b[201~\x05")
                 self.wait(t, "Emojis · Esc voltar")
                 t.send("grinning face with smiling eyes\n")
                 self.wait(t, "excede o limite")
@@ -632,7 +636,7 @@ class EmojiTerminal(support.EmojiTerminal):
                 self.wait(t, "Emojis · Esc voltar")
                 t.send("\x1b")
                 self.assertEqual(s.message_count, 0)
-                t.send("\x1bOS\x03\t\x1bOC")
+                t.send("\x05\x03\t\x1bOC")
                 self.wait(t, "Limite atingido")
                 t.resize(30, 100)
                 self.wait(t, "Emojis · Esc voltar")
@@ -872,7 +876,7 @@ class EmojiTerminal(support.EmojiTerminal):
             t = self.open(s, protocol="kitty")
             try:
                 self.until(t, lambda: bool(s.peers))
-                t.send("rascunho preservado\x1bOS")
+                t.send("rascunho preservado\x05")
                 self.wait(t, "Emojis · Esc voltar")
                 s.emit({"type": "channel_delete", "channel_id": CHANNEL})
                 self.wait(t, "Canal removido")

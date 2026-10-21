@@ -21,13 +21,13 @@ class MessageInteractions(support.MessageInteractions):
             try:
                 self.resize(terminal, 32, 100)
                 self.wait(terminal, "Mensagem 0003")
-                terminal.send("Draft\x1b[18~")
-                self.wait(terminal, "↑↓ mensagens")
+                terminal.send("Draft\x0b")
+                self.wait(terminal, "Foco: Seleção")
                 self.assertNotIn("Escolha uma mídia", self.screen(terminal))
                 self.assertNotIn("Nenhuma mídia", self.screen(terminal))
                 terminal.send("\n")
                 self.assertNotIn("Ver quem reagiu", self.screen(terminal))
-                self.assertIn("↑↓ mensagens", self.screen(terminal))
+                self.assertIn("Foco: Seleção", self.screen(terminal))
                 self.assertEqual(server.message_count, 0)
                 terminal.send("\x1bOAm")
                 self.wait(terminal, "Ver quem reagiu")
@@ -35,7 +35,7 @@ class MessageInteractions(support.MessageInteractions):
                 terminal.send("m")
                 self.settled(terminal, lambda: "Ver quem reagiu" not in self.screen(terminal))
                 self.assertNotIn("Ver quem reagiu", self.screen(terminal))
-                self.assertIn("↑↓ mensagens", self.screen(terminal))
+                self.assertIn("Foco: Seleção", self.screen(terminal))
                 terminal.send("m")
                 self.wait(terminal, "Ver quem reagiu")
                 terminal.send("\x1b\x1b")
@@ -63,7 +63,7 @@ class MessageInteractions(support.MessageInteractions):
             try:
                 self.resize(terminal, 32, 100)
                 self.wait(terminal, "Mensagem 0060")
-                terminal.send("Preserved draft\x1b[18~m")
+                terminal.send("Preserved draft\x0bm")
 
                 def check_position(message):
                     def positioned():
@@ -122,7 +122,7 @@ class MessageInteractions(support.MessageInteractions):
                 self.right_click(terminal, "Mensagem 0002")
                 self.click(terminal, "Responder")
                 server.scenario = "public"
-                terminal.send("\x14")
+                terminal.send("\x19")
                 self.wait(terminal, "Mensagem confirmada")
                 self.assertEqual(server.sent_messages[0]["reply_to"], server.messages[0]["id"])
                 reply_strip = next(
@@ -144,7 +144,7 @@ class MessageInteractions(support.MessageInteractions):
             try:
                 self.resize(terminal, 32, 100)
                 self.wait(terminal, "Mensagem 0002")
-                terminal.send("Preserved draft\x1b[18~\x1bOAR")
+                terminal.send("Preserved draft\x0b\x1bOAR")
                 self.wait(terminal, "Respondendo a")
                 self.wait(terminal, "Foco: Mensagem")
                 self.assertIn(
@@ -165,7 +165,7 @@ class MessageInteractions(support.MessageInteractions):
             try:
                 self.resize(terminal, 32, 100)
                 self.wait(terminal, "Mensagem 0002")
-                terminal.send("Preserved draft\x1b[18~\x1bOAr")
+                terminal.send("Preserved draft\x0b\x1bOAr")
                 self.wait(terminal, "Respondendo a")
                 border = next(
                     i
@@ -179,7 +179,7 @@ class MessageInteractions(support.MessageInteractions):
                 )
                 self.assertLess(border, original)
                 self.assertLessEqual(original - border, 2)
-                self.wait(terminal, "Esc cancelar resposta")
+                self.wait(terminal, "Foco: Mensagem")
                 terminal.send("\x1b")
                 self.settled(terminal, lambda: "Respondendo" not in self.screen(terminal))
                 self.assertNotIn("Respondendo", self.screen(terminal))
@@ -228,7 +228,7 @@ class MessageInteractions(support.MessageInteractions):
                 self.wait(terminal, "↰ Build Bot: Original do webhook")
                 self.assertNotIn("Resposta:", self.screen(terminal))
                 self.click(terminal, "↰ Build Bot:")
-                self.wait(terminal, "↑↓ mensagens")
+                self.wait(terminal, "Foco: Seleção")
                 self.assertIn("Original do webhook", self.screen(terminal))
                 server.emit(
                     dict(
@@ -258,7 +258,7 @@ class MessageInteractions(support.MessageInteractions):
                 self.assertGreaterEqual(len(pages), 3)
                 self.assertFalse(any(OTHER in r[1] for r in pages))
                 self.click(terminal, "Original muito antiga")
-                self.wait(terminal, "↑↓ mensagens")
+                self.wait(terminal, "Foco: Seleção")
                 self.settled(terminal, lambda: "Mensagem 0320" not in self.screen(terminal))
                 self.assertIn("Original muito antiga", self.screen(terminal))
                 self.resize(terminal, 20, 60)
@@ -296,7 +296,7 @@ class MessageInteractions(support.MessageInteractions):
                 self.assertIn("Mensagem 0220", self.screen(terminal))
                 server.lookup_status = None
                 terminal.send("\x12")
-                self.wait(terminal, "↑↓ mensagens")
+                self.wait(terminal, "Foco: Seleção")
                 self.assertIn("Original to revisit", self.screen(terminal))
                 self.assertNotIn("Mensagem 0220", self.screen(terminal))
             finally:
@@ -330,7 +330,7 @@ class MessageInteractions(support.MessageInteractions):
             try:
                 terminal.send("Preserved draft")
                 self.wait(terminal, "Mensagem 0001")
-                terminal.send("\x1b[18~e")
+                terminal.send("\x0be")
                 self.wait(terminal, "Reagir · Esc voltar")
                 self.wait(terminal, "Unicode")
                 terminal.send("grinning\x1bOB\x1bOB\n")
@@ -426,7 +426,7 @@ class MessageInteractions(support.MessageInteractions):
             terminal = self.open(server)
             try:
                 self.wait(terminal, "Mensagem 0001")
-                terminal.send("\x1b[18~E")
+                terminal.send("\x0bE")
                 self.wait(terminal, "Quem reagiu")
                 self.wait(terminal, "Autor")
                 terminal.send("\x1bOC" + "\x1b[6~" * 14)
@@ -483,7 +483,7 @@ class MessageInteractions(support.MessageInteractions):
             try:
                 self.resize(terminal, 32, 100)
                 self.wait(terminal, "Mensagem 0001")
-                terminal.send("Preserved draft\x1b[18~E")
+                terminal.send("Preserved draft\x0bE")
                 self.wait(terminal, "Pessoa 0334")
                 self.wait(terminal, "Fim da lista")
 
@@ -592,7 +592,7 @@ class MessageInteractions(support.MessageInteractions):
             terminal = self.open(server)
             try:
                 self.wait(terminal, "Mensagem 0001")
-                terminal.send("\x1b[18~E")
+                terminal.send("\x0bE")
                 self.wait(terminal, "Falha ao listar")
                 terminal.read(0.4)
 
@@ -616,7 +616,7 @@ class MessageInteractions(support.MessageInteractions):
             terminal = self.open(server)
             try:
                 self.wait(terminal, "Mensagem 0001")
-                terminal.send("\x1b[18~E")
+                terminal.send("\x0bE")
                 self.wait(terminal, "Autor e")
                 self.wait(terminal, "Fim da lista")
                 self.assertIn("☀ 1", self.screen(terminal))
@@ -638,7 +638,7 @@ class MessageInteractions(support.MessageInteractions):
             terminal = self.open(server)
             try:
                 self.wait(terminal, "Mensagem 0001")
-                terminal.send("\x1b[18~E")
+                terminal.send("\x0bE")
                 self.wait(terminal, "Role para carregar mais")
                 terminal.send("\x1bOB\n")
                 self.wait(terminal, "Autor e")

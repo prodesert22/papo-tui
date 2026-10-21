@@ -179,7 +179,7 @@ class EmojiTerminal(unittest.TestCase):
                 t = self.open(s, protocol=protocol, sixel=protocol != "chafa", size=(32, 100))
                 try:
                     self.wait(t, "Mensagem 0001")
-                    t.send("\x1b[18~")
+                    t.send("\x0b")
                     t.read(0.5)
                     t.send("E")
                     self.wait(t, "Quem reagiu")

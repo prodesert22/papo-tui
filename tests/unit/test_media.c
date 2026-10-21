@@ -381,7 +381,7 @@ static void attachment_layout(void)
         for (int c = 0; c < b.rows[r].count; ++c) {
             const char *text = b.rows[r].segments[c].text;
             assert(!strstr(text, "Anexo:") && !strstr(text, "Tipo:") &&
-                   !strstr(text, "Moderação:") && !strstr(text, "[Imagem / F7]"));
+                   !strstr(text, "Moderação:") && !strstr(text, "[Imagem]"));
         }
         for (int k = 0; k < b.rows[r].media_count; ++k) {
             assert(b.rows[r].media[k].width == 8 && b.rows[r].media[k].height == 10);

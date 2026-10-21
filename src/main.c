@@ -19,8 +19,9 @@ int main(int argc, char **argv)
              "Sem argumentos: recuperar a última sessão ou abrir login.\n"
              "--profiles: gerenciar servidores salvos antes do login.\n"
              "--allow-local-http: permitir HTTP de desenvolvimento em loopback.\n"
-             "Ctrl+P: selecionar perfil; Ctrl+L no gerenciador: limites; F5: identificar "
+             "Ctrl+P: selecionar perfil; Ctrl+L no gerenciador: limites; Ctrl+Y: identificar "
              "instância.\n"
+             "Ctrl+G: ajuda do contexto; Ctrl+/: ajuda global.\n"
              "Tab: foco; Enter: confirmar; Ctrl+Q: sair.");
         return 0;
     }

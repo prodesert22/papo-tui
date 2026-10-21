@@ -45,7 +45,7 @@ class R8Terminal(support.R8Terminal):
             terminal.resize(32, 100)
             terminal.click(8, 4)
             self.wait(terminal, "Conteúdo do outro canal")
-            terminal.send("\x1b[20~")
+            terminal.send("\x04")
             self.wait(terminal, "Autor ainda não carregado")
             self.assertEqual(
                 sum(CHANNEL + "/messages" in path for _, path, _, _ in server.requests), 1
@@ -73,7 +73,7 @@ class R8Terminal(support.R8Terminal):
             terminal.resize(32, 100)
             terminal.click(7, 4)
             self.wait(terminal, "Mensagem 0220")
-            terminal.send("\x1b[20~")
+            terminal.send("\x04")
             self.wait(terminal, "Bot antigo")
             self.assertNotIn("Webhook / autor removido", "\n".join(terminal.screen.display))
             terminal.send("\x1b")
@@ -85,7 +85,7 @@ class R8Terminal(support.R8Terminal):
             partial.pop("external_author")
             partial.pop("webhook_id")
             server.emit(partial)
-            terminal.send("\x1b[20~")
+            terminal.send("\x04")
             self.wait(terminal, "Bot antigo")
             terminal.read(0.3)
             self.assertEqual(
@@ -147,7 +147,7 @@ class R8Terminal(support.R8Terminal):
             terminal = self.login(server)
             terminal.click(7, 4)
             self.wait(terminal, "Mensagem 0003")
-            terminal.send("\x1b[20~")
+            terminal.send("\x04")
             self.wait(terminal, "Bia")
             self.assertNotIn("Autor ainda não carregado", "\n".join(terminal.screen.display))
 
@@ -234,7 +234,7 @@ class R8Terminal(support.R8Terminal):
                 self.wait(terminal, "Não foi possível abrir a conversa.")
                 terminal.send("\n")
                 self.wait(terminal, "Mensagem direta")
-                self.wait(terminal, "↑↓ mensagens")
+                self.wait(terminal, "Foco: Seleção")
                 self.assertEqual(server.opens, 2)
 
     def test_cancel_notification_location_ignores_hidden_dm_resolution_and_open_receipts(self):
@@ -289,7 +289,7 @@ class R8Terminal(support.R8Terminal):
             terminal.resize(32, 100)
             self.open_notification_target(terminal)
             self.wait(terminal, "Mensagem não disponível")
-            self.assertNotIn("↑↓ mensagens", "\n".join(terminal.screen.display))
+            self.assertNotIn("Foco: Seleção", "\n".join(terminal.screen.display))
             before = sum("/messages" in request[1] for request in server.requests)
             terminal.read(0.4)
             self.assertEqual(before, sum("/messages" in request[1] for request in server.requests))
@@ -312,7 +312,7 @@ class R8Terminal(support.R8Terminal):
             ]
             t = self.login(server)
             t.resize(32, 140)
-            t.send("\x1b[20~Aviso\t\x1bOC\n")
+            t.send("\x04Aviso\t\x1bOC\n")
             self.wait(t, "Selecionar canal")
             t.send("\x1bOB\x1bOC")
             self.wait(t, "Selecionar DM")
@@ -356,7 +356,7 @@ class R8Terminal(support.R8Terminal):
         with R8Mock(count=3) as server:
             server.notifications[1]["channel_id"] = DM
             t = self.login(server)
-            t.send("\x1b[20~\x1bOC")
+            t.send("\x04\x1bOC")
             self.wait(t, "Filtro: Canais")
             self.assertIn("Filtro: Canais [Nome]", "\n".join(t.screen.display))
             self.assertNotIn("Selecionar", "\n".join(t.screen.display))
@@ -416,7 +416,7 @@ class R8Terminal(support.R8Terminal):
             )
             t = self.login(server)
             t.resize(32, 140)
-            t.send("\x1b[20~")
+            t.send("\x04")
             self.wait(t, "@Apelido")
             top, left = 3, 25
             self.assertIn("Filtro: Todos [Nome]", t.screen.display[top + 3])
@@ -488,7 +488,7 @@ class R8Terminal(support.R8Terminal):
     def test_webhook_notification_uses_cached_author_and_red_mention_badges(self):
         with R8Mock(count=0) as server:
             t = self.login(server, environment={"KITTY_WINDOW_ID": "badge-fixture"})
-            self.assertIn("F9 notificações", t.screen.display[-2])
+            self.assertIn("Ctrl+G: ajuda", t.screen.display[-2])
             content = "Olá @mention(<@" + uuid(1) + ">)"
             webhook = dict(
                 server.message(50),
@@ -511,7 +511,7 @@ class R8Terminal(support.R8Terminal):
             self.assertIn("[Comunidade 1]", t.screen.display[1])
             self.assertEqual(t.screen.buffer[7][23].data, "❶")
             self.assertEqual(t.screen.buffer[7][23].fg, "ff0000")
-            t.send("\x1b[20~")
+            t.send("\x04")
             self.wait(t, "Bot de avisos")
             self.assertNotIn("Autor indisponível", "\n".join(t.screen.display))
             self.assert_initial_history_only(server)
@@ -565,7 +565,7 @@ class R8Terminal(support.R8Terminal):
             self.wait(t, "Mensagem 0003")
             t.click(8, 4)
             self.wait(t, "Conteúdo do outro canal")
-            t.send("\x1b[20~")
+            t.send("\x04")
             self.wait(t, "Webhook histórico")
             self.wait(t, "Autor ainda não carregado")
             self.assertNotIn("Autor indisponível", "\n".join(t.screen.display))
@@ -581,7 +581,7 @@ class R8Terminal(support.R8Terminal):
             self.assertEqual(t.screen.buffer[7][20].fg, "ff0000")
             self.assert_initial_history_only(server)
             t.resize(32, 140)
-            t.send("\x1b[20~\n")
+            t.send("\x04\n")
             self.wait(t, "Detalhes da notificação")
             self.wait(t, "(11)")
             self.assertIn("[Comunidade 11]", t.screen.display[1])
@@ -827,7 +827,7 @@ class R8Terminal(support.R8Terminal):
             dot(6, 57)
             # Reading a central notification does not advance the conversation
             # cursor. Both conversation badges remain on.
-            t.send("\x1b[20~")
+            t.send("\x04")
             self.wait(t, "Aviso 0001")
             t.send("\n")
             self.wait(t, "Detalhes da notificação")
@@ -940,7 +940,7 @@ class R8Terminal(support.R8Terminal):
     def test_center_details_marks_only_selected_and_preferences_persist(self):
         with R8Mock(count=3) as server:
             t = self.login(server)
-            t.send("\x1b[20~")
+            t.send("\x04")
             self.wait(t, "Notificações")
             self.wait(t, "Aviso 0003")
             self.assertEqual(server.marked, [])
@@ -968,13 +968,13 @@ class R8Terminal(support.R8Terminal):
     def test_member_drawer_replaces_dm_picker_and_includes_banned_members(self):
         with R8Mock() as server:
             t = self.login(server)
-            t.send("\x1b[21~")
+            t.send("\x15")
             self.wait(t, "Membros (3)")
             self.wait(t, "Bia")
             self.wait(t, "banido")
             t.send("/nenhum\n")
             self.wait(t, "Nenhum membro encontrado")
-            t.send("/\x15bia\n")
+            t.send("/\x03bia\n")
             self.wait(t, "Membros (1)")
             t.send("m")
             self.wait(t, "Ver perfil")
@@ -982,7 +982,7 @@ class R8Terminal(support.R8Terminal):
             t.click(row + 1, t.screen.display[row].index("Ver perfil") + 1)
             self.wait(t, "Mensagem direta")
             self.assertEqual(server.opens, 1)
-            t.send("\x1b[21~")
+            t.send("\x15")
             self.wait(t, "Mensagem direta")
             self.assertNotIn("Membros (", "\n".join(t.screen.display))
 
@@ -1000,7 +1000,7 @@ class R8Terminal(support.R8Terminal):
                     message_content="Aviso em promoção",
                 )
             )
-            t.send("\x1b[20~")
+            t.send("\x04")
             self.wait(t, "Aviso em promoção")
             t.send("\n")
             self.wait(t, "Detalhes da notificação")
@@ -1071,7 +1071,7 @@ class R8Terminal(support.R8Terminal):
             t.read(0.5)
             self.assertIn("Primeiro 2", t.screen.display[1])
             self.assertIn("Segundo 0", t.screen.display[1])
-            t.send("\x1b[20~")
+            t.send("\x04")
             self.wait(t, "Aviso segundo servidor")
             self.assertNotIn("Aviso primeiro servidor", "\n".join(t.screen.display))
             t.send("\n")
@@ -1083,7 +1083,7 @@ class R8Terminal(support.R8Terminal):
             self.assertIn("Primeiro 2", t.screen.display[1])
             t.click(1, 4)
             self.wait(t, "Foco: Abas")
-            t.send("\x1b[20~")
+            t.send("\x04")
             self.wait(t, "Novidade no servidor inativo")
             self.assertNotIn("Aviso segundo servidor", "\n".join(t.screen.display))
             self.assertEqual(sum("/messages" in r[1] for r in first.requests), 2)

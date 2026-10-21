@@ -576,10 +576,10 @@ static bool media(message_blocks *b, json_t *message, json_t *entry, const char 
         return strlen(str(entry, "id")) != 36;
     b->media[n].full_width = true;
     size_t start = b->count;
-    /* A graphical preview is the image itself; F7 is documented in the UI. */
+    /* A graphical preview is the image itself; Ctrl+K is documented in the UI. */
     if ((!graphics || video) &&
-        !labeled(b, key, video ? (graphics ? "▶ " : "[▶ Vídeo / F7] ") : "[Imagem / F7] ", label,
-                 width, false, card, color))
+        !labeled(b, key, video ? (graphics ? "▶ " : "[▶ Vídeo] ") : "[Imagem] ", label, width,
+                 false, card, color))
         return false;
     size_t image_start = b->count;
     int height =
