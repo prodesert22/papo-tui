@@ -65,6 +65,10 @@ class DistributionTests(unittest.TestCase):
         self.assertIn("-Dvaapi=enabled", mpv["config-opts"])
         self.assertIn("-Dvaapi-drm=enabled", mpv["config-opts"])
         self.assertIn("--device=dri", manifest["finish-args"])
+        self.assertLess(
+            [x["name"] for x in manifest["modules"]].index("libdisplay-info"),
+            [x["name"] for x in manifest["modules"]].index("mpv"),
+        )
         libplacebo = next(x for x in manifest["modules"] if x["name"] == "libplacebo")
         self.assertEqual(
             libplacebo["build-options"]["env"]["PYTHONPATH"],

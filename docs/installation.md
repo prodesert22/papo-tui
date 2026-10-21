@@ -2,8 +2,8 @@
 
 Choose **x86_64** for 64-bit Intel/AMD computers or **ARM64** for AArch64
 computers. Download the package for your system from
-[Releases](https://github.com/prodesert22/papo-tui/releases), together with
-`SHA256SUMS` to verify the download. The [build comparison](builds.md) lists
+[Releases](https://github.com/prodesert22/papo-tui/releases). If the release
+provides `SHA256SUMS`, use it to verify the download. The [build comparison](builds.md) lists
 the distribution versions targeted by each package.
 
 To compile the program instead, see [BUILD.md](../BUILD.md).
@@ -106,6 +106,24 @@ flatpak run io.github.prodesert22.PapoTUI
 The downloaded file is the application package. Its data is stored in the
 application's isolated directory; it does not automatically share profiles
 with other builds.
+
+## Android / Termux
+
+Use the **Termux ARM64 DEB** on Android 9 or newer with the standard
+`com.termux` application. Download it from Releases and, from its folder in
+Termux, run:
+
+```sh
+pkg update
+apt install ./papo-tui-0.5.0-termux-aarch64.deb
+papo-tui
+```
+
+APT installs the required Termux libraries. The Ubuntu/Debian packages use a
+different runtime and cannot be installed in Termux. This build uses the terminal
+file picker and asks you to sign in each time; desktop credential storage and
+desktop notification popups are unavailable. Use Light mode if your terminal
+does not display graphics correctly.
 
 ## Windows
 

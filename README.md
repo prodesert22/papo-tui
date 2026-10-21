@@ -31,6 +31,7 @@ Choose your operating system and architecture: **x86_64** or **ARM64**.
 | --- | --- |
 | Linux | DEB, RPM, Arch, AppImage and Flatpak |
 | Windows | Portable ZIP and installer |
+| Android / Termux | Native ARM64 DEB (Android 9+) |
 
 See the [installation guide](docs/installation.md) and
 [build comparison](docs/builds.md).

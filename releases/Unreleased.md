@@ -1,0 +1,3 @@
+- Added a native ARM64 Termux package for Android 9 and newer, using the terminal file picker and Termux runtime libraries.
+- Fixed Flatpak package builds by bundling the display information library required for hardware-assisted video decoding.
+- Arch packages now declare the certificate, font configuration and ALSA runtime dependencies needed for a complete installation.

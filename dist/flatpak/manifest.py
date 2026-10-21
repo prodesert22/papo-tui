@@ -127,6 +127,11 @@ def module(entry):
                 "-Dlibunibreak=enabled",
                 "-Dasm=auto",
             ]
+        elif name == "libdisplay-info":
+            result["post-install"] = [
+                "install -Dm644 /run/build/libdisplay-info/LICENSE "
+                "/app/share/licenses/libdisplay-info/LICENSE"
+            ]
     return result
 
 

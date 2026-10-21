@@ -398,11 +398,34 @@ cross-compilation. Use a separate native build for each OS/architecture.
 | Windows executable `papo-tui.exe` | Windows 11 | None beyond the MSYS2 source-build requirements |
 | [Portable `.zip`](#windows-zip-and-installer) | Windows 11 | Python's standard ZIP support |
 | [Installer `-setup.exe`](#windows-zip-and-installer) | Windows 11 | Verified Inno Setup compiler |
+| [Termux `.deb`](#termux-android-arm64) | Official Termux package builder | Android NDK and Termux package dependencies |
 
 Native package recipes include runtime libraries, their licenses and source
 provenance. Keep the dependency prefix and `build/source-cache` created by the
 bootstrap. A binary built with system media libraries or without runtime
 bundling is not a valid input for these release recipes.
+
+### Termux (Android ARM64)
+
+Use the official [Termux package build system](https://github.com/termux/termux-packages)
+to create an Android/Bionic package. This is separate from the glibc Linux DEB.
+From a checkout of that build system, copy this repository's recipe and run:
+
+```sh
+mkdir -p packages/papo-tui
+cp /path/to/papo-tui/dist/termux/build.sh packages/papo-tui/build.sh
+./scripts/run-docker.sh ./build-package.sh -I -a aarch64 papo-tui
+```
+
+The recipe pins the v0.5.0 source archive and its SHA-256. It targets Android 9
+(API 28), uses published Termux dependencies and disables desktop credential
+storage, desktop notifications and native desktop file dialogs. The Termux
+ncurses package contains a patched 6.5 snapshot; the recipe permits that version
+without lowering the desktop requirement. Cross configuration enables the curl
+WebSocket probe result because the Termux libcurl package provides that feature.
+The post-install step checks `--version` and `--help` using the build system's
+Android runtime emulation; it does not replace testing on an Android device.
+The resulting DEB is written under the build system's `output/` directory.
 
 ### Prepare a Linux packaging build
 
