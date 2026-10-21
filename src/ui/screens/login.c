@@ -646,6 +646,9 @@ static bool click_event(login_ui *ui, auth_client *client, MEVENT event)
         if (y != 4 + row && y != 5 + row)
             continue;
         select_focus(ui, i);
+        /* Clicking the label row focuses the field without reaching the text
+         * buffer, so the keyboard request belongs to the focus change. */
+        ui_mouse_keyboard_request();
         if (y == 4 + row)
             text_edit(&ui->values[i], KEY_CODE_YES, TEXT_CTRL_END, TEXT_LIMIT * 2 + 1, false);
         else

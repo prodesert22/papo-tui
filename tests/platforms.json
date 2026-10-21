@@ -114,6 +114,9 @@
   "tests/terminal/test_terminal_synchronization.py": {
     "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
   },
+  "tests/terminal/test_termux_keyboard.py": {
+    "windows": "Termux is an Android terminal; the scenario needs the POSIX pseudo terminal mouse reports it consumes"
+  },
   "tests/terminal/test_typing_terminal.py": {
     "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
   },

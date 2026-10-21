@@ -748,3 +748,8 @@ above.
   Terminal.
 - **Linux terminal settings were disrupted:** run `reset`, even if the
   characters do not appear as you type.
+- **The on-screen keyboard does not open on Android:** in Termux, a tap only
+  opens the soft keyboard while the terminal is not reporting mouse events.
+  The application pauses the mouse reports as soon as the tap that focuses a
+  field ends, so the keyboard opens a moment later. If it stays closed, show it
+  with the keyboard button in the Termux drawer.

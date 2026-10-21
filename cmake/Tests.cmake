@@ -125,6 +125,12 @@ if(BUILD_TESTING)
         NAME input-controls-terminal COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_input_controls.py $<TARGET_FILE:papo-tui>)
     papo_set_tests_properties(input-controls-terminal PROPERTIES TIMEOUT 120)
+    # Termux is Android-only and its terminal reports mouse taps through a POSIX pseudo terminal, so
+    # the scenario stays outside the Windows suite.
+    papo_add_test(
+        NAME termux-keyboard-terminal COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_termux_keyboard.py $<TARGET_FILE:papo-tui>)
+    papo_set_tests_properties(termux-keyboard-terminal PROPERTIES TIMEOUT 120)
     add_executable(media-probe tests/probes/media_probe.c)
     target_link_libraries(media-probe PRIVATE papo_auth)
     target_compile_options(media-probe PRIVATE -Wall -Wextra -Wpedantic -Werror)
@@ -370,7 +376,8 @@ if(BUILD_TESTING)
     papo_add_test(
         NAME login-terminal COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_terminal.py $<TARGET_FILE:papo-tui>)
-    add_executable(text-test tests/unit/test_text.c src/ui/input/text.c src/model/text/mentions.c)
+    add_executable(text-test tests/unit/test_text.c src/ui/input/text.c src/ui/input/mouse.c
+                             src/model/text/mentions.c)
     target_include_directories(text-test PRIVATE src)
     target_link_libraries(text-test PRIVATE PkgConfig::GLIB PkgConfig::NCURSES PkgConfig::UNIBREAK
                                             PkgConfig::JANSSON)

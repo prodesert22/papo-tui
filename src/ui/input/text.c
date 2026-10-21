@@ -7,6 +7,7 @@
 #endif
 #include "platform/unicode.h"
 #include "ui/components/theme.h"
+#include "ui/input/mouse.h"
 #include <stdint.h>
 
 #include <limits.h>
@@ -208,6 +209,8 @@ int text_read_raw(uint32_t *key)
 
 int text_input_read(uint32_t *key)
 {
+    /* The input loop polls often enough to close a pending keyboard request. */
+    ui_mouse_keyboard_poll();
     int type = text_read_raw(key);
     if (type == KEY_CODE_YES && *key == TEXT_KEYBOARD_SUPPORTED) {
         if (input_active && !keyboard_active) {
@@ -689,6 +692,8 @@ void text_click(text_buffer *buffer, int width, int row, int column)
     position_at(buffer, &layout, row, column);
     buffer->goal_column = -1;
     text_unselect(buffer);
+    /* The click reached a text field, where the user types next. */
+    ui_mouse_keyboard_request();
 }
 void text_drag(text_buffer *buffer, int width, int row, int column)
 {
@@ -878,6 +883,7 @@ int text_paste_read(text_paste *paste, uint32_t *key, bool multiline, int (*read
             if (*key == KEY_MOUSE) {
                 MEVENT ignored;
                 while (getmouse(&ignored) == OK) {
+                    ui_mouse_keyboard_event(ignored.bstate);
                 }
             }
             type = ERR;
