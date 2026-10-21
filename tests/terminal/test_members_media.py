@@ -1,5 +1,9 @@
 """PTY/protocol evidence for member panels; not real-emulator visual inspection."""
 
+from test_context import protocols
+
+from test_context import main as test_main
+
 import base64
 import hashlib
 import subprocess
@@ -9,9 +13,9 @@ from urllib.parse import urlsplit
 import unittest
 
 # This import consumes the binary and ffmpeg arguments, as in the media suite.
-import test_media_terminal as media
+import terminal_media as media
 from member_mock import MemberMock, AUTHOR
-import test_message_interactions as interactions
+import terminal_interactions as interactions
 
 
 class MemberMedia(unittest.TestCase):
@@ -95,24 +99,24 @@ class MemberMedia(unittest.TestCase):
         ]
 
     def test_drawer_menu_profile_resize_and_close_preserve_uncovered_media(self):
-        for protocol in ("kitty", "sixel", "iterm2"):
+        for protocol in protocols("kitty", "sixel", "iterm2"):
             with self.subTest(protocol=protocol), self.fixture() as server:
                 helper = media.MediaTerminal()
                 helper.include_icons = True
                 terminal = helper.open(server, protocol=protocol, size=(44, 180))
                 try:
                     helper.wait_frames(terminal)
-                    terminal.send("\x1b[21~")
+                    terminal.send("\x15")
                     self.wait(terminal, "Membros (6)")
                     self.wait(terminal, "Equipe")
                     interactions.MessageInteractions.click(self, terminal, "Conversar em #geral")
-                    terminal.send("\x1bOS")
+                    terminal.send("\x05")
                     self.wait(terminal, "Emojis")
                     terminal.resize(42, 170)
                     self.wait(terminal, "Emojis")
                     terminal.send("\x1b")
                     terminal.resize(44, 180)
-                    terminal.send("\x1b[21~\x1b[21~")
+                    terminal.send("\x15\x15")
                     self.wait(terminal, "Membros (6)")
                     terminal.send("/bob\n")
                     self.wait(terminal, "Membros (1)")
@@ -142,7 +146,7 @@ class MemberMedia(unittest.TestCase):
                     before = sum("/attachments/" in path for method, path, *_ in server.requests)
                     terminal.resize(38, 130)
                     self.wait(terminal, "@bob")
-                    terminal.send("\x1b\x1b[21~")
+                    terminal.send("\x1b\x15")
                     self.wait(terminal, "Conversar em #geral")
                     interactions.MessageInteractions.click(self, terminal, "[DMs]")
                     self.wait(terminal, "Bia ·")
@@ -199,7 +203,7 @@ class MemberMedia(unittest.TestCase):
             helper = media.MediaTerminal()
             terminal = helper.open(server, protocol="kitty", size=(40, 150))
             try:
-                terminal.send("\x1b[21~/bob\n")
+                terminal.send("\x15/bob\n")
                 self.wait(terminal, "Membros (1)")
                 terminal.send("\n")
                 self.wait(terminal, "@bob")
@@ -219,13 +223,13 @@ class MemberMedia(unittest.TestCase):
                 helper.tearDown()
 
     def test_drawer_avatars_remain_square_with_tall_terminal_cells(self):
-        for protocol in ("kitty", "sixel", "iterm2"):
+        for protocol in protocols("kitty", "sixel", "iterm2"):
             with self.subTest(protocol=protocol), self.fixture() as server:
                 helper = media.MediaTerminal()
                 helper.include_icons = True
                 terminal = helper.open(server, protocol=protocol, size=(44, 180))
                 try:
-                    terminal.send("\x1b[6;25;11t\x1b[21~/bob\n")
+                    terminal.send("\x1b[6;25;11t\x15/bob\n")
                     self.wait(terminal, "Membros (1)")
 
                     def avatars():
@@ -290,7 +294,7 @@ class MemberMedia(unittest.TestCase):
                         self.assertLessEqual(red_height, 33)
                     terminal.resize(36, 130)
                     self.wait(terminal, "Membros (1)")
-                    terminal.send("\x1b[21~")
+                    terminal.send("\x15")
                     self.wait(terminal, "Conversar em #geral")
                 finally:
                     self.assertTrue(terminal.close())
@@ -303,12 +307,12 @@ class MemberMedia(unittest.TestCase):
                 helper = media.MediaTerminal()
                 terminal = helper.open(server, sixel=False, size=(36, 130))
                 try:
-                    terminal.send("\x1bOQ")
+                    terminal.send("\x13")
                     self.wait(terminal, "Configurações")
                     terminal.send("\t" + "\x1bOB" * (1 if mode == "light" else 2) + "\n\t\n")
                     self.settled(terminal, lambda: "Configurações" not in self.screen(terminal))
                     baseline = len(server.requests)
-                    terminal.send("\x1b[21~/bob\n")
+                    terminal.send("\x15/bob\n")
                     self.wait(terminal, "Membros (1)")
                     terminal.send("\n")
                     self.wait(terminal, "@bob")
@@ -334,4 +338,6 @@ class MemberMedia(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        2,
+    )

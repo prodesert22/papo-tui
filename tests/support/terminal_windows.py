@@ -40,7 +40,7 @@ class WindowsTerminal:
         unset_environment=(),
     ):
         # Imported lazily: test_terminal defines the shared pyte observer first.
-        from test_terminal import BINARY, ObservedScreen, TerminalStream
+        from terminal_support import BINARY, ObservedScreen, TerminalStream
 
         self.configuration = tempfile.TemporaryDirectory(prefix="papo-conpty-")
         self._closed = False
@@ -50,6 +50,8 @@ class WindowsTerminal:
             TERM=terminal_type,
             XDG_CONFIG_HOME=self.configuration.name,
             XDG_STATE_HOME=os.path.join(self.configuration.name, "state"),
+            XDG_CACHE_HOME=os.path.join(self.configuration.name, "cache"),
+            PYTHONUTF8="1",
         )
         # Every test has its own config scope; it cannot read personal credentials.
         env.update(environment or {})
@@ -58,9 +60,18 @@ class WindowsTerminal:
         args = [BINARY, *arguments]
         if allow_local_http and "--allow-local-http" not in args:
             args.append("--allow-local-http")
-        self.child = PtyProcess.spawn(args, env=env, dimensions=(24, 80), backend=Backend.ConPTY)
+        try:
+            self.child = PtyProcess.spawn(
+                args, env=env, dimensions=(24, 80), backend=Backend.ConPTY
+            )
+        except BaseException:
+            self.configuration.cleanup()
+            raise
         self.process = Process(self.child)
         self.output = bytearray()
+        from test_context import terminals
+
+        terminals.append(self)
         self.screen = ObservedScreen(80, 24)
         self.stream = TerminalStream(self.screen, ansi_charset=True)
         try:
@@ -99,6 +110,8 @@ class WindowsTerminal:
     def close(self, signal_number=None, exit_key="\x11"):
         if self._closed:
             return self._clean_exit
+        if hasattr(self, "screen"):
+            self._screen_before_close = list(self.screen.display)
         try:
             if self.child.isalive():
                 if signal_number is None:

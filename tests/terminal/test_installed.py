@@ -1,9 +1,11 @@
 """Synthetic end-to-end smoke test of an installed distribution entrypoint."""
 
+from test_context import main as test_main
+
 import time
 import unittest
 from history_mock import HistoryMock
-from test_terminal import Terminal
+from terminal_support import Terminal
 
 
 class InstalledApplication(unittest.TestCase):
@@ -33,4 +35,6 @@ class InstalledApplication(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

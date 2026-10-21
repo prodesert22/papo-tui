@@ -216,7 +216,15 @@ def dependency_sources(output, version, architecture, flavor, prefix, cache, sta
         shutil.copytree(ROOT / "dist/patches", kit / "dist/patches")
         resources = ROOT / "build/resources"
         if resources.is_dir():
-            shutil.copytree(resources, kit / "font-resources")
+            # Only declared release resources belong in the source kit. The
+            # same download cache may also contain development-only test fonts.
+            resource_lock = json.loads((ROOT / "dist/resources.json").read_text(encoding="utf-8"))
+            for resource in resource_lock["files"]:
+                source = resources / resource["name"]
+                if source.is_file():
+                    destination = kit / "font-resources" / resource["name"]
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(source, destination)
         collect(stage, prefix, kit / "system-sources")
         licenses = prefix / "share/licenses/papo-dependencies"
         if licenses.is_dir():

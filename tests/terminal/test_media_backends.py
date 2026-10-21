@@ -1,17 +1,19 @@
 """Lazy dependency loading and failure handling; synthetic HTTP and PTY only."""
 
+from test_context import main as test_main
+
+from test_context import argument
+
 import locale
 from pathlib import Path
 import shutil
-import sys
 import tempfile
 import unittest
 
 # test_media_terminal consumes the first two arguments when imported.
-BINARY, FFMPEG, FAKE, IMAGE, VIDEO = map(Path, sys.argv[1:6])
-sys.argv = [sys.argv[0], str(BINARY), str(FFMPEG), *sys.argv[6:]]
-import test_media_terminal as media  # noqa: E402 - path and test arguments are prepared above
-import test_terminal  # noqa: E402 - path and test arguments are prepared above
+BINARY, FFMPEG, FAKE, IMAGE, VIDEO = (Path(argument(i)) for i in range(5))
+import terminal_media as media  # noqa: E402 - path and test arguments are prepared above
+import terminal_support as test_terminal  # noqa: E402 - path and test arguments are prepared above
 from history_mock import HistoryMock  # noqa: E402 - path and test arguments are prepared above
 
 
@@ -35,12 +37,12 @@ class MediaBackends(unittest.TestCase):
         test_terminal.BINARY = self.previous
 
     def maps(self, terminal):
-        maps = Path(f"/proc/{terminal.process.pid}/maps").read_text()
+        maps = Path(f"/proc/{terminal.process.pid}/maps").read_text(encoding="utf-8")
         for task in Path(f"/proc/{terminal.process.pid}/task").iterdir():
-            for pid in (task / "children").read_text().split():
+            for pid in (task / "children").read_text(encoding="utf-8").split():
                 try:
                     if b"papo-media-worker" in Path(f"/proc/{pid}/cmdline").read_bytes():
-                        maps += Path(f"/proc/{pid}/maps").read_text()
+                        maps += Path(f"/proc/{pid}/maps").read_text(encoding="utf-8")
                 except FileNotFoundError:
                     pass
         return maps
@@ -130,7 +132,7 @@ class MediaBackends(unittest.TestCase):
             try:
                 self.helper.wait_frames(terminal)
                 self.assertNotIn(VIDEO.name, self.maps(terminal))
-                terminal.send("Draft\x1b\x1b[18~\n")
+                terminal.send("Draft\x1b\x0b\n")
                 self.helper.wait_frames(terminal, 2)
                 maps = self.maps(terminal)
                 self.assertIn(VIDEO.name, maps)
@@ -161,7 +163,7 @@ class MediaBackends(unittest.TestCase):
                 server, protocol="kitty", environment={"LANG": selected, "LC_ALL": selected}
             )
             try:
-                terminal.send("Ação ç界\x1b\x1b[18~\n")
+                terminal.send("Ação ç界\x1b\x0b\n")
                 self.helper.wait_frames(terminal, 2)
                 self.helper.wait(terminal, "Reproduzindo")
                 terminal.send(" ")
@@ -182,7 +184,7 @@ class MediaBackends(unittest.TestCase):
                 self.bundle(tmp, source)
                 terminal = self.helper.open(server, protocol="kitty")
                 try:
-                    terminal.send("draft preserved\x1b\x1b[18~\n")
+                    terminal.send("draft preserved\x1b\x0b\n")
                     self.helper.wait(terminal, "Módulo de imagens ausente")
                     terminal.send("\x1b")
                     self.assertIn("draft preserved", "\n".join(terminal.screen.display))
@@ -200,7 +202,7 @@ class MediaBackends(unittest.TestCase):
                 self.bundle(tmp, video=source)
                 terminal = self.helper.open(server, protocol="kitty")
                 try:
-                    terminal.send("draft preserved\x1b\x1b[18~\n")
+                    terminal.send("draft preserved\x1b\x0b\n")
                     self.helper.wait(terminal, "Módulo de vídeo ausente")
                     terminal.send("\x1b")
                     self.assertIn("draft preserved", "\n".join(terminal.screen.display))
@@ -210,4 +212,6 @@ class MediaBackends(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        5,
+    )

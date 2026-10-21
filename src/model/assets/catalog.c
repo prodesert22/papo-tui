@@ -257,14 +257,15 @@ bool chat_assets_emojis_response(chat_assets *a, json_t *response, long status)
         a->wanted = a->refreshing = false;
         a->loaded = true;
         net_now_ms(&a->refreshed);
-        snprintf(a->notice, sizeof(a->notice), "%zu emojis do servidor · F5 atualizar", a->count);
+        snprintf(a->notice, sizeof(a->notice), "%zu emojis do servidor · Ctrl+R atualizar",
+                 a->count);
     }
     if (!ok) {
         a->wanted = false;
         a->failed = true;
         snprintf(a->notice, sizeof(a->notice),
-                 status == 429 ? "Limite atingido · Aguarde e use F5"
-                               : "Falha nos emojis · F5 tentar novamente");
+                 status == 429 ? "Limite atingido · Aguarde e use Ctrl+R"
+                               : "Falha nos emojis · Ctrl+R tentar novamente");
     }
     ++a->revision;
     ++a->emoji_revision;

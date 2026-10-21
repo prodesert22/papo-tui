@@ -7,6 +7,51 @@ full details are available in `releases/`.
 
 Upcoming changes are recorded in [Unreleased](releases/Unreleased.md).
 
+## [0.5.0]
+
+### Added
+
+- Global shortcut help through Ctrl+/, with instant search by key combination,
+  action or area, and contextual help through Ctrl+G/F1 for the focused area.
+- Bordered, scrollable help tables with keyboard/mouse navigation, narrow-screen
+  layouts and preserved drafts, focus and underlying panels.
+- Channel notification preferences for all messages, mentions only or no
+  notifications, plus m/M, Ctrl+Space and right-click channel menus.
+- Timed channel mutes for 10/30 minutes, 1/4/12/24 hours or until reactivated,
+  stored per account and instance.
+- Playback during compatible video downloads, with timeline colors for played,
+  downloaded and pending portions, and player volume retained between sessions.
+
+### Changed
+
+- Replace F2–F10 commands with Ctrl shortcuts for settings, search, pinned
+  messages, members, notifications, attachments, emojis, account and message
+  selection. Use Ctrl+Y for failed-send retry/server identification and Ctrl+W
+  to close a selected DM; move footer shortcut listings into help.
+- Scroll history from the editor with PageUp/PageDown and full pages with
+  Shift+PageUp/PageDown when the terminal forwards the combination.
+- Improve video/GIF cadence, Chafa/TTY and Light animation processing, and Kitty
+  graphics throughput; enable compatible VA-API/D3D11VA video decoding in
+  packaged builds with automatic CPU fallback.
+- Isolate native and instrumented CI jobs, make test dependencies reproducible
+  and report individual scenarios/build stages with an explicit Clang 18 analyzer.
+
+### Fixed
+
+- Keep video covers and playback for video attachments reported as generic files.
+- Preserve image transfers when resizing interrupts terminal output.
+- Delete words correctly with Ctrl+Backspace in legacy terminals; Ctrl+W remains
+  available for word deletion in text fields.
+- Avoid extra blank lines after width-filling text or trailing spaces, and remove
+  gaps between enlarged emoji-only previews.
+- Clear stale server activity indicators after conversations are read while
+  retaining unread notification records in the notification center.
+- Keep disconnection notices readable in compact footers and preserve history
+  errors during background channel refreshes.
+
+See the [full 0.5.0 release notes](releases/v0.5.0.md), including the shortcut
+migration table and streaming-video limitations.
+
 ## [0.4.0]
 
 ### Added

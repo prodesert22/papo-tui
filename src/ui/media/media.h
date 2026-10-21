@@ -18,6 +18,8 @@ void media_view_idle(media_view *v);
 void media_view_suspend(media_view *v);
 void media_view_reset(media_view *v);
 bool media_view_poll(media_view *v, history *h);
+/* Milliseconds to wait for input: keep animation responsive without waking an idle view. */
+int media_view_input_delay(media_view *v);
 void media_view_measure(void *context, const message_media *item, int available_width, int *width,
                         int *height);
 /* History viewport in cells; invalidates measured image heights on changes. */
@@ -30,6 +32,15 @@ void media_view_offer(media_view *v, const message_media *item, int y, int x, in
 void media_view_draw(media_view *v);
 void media_view_prepare(media_view *v);
 bool media_view_modal(const media_view *v);
+typedef enum {
+    MEDIA_CONTEXT_NONE,
+    MEDIA_CONTEXT_LIST,
+    MEDIA_CONTEXT_IMAGE,
+    MEDIA_CONTEXT_VIDEO,
+    MEDIA_CONTEXT_LOADING,
+    MEDIA_CONTEXT_ERROR
+} media_context;
+media_context media_view_context(const media_view *v);
 /* Opens a message-owned item directly; embed video covers open their player.
  * Image arrows use metadata from the message in the last polled history. */
 bool media_view_open(media_view *v, const message_media *item);

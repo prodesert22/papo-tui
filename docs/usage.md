@@ -59,15 +59,50 @@ Changes to a role's color appear after the role catalog refreshes; Ctrl+R also
 requests an update. Terminals with a limited palette approximate the role color.
 
 Scroll with the arrow keys, PageUp/PageDown or the mouse wheel over the history.
-The next page loads as you approach either edge. A loading indicator appears
-if you reach the edge before the messages arrive.
+While the editor is focused, PageUp/PageDown scroll one line per press and
+Shift+PageUp/PageDown scroll a full page in terminals that report the modified
+key; GNOME Terminal keeps Shift+PageUp/PageDown for its own scrollback. The next
+page loads as you approach either edge. A loading indicator appears if you reach
+the edge before the messages arrive.
 
 Closing the application discards drafts. Signing out also disables session
 recovery. If a send remains unconfirmed, check the history before resending:
 the message may already have reached the server.
 
 To open messages in a voice channel, select it in the channel list and press
-**Shift+Enter** or **F4**. Voice calls are not available yet.
+**Shift+Enter** or **Ctrl+O**. Voice calls are not available yet.
+
+## Channel notifications and muting
+
+Focus the channel list and press **Ctrl+Space**, **m** or **M**, or **right-click a channel**, to
+open its context menu. This also works on a channel you are not reading; opening
+the menu does not load that channel's messages. Categories have no context menu.
+Use ↑/↓ and Enter, or click an option. In a submenu, ← or Esc returns to the
+channel menu; m/M closes it. Closing a menu preserves your draft.
+
+- **Silenciar canal…** (Mute channel) offers **10 minutos**, **30 minutos**,
+  **1 hora**, **4 horas**, **12 horas**, **24 horas**, and **Até eu reativar**
+  (until you reactivate it). A muted channel shows **(silenciado)** in the list;
+  its menu offers **Reativar canal** (Reactivate channel).
+- **Notificações…** (Notifications) offers **Todas as mensagens** (All messages),
+  **Apenas menções** (Mentions only), and **Nada** (None). The checked option is
+  the confirmed server preference. Mentions include direct mentions, replies to
+  your messages and `@everyone`, following the server's rules. The default is
+  mentions only when the server has no saved preference.
+
+Muting pauses this client's system notifications and channel/server activity
+indicators for that channel. It does not mark messages or notifications read,
+change the server's notification preference, or affect another client. Mutes are
+saved separately for each account and instance and survive restarting the
+application. Timed mutes expire automatically, including while you are offline;
+indefinite mutes last until you choose Reactivate channel.
+
+Notification preferences are saved on the server. A failed or uncertain save
+shows an error and is never repeated automatically. Refresh the channels with
+Ctrl+R before making another choice when the result is uncertain. If the local
+mute file is damaged, inaccessible, or the client detects a conflicting change
+from another process, it preserves the file and reports that the mute could not
+be saved; fix the file or restart the application after resolving the conflict.
 
 ## Server members and profiles
 
@@ -78,11 +113,11 @@ Enter to open one. ↓ returns to the history; on 👤, it enters an open member
 drawer. ↑ goes to server tabs. From the channel/DM selector buttons, → after
 DMs also reaches Search. Tab and Shift+Tab include all three controls.
 
-Press **F10** or click **👤** beside the pinned-message button to open the member
+Press **Ctrl+U** or click **👤** beside the pinned-message button to open the member
 drawer on the right. It reserves space beside the conversation when the terminal is wide
 enough and overlays the right side on narrower screens. Closing or resizing it
-preserves your draft and reading position. The conversation footer includes
-**F10 membros** (Members), shortened to **F10** when space is limited.
+preserves your draft and reading position. Use contextual help for the member controls; the footer keeps only **Ctrl+G: ajuda**
+(Open help) beside operational notices.
 
 Each member shows an avatar (or their centered first initial), display name and
 presence dot: green for online, yellow for away, red for busy and gray for offline. A text label also identifies
@@ -101,9 +136,9 @@ then press Enter to return to the list. Search ignores case and operates on
 loaded members; loading and partial-list notices identify incomplete results.
 Use Tab/Shift+Tab to move between search, grouping and results. Use ↑/↓,
 Home/End or PageUp/PageDown to select people, or use the mouse. Press **Ctrl+R**
-to refresh the list and **Esc** or **F10** to close the drawer.
+to refresh the list and **Esc** or **Ctrl+U** to close the drawer.
 
-Press **m** on the selected member, or **right-click a member**, to open their
+Press **Ctrl+Space** or **m** on the selected member, or **right-click a member**, to open their
 context menu. It sits to the left of the drawer, or above/below the selected row
 on narrow screens, keeping the member's name visible. Navigate with ↑/↓ and
 Enter, or click an option:
@@ -149,52 +184,94 @@ editor. Switching the list or moving its selection does not load other histories
 
 Press **m** on a selected DM, or right-click its entry, to open a menu with
 **Fechar DM** (Close DM). Enter or a click closes that conversation in your list;
-Esc or m dismisses the menu. **Ctrl+D** in the DM list also closes the selected
+Esc or m dismisses the menu. **Ctrl+W** in the DM list also closes the selected
 conversation. The menu keeps the recipient's name visible. Closing preserves its remote history; a new message can make it
 reappear. Pending sends must finish before you close that DM.
+
+## Navigation help
+
+The footer shows only **Ctrl+G: ajuda** (Open contextual help), alongside
+connection, delivery and other operational notices. Click that hint or press
+**Ctrl+G** to open **Ajuda do contexto** (Contextual help). The table has
+**Combinação de teclas** (Key combination) and **Função** (Action) columns.
+Borders and horizontal dividers separate the header, columns and entries.
+It lists the controls for the focused editor, history, channel/DM list, member
+list or open panel. F1 is also available for contextual help.
+
+Press **Ctrl+/** to open **Ajuda global** (Global help), which lists all
+keyboard and mouse controls with their area of use. The contextual dialog's
+**Todos os atalhos** (All shortcuts) button opens the global dialog;
+**Ajuda do contexto** returns to the focused-area reference.
+
+The global dialog opens with **Buscar** (Search) focused. Type to filter key
+combinations, functions and area names; matching ignores letter case. Ctrl+F
+or clicking the field returns to search. Ctrl+U or Ctrl+C clears it, restoring
+all entries. Terminal text paste is supported in this field. No matches shows
+**Nenhum atalho encontrado.** (No shortcut found). The query stays in place when
+switching between the two help dialogs and resets when help is reopened.
+Tab/Shift+Tab cycle through search, the table and the buttons. Enter in search
+focuses the table; ↑/↓ and PageUp/PageDown scroll results. Home/End move the
+cursor in search or jump through results when the table has focus.
+
+Use ↑/↓, PageUp/PageDown, Home/End or the wheel to scroll either table. Tab and
+Shift+Tab select its buttons; Enter activates the selected button. Esc or
+**Fechar** (Close) returns to the underlying screen with its draft and focus
+preserved. Help consumes typing, pasted text and unrelated shortcuts so they
+cannot trigger actions underneath it. Ctrl+Q still quits.
+
+Application commands use Ctrl combinations. F2–F10 no longer activate the old
+commands. Ctrl+H is reserved for Backspace; Ctrl+I and Ctrl+M remain Tab and
+Enter. Ctrl+N still inserts a new line in the conversation editor. Terminals
+that do not report Ctrl+/ can reach global help through contextual help's
+**Todos os atalhos** button.
 
 ## Keyboard and mouse
 
 | Control | Action |
 | --- | --- |
+| Ctrl+G / F1 | Open contextual help for the focused area or panel |
+| Ctrl+/ | Open global help with every keyboard and mouse control |
 | Tab / Shift+Tab | Move focus |
 | Esc | Close a modal, go back or cancel a connection |
 | Ctrl+Q | Quit |
 | Ctrl+C | Clear the field; quit when outside a field |
 | ↑ / ↓ or mouse wheel over history | Scroll the conversation |
 | PageUp / PageDown in history | Scroll by a page; nearby pages load automatically |
+| PageUp / PageDown in the editor | Scroll the conversation one line per press; Shift+PageUp/PageDown scroll a page where the terminal reports the modified key |
 | Home / End in history | Go to the start of loaded history / recent messages |
 | Ctrl+R | Refresh or retry a request/connection |
-| Ctrl+T | Retry the last failed send |
-| F6 | Open the account screen |
-| F2 | Open application settings |
+| Ctrl+Y | Retry the last failed send |
+| Ctrl+T | Open the account screen |
+| Ctrl+S | Open application settings |
 | Ctrl+L in a conversation | Sign out of the current account |
-| F10 / 👤 beside 📌/🖈 | Open or close the server member drawer |
-| F9 | Open the notification center and preferences |
-| F3 | Search messages on the current server |
-| F8 outside the media player | Open pinned messages in the current conversation |
-| F4 in the editor | Choose an emoji |
-| F5 or Anexar | Choose files to attach |
+| Ctrl+U / 👤 beside 📌/🖈 | Open or close the server member drawer |
+| Ctrl+D | Open the notification center and preferences |
+| Ctrl+F | Search messages on the current server |
+| Ctrl+B outside the media player | Open pinned messages in the current conversation |
+| Ctrl+E in the editor | Choose an emoji |
+| Ctrl+O or Anexar | Choose files to attach |
 | Ctrl+V in a conversation | Paste copied files, an image, or text from the local clipboard |
-| Shift+Enter or F4 on a voice channel in the channel list | Open its message history |
-| F7 in a conversation | Enter or leave message navigation |
+| Shift+Enter or Ctrl+O on a voice channel in the channel list | Open its message history |
+| Ctrl+K in a conversation | Enter or leave message navigation |
 | ↑ / ↓ during message navigation | Select the previous / next message |
 | ← / → during message navigation | Select media within the message |
 | Enter during message navigation | Open selected media |
-| `m` during message navigation | Open or close the selected message's context menu |
+| Ctrl+Space or `m` during message navigation | Open or close the selected message's context menu |
 | `r` or `R` during message navigation | Reply to the selected message and focus the editor |
 | `e` during message navigation | Open the reaction picker |
 | Shift+E during message navigation | Show who reacted |
 | Right-click a message | Open its context menu directly |
+| Ctrl+Space, m / M in the channel list, or right-click a channel | Open channel mute and notification settings |
 | ↑ in the focused, empty editor | Edit your newest message in loaded history |
 | Enter while editing a message | Save the edit |
 | Esc while editing a message | Cancel editing and restore the send draft |
 | Shift+Enter in the editor | Insert a new line |
+| Ctrl+Backspace / Ctrl+W | Delete the word before the cursor |
 
 Type `@` in the editor to choose a person to mention; confirm with Tab or Enter.
 After closing the chooser, Enter sends the message.
 
-Press F9 to open notifications. Type in **Buscar** (Search) to match message text,
+Press Ctrl+D to open notifications. Type in **Buscar** (Search) to match message text,
 displayed mentions, authors or conversation names. Click the filter on the next
 row, or use ←/→ from the results, to choose **Todos** (All), **Canais** (Channels)
 or **DMs**. Changing the category keeps you in the notification list. Press Enter
@@ -249,6 +326,9 @@ unread activity without a confirmed mention.
 Counts cover loaded previews, which can be truncated, rather than a server-wide
 total. Opening a notification clears its mention badge after confirmation.
 The server dot also covers notifications with missing mention metadata.
+Old notification records covered by a successful conversation read no longer
+keep the activity dot lit; they remain in the notification center until marked
+read there. Delayed copies of already-read messages do not restore the dot.
 The unread-message dot remains until the conversation is read. Webhook names
 come from their message and remain available when later events omit attribution.
 If an author is missing from a notification in the active conversation, its
@@ -271,7 +351,7 @@ Counts are saved per account and instance in the user configuration directory,
 under `papo-tui/emoji-usage/`; if it cannot be written, ranking lasts for the
 current run.
 
-F4 opens the full emoji picker. Each tile shows a 32×32 preview with its name
+Ctrl+E opens the full emoji picker. Each tile shows a 32×32 preview with its name
 below. Use ↓ to move from search to the Unicode/Servidor buttons, then ↓ again
 to enter the grid. From its first row, ↑ returns to the buttons; ↑ again returns
 to search. Use ←/→ to switch emoji sources while the buttons have focus.
@@ -282,10 +362,12 @@ messages, reactions, the editor and emoji selectors. Light shows their first fra
 as a static image; attached animations can still play. Ultralight keeps emojis as text.
 Animated WebP requires an FFmpeg build with the `webp_anim` decoder.
 
-Messages containing only rendered emojis use larger 48×48 previews and taller
-rows, wrapping to fit the conversation. Messages with text and reaction buttons
-keep their usual emoji size. Light keeps enlarged server emojis static and uses
-native Unicode emojis; Ultralight keeps the text layout.
+Messages containing only rendered emojis use larger previews (about 48×48
+pixels) and taller rows, wrapping to fit the conversation. Adjacent enlarged
+previews sit directly next to each other and fill the terminal cell grid.
+Messages with text and reaction buttons keep their usual emoji size. Light keeps
+enlarged server emojis static and uses native Unicode emojis; Ultralight keeps
+the text layout.
 
 ## Permissions and access
 
@@ -313,10 +395,10 @@ in this client yet.
 
 ## Messages, editing, replies and reactions
 
-Press **F7** to select a message with a highlighted border. Use ↑/↓ to move
+Press **Ctrl+K** to select a message with a highlighted border. Use ↑/↓ to move
 between messages; older or newer pages load as needed. Use ←/→ to select
 media within the message, then Enter to open it. The border shows the selected
-media number. Press Esc or F7 to return to your previous focus. Closing the
+media number. Press Esc or Ctrl+K to return to your previous focus. Closing the
 media viewer returns to the selected message.
 
 Right-click any visible message to open its context menu immediately, or
@@ -384,7 +466,7 @@ run, including manual send retries. Confirmed sends clear their reply target.
 ## Send files and pasted images
 
 Click **📎** to the left of the emoji button, focus it with Tab and press Enter,
-or press **F5**. Both buttons have a filled background; the focused button changes
+or press **Ctrl+O**. Both buttons have a filled background; the focused button changes
 color. While either button has focus, Left or Right switches between them.
 The application opens the system file dialog when available. Otherwise, a
 terminal file picker opens. Builds with native dialogs disabled open this
@@ -419,7 +501,7 @@ folders and remote file URLs are not attached. Pasting a plain-text path keeps
 it as text. On Linux, native clipboard access requires `wl-paste` from
 wl-clipboard under Wayland, or `xclip` under X11. Windows uses the native clipboard.
 SSH sessions and sandboxed installations without clipboard access can use
-📎/F5 for files and the terminal's text paste command. A terminal that
+📎/Ctrl+O for files and the terminal's text paste command. A terminal that
 intercepts Ctrl+V must be configured to pass it to the application for native
 file/image pasting. In Kitty, add or replace the Papo-specific Ctrl+V mapping
 in `kitty.conf` with:
@@ -438,12 +520,12 @@ files per message**, **512 MiB** of temporary attachment data across drafts and
 pending sends, and **64 MiB** per clipboard image. The server can reject uploads
 under its own policy. Read failures or insufficient temporary space show a
 notice; prepared files and your text remain available. Failed sends require an
-explicit retry with Ctrl+T. If the result is uncertain, check history before
+explicit retry with Ctrl+Y. If the result is uncertain, check history before
 confirming a retry, which can duplicate the message.
 
 ## Pinned messages and server search
 
-Click **Fixadas** (Pinned) in the conversation header, or press **F8** outside
+Click **Fixadas** (Pinned) in the conversation header, or press **Ctrl+B** outside
 of the media player, to list that conversation's pinned messages. Type in
 **Buscar** (Search) to filter their text, author name or username. Filtering
 is local and ignores letter case. Use arrow keys, PageUp/PageDown, Home/End
@@ -458,7 +540,7 @@ The server remains authoritative; a conversation can have at most 100 pins.
 Pinning and unpinning are not repeated automatically after
 an error or an uncertain response. Check the refreshed list before retrying.
 
-Click **Buscar** (Search) in the conversation header, or press **F3**, to
+Click **Buscar** (Search) in the conversation header, or press **Ctrl+F**, to
 search messages on the current instance. Type message content and press
 **Enter**, or click **Buscar**, to query the server. Typing alone does not
 send requests. The initial scope is the whole server, with newest results
@@ -512,11 +594,11 @@ notifications read. Opening the actual conversation has its normal read behavior
 
 ### Application modes
 
-Press **F2**, or click the gear beside your name in the box below the channel
+Press **Ctrl+S**, or click the gear beside your name in the box below the channel
 list, to open **Configurações** (Settings). In **Geral** (General), use ↓ to
 reach the modes, ↑/↓ to select one and Space or Enter to mark it. Select
 **Salvar e aplicar** (Save and apply) to apply and remember your choice.
-**Cancelar** (Cancel), Esc or F2 closes the window without applying changes.
+**Cancelar** (Cancel), Esc or Ctrl+S closes the window without applying changes.
 From either bottom button, ↑ returns to the mode list. Use ←/→ on the section
 selector to browse the other sections; these are placeholders for future
 settings and currently change nothing.
@@ -532,19 +614,45 @@ images remain visible; the helper starts again when needed.
 Chafa colors depend on the terminal palette: truecolor terminals preserve RGB
 colors, while other terminals use the nearest available colors.
 
+Animated GIFs follow their frame timings, and videos can play at up to 60 FPS
+when processing speed and terminal throughput allow it. Chafa rendering uses
+multiple CPU threads when available, including in a TTY. Video decoding uses
+the GPU when a compatible codec and driver are available, and falls back to the
+CPU automatically. GIFs and character rendering continue to use the CPU.
+Kitty-compatible terminals use compressed graphics to reduce terminal traffic.
+
 ### Open media
 
 Image previews remain visible outside floating panels, including mention/emoji
 choosers, message context menus, notifications and reaction dialogs.
 
-Click a media preview to open it, or use F7, select the message and media, then
+Click a media preview to open it, or use Ctrl+K, select the message and media, then
 press Enter. In Normal mode, visible video attachments download automatically in the background
 to generate a static cover; they do not play or produce sound in the history.
-This consumes bandwidth even before you open the player. The player reuses the
-download while it remains cached.
+This consumes bandwidth even before you open the player. Opening the player
+reuses that same download, whether it is still running or already cached.
 
-Videos finish downloading before playback starts. Press Esc or click outside
-the media window to close it or cancel loading.
+The server reports the type of an attachment from the file's own contents, and
+that check recognizes only some video containers. A video whose type is reported
+as a generic binary file is still recognized by its file name, so `.mp4`, `.mov`,
+`.mkv`, `.webm`, `.avi` and other common containers keep their cover and their
+player instead of appearing as a plain attachment.
+
+Videos prepared for streaming start playing as soon as the first part arrives,
+while the rest of the download continues. The player timeline keeps the played
+part in orange, shows the downloaded part ahead of the playhead in white, and
+the part still pending in gray. The orange playhead keeps marking the current
+position.
+
+Seeking is enabled after the download finishes. To seek a video that started
+while it was still downloading, let the transfer finish and reopen the player;
+it will then use the local copy.
+
+Some files can still start only after the download finishes: MP4 files whose
+index is stored at the end of the file — usually videos that were not prepared
+for streaming — cannot be parsed before their last bytes arrive.
+
+Press Esc or click outside the media window to close it or cancel loading.
 
 The client accepts downloads up to 32 MiB per attached image, 16 MiB per avatar
 and 256 MiB per video. Larger files show **Mídia excede o limite de tamanho.**
@@ -564,10 +672,14 @@ seek, and the right bar to adjust the volume from 0 to 100%. The volume gradient
 is green up to 60%, yellow up to 85% and red above that.
 The button shows `[▶]` to resume and `[⏸]` to pause.
 
+The volume you choose is kept when the player closes, when you open the next
+video and when you start the application again. It is stored in the same
+configuration file as the server profiles, next to the application mode.
+
 Videos scale up or down to fit the player, preserving their aspect ratio without
 cropping. Their size adjusts when you resize the terminal.
 
-Click **Info**, or press `i` or F8, to show or hide the media properties.
+Click **Info**, or press `i` or Ctrl+B, to show or hide the media properties.
 Use PageUp/PageDown or the mouse wheel over the properties panel to scroll it.
 
 ### Browse the images of a message
@@ -581,7 +693,9 @@ switching back to an image already seen does not download it again.
 
 When a message carries an embed with a video, pressing Enter on the embed cover
 opens the video player directly. The **Abrir player** entry keeps working as
-before and reuses the download already made for the cover.
+before and reuses the download already made for the cover. Videos served by the
+embed relay also play while they download, under the same limits described
+above.
 
 ## Troubleshooting
 
@@ -603,14 +717,16 @@ before and reuses the download already made for the cover.
   HTTP only on `localhost`, `127.0.0.1` and `[::1]`.
 - **Request limit:** wait for the indicated period and try again.
   Sends are not retried automatically.
-- **Images do not appear:** check the application mode in F2. Ultralight shows
+- **Images do not appear:** check the application mode in Ctrl+S. Ultralight shows
   attachment descriptions only. Normal falls back to Chafa when the terminal
   has no supported graphics protocol; Light always uses Chafa.
 - **Emoji pictures are missing:** install the Noto Color Emoji font and restart
   the application.
-- **Video is still loading:** playback starts after the download finishes.
-  Check the connection if it does not progress. Press Esc to cancel; if an
-  error appears, press Enter in the media window to retry.
+- **Video is still loading:** the player status line shows the transfer
+  progress. Videos prepared for streaming start before the download ends;
+  files whose index is at the end start only when it finishes. If progress
+  stops, check the connection. Press Esc to cancel; if an error appears,
+  press Enter in the media window to retry.
 - **Video plays without sound:** press `m` to unmute, raise the volume in the
   player and check the system's audio output. If no audio device is available,
   playback can continue without sound.
@@ -624,7 +740,11 @@ before and reuses the download already made for the cover.
   the application.
 - **Shift+Enter sends instead of adding a line:** use a terminal that supports
   reporting modified Enter, such as Kitty. If the terminal cannot distinguish
-  it from Enter, use Ctrl+N to insert a new line, or F4 in the channel list to
+  it from Enter, use Ctrl+N to insert a new line, or Ctrl+O in the channel list to
   open a voice channel's messages.
+- **Ctrl+Backspace deletes only one character:** some terminals send the same
+  code for Backspace and Ctrl+Backspace. Use Ctrl+W to delete the word before
+  the cursor, or a terminal that reports the modified key, such as GNOME
+  Terminal.
 - **Linux terminal settings were disrupted:** run `reset`, even if the
   characters do not appear as you type.

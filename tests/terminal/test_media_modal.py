@@ -1,7 +1,9 @@
 """Modal interactions over a local PTY, without a server or session credentials."""
 
+from test_context import main as test_main
+
 import unittest
-from test_terminal import Terminal, wait_for_screen
+from terminal_support import Terminal, wait_for_screen
 
 
 class ModalTest(unittest.TestCase):
@@ -35,7 +37,7 @@ class ModalTest(unittest.TestCase):
         t = Terminal(arguments=("--demo",))
         try:
             self.wait(t, "Modal fechado")
-            t.send("\x1b[18~")
+            t.send("\x0b")
             self.wait(t, "Modal aberto")
             self.assertIn("Canais preservados", "\n".join(t.screen.display))
             self.wait(t, "[Info]")
@@ -56,9 +58,9 @@ class ModalTest(unittest.TestCase):
             self.wait(t, "Propriedades", absent=True)
             t.send("\t\n")
             self.wait(t, "Propriedades")
-            t.send("\x1b[19~")
+            t.send("\x02")
             self.wait(t, "Propriedades", absent=True)
-            t.send("\x1b[19~")
+            t.send("\x02")
             self.wait(t, "Propriedades")
             t.send("\x1b[<65;65;12M")
             self.wait(t, "Nome", absent=True)
@@ -82,7 +84,7 @@ class ModalTest(unittest.TestCase):
             t.click(8, 4)
             self.wait(t, "Modal fechado")
             self.assertIn("Canais acionados: 0", "\n".join(t.screen.display))
-            t.send("\x1b[18~")
+            t.send("\x0b")
             self.wait(t, "Modal aberto")
             self.assertNotIn("Propriedades", "\n".join(t.screen.display))
             t.send("\x1b")
@@ -95,4 +97,6 @@ class ModalTest(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

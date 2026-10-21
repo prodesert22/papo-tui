@@ -1,5 +1,7 @@
 """Voice-channel text conversations through the TUI; synthetic HTTP/WS only."""
 
+from test_context import main as test_main
+
 import time
 import unittest
 from urllib.parse import urlsplit
@@ -7,7 +9,7 @@ from urllib.parse import urlsplit
 from history_mock import HistoryMock, CHANNEL, VOICE, uuid
 from realtime_mock import RealtimeMock
 from r8_mock import R8Mock
-from test_terminal import Terminal
+from terminal_support import Terminal
 
 
 class VoiceRealtimeMock(RealtimeMock):
@@ -47,7 +49,7 @@ class VoiceConversation(unittest.TestCase):
     def reads(self, server):
         return [r for r in server.requests if r[0] == "GET" and "/messages" in r[1]]
 
-    def voice(self, t, packet="\x1bOS"):
+    def voice(self, t, packet="\x0f"):
         t.send("\x1bOB\x1bOF" + packet)  # tabs -> list -> last channel
         self.wait(t, "♪ voz · Histórico")
 
@@ -59,7 +61,7 @@ class VoiceConversation(unittest.TestCase):
             t.send("Rascunho do geral")
             t.click(9, 4)
             self.wait(t, "Foco: Canais")
-            self.wait(t, "F4")
+            self.wait(t, "Ctrl+G: ajuda")
             before = self.reads(server)
             for action in ("\n", "\r", "\x1b[13u", "\x1bOM", "\x1bOC"):
                 t.send(action)
@@ -78,7 +80,7 @@ class VoiceConversation(unittest.TestCase):
             self.wait(t, "Foco: Canais")
             self.assertIn("Rascunho de voz", self.screen(t))
             before = self.reads(server)
-            t.send("\x1bOS")
+            t.send("\x0f")
             self.wait(t, "Foco: Histórico")
             self.assertEqual(self.reads(server), before)
             self.assertIn("Rascunho de voz", self.screen(t))
@@ -93,8 +95,8 @@ class VoiceConversation(unittest.TestCase):
             self.assertEqual(self.reads(server), before)
             for locks in (0, 64, 128, 192):
                 for packet in (
-                    f"\x1b[1;{1 + locks}S",
-                    f"\x1b[14;{1 + locks}~",
+                    f"\x1b[111;{5 + locks}u",
+                    f"\x1b[27;{5 + locks};111~",
                     f"\x1b[13;{2 + locks}u",
                     f"\x1b[27;{2 + locks};13~",
                     f"\x1b[57414;{2 + locks}u",
@@ -107,7 +109,7 @@ class VoiceConversation(unittest.TestCase):
                         self.wait(t, "Nenhuma mensagem neste canal")
             t.send("\x1bOD")
             t.resize(14, 44)
-            self.wait(t, "F4")
+            self.wait(t, "Ctrl+G: ajuda")
             before = self.reads(server)
             t.send("\n")
             self.assertEqual(self.reads(server), before)
@@ -137,13 +139,13 @@ class VoiceConversation(unittest.TestCase):
             self.assertIn("Texto enviado no canal de voz", self.screen(t))
             t.send("Rascunho da voz\x1b\x1bOD\x1bOH\n")
             self.wait(t, "# geral · Histórico")
-            t.send("Rascunho do texto\x1b\x1bOD\x1bOF\x1bOS")
+            t.send("Rascunho do texto\x1b\x1bOD\x1bOF\x0f")
             self.wait(t, "♪ voz · Histórico")
             self.wait(t, "Rascunho da voz")
-            t.send("\n\x1bOS")
+            t.send("\n\x05")
             t.read(0.2)
             self.wait(t, "Emojis")
-            self.assertEqual(len(server.sent_messages), 1)  # F4 in the editor opens emojis.
+            self.assertEqual(len(server.sent_messages), 1)  # Ctrl+E in the editor opens emojis.
             t.send("\x1b")
             t.send("\x1b\x1bOD\x1bOH\n")
             self.wait(t, "Rascunho do texto")
@@ -162,7 +164,7 @@ class VoiceConversation(unittest.TestCase):
                     before = self.reads(server)
                     t.send("\x1bOB\x1bOF\n")
                     self.assertEqual(self.reads(server), before)
-                    t.send("\x1bOS")
+                    t.send("\x0f")
                     self.wait(t, expected)
                     deadline = time.monotonic() + 5
                     while len(self.reads(server)) == len(before) and time.monotonic() < deadline:
@@ -223,7 +225,7 @@ class VoiceConversation(unittest.TestCase):
 
             server.api_handler = route
             t = self.login(server)
-            t.send("\x1b[20~")
+            t.send("\x04")
             self.wait(t, "Aviso 0001")
             t.send("\n")
             self.wait(t, "Detalhes da notificação")
@@ -232,10 +234,12 @@ class VoiceConversation(unittest.TestCase):
             t.send("\n")
             self.wait(t, "♪ voz · Histórico")
             self.wait(t, "Conversa de voz 0001")
-            self.wait(t, "↑↓ mensagens")
+            self.wait(t, "Foco: Seleção")
             self.assertEqual(len(self.reads(server)), 2)
             self.assertIn(VOICE, self.reads(server)[1][1])
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

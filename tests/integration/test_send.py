@@ -1,15 +1,18 @@
 """R6 multipart and bounded outbox against controlled synthetic fixtures."""
 
+from test_context import main as test_main
+
+from test_context import argument
+
 import json
 import os
 import subprocess
-import sys
 import unittest
 import tempfile
 from pathlib import Path
 from mock_server import MockServer
 
-BINARY = sys.argv.pop(1)
+BINARY = argument(0)
 TEXT = "Olá, ação!\nSegunda linha."
 CONFIRMED, FAILED, UNCERTAIN = 2, 3, 4
 
@@ -195,8 +198,10 @@ class Sending(unittest.TestCase):
             self.assertFalse(result["transmitted"])
             self.assertEqual(server.message_count, 0)
             self.assertEqual(result["draft"], TEXT)
-        with MockServer("send-cancel") as server:
-            result = self.probe(server, "cancel")
+        with tempfile.TemporaryDirectory() as folder, MockServer("send-cancel") as server:
+            received = Path(folder, "received")
+            server.message_hook = lambda _message: received.touch()
+            result = self.probe(server, "cancel", PAPO_SEND_RECEIVED_FILE=str(received))
             self.assertEqual(result["state"], UNCERTAIN)
             self.assertTrue(result["transmitted"])
             self.assertEqual(server.message_count, 1)
@@ -221,4 +226,6 @@ class Sending(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

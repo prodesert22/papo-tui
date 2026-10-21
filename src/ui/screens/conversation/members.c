@@ -1,3 +1,4 @@
+#include "ui/input/shortcuts.h"
 #include "ui/screens/conversation/private.h"
 
 enum member_modal { MEMBER_NO_MODAL, MEMBER_MENU, MEMBER_CARD, MEMBER_CONFIRM, MEMBER_LINK };
@@ -98,6 +99,7 @@ static gint compare_rows(gconstpointer a, gconstpointer b)
 static bool refresh_rows(view *ui)
 {
     struct member_drawer *d = ui->members;
+
     uint64_t users = history_users_revision(ui->model),
              presence = inbox_revision(history_inbox(ui->model)),
              permission = permissions_revision(
@@ -217,6 +219,16 @@ void conversation_members_destroy(view *ui)
 bool conversation_members_modal(view *ui)
 {
     return ui->members_open && ui->members && ui->members->panel != MEMBER_NO_MODAL;
+}
+help_context conversation_members_help(view *ui, const char **area)
+{
+    enum member_modal panel = ui->members->panel;
+    *area = panel == MEMBER_MENU   ? "Menu de membro"
+            : panel == MEMBER_CARD ? "Perfil do membro"
+                                   : "Confirmação de ação sobre membro";
+    return panel == MEMBER_MENU   ? HELP_MENU
+           : panel == MEMBER_CARD ? HELP_MEMBER_PROFILE
+                                  : HELP_CONFIRM;
 }
 bool conversation_members_poll(view *ui)
 {
@@ -387,26 +399,42 @@ static void retry_profile_media(view *ui)
         media_resource_release(image);
     }
 }
+text_buffer *conversation_members_input(view *ui)
+{
+    struct member_drawer *d = ui->members;
+    return ui->members_open && ui->focus == MEMBERS_PANEL && d && d->panel == MEMBER_NO_MODAL &&
+                   d->focus == 0
+               ? &d->query
+               : NULL;
+}
 bool conversation_members_key(view *ui, int type, uint32_t key)
 {
-    if (type == KEY_CODE_YES && key == KEY_F(10)) {
+    if (r8_modal_is_open(ui->r8))
+        return false;
+    if (shortcut_is(type, key, SHORTCUT_MEMBERS)) {
         conversation_members_toggle(ui);
         return true;
     }
-    if (r8_modal_is_open(ui->r8))
-        return false;
     if (ui->focus == MEMBERS_BUTTON && ((type == OK && (key == '\n' || key == '\r')) ||
                                         (type == KEY_CODE_YES && key == KEY_ENTER))) {
         conversation_members_toggle(ui);
         return true;
     }
-    if (type == KEY_CODE_YES && !conversation_members_modal(ui) &&
-        (key == KEY_F(1) || key == KEY_F(3) || key == KEY_F(8) || key == KEY_F(9)))
+    if (!conversation_members_modal(ui) &&
+        (shortcut_is(type, key, SHORTCUT_SEARCH) || shortcut_is(type, key, SHORTCUT_PINNED) ||
+         shortcut_is(type, key, SHORTCUT_NOTIFICATIONS)))
         return false;
     if (!ui->members_open || (ui->focus != MEMBERS_PANEL && !conversation_members_modal(ui)) ||
         (type == KEY_CODE_YES && key == KEY_MOUSE))
         return false;
     struct member_drawer *d = ui->members;
+    if (shortcut_is(type, key, SHORTCUT_MENU)) {
+        if (d->panel == MEMBER_MENU || (d->panel == MEMBER_NO_MODAL && d->focus == 2)) {
+            type = OK;
+            key = 'm';
+        } else
+            return true;
+    }
     bool enter =
         (type == OK && (key == '\r' || key == '\n')) || (type == KEY_CODE_YES && key == KEY_ENTER);
     if (type == OK && key == 27) {
@@ -764,7 +792,7 @@ void conversation_members_draw(view *ui)
     member_overlay(ui, w);
     wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
     char title[80];
-    snprintf(title, sizeof(title), "Membros (%u) · F10", d->rows->len);
+    snprintf(title, sizeof(title), "Membros (%u) · Ctrl+U", d->rows->len);
     text_label(w, 0, 2, width - 4, title);
     wattrset(w,
              COLOR_PAIR(d->focus == 0 && ui->focus == MEMBERS_PANEL ? THEME_FOCUSED : THEME_INPUT));

@@ -89,6 +89,12 @@ json_t *history_channel(const history *h, size_t index);
  * the normalized instance URL and verified account UUID. NULL h checks only
  * the backend snapshot. Notifications/counts do not override reading. */
 bool history_channel_unread(const history *h, const json_t *channel);
+/* Notification preference changes share the authenticated, non-replayed REST queue.
+ * Menus can address an inactive channel without reading its history. */
+const char *history_channel_notifications(const history *h, const char *channel);
+bool history_set_channel_notifications(history *h, const char *channel, const char *mode);
+bool history_channel_notifications_pending(const history *h);
+bool history_instance_unread(const history *h);
 /* Schedule a coalesced read of the active, actually visible latest message.
  * NULL cancels a queued read when the view loses visibility/focus. */
 void history_read_visible(history *h, const char *message_id);

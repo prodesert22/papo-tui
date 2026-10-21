@@ -1,5 +1,7 @@
 """Mention picker and canonical wire text through the real TUI, synthetic peers."""
 
+from test_context import main as test_main
+
 import re
 import subprocess
 import time
@@ -7,7 +9,7 @@ import unittest
 from urllib.parse import urlsplit, parse_qs
 from history_mock import CHANNEL, OTHER, STAMP, uuid, assert_history_reads
 from realtime_mock import RealtimeMock
-from test_terminal import Terminal, BINARY
+from terminal_support import Terminal, BINARY
 
 
 class MentionServer(RealtimeMock):
@@ -101,7 +103,7 @@ class Mentions(unittest.TestCase):
                     self.assertIn(f"@candidate{n}", "\n".join(t.screen.display))
                 self.assertNotIn("@other", "\n".join(t.screen.display))
                 self.assertIn("EA -* NA", "\n".join(t.screen.display))
-                t.send("\x15@ea-na")
+                t.send("\x03@ea-na")
                 self.wait(t, "@candidate5")
                 t.send("\t")
                 self.wait(t, "@EA NA")
@@ -327,7 +329,7 @@ class Mentions(unittest.TestCase):
                 t.send("\x1b")
                 t.read(0.2)
                 self.assertNotIn("Menções", "\n".join(t.screen.display))
-                t.send("\x15\x1b[200~@alice\x1b[201~")
+                t.send("\x03\x1b[200~@alice\x1b[201~")
                 t.read(0.2)
                 self.assertNotIn("Menções", "\n".join(t.screen.display))
                 self.assertFalse(s.sent_messages)
@@ -626,4 +628,6 @@ class Mentions(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

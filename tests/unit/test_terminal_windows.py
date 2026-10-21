@@ -1,5 +1,7 @@
 """ConPTY fixture lifecycle checks with real sockets and a controlled child."""
 
+from test_context import main as test_main
+
 import importlib.util
 from pathlib import Path
 import socket
@@ -146,4 +148,6 @@ class WindowsTerminalReads(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        0,
+    )

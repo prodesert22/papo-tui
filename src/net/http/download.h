@@ -25,6 +25,10 @@ bool media_download_poll(media_download *m);
 void media_download_cancel(media_download *m);
 media_state media_download_state(const media_download *m);
 size_t media_download_bytes(const media_download *m);
+/* Borrowed private path while the transfer owns it, for progressive readers. */
+const char *media_download_path(const media_download *m);
+/* Expected body length announced by the response, or zero when unknown. */
+size_t media_download_total(const media_download *m);
 const char *media_download_error(const media_download *m);
 const char *media_download_mime(const media_download *m);
 uint64_t media_download_generation(const media_download *m);

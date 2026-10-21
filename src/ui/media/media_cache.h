@@ -47,6 +47,8 @@ void media_cache_begin(media_cache *cache);
 void media_resource_use_image(media_resource *resource, bool author, bool modal);
 void media_resource_use(media_resource *resource, bool modal);
 bool media_cache_poll(media_cache *cache, uint64_t now);
+/* Active frames/jobs need a shorter event-loop wait; inactive media never do. */
+bool media_cache_animating(const media_cache *cache);
 /* Borrowed until the next poll. Missing representations are queued once;
  * admission failure defers them until capacity becomes available. */
 const graphics_image *media_resource_image(media_resource *resource, bool author,
@@ -65,6 +67,15 @@ void media_resource_place_image(media_resource *resource, bool author, image_dec
                                 const graphics_image *image, uint32_t id, uint32_t fragments[32],
                                 int y, int x, int top, int bottom, unsigned layer);
 const char *media_resource_path(const media_resource *resource);
+/* Player source for a video: the growing loopback stream while the download
+ * is in progress, otherwise the ready local file. The path itself is not
+ * exposed before the bytes are complete. */
+const char *media_resource_source(const media_resource *resource);
+/* Bytes already written and the announced total while a video downloads. */
+bool media_resource_progress(const media_resource *resource, size_t *available, size_t *total);
+/* True when the resource itself failed (download or ingest), before any player
+ * attempt. A ready video that the player rejects is not a resource failure. */
+bool media_resource_failed(const media_resource *resource);
 const char *media_resource_error(const media_resource *resource, bool author);
 bool media_resource_dimensions(const media_resource *resource, bool author, int *width,
                                int *height);

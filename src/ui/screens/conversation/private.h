@@ -17,6 +17,7 @@
 #include "ui/components/button.h"
 #include "ui/components/emoji_picker.h"
 #include "ui/components/file_picker.h"
+#include "ui/components/help.h"
 #include "ui/components/mention_popup.h"
 #include "ui/components/settings.h"
 #include "ui/components/status_bar.h"
@@ -97,6 +98,8 @@ typedef struct {
         reactor_users_focus;
     char selected_message[37], action_channel[37], reaction_target[37];
     char dm_context_id[37];
+    char channel_context_id[37];
+    int channel_menu; /* 0 context actions, 1 mute duration, 2 notifications. */
     char centered_message[37];
     char notification_channel[37], notification_message[37];
     char notification_time[65];
@@ -118,6 +121,7 @@ typedef struct {
     history *model;
     r8_modal *r8;
     app_settings settings;
+    help_modal help;
     bool list_dms, initial_channel_pending;
     int list_button;
     size_t highlights[2];
@@ -165,6 +169,7 @@ typedef struct {
     click_range attachment_hits[ATTACHMENT_LIMIT], attachment_remove_hits[ATTACHMENT_LIMIT];
     text_paste paste_data;
 } view;
+help_context conversation_help_context(view *ui, const char **area);
 const char *conversation_str(const json_t *obj, const char *key);
 size_t conversation_list_index(view *ui, size_t row);
 size_t conversation_list_count(view *ui);
@@ -240,6 +245,8 @@ bool conversation_members_key(view *ui, int type, uint32_t key);
 bool conversation_members_mouse(view *ui, const MEVENT *event);
 void conversation_members_draw(view *ui);
 bool conversation_members_modal(view *ui);
+help_context conversation_members_help(view *ui, const char **area);
+text_buffer *conversation_members_input(view *ui);
 bool conversation_members_cursor(view *ui);
 void conversation_attachments_draw_row(view *ui);
 WINDOW *conversation_attachments_draw_dialog(view *ui);

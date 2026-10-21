@@ -9,6 +9,7 @@
 #include "ui/input/text.h"
 #include "ui/media/media_service.h"
 #include "ui/media/sixel.h"
+#include <errno.h>
 #include <glib.h>
 #include <limits.h>
 #include <stdatomic.h>
@@ -522,6 +523,22 @@ void graphics_frame_prepare(void)
     }
     setsyx(saved_y, saved_x);
 }
+static bool write_pixels(const graphics_image *image)
+{
+    size_t sent = 0;
+    while (sent < image->length) {
+        size_t count = fwrite(image->data + sent, 1, image->length - sent, stdout);
+        sent += count;
+        if (sent == image->length)
+            return true;
+        if (!ferror(stdout) || errno != EINTR)
+            return false;
+        /* SIGWINCH can interrupt a large PTY write. Finish the same payload
+         * before emitting another control sequence or placement. */
+        clearerr(stdout);
+    }
+    return true;
+}
 void graphics_frame_flush(void)
 {
     if (!displayed_count && !desired_count)
@@ -545,15 +562,15 @@ void graphics_frame_flush(void)
                 uploaded |= displayed[j].id == next->id && displayed[j].revision == next->revision;
             for (size_t j = 0; j < i; ++j)
                 uploaded |= desired[j].id == next->id && desired[j].revision == next->revision;
-            if (!uploaded)
-                fwrite(next->image->data, 1, next->image->length, stdout);
+            if (!uploaded && !write_pixels(next->image))
+                goto write_failed;
             /* Reusing the placement ID moves/crops the existing image atomically. */
             fprintf(stdout, "\033_Ga=p,i=%u,p=%u,q=2,C=1,x=0,y=%d,w=%d,h=%d,c=%d,r=%d\033\\",
                     next->id, next->placement_id, next->top, next->image->width,
                     next->image->height - next->top - next->bottom,
                     next->scaled ? next->columns : 0, next->scaled ? next->rows : 0);
-        } else
-            fwrite(next->image->data, 1, next->image->length, stdout);
+        } else if (!write_pixels(next->image))
+            goto write_failed;
     }
     if (displayed_capacity < desired_count) {
         displayed_image *next = realloc(displayed, desired_capacity * sizeof(*next));
@@ -572,6 +589,12 @@ void graphics_frame_flush(void)
     displayed_count = desired_count;
     for (size_t i = 0; i < displayed_count; ++i)
         displayed[i].image = NULL;
+    desired_count = 0;
+    if (pixels)
+        fputs("\0338", stdout);
+    fflush(stdout);
+    return;
+write_failed:
     desired_count = 0;
     if (pixels)
         fputs("\0338", stdout);

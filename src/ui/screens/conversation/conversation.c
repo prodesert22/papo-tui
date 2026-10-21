@@ -1,5 +1,83 @@
 #include "ui/screens/conversation/private.h"
 
+help_context conversation_help_context(view *ui, const char **area)
+{
+    if (file_picker_open(ui->files)) {
+        *area = "Seleção de arquivos";
+        return HELP_FILES;
+    }
+    if (ui->remove_confirm || ui->duplicate_modal || ui->delete_confirm) {
+        *area = "Confirmação";
+        return HELP_CONFIRM;
+    }
+    if (ui->settings.open) {
+        *area = "Configurações";
+        return HELP_SETTINGS;
+    }
+    if (emoji_picker_open(ui->emojis)) {
+        *area = "Seletor de emojis";
+        return HELP_EMOJIS;
+    }
+    if (ui->context_open) {
+        *area = "Menu de contexto";
+        return HELP_MENU;
+    }
+    if (ui->reactors_open) {
+        *area = "Reações e pessoas";
+        return HELP_REACTIONS;
+    }
+    if (r8_modal_is_open(ui->r8)) {
+        bool notifications = r8_modal_type(ui->r8) == R8_NOTIFICATIONS;
+        *area = notifications ? "Central de notificações" : "Busca e mensagens fixadas";
+        return notifications ? HELP_NOTIFICATIONS : HELP_SEARCH;
+    }
+    if (media_view_modal(ui->media)) {
+        media_context context = media_view_context(ui->media);
+        if (context == MEDIA_CONTEXT_LIST) {
+            *area = "Lista de mídias";
+            return HELP_MEDIA_LIST;
+        }
+        *area = context == MEDIA_CONTEXT_VIDEO ? "Player de vídeo" : "Visualizador de mídia";
+        return HELP_MEDIA | (context == MEDIA_CONTEXT_VIDEO   ? HELP_PLAYER
+                             : context == MEDIA_CONTEXT_IMAGE ? HELP_IMAGE
+                             : context == MEDIA_CONTEXT_ERROR ? HELP_MEDIA_ERROR
+                                                              : 0);
+    }
+    if (conversation_members_modal(ui))
+        return conversation_members_help(ui, area);
+    if (ui->focus == MESSAGE_INPUT) {
+        *area = "Editor de mensagens";
+        return HELP_EDITOR;
+    }
+    if (ui->focus == HISTORY_PANEL) {
+        *area = ui->navigating ? "Seleção de mensagens" : "Histórico da conversa";
+        return ui->navigating ? HELP_SELECTION : HELP_HISTORY;
+    }
+    if (ui->focus == CHANNEL_LIST) {
+        *area = ui->list_dms ? "Lista de DMs" : "Lista de canais";
+        return HELP_CHANNELS | (ui->list_dms ? HELP_DM_LIST : 0);
+    }
+    if (ui->focus == MEMBERS_PANEL) {
+        bool editing = conversation_members_input(ui) != NULL;
+        *area = editing ? "Busca de membros" : "Lista de membros";
+        return editing ? HELP_FIELDS | HELP_MEMBER_SEARCH : HELP_MEMBERS;
+    }
+    if (ui->focus == SERVER_TABS) {
+        *area = "Servidores conectados";
+        return HELP_SERVER_TABS;
+    }
+    if (ui->focus == ATTACH_BUTTON || ui->focus == EMOJI_BUTTON || ui->focus == ATTACHMENT_ROW) {
+        *area = "Anexos e botões do editor";
+        return HELP_EDITOR_BUTTONS;
+    }
+    if (ui->focus == SETTINGS_BUTTON) {
+        *area = "Botão Configurações";
+        return HELP_SETTINGS_BUTTON;
+    }
+    *area = "Botões de navegação";
+    return HELP_HEADER;
+}
+
 static void open_settings(view *ui, const profile_config *config)
 {
     media_view_suspend(ui->media);
@@ -164,6 +242,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         media_view_suspend(ui->media);
         if (ui->model)
             history_active(ui->model, false);
+        help_destroy(&ui->help);
         r8_modal_destroy(ui->r8);
         conversation_destroy_layout(ui);
         g_hash_table_destroy(ui->layout_index);
@@ -181,16 +260,20 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
     bool redraw = true;
     draw_scope scope = DRAW_ALL;
     int result = HISTORY_ACCOUNT;
+    /* The player volume only reaches the profile once the player closes, so a
+     * running player never writes the file for every key press. */
+    int saved_volume = player_volume_get();
     while (!*interrupted) {
         if (ui->layout_failed)
             break;
         uint64_t visible_now = 0;
         net_now_ms(&visible_now);
-        if (!ui->body || !ui->at_end || r8_modal_is_open(ui->r8) || ui->settings.open ||
-            ui->duplicate_modal || file_picker_open(ui->files) || ui->remove_confirm ||
-            mention_popup_open(ui->mentions) || emoji_picker_open(ui->emojis) ||
-            media_view_modal(ui->media) || ui->context_open || ui->reactors_open ||
-            conversation_members_modal(ui) || (ui->members_open && !ui->members_reserved) ||
+        if (ui->help.open || !ui->body || !ui->at_end || r8_modal_is_open(ui->r8) ||
+            ui->settings.open || ui->duplicate_modal || file_picker_open(ui->files) ||
+            ui->remove_confirm || mention_popup_open(ui->mentions) ||
+            emoji_picker_open(ui->emojis) || media_view_modal(ui->media) || ui->context_open ||
+            ui->reactors_open || conversation_members_modal(ui) ||
+            (ui->members_open && !ui->members_reserved) ||
             !(text_terminal_focused() ||
               (text_terminal_focus_unknown() && visible_now < ui->view_requested_until)))
             history_read_visible(ui->model, NULL);
@@ -225,6 +308,13 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             else if (scope == DRAW_EDITOR)
                 scope = DRAW_CONVERSATION;
             redraw = true;
+        }
+        if (!media_view_modal(ui->media) && connections->config) {
+            int level = player_volume_get();
+            if (level != saved_volume) {
+                saved_volume = level;
+                profiles_set_player_volume(connections->config, level);
+            }
         }
         icons_assets(ui->icons, history_assets(ui->model), media_view_cache(ui->media),
                      auth_context_generation(auth));
@@ -348,7 +438,8 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         }
         instances_visible(
             connections, auth,
-            ui->body && ui->at_end && !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
+            ui->body && ui->at_end && !ui->help.open &&
+                    !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
                     !emoji_picker_open(ui->emojis) && !media_view_modal(ui->media) &&
                     !ui->context_open && !ui->reactors_open && !file_picker_open(ui->files) &&
                     !ui->remove_confirm
@@ -367,9 +458,11 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             scope = DRAW_ALL;
         }
         uint32_t key;
-        int type = ui->paste
-                       ? text_paste_read(&ui->paste_data, &key, true, graphics_terminal_input, 30)
-                       : graphics_terminal_input(&key);
+        int input_delay = media_view_input_delay(ui->media);
+        timeout(input_delay);
+        int type = ui->paste ? text_paste_read(&ui->paste_data, &key, true, graphics_terminal_input,
+                                               input_delay)
+                             : graphics_terminal_input(&key);
         if (type == ERR)
             continue;
         if (type == KEY_CODE_YES && (key == TEXT_FOCUS_IN || key == TEXT_FOCUS_OUT)) {
@@ -390,10 +483,11 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             ui->paste = true;
             text_paste_begin(&ui->paste_data);
             ui->dragging = false;
-            if (!file_picker_open(ui->files) && !ui->remove_confirm && !ui->duplicate_modal &&
-                !(r8_modal_is_open(ui->r8) || ui->settings.open) && !media_view_modal(ui->media) &&
-                !emoji_picker_open(ui->emojis) && !ui->context_open && !ui->reactors_open &&
-                conversation_input(ui) && ui->focus != SERVER_TABS) {
+            if (!ui->help.open && !file_picker_open(ui->files) && !ui->remove_confirm &&
+                !ui->duplicate_modal && !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
+                !media_view_modal(ui->media) && !emoji_picker_open(ui->emojis) &&
+                !ui->context_open && !ui->reactors_open && conversation_input(ui) &&
+                ui->focus != SERVER_TABS) {
                 ui->navigating = false;
                 conversation_set_focus(ui, MESSAGE_INPUT);
                 redraw = true;
@@ -402,15 +496,22 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         }
         if (type == KEY_CODE_YES && key == PASTE_END) {
             ui->paste = false;
-            if (file_picker_paste(ui->files, &ui->paste_data)) {
+            if (ui->help.open) {
+                help_paste(&ui->help, &ui->paste_data);
                 redraw = true;
                 scope = DRAW_ALL;
                 continue;
             }
-            if (!file_picker_open(ui->files) && !ui->remove_confirm && !ui->duplicate_modal &&
-                !(r8_modal_is_open(ui->r8) || ui->settings.open) && !media_view_modal(ui->media) &&
-                !emoji_picker_open(ui->emojis) && !ui->context_open && !ui->reactors_open &&
-                ui->focus == MESSAGE_INPUT && conversation_input(ui)) {
+            if (!ui->help.open && file_picker_paste(ui->files, &ui->paste_data)) {
+                redraw = true;
+                scope = DRAW_ALL;
+                continue;
+            }
+            if (!ui->help.open && !file_picker_open(ui->files) && !ui->remove_confirm &&
+                !ui->duplicate_modal && !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
+                !media_view_modal(ui->media) && !emoji_picker_open(ui->emojis) &&
+                !ui->context_open && !ui->reactors_open && ui->focus == MESSAGE_INPUT &&
+                conversation_input(ui)) {
                 if (!text_paste_commit(&ui->paste_data, conversation_input(ui)))
                     ui->feedback = "Colagem excede o limite; rascunho preservado.";
                 else {
@@ -446,6 +547,18 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             result = HISTORY_EXIT;
             break;
         }
+        if (help_key(&ui->help, type, key)) {
+            scope = DRAW_ALL;
+            continue;
+        }
+        if (shortcut_is(type, key, SHORTCUT_HELP) || shortcut_is(type, key, SHORTCUT_HELP_ALL)) {
+            const char *area;
+            help_context context = conversation_help_context(ui, &area);
+            if (!help_open(&ui->help, context, area, shortcut_is(type, key, SHORTCUT_HELP_ALL)))
+                ui->feedback = "Não foi possível abrir a ajuda.";
+            scope = DRAW_ALL;
+            continue;
+        }
         if (file_picker_open(ui->files) || ui->remove_confirm) {
             if (type == KEY_CODE_YES && key == KEY_MOUSE) {
                 MEVENT events[64];
@@ -458,15 +571,18 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             continue;
         }
         if (type == KEY_CODE_YES && key == TEXT_COPY) {
-            if (ui->focus == MESSAGE_INPUT && conversation_input(ui) && !ui->duplicate_modal &&
-                !(r8_modal_is_open(ui->r8) || ui->settings.open) && !media_view_modal(ui->media))
+            if (conversation_members_input(ui))
+                clipboard_copy(conversation_members_input(ui));
+            else if (ui->focus == MESSAGE_INPUT && conversation_input(ui) && !ui->duplicate_modal &&
+                     !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
+                     !media_view_modal(ui->media))
                 clipboard_copy(conversation_input(ui));
             continue;
         }
-        if (type == OK &&
-            (key == 17 || (key == 3 && !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
-                           (ui->focus != MESSAGE_INPUT || ui->duplicate_modal ||
-                            media_view_modal(ui->media))))) {
+        if (type == OK && (key == 17 || (key == 3 && !conversation_members_input(ui) &&
+                                         !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
+                                         (ui->focus != MESSAGE_INPUT || ui->duplicate_modal ||
+                                          media_view_modal(ui->media))))) {
             result = HISTORY_EXIT;
             break;
         }
@@ -496,7 +612,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             scope = DRAW_ALL;
             continue;
         }
-        if (type == KEY_CODE_YES && key == KEY_F(2) && !ui->duplicate_modal) {
+        if (shortcut_is(type, key, SHORTCUT_SETTINGS) && !ui->duplicate_modal) {
             open_settings(ui, connections->config);
             scope = DRAW_ALL;
             continue;
@@ -528,7 +644,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             scope = DRAW_ALL;
             continue;
         }
-        if (type == KEY_CODE_YES && key == KEY_F(4) &&
+        if (shortcut_is(type, key, SHORTCUT_EMOJIS) &&
             (ui->focus == HISTORY_PANEL || ui->focus == MESSAGE_INPUT ||
              ui->focus == EMOJI_BUTTON) &&
             !ui->duplicate_modal && !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
@@ -557,7 +673,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             conversation_handle_confirmation(ui, type, key, enter);
             continue;
         }
-        if (type == KEY_CODE_YES && key == KEY_F(6))
+        if (shortcut_is(type, key, SHORTCUT_ACCOUNT))
             break;
         if (type == OK && key == 16) {
             result = HISTORY_PROFILES;
@@ -566,6 +682,13 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         if (type == OK && key == 12) {
             auth_logout(auth);
             break;
+        }
+        if (shortcut_is(type, key, SHORTCUT_MENU) &&
+            (ui->context_open || ui->focus == CHANNEL_LIST || ui->focus == HISTORY_PANEL)) {
+            if (ui->focus == HISTORY_PANEL && !ui->navigating && !ui->context_open)
+                conversation_interactions_key(ui, OK, SHORTCUT_MESSAGES);
+            key = 'm';
+            type = OK;
         }
         if (!media_view_modal(ui->media) && conversation_members_key(ui, type, key)) {
             scope = DRAW_ALL;
@@ -576,21 +699,18 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             scope = DRAW_ALL;
             continue;
         }
-        if (type == KEY_CODE_YES &&
-            (key == KEY_F(9) || key == KEY_F(1) || key == KEY_F(3) || key == KEY_F(8)) &&
-            !(key == KEY_F(8) && media_view_modal(ui->media))) {
-            if (!media_view_modal(ui->media)) {
-                conversation_interactions_close(ui);
-                mention_popup_close(ui->mentions);
-                r8_modal_open(ui->r8, key == KEY_F(9)   ? R8_NOTIFICATIONS
-                                      : key == KEY_F(3) ? R8_SEARCH
-                                      : key == KEY_F(8) ? R8_PINNED
-                                                        : R8_HELP);
-            }
+        if ((shortcut_is(type, key, SHORTCUT_NOTIFICATIONS) ||
+             shortcut_is(type, key, SHORTCUT_SEARCH) || shortcut_is(type, key, SHORTCUT_PINNED)) &&
+            !media_view_modal(ui->media)) {
+            conversation_interactions_close(ui);
+            mention_popup_close(ui->mentions);
+            r8_modal_open(ui->r8, shortcut_is(type, key, SHORTCUT_NOTIFICATIONS) ? R8_NOTIFICATIONS
+                                  : shortcut_is(type, key, SHORTCUT_SEARCH)      ? R8_SEARCH
+                                                                                 : R8_PINNED);
             scope = DRAW_ALL;
             continue;
         }
-        if (type == OK && key == 4 && ui->focus == CHANNEL_LIST && ui->list_dms) {
+        if (type == OK && key == 23 && ui->focus == CHANNEL_LIST && ui->list_dms) {
             json_t *dm = conversation_list_channel(ui, ui->highlighted);
             conversation_close_dm(ui, conversation_str(dm, "id"));
             continue;
@@ -612,11 +732,12 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             continue;
         }
         if (!media_view_modal(ui->media) &&
-            ((type == KEY_CODE_YES && key == KEY_F(5)) || (type == OK && key == 22))) {
+            ((shortcut_is(type, key, SHORTCUT_ATTACH) && ui->focus != CHANNEL_LIST) ||
+             (type == OK && key == 22))) {
             if (*ui->edit_message)
                 ui->feedback = "Conclua a edição antes de anexar arquivos.";
             else
-                conversation_attachments_open(ui, type == OK);
+                conversation_attachments_open(ui, type == OK && key == 22);
             scope = DRAW_ALL;
             continue;
         }
@@ -630,7 +751,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             scope = DRAW_ALL;
             continue;
         }
-        if (type == OK && key == 20 && conversation_input(ui)) {
+        if (shortcut_is(type, key, SHORTCUT_RETRY_SEND) && conversation_input(ui)) {
             outbox_operation latest;
             if (outbox_latest(send_editor_outbox(ui->editor), ui->editor_channel, &latest) &&
                 (latest.state == OUTBOX_FAILED || latest.state == OUTBOX_UNCERTAIN))
@@ -697,6 +818,15 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             size_t count = ui_mouse_events(events, 64);
             for (size_t event_index = 0; event_index < count; ++event_index) {
                 MEVENT e = events[event_index];
+                if (ui->footer && (e.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED)) &&
+                    e.y == getbegy(ui->footer) + 1 && e.x >= getbegx(ui->footer) + 1 &&
+                    e.x < getbegx(ui->footer) + 1 + text_label(NULL, 0, 0, 128, UI_HELP_HINT)) {
+                    const char *area;
+                    help_context context = conversation_help_context(ui, &area);
+                    help_open(&ui->help, context, area, false);
+                    scope = DRAW_ALL;
+                    continue;
+                }
                 if (!ui->frame)
                     continue;
                 if (conversation_members_mouse(ui, &e)) {
@@ -974,7 +1104,16 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         if (ui->focus == MESSAGE_INPUT) {
             if (enter)
                 conversation_submit(ui, 0, false);
-            else {
+            else if (type == KEY_CODE_YES && (key == KEY_PPAGE || key == KEY_NPAGE)) {
+                /* Keep typing while browsing: one line per press. */
+                scope = DRAW_CONVERSATION;
+                conversation_scroll_history(ui, key == KEY_PPAGE ? -1 : 1, true);
+            } else if (type == KEY_CODE_YES &&
+                       (key == TEXT_SHIFT_PAGE_UP || key == TEXT_SHIFT_PAGE_DOWN)) {
+                scope = DRAW_CONVERSATION;
+                conversation_scroll_history(
+                    ui, key == TEXT_SHIFT_PAGE_UP ? -ui->visible : ui->visible, true);
+            } else {
                 if (!mention_popup_open(ui->mentions))
                     scope = DRAW_EDITOR;
                 conversation_edit(ui, type, key);
@@ -1009,8 +1148,8 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             scope = DRAW_NAVIGATION;
             size_t count = conversation_list_count(ui);
             size_t row = SIZE_MAX;
-            bool voice_history =
-                type == KEY_CODE_YES && (key == TEXT_SHIFT_ENTER || key == KEY_F(4));
+            bool voice_history = (type == KEY_CODE_YES && key == TEXT_SHIFT_ENTER) ||
+                                 shortcut_is(type, key, SHORTCUT_ATTACH);
             if (type == KEY_CODE_YES && key == KEY_UP) {
                 row = ui->highlighted ? conversation_list_find(ui, ui->highlighted - 1, -1)
                                       : SIZE_MAX;
@@ -1073,6 +1212,12 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
     }
 finished:
     terminal_title_reset();
+    /* A session that ends with the player open still keeps the chosen level. */
+    if (connections->config) {
+        int level = player_volume_get();
+        if (level != saved_volume)
+            profiles_set_player_volume(connections->config, level);
+    }
     conversation_members_destroy(ui);
     conversation_attachments_close(ui);
     file_picker_destroy(ui->files);
@@ -1096,6 +1241,7 @@ finished:
     conversation_destroy_layout(ui);
     if (ui->model)
         history_active(ui->model, false);
+    help_destroy(&ui->help);
     r8_modal_destroy(ui->r8);
     g_hash_table_destroy(ui->layout_index);
     free(ui);

@@ -4,6 +4,10 @@ run-name: >-
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    - cron: '23 5 * * *'
   workflow_dispatch:
   workflow_call:
     inputs:
@@ -13,6 +17,11 @@ on:
       release:
         type: boolean
         default: false
+env:
+  PYTHONUTF8: '1'
+  PYTHONIOENCODING: utf-8
+  TZ: UTC
+  PAPO_TEST_REQUIRED: '1'
 permissions:
   contents: read
 concurrency:
@@ -25,7 +34,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref || github.ref }}
+          ref: ${{ inputs.ref || github.sha }}
           fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
@@ -33,7 +42,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
-      - run: python -m pip install -r requirements-dev.txt
+      - run: python -m pip install --require-hashes -r requirements/ci-linux-py313.txt
       - name: Validate version changes before merging
         if: github.event_name == 'pull_request'
         env:
@@ -55,6 +64,7 @@ jobs:
     name: Build (${{ matrix.platform }}, ${{ matrix.arch }})
     strategy:
       fail-fast: false
+      max-parallel: 4
       matrix:
         include:
           - runner: ubuntu-24.04
@@ -81,8 +91,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref || github.ref }}
+          ref: ${{ inputs.ref || github.sha }}
+      - uses: actions/setup-python@v5
+        if: matrix.platform == 'linux'
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: requirements/ci-linux-py313.txt
       - name: Linux build environment
+        id: linux-env
         if: matrix.platform == 'linux'
         run: |
           if [ '${{ inputs.release }}' = true ]; then
@@ -91,10 +108,11 @@ jobs:
             python3 dist/ci_linux.py --prepare
           else
             sh dist/linux-deps.sh
-            if [ "$BUILD_ARCH" = x86_64 ]; then sudo apt-get install -y clang-tidy; fi
+            if [ "$BUILD_ARCH" = x86_64 ]; then sudo apt-get install -y clang-tidy-18; fi
           fi
           python3 -m venv build/test-env
-          build/test-env/bin/pip install -r requirements-dev.txt
+          build/test-env/bin/pip install --require-hashes -r requirements/ci-linux-py313.txt
+          build/test-env/bin/python tools/dependency_key.py >> "$GITHUB_OUTPUT"
       - uses: actions/cache/restore@v4
         if: matrix.platform == 'linux' && !inputs.release
         id: linux-cache
@@ -103,9 +121,10 @@ jobs:
             build/source-cache
             build/resources
             build/release-deps
-          key: linux-${{ matrix.runner }}-${{ hashFiles('dist/dependencies.json', 'dist/bootstrap.py', 'dist/resources.json') }}
+          key: linux-${{ matrix.runner }}-${{ matrix.arch }}-${{ steps.linux-env.outputs.fingerprint }}-${{ hashFiles('dist/dependencies.json', 'dist/bootstrap.py', 'dist/patches/**', 'dist/resources.json', 'tests/fixtures/resources.json') }}
           restore-keys: |
-            linux-${{ matrix.runner }}-
+            linux-${{ matrix.runner }}-${{ matrix.arch }}-${{ steps.linux-env.outputs.fingerprint }}-
+            linux-${{ matrix.runner }}-${{ steps.linux-env.outputs.fingerprint }}-
       - uses: actions/cache/restore@v4
         if: matrix.platform == 'linux' && inputs.release
         id: release-cache
@@ -114,7 +133,7 @@ jobs:
             build/release-tasks/*/source/build/source-cache
             build/release-tasks/*/source/build/resources
             build/release-tasks/*/source/build/release-deps
-          key: release-native-v2-${{ matrix.arch }}-${{ hashFiles('dist/dependencies.json', 'dist/bootstrap.py', 'dist/resources.json') }}
+          key: release-native-v2-${{ matrix.arch }}-${{ hashFiles('dist/dependencies.json', 'dist/bootstrap.py', 'dist/patches/**', 'dist/resources.json', 'tests/fixtures/resources.json') }}
           restore-keys: |
             release-native-v2-${{ matrix.arch }}-
       - uses: actions/cache/restore@v4
@@ -127,24 +146,28 @@ jobs:
           key: flatpak-${{ matrix.arch }}-26.08-${{ hashFiles('dist/dependencies.json', 'dist/flatpak/build-dependencies.json', 'dist/resources.json') }}
           restore-keys: |
             flatpak-${{ matrix.arch }}-26.08-
-      - name: Build and test Linux variants concurrently
+      - name: Build Linux Release
         id: linux-build
         if: matrix.platform == 'linux' && !inputs.release
         env:
+          PAPO_CI_CACHE_HIT: ${{ steps.linux-cache.outputs.cache-hit }}
           PATH: ${{ github.workspace }}/build/test-env/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
         run: |
-          variants=release
-          if [ "$BUILD_ARCH" = x86_64 ]; then variants=release,sanitizers,coverage; fi
-          build/test-env/bin/python dist/build.py --build build --prefix build/release-deps --variants "$variants"
-      - name: Analyze C paths
-        if: matrix.platform == 'linux' && matrix.arch == 'x86_64' && !inputs.release
-        run: build/test-env/bin/python tools/analyze.py --build build/release
-      - name: Coverage report
-        if: always() && matrix.platform == 'linux' && matrix.arch == 'x86_64' && !inputs.release
-        run: |
-          if [ -f build/coverage/CMakeCache.txt ]; then
-            build/test-env/bin/gcovr --root . --filter src/ --exclude 'src/model/text/emoji_data.inc' --html-details build/coverage/index.html --xml build/coverage/coverage.xml --print-summary
-          fi
+          build/test-env/bin/python dist/build.py --build build --prefix build/release-deps --variants release --build-only
+      - uses: actions/cache/save@v4
+        if: always() && !cancelled() && steps.linux-cache.outcome == 'success' && steps.linux-cache.outputs.cache-hit != 'true' && steps.linux-build.outputs.dependencies-ready == 'true'
+        with:
+          path: |
+            build/source-cache
+            build/resources
+            build/release-deps
+          key: ${{ steps.linux-cache.outputs.cache-primary-key }}
+      - name: Test Linux Release
+        if: matrix.platform == 'linux' && !inputs.release
+        env:
+          PAPO_CI_CACHE_HIT: ${{ steps.linux-cache.outputs.cache-hit }}
+          PATH: ${{ github.workspace }}/build/test-env/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: build/test-env/bin/python dist/build.py --build build --prefix build/release-deps --variants release --test-only
       - name: Build, test and package Linux targets concurrently
         id: release-build
         if: matrix.platform == 'linux' && inputs.release
@@ -172,12 +195,14 @@ jobs:
             ${{ matrix.package }}-ffmpeg ${{ matrix.package }}-libgcrypt
             ${{ matrix.package }}-vulkan-headers
       - name: Windows Python test environment
+        id: windows-env
         if: matrix.platform == 'windows'
         shell: msys2 {0}
         run: |
           native_python="$(cygpath -u "$pythonLocation")/python.exe"
           "$native_python" -m venv build/test-env
-          build/test-env/Scripts/python.exe -m pip install -r requirements-dev.txt
+          build/test-env/Scripts/python.exe -m pip install --require-hashes -r requirements/ci-windows-py313.txt
+          build/test-env/Scripts/python.exe tools/dependency_key.py >> "$GITHUB_OUTPUT"
       - uses: actions/cache/restore@v4
         if: matrix.platform == 'windows'
         id: windows-cache
@@ -186,17 +211,35 @@ jobs:
             build/source-cache
             build/resources
             build/release-deps
-          key: windows-${{ matrix.system }}-${{ hashFiles('dist/dependencies.json', 'dist/bootstrap.py', 'dist/patches/**', 'dist/resources.json') }}
+          key: windows-${{ matrix.system }}-${{ steps.windows-env.outputs.fingerprint }}-${{ hashFiles('dist/dependencies.json', 'dist/bootstrap.py', 'dist/patches/**', 'dist/resources.json', 'tests/fixtures/resources.json') }}
           restore-keys: |
-            windows-${{ matrix.system }}-
-      - name: Build and test Windows
+            windows-${{ matrix.system }}-${{ steps.windows-env.outputs.fingerprint }}-
+      - name: Build Windows
+        env:
+          PAPO_CI_CACHE_HIT: ${{ steps.windows-cache.outputs.cache-hit }}
         id: windows-build
         if: matrix.platform == 'windows'
         shell: msys2 {0}
         run: |
           export PATH="$PWD/build/test-env/Scripts:$PATH"
           export PAPO_SYSTEM_BIN="$(cygpath -w "$MINGW_PREFIX/bin")"
-          python dist/build.py --build build/release --prefix build/release-deps
+          python dist/build.py --build build/release --prefix build/release-deps --build-only
+      - uses: actions/cache/save@v4
+        if: always() && !cancelled() && steps.windows-cache.outcome == 'success' && steps.windows-cache.outputs.cache-hit != 'true' && steps.windows-build.outputs.dependencies-ready == 'true'
+        with:
+          path: |
+            build/source-cache
+            build/resources
+            build/release-deps
+          key: ${{ steps.windows-cache.outputs.cache-primary-key }}
+      - name: Test Windows
+        if: matrix.platform == 'windows'
+        env:
+          PAPO_CI_CACHE_HIT: ${{ steps.windows-cache.outputs.cache-hit }}
+        shell: msys2 {0}
+        run: |
+          export PATH="$PWD/build/test-env/Scripts:$PATH"
+          python dist/build.py --build build/release --prefix build/release-deps --test-only
       - name: ZIP, installer and installation lifecycle
         if: matrix.platform == 'windows' && inputs.release
         shell: msys2 {0}
@@ -209,22 +252,6 @@ jobs:
           python dist/package.py --build build/release --output build/artifacts --formats zip,installer \
             --arch "$BUILD_ARCH" --flavor windows --dependency-prefix build/release-deps
           python dist/windows/verify.py --artifacts build/artifacts --version "$version" --arch "$BUILD_ARCH"
-      - uses: actions/cache/save@v4
-        if: always() && !cancelled() && steps.linux-cache.outcome == 'success' && steps.linux-cache.outputs.cache-hit != 'true' && steps.linux-build.outputs.dependencies-ready == 'true'
-        with:
-          path: |
-            build/source-cache
-            build/resources
-            build/release-deps
-          key: ${{ steps.linux-cache.outputs.cache-primary-key }}
-      - uses: actions/cache/save@v4
-        if: always() && !cancelled() && steps.windows-cache.outcome == 'success' && steps.windows-cache.outputs.cache-hit != 'true' && steps.windows-build.outputs.dependencies-ready == 'true'
-        with:
-          path: |
-            build/source-cache
-            build/resources
-            build/release-deps
-          key: ${{ steps.windows-cache.outputs.cache-primary-key }}
       - uses: actions/cache/save@v4
         if: always() && !cancelled() && steps.release-cache.outcome == 'success' && steps.release-cache.outputs.cache-hit != 'true' && steps.release-build.outputs.dependencies-ready == 'true'
         with:
@@ -245,8 +272,8 @@ jobs:
         with:
           name: build-results-${{ matrix.platform }}-${{ matrix.arch }}
           path: |
-            build/**/ci-logs/*.log
-            build/**/Testing/Temporary/*
+            build/**/ci-logs/*
+            build/**/Testing/Temporary/**
             build/release-tasks/logs/*
             build/**/coverage/*.html
             build/**/coverage/*.css
@@ -257,3 +284,117 @@ jobs:
           name: packages-${{ matrix.platform }}-${{ matrix.arch }}
           path: build/artifacts/*
           if-no-files-found: error
+
+  instrumentation:
+    if: ${{ !inputs.release }}
+    name: Linux x86_64 (${{ matrix.variant }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        variant: [sanitizers, coverage]
+    env:
+      ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Prepare host
+        id: instrumentation-env
+        run: |
+          sh dist/linux-deps.sh
+          sudo apt-get install -y clang-tidy-18
+          python -m venv build/test-env
+          build/test-env/bin/python -m pip install --require-hashes -r requirements/ci-linux-py313.txt
+          build/test-env/bin/python tools/dependency_key.py >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v4
+        id: dependencies
+        with:
+          path: |
+            build/source-cache
+            build/resources
+            build/release-deps
+          key: linux-ubuntu-24.04-x86_64-${{ steps.instrumentation-env.outputs.fingerprint }}-${{ hashFiles('dist/dependencies.json', 'dist/bootstrap.py', 'dist/patches/**', 'dist/resources.json', 'tests/fixtures/resources.json') }}
+          restore-keys: |
+            linux-ubuntu-24.04-x86_64-${{ steps.instrumentation-env.outputs.fingerprint }}-
+            linux-ubuntu-24.04-${{ steps.instrumentation-env.outputs.fingerprint }}-
+      - name: Build isolated variant
+        id: instrumented-build
+        env:
+          PAPO_CI_CACHE_HIT: ${{ steps.dependencies.outputs.cache-hit }}
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          export PATH="$PWD/build/test-env/bin:$PATH"
+          python dist/build.py --build build --prefix build/release-deps --variants "$VARIANT" --build-only
+      - uses: actions/cache/save@v4
+        if: always() && !cancelled() && steps.dependencies.outputs.cache-hit != 'true' && steps.instrumented-build.outputs.dependencies-ready == 'true'
+        with:
+          path: |
+            build/source-cache
+            build/resources
+            build/release-deps
+          key: ${{ steps.dependencies.outputs.cache-primary-key }}
+      - name: Test isolated variant
+        env:
+          PAPO_CI_CACHE_HIT: ${{ steps.dependencies.outputs.cache-hit }}
+          VARIANT: ${{ matrix.variant }}
+          FULL: ${{ github.event_name == 'schedule' }}
+        run: |
+          export PATH="$PWD/build/test-env/bin:$PATH"
+          options=()
+          if [ "$FULL" = true ]; then options+=(--full-instrumentation); fi
+          python dist/build.py --build build --prefix build/release-deps --variants "$VARIANT" --test-only "${options[@]}"
+      - name: Analyze C paths independently of test results
+        if: always() && matrix.variant == 'coverage' && !cancelled()
+        run: |
+          if [ -f build/coverage/compile_commands.json ]; then
+            build/test-env/bin/python tools/analyze.py --build build/coverage
+          else
+            exit 1
+          fi
+      - name: Coverage report
+        if: always() && matrix.variant == 'coverage' && !cancelled()
+        run: |
+          if [ -f build/coverage/CMakeCache.txt ]; then
+            build/test-env/bin/gcovr --root . --filter src/ --exclude 'src/model/text/emoji_data.inc' --html-details build/coverage/index.html --xml build/coverage/coverage.xml --print-summary
+          fi
+      - name: Repeat sensitive scenarios
+        if: github.event_name == 'schedule' && matrix.variant == 'sanitizers'
+        run: |
+          ctest --test-dir build/sanitizers --output-on-failure --no-tests=error --parallel 2 --repeat until-fail:10 -R 'test_grouping_survives_prepend_scroll_and_resize|test_graphical_server_badge_is_inside_tab_delimiters'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: instrumentation-${{ matrix.variant }}
+          path: |
+            build/**/ci-logs/*
+            build/**/Testing/Temporary/**
+            build/coverage/*.html
+            build/coverage/*.css
+            build/coverage/*.xml
+
+  required:
+    name: CI required
+    if: always()
+    needs: [quality, build, instrumentation]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every applicable job to succeed
+        env:
+          QUALITY: ${{ needs.quality.result }}
+          BUILD: ${{ needs.build.result }}
+          INSTRUMENTATION: ${{ needs.instrumentation.result }}
+          RELEASE: ${{ inputs.release }}
+        run: |
+          test "$QUALITY" = success
+          test "$BUILD" = success
+          if [ "$RELEASE" = true ]; then
+            test "$INSTRUMENTATION" = skipped
+          else
+            test "$INSTRUMENTATION" = success
+          fi

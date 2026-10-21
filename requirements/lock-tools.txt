@@ -1,0 +1,2 @@
+# Only needed to regenerate CI locks; never installed into the application.
+uv==0.13.1

@@ -1,87 +1,19 @@
 """R5 through ncurses in a pseudoterminal, using synthetic HTTP data."""
 
+from test_context import main as test_main
+from terminal_history import SidebarObserver, ConversationObserver
+
 import resource
 import threading
 import time
-import unittest
 from history_mock import HistoryMock, CHANNEL, OTHER, VOICE, uuid
-from test_terminal import Terminal, ObservedScreen, TerminalStream
-from wcwidth import wcswidth
+from terminal_support import Terminal, TerminalStream, wait_for_screen
 
 
-class SidebarObserver(ObservedScreen):
-    """Catch transient sidebar changes, even if a later write restores it."""
-
-    def __init__(self, columns, lines):
-        super().__init__(columns, lines)
-        self.watch = False
-        self.sidebar_changes = []
-
-    def sidebar(self):
-        return tuple(
-            tuple(self.buffer[y][x] for x in range(1, 25)) for y in range(5, self.lines - 3)
-        )
-
-    def observe(self, method, *args, **kwargs):
-        before = self.sidebar() if self.watch else None
-        result = method(*args, **kwargs)
-        if self.watch and self.sidebar() != before:
-            self.sidebar_changes.append(method.__name__)
-        return result
-
-    def draw(self, *args, **kwargs):
-        return self.observe(super().draw, *args, **kwargs)
-
-    def erase_in_line(self, *args, **kwargs):
-        return self.observe(super().erase_in_line, *args, **kwargs)
-
-    def erase_in_display(self, *args, **kwargs):
-        return self.observe(super().erase_in_display, *args, **kwargs)
-
-    def insert_lines(self, *args, **kwargs):
-        return self.observe(super().insert_lines, *args, **kwargs)
-
-    def delete_lines(self, *args, **kwargs):
-        return self.observe(super().delete_lines, *args, **kwargs)
-
-    def index(self, *args, **kwargs):
-        return self.observe(super().index, *args, **kwargs)
-
-    def reverse_index(self, *args, **kwargs):
-        return self.observe(super().reverse_index, *args, **kwargs)
-
-    def scroll_up(self, *args, **kwargs):
-        return self.observe(super().scroll_up, *args, **kwargs)
-
-    def scroll_down(self, *args, **kwargs):
-        return self.observe(super().scroll_down, *args, **kwargs)
+import terminal_history as support
 
 
-class ConversationObserver(SidebarObserver):
-    def sidebar(self):
-        return tuple(
-            tuple(self.buffer[y][x] for x in range(26, self.columns - 1))
-            for y in range(5, self.lines - 3)
-        )
-
-
-class HistoryTerminal(unittest.TestCase):
-    def wait(self, terminal, text):
-        deadline = time.monotonic() + 8
-        while text not in "\n".join(terminal.screen.display) and time.monotonic() < deadline:
-            terminal.read(0.03)
-        self.assertIn(text, "\n".join(terminal.screen.display))
-
-    def open(self, server, terminal_type="xterm-256color"):
-        t = Terminal(terminal_type=terminal_type)
-        t.send(server.url + "\tjosé\tSynthetic!123\n")
-        self.wait(t, "geral")
-        self.assertNotIn("URL do servidor", "\n".join(t.screen.display))
-        self.wait(t, "Conversar em #geral")
-        t.send("\x1bOB\n")  # tabs -> first channel -> history
-        self.wait(t, "Conversar em #geral")
-        return t
-
+class HistoryTerminal(support.HistoryTerminal):
     def test_history_resize_and_unicode_send_with_one_megabyte_stack(self):
         # Reproduce the Windows executable's default stack limit on Linux.
         with HistoryMock() as server:
@@ -157,7 +89,12 @@ class HistoryTerminal(unittest.TestCase):
                 terminal.click(6, 4)
                 self.assertIn("Foco: Histórico", terminal.screen.display[2])
                 terminal.send("\x1bOD")  # history -> channels
-                self.wait(terminal, "↑↓ · Enter")
+                self.wait(terminal, "Foco: Canais")
+                wait_for_screen(
+                    terminal,
+                    lambda: terminal.screen.buffer[7][2].fg != terminal.screen.buffer[10][2].fg,
+                    "Focused channel highlight did not arrive",
+                )
                 selected = terminal.screen.buffer[7][2].fg
 
                 def highlighted(row):
@@ -201,7 +138,7 @@ class HistoryTerminal(unittest.TestCase):
                 try:
                     terminal.send(server.url + "\tjosé\tSynthetic!123\n")
                     self.wait(terminal, "Categoria" if categories else "Nenhum canal disponível")
-                    terminal.send("\x1bOB\x1bOH\x1bOF\x1b[5~\x1b[6~\n\x1bOC\x1bOS")
+                    terminal.send("\x1bOB\x1bOH\x1bOF\x1b[5~\x1b[6~\n\x1bOC\x05")
                     terminal.click(6, 4)
                     terminal.read(0.2)
                     self.assertFalse(any("/messages" in r[1] for r in server.requests))
@@ -218,9 +155,7 @@ class HistoryTerminal(unittest.TestCase):
                 terminal.send("Rascunho preservado\x1b\x1bOH\x1bOD")
                 self.wait(terminal, "Mensagem 0151")
                 self.wait(terminal, "Foco: Canais")
-                # ncurses emits the footer after the conversation cells. Wait
-                # for the complete focus transition before recording colors.
-                self.wait(terminal, "↑↓ · Enter")
+                # Finish asynchronous paints before recording navigation colors.
                 # Author metadata can arrive after the page. Finish that
                 # asynchronous paint before observing navigation-only changes.
                 self.wait(terminal, "Apelido")
@@ -419,13 +354,13 @@ class HistoryTerminal(unittest.TestCase):
                 self.wait(t, "geral")
                 self.wait(t, "Mensagem 0250")
                 self.assertEqual(sum("/messages" in r[1] for r in server.requests), 1)
-                t.send("\x1b[17~")
+                t.send("\x14")
                 self.wait(t, "[Renovar]")
                 t.send("\x12")
                 self.wait(t, "[Renovar]")
                 t.read(0.3)
                 self.assertEqual(server.refresh_count, 1)
-                self.assertIn("[Canais / F6]", "\n".join(t.screen.display))
+                self.assertIn("[Canais]", "\n".join(t.screen.display))
                 self.assertNotIn("[+ Adicionar]", "\n".join(t.screen.display))
                 t.send("\n")
                 self.wait(t, "Você saiu da conta")
@@ -503,11 +438,12 @@ class HistoryTerminal(unittest.TestCase):
             def delayed_page(method, path, body):
                 if "/messages?" in path and "last_id=" in path:
                     started.set()
-                    release.wait(8)
+                    release.wait()
                 return route(method, path, body)
 
             server.api_handler = delayed_page
             t = self.open(server)
+            t.resize(24, 120)
             try:
                 self.wait(t, "Mensagem 0250")
                 t.send("\x1bOH\x1b[6~\x1b[6~\x1b[6~")
@@ -687,6 +623,52 @@ class HistoryTerminal(unittest.TestCase):
             finally:
                 self.assertTrue(t.close())
 
+    def test_message_filling_the_width_keeps_one_separator_line(self):
+        with HistoryMock(count=2) as server:
+            # At 212 columns the content area fits 175 cells; a trailing space
+            # at that boundary used to wrap into an empty line below the text.
+            server.messages[0]["content"] = "WRAP" + "A" * 170 + " "
+            t = self.open(server)
+            try:
+                t.resize(30, 212)
+                self.wait(t, "Mensagem 0002")
+                self.wait(t, "WRAP")
+
+                def row_of(text):
+                    return next(
+                        (row for row, line in enumerate(t.screen.display) if text in line), None
+                    )
+
+                first, second = row_of("WRAP"), row_of("Mensagem 0002")
+                self.assertIsNotNone(first)
+                self.assertIsNotNone(second)
+                self.assertEqual(second - first, 3)
+            finally:
+                self.assertTrue(t.close())
+
+    def test_trailing_space_at_the_width_boundary_does_not_add_an_empty_line(self):
+        with HistoryMock(count=2) as server:
+            # At 211 columns the content area fits 174 cells, so the trailing
+            # space used to wrap alone into an empty line below the text.
+            server.messages[0]["content"] = "WRAP" + "A" * 170 + " "
+            t = self.open(server)
+            try:
+                t.resize(30, 211)
+                self.wait(t, "Mensagem 0002")
+                self.wait(t, "WRAP")
+
+                def row_of(text):
+                    return next(
+                        (row for row, line in enumerate(t.screen.display) if text in line), None
+                    )
+
+                first, second = row_of("WRAP"), row_of("Mensagem 0002")
+                self.assertIsNotNone(first)
+                self.assertIsNotNone(second)
+                self.assertEqual(second - first, 3)
+            finally:
+                self.assertTrue(t.close())
+
     def test_narrow_navigation_errors_and_return_account(self):
         with HistoryMock("forbidden") as server:
             t = self.open(server)
@@ -699,21 +681,14 @@ class HistoryTerminal(unittest.TestCase):
                 t.send("\x1bOB\n")
                 self.wait(t, "Conteúdo do outro canal")
                 t.resize(24, 80)
-                t.send("\x1b[17~")
-                self.wait(t, "[Canais / F6]")
-                t.send("\x1b[17~")
+                t.send("\x14")
+                self.wait(t, "[Canais]")
+                t.send("\x14")
                 self.wait(t, "geral")
                 t.send("\x10")
                 self.wait(t, "Selecione um perfil")
             finally:
                 self.assertTrue(t.close())
-
-    def click_text(self, terminal, text):
-        for row, line in enumerate(terminal.screen.display):
-            if text in line:
-                terminal.click(row, wcswidth(line[: line.index(text)]) + min(2, wcswidth(text) - 1))
-                return
-        self.fail("Control absent: " + text)
 
     def test_demo_frame_and_add_login_registration_then_switch_isolated_sessions(self):
         with HistoryMock() as first, HistoryMock() as second:
@@ -873,4 +848,4 @@ class HistoryTerminal(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(1, verbosity=2)

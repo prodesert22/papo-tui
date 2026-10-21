@@ -1,11 +1,13 @@
+from test_context import main as test_main
+
+from test_context import argument
 import json
 import os
 import subprocess
-import sys
 import unittest
 from history_mock import HistoryMock, CHANNEL, OTHER, uuid
 
-BINARY = sys.argv.pop(1)
+BINARY = argument(0)
 
 
 class HistoryTests(unittest.TestCase):
@@ -319,4 +321,6 @@ class HistoryTests(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

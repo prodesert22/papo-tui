@@ -43,15 +43,6 @@ static int notification_badge(view *ui, WINDOW *window, int row, int column, siz
         wattrset(window, previous);
     return width;
 }
-static bool instance_unread(history *h)
-{
-    if (inbox_unseen_conversations(history_inbox(h)))
-        return true;
-    for (size_t i = 0; i < history_channel_count(h); ++i)
-        if (history_channel_unread(h, history_channel(h, i)))
-            return true;
-    return false;
-}
 static int server_badge(view *ui, WINDOW *window, int row, int column, size_t count, int pair)
 {
     graphics_protocol protocol = graphics_terminal_get().protocol;
@@ -86,7 +77,7 @@ int conversation_tab_width(view *ui, size_t index, int available)
     int width = text_label(NULL, 0, 0, 128, ui->connections->items[index].name) + 4;
     inbox *box = history_inbox(ui->connections->items[index].model);
     size_t mentions = inbox_unread_mentions(box, NULL);
-    if (inbox_unread(box) || instance_unread(ui->connections->items[index].model))
+    if (history_instance_unread(ui->connections->items[index].model))
         width += 1 + server_badge(ui, NULL, 0, 0, mentions, 0);
     return width > available ? available : width;
 }
@@ -134,7 +125,7 @@ void conversation_draw_tabs(view *ui, auth_client *auth)
         char label[192];
         inbox *box = history_inbox(ui->connections->items[i].model);
         size_t mentions = inbox_unread_mentions(box, NULL);
-        bool notified = inbox_unread(box) || instance_unread(ui->connections->items[i].model);
+        bool notified = history_instance_unread(ui->connections->items[i].model);
         int badge_width = notified ? server_badge(ui, NULL, 0, 0, mentions, 0) : 0;
         snprintf(label, sizeof(label), "%c%s",
                  selected ? '['
@@ -161,9 +152,10 @@ void conversation_draw_tabs(view *ui, auth_client *auth)
                            "Canais/DMs", "Configurações", "Anexos",    "Anexar",   "Membros",
                            "Membros",    "Buscar",        "Fixadas"};
     char summary[1200];
-    snprintf(summary, sizeof(summary), "%s · Foco: %s · F2: ajustes · F6: conta",
-             auth_username(auth),
-             ui->focus == CHANNEL_LIST ? ui->list_dms ? "DMs" : "Canais" : areas[ui->focus]);
+    snprintf(summary, sizeof(summary), "%s · Foco: %s", auth_username(auth),
+             ui->navigating              ? "Seleção"
+             : ui->focus == CHANNEL_LIST ? ui->list_dms ? "DMs" : "Canais"
+                                         : areas[ui->focus]);
     wattrset(ui->tabs, COLOR_PAIR(focused ? THEME_FOCUS_MUTED : THEME_PANEL_MUTED));
     if (COLS < 80) {
         text_label(ui->tabs, 1, 0, width - 20, summary);
@@ -223,7 +215,7 @@ bool conversation_collect_notices(view *ui, auth_client *auth)
     inbox *box = history_inbox(ui->model);
     char notifications[192] = "";
     if (inbox_unread(box))
-        snprintf(notifications, sizeof(notifications), "%zu %s%s · F9", inbox_unread(box),
+        snprintf(notifications, sizeof(notifications), "%zu %s%s", inbox_unread(box),
                  inbox_unread(box) == 1 ? "notificação" : "notificações",
                  inbox_has_more(box) ? "+" : "");
     changed |= status_bar_set(&ui->status, STATUS_NOTIFICATIONS,
@@ -287,137 +279,18 @@ bool conversation_collect_notices(view *ui, auth_client *auth)
     }
     char unread[128] = "";
     if (ui->unseen)
-        snprintf(unread, sizeof(unread), "%llu novas mensagens · End: ir ao fim",
-                 (unsigned long long)ui->unseen);
+        snprintf(unread, sizeof(unread), "%llu novas mensagens", (unsigned long long)ui->unseen);
     changed |= status_bar_set(&ui->status, STATUS_UNREAD, unread);
     return changed;
 }
 
 void conversation_draw_footer(view *ui)
 {
-    const char *full, *shorter, *minimal;
-    if (file_picker_open(ui->files)) {
-        full = shorter = "Tab áreas · Espaço marcar · Enter abrir · Esc cancelar";
-        minimal = "Tab · Enter · Esc";
-    } else if (ui->remove_confirm) {
-        full = shorter = "←→ escolher · Enter confirmar · Esc cancelar";
-        minimal = "Enter · Esc";
-    } else if (r8_modal_locating(ui->r8)) {
-        full = shorter = "Esc voltar aos detalhes";
-        minimal = "Esc";
-    } else if (r8_modal_is_open(ui->r8) || ui->settings.open) {
-        full = shorter = "↑↓ escolher · Enter abrir · Tab ações · Esc voltar";
-        minimal = "Enter · Esc";
-    } else if (ui->duplicate_modal) {
-        full = "←→ escolher · Enter confirmar · Esc cancelar";
-        shorter = "Enter confirmar · Esc cancelar";
-        minimal = "Enter · Esc";
-    } else if (ui->reactors_open) {
-        full = "↑↓ rolar · ←→ colunas · Enter selecionar · Esc fechar";
-        shorter = "↑↓ rolar · ←→ colunas · Enter · Esc";
-        minimal = "↑↓ · ←→ · Enter · Esc";
-    } else if (ui->context_open) {
-        full = shorter = "↑↓ escolher · Enter confirmar · m/Esc fechar";
-        minimal = "↑↓ · Enter · m/Esc";
-    } else if (media_view_modal(ui->media)) {
-        full = shorter = minimal = "Esc: voltar da mídia";
-    } else if (emoji_picker_open(ui->emojis)) {
-        full = "Tab áreas · ↑↓←→ escolher · Enter inserir · F5 atualizar · Esc fechar";
-        shorter = "↑↓←→ escolher · Enter inserir · Esc fechar";
-        minimal = "Enter inserir · Esc";
-    } else if (emoji_picker_suggesting(ui->emojis)) {
-        full = shorter = "↑↓ escolher · Tab/Enter inserir emoji · Esc fechar";
-        minimal = "↑↓ · Tab/Enter";
-    } else if (mention_popup_open(ui->mentions)) {
-        full = "↑↓ escolher · Tab/Enter mencionar · Roda: rolar · Esc fechar";
-        shorter = "↑↓ escolher · Tab mencionar · Esc fechar";
-        minimal = "↑↓ · Tab";
-    } else if (ui->navigating) {
-        full = "↑↓ mensagens · ←→ mídia · Enter mídia · m menu · r responder · e reagir · E "
-               "reações · Esc";
-        shorter = "↑↓ mensagens · m menu · r responder · e/E reações";
-        minimal = "↑↓ mensagens · m menu · r/e/E";
-    } else if (ui->focus == SEARCH_BUTTON || ui->focus == PINS_BUTTON ||
-               ui->focus == MEMBERS_BUTTON) {
-        full = "←→ botões · Enter abrir · ↓ histórico/lista · ↑ servidores · Esc histórico";
-        shorter = "←→ botões · Enter abrir · ↓ histórico · ↑ servidores";
-        minimal = "←→ · Enter · ↓ histórico";
-    } else if (ui->focus == SERVER_TABS) {
-        bool adding = ui->tab_cursor == ui->connections->count;
-        full = adding ? "←→ servidores · Enter adicionar · ↓ canais · Ctrl+Q sair"
-                      : "←→ servidores · Enter ativar · ↓ canais · Ctrl+Q sair";
-        shorter = adding ? "←→ servidores · ↓ canais · Enter adicionar"
-                         : "←→ servidores · ↓ canais · Enter ativar";
-        minimal = "←→ · Enter";
-    } else if (ui->focus == LIST_BUTTONS) {
-        full = "←→ Canais/DMs · Enter ativar · ↓ lista · F9 notificações · F10 membros";
-        shorter = "←→ escolher · Enter ativar · ↓ lista";
-        minimal = "←→ · Enter";
-    } else if (ui->focus == CHANNEL_LIST) {
-        bool voice = !strcmp(
-            conversation_str(conversation_list_channel(ui, ui->highlighted), "type"), "voice");
-        full = voice ? "↑↓ canais · Shift+Enter/F4 histórico · Enter voz (em breve) · ↑ topo"
-                     : "↑↓ canais · Enter/→ abrir · ↑ topo · Ctrl+R atualizar";
-        shorter = voice ? "↑↓ canais · Shift+Enter/F4 histórico · ↑ topo"
-                        : "↑↓ canais · Enter abrir · ↑ topo";
-        minimal = voice ? "Shift+Enter/F4 histórico" : "↑↓ · Enter";
-    } else if (*ui->edit_message && ui->focus == MESSAGE_INPUT) {
-        full = shorter = "Enter editar · Shift+Enter linha · Esc cancelar edição";
-        minimal = "Enter · Esc";
-    } else if (ui->focus == MESSAGE_INPUT && *conversation_reply_target(ui)) {
-        full = "Enter enviar · Shift+Enter linha · F4 emojis · Esc cancelar resposta";
-        shorter = "Enter enviar · Esc cancelar resposta";
-        minimal = "Esc cancelar resposta";
-    } else if (ui->focus == ATTACHMENT_ROW) {
-        full = shorter = "←→ anexos · Enter remover · Tab ações · Esc voltar";
-        minimal = "←→ · Enter remover";
-    } else if (ui->focus == ATTACH_BUTTON) {
-        full = shorter = "←→ botões · Enter/F5 anexar · Shift+Tab editor";
-        minimal = "Enter anexar";
-    } else if (ui->focus == EMOJI_BUTTON) {
-        full = shorter = "←→ botões · Enter/F4 emojis · Shift+Tab voltar";
-        minimal = "Enter emojis";
-    } else if (ui->focus == MESSAGE_INPUT) {
-        full = "Enter enviar · Shift+Enter linha · Ctrl+N linha · Shift+setas selecionar · "
-               "Ctrl+Shift+C copiar · "
-               "Ctrl+C limpar · @ mencionar · F4 emojis · Tab botão · Esc histórico";
-        shorter = "Enter enviar · Ctrl+Shift+C copiar · Esc histórico";
-        minimal = "Enter";
-    } else {
-        full = conversation_input(ui)
-                   ? "↑↓ rolar · PgUp/PgDn páginas · F7 mensagens · Digite: conversar · ← canais "
-                     "· Ctrl+R atualizar"
-                   : "↑↓ rolar · ← canais · Ctrl+R atualizar";
-        shorter = "↑↓ rolar · F7 mensagens · Ctrl+R atualizar";
-        minimal = "↑↓ · F7";
-    }
     wbkgd(ui->footer, COLOR_PAIR(THEME_PANEL));
     werase(ui->footer);
     wattrset(ui->footer, COLOR_PAIR(THEME_BORDER));
     mvwhline(ui->footer, 0, 0, ACS_HLINE, getmaxx(ui->footer));
-    char full_hints[768], short_hints[512], minimal_hints[256];
-    bool normal = !file_picker_open(ui->files) && !ui->remove_confirm && !ui->attachment_dialog &&
-                  !r8_modal_is_open(ui->r8) && !ui->settings.open && !ui->duplicate_modal &&
-                  !ui->reactors_open && !ui->context_open && !media_view_modal(ui->media) &&
-                  !emoji_picker_open(ui->emojis) && !emoji_picker_suggesting(ui->emojis) &&
-                  !mention_popup_open(ui->mentions);
-    snprintf(full_hints, sizeof(full_hints), "%s%s%s%s", full,
-             normal ? " · F3 busca · F8 fixadas" : "",
-             normal && !strstr(full, "F9") ? " · F9 notificações" : "",
-             normal && !strstr(full, "F10") ? " · F10 membros" : "");
-    snprintf(short_hints, sizeof(short_hints), "%s%s%s%s", shorter,
-             normal ? " · F3 busca · F8 fixadas" : "",
-             normal && !strstr(shorter, "F9") ? " · F9 notificações" : "",
-             normal && !strstr(shorter, "F10") ? " · F10 membros" : "");
-    snprintf(minimal_hints, sizeof(minimal_hints), "%s%s%s%s", minimal, normal ? " F3/F8" : "",
-             normal ? (getmaxx(ui->footer) >= 60 ? " F9 notificações" : " F9") : "",
-             normal ? (getmaxx(ui->footer) >= 80 ? " F10 membros" : " F10") : "");
-    int hint_width = getmaxx(ui->footer) - 2;
-    const char *compact =
-        text_label(NULL, 0, 0, 1024, short_hints) > hint_width ? minimal_hints : short_hints;
-    const char *hints =
-        text_label(NULL, 0, 0, 1024, full_hints) > hint_width ? compact : full_hints;
-    status_bar_draw(&ui->status, ui->footer, 1, hints, compact, minimal_hints);
+    status_bar_draw(&ui->status, ui->footer, 1, UI_HELP_HINT, UI_HELP_HINT, UI_HELP_HINT);
 }
 
 void conversation_draw_confirmation(view *ui)
@@ -499,10 +372,10 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         scope = DRAW_ALL;
     bool paint_history = scope == DRAW_ALL || scope == DRAW_CONVERSATION;
     bool paint_navigation = paint_history || scope == DRAW_NAVIGATION;
-    bool paint_media = paint_history || paint_navigation || scope == DRAW_MEDIA ||
-                       scope == DRAW_EDITOR || emoji_picker_open(ui->emojis) ||
-                       emoji_picker_suggesting(ui->emojis) || ui->reactors_open ||
-                       mention_popup_open(ui->mentions) || r8_modal_is_open(ui->r8);
+    bool paint_media =
+        paint_history || paint_navigation || scope == DRAW_MEDIA || scope == DRAW_EDITOR ||
+        emoji_picker_open(ui->emojis) || emoji_picker_suggesting(ui->emojis) || ui->reactors_open ||
+        mention_popup_open(ui->mentions) || r8_modal_is_open(ui->r8) || ui->help.open;
     graphics_update_begin();
     curs_set(0);
     if (paint_history) {
@@ -520,7 +393,7 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         icons_begin_navigation(ui->icons);
     if (!ui->frame) {
         erase();
-        text_label(stdscr, 0, 0, COLS, "Amplie o terminal para 44×14. F6: conta.");
+        text_label(stdscr, 0, 0, COLS, "Amplie o terminal para 44×14.");
         refresh();
         graphics_frame_prepare();
         graphics_frame_flush();
@@ -567,7 +440,9 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                 if (!c)
                     break;
                 const char *type = conversation_str(c, "type");
-                bool unread = history_channel_unread(ui->model, c);
+                bool muted =
+                    inbox_conversation_muted(history_inbox(ui->model), conversation_str(c, "id"));
+                bool unread = !muted && history_channel_unread(ui->model, c);
                 char label[2200];
                 snprintf(label, sizeof(label), "%s%s%s",
                          !strcmp(type, "category") ? "── "
@@ -582,6 +457,8 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                                                               conversation_str(user, "id"))),
                              (long long)json_integer_value(json_object_get(c, "unread_count")));
                 }
+                if (muted)
+                    g_strlcat(label, " (silenciado)", sizeof(label));
                 bool selected = index == ui->highlighted && conversation_list_selectable(ui, index);
                 size_t mentions =
                     inbox_unread_mentions(history_inbox(ui->model), conversation_str(c, "id"));
@@ -872,10 +749,20 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         caret = false;
         setsyx(-1, -1);
     }
+    WINDOW *help_window = help_draw(&ui->help);
+    if (help_window) {
+        icons_overlay(ui->icons, getbegy(help_window), getbegx(help_window), getmaxy(help_window),
+                      getmaxx(help_window));
+    }
     if (paint_media) {
         if (!ui->duplicate_modal && !ui->settings.open)
             media_view_prepare(ui->media);
         icons_prepare(ui->icons);
+        /* The player owns a direct raster rather than a cached preview. Keep
+         * it below help as well; cached fragments already exclude this area. */
+        if (help_window)
+            graphics_frame_occlude(getbegy(help_window), getbegx(help_window), getmaxy(help_window),
+                                   getmaxx(help_window));
         graphics_frame_prepare();
     }
     settings_draw(&ui->settings);
@@ -893,6 +780,11 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         setsyx(-1, -1);
     } else if (conversation_members_cursor(ui))
         caret = true;
+    if (ui->help.open) {
+        help_draw(&ui->help);
+        caret = false;
+        setsyx(-1, -1);
+    }
     doupdate();
     if (paint_media)
         graphics_frame_flush();

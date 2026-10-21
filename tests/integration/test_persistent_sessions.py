@@ -1,5 +1,9 @@
 """Synthetic HTTP and desktop credentials, exclusively on a private D-Bus."""
 
+from test_context import main as test_main
+
+from test_context import argument
+
 import json
 import os
 from pathlib import Path
@@ -9,8 +13,8 @@ import tempfile
 import time
 import unittest
 
-KEYRING = sys.argv.pop(2)
-from test_terminal import Terminal  # consumes the TUI binary  # noqa: E402 - path and test arguments are prepared above
+KEYRING = argument(1)
+from terminal_support import Terminal  # consumes the TUI binary  # noqa: E402 - path and test arguments are prepared above
 from history_mock import HistoryMock  # noqa: E402 - path and test arguments are prepared above
 
 
@@ -91,7 +95,7 @@ class Persistence(unittest.TestCase):
 
     def state(self):
         files = list(Path(self.env["XDG_STATE_HOME"]).glob("papo-tui/session-*.json"))
-        return json.loads(files[0].read_text()) if files else {}
+        return json.loads(files[0].read_text(encoding="utf-8")) if files else {}
 
     def saved(self, t, url):
         deadline = time.monotonic() + 8
@@ -319,7 +323,7 @@ class Persistence(unittest.TestCase):
         with HistoryMock() as server:
             t = self.login(server)
             self.control("Mode", "slow")
-            t.send("\x1b[17~")
+            t.send("\x14")
             self.wait(t, "[Renovar]")
             t.send("\x12")
             deadline = time.monotonic() + 5
@@ -362,7 +366,7 @@ class Persistence(unittest.TestCase):
             t = self.login(server)
             file = next(Path(self.env["XDG_STATE_HOME"]).glob("papo-tui/session-*.json"))
             file.chmod(0o644)
-            t.send("\x1b[17~")
+            t.send("\x14")
             self.wait(t, "[Renovar]")
             t.send("\x12")
             self.wait(t, "proteger")
@@ -430,4 +434,6 @@ class Persistence(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        2,
+    )

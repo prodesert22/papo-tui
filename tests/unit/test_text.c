@@ -201,6 +201,14 @@ int main(void)
     insertion.length = TEXT_LIMIT;
     CHECK(!text_insert_buffer(&buffer, &insertion));
     CHECK(text_encode(&buffer, output) && !strcmp(output, "texto intacto"));
+    CHECK(text_decode(&buffer, "uma palavra"));
+    buffer.cursor = buffer.length;
+    CHECK(text_edit(&buffer, KEY_CODE_YES, TEXT_CTRL_BACKSPACE, 20, true));
+    CHECK(text_encode(&buffer, output) && !strcmp(output, "uma "));
+    CHECK(text_decode(&buffer, "outra palavra"));
+    buffer.cursor = buffer.length;
+    CHECK(text_edit(&buffer, OK, 23, 20, true));
+    CHECK(text_encode(&buffer, output) && !strcmp(output, "outra "));
     puts("Unicode, selection, words, atomic insertion, wrapping, controls and limits passed");
     return 0;
 }

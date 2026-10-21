@@ -6,6 +6,7 @@
 #include "net/rate_limit.h"
 #include "platform/clipboard.h"
 #include "ui/components/button.h"
+#include "ui/components/help.h"
 #include "ui/components/theme.h"
 #include "ui/input/mouse.h"
 #include "ui/input/text.h"
@@ -30,6 +31,7 @@ typedef struct {
     int row, column, width, index;
 } hit;
 typedef struct {
+    help_modal help;
     WINDOW *window, *dialog;
     int cursor, first_tab, focus, dialog_type, field, button, top_tab;
     bool paste, dragging;
@@ -253,7 +255,8 @@ static void draw_dialog(profile_ui *ui)
           ui->config->writable ? THEME_PANEL_MUTED : THEME_ERROR, ui->config->message);
     label(ui->dialog, 10, 2, ui->dialog_width - 4, THEME_PANEL_MUTED,
           clipboard_notice() ? clipboard_notice() : "Tab: foco · Enter: confirmar · Esc: cancelar");
-    if ((ui->dialog_type == EDIT_DIALOG || ui->dialog_type == RATE_DIALOG) && ui->field < 2) {
+    if (!ui->help.open && (ui->dialog_type == EDIT_DIALOG || ui->dialog_type == RATE_DIALOG) &&
+        ui->field < 2) {
         text_buffer *buffer = ui->field ? &ui->url : &ui->name;
         text_layout view;
         text_measure(buffer, TEXT_LIMIT * 2 + 1, &view);
@@ -337,9 +340,9 @@ static void draw_chooser(profile_ui *ui)
         ui->actions[ui->action_count++] = (hit){row, column, width, actions[i]};
         column += width + 2;
     }
-    label(ui->window, ui->height - 2, 2, ui->width - 4, THEME_PANEL_MUTED,
-          "Tab: foco · Ctrl+P: gerenciar · Ctrl+Q: sair");
+    label(ui->window, ui->height - 2, 2, ui->width - 4, THEME_PANEL_MUTED, UI_HELP_HINT);
     wnoutrefresh(ui->window);
+    help_draw(&ui->help);
     doupdate();
 }
 
@@ -350,7 +353,7 @@ static void draw(profile_ui *ui)
         erase();
         label(stdscr, 0, 0, COLS, THEME_MUTED, "Amplie o terminal para 44 colunas e 14 linhas.");
         if (LINES > 1)
-            label(stdscr, 1, 0, COLS, THEME_MUTED, "Ctrl+Q: sair");
+            label(stdscr, 1, 0, COLS, THEME_MUTED, UI_HELP_HINT);
         refresh();
         return;
     }
@@ -401,20 +404,13 @@ static void draw(profile_ui *ui)
               "Selecione um perfil para habilitar as ações.");
     label(ui->window, LINES - 4, 2, COLS - 4, ui->config->writable ? THEME_MUTED : THEME_ERROR,
           ui->config->message);
-    const char *navigation = ui->focus == TAB_AREA    ? "←→: opções · ↓/Enter: abrir · Tab: foco"
-                             : ui->focus == LIST_AREA ? "↑↓: perfis · →/Enter: ações · Tab: foco"
-                                                      : "←→: ações · ↑: lista · Enter: confirmar";
-    label(ui->window, LINES - 3, 2, COLS - 4, THEME_MUTED, navigation);
-    label(ui->window, LINES - 2, 2, COLS - 4, THEME_MUTED,
-          profile
-              ? (COLS >= 80
-                     ? "Ctrl+L: limites · F5: retry · Ctrl+R: reler · Esc: voltar · Ctrl+Q: sair"
-                     : "F5 · Ctrl+L · Ctrl+R · Esc · Ctrl+Q")
-              : "Ctrl+R: recarregar · Esc: voltar · Ctrl+Q: sair");
+    label(ui->window, LINES - 2, 2, COLS - 4, THEME_MUTED, UI_HELP_HINT);
     wnoutrefresh(ui->window);
     draw_dialog(ui);
+    help_draw(&ui->help);
     doupdate();
-    curs_set(ui->dialog && (ui->dialog_type == EDIT_DIALOG || ui->dialog_type == RATE_DIALOG) &&
+    curs_set(!ui->help.open && ui->dialog &&
+                     (ui->dialog_type == EDIT_DIALOG || ui->dialog_type == RATE_DIALOG) &&
                      ui->field < 2
                  ? 1
                  : 0);
@@ -614,8 +610,8 @@ static int click_event(profile_ui *ui, server_profile *output, MEVENT mouse)
                     return -1;
                 return 0;
             }
-        if ((ui->dialog_type == EDIT_DIALOG || ui->dialog_type == RATE_DIALOG) && column >= 2 &&
-            column < ui->dialog_width - 2 && (row == 3 || row == 6)) {
+        if (!ui->help.open && (ui->dialog_type == EDIT_DIALOG || ui->dialog_type == RATE_DIALOG) &&
+            column >= 2 && column < ui->dialog_width - 2 && (row == 3 || row == 6)) {
             ui->field = row == 6 ? 1 : 0;
             text_buffer *buffer = ui->field ? &ui->url : &ui->name;
             text_click(buffer, TEXT_LIMIT * 2 + 1, 0, ui->scroll[ui->field] + column - 2);
@@ -735,13 +731,36 @@ static int profiles_run(profile_config *config, bool allow_local_http,
         }
         if (type == KEY_CODE_YES && key == KEY_PASTE_END) {
             ui->paste = false;
-            if ((ui->dialog_type == EDIT_DIALOG || ui->dialog_type == RATE_DIALOG) &&
+            if (ui->help.open) {
+                help_paste(&ui->help, &ui->paste_data);
+                continue;
+            }
+            if (!ui->help.open &&
+                (ui->dialog_type == EDIT_DIALOG || ui->dialog_type == RATE_DIALOG) &&
                 ui->field < 2) {
                 if (!text_paste_commit(&ui->paste_data, ui->field ? &ui->url : &ui->name))
                     snprintf(config->message, sizeof(config->message),
                              "Colagem excede o limite do campo; texto preservado.");
             } else
                 text_paste_cancel(&ui->paste_data);
+            continue;
+        }
+        if (!ui->paste && type == OK && key == 17) {
+            result = 2;
+            break;
+        }
+        if (!ui->paste && help_key(&ui->help, type, key))
+            continue;
+        if (!ui->paste &&
+            (shortcut_is(type, key, SHORTCUT_HELP) || shortcut_is(type, key, SHORTCUT_HELP_ALL))) {
+            help_context context =
+                ui->dialog ? HELP_CONFIRM | (ui->field < 2 && ui->dialog_type != REMOVE_DIALOG
+                                                 ? HELP_FIELDS | HELP_FIELD_CLEAR
+                                                 : 0)
+                           : HELP_PROFILES;
+            help_open(&ui->help, context,
+                      ui->dialog ? "Formulário de perfil" : "Perfis de servidores",
+                      shortcut_is(type, key, SHORTCUT_HELP_ALL));
             continue;
         }
         if (type == KEY_CODE_YES && key == KEY_MOUSE) {
@@ -813,7 +832,7 @@ static int profiles_run(profile_config *config, bool allow_local_http,
                 profiles_reload(config);
                 ui->cursor = ui->first_tab = 0;
                 ui->selection_error = false;
-            } else if (type == KEY_CODE_YES && key == KEY_F(5)) {
+            } else if (shortcut_is(type, key, SHORTCUT_RETRY_SEND)) {
                 const server_profile *profile = selected(ui);
                 if (profile && !start_discovery(ui, profile)) {
                     result = -1;
@@ -909,7 +928,7 @@ static int profiles_run(profile_config *config, bool allow_local_http,
                 result = -1;
                 break;
             }
-        } else if (type == KEY_CODE_YES && key == KEY_F(5)) {
+        } else if (shortcut_is(type, key, SHORTCUT_RETRY_SEND)) {
             const server_profile *profile = selected(ui);
             if (profile && !start_discovery(ui, profile)) {
                 result = -1;
@@ -926,6 +945,7 @@ static int profiles_run(profile_config *config, bool allow_local_http,
                 done = true;
         }
     }
+    help_destroy(&ui->help);
     close_dialog(ui);
     if (ui->window)
         delwin(ui->window);

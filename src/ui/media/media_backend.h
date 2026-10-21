@@ -2,7 +2,7 @@
 #define PAPO_MEDIA_BACKEND_H
 #include "ui/media/image_decode.h"
 
-#define PAPO_MEDIA_BACKEND_ABI 9U
+#define PAPO_MEDIA_BACKEND_ABI 10U
 /* Bound larger modal surfaces while keeping their buffers within the cache budget. */
 #define VIDEO_FRAME_PIXELS (7U * 1024U * 1024U)
 #define VIDEO_KITTY_FRAME_PIXELS (960U * 540U)
@@ -47,6 +47,7 @@ typedef struct {
     void (*close)(void *);
     void (*update)(void *, const video_controls *, video_info *);
     bool (*changed)(void *);
+    /* Packed RGB888; the caller supplies IMAGE_PIXEL_PADDING writable tail bytes. */
     bool (*render)(void *, unsigned char *, int, int);
     /* Callbacks only wake the worker; they must not call back into libmpv. */
     void (*set_wakeup)(void *, void (*)(void *), void *);

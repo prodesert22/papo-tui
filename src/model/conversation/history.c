@@ -229,7 +229,7 @@ void history_active(history *h, bool active)
     h->active = active;
     if (!active) {
         if (h->pending != NONE && h->pending != INBOX && !history_internal_actions_mutating(h) &&
-            !history_internal_members_mutating(h)) {
+            !history_internal_members_mutating(h) && h->pending != CHANNEL_SETTINGS) {
             if (h->pending == MEMBERS)
                 history_internal_members_recover(h);
             auth_cancel_read(h->auth);
@@ -419,7 +419,7 @@ int history_paging_direction(const history *h)
 void history_reload_channels(history *h)
 {
     if (h->pending != NONE && h->pending != INBOX && !history_internal_actions_mutating(h) &&
-        !history_internal_members_mutating(h)) {
+        !history_internal_members_mutating(h) && h->pending != CHANNEL_SETTINGS) {
         if (h->pending == MEMBERS)
             history_internal_members_recover(h);
         auth_cancel_read(h->auth);
@@ -449,7 +449,7 @@ bool history_select(history *h, size_t index)
         h->pending = NONE;
     }
     if (h->pending != NONE && h->pending != INBOX && !history_internal_actions_mutating(h) &&
-        !history_internal_members_mutating(h)) {
+        !history_internal_members_mutating(h) && h->pending != CHANNEL_SETTINGS) {
         if (h->pending == MEMBERS)
             history_internal_members_recover(h);
         auth_cancel_read(h->auth);
@@ -554,7 +554,7 @@ bool history_internal_channels_response(history *h, json_t *body)
             h->selected = i;
     if (*selected_id && h->selected == SIZE_MAX)
         clear_messages(h);
-    if (!h->messages || h->selected == SIZE_MAX) {
+    if ((!h->messages || h->selected == SIZE_MAX) && h->failed != MESSAGES) {
         history_internal_status(h,
                                 count ? "Escolha um canal para ler." : "Nenhum canal disponível.");
         if (count)
@@ -614,7 +614,7 @@ static bool sync_permissions(history *h)
     if (h->selected != SIZE_MAX &&
         history_permission(h, PERMISSION_READ_CHANNEL) == PERMISSION_DENIED) {
         if (h->pending != NONE && h->pending != INBOX && !history_internal_actions_mutating(h) &&
-            !history_internal_members_mutating(h)) {
+            !history_internal_members_mutating(h) && h->pending != CHANNEL_SETTINGS) {
             if (h->pending == MEMBERS)
                 history_internal_members_recover(h);
             auth_cancel_read(h->auth);
@@ -641,6 +641,13 @@ static int process_response(history *h, uint64_t maintenance_now)
     long code;
     uint64_t generation;
     json_t *body = auth_take_response(h->auth, &code, &generation);
+    if (h->pending == CHANNEL_SETTINGS) {
+        if (generation == h->context && h->request_context == h->context)
+            history_internal_channel_settings_response(h, body, code, uncertain);
+        json_decref(body);
+        h->pending = NONE;
+        return 3;
+    }
     if (h->pending == MEMBERS) {
         if (generation == h->context && h->request_context == h->context)
             history_internal_members_response(h, body, code, uncertain);
@@ -804,6 +811,8 @@ bool history_poll(history *h)
         h->read_loaded = h->read_dirty = h->read_save_failed = false;
         h->read_url[0] = h->read_user[0] = 0;
         h->read_save_after = 0;
+        h->notification_queued = false;
+        h->notification_channel[0] = h->notification_mode[0] = 0;
         h->context = auth_context_generation(h->auth);
         chat_assets_destroy(h->assets);
         h->assets = chat_assets_create();
@@ -823,6 +832,7 @@ bool history_poll(history *h)
         h->epoch = auth_ws_epoch(h->auth);
     }
     load_reads(h);
+    changed |= inbox_preferences_poll(h->inbox);
     changed |= sync_permissions(h);
     uint64_t epoch = auth_ws_epoch(h->auth);
     bool connected = auth_has_session(h->auth) && auth_ws_state(h->auth) == WS_OPEN;
@@ -867,6 +877,7 @@ bool history_poll(history *h)
     }
     changed |= sync_permissions(h);
     int response = process_response(h, maintenance_now);
+    history_internal_notification_reads(h);
     changed |= (response & 1) != 0;
     if (h->retry_requested && h->pending == NONE) {
         h->retry_requested = false;
@@ -912,6 +923,8 @@ bool history_poll(history *h)
                 h->want_messages = true;
             }
         }
+        if (history_internal_channel_settings_dispatch(h))
+            return true;
         if (history_internal_members_dispatch(h))
             return true;
         if (history_internal_actions_dispatch(h, true))

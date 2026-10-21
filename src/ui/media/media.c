@@ -3,10 +3,12 @@
 #endif
 #include "ui/media/media.h"
 #include "config/app_mode.h"
+#include "config/player_volume.h"
 #include "net/clock.h"
 #include "net/http/download.h"
 #include "ui/components/button.h"
 #include "ui/components/theme.h"
+#include "ui/input/shortcuts.h"
 #include "ui/input/text.h"
 #include "ui/media/graphics.h"
 #include "ui/media/image_decode.h"
@@ -51,6 +53,7 @@ typedef struct {
     uint64_t token;
     int width, height;
     bool video;
+    double volume; /* Level applied when the player starts; negative keeps it. */
     graphics_terminal terminal;
     uint32_t image_id;
 } job;
@@ -90,6 +93,7 @@ struct media_view {
     message_media *gallery; /* Owned metadata; resources stay in the shared cache. */
     size_t gallery_count, gallery_index, image_count;
     uint64_t modal_token;
+    char *modal_source; /* First source this player session used, kept across resizes. */
     graphics_image modal_image;
     const char *modal_error;
 };
@@ -145,9 +149,10 @@ static void *worker(void *context)
     job current = {0};
     void *player = NULL;
     const video_player_api *api = NULL;
-    uint64_t last_frame = 0;
     bool force_frame = false;
+    bool apply_volume = false;
     for (;;) {
+        gint64 frame_started = g_get_monotonic_time();
         g_mutex_lock(&v->lock);
         bool stop = v->stopping;
         bool pending = v->pending;
@@ -189,7 +194,6 @@ static void *worker(void *context)
             if (reuse) {
                 free_job(&current);
                 current = next;
-                last_frame = 0;
                 force_frame = true;
             } else {
                 current = next;
@@ -208,13 +212,29 @@ static void *worker(void *context)
                     continue;
                 }
                 api->set_wakeup(player, player_wakeup, v);
+                apply_volume = current.volume >= 0;
             }
         }
         if (player) {
-            video_info info;
-            api->update(player, &controls, &info);
-            if (info.invalid) {
+            /* The level the user chose reaches the new player before its first
+             * frame, so the volume never restarts at the default. */
+            if (apply_volume) {
+                apply_volume = false;
+                controls.volume_absolute = true;
+                controls.volume_level = current.volume;
+                controls.volume = 0;
+            }
+            video_info info = {0};
+            graphics_image image = {0};
+            image_decode_request request = {.width = current.width,
+                                            .height = current.height,
+                                            .terminal = current.terminal,
+                                            .image_id = current.image_id};
+            if (!media_service_video_frame(player, &controls, &request, force_frame, &info,
+                                           &image) ||
+                info.invalid) {
                 uint64_t token = current.token;
+                graphics_image_free(&image);
                 api->close(player);
                 player = NULL;
                 free_job(&current);
@@ -235,49 +255,9 @@ static void *worker(void *context)
             v->duration = info.duration;
             v->volume = info.volume;
             g_mutex_unlock(&v->lock);
-            uint64_t now = 0;
-            if (info.width > 0 && info.height > 0 && net_now_ms(&now) && now - last_frame >= 33 &&
-                (force_frame || api->changed(player))) {
-                last_frame = now;
+            if (image.data) {
                 force_frame = false;
-                /* Fit the available modal area, preserving the display aspect ratio. */
-                double scale =
-                    fmin((double)current.width / info.width, (double)current.height / info.height);
-                int width = (int)fmax(1, info.width * scale);
-                int height = (int)fmax(1, info.height * scale);
-                int display_width = width, display_height = height;
-                if (current.terminal.protocol == GRAPHICS_KITTY) {
-                    /* Send at most the native frame (bounded for video), then
-                     * let Kitty enlarge it. Scaling to a large modal on the CPU
-                     * only increases transfer traffic without adding detail. */
-                    scale = fmin(1, fmin(scale, sqrt(VIDEO_KITTY_FRAME_PIXELS /
-                                                     ((double)info.width * info.height))));
-                    width = (int)fmax(1, info.width * scale);
-                    height = (int)fmax(1, info.height * scale);
-                }
-                size_t pixels = (size_t)width * (size_t)height;
-                unsigned char *rgba = malloc(pixels * 4), *rgb = malloc(pixels * 3);
-                graphics_image image = {0};
-                if (rgba && rgb) {
-                    if (api->render(player, rgba, width, height)) {
-                        for (size_t i = 0; i < pixels; ++i)
-                            memcpy(rgb + i * 3, rgba + i * 4, 3);
-                        if (graphics_image_encode_id(rgb, width, height, current.terminal,
-                                                     current.image_id, &image)) {
-                            image.source_width = info.width;
-                            image.source_height = info.height;
-                            if (current.terminal.protocol == GRAPHICS_KITTY) {
-                                image.columns =
-                                    (display_width + image.cell_width - 1) / image.cell_width;
-                                image.rows =
-                                    (display_height + image.cell_height - 1) / image.cell_height;
-                            }
-                            publish(v, current.token, &image, NULL, NULL);
-                        }
-                    }
-                }
-                free(rgba);
-                free(rgb);
+                publish(v, current.token, &image, NULL, NULL);
             }
         }
         g_mutex_lock(&v->lock);
@@ -287,11 +267,12 @@ static void *worker(void *context)
             if (!player)
                 g_cond_wait(&v->wake, &v->lock);
             else {
-                uint64_t now = 0;
-                int64_t delay = 50000;
-                if (net_now_ms(&now) && now - last_frame < 33)
-                    delay = (int64_t)(33 - (now - last_frame)) * 1000;
-                g_cond_wait_until(&v->wake, &v->lock, g_get_monotonic_time() + delay);
+                /* IPC cannot forward libmpv callbacks to this process. Poll at
+                 * 60 Hz while playing, counting work time in the interval;
+                 * there is only one pending publication, so slow terminals
+                 * always receive the latest frame instead of a growing queue. */
+                gint64 interval = v->paused && !force_frame ? 50000 : G_USEC_PER_SEC / 60;
+                g_cond_wait_until(&v->wake, &v->lock, frame_started + interval);
             }
         }
         g_mutex_unlock(&v->lock);
@@ -375,6 +356,8 @@ static void close_modal(media_view *v)
     v->modal = MODAL_NONE;
     v->modal_entry = -1;
     v->modal_token = 0;
+    free(v->modal_source);
+    v->modal_source = NULL;
     v->modal_error = NULL;
     v->info_open = v->info_focused = false;
     v->info_scroll = v->info_rows = 0;
@@ -715,6 +698,15 @@ static bool modal_layout_update(media_view *v)
     v->layout = layout;
     return true;
 }
+int media_view_input_delay(media_view *v)
+{
+    if (!v)
+        return 30;
+    g_mutex_lock(&v->lock);
+    bool paused = v->paused;
+    g_mutex_unlock(&v->lock);
+    return (v->modal_token && !paused) || media_cache_animating(v->store) ? 8 : 30;
+}
 bool media_view_poll(media_view *v, history *h)
 {
     if (!v)
@@ -789,7 +781,17 @@ bool media_view_poll(media_view *v, history *h)
     if (v->result_ready) {
         if (v->modal_token && v->result_token == v->modal_token) {
             if (v->result_error) {
-                v->modal_error = v->result_error;
+                media_resource *resource = v->modal_entry >= 0 && v->modal_entry < CACHE_COUNT
+                                               ? v->cache[v->modal_entry].resource
+                                               : NULL;
+                /* Only a failed transfer or ingest replaces the player's own
+                 * message; a ready-but-undecodable video keeps that message. */
+                const char *failure =
+                    media_resource_failed(resource)
+                        ? media_resource_error(
+                              resource, !strcmp(v->cache[v->modal_entry].item.role, "author"))
+                        : NULL;
+                v->modal_error = failure ? failure : v->result_error;
                 v->modal = MODAL_ERROR;
             } else {
                 clear_modal_image(v);
@@ -819,7 +821,13 @@ bool media_view_poll(media_view *v, history *h)
             return true;
         }
         if (e->item.video) {
-            const char *path = media_resource_path(e->resource);
+            const char *current = media_resource_source(e->resource);
+            /* Keep the source the session started with: a download opened
+             * through the bridge must not reload the player (losing pause and
+             * position) when the file becomes available locally. */
+            if (current && !v->modal_source)
+                v->modal_source = strdup(current);
+            const char *path = v->modal_source ? v->modal_source : current;
             if (path && !v->modal_token && v->modal_width > 0 && v->modal_height > 0) {
                 /* Cover RGB/RGBA working buffers and three encoded frames (the
                  * displayed frame, pending result and next publication). Keep the
@@ -839,6 +847,7 @@ bool media_view_poll(media_view *v, history *h)
                                .width = v->modal_width,
                                .height = v->modal_height,
                                .video = true,
+                               .volume = player_volume_get(),
                                .image_id = v->modal_image.id};
                 if (!submit_job(v, &request)) {
                     v->modal_error = "Não foi possível preparar o player.";
@@ -1013,12 +1022,24 @@ bool media_view_modal(const media_view *v)
 {
     return v && v->modal != MODAL_NONE;
 }
+media_context media_view_context(const media_view *v)
+{
+    if (!v || v->modal == MODAL_NONE)
+        return MEDIA_CONTEXT_NONE;
+    if (v->modal == MODAL_LIST)
+        return MEDIA_CONTEXT_LIST;
+    if (v->modal == MODAL_ERROR)
+        return MEDIA_CONTEXT_ERROR;
+    if (v->modal == MODAL_LOADING)
+        return MEDIA_CONTEXT_LOADING;
+    return v->selected_item.video ? MEDIA_CONTEXT_VIDEO : MEDIA_CONTEXT_IMAGE;
+}
 bool media_view_key(media_view *v, int type, uint32_t key)
 {
     if (!v)
         return false;
     if (!media_view_modal(v)) {
-        if (type != KEY_CODE_YES || key != KEY_F(7))
+        if (!shortcut_is(type, key, SHORTCUT_MESSAGES))
             return false;
         if (!v->visible_count) {
             v->modal = MODAL_ERROR;
@@ -1051,7 +1072,7 @@ bool media_view_key(media_view *v, int type, uint32_t key)
         return true;
     }
     if (v->modal != MODAL_LIST) {
-        bool toggle = (type == OK && key == 'i') || (type == KEY_CODE_YES && key == KEY_F(8));
+        bool toggle = (type == OK && key == 'i') || shortcut_is(type, key, SHORTCUT_PINNED);
         if ((type == OK && key == '\t') || (type == KEY_CODE_YES && key == KEY_BTAB)) {
             v->info_focused = !v->info_focused;
             return true;
@@ -1062,7 +1083,7 @@ bool media_view_key(media_view *v, int type, uint32_t key)
         if (toggle) {
             v->info_open = !v->info_open;
             v->info_scroll = 0;
-            if (key == 'i' || key == KEY_F(8))
+            if (key == 'i' || shortcut_is(type, key, SHORTCUT_PINNED))
                 v->info_focused = false;
             return true;
         }
@@ -1081,6 +1102,8 @@ bool media_view_key(media_view *v, int type, uint32_t key)
         v->cache[v->modal_entry].item = v->selected_item;
         v->modal = MODAL_LOADING;
         v->modal_token = 0;
+        free(v->modal_source);
+        v->modal_source = NULL;
         return true;
     }
     g_mutex_lock(&v->lock);
@@ -1096,10 +1119,19 @@ bool media_view_key(media_view *v, int type, uint32_t key)
         --v->seek_commands;
     if (type == OK && (key == '>' || key == '.') && v->seek_commands < 3600)
         ++v->seek_commands;
-    if (type == KEY_CODE_YES && key == KEY_UP && v->volume_commands < 100)
-        v->volume_commands += 5;
-    if (type == KEY_CODE_YES && key == KEY_DOWN && v->volume_commands > -100)
-        v->volume_commands -= 5;
+    if (type == KEY_CODE_YES && (key == KEY_UP || key == KEY_DOWN)) {
+        /* The level belongs to the client, so it survives the player and the
+         * session; the player only applies what it receives. */
+        int level = player_volume_get() + (key == KEY_UP ? 5 : -5);
+        if (level < PLAYER_VOLUME_MIN)
+            level = PLAYER_VOLUME_MIN;
+        if (level > PLAYER_VOLUME_MAX)
+            level = PLAYER_VOLUME_MAX;
+        player_volume_set(level);
+        v->volume_absolute = true;
+        v->volume_level = level;
+        v->volume_commands = 0;
+    }
     g_cond_signal(&v->wake);
     g_mutex_unlock(&v->lock);
     return true;
@@ -1154,8 +1186,14 @@ bool media_view_click(media_view *v, int y, int x)
                     v->seek_position = fraction * v->duration;
                     v->seek_commands = 0;
                 } else if (action == MEDIA_CONTROL_VOLUME) {
+                    int level = (int)lround(fraction * 100);
+                    if (level < PLAYER_VOLUME_MIN)
+                        level = PLAYER_VOLUME_MIN;
+                    if (level > PLAYER_VOLUME_MAX)
+                        level = PLAYER_VOLUME_MAX;
+                    player_volume_set(level);
                     v->volume_absolute = true;
-                    v->volume_level = fraction * 100;
+                    v->volume_level = level;
                     v->volume_commands = 0;
                 }
                 g_cond_signal(&v->wake);
@@ -1248,27 +1286,55 @@ static double control_fraction(double value)
 }
 
 static void draw_control_track(WINDOW *w, int row, int x, int width, double fraction, bool timeline,
-                               bool muted, bool known)
+                               bool muted, bool known, double downloaded)
 {
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     mvwaddch(w, row, x - 1, '[');
     mvwaddch(w, row, x + width, ']');
     int marker = (int)(fraction * (width - 1));
     int filled = (int)ceil(fraction * width);
+    double bounded = fmin(1, fmax(0, downloaded));
+    int ready = (int)ceil(bounded * width);
     for (int i = 0; i < width; ++i) {
+        if (timeline) {
+            bool playhead = known && i == marker;
+            bool played = known && i < marker;
+            bool buffered = i < ready;
+            /* Keep the played interval orange so the current position stays
+             * visible; the downloaded part ahead of it is white and the
+             * remaining part is gray. */
+            int pair = playhead || played ? THEME_PANEL_ACCENT
+                       : buffered         ? THEME_PANEL_BRIGHT
+                                          : THEME_PANEL_MUTED;
+            wattrset(w, COLOR_PAIR(pair));
+            mvwaddnwstr(w, row, x + i, playhead ? L"●" : (played || buffered) ? L"━" : L"─", 1);
+            continue;
+        }
         int percent = width > 1 ? i * 100 / (width - 1) : 100;
-        if (!timeline && percent > (int)lround(fraction * 100))
+        if (percent > (int)lround(fraction * 100))
             percent = (int)lround(fraction * 100);
-        bool active = known && (timeline ? i <= marker : i < filled);
-        int pair = !active    ? THEME_PANEL_MUTED
-                   : timeline ? THEME_PANEL_ACCENT
-                              : theme_volume_pair(percent);
+        bool active = known && i < filled;
+        int pair = active ? theme_volume_pair(percent) : THEME_PANEL_MUTED;
         wattrset(w, COLOR_PAIR(pair) | (muted ? A_DIM : 0));
-        const wchar_t *cell = !active ? L"─" : timeline ? (i == marker ? L"●" : L"━") : L"█";
-        mvwaddnwstr(w, row, x + i, cell, 1);
+        mvwaddnwstr(w, row, x + i, active ? L"█" : L"─", 1);
     }
 }
 
+static bool modal_download(media_view *v, size_t *available, size_t *total)
+{
+    *available = 0;
+    *total = 0;
+    if (!v || v->modal_entry < 0 || v->modal_entry >= CACHE_COUNT)
+        return false;
+    return media_resource_progress(v->cache[v->modal_entry].resource, available, total);
+}
+static unsigned download_percent(size_t available, size_t total)
+{
+    if (!total)
+        return 0;
+    size_t percent = available * 100 / total;
+    return (unsigned)MIN(percent, 100U);
+}
 static void draw_video_controls(media_view *v, WINDOW *w)
 {
     video_info info;
@@ -1289,14 +1355,24 @@ static void draw_video_controls(media_view *v, WINDOW *w)
         bool known = isfinite(info.duration) && info.duration > 0;
         double position = known ? control_fraction(info.position / info.duration) : 0;
         double volume = control_fraction(info.volume / 100);
+        size_t available = 0, total = 0;
+        bool downloading = modal_download(v, &available, &total);
+        /* The timeline keeps the played interval orange, marks the bytes
+         * already on disk ahead of it in white and the rest in gray. Without a
+         * known length, the played part is the only safe lower bound for what
+         * is already buffered. */
+        double downloaded = downloading
+                                ? (total ? control_fraction((double)available / (double)total)
+                                         : (known ? position : 0.0))
+                                : 1.0;
         draw_control_track(w, controls.row, controls.timeline_x, controls.timeline_width, position,
-                           true, false, known);
+                           true, false, known, downloaded);
         if (controls.volume_label_x >= 0) {
             wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
             mvwaddch(w, controls.row, controls.volume_label_x, 'V');
         }
         draw_control_track(w, controls.row, controls.volume_x, controls.volume_width, volume, false,
-                           info.muted, true);
+                           info.muted, true, 1.0);
         if (controls.percent_x >= 0) {
             char percent[8];
             snprintf(percent, sizeof(percent), "%3d%%", (int)lround(volume * 100));
@@ -1372,7 +1448,14 @@ void media_view_draw(media_view *v)
                                     : BUTTON_NORMAL,
                     BUTTON_PANEL);
         if (v->modal == MODAL_LOADING) {
-            text_label(w, 3, 3, image_width, "Carregando mídia…");
+            char loading[96];
+            size_t available = 0, total = 0;
+            if (modal_download(v, &available, &total) && total)
+                snprintf(loading, sizeof(loading), "Carregando mídia… %u%%",
+                         download_percent(available, total));
+            else
+                snprintf(loading, sizeof(loading), "Carregando mídia…");
+            text_label(w, 3, 3, image_width, loading);
         } else if (v->modal == MODAL_ERROR) {
             text_label(w, 3, 3, image_width,
                        v->modal_error ? v->modal_error : "Mídia indisponível.");
@@ -1405,7 +1488,14 @@ void media_view_prepare(media_view *v)
     if (media_view_modal(v)) {
         if (v->window && v->modal == MODAL_PLAYING && modal_layout_update(v)) {
             /* Recalculate after a decode result changes the raster dimensions. */
-            if (v->selected_item.video && v->modal_image.protocol == GRAPHICS_KITTY)
+            if (!v->selected_item.video && media_cache_overlay_count(v->store) &&
+                v->modal_entry >= 0 && v->modal_entry < CACHE_COUNT) {
+                cache_entry *e = &v->cache[v->modal_entry];
+                image_decode_request request = {.terminal = graphics_terminal_get()};
+                media_resource_place_image(e->resource, !strcmp(e->item.role, "author"), request,
+                                           &v->modal_image, v->modal_image.id, e->fragments,
+                                           v->layout.image_y, v->layout.image_x, 0, 0, 0);
+            } else if (v->selected_item.video && v->modal_image.protocol == GRAPHICS_KITTY)
                 graphics_image_place_scaled(&v->modal_image, v->layout.image_y, v->layout.image_x);
             else
                 graphics_image_place(&v->modal_image, v->layout.image_y, v->layout.image_x, 0, 0);

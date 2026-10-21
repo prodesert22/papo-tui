@@ -1,0 +1,6 @@
+{
+  "permissions-integration/PermissionsIntegration.test_role_permission_edit_without_ws_event_is_reconciled_periodically": {
+    "reason": "Exercises the real 30-second REST permission reconciliation interval without a WebSocket event.",
+    "timeout_seconds": 60
+  }
+}

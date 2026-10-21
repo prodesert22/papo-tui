@@ -1,15 +1,18 @@
 """End-to-end C API/outbox/history interaction owner against synthetic HTTP/WS."""
 
+from test_context import main as test_main
+
+from test_context import argument
+
 import json
 import os
 import subprocess
-import sys
 import tempfile
 import unittest
 from history_mock import CHANNEL, uuid
 from interaction_mock import InteractionMock
 
-BINARY = sys.argv.pop(1)
+BINARY = argument(0)
 
 
 class InteractionIntegration(unittest.TestCase):
@@ -48,4 +51,6 @@ class InteractionIntegration(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

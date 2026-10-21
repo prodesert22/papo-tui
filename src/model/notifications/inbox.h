@@ -32,6 +32,13 @@ size_t inbox_event_count(const inbox *box);
 json_t *inbox_notification_event(const inbox *box, size_t index);
 bool inbox_has_more(const inbox *box);
 size_t inbox_unread(const inbox *box);
+/* Activity badges exclude notification records covered by successful reads.
+ * Reading a conversation does not mark its notification-center records read. */
+bool inbox_has_activity(const inbox *box);
+void inbox_read_through(inbox *box, const char *channel, const json_t *cursor);
+bool inbox_preferences_poll(inbox *box);
+bool inbox_conversation_muted(const inbox *box, const char *channel);
+bool inbox_mute_conversation(inbox *box, const char *channel, int seconds);
 /* Known explicit mentions, deduplicated by notification/message promotion.
  * NULL channel counts the whole instance; previews may be truncated. */
 size_t inbox_unread_mentions(const inbox *box, const char *channel);

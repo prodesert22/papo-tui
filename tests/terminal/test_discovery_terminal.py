@@ -1,5 +1,7 @@
 """Pinned/search UI against synthetic HTTP/WS using a local terminal transport."""
 
+from test_context import main as test_main
+
 import time
 import os
 from pathlib import Path
@@ -8,7 +10,7 @@ import unittest
 from urllib.parse import parse_qs, urlsplit
 from discovery_mock import DiscoveryMock
 from history_mock import CHANNEL, uuid
-import test_r8_terminal as r8
+import terminal_discovery as r8
 
 
 class DiscoveryTerminal(unittest.TestCase):
@@ -42,10 +44,10 @@ class DiscoveryTerminal(unittest.TestCase):
             source = Path(folder, "integration.txt")
             source.write_text("Integrated attachment")
             t = self.login(server)
-            t.send("\x1bOR")
+            t.send("\x06")
             self.wait(t, "Buscar mensagens no servidor")
             t.send("\x1b")
-            t.send("\x1b[15~")
+            t.send("\x0f")
             self.wait(t, "Anexar arquivos")
             t.send("\x03" + str(source) + "\n")
             self.wait(t, "integration.txt 🗙]")
@@ -62,7 +64,7 @@ class DiscoveryTerminal(unittest.TestCase):
             server.user_roles = [dict(id=role)]
             t = self.login(server)
             self.resize(t, 32, 160)
-            t.send("\x1b[18~m")
+            t.send("\x0bm")
             self.wait(t, "Fixar mensagem")
             self.assertNotIn("Excluir mensagem", "\n".join(t.screen.display))
             self.click(t, "Fixar mensagem")
@@ -74,7 +76,7 @@ class DiscoveryTerminal(unittest.TestCase):
             t.send("m")
             self.wait(t, "Ver quem reagiu")
             self.assertNotIn("Desafixar mensagem", "\n".join(t.screen.display))
-            t.send("\x1b\x1b[19~")
+            t.send("\x1b\x02")
             self.wait(t, "4 resultado(s)")
             t.send("0010\n")
             self.wait(t, "Detalhes da mensagem")
@@ -93,7 +95,7 @@ class DiscoveryTerminal(unittest.TestCase):
             source.write_text("Permission gated")
             t = self.login(server)
             self.resize(t, 32, 160)
-            t.send("\x1b[15~")
+            t.send("\x0f")
             self.wait(t, "Anexar arquivos")
             t.send("\x03" + str(source) + "\n")
             self.wait(t, "revoked.txt 🗙]")
@@ -104,11 +106,17 @@ class DiscoveryTerminal(unittest.TestCase):
             self.wait(t, "Sem permissão")
             self.assertEqual(server.message_count, 0)
             self.assertIn("revoked.txt 🗙]", "\n".join(t.screen.display))
-            t.send("\x1b[15~")
+            t.send("\x0f")
             self.wait(t, "Permissão indisponível para anexar arquivos.")
             self.assertNotIn("Anexar arquivos", "\n".join(t.screen.display))
 
     def click(self, t, label):
+        # Functional scenarios use documented shortcuts when the native Windows
+        # wchar_t cannot represent a supplementary-plane header icon.
+        if os.name == "nt" and label in ("🖈", "🔍"):
+            t.send("\x02" if label == "🖈" else "\x06")
+            self.wait(t, "Mensagens fixadas" if label == "🖈" else "Buscar mensagens no servidor")
+            return
         self.wait(t, label)
         t.read(0.08)
         row = next(i for i, line in enumerate(t.screen.display) if label in line)
@@ -145,7 +153,7 @@ class DiscoveryTerminal(unittest.TestCase):
                 t = self.login(server)
                 self.resize(t, 32, 100)
                 self.wait(t, "Mensagem 10005")
-                t.send("\x1b[19~" if pins else "\x1bOR")
+                t.send("\x02" if pins else "\x06")
                 self.wait(t, "Mensagens fixadas" if pins else "Buscar mensagens no servidor")
                 t.send("Destino muito antigo\n")
                 if not pins:
@@ -175,7 +183,7 @@ class DiscoveryTerminal(unittest.TestCase):
                 t = self.login(server)
                 self.resize(t, 32, 100)
                 self.wait(t, "Mensagem 0205")
-                t.send("\x1b[19~")
+                t.send("\x02")
                 self.wait(t, "1 resultado(s)")
                 t.send("0040\n")
                 self.wait(t, "Detalhes da mensagem")
@@ -210,7 +218,7 @@ class DiscoveryTerminal(unittest.TestCase):
             t = self.login(server)
             self.resize(t, 32, 100)
             self.wait(t, "Mensagem 0205")
-            t.send("\x1b[19~")
+            t.send("\x02")
             self.wait(t, "1 resultado(s)")
             t.send("0040\n")
             self.wait(t, "Detalhes da mensagem")
@@ -238,7 +246,7 @@ class DiscoveryTerminal(unittest.TestCase):
             t = self.login(server)
             self.resize(t, 32, 100)
             self.wait(t, "Mensagem 0320")
-            t.send("\x1b[20~")
+            t.send("\x04")
             self.wait(t, "Destino de aviso")
             t.send("\n")
             self.wait(t, "Detalhes da notificação")
@@ -254,7 +262,7 @@ class DiscoveryTerminal(unittest.TestCase):
             self.resize(t, 32, 100)
             self.click(t, "outro")
             self.wait(t, "Conteúdo do outro canal")
-            t.send("\x1bOR")
+            t.send("\x06")
             self.wait(t, "Buscar mensagens no servidor")
             t.send("Mensagem 0040\n")
             self.wait(t, "1 resultado(s)")
@@ -277,7 +285,7 @@ class DiscoveryTerminal(unittest.TestCase):
             t = self.login(server)
             self.resize(t, 32, 100)
             self.wait(t, "Mensagem 0205")
-            t.send("\x1b[19~")
+            t.send("\x02")
             self.wait(t, "1 resultado(s)")
             t.send("\n")
             self.wait(t, "Detalhes da mensagem")
@@ -305,7 +313,7 @@ class DiscoveryTerminal(unittest.TestCase):
             with self.subTest(width=width), DiscoveryMock(10) as server:
                 t = self.login(server)
                 self.resize(t, 32 if width == 100 else 22, width)
-                t.send("\x1bOR")
+                t.send("\x06")
                 self.wait(t, "Buscar mensagens no servidor")
                 normal = self.button_style(t, "[Buscar]")
                 # Left/Right in the text field must still move its cursor.
@@ -341,6 +349,7 @@ class DiscoveryTerminal(unittest.TestCase):
                 while len(server.search_calls) < 2 and time.monotonic() < deadline:
                     t.read(0.03)
                 self.assertEqual(len(server.search_calls), 2)
+                self.until(t, lambda: "Detalhes da mensagem" not in "\n".join(t.screen.display))
                 self.assertNotIn("Detalhes da mensagem", "\n".join(t.screen.display))
 
     def test_pin_detail_arrows_select_go_and_unpin_without_activating(self):
@@ -348,7 +357,7 @@ class DiscoveryTerminal(unittest.TestCase):
             with self.subTest(width=width), DiscoveryMock(10) as server:
                 t = self.login(server)
                 self.resize(t, 32 if width == 100 else 22, width)
-                t.send("\x1b[19~")
+                t.send("\x02")
                 self.wait(t, "3 resultado(s)")
                 t.send("0001\n")
                 self.wait(t, "Detalhes da mensagem")
@@ -367,9 +376,10 @@ class DiscoveryTerminal(unittest.TestCase):
                 self.assertEqual(self.button_style(t, "[Ir para mensagem]"), focused)
                 self.assertEqual(self.button_style(t, "[Desafixar]"), normal)
                 t.send("\n")
+                self.until(t, lambda: "Detalhes da mensagem" not in "\n".join(t.screen.display))
                 self.assertNotIn("Detalhes da mensagem", "\n".join(t.screen.display))
                 self.assertEqual(server.pin_calls, [])
-                t.send("\x1b[19~")
+                t.send("\x02")
                 self.wait(t, "3 resultado(s)")
                 t.send("0001\n")
                 self.wait(t, "Detalhes da mensagem")
@@ -414,12 +424,12 @@ class DiscoveryTerminal(unittest.TestCase):
         with DiscoveryMock(10) as server:
             t = self.login(server)
             self.resize(t, 32, 160)
-            t.send("\x1b[18~m")
+            t.send("\x0bm")
             self.wait(t, "Fixar mensagem")
             self.click(t, "Fixar mensagem")
             self.wait(t, "Mensagem fixada.")
             self.assertEqual(len(server.pin_calls), 1)
-            t.send("\x1b[19~")
+            t.send("\x02")
             self.wait(t, "Mensagens fixadas")
             self.wait(t, "4 resultado(s)")
             t.send("0010\n")
@@ -463,7 +473,7 @@ class DiscoveryTerminal(unittest.TestCase):
             t.send("\x1b")
             self.click(t, "outro")
             self.wait(t, "Conteúdo do outro canal")
-            t.send("\x1bOR")
+            t.send("\x06")
             self.wait(t, "Buscar mensagens no servidor")
             t.send("Destino\n")
             self.wait(t, "1 resultado(s)")
@@ -479,7 +489,7 @@ class DiscoveryTerminal(unittest.TestCase):
         with DiscoveryMock(10) as server:
             t = self.login(server)
             self.resize(t, 32, 100)
-            t.send("\x1bOR")
+            t.send("\x06")
             self.wait(t, "Buscar mensagens no servidor")
             self.click(t, "[Filtros]")
             self.click(t, "Autor: Qualquer")
@@ -496,14 +506,22 @@ class DiscoveryTerminal(unittest.TestCase):
             t.send("bob\n")
             self.wait(t, "Menciona: Bia")
             self.click(t, "Contém link")
+            self.wait(t, "[x] Contém link")
             self.click(t, "Data inicial:")
             t.send("2026-10-12")
+            self.wait(t, "Data inicial: 2026-10-12")
             self.click(t, "Data final:")
             t.send("2026-10-13")
+            self.wait(t, "Data final:   2026-10-13")
             self.click(t, "Anexos: Qualquer")
             self.click(t, "Anexos: Com anexos")
+            self.wait(t, "Anexos: Sem anexos")
             self.click(t, "Ordem: Mais recentes")
+            # Mouse reports can be coalesced while the previous action is still
+            # pending. Observe its new state before clicking an existing button.
+            self.wait(t, "Ordem: Mais antigas")
             self.click(t, "[Aplicar]")
+            self.wait(t, "Buscar mensagens no servidor")
             self.assertEqual(server.search_calls, [])
             self.click(t, "[Buscar]")
             self.wait(t, "0 resultado(s)")
@@ -527,7 +545,7 @@ class DiscoveryTerminal(unittest.TestCase):
     def test_pagination_dirty_state_resize_and_keyboard_focus(self):
         with DiscoveryMock(205) as server:
             t = self.login(server)
-            t.send("\x1bOR")
+            t.send("\x06")
             self.wait(t, "Buscar mensagens no servidor")
             t.send("Mensagem\n")
             self.wait(t, "100 resultado(s)")
@@ -548,11 +566,13 @@ class DiscoveryTerminal(unittest.TestCase):
             t.send("\n")
             self.wait(t, "[Filtros]")
             t.send("\x1b")
-            t.send("\x1b[19~")
+            t.send("\x02")
             self.wait(t, "Mensagens fixadas")
             t.send("\x1b[B\x1b[6~")
             self.wait(t, "3 resultado(s)")
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

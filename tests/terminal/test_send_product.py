@@ -1,50 +1,15 @@
 """R6 through the actual login/conversation screen with synthetic HTTP data."""
 
-import os
-import time
-import unittest
+from test_context import main as test_main
+
 from history_mock import HistoryMock, CHANNEL
-from test_terminal import Terminal, editor_region, editor_column
-from wcwidth import wcswidth
+from terminal_support import editor_region, editor_column
 
 
-class SendProduct(unittest.TestCase):
-    def screen(self, terminal):
-        return "\n".join(terminal.screen.display)
+import terminal_send as support
 
-    def wait(self, terminal, text):
-        deadline = time.monotonic() + 8
-        while text not in self.screen(terminal) and time.monotonic() < deadline:
-            terminal.read(0.03)
-        self.assertIn(text, self.screen(terminal))
 
-    def click(self, terminal, text):
-        self.wait(terminal, text)
-        for row, line in enumerate(terminal.screen.display):
-            if text in line:
-                terminal.click(row, wcswidth(line[: line.index(text)]) + 1)
-                return
-        self.fail("Missing control: " + text)
-
-    def open(self, server, *, environment=None):
-        terminal = Terminal(environment=environment)
-        if os.name == "nt":
-            # Register before login assertions, which may fail before returning
-            # the terminal to a caller's try/finally block.
-            self.addCleanup(terminal.close)
-        terminal.send(server.url + "\tjosé\tSynthetic!123\n")
-        self.wait(terminal, "geral")
-        terminal.send("\x1bOB\n")
-        self.wait(terminal, "# geral · Histórico")
-        self.wait(terminal, "Conversar em #geral")
-        return terminal
-
-    def editor_text(self, terminal):
-        # Editor input is separated from message history and status lines.
-        rows = terminal.screen.display
-        first, end = editor_region(terminal)
-        return "\n".join(rows[first:end])
-
+class SendProduct(support.SendProduct):
     def test_confirmed_message_merges_without_get_and_keeps_later_edits(self):
         with HistoryMock(count=0) as server:
             server.scenario = "send-delayed"
@@ -85,9 +50,9 @@ class SendProduct(unittest.TestCase):
                 self.assertIn("Primeiro", self.editor_text(terminal))
                 terminal.send("X")
                 self.assertIn("PrimeiXro", self.editor_text(terminal))
-                terminal.send("\x1b[17~")
-                self.wait(terminal, "[Canais / F6]")
-                terminal.send("\x1b[17~")
+                terminal.send("\x14")
+                self.wait(terminal, "[Canais]")
+                terminal.send("\x14")
                 self.wait(terminal, "geral")
                 terminal.send("\x1bOB\n")
                 self.wait(terminal, "# geral · Histórico")
@@ -127,7 +92,7 @@ class SendProduct(unittest.TestCase):
                 self.wait(terminal, "Sem permissão")
                 self.assertIn("Texto preservado", self.editor_text(terminal))
                 server.scenario = "public"
-                terminal.send("\x14")
+                terminal.send("\x19")
                 self.wait(terminal, "Mensagem confirmada")
                 self.assertEqual(server.message_count, 2)
                 self.assertNotIn("Texto preservado", self.editor_text(terminal))
@@ -139,7 +104,7 @@ class SendProduct(unittest.TestCase):
             server.scenario = "send-delayed"
             terminal = self.open(server)
             try:
-                terminal.send("Texto capturado\n\x15Novo rascunho")
+                terminal.send("Texto capturado\n\x03Novo rascunho")
                 self.wait(terminal, "Mensagem confirmada")
                 self.assertEqual(server.sent_messages[0]["content"], "Texto capturado")
                 self.assertIn("Novo rascunho", self.editor_text(terminal))
@@ -181,11 +146,11 @@ class SendProduct(unittest.TestCase):
                 self.wait(terminal, "Reenviar mensagem?")
                 terminal.send("\n")  # Default is Cancelar, never another POST.
                 self.assertEqual(server.message_count, 1)
-                terminal.send("\x14")
+                terminal.send("\x19")
                 self.wait(terminal, "Reenviar mensagem?")
                 terminal.send("\x1b")
                 self.assertEqual(server.message_count, 1)
-                terminal.send("\x14\x1bOC\n")
+                terminal.send("\x19\x1bOC\n")
                 self.wait(terminal, "Mensagem confirmada")
                 self.assertEqual(server.message_count, 2)
                 self.assertNotIn("Mensagem incerta", self.editor_text(terminal))
@@ -198,7 +163,7 @@ class SendProduct(unittest.TestCase):
             try:
                 terminal.send("   \n")
                 self.assertEqual(server.message_count, 0)
-                terminal.send("\x15\x1b[200~Ação\r\nsegunda linha\x11\x1b[201~")
+                terminal.send("\x03\x1b[200~Ação\r\nsegunda linha\x11\x1b[201~")
                 self.assertEqual(server.message_count, 0)
                 terminal.resize(22, 44)
                 self.assertIn("segunda linha", self.editor_text(terminal))
@@ -252,4 +217,4 @@ class SendProduct(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(1, verbosity=2)

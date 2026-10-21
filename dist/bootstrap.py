@@ -2,6 +2,7 @@
 """Build locked dependencies in a private prefix; never overwrite system libraries."""
 
 import argparse
+import shlex
 import hashlib
 import json
 import os
@@ -270,11 +271,13 @@ def build(entry, source, work, prefix, jobs, env):
             "--enable-zlib",
         ]
         if os.name == "nt":
-            options += ["--target-os=mingw32", "--cc=clang", "--cxx=clang++"]
+            options += ["--target-os=mingw32", "--cc=clang", "--cxx=clang++", "--enable-d3d11va"]
             if os.environ.get("MSYSTEM") == "CLANGARM64":
                 options += ["--arch=aarch64"]
             else:
                 options += ["--arch=x86_64"]
+        else:
+            options += ["--enable-vaapi"]
         run("sh", unix_path(source / "configure"), *options, cwd=binary)
         run("make", "-j", jobs, cwd=binary)
         run("make", "install", cwd=binary)
@@ -297,9 +300,15 @@ def build(entry, source, work, prefix, jobs, env):
                 "-Dbuild-date=false",
             ]
             if os.name == "nt":
-                options += ["-Dwasapi=enabled", "-Dwin32-threads=enabled"]
+                options += ["-Dwasapi=enabled", "-Dwin32-threads=enabled", "-Dd3d-hwaccel=enabled"]
             else:
-                options += ["-Dpulse=enabled", "-Dalsa=enabled"]
+                options += [
+                    "-Dpulse=enabled",
+                    "-Dalsa=enabled",
+                    "-Ddrm=enabled",
+                    "-Dvaapi=enabled",
+                    "-Dvaapi-drm=enabled",
+                ]
         elif name == "libsixel":
             options += ["-Dimg2sixel=disabled", "-Dsixel2png=disabled", "-Dtests=disabled"]
         elif name == "libsecret":
@@ -361,6 +370,11 @@ def main():
     unknown = selected - {x["name"] for x in lock["sources"]}
     if unknown:
         parser.error(f"Unknown sources: {sorted(unknown)}")
+    recipe = sha256(Path(__file__))
+    compiler = subprocess.check_output(
+        [*shlex.split(os.environ.get("CC", "clang" if os.name == "nt" else "cc")), "--version"],
+        text=True,
+    ).splitlines()[0]
     for entry in lock["sources"]:
         if entry["name"] not in selected:
             continue
@@ -369,6 +383,8 @@ def main():
         stamp = prefix / (".papo-" + entry["name"] + ".json")
         identity = {
             "source": entry,
+            "recipe_sha256": recipe,
+            "compiler": compiler,
             "compatibility_patch": (
                 "windows-nanosleep-v1"
                 if os.name == "nt" and entry["name"] == "libsixel"

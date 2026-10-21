@@ -115,19 +115,21 @@ static const char *json_text(json_t *value, size_t limit)
 static bool decode(profile_config *config, json_t *root)
 {
     config->mode = APP_MODE_NORMAL;
+    config->player_volume = PLAYER_VOLUME_DEFAULT;
     if (!json_is_object(root) || !json_is_integer(json_object_get(root, "version")))
         return false;
     json_int_t version = json_integer_value(json_object_get(root, "version"));
     if (version == 1) {
         if (json_object_size(root) != 3)
             return false;
-    } else if (version == 2 || version == 3 || version == 4 || version == 5) {
+    } else if (version == 2 || version == 3 || version == 4 || version == 5 || version == 6) {
         json_t *rate = json_object_get(root, "requests_per_second");
         json_t *burst = json_object_get(root, "request_burst");
         if (json_object_size(root) != (version == 2   ? 5U
                                        : version == 3 ? 7U
                                        : version == 4 ? 8U
-                                                      : 9U) ||
+                                       : version == 5 ? 9U
+                                                      : 10U) ||
             !json_is_number(rate) || !json_is_integer(burst) || json_integer_value(burst) <= 0 ||
             json_integer_value(burst) > UINT_MAX ||
             !net_rate_parameters_valid(json_number_value(rate),
@@ -153,6 +155,13 @@ static bool decode(profile_config *config, json_t *root)
         if (!json_is_boolean(group))
             return false;
         config->members_by_status = json_is_true(group);
+    }
+    if (version >= 6) {
+        json_t *volume = json_object_get(root, "player_volume");
+        if (!json_is_integer(volume) || json_integer_value(volume) < PLAYER_VOLUME_MIN ||
+            json_integer_value(volume) > PLAYER_VOLUME_MAX)
+            return false;
+        config->player_volume = (int)json_integer_value(volume);
     }
     json_t *array = json_object_get(root, "profiles");
     json_t *selected = json_object_get(root, "selected_profile");
@@ -189,6 +198,8 @@ bool profiles_reload(profile_config *config)
     config->requests_per_second = PAPO_REQUESTS_PER_SECOND;
     config->request_burst = PAPO_REQUEST_BURST;
     config->desktop_notifications = config->notification_preview = true;
+    config->player_volume = PLAYER_VOLUME_DEFAULT;
+    player_volume_set(PLAYER_VOLUME_DEFAULT);
     if (!profiles_storage_open(config))
         return false;
     char *buffer = NULL;
@@ -216,11 +227,14 @@ bool profiles_reload(profile_config *config)
         config->requests_per_second = PAPO_REQUESTS_PER_SECOND;
         config->request_burst = PAPO_REQUEST_BURST;
         config->desktop_notifications = config->notification_preview = true;
+        config->player_volume = PLAYER_VOLUME_DEFAULT;
+        player_volume_set(PLAYER_VOLUME_DEFAULT);
         return error(
             config,
             "Configuração inválida ou incompatível; arquivo preservado. Corrija-o e use Ctrl+R.");
     }
     config->writable = config->existed = true;
+    player_volume_set(config->player_volume);
     if (!net_rate_configure(config->requests_per_second, config->request_burst))
         return error(
             config, "Perfis carregados; falha no relógio impediu aplicar os limites nesta sessão.");
@@ -263,13 +277,14 @@ static bool save_locked(profile_config *config)
     }
     json_t *selection = *config->selected ? json_string(config->selected) : json_null();
     json_t *root =
-        selection ? json_pack("{s:i,s:O,s:O,s:f,s:I,s:b,s:b,s:s,s:b}", "version", 5, "profiles",
+        selection ? json_pack("{s:i,s:O,s:O,s:f,s:I,s:b,s:b,s:s,s:b,s:i}", "version", 6, "profiles",
                               array, "selected_profile", selection, "requests_per_second",
                               config->requests_per_second, "request_burst",
                               (json_int_t)config->request_burst, "desktop_notifications",
                               config->desktop_notifications, "notification_preview",
                               config->notification_preview, "app_mode", app_mode_name(config->mode),
-                              "members_by_status", config->members_by_status)
+                              "members_by_status", config->members_by_status, "player_volume",
+                              (json_int_t)config->player_volume)
                   : NULL;
     json_decref(selection);
     json_decref(array);
@@ -442,4 +457,17 @@ bool profiles_set_member_grouping(profile_config *config, bool by_status)
         return false;
     copy->members_by_status = by_status;
     return commit(config, copy);
+}
+bool profiles_set_player_volume(profile_config *config, int level)
+{
+    if (level < PLAYER_VOLUME_MIN || level > PLAYER_VOLUME_MAX)
+        return error(config, "Escolha um volume entre 0 e 100.");
+    profile_config *copy = candidate(config);
+    if (!copy)
+        return false;
+    copy->player_volume = level;
+    if (!commit(config, copy))
+        return false;
+    player_volume_set(level);
+    return true;
 }

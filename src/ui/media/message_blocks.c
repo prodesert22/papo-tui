@@ -21,6 +21,34 @@ static const char *str(const json_t *obj, const char *key)
     const char *s = json_string_value(json_object_get(obj, key));
     return s ? s : "";
 }
+/* The server reports the MIME type it detected from the file's magic bytes.
+ * That detection recognizes only a few containers, so a valid video can
+ * arrive as a generic binary type. The file name extension is the remaining
+ * hint available before the bytes are downloaded. */
+static bool video_extension(const char *name)
+{
+    static const char *const extensions[] = {".mp4", ".m4v", ".mov",  ".mkv",  ".webm", ".ogv",
+                                             ".avi", ".3gp", ".3g2",  ".mpg",  ".mpeg", ".mpe",
+                                             ".wmv", ".flv", ".f4v",  ".m2ts", ".mts",  ".vob",
+                                             ".asf", ".rm",  ".rmvb", ".divx", ".mxf"};
+    const char *dot = strrchr(name, '.');
+    if (!dot || !dot[1])
+        return false;
+    for (size_t i = 0; i < sizeof(extensions) / sizeof(*extensions); ++i)
+        if (!g_ascii_strcasecmp(dot, extensions[i]))
+            return true;
+    return false;
+}
+/* An image or an audio file keeps its reported type; any other attachment is
+ * a video when its name carries a known video container extension. */
+static bool attachment_is_video(const char *mime, const char *name)
+{
+    if (g_str_has_prefix(mime, "video/"))
+        return true;
+    if (g_str_has_prefix(mime, "image/") || g_str_has_prefix(mime, "audio/"))
+        return false;
+    return video_extension(name);
+}
 bool message_same_author(const json_t *previous, const json_t *message)
 {
     if (!json_is_object(previous) || !json_is_object(message) ||
@@ -132,6 +160,32 @@ static void card_measure(const text_buffer *buffer, int width, text_layout *layo
     layout->cells[count].column = column;
     layout->rows = row + 1;
 }
+/* Trailing spaces at a line end are invisible; when they overflow the column
+ * they wrap alone into an extra empty row, so drop them before measuring.
+ * Explicit newlines stay, keeping blank lines written by the author. */
+static void trim_line_ends(text_buffer *buffer)
+{
+    size_t out = 0, pending = 0;
+    for (size_t at = 0; at < buffer->length; ++at) {
+        uint32_t character = buffer->data[at];
+        if (character == ' ' || character == '\t') {
+            ++pending;
+            continue;
+        }
+        if (character == '\n')
+            pending = 0;
+        else
+            while (pending) {
+                buffer->data[out++] = ' ';
+                --pending;
+            }
+        buffer->data[out++] = character;
+    }
+    buffer->length = out;
+    buffer->data[out] = 0;
+    if (buffer->cursor > out)
+        buffer->cursor = out;
+}
 /* Appends one wrapped column at a specified row. Other columns can occupy the
  * same rows. All terminal controls pass through the shared Unicode decoder. */
 static bool column(message_blocks *b, size_t start, const char *key, const char *value, int x,
@@ -172,6 +226,7 @@ static bool column(message_blocks *b, size_t start, const char *key, const char 
         }
         if (styled)
             text_mentions(&buffer, b->resolver, b->resolver_context);
+        trim_line_ends(&buffer);
         if (b->icon_resolver && (card || !strcmp(key, "content") || !strncmp(key, "reaction:", 9)))
             text_icons(&buffer, b->icon_resolver, b->icon_painter, b->icon_context);
         text_buffer visible;
@@ -179,7 +234,10 @@ static bool column(message_blocks *b, size_t start, const char *key, const char 
         if (card)
             card_measure(&buffer, width, &layout);
         else
-            text_measure(&buffer, width, &layout);
+            /* Messages have no end-of-line cursor: the full column width is
+             * drawable, so ask text_measure for one extra cell to avoid
+             * wrapping a cell that still fits (usually a trailing space). */
+            text_measure(&buffer, width + 1, &layout);
         for (int line = 0; line < layout.rows; ++line) {
             if (!reserve(b, row + 1))
                 return false;
@@ -288,12 +346,12 @@ static bool emoji_content(message_blocks *b, const char *value, int width, bool 
         g_free(points);
         return true;
     }
-    int pixels = MESSAGE_EMOJI_PIXELS;
-    int columns = (pixels + terminal.cell_width - 1) / terminal.cell_width;
-    if (columns > width) {
-        pixels = width * terminal.cell_width;
+    int columns = (MESSAGE_EMOJI_PIXELS + terminal.cell_width - 1) / terminal.cell_width;
+    if (columns > width)
         columns = width;
-    }
+    /* Fill the whole cell span so adjacent emojis touch even when the cell
+     * width does not divide the nominal 48-pixel preview. */
+    int pixels = columns * terminal.cell_width;
     int rows = (pixels + terminal.cell_height - 1) / terminal.cell_height;
     size_t line = b->count;
     int x = 0;
@@ -343,7 +401,7 @@ static bool emoji_content(message_blocks *b, const char *value, int width, bool 
                 (message_icon_region){.id = id, .x = x, .pixels = pixels, .row = sub, .offset = at};
             snprintf(icon->key, sizeof(icon->key), "content");
         }
-        x += columns + 1;
+        x += columns;
         at += consumed;
     }
     g_free(points);
@@ -518,10 +576,10 @@ static bool media(message_blocks *b, json_t *message, json_t *entry, const char 
         return strlen(str(entry, "id")) != 36;
     b->media[n].full_width = true;
     size_t start = b->count;
-    /* A graphical preview is the image itself; F7 is documented in the UI. */
+    /* A graphical preview is the image itself; Ctrl+K is documented in the UI. */
     if ((!graphics || video) &&
-        !labeled(b, key, video ? (graphics ? "▶ " : "[▶ Vídeo / F7] ") : "[Imagem / F7] ", label,
-                 width, false, card, color))
+        !labeled(b, key, video ? (graphics ? "▶ " : "[▶ Vídeo] ") : "[Imagem] ", label, width,
+                 false, card, color))
         return false;
     size_t image_start = b->count;
     int height =
@@ -785,7 +843,7 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
         if (app_mode_get() == APP_MODE_ULTRALIGHT) {
             const char *kind = !strcmp(mime, "image/gif")         ? "GIF"
                                : g_str_has_prefix(mime, "image/") ? "Imagem"
-                               : g_str_has_prefix(mime, "video/") ? "Vídeo"
+                               : attachment_is_video(mime, name)  ? "Vídeo"
                                                                   : "Anexo";
             json_t *size = json_object_get(item, "size_bytes");
             size_t length = strlen(name);
@@ -805,7 +863,7 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
                 goto error;
             continue;
         }
-        bool video = g_str_has_prefix(mime, "video/");
+        bool video = attachment_is_video(mime, name);
         bool image = g_str_has_prefix(mime, "image/");
         if (!graphics || (!image && !video)) {
             if (!labeled(b, key, "Anexo: ", name, width, true, false, 0))
@@ -1056,7 +1114,7 @@ void message_row_draw(WINDOW *w, const message_row *row, int y, int x, int width
             text_buffer buffer;
             text_layout layout;
             if (text_decode(&buffer, s->text)) {
-                text_measure(&buffer, s->width, &layout);
+                text_measure(&buffer, s->width + 1, &layout);
                 text_draw_styled(w, &buffer, &layout, s->highlight, s->highlight_length, 0, 1, y,
                                  x + s->x, text_pair,
                                  row->header && !strcmp(s->key, "header")

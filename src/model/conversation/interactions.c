@@ -218,7 +218,7 @@ bool history_interactions_retry(history *h)
 }
 bool history_jump(history *h, const char *id)
 {
-    bool ok = history_jump_at(h, id, NULL);
+    bool ok = h && history_jump_at(h, id, NULL) && h->actions;
     if (ok) {
         h->actions->jump_silent = false;
         if (*h->actions->jump)

@@ -30,15 +30,18 @@ add_library(
     src/net/rate_limit.c
     src/net/realtime/websocket.c
     src/config/app_mode.c
+    src/config/player_volume.c
     src/config/profiles.c
     src/platform/${PAPO_PLATFORM}/profiles_storage.c
     src/config/read_state.c
+    src/config/channel_mutes.c
     src/platform/${PAPO_PLATFORM}/read_storage.c
     src/model/conversation/discovery.c
     src/model/conversation/members.c
     src/model/conversation/directory.c
     src/model/conversation/events.c
     src/model/conversation/history.c
+    src/model/conversation/channel_settings.c
     src/model/conversation/interactions.c
     src/model/conversation/pagination.c
     src/model/notifications/inbox.c)
@@ -118,7 +121,7 @@ target_link_libraries(
 add_library(papo_video_player MODULE src/ui/media/video_player.c)
 target_include_directories(papo_video_player PRIVATE src)
 target_link_libraries(papo_video_player PRIVATE PkgConfig::NCURSES PkgConfig::GMODULE
-                                                PkgConfig::MPV)
+                                                PkgConfig::MPV PkgConfig::SWSCALE PkgConfig::AVUTIL)
 foreach(target papo_image_codec papo_video_player)
     set_target_properties(
         ${target}
@@ -149,6 +152,7 @@ target_compile_options(papo-media-worker PRIVATE -Wall -Wextra -Wpedantic -Werro
 target_link_libraries(
     papo-media-worker
     PRIVATE papo_platform
+            PkgConfig::GIO
             PkgConfig::NCURSES
             PkgConfig::GMODULE
             PkgConfig::PANGO
@@ -176,6 +180,7 @@ add_library(
     src/ui/media/resources.c
     src/ui/media/media.c
     src/ui/media/media_cache.c
+    src/ui/media/media_stream.c
     src/ui/media/media_process.c
     src/ui/media/media_service.c
     src/ui/media/media_wire.c
@@ -216,7 +221,8 @@ add_executable(
     src/ui/screens/message_browser.c
     src/ui/screens/inbox.c
     src/ui/screens/profiles.c
-    src/ui/components/button.c)
+    src/ui/components/button.c
+    src/ui/components/help.c)
 target_sources(papo-tui PRIVATE src/ui/components/file_picker.c)
 target_compile_definitions(papo-tui
                            PRIVATE PAPO_NATIVE_FILE_DIALOGS=$<BOOL:${PAPO_NATIVE_FILE_DIALOGS}>)

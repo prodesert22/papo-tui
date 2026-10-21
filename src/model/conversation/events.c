@@ -70,7 +70,7 @@ void history_recover(history *h)
     if (!h || !auth_has_session(h->auth))
         return;
     if (h->pending != NONE && h->pending != INBOX && !history_internal_actions_mutating(h) &&
-        !history_internal_members_mutating(h)) {
+        !history_internal_members_mutating(h) && h->pending != CHANNEL_SETTINGS) {
         auth_cancel_read(h->auth);
         h->pending = NONE;
     }
@@ -336,9 +336,10 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
         if (!ok)
             goto invalid;
         if (remove && was_active) {
-            if (h->pending != NONE)
+            if (h->pending != NONE && h->pending != CHANNEL_SETTINGS) {
                 auth_cancel_read(h->auth);
-            h->pending = NONE;
+                h->pending = NONE;
+            }
             ++h->selection;
             history_internal_status(h, "Canal removido ou indisponível. Rascunho preservado.");
         }

@@ -6,6 +6,7 @@
 #include "ui/media/message_blocks.h"
 #include "ui/media/sixel.h"
 #include <assert.h>
+#include <gio/gio.h>
 #include <libavutil/base64.h>
 #include <locale.h>
 #include <sixel.h>
@@ -161,11 +162,12 @@ static void graphics_protocols(void)
     char *encoded = calloc(image.length + 1, 1);
     assert(encoded);
     memcpy(encoded, image.data, image.length);
-    assert(strstr(encoded, "a=t,f=32,s=12,v=12,c=3,r=2,i="));
+    assert(strstr(encoded, "a=t,f=24,s=12,v=12,c=3,r=2,i="));
+    assert(strstr(encoded, ",o=z,m=1,q=2,C=1;"));
     assert(strstr(encoded, "q=2,C=1"));
     char payload[2048] = "";
     size_t used = 0;
-    for (char *p = encoded; (p = strstr(p, "\033_Gm=1;"));) {
+    for (char *p = encoded; (p = strstr(p, "\033_Gm="));) {
         p += 7;
         char *end = strstr(p, "\033\\");
         assert(end);
@@ -175,10 +177,17 @@ static void graphics_protocols(void)
         used += length;
         p = end + 2;
     }
-    unsigned char rgba[12 * 12 * 4 + 1];
-    assert(av_base64_decode(rgba, payload, sizeof(rgba)) == 12 * 12 * 4);
-    for (size_t i = 0; i < 12 * 12 * 4; i += 4)
-        assert(rgba[i] > 240 && rgba[i + 1] < 16 && rgba[i + 2] < 16 && rgba[i + 3] == 255);
+    unsigned char compressed[2048], rgb[12 * 12 * 3];
+    int compressed_size = av_base64_decode(compressed, payload, sizeof(compressed));
+    assert(compressed_size > 0);
+    GZlibDecompressor *codec = g_zlib_decompressor_new(G_ZLIB_COMPRESSOR_FORMAT_ZLIB);
+    gsize consumed = 0, written = 0;
+    assert(g_converter_convert(G_CONVERTER(codec), compressed, (size_t)compressed_size, rgb,
+                               sizeof(rgb), G_CONVERTER_INPUT_AT_END, &consumed, &written,
+                               NULL) == G_CONVERTER_FINISHED);
+    g_object_unref(codec);
+    assert(consumed == (size_t)compressed_size && written == sizeof(rgb));
+    assert(!memcmp(rgb, pixels, sizeof(rgb)));
     free(encoded);
     graphics_image_free(&image);
     t.protocol = GRAPHICS_ITERM2;
@@ -207,7 +216,7 @@ static void rectangular_crop(void)
     assert(image.length < sizeof(encoded));
     memcpy(encoded, image.data, image.length);
     size_t used = 0;
-    for (char *p = encoded; (p = strstr(p, "\033_Gm=1;"));) {
+    for (char *p = encoded; (p = strstr(p, "\033_Gm="));) {
         p += 7;
         char *end = strstr(p, "\033\\");
         assert(end && (size_t)(end - p) < sizeof(payload) - used);
@@ -218,15 +227,33 @@ static void rectangular_crop(void)
     int raster_width = 0, raster_height = 0;
     char *size = strstr(encoded, ",s=");
     assert(size && sscanf(size, ",s=%d,v=%d", &raster_width, &raster_height) == 2);
-    /* Chafa pads the encoded canvas to whole cells; placement crops it back. */
+    /* The uncompressed Chafa fallback may pad to whole cells; placement crops it back. */
     assert(raster_width >= 3 && raster_height >= 7 && raster_width <= 12 && raster_height <= 12);
-    unsigned char rgba[12 * 12 * 4 + 1];
-    assert(av_base64_decode(rgba, payload, sizeof(rgba)) == raster_width * raster_height * 4);
+    unsigned char packed[2048], rgb[12 * 12 * 4 + 1];
+    int length = av_base64_decode(packed, payload, sizeof(packed));
+    assert(length > 0);
+    bool compressed = strstr(encoded, ",o=z,") != NULL;
+    int channels = compressed ? 3 : 4;
+    size_t expected = (size_t)raster_width * raster_height * channels;
+    if (compressed) {
+        assert(raster_width == 3 && raster_height == 7);
+        GZlibDecompressor *codec = g_zlib_decompressor_new(G_ZLIB_COMPRESSOR_FORMAT_ZLIB);
+        gsize consumed = 0, written = 0;
+        assert(g_converter_convert(G_CONVERTER(codec), packed, (size_t)length, rgb, sizeof(rgb),
+                                   G_CONVERTER_INPUT_AT_END, &consumed, &written,
+                                   NULL) == G_CONVERTER_FINISHED);
+        g_object_unref(codec);
+        assert(consumed == (size_t)length && written == expected);
+    } else {
+        assert((size_t)length == expected);
+        memcpy(rgb, packed, expected);
+    }
     for (int y = 0; y < 7; ++y)
         for (int x = 0; x < 3; ++x) {
-            size_t at = (size_t)(y * raster_width + x) * 4;
-            assert(rgba[at] == (x + 4) * 20 && rgba[at + 1] == (y + 2) * 20);
-            assert(rgba[at + 2] == 17 && rgba[at + 3] == 255);
+            size_t at = (size_t)(y * raster_width + x) * channels;
+            assert(rgb[at] == (x + 4) * 20 && rgb[at + 1] == (y + 2) * 20 && rgb[at + 2] == 17);
+            if (channels == 4)
+                assert(rgb[at + 3] == 255);
         }
     graphics_image_free(&image);
     assert(!graphics_image_encode_region_id(pixels, 12, 12, 0, 0, 12, 0, t, 42, &image));
@@ -354,7 +381,7 @@ static void attachment_layout(void)
         for (int c = 0; c < b.rows[r].count; ++c) {
             const char *text = b.rows[r].segments[c].text;
             assert(!strstr(text, "Anexo:") && !strstr(text, "Tipo:") &&
-                   !strstr(text, "Moderação:") && !strstr(text, "[Imagem / F7]"));
+                   !strstr(text, "Moderação:") && !strstr(text, "[Imagem]"));
         }
         for (int k = 0; k < b.rows[r].media_count; ++k) {
             assert(b.rows[r].media[k].width == 8 && b.rows[r].media[k].height == 10);
@@ -544,6 +571,94 @@ static void attachment_mime_types(void)
     }
     app_mode_set(APP_MODE_NORMAL);
 }
+static void attachment_video_extensions(void)
+{
+    const struct {
+        const char *mime, *name, *label;
+        bool media, video;
+    } fixtures[] = {{"application/octet-stream", "movie.mp4", "Vídeo: ", true, true},
+                    {"application/octet-stream", "movie.MOV", "Vídeo: ", true, true},
+                    {"application/octet-stream", "clip.webm", "Vídeo: ", true, true},
+                    {"application/octet-stream", "notes.txt", "Anexo: ", false, false},
+                    {"application/octet-stream", "movie", "Anexo: ", false, false},
+                    {"application/octet-stream", "movie.", "Anexo: ", false, false},
+                    {"application/octet-stream", "photo.png", "Anexo: ", false, false},
+                    {"application/ogg", "clip.ogv", "Vídeo: ", true, true},
+                    {"video/avi", "clip.avi", "Vídeo: ", true, true},
+                    {"image/png", "clip.mp4", "Imagem: ", true, false},
+                    {"audio/mpeg", "song.mp3", "Anexo: ", false, false}};
+    for (size_t f = 0; f < sizeof(fixtures) / sizeof(fixtures[0]); ++f) {
+        json_t *attachment =
+            json_pack("{s:s,s:s,s:s}", "id", "00000000-0000-4000-8000-000000000002", "mime_type",
+                      fixtures[f].mime, "original_file_name", fixtures[f].name);
+        assert(attachment);
+        json_t *m = json_pack("{s:s,s:[o]}", "id", "00000000-0000-4000-8000-000000000001",
+                              "attachments", attachment);
+        assert(m);
+        for (int mode = APP_MODE_NORMAL; mode <= APP_MODE_ULTRALIGHT; ++mode) {
+            app_mode_set((app_mode)mode);
+            for (int graphics = 0; graphics < 2; ++graphics) {
+                message_blocks blocks;
+                assert(message_blocks_build(&blocks, m, "Sender", "", 80, graphics != 0));
+                assert(blocks.media_count ==
+                       (size_t)(fixtures[f].media && mode != APP_MODE_ULTRALIGHT));
+                if (blocks.media_count)
+                    assert(blocks.media[0].video == fixtures[f].video);
+                if (mode == APP_MODE_ULTRALIGHT) {
+                    bool labeled = false;
+                    for (size_t r = 0; r < blocks.count; ++r)
+                        for (int k = 0; k < blocks.rows[r].count; ++k)
+                            labeled |= blocks.rows[r].segments[k].text &&
+                                       !strncmp(blocks.rows[r].segments[k].text, fixtures[f].label,
+                                                strlen(fixtures[f].label));
+                    assert(labeled);
+                }
+                message_blocks_free(&blocks);
+            }
+        }
+        json_decref(m);
+    }
+    app_mode_set(APP_MODE_NORMAL);
+}
+static size_t content_rows(const message_blocks *b)
+{
+    size_t rows = 0;
+    for (size_t r = 0; r < b->count; ++r)
+        for (int k = 0; k < b->rows[r].count; ++k)
+            if (!strcmp(b->rows[r].segments[k].key, "content"))
+                ++rows;
+    return rows;
+}
+static void exact_width_content(void)
+{
+    /* Messages have no end-of-line cursor: text filling the drawable column
+     * must not wrap a trailing space into an empty extra line, and trailing
+     * spaces that overflow the column are dropped instead of wrapping. */
+    enum { WIDTH = 80, GUTTER = 6 };
+    char filled[WIDTH - GUTTER + 1], spaced[WIDTH - GUTTER + 1], trailing[WIDTH - GUTTER + 3];
+    memset(filled, 'x', WIDTH - GUTTER);
+    filled[WIDTH - GUTTER] = 0;
+    memset(spaced, 'x', WIDTH - GUTTER - 1);
+    spaced[WIDTH - GUTTER - 1] = ' ';
+    spaced[WIDTH - GUTTER] = 0;
+    memset(trailing, 'x', WIDTH - GUTTER);
+    trailing[WIDTH - GUTTER] = ' ';
+    trailing[WIDTH - GUTTER + 1] = ' ';
+    trailing[WIDTH - GUTTER + 2] = 0;
+    const char *variants[] = {filled, spaced, trailing};
+    app_mode_set(APP_MODE_NORMAL);
+    for (size_t variant = 0; variant < sizeof(variants) / sizeof(*variants); ++variant) {
+        json_t *m = json_pack("{s:s,s:s}", "id", "00000000-0000-4000-8000-000000000001", "content",
+                              variants[variant]);
+        assert(m);
+        message_blocks b;
+        assert(message_blocks_build(&b, m, "Author", "", WIDTH, false));
+        assert(content_rows(&b) == 1);
+        assert(b.count == 3); /* Header, content and the separator row. */
+        message_blocks_free(&b);
+        json_decref(m);
+    }
+}
 static void video_preview_layout(void)
 {
     json_t *m = json_loads("{\"id\":\"00000000-0000-4000-8000-000000000001\","
@@ -613,6 +728,8 @@ int main(void)
     assert(setlocale(LC_ALL, "C.UTF-8"));
     init_graphemebreak();
     attachment_mime_types();
+    attachment_video_extensions();
+    exact_width_content();
     video_preview_layout();
     reactions_and_replies();
     cards();

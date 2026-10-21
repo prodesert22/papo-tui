@@ -8,6 +8,7 @@
 #include "ui/media/media_backend.h"
 #include "ui/media/media_process.h"
 #include "ui/media/media_service.h"
+#include "ui/media/media_stream.h"
 #include <glib.h>
 #include <math.h>
 #include <stdatomic.h>
@@ -37,7 +38,7 @@ struct variant {
     image_decode_request request;
     graphics_image image;
     task *job;
-    uint64_t used, presented;
+    uint64_t used;
     size_t frame;
     bool pinned, failed, visible;
 };
@@ -65,6 +66,7 @@ struct media_resource {
     unsigned expired;
     enum { RESOURCE_NEW, RESOURCE_FETCH, RESOURCE_INGEST, RESOURCE_READY, RESOURCE_ERROR } state;
     const char *error;
+    char *stream_path; /* published loopback copy while the video downloads */
     image_object *objects[2];
     task *job;
 };
@@ -74,6 +76,7 @@ struct media_cache {
     uint64_t generation, now, maintenance;
     GHashTable *objects, *resources;
     GList *tasks;
+    media_stream_server *stream; /* loopback bridge for videos under download */
     media_download *downloads[MEDIA_CACHE_DOWNLOADS];
     media_resource *fetching[MEDIA_CACHE_DOWNLOADS];
     struct {
@@ -172,10 +175,21 @@ void media_resource_ref(media_resource *r)
     if (r)
         ++r->refs;
 }
+/* Drops the loopback copy without touching the downloaded bytes. */
+static void resource_stream_withdraw(media_resource *r)
+{
+    if (!r || !r->stream_path)
+        return;
+    if (r->cache && r->cache->stream)
+        media_stream_withdraw(r->cache->stream, r->stream_path);
+    free(r->stream_path);
+    r->stream_path = NULL;
+}
 void media_resource_release(media_resource *r)
 {
     if (!r || --r->refs)
         return;
+    resource_stream_withdraw(r);
     object_unref(r->objects[0]);
     object_unref(r->objects[1]);
     free(r->source);
@@ -188,6 +202,7 @@ void media_resource_retry(media_resource *r)
     if (r->state == RESOURCE_ERROR || (r->video && r->state == RESOURCE_READY)) {
         /* A downloaded video can fail later in the player. Explicit retry
          * must fetch fresh bytes instead of reopening the invalid file. */
+        resource_stream_withdraw(r);
         r->state = RESOURCE_NEW;
         r->error = NULL;
     }
@@ -661,7 +676,6 @@ static bool collect(media_cache *c)
                     shared.stats.memory += o->frames->bytes + sizeof(animation);
                     for (variant *v = o->variants; v; v = v->next) {
                         v->frame = SIZE_MAX;
-                        v->presented = 0;
                         v->failed = false;
                     }
                 }
@@ -683,7 +697,6 @@ static bool collect(media_cache *c)
                     memset(&t->image, 0, sizeof(t->image));
                     shared.stats.memory += graphics_image_bytes(&v->image);
                     v->frame = t->request.frame;
-                    v->presented = c->now;
                 }
             }
         }
@@ -727,6 +740,11 @@ void media_cache_reset(media_cache *c)
 {
     if (!c)
         return;
+    GHashTableIter streaming;
+    gpointer streamed;
+    g_hash_table_iter_init(&streaming, c->resources);
+    while (g_hash_table_iter_next(&streaming, NULL, &streamed))
+        resource_stream_withdraw(streamed);
     for (int i = 0; i < MEDIA_CACHE_DOWNLOADS; ++i) {
         media_download_cancel(c->downloads[i]);
         if (c->fetching[i]) {
@@ -762,6 +780,7 @@ void media_cache_destroy(media_cache *c)
     }
     for (int i = 0; i < MEDIA_CACHE_DOWNLOADS; ++i)
         media_download_destroy(c->downloads[i]);
+    media_stream_server_destroy(c->stream);
     g_hash_table_destroy(c->resources);
     g_hash_table_destroy(c->objects);
     media_cache **link = &shared.caches;
@@ -1005,6 +1024,25 @@ static bool maintain(uint64_t now)
     }
     return changed;
 }
+bool media_cache_animating(const media_cache *c)
+{
+    if (!c)
+        return false;
+    if (c->tasks)
+        return true;
+    GHashTableIter iter;
+    gpointer value;
+    g_hash_table_iter_init(&iter, c->objects);
+    while (g_hash_table_iter_next(&iter, NULL, &value)) {
+        const image_object *o = value;
+        if (!o->pinned || !o->frames || o->frames->count < 2)
+            continue;
+        for (const variant *v = o->variants; v; v = v->next)
+            if (v->pinned && !v->request.first_frame)
+                return true;
+    }
+    return false;
+}
 bool media_cache_poll(media_cache *c, uint64_t now)
 {
     note_released(media_process_released_bytes());
@@ -1028,14 +1066,26 @@ bool media_cache_poll(media_cache *c, uint64_t now)
             continue;
         media_download *d = c->downloads[i];
         if (!r->wanted) {
+            resource_stream_withdraw(r);
             media_download_cancel(d);
             r->state = RESOURCE_NEW;
         } else {
-            media_download_poll(d);
-            if (media_download_state(d) == MEDIA_FAILED) {
+            /* Download progress also changes paused-player controls, even
+             * when there is no new video frame to trigger a redraw. */
+            changed |= media_download_poll(d);
+            media_state state = media_download_state(d);
+            if (r->stream_path && c->stream) {
+                media_stream_progress(c->stream, r->stream_path, media_download_bytes(d),
+                                      media_download_total(d));
+                if (state == MEDIA_READY)
+                    media_stream_finish(c->stream, r->stream_path);
+                else if (state == MEDIA_FAILED)
+                    resource_stream_withdraw(r);
+            }
+            if (state == MEDIA_FAILED) {
                 r->state = RESOURCE_ERROR;
                 r->error = media_download_error(d);
-            } else if (media_download_state(d) == MEDIA_READY) {
+            } else if (state == MEDIA_READY) {
                 {
                     size_t file_reserve = media_download_bytes(d);
                     if (r->kind == AUTH_MEDIA_EMBED) {
@@ -1151,6 +1201,7 @@ bool media_cache_poll(media_cache *c, uint64_t now)
             media_resource *r = c->fetching[i];
             if (!r || r->modal)
                 continue;
+            resource_stream_withdraw(r);
             media_download_cancel(c->downloads[i]);
             r->state = RESOURCE_NEW;
             c->fetching[i] = NULL;
@@ -1180,6 +1231,17 @@ bool media_cache_poll(media_cache *c, uint64_t now)
                     ? media_download_avatar_request(c->downloads[i], best->source)
                     : media_download_request(c->downloads[i], best->kind, best->id, best->video);
             if (started) {
+                if (best->video && !c->stream)
+                    c->stream = media_stream_server_create();
+                if (best->video) {
+                    const char *path = media_download_path(c->downloads[i]);
+                    resource_stream_withdraw(best);
+                    if (path && c->stream) {
+                        best->stream_path = strdup(path);
+                        if (best->stream_path)
+                            media_stream_publish(c->stream, best->stream_path, 0);
+                    }
+                }
                 c->fetching[i] = best;
                 media_resource_ref(best);
                 best->state = RESOURCE_FETCH;
@@ -1335,9 +1397,10 @@ const graphics_image *media_resource_image(media_resource *r, bool author,
             g_thread_pool_move_to_front(shared.pool, v->job);
     }
     size_t frame = request.first_frame ? 0 : animation_frame_at(o->frames, o->epoch, now);
-    if (!o->job && !enlarge && !v->job && !v->failed &&
-        (!v->image.data || (frame != v->frame && now - v->presented >= 67))) {
+    if (!o->job && !enlarge && !v->job && !v->failed && (!v->image.data || frame != v->frame)) {
         size_t workspace = (size_t)request.width * request.height * 7 + IMAGE_PIXEL_PADDING * 2;
+        if (request.terminal.protocol == GRAPHICS_KITTY)
+            workspace += (size_t)request.width * request.height * 3 + 64U * 1024U;
         if (request.region && (request.left || request.right))
             workspace += (size_t)request.width * request.height * 3 + IMAGE_PIXEL_PADDING;
         if (o->frames && request.cover) {
@@ -1495,6 +1558,54 @@ const char *media_resource_path(const media_resource *r)
 {
     return r && r->state == RESOURCE_READY && r->video && r->objects[0] ? r->objects[0]->path
                                                                         : NULL;
+}
+/* The video's transfer slot, if one is still owned by this resource. */
+static media_download *resource_download(const media_resource *r)
+{
+    if (!r || !r->cache)
+        return NULL;
+    for (int i = 0; i < MEDIA_CACHE_DOWNLOADS; ++i)
+        if (r->cache->fetching[i] == r)
+            return r->cache->downloads[i];
+    return NULL;
+}
+const char *media_resource_source(const media_resource *r)
+{
+    if (!r || !r->video)
+        return NULL;
+    const char *path = media_resource_path(r);
+    if (path)
+        return path;
+    if (!r->stream_path || !r->cache || !r->cache->stream)
+        return NULL;
+    /* Do not open the player before the first response proves the transfer
+     * started; after the download ends the same URL keeps serving the file. */
+    media_download *d = resource_download(r);
+    if (d && !media_download_bytes(d) && !media_download_total(d))
+        return NULL;
+    return media_stream_url(r->cache->stream, r->stream_path);
+}
+bool media_resource_progress(const media_resource *r, size_t *available, size_t *total)
+{
+    if (available)
+        *available = 0;
+    if (total)
+        *total = 0;
+    media_download *d = resource_download(r);
+    if (!d)
+        return false;
+    media_state state = media_download_state(d);
+    if (state != MEDIA_WAITING && state != MEDIA_DOWNLOADING)
+        return false;
+    if (available)
+        *available = media_download_bytes(d);
+    if (total)
+        *total = media_download_total(d);
+    return true;
+}
+bool media_resource_failed(const media_resource *r)
+{
+    return r && r->state == RESOURCE_ERROR;
 }
 const char *media_resource_error(const media_resource *r, bool author)
 {

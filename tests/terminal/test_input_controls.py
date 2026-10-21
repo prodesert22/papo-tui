@@ -1,5 +1,7 @@
 """Real input controls in PTYs; clipboard helpers are synthetic or OSC-only."""
 
+from test_context import main as test_main
+
 import base64
 import json
 import os
@@ -12,7 +14,7 @@ import unittest
 from history_mock import HistoryMock
 from realtime_mock import RealtimeMock
 from mock_server import MockServer
-from test_terminal import Terminal, editor_region, editor_column, wait_for_screen
+from terminal_support import Terminal, editor_region, editor_column, wait_for_screen
 from wcwidth import wcswidth
 
 
@@ -276,6 +278,110 @@ class InputControls(unittest.TestCase):
             f.send("\x1b[1;5D")
             self.wait_cursor(f, row, column)
 
+    def test_ctrl_w_deletes_word_without_modified_keys(self):
+        with HistoryMock(count=0) as server:
+            t = self.open(server)
+            t.send("um dois")
+            self.wait_field(t, "um dois")
+            t.send("\x17")
+            self.wait_field(t, "um ")
+            t.send("\x17")
+            self.wait(t, "Conversar em #geral")
+
+    @unittest.skipIf(os.name == "nt", "Windows ncurses does not expose the terminal erase code")
+    def test_ctrl_backspace_deletes_word_with_legacy_erase_code(self):
+        with HistoryMock(count=0) as server:
+            t = self.open(server)
+            t.send("um dois três")
+            self.wait_field(t, "um dois três")
+            # VTE/GNOME Terminal sends ^? for Backspace and ^H for Ctrl+Backspace.
+            t.send("\x7f")
+            self.wait_field(t, "um dois trê")
+            t.send("\x08")
+            self.wait_field(t, "um dois ")
+            t.send("\x08")
+            self.wait_field(t, "um ")
+            t.send("\x08")
+            self.wait(t, "Conversar em #geral")
+
+    @unittest.skipIf(os.name == "nt", "Windows ncurses does not expose the terminal erase code")
+    def test_ctrl_backspace_when_backspace_sends_ctrl_h(self):
+        with HistoryMock(count=0) as server:
+            t = self.open(server, erase_char=0x08)
+            t.send("um dois")
+            self.wait_field(t, "um dois")
+            # Backspace is ^H, so the modified key arrives as ^? (0x7f).
+            t.send("\x08")
+            self.wait_field(t, "um doi")
+            t.send("\x7f")
+            self.wait_field(t, "um ")
+            t.send("\x7f")
+            self.wait(t, "Conversar em #geral")
+
+    def test_page_keys_scroll_history_without_leaving_the_editor(self):
+        with HistoryMock(count=30) as server:
+            t = self.open(server)
+            self.wait(t, "Mensagem 0030")
+            t.send("rascunho")
+            self.wait_field(t, "rascunho")
+
+            def row_of(message):
+                return next(
+                    (row for row, line in enumerate(t.screen.display) if message in line), None
+                )
+
+            self.assertIn("Foco: Mensagem", self.screen(t))
+            latest = row_of("Mensagem 0030")
+            self.assertIsNotNone(latest)
+
+            # PgUp/PgDn scroll one line per press and keep the editor focused.
+            t.send("\x1b[5~")
+            wait_for_screen(
+                t,
+                lambda: row_of("Mensagem 0030") == latest + 1,
+                "PageUp did not scroll one line from the editor",
+            )
+            t.send("\x1b[6~")
+            wait_for_screen(
+                t,
+                lambda: row_of("Mensagem 0030") == latest,
+                "PageDown did not return one line",
+            )
+            self.wait_field(t, "rascunho")
+            self.assertIn("Foco: Mensagem", self.screen(t))
+
+            # Shift variants scroll a full page where the terminal reports the
+            # modified key (xterm modifyOtherKeys and Kitty CSI-u).
+            for page_up, page_down in (
+                ("\x1b[5;2~", "\x1b[6;2~"),
+                ("\x1b[57421;2u", "\x1b[57422;2u"),
+            ):
+                t.send(page_up)
+                wait_for_screen(
+                    t,
+                    lambda: (
+                        (
+                            row_of("Mensagem 0028"),
+                            row_of("Mensagem 0027"),
+                            row_of("Mensagem 0026"),
+                        )
+                        == (latest + 1, latest - 2, latest - 5)
+                    ),
+                    f"{page_up!r} did not scroll a full page from the editor",
+                )
+                self.assertIsNone(row_of("Mensagem 0030"))
+                t.send(page_down)
+                wait_for_screen(
+                    t,
+                    lambda: row_of("Mensagem 0030") == latest,
+                    f"{page_down!r} did not return a full page",
+                )
+
+            self.wait_field(t, "rascunho")
+            self.assertIn("Foco: Mensagem", self.screen(t))
+            t.send("X")
+            self.wait_field(t, "rascunhoX")
+
     def test_kitty_copy_marker_lifecycle_and_forwarded_shortcut(self):
         t = self.terminal(environment=dict(KITTY_WINDOW_ID="papo-synthetic-window"))
         self.assertIn(b"\x1b]1337;SetUserVar=papo_tui=MQ==\x07", t.output)
@@ -410,7 +516,9 @@ class InputControls(unittest.TestCase):
             t.send("amigos\tURL errada\x03\x1b[200~" + server.url + "\x1b[201~\t\n")
             self.wait(t, "Lugar amigos")
             self.assertIsNone(t.process.poll())
-            config = json.loads((Path(t.configuration.name) / "papo-tui/config.json").read_text())
+            config = json.loads(
+                (Path(t.configuration.name) / "papo-tui/config.json").read_text(encoding="utf-8")
+            )
             self.assertEqual(config["profiles"][0]["name"], "Lugar amigos")
             self.assertEqual(config["profiles"][0]["url"], server.url)
 
@@ -445,7 +553,7 @@ class InputControls(unittest.TestCase):
             t.send("Mensagem enquanto copia\n")
             self.wait(t, "Mensagem confirmada")
             self.wait(t, "Texto copiado")
-            self.assertEqual(captured.read_text(), "conteúdo antigo")
+            self.assertEqual(captured.read_text(encoding="utf-8"), "conteúdo antigo")
             self.assertEqual(server.sent_messages[-1]["content"], "Mensagem enquanto copia")
             self.assertNotIn(b"\x1b]52;c;", t.output)
 
@@ -545,8 +653,8 @@ class InputControls(unittest.TestCase):
             # emit it. Check the actual mode request as well as live highlight.
             last_mouse_enable = bytes(t.output).rfind(b"\x1b[?1006;1000h")
             self.assertIn(b"\x1b[?1002h", t.output[last_mouse_enable:])
-            t.send("\x1b[17;129~")
-            self.wait(t, "[Canais / F6]")
+            t.send("\x1b[116;133u")
+            self.wait(t, "[Canais]")
             self.assertIn(b"\x1b[?1002h", t.output[bytes(t.output).rfind(b"\x1b[?1006;1000h") :])
             t.send("\x1b[113;5u")
             t.process.wait(timeout=5)
@@ -690,4 +798,6 @@ class InputControls(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        1,
+    )

@@ -1,14 +1,17 @@
 """Release behavior, installation contracts and CLI error handling."""
 
+from test_context import main as test_main
+
+from test_context import argument
+
 from pathlib import Path
 import os
 import subprocess
-import sys
 import tempfile
 import unittest
 
-BINARY = Path(sys.argv.pop(1)).resolve()
-VERSION = sys.argv.pop(1)
+BINARY = Path(argument(0)).resolve()
+VERSION = argument(1)
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -47,8 +50,10 @@ class ReleaseCLI(unittest.TestCase):
     def test_release_notes_and_changelog_are_present_and_linked(self):
         notes = ROOT / "releases" / f"v{VERSION.removesuffix('-dev')}.md"
         self.assertTrue(notes.is_file())
-        self.assertIn(f"releases/{notes.name}", (ROOT / "CHANGELOG.md").read_text())
+        self.assertIn(f"releases/{notes.name}", (ROOT / "CHANGELOG.md").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_main(
+        2,
+    )

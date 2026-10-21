@@ -1,5 +1,7 @@
 #include "ui/media/media_backend.h"
 #include <gmodule.h>
+#include <libavutil/mem.h>
+#include <libswscale/swscale.h>
 #include <limits.h>
 #include <mpv/client.h>
 #include <mpv/render.h>
@@ -12,6 +14,9 @@ typedef struct {
     mpv_render_context *render;
     video_info info;
     double volume_target;
+    unsigned char *rgba;
+    size_t rgba_capacity;
+    struct SwsContext *scale;
 } video_player;
 enum {
     PROP_PAUSE = 1,
@@ -32,7 +37,34 @@ static void close_player(void *context)
         mpv_render_context_free(p->render);
     if (p->handle)
         mpv_terminate_destroy(p->handle);
+    sws_freeContext(p->scale);
+    av_free(p->rgba);
     free(p);
+}
+/* Only the loopback media bridge may use HTTP; every other input keeps the
+ * file-only policy. The bridge binds 127.0.0.1 and serves one random token. */
+static bool loopback_url(const char *path)
+{
+    static const char prefix[] = "http://127.0.0.1:";
+    if (!path || strncmp(path, prefix, sizeof(prefix) - 1))
+        return false;
+    const char *p = path + sizeof(prefix) - 1;
+    unsigned port = 0, digits = 0;
+    while (g_ascii_isdigit(*p)) {
+        port = port * 10U + (unsigned)(*p - '0');
+        ++p;
+        if (++digits > 5)
+            return false;
+    }
+    if (!digits || port < 1 || port > 65535 || *p != '/')
+        return false;
+    ++p;
+    if (strlen(p) != 32)
+        return false;
+    for (unsigned i = 0; i < 32; ++i)
+        if (!g_ascii_isxdigit(p[i]))
+            return false;
+    return true;
 }
 static void *open_player(const char *path)
 {
@@ -55,7 +87,9 @@ static void *open_player(const char *path)
                                 {"audio-fallback-to-null", "yes"},
                                 {"vd-lavc-o", "max_pixels=16777216"},
                                 {"demuxer", "lavf"},
-                                {"demuxer-lavf-o", "protocol_whitelist=file"},
+                                {"demuxer-lavf-o", loopback_url(path)
+                                                       ? "protocol_whitelist=\"file,http\""
+                                                       : "protocol_whitelist=file"},
                                 {"volume", "50"}};
     for (size_t i = 0; i < sizeof(options) / sizeof(options[0]); ++i) {
         int result = mpv_set_option_string(p->handle, options[i][0], options[i][1]);
@@ -173,8 +207,12 @@ static void update_player(void *context, const video_controls *controls, video_i
             level = 100;
         /* Retain the requested value across quick key repeats until the
          * corresponding property notification arrives. */
-        if (mpv_set_property_async(p->handle, 0, "volume", MPV_FORMAT_DOUBLE, &level) >= 0)
+        if (mpv_set_property_async(p->handle, 0, "volume", MPV_FORMAT_DOUBLE, &level) >= 0) {
             p->volume_target = level;
+            /* Report the dispatched level right away: the property
+             * notification follows one event later. */
+            p->info.volume = level;
+        }
     }
     *info = p->info;
 }
@@ -183,18 +221,39 @@ static bool changed_player(void *context)
     return (mpv_render_context_update(((video_player *)context)->render) &
             MPV_RENDER_UPDATE_FRAME) != 0;
 }
-static bool render_player(void *context, unsigned char *rgba, int width, int height)
+static bool render_player(void *context, unsigned char *rgb, int width, int height)
 {
-    if (!rgba || width < 1 || height < 1 || (size_t)width > VIDEO_FRAME_PIXELS / (size_t)height)
+    if (!rgb || width < 1 || height < 1 || (size_t)width > VIDEO_FRAME_PIXELS / (size_t)height)
+        return false;
+    video_player *p = context;
+    size_t bytes = (size_t)width * height * 4 + IMAGE_PIXEL_PADDING;
+    if (bytes > p->rgba_capacity) {
+        unsigned char *rgba = av_mallocz(bytes);
+        if (!rgba)
+            return false;
+        av_free(p->rgba);
+        p->rgba = rgba;
+        p->rgba_capacity = bytes;
+    }
+    p->scale = sws_getCachedContext(p->scale, width, height, AV_PIX_FMT_RGB0, width, height,
+                                    AV_PIX_FMT_RGB24, SWS_POINT, NULL, NULL, NULL);
+    if (!p->scale)
         return false;
     int dimensions[] = {width, height};
     size_t stride = (size_t)width * 4;
     mpv_render_param params[] = {{MPV_RENDER_PARAM_SW_SIZE, dimensions},
                                  {MPV_RENDER_PARAM_SW_FORMAT, "rgb0"},
                                  {MPV_RENDER_PARAM_SW_STRIDE, &stride},
-                                 {MPV_RENDER_PARAM_SW_POINTER, rgba},
+                                 {MPV_RENDER_PARAM_SW_POINTER, p->rgba},
                                  {MPV_RENDER_PARAM_INVALID, NULL}};
-    return mpv_render_context_render(((video_player *)context)->render, params) >= 0;
+    /* libmpv discourages its slow rgb24 path. Keep its aligned rgb0 surface,
+     * then use libswscale's SIMD conversion without a per-frame allocation. */
+    if (mpv_render_context_render(p->render, params) < 0)
+        return false;
+    const uint8_t *source[] = {p->rgba, NULL, NULL, NULL};
+    uint8_t *dest[] = {rgb, NULL, NULL, NULL};
+    int source_stride[] = {width * 4, 0, 0, 0}, dest_stride[] = {width * 3, 0, 0, 0};
+    return sws_scale(p->scale, source, source_stride, 0, height, dest, dest_stride) == height;
 }
 static void set_wakeup(void *context, void (*callback)(void *), void *data)
 {

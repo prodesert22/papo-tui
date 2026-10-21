@@ -4,130 +4,30 @@ Reaction fixtures use distinct BMP glyphs, which fit ncurses' Windows wchar_t.
 The native input suites separately verify non-BMP input and message payloads.
 """
 
-import faulthandler
-import json
-import os
-from pathlib import Path
+from test_context import main as test_main
+
 import re
-import time
-import unittest
-from wcwidth import wcswidth
 from history_mock import CHANNEL, OTHER, uuid
 from interaction_mock import InteractionMock
-import test_send_product as product
-from test_terminal import editor_region
 
 
-class MessageInteractions(unittest.TestCase):
-    screen = product.SendProduct.screen
-    click = product.SendProduct.click
+import terminal_interactions as support
 
-    def editor_text(self, terminal):
-        def editor_visible():
-            try:
-                editor_region(terminal)
-            except StopIteration:
-                return False
-            return True
 
-        # Closing a panel can erase its title before ConPTY delivers the
-        # restored editor. Observe the editor before inspecting its contents.
-        self.settled(terminal, editor_visible)
-        return product.SendProduct.editor_text(self, terminal)
-
-    def wait(self, terminal, text):
-        self.settled(terminal, lambda: text in self.screen(terminal), seconds=8)
-
-    def resize(self, terminal, rows, columns):
-        terminal.resize(rows, columns)
-        # ConPTY can retain old text while resize output is in flight. Wait
-        # for the new frame before reading positions or sending input.
-        # The POSIX observer exposes the DEC border glyph as "j".
-        self.settled(
-            terminal, lambda: terminal.screen.buffer[rows - 1][columns - 1].data in ("j", "┘")
-        )
-
-    def setUp(self):
-        if os.name == "nt":
-            # Preserve the blocked call stack if a native ConPTY call stalls;
-            # CTest's outer timeout otherwise kills Python without a traceback.
-            faulthandler.dump_traceback_later(60)
-            self.addCleanup(faulthandler.cancel_dump_traceback_later)
-
-    def open(self, server):
-        # Keep Unicode labels observable for text interaction assertions. The
-        # graphics suites cover rendered icons; mode tests exercise all modes.
-        # Let the app create its private configuration with native permissions.
-        self._mock_server = server
-        terminal = product.SendProduct.open(self, server)
-        try:
-            terminal.send("\x1bOQ")
-            self.wait(terminal, "Configurações")
-            self.wait(terminal, "(*) Normal")
-            terminal.send("\t\x1bOB\n\t\n")
-            path = Path(terminal.configuration.name, "papo-tui", "config.json")
-            self.settled(
-                terminal,
-                lambda: path.exists() and json.loads(path.read_text()).get("app_mode") == "light",
-            )
-            # History remains visible behind settings, so its editor label
-            # alone does not prove that the modal and mode reflow have closed.
-            self.settled(terminal, lambda: "Configurações" not in self.screen(terminal))
-            self.wait(terminal, "Conversar em #geral")
-            return terminal
-        except BaseException:
-            terminal.close()
-            raise
-
-    def right_click(self, terminal, text):
-        self.wait(terminal, text)
-        for row, line in enumerate(terminal.screen.display):
-            if text in line:
-                column = wcswidth(line[: line.index(text)]) + 1
-                terminal.send(f"\x1b[<2;{column + 1};{row + 1}M\x1b[<2;{column + 1};{row + 1}m")
-                return
-        self.fail("Missing message: " + text)
-
-    def settled(self, terminal, predicate, seconds=6):
-        deadline = time.monotonic() + seconds
-        while not predicate() and time.monotonic() < deadline:
-            terminal.read(0.03)
-        if not predicate() and os.name == "nt":
-            # Retain a safely escaped synthetic protocol trace even when
-            # CTest reports only the failing screen assertion.
-            directory = Path.cwd() / "Testing" / "Temporary"
-            directory.mkdir(parents=True, exist_ok=True)
-            output = bytes(terminal.output).replace(b"Synthetic!123", b"[redacted]")
-            (directory / f"{self._testMethodName}-terminal.log").write_text(
-                json.dumps(
-                    {
-                        "output_hex": output.hex(),
-                        "checkpoint": getattr(self, "_protocol_checkpoint", None),
-                        "screen": terminal.screen.display,
-                        "requests": [
-                            [method, path] for method, path, *_ in self._mock_server.requests
-                        ],
-                        "reactions": self._mock_server.reaction_calls,
-                    },
-                    ensure_ascii=True,
-                ),
-                encoding="utf-8",
-            )
-        self.assertTrue(predicate(), self.screen(terminal))
-
+class MessageInteractions(support.MessageInteractions):
     def test_f7_selects_messages_and_context_menu_is_available_directly(self):
         with InteractionMock() as server:
             terminal = self.open(server)
             try:
                 self.resize(terminal, 32, 100)
                 self.wait(terminal, "Mensagem 0003")
-                terminal.send("Draft\x1b[18~")
-                self.wait(terminal, "↑↓ mensagens")
+                terminal.send("Draft\x0b")
+                self.wait(terminal, "Foco: Seleção")
                 self.assertNotIn("Escolha uma mídia", self.screen(terminal))
                 self.assertNotIn("Nenhuma mídia", self.screen(terminal))
                 terminal.send("\n")
                 self.assertNotIn("Ver quem reagiu", self.screen(terminal))
-                self.assertIn("↑↓ mensagens", self.screen(terminal))
+                self.assertIn("Foco: Seleção", self.screen(terminal))
                 self.assertEqual(server.message_count, 0)
                 terminal.send("\x1bOAm")
                 self.wait(terminal, "Ver quem reagiu")
@@ -135,7 +35,7 @@ class MessageInteractions(unittest.TestCase):
                 terminal.send("m")
                 self.settled(terminal, lambda: "Ver quem reagiu" not in self.screen(terminal))
                 self.assertNotIn("Ver quem reagiu", self.screen(terminal))
-                self.assertIn("↑↓ mensagens", self.screen(terminal))
+                self.assertIn("Foco: Seleção", self.screen(terminal))
                 terminal.send("m")
                 self.wait(terminal, "Ver quem reagiu")
                 terminal.send("\x1b\x1b")
@@ -163,11 +63,26 @@ class MessageInteractions(unittest.TestCase):
             try:
                 self.resize(terminal, 32, 100)
                 self.wait(terminal, "Mensagem 0060")
-                terminal.send("Preserved draft\x1b[18~m")
+                terminal.send("Preserved draft\x0bm")
 
                 def check_position(message):
-                    self.wait(terminal, "Ver quem reagiu")
-                    self.wait(terminal, message)
+                    def positioned():
+                        rows = terminal.screen.display
+                        message_row = next(
+                            (i for i, line in enumerate(rows) if message in line), None
+                        )
+                        menu_row = next(
+                            (i for i, line in enumerate(rows) if "Ver quem reagiu" in line), None
+                        )
+                        return (
+                            message_row is not None
+                            and menu_row is not None
+                            and abs(menu_row - message_row) <= 4
+                            and rows[menu_row].index("Ver quem reagiu")
+                            > rows[message_row].index(message) + len(message)
+                        )
+
+                    self.settled(terminal, positioned)
                     rows = terminal.screen.display
                     message_row = next(i for i, line in enumerate(rows) if message in line)
                     menu_row = next(i for i, line in enumerate(rows) if "Ver quem reagiu" in line)
@@ -179,7 +94,9 @@ class MessageInteractions(unittest.TestCase):
                     )
 
                 check_position("Mensagem 0060")
-                terminal.send("\x1b" + "\x1bOA" * 24 + "m")
+                terminal.send("\x1b")
+                self.settled(terminal, lambda: "Ver quem reagiu" not in self.screen(terminal))
+                terminal.send("\x1bOA" * 24 + "m")
                 check_position("Mensagem 0036")
                 self.resize(terminal, 24, 60)
                 check_position("Mensagem 0036")
@@ -205,7 +122,7 @@ class MessageInteractions(unittest.TestCase):
                 self.right_click(terminal, "Mensagem 0002")
                 self.click(terminal, "Responder")
                 server.scenario = "public"
-                terminal.send("\x14")
+                terminal.send("\x19")
                 self.wait(terminal, "Mensagem confirmada")
                 self.assertEqual(server.sent_messages[0]["reply_to"], server.messages[0]["id"])
                 reply_strip = next(
@@ -227,7 +144,7 @@ class MessageInteractions(unittest.TestCase):
             try:
                 self.resize(terminal, 32, 100)
                 self.wait(terminal, "Mensagem 0002")
-                terminal.send("Preserved draft\x1b[18~\x1bOAR")
+                terminal.send("Preserved draft\x0b\x1bOAR")
                 self.wait(terminal, "Respondendo a")
                 self.wait(terminal, "Foco: Mensagem")
                 self.assertIn(
@@ -248,7 +165,7 @@ class MessageInteractions(unittest.TestCase):
             try:
                 self.resize(terminal, 32, 100)
                 self.wait(terminal, "Mensagem 0002")
-                terminal.send("Preserved draft\x1b[18~\x1bOAr")
+                terminal.send("Preserved draft\x0b\x1bOAr")
                 self.wait(terminal, "Respondendo a")
                 border = next(
                     i
@@ -262,7 +179,7 @@ class MessageInteractions(unittest.TestCase):
                 )
                 self.assertLess(border, original)
                 self.assertLessEqual(original - border, 2)
-                self.wait(terminal, "Esc cancelar resposta")
+                self.wait(terminal, "Foco: Mensagem")
                 terminal.send("\x1b")
                 self.settled(terminal, lambda: "Respondendo" not in self.screen(terminal))
                 self.assertNotIn("Respondendo", self.screen(terminal))
@@ -311,7 +228,7 @@ class MessageInteractions(unittest.TestCase):
                 self.wait(terminal, "↰ Build Bot: Original do webhook")
                 self.assertNotIn("Resposta:", self.screen(terminal))
                 self.click(terminal, "↰ Build Bot:")
-                self.wait(terminal, "↑↓ mensagens")
+                self.wait(terminal, "Foco: Seleção")
                 self.assertIn("Original do webhook", self.screen(terminal))
                 server.emit(
                     dict(
@@ -341,7 +258,7 @@ class MessageInteractions(unittest.TestCase):
                 self.assertGreaterEqual(len(pages), 3)
                 self.assertFalse(any(OTHER in r[1] for r in pages))
                 self.click(terminal, "Original muito antiga")
-                self.wait(terminal, "↑↓ mensagens")
+                self.wait(terminal, "Foco: Seleção")
                 self.settled(terminal, lambda: "Mensagem 0320" not in self.screen(terminal))
                 self.assertIn("Original muito antiga", self.screen(terminal))
                 self.resize(terminal, 20, 60)
@@ -379,7 +296,7 @@ class MessageInteractions(unittest.TestCase):
                 self.assertIn("Mensagem 0220", self.screen(terminal))
                 server.lookup_status = None
                 terminal.send("\x12")
-                self.wait(terminal, "↑↓ mensagens")
+                self.wait(terminal, "Foco: Seleção")
                 self.assertIn("Original to revisit", self.screen(terminal))
                 self.assertNotIn("Mensagem 0220", self.screen(terminal))
             finally:
@@ -413,7 +330,7 @@ class MessageInteractions(unittest.TestCase):
             try:
                 terminal.send("Preserved draft")
                 self.wait(terminal, "Mensagem 0001")
-                terminal.send("\x1b[18~e")
+                terminal.send("\x0be")
                 self.wait(terminal, "Reagir · Esc voltar")
                 self.wait(terminal, "Unicode")
                 terminal.send("grinning\x1bOB\x1bOB\n")
@@ -509,7 +426,7 @@ class MessageInteractions(unittest.TestCase):
             terminal = self.open(server)
             try:
                 self.wait(terminal, "Mensagem 0001")
-                terminal.send("\x1b[18~E")
+                terminal.send("\x0bE")
                 self.wait(terminal, "Quem reagiu")
                 self.wait(terminal, "Autor")
                 terminal.send("\x1bOC" + "\x1b[6~" * 14)
@@ -566,7 +483,7 @@ class MessageInteractions(unittest.TestCase):
             try:
                 self.resize(terminal, 32, 100)
                 self.wait(terminal, "Mensagem 0001")
-                terminal.send("Preserved draft\x1b[18~E")
+                terminal.send("Preserved draft\x0bE")
                 self.wait(terminal, "Pessoa 0334")
                 self.wait(terminal, "Fim da lista")
 
@@ -619,18 +536,29 @@ class MessageInteractions(unittest.TestCase):
                 header, left, right, rows = columns()
                 initial_left = [line[0] for line in rows]
                 self._protocol_checkpoint = len(terminal.output)
+                expected_initial = [f"Pessoa {i:04d}" for i in range(334, 334 - len(rows), -1)]
+                self.settled(terminal, lambda: people() == expected_initial)
                 initial_people = people()
                 self.assertIn("☀ 35", "\n".join(initial_left))
                 self.assertNotIn("☂", "\n".join(initial_left))
                 terminal.send(f"\x1b[<65;{right + 3};{header + 4}M")
-                self.settled(terminal, lambda: people() != initial_people)
+                # One wheel event moves three rows. A changed list may be an
+                # intermediate ConPTY repaint; wait for the complete viewport.
+                right_scrolled = [f"Pessoa {i:04d}" for i in range(331, 331 - len(rows), -1)]
+                self.settled(terminal, lambda: people() == right_scrolled)
+                self.assertNotEqual(right_scrolled, initial_people)
                 self.settled(terminal, lambda: [line[0] for line in columns()[3]] == initial_left)
                 self.assertEqual([line[0] for line in columns()[3]], initial_left)
-                right_scrolled = people()
                 terminal.send("\x1bOD")
                 for _ in range(3):
                     terminal.send(f"\x1b[<65;{left + 3};{header + 4}M")
-                self.settled(terminal, lambda: "☂" in "\n".join(line[0] for line in columns()[3]))
+                self.settled(
+                    terminal,
+                    lambda: (
+                        "☂" in "\n".join(line[0] for line in columns()[3])
+                        and people() == right_scrolled
+                    ),
+                )
                 self.assertIn("☂", "\n".join(line[0] for line in columns()[3]))
                 self.assertEqual(people(), right_scrolled)
                 terminal.send("\x1bOB" * 13 + "\n")
@@ -664,7 +592,7 @@ class MessageInteractions(unittest.TestCase):
             terminal = self.open(server)
             try:
                 self.wait(terminal, "Mensagem 0001")
-                terminal.send("\x1b[18~E")
+                terminal.send("\x0bE")
                 self.wait(terminal, "Falha ao listar")
                 terminal.read(0.4)
 
@@ -688,7 +616,7 @@ class MessageInteractions(unittest.TestCase):
             terminal = self.open(server)
             try:
                 self.wait(terminal, "Mensagem 0001")
-                terminal.send("\x1b[18~E")
+                terminal.send("\x0bE")
                 self.wait(terminal, "Autor e")
                 self.wait(terminal, "Fim da lista")
                 self.assertIn("☀ 1", self.screen(terminal))
@@ -710,7 +638,7 @@ class MessageInteractions(unittest.TestCase):
             terminal = self.open(server)
             try:
                 self.wait(terminal, "Mensagem 0001")
-                terminal.send("\x1b[18~E")
+                terminal.send("\x0bE")
                 self.wait(terminal, "Role para carregar mais")
                 terminal.send("\x1bOB\n")
                 self.wait(terminal, "Autor e")
@@ -766,6 +694,4 @@ class MessageInteractions(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    # Failed waits retain their traces before CTest's outer timeout, while
-    # continuing through the remaining scenarios preserves full diagnostics.
-    unittest.main(verbosity=2)
+    test_main(1, verbosity=2)

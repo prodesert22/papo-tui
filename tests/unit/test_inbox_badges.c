@@ -20,6 +20,7 @@ static const char *fixture_identity(const auth_client *client)
 #define auth_has_session fixture_session
 #define auth_instance_url fixture_instance
 #define auth_user_id fixture_identity
+#include "model/conversation/channel_settings.c"
 #include "model/conversation/directory.c"
 #include "model/conversation/events.c"
 #include "model/conversation/history.c"
@@ -194,12 +195,44 @@ int main(void)
     json_object_set_new(channel, "last_read_at", json_string("2026-10-15T11:59:00Z"));
     assert(!history_channel_unread(NULL, channel));
     history *first = model(auth, channel), *restart = model(auth, channel);
+    history *failed = model(auth, channel);
+    failed->selected = 0;
+    failed->failed = MESSAGES;
+    history_internal_status(failed, "Sem permissão para ler este canal.");
+    json_t *metadata = json_pack("{s:[O]}", "channels", channel);
+    assert(metadata && history_internal_channels_response(failed, metadata));
+    assert(!strcmp(history_notice(failed, HISTORY_NOTICE_READ, NULL),
+                   "Sem permissão para ler este canal."));
+    assert(failed->failed == MESSAGES);
+    json_decref(metadata);
+    history_destroy(failed);
+    assert(!strcmp(history_channel_notifications(first, channel_id), "only_mentions"));
+    json_t *preference = history_channel(first, 0);
+    json_object_set_new(preference, "notification_settings", json_stringn("off\0extra", 9));
+    assert(!history_channel_notifications(first, channel_id));
+    json_object_set_new(preference, "notification_settings", json_string("off"));
+    assert(!strcmp(history_channel_notifications(first, channel_id), "off"));
+    json_object_del(preference, "notification_settings");
     json_t *event = json_pack("{s:s,s:s,s:s,s:s,s:s}", "type", "new_notification", "id",
                               "00000000-0000-4000-8000-000000004001", "message_id", previous_id,
                               "user_id", author_id, "message_content", "Old notification");
     assert(event && inbox_event(history_inbox(first), event));
     json_decref(event);
     assert(inbox_unread(history_inbox(first)) == 1);
+    /* A read cursor clears activity without deleting or reading notification
+     * records. A delayed copy of an old WS message must not resurrect it. */
+    json_t *old = message(previous_id);
+    inbox_observe_message(history_inbox(first), old);
+    history_internal_notification_reads(first);
+    assert(!history_instance_unread(first));
+    assert(inbox_unread(history_inbox(first)) == 1);
+    json_object_set_new(old, "type", json_string("message"));
+    assert(inbox_event(history_inbox(first), old));
+    assert(!history_instance_unread(first));
+    json_object_set_new(old, "id", json_string("00000000-0000-4000-8000-000000000104"));
+    assert(inbox_event(history_inbox(first), old));
+    assert(history_instance_unread(first));
+    json_decref(old);
     assert(!history_channel_unread(first, history_channel(first, 0)));
     assert(!history_channel_unread(restart, history_channel(restart, 0)));
     history_destroy(first);

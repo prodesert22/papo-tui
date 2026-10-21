@@ -83,6 +83,8 @@ enum {
     TEXT_FOCUS_OUT,
     TEXT_SHIFT_ENTER,
     TEXT_CTRL_BACKSPACE,
+    TEXT_SHIFT_PAGE_UP,
+    TEXT_SHIFT_PAGE_DOWN,
     TEXT_KEYBOARD_SUPPORTED,
     TEXT_CONTROL_BASE
 }; /* Followed by the encoded ASCII key value. */

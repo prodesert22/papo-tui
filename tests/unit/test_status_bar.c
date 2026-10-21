@@ -87,6 +87,11 @@ int main(void)
     mvwinnstr(narrow, 0, 0, line, sizeof(line) - 1);
     assert(strstr(line, "Desconectado"));
     assert(bar.notices[STATUS_CONNECTION].width > 0);
+    werase(narrow);
+    status_bar_draw(&bar, narrow, 0, "Dicas completas de navegação", "Dicas completas de navegação",
+                    "←→ · Enter F3/F8 F9 F10");
+    mvwinnstr(narrow, 0, 0, line, sizeof(line) - 1);
+    assert(strstr(line, "Desconectado"));
     delwin(narrow);
     delwin(wide);
     endwin();
