@@ -4,9 +4,11 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path, PureWindowsPath
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -26,6 +28,90 @@ spec.loader.exec_module(flatpak)
 
 
 class DistributionTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux ELF runtime bundling")
+    def test_runtime_bundle_installs_once_with_and_without_destdir(self):
+        for tool in ("cmake", "cc", "objdump", "patchelf"):
+            if not shutil.which(tool):
+                self.skipTest(f"Runtime bundle fixture requires {tool}")
+        with tempfile.TemporaryDirectory(prefix="papo bundle staging ") as directory:
+            root = Path(directory)
+            source, build = root / "source", root / "build"
+            source.mkdir()
+            (source / "runtime.c").write_text("int bundle_value(void) { return 7; }\n")
+            (source / "main.c").write_text(
+                "int bundle_value(void);\nint main(void) { return bundle_value() != 7; }\n"
+            )
+            (source / "module.c").write_text(
+                "int bundle_value(void);\nint module_value(void) { return bundle_value(); }\n"
+            )
+            (source / "CMakeLists.txt").write_text(
+                "cmake_minimum_required(VERSION 3.21)\n"
+                "project(bundle_fixture C)\n"
+                "set(CMAKE_INSTALL_LIBDIR lib)\n"
+                "set(CMAKE_INSTALL_BINDIR bin)\n"
+                "set(CMAKE_INSTALL_DATADIR share)\n"
+                'set(CMAKE_INSTALL_RPATH "$ORIGIN/../lib/papo-tui")\n'
+                "add_library(papo_bundle_fixture SHARED runtime.c)\n"
+                "set_target_properties(papo_bundle_fixture PROPERTIES VERSION 1.0 SOVERSION 1)\n"
+                "foreach(target papo-tui papo-media-worker)\n"
+                "  add_executable(${target} main.c)\n"
+                "  target_link_libraries(${target} PRIVATE papo_bundle_fixture)\n"
+                "  install(TARGETS ${target} RUNTIME DESTINATION bin)\n"
+                "endforeach()\n"
+                "foreach(target papo_image_codec papo_video_player)\n"
+                "  add_library(${target} MODULE module.c)\n"
+                "  target_link_libraries(${target} PRIVATE papo_bundle_fixture)\n"
+                "endforeach()\n"
+                'set(PAPO_RUNTIME_SEARCH_DIRS "\\"${CMAKE_BINARY_DIR}\\"")\n'
+                f'configure_file("{ROOT.as_posix()}/cmake/BundleRuntime.cmake.in" '
+                '"${CMAKE_BINARY_DIR}/BundleRuntime.in" @ONLY)\n'
+                'file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/BundleRuntime.cmake" '
+                'INPUT "${CMAKE_BINARY_DIR}/BundleRuntime.in")\n'
+                'install(SCRIPT "${CMAKE_BINARY_DIR}/BundleRuntime.cmake")\n'
+            )
+            subprocess.run(
+                ["cmake", "-S", str(source), "-B", str(build)], check=True, capture_output=True
+            )
+            subprocess.run(["cmake", "--build", str(build)], check=True, capture_output=True)
+            for staged in (False, True):
+                with self.subTest(destdir=staged):
+                    stage = root / ("destdir" if staged else "standalone")
+                    prefix = "/usr" if staged else str(stage)
+                    environment = dict(os.environ)
+                    environment.pop("DESTDIR", None)
+                    environment.pop("LD_LIBRARY_PATH", None)
+                    if staged:
+                        environment["DESTDIR"] = str(stage)
+                    subprocess.run(
+                        ["cmake", "--install", str(build), "--prefix", prefix],
+                        env=environment,
+                        check=True,
+                        capture_output=True,
+                    )
+                    installed = stage / "usr" if staged else stage
+                    library = installed / "lib/papo-tui/libpapo_bundle_fixture.so.1.0"
+                    self.assertEqual(list(stage.rglob(library.name)), [library])
+                    self.assertEqual(
+                        subprocess.check_output(
+                            ["patchelf", "--print-rpath", str(library)], text=True
+                        ).strip(),
+                        "$ORIGIN",
+                    )
+                    self.assertTrue((library.parent / "libpapo_bundle_fixture.so.1").is_symlink())
+                    records = json.loads(
+                        (installed / "share/doc/papo-tui/runtime-libraries.json").read_text()
+                    )
+                    record = next(
+                        item
+                        for item in records
+                        if Path(item["source"]).resolve().name == library.name
+                    )
+                    self.assertEqual(
+                        record["sha256"],
+                        hashlib.sha256(Path(record["source"]).read_bytes()).hexdigest(),
+                    )
+                    subprocess.run([str(installed / "bin/papo-tui")], env=environment, check=True)
+
     def test_checksums_and_unique_sources(self):
         lock = json.loads((ROOT / "dist/dependencies.json").read_text(encoding="utf-8"))
         self.assertEqual(len(lock["sources"]), len({x["name"] for x in lock["sources"]}))
