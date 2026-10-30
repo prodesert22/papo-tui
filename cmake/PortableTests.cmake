@@ -1,5 +1,18 @@
 # Portable declarations are shared; OS adapters register their own additional scenarios.
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
+if(PAPO_VOICE)
+    add_executable(voice-test tests/unit/test_voice.c)
+    target_link_libraries(voice-test PRIVATE papo_auth)
+    target_compile_options(voice-test PRIVATE -UNDEBUG -Wall -Wextra -Wpedantic -Werror)
+    papo_add_test(NAME voice-state-unit COMMAND voice-test)
+    add_executable(voice-audio-test tests/integration/test_voice_audio.c
+                                    tests/support/voice_devices.c)
+    target_include_directories(voice-audio-test PRIVATE tests/support)
+    target_link_libraries(voice-audio-test PRIVATE papo_auth)
+    target_compile_options(voice-audio-test PRIVATE -UNDEBUG -Wall -Wextra -Wpedantic -Werror)
+    papo_add_test(NAME voice-audio-integration COMMAND voice-audio-test)
+    papo_set_tests_properties(voice-audio-integration PROPERTIES TIMEOUT 25)
+endif()
 add_executable(channel-mutes-test tests/unit/test_channel_mutes.c)
 target_link_libraries(channel-mutes-test PRIVATE papo_auth)
 papo_add_test(NAME channel-mutes-unit COMMAND channel-mutes-test)

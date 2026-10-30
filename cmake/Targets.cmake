@@ -31,6 +31,8 @@ add_library(
     src/net/realtime/websocket.c
     src/config/app_mode.c
     src/config/player_volume.c
+    src/config/audio.c
+    src/config/key_binding.c
     src/config/profiles.c
     src/platform/${PAPO_PLATFORM}/profiles_storage.c
     src/config/read_state.c
@@ -47,7 +49,16 @@ add_library(
     src/model/notifications/inbox.c)
 target_include_directories(papo_auth PUBLIC src)
 target_link_libraries(papo_auth PUBLIC papo_platform PkgConfig::CURL PkgConfig::JANSSON
-                                       PkgConfig::GLIB PkgConfig::GIO)
+                                       PkgConfig::GLIB PkgConfig::GIO m)
+
+# Voice calls need the GStreamer WebRTC stack. Platforms without it build the inert stub instead, so
+# the rest of the program stays available.
+if(PAPO_VOICE)
+    target_sources(papo_auth PRIVATE src/net/voice/audio.c src/net/voice/client.c)
+    target_link_libraries(papo_auth PUBLIC PkgConfig::GSTREAMER)
+else()
+    target_sources(papo_auth PRIVATE src/net/voice/stub.c)
+endif()
 
 add_library(papo_outbox src/app/outbox.c)
 target_link_libraries(papo_outbox PUBLIC papo_auth PkgConfig::UNIBREAK)

@@ -29,6 +29,47 @@ size_t conversation_list_count(view *ui)
     return n;
 }
 
+static const json_t *participants(view *ui, size_t row)
+{
+    json_t *channel = conversation_list_channel(ui, row);
+    return !ui->list_dms && !strcmp(conversation_str(channel, "type"), "voice")
+               ? voice_members(history_voice(ui->model), conversation_str(channel, "id"))
+               : NULL;
+}
+
+size_t conversation_list_visual_row(view *ui, size_t channel)
+{
+    size_t row = 0;
+    for (size_t i = 0; i < channel && i < conversation_list_count(ui); ++i)
+        row += 1 + json_array_size(participants(ui, i));
+    return row;
+}
+
+size_t conversation_list_visual_hit(view *ui, size_t row, const char **participant)
+{
+    if (participant)
+        *participant = NULL;
+    for (size_t i = 0; i < conversation_list_count(ui); ++i) {
+        if (!row)
+            return i;
+        --row;
+        const json_t *members = participants(ui, i);
+        size_t count = json_array_size(members);
+        if (row < count) {
+            if (participant)
+                *participant = json_string_value(json_array_get(members, row));
+            return i;
+        }
+        row -= count;
+    }
+    return SIZE_MAX;
+}
+
+int conversation_list_rows(view *ui)
+{
+    return ui->list ? MAX(1, getmaxy(ui->list) - 5 - (voice_active() ? 2 : 0)) : 0;
+}
+
 json_t *conversation_list_channel(view *ui, size_t row)
 {
     return history_channel(ui->model, conversation_list_index(ui, row));
@@ -143,7 +184,9 @@ void conversation_set_focus(view *ui, int focus)
         return;
     bool was_channels = ui->show_channels;
     ui->focus = focus;
-    if (focus == CHANNEL_LIST || focus == LIST_BUTTONS || focus == SETTINGS_BUTTON)
+    if (focus == CHANNEL_LIST || focus == LIST_BUTTONS || focus == SETTINGS_BUTTON ||
+        focus == VOICE_OUTPUT_BUTTON || focus == VOICE_MICROPHONE_BUTTON ||
+        focus == VOICE_LEAVE_BUTTON || focus == VOICE_PTT_BUTTON)
         ui->show_channels = true;
     if (focus == HISTORY_PANEL || focus == MESSAGE_INPUT || focus == EMOJI_BUTTON ||
         focus == ATTACHMENT_ROW || focus == ATTACH_BUTTON || focus == SEARCH_BUTTON ||
@@ -173,7 +216,8 @@ void conversation_open_channel(view *ui, bool voice_history)
     bool voice = !strcmp(conversation_str(channel, "type"), "voice");
     if (voice && !voice_history) {
         conversation_set_focus(ui, CHANNEL_LIST);
-        ui->feedback = "Voz em breve. Shift+Enter/Ctrl+O abre o histórico.";
+        /* The voice status slot already reports the result of this attempt. */
+        voice_join(history_voice(ui->model), conversation_str(channel, "id"));
         return;
     }
     if (voice)

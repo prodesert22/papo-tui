@@ -10,7 +10,9 @@
 #include "ui/input/mouse.h"
 #include <stdint.h>
 
+#include <glib.h>
 #include <limits.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <wctype.h>
@@ -166,6 +168,924 @@ void text_input_init(void)
         }
 }
 static bool focus_known, terminal_focused, input_active, keyboard_active;
+static bool keyboard_events_requested, keyboard_events_active, event_keys_defined;
+/* The terminal reports press, repeat and release events only while
+ * push-to-talk needs the release. Every registered key then needs its
+ * event-type variants, and ncurses compares each definition against the whole
+ * keymap, so the variants are added the first time the mode is requested
+ * instead of on every start. */
+static void define_event_key(int code, const char *sequence)
+{
+    size_t length = strlen(sequence);
+    if (length < 4 || length >= 60 || sequence[0] != 27 || sequence[1] != '[' ||
+        strchr(sequence, ':') || sequence[2] < '0' || sequence[2] > '9')
+        return;
+    char last = sequence[length - 1];
+    if (last != 'u' && last != '~' && (last < 'A' || last > 'Z'))
+        return;
+    char extended[80];
+    for (int event = 1; event <= 3; ++event) {
+        snprintf(extended, sizeof(extended), "%.*s%s:%d%c", (int)length - 1, sequence,
+                 strchr(sequence, ';') ? "" : ";1", event, last);
+        define_key(extended, event == 3 ? TEXT_IGNORED : code);
+    }
+}
+static void define_event_keys(void)
+{
+    if (event_keys_defined)
+        return;
+    event_keys_defined = true;
+    /* Ordinary keys keep their code for press and repeat; the release is
+     * consumed so that its tail never reaches the editor as text. */
+    for (int code = KEY_MIN; code < TEXT_CONTROL_BASE + 32; ++code)
+        for (int occurrence = 0;; ++occurrence) {
+            char *sequence = keybound(code, occurrence);
+            if (!sequence)
+                break;
+            define_event_key(code, sequence);
+            free(sequence);
+        }
+}
+
+/* Push-to-talk mappings are temporary: while a call is active the chosen
+ * combination must reach the conversation loop as press/release events, then
+ * ordinary text editing has to regain the same sequences. Keep every
+ * sequence defined here so changing the binding can remove and rebuild it. */
+#define PTT_SEQUENCE_LIMIT 96
+typedef struct {
+    char text[64];
+} ptt_sequence;
+static ptt_sequence ptt_sequences[PTT_SEQUENCE_LIMIT];
+static size_t ptt_sequence_count;
+static key_binding ptt_binding;
+static bool ptt_configured;
+/* A legacy terminal repeats the control byte while the key is held. Suppress
+ * those repeats so a held key performs one toggle instead of switching the
+ * microphone on and off at the keyboard repeat rate. */
+#define PTT_TOGGLE_REPEAT_US (600 * 1000)
+static int64_t ptt_toggle_last;
+
+typedef struct {
+    bool active, pushed, have;
+    key_binding binding;
+} capture_state;
+static capture_state capture;
+
+static void ptt_store(const char *sequence, int code)
+{
+    size_t length = sequence ? strlen(sequence) : 0;
+    if (!length || length >= sizeof(ptt_sequences[0].text) ||
+        ptt_sequence_count >= PTT_SEQUENCE_LIMIT)
+        return;
+    for (size_t i = 0; i < ptt_sequence_count; ++i)
+        if (!strcmp(ptt_sequences[i].text, sequence)) {
+            /* Generic event definitions may have overwritten this sequence. */
+            define_key(sequence, code);
+            return;
+        }
+    define_key(sequence, code);
+    snprintf(ptt_sequences[ptt_sequence_count++].text, sizeof(ptt_sequences[0].text), "%s",
+             sequence);
+}
+
+static void ptt_clear(void)
+{
+    for (size_t i = 0; i < ptt_sequence_count; ++i)
+        define_key(ptt_sequences[i].text, 0);
+    ptt_sequence_count = 0;
+    ptt_toggle_last = 0;
+    if (!ptt_configured)
+        return;
+    ptt_configured = false;
+    /* Recreate the sequences the binding replaced, including their event-type
+     * variants. The base definitions live in text_input_init(). */
+    event_keys_defined = false;
+    text_input_init();
+    if (keyboard_events_requested)
+        define_event_keys();
+}
+
+static void ptt_add_csi_u_events(unsigned code, unsigned modifiers)
+{
+    unsigned modifier = modifiers + 1;
+    char sequence[64];
+    snprintf(sequence, sizeof(sequence), "\033[%u;%uu", code, modifier);
+    ptt_store(sequence, TEXT_PTT_PRESS);
+    snprintf(sequence, sizeof(sequence), "\033[%u;%u:1u", code, modifier);
+    ptt_store(sequence, TEXT_PTT_PRESS);
+    snprintf(sequence, sizeof(sequence), "\033[%u;%u:2u", code, modifier);
+    ptt_store(sequence, TEXT_IGNORED);
+    snprintf(sequence, sizeof(sequence), "\033[%u;%u:3u", code, modifier);
+    ptt_store(sequence, TEXT_PTT_RELEASE);
+}
+
+static void ptt_add_tilde_events(unsigned number, unsigned modifiers)
+{
+    unsigned modifier = modifiers + 1;
+    char sequence[64];
+    if (modifiers)
+        snprintf(sequence, sizeof(sequence), "\033[%u;%u~", number, modifier);
+    else
+        snprintf(sequence, sizeof(sequence), "\033[%u~", number);
+    ptt_store(sequence, TEXT_PTT_PRESS);
+    for (unsigned event = 1; event <= 3; ++event) {
+        snprintf(sequence, sizeof(sequence), "\033[%u;%u:%u~", number, modifier, event);
+        ptt_store(sequence, event == 3   ? TEXT_PTT_RELEASE
+                            : event == 2 ? TEXT_IGNORED
+                                         : TEXT_PTT_PRESS);
+    }
+}
+
+static void ptt_add_final_events(unsigned number, unsigned modifiers, char final)
+{
+    unsigned modifier = modifiers + 1;
+    char sequence[64];
+    if (number == 1 && !modifiers)
+        snprintf(sequence, sizeof(sequence), "\033[%c", final);
+    else
+        snprintf(sequence, sizeof(sequence), "\033[%u;%u%c", number, modifier, final);
+    ptt_store(sequence, TEXT_PTT_PRESS);
+    for (unsigned event = 1; event <= 3; ++event) {
+        snprintf(sequence, sizeof(sequence), "\033[%u;%u:%u%c", number, modifier, event, final);
+        ptt_store(sequence, event == 3   ? TEXT_PTT_RELEASE
+                            : event == 2 ? TEXT_IGNORED
+                                         : TEXT_PTT_PRESS);
+    }
+}
+
+static unsigned shifted_character(unsigned code)
+{
+    if (code >= 'a' && code <= 'z')
+        return code - 'a' + 'A';
+    static const char pairs[] = "1!2@3#4$5%6^7&8*9(0)-_=+[{]}\\|;:'\",<.>/?`~";
+    for (size_t i = 0; pairs[i] && pairs[i + 1]; i += 2)
+        if ((unsigned char)pairs[i] == code)
+            return (unsigned char)pairs[i + 1];
+    return code;
+}
+
+static bool unshifted_character(unsigned code, unsigned *base)
+{
+    if (code >= 'A' && code <= 'Z') {
+        *base = code - 'A' + 'a';
+        return true;
+    }
+    static const char pairs[] = "1!2@3#4$5%6^7&8*9(0)-_=+[{]}\\|;:'\",<.>/?`~";
+    for (size_t i = 0; pairs[i] && pairs[i + 1]; i += 2)
+        if ((unsigned char)pairs[i + 1] == code) {
+            *base = (unsigned char)pairs[i];
+            return true;
+        }
+    return false;
+}
+
+static void normalize_character(key_binding *binding)
+{
+    if (binding->kind != KEY_BINDING_CHAR ||
+        !(binding->modifiers & (KEY_BINDING_CTRL | KEY_BINDING_ALT)))
+        return;
+    unsigned base;
+    if (unshifted_character(binding->code, &base)) {
+        binding->code = base;
+        binding->modifiers |= KEY_BINDING_SHIFT;
+    }
+}
+
+static void ptt_add_legacy_ctrl(const key_binding *binding)
+{
+    unsigned byte = key_binding_legacy_ctrl_byte(binding);
+    if (!byte)
+        return;
+    char sequence[2] = {(char)byte, 0};
+    ptt_store(sequence, TEXT_PTT_TOGGLE);
+}
+
+static void ptt_add_legacy_alt(unsigned code, unsigned modifiers)
+{
+    if (!(modifiers & KEY_BINDING_ALT) || (modifiers & KEY_BINDING_CTRL))
+        return;
+    if (modifiers & KEY_BINDING_SHIFT)
+        code = shifted_character(code);
+    char sequence[16];
+    int length = g_unichar_to_utf8((gunichar)code, sequence + 1);
+    if (length <= 0 || length >= (int)sizeof(sequence) - 1)
+        return;
+    sequence[0] = 27;
+    sequence[length + 1] = 0;
+    ptt_store(sequence, TEXT_PTT_PRESS);
+}
+
+static unsigned kitty_code(key_binding_code code)
+{
+    switch (code) {
+    case KEY_BINDING_INSERT:
+        return 57348;
+    case KEY_BINDING_DELETE:
+        return 57349;
+    case KEY_BINDING_LEFT:
+        return 57350;
+    case KEY_BINDING_RIGHT:
+        return 57351;
+    case KEY_BINDING_UP:
+        return 57352;
+    case KEY_BINDING_DOWN:
+        return 57353;
+    case KEY_BINDING_PAGE_UP:
+        return 57354;
+    case KEY_BINDING_PAGE_DOWN:
+        return 57355;
+    case KEY_BINDING_HOME:
+        return 57356;
+    case KEY_BINDING_END:
+        return 57357;
+    case KEY_BINDING_ENTER:
+        return 13;
+    case KEY_BINDING_TAB:
+        return 9;
+    case KEY_BINDING_BACKSPACE:
+        return 127;
+    case KEY_BINDING_ESCAPE:
+        return 27;
+    default:
+        return 57363 + (unsigned)(code - KEY_BINDING_F1 + 1);
+    }
+}
+
+static void ptt_add_key(key_binding_code code, unsigned modifiers)
+{
+    ptt_add_csi_u_events(kitty_code(code), modifiers);
+    unsigned modifier = modifiers + 1;
+    char sequence[64];
+    /* xterm modifyOtherKeys reports control keys as ESC [ 27 ; mod ; code ~. */
+    if (code == KEY_BINDING_ENTER || code == KEY_BINDING_TAB || code == KEY_BINDING_BACKSPACE ||
+        code == KEY_BINDING_ESCAPE) {
+        snprintf(sequence, sizeof(sequence), "\033[27;%u;%uu", modifier, kitty_code(code));
+        ptt_store(sequence, TEXT_PTT_PRESS);
+        snprintf(sequence, sizeof(sequence), "\033[27;%u;%u~", modifier, kitty_code(code));
+        ptt_store(sequence, TEXT_PTT_PRESS);
+        if (!(modifiers & KEY_BINDING_CTRL) && (modifiers & KEY_BINDING_ALT)) {
+            char legacy[3] = {27, 0, 0};
+            legacy[1] = code == KEY_BINDING_ENTER    ? '\r'
+                        : code == KEY_BINDING_TAB    ? '\t'
+                        : code == KEY_BINDING_ESCAPE ? 27
+                                                     : '\177';
+            ptt_store(legacy, TEXT_PTT_PRESS);
+        }
+        if (code == KEY_BINDING_TAB && (modifiers & KEY_BINDING_SHIFT))
+            ptt_store("\033[Z", TEXT_PTT_PRESS);
+        return;
+    }
+    if (!modifiers) {
+        switch (code) {
+        case KEY_BINDING_UP:
+            ptt_store("\033[A", TEXT_PTT_PRESS);
+            ptt_store("\033OA", TEXT_PTT_PRESS);
+            break;
+        case KEY_BINDING_DOWN:
+            ptt_store("\033[B", TEXT_PTT_PRESS);
+            ptt_store("\033OB", TEXT_PTT_PRESS);
+            break;
+        case KEY_BINDING_RIGHT:
+            ptt_store("\033[C", TEXT_PTT_PRESS);
+            ptt_store("\033OC", TEXT_PTT_PRESS);
+            break;
+        case KEY_BINDING_LEFT:
+            ptt_store("\033[D", TEXT_PTT_PRESS);
+            ptt_store("\033OD", TEXT_PTT_PRESS);
+            break;
+        case KEY_BINDING_HOME:
+            ptt_store("\033[H", TEXT_PTT_PRESS);
+            ptt_store("\033OH", TEXT_PTT_PRESS);
+            break;
+        case KEY_BINDING_END:
+            ptt_store("\033[F", TEXT_PTT_PRESS);
+            ptt_store("\033OF", TEXT_PTT_PRESS);
+            break;
+        case KEY_BINDING_F1:
+            ptt_store("\033OP", TEXT_PTT_PRESS);
+            break;
+        case KEY_BINDING_F2:
+            ptt_store("\033OQ", TEXT_PTT_PRESS);
+            break;
+        case KEY_BINDING_F3:
+            ptt_store("\033OR", TEXT_PTT_PRESS);
+            break;
+        case KEY_BINDING_F4:
+            ptt_store("\033OS", TEXT_PTT_PRESS);
+            break;
+        default:
+            break;
+        }
+    }
+    switch (code) {
+    case KEY_BINDING_UP:
+    case KEY_BINDING_DOWN:
+    case KEY_BINDING_LEFT:
+    case KEY_BINDING_RIGHT:
+    case KEY_BINDING_HOME:
+    case KEY_BINDING_END: {
+        static const char finals[] = "ABDCHF";
+        char final = finals[code - KEY_BINDING_UP];
+        ptt_add_final_events(1, modifiers, final);
+        snprintf(sequence, sizeof(sequence), "\033O1;%u%c", modifier, final);
+        ptt_store(sequence, TEXT_PTT_PRESS);
+        if (code == KEY_BINDING_HOME)
+            ptt_add_tilde_events(7, modifiers);
+        else if (code == KEY_BINDING_END)
+            ptt_add_tilde_events(8, modifiers);
+        break;
+    }
+    case KEY_BINDING_INSERT:
+        ptt_add_tilde_events(2, modifiers);
+        break;
+    case KEY_BINDING_DELETE:
+        ptt_add_tilde_events(3, modifiers);
+        break;
+    case KEY_BINDING_PAGE_UP:
+        ptt_add_tilde_events(5, modifiers);
+        break;
+    case KEY_BINDING_PAGE_DOWN:
+        ptt_add_tilde_events(6, modifiers);
+        break;
+    case KEY_BINDING_F1:
+    case KEY_BINDING_F2:
+    case KEY_BINDING_F3:
+    case KEY_BINDING_F4: {
+        static const unsigned numbers[] = {11, 12, 13, 14};
+        static const char finals[] = "PQRS";
+        unsigned index = (unsigned)(code - KEY_BINDING_F1);
+        if (modifiers)
+            ptt_add_final_events(1, modifiers, finals[index]);
+        ptt_add_tilde_events(numbers[index], modifiers);
+        break;
+    }
+    case KEY_BINDING_F5:
+    case KEY_BINDING_F6:
+    case KEY_BINDING_F7:
+    case KEY_BINDING_F8:
+    case KEY_BINDING_F9:
+    case KEY_BINDING_F10:
+    case KEY_BINDING_F11:
+    case KEY_BINDING_F12: {
+        static const unsigned numbers[] = {15, 17, 18, 19, 20, 21, 23, 24};
+        ptt_add_tilde_events(numbers[code - KEY_BINDING_F5], modifiers);
+        break;
+    }
+    default:
+        break;
+    }
+}
+
+static void ptt_add_char(unsigned code, unsigned modifiers)
+{
+    ptt_add_csi_u_events(code, modifiers);
+    char sequence[64];
+    snprintf(sequence, sizeof(sequence), "\033[27;%u;%u~", modifiers + 1, code);
+    ptt_store(sequence, TEXT_PTT_PRESS);
+    ptt_add_legacy_alt(code, modifiers);
+    unsigned shifted = shifted_character(code);
+    if (shifted != code && (modifiers & KEY_BINDING_SHIFT)) {
+        ptt_add_csi_u_events(shifted, modifiers);
+        snprintf(sequence, sizeof(sequence), "\033[27;%u;%u~", modifiers + 1, shifted);
+        ptt_store(sequence, TEXT_PTT_PRESS);
+        ptt_add_legacy_alt(shifted, modifiers);
+    }
+}
+
+static void ptt_apply(void)
+{
+    if (!ptt_configured)
+        return;
+    if (ptt_binding.kind == KEY_BINDING_CHAR) {
+        ptt_add_char(ptt_binding.code, ptt_binding.modifiers);
+        ptt_add_legacy_ctrl(&ptt_binding);
+    } else if (ptt_binding.kind == KEY_BINDING_KEY)
+        ptt_add_key((key_binding_code)ptt_binding.code, ptt_binding.modifiers);
+}
+
+void text_push_to_talk_configure(const key_binding *binding)
+{
+    bool wanted = binding && key_binding_valid(binding);
+    if (!wanted) {
+        ptt_clear();
+        return;
+    }
+    if (ptt_configured && key_binding_equal(&ptt_binding, binding))
+        return;
+    if (ptt_configured)
+        ptt_clear();
+    ptt_binding = *binding;
+    ptt_configured = true;
+    ptt_apply();
+}
+
+typedef enum {
+    CAPTURE_NONE,
+    CAPTURE_PRESS,
+    CAPTURE_RELEASE,
+    CAPTURE_IGNORED,
+    CAPTURE_CANCELLED,
+    CAPTURE_RESIZE
+} capture_result;
+
+static bool capture_printable(unsigned code, unsigned modifiers, key_binding *binding)
+{
+    /* Kitty reports modifiers and other functional keys in the private-use
+     * area. Ignoring them keeps the capture open for the actual key. */
+    if (code < 0x20 || code == 0x7f || (code >= 0xe000 && code <= 0xf8ff) ||
+        !g_unichar_isprint((gunichar)code))
+        return false;
+    binding->kind = KEY_BINDING_CHAR;
+    binding->code = code;
+    binding->modifiers = modifiers;
+    normalize_character(binding);
+    return true;
+}
+
+static bool capture_control(unsigned value, unsigned extra, key_binding *binding)
+{
+    binding->modifiers = extra;
+    binding->kind = KEY_BINDING_KEY;
+    switch (value) {
+    case 0:
+        binding->kind = KEY_BINDING_CHAR;
+        binding->code = ' ';
+        binding->modifiers |= KEY_BINDING_CTRL;
+        return true;
+    case 0x09:
+        binding->code = KEY_BINDING_TAB;
+        return true;
+    case 0x0a:
+    case 0x0d:
+        binding->code = KEY_BINDING_ENTER;
+        return true;
+    case 0x1b:
+        binding->code = KEY_BINDING_ESCAPE;
+        return true;
+    case 0x08:
+    case 0x7f:
+        binding->code = KEY_BINDING_BACKSPACE;
+        return true;
+    case 0x1c:
+        binding->kind = KEY_BINDING_CHAR;
+        binding->code = '\\';
+        binding->modifiers |= KEY_BINDING_CTRL;
+        return true;
+    case 0x1d:
+        binding->kind = KEY_BINDING_CHAR;
+        binding->code = ']';
+        binding->modifiers |= KEY_BINDING_CTRL;
+        return true;
+    case 0x1e:
+        binding->kind = KEY_BINDING_CHAR;
+        binding->code = '^';
+        binding->modifiers |= KEY_BINDING_CTRL;
+        return true;
+    case 0x1f:
+        binding->kind = KEY_BINDING_CHAR;
+        binding->code = '_';
+        binding->modifiers |= KEY_BINDING_CTRL;
+        return true;
+    default:
+        if (value >= 1 && value <= 26) {
+            binding->kind = KEY_BINDING_CHAR;
+            binding->code = 'a' + value - 1;
+            binding->modifiers |= KEY_BINDING_CTRL;
+            return true;
+        }
+        return false;
+    }
+}
+
+static bool capture_code(unsigned code, unsigned modifiers, key_binding *binding)
+{
+    binding->modifiers = modifiers & (KEY_BINDING_CTRL | KEY_BINDING_ALT | KEY_BINDING_SHIFT);
+    switch (code) {
+    case 27:
+        binding->kind = KEY_BINDING_KEY;
+        binding->code = KEY_BINDING_ESCAPE;
+        return true;
+    case 13:
+        binding->kind = KEY_BINDING_KEY;
+        binding->code = KEY_BINDING_ENTER;
+        return true;
+    case 9:
+        binding->kind = KEY_BINDING_KEY;
+        binding->code = KEY_BINDING_TAB;
+        return true;
+    case 127:
+        binding->kind = KEY_BINDING_KEY;
+        binding->code = KEY_BINDING_BACKSPACE;
+        return true;
+    case 57348:
+    case 57349:
+        binding->kind = KEY_BINDING_KEY;
+        binding->code = code == 57348 ? KEY_BINDING_INSERT : KEY_BINDING_DELETE;
+        return true;
+    case 57350:
+    case 57351:
+    case 57352:
+    case 57353:
+        binding->kind = KEY_BINDING_KEY;
+        binding->code = code == 57350   ? KEY_BINDING_LEFT
+                        : code == 57351 ? KEY_BINDING_RIGHT
+                        : code == 57352 ? KEY_BINDING_UP
+                                        : KEY_BINDING_DOWN;
+        return true;
+    case 57354:
+    case 57355:
+        binding->kind = KEY_BINDING_KEY;
+        binding->code = code == 57354 ? KEY_BINDING_PAGE_UP : KEY_BINDING_PAGE_DOWN;
+        return true;
+    case 57356:
+    case 57357:
+        binding->kind = KEY_BINDING_KEY;
+        binding->code = code == 57356 ? KEY_BINDING_HOME : KEY_BINDING_END;
+        return true;
+    default:
+        if (code >= 57364 && code <= 57375) {
+            binding->kind = KEY_BINDING_KEY;
+            binding->code = KEY_BINDING_F1 + code - 57364;
+            return true;
+        }
+        return capture_printable(code, binding->modifiers, binding);
+    }
+}
+
+static size_t capture_params(const char *text, int *values, size_t maximum, int *event)
+{
+    char copy[64];
+    snprintf(copy, sizeof(copy), "%s", text);
+    *event = 0;
+    size_t count = 0;
+    char *save = NULL;
+    for (char *token = strtok_r(copy, ";", &save); token && count < maximum;
+         token = strtok_r(NULL, ";", &save)) {
+        char *colon = strchr(token, ':');
+        if (colon) {
+            *colon = 0;
+            *event = (int)strtol(colon + 1, NULL, 10);
+        }
+        values[count++] = (int)strtol(token, NULL, 10);
+    }
+    return count;
+}
+
+static bool capture_number(int number, unsigned modifiers, key_binding *binding)
+{
+    binding->modifiers = modifiers;
+    binding->kind = KEY_BINDING_KEY;
+    switch (number) {
+    case 1:
+    case 7:
+        binding->code = KEY_BINDING_HOME;
+        return true;
+    case 2:
+        binding->code = KEY_BINDING_INSERT;
+        return true;
+    case 3:
+        binding->code = KEY_BINDING_DELETE;
+        return true;
+    case 4:
+    case 8:
+        binding->code = KEY_BINDING_END;
+        return true;
+    case 5:
+        binding->code = KEY_BINDING_PAGE_UP;
+        return true;
+    case 6:
+        binding->code = KEY_BINDING_PAGE_DOWN;
+        return true;
+    default:
+        break;
+    }
+    static const int function_numbers[] = {11, 12, 13, 14, 15, 17, 18, 19, 20, 21, 23, 24};
+    for (size_t i = 0; i < sizeof(function_numbers) / sizeof(function_numbers[0]); ++i)
+        if (number == function_numbers[i]) {
+            binding->code = KEY_BINDING_F1 + (unsigned)i;
+            return true;
+        }
+    return false;
+}
+
+static bool capture_sgr_mouse(const char *params, bool press, key_binding *binding)
+{
+    char copy[64];
+    snprintf(copy, sizeof(copy), "%s", params + 1);
+    char *save = NULL;
+    char *button_text = strtok_r(copy, ";", &save);
+    if (!button_text)
+        return false;
+    char *x = strtok_r(NULL, ";", &save);
+    char *y = strtok_r(NULL, ";", &save);
+    if (!x || !y)
+        return false;
+    int button = (int)strtol(button_text, NULL, 10);
+    if (!press || (button & 32))
+        return false;
+    button &= ~(4 | 8 | 16 | 32);
+    if (button != 64 && button != 65)
+        return false;
+    binding->kind = KEY_BINDING_MOUSE;
+    binding->code = button == 64 ? 4 : 5;
+    binding->modifiers = 0;
+    return true;
+}
+
+static capture_result capture_csi(key_binding *binding)
+{
+    char sequence[64];
+    size_t used = 0;
+    char final = 0;
+    for (;;) {
+        uint32_t next;
+        int type = text_read_raw(&next);
+        if (type == ERR) {
+            if (!used) {
+                binding->kind = KEY_BINDING_CHAR;
+                binding->code = '[';
+                binding->modifiers = KEY_BINDING_ALT;
+                return CAPTURE_PRESS;
+            }
+            return CAPTURE_IGNORED;
+        }
+        if (type != OK || next > 0x7e || used + 1 >= sizeof(sequence))
+            return CAPTURE_IGNORED;
+        sequence[used++] = (char)next;
+        if (next >= 0x40 && next <= 0x7e) {
+            final = (char)next;
+            break;
+        }
+        if (next < 0x20)
+            return CAPTURE_IGNORED;
+    }
+    sequence[--used] = 0;
+    if (final == 'M' || final == 'm') {
+        if (!used && final == 'M') {
+            /* X10 mouse reports append three bytes after ESC [ M. */
+            uint32_t raw[3];
+            for (size_t i = 0; i < sizeof(raw) / sizeof(raw[0]); ++i)
+                if (text_read_raw(&raw[i]) != OK)
+                    return CAPTURE_IGNORED;
+            int button = (int)raw[0] - 32;
+            if ((button & 32) || button < 0)
+                return CAPTURE_IGNORED;
+            button &= ~(4 | 8 | 16);
+            if (button == 64 || button == 65) {
+                binding->kind = KEY_BINDING_MOUSE;
+                binding->code = button == 64 ? 4 : 5;
+                binding->modifiers = 0;
+                return CAPTURE_PRESS;
+            }
+            return CAPTURE_IGNORED;
+        }
+        if (sequence[0] != '<')
+            return CAPTURE_IGNORED;
+        return capture_sgr_mouse(sequence, final == 'M', binding) ? CAPTURE_PRESS : CAPTURE_IGNORED;
+    }
+    int values[8], event;
+    size_t count = capture_params(sequence, values, sizeof(values) / sizeof(values[0]), &event);
+    if (event == 2 || event == 3)
+        return CAPTURE_IGNORED;
+    unsigned modifier = count >= 2 && values[1] > 0 ? (unsigned)values[1] - 1 : 0;
+    modifier &= KEY_BINDING_CTRL | KEY_BINDING_ALT | KEY_BINDING_SHIFT;
+    if (final == 'u') {
+        if (!count)
+            return CAPTURE_IGNORED;
+        if (count >= 3 && values[0] == 27) {
+            if (!capture_code((unsigned)values[2], modifier, binding))
+                return CAPTURE_IGNORED;
+        } else if (!capture_code((unsigned)values[0], modifier, binding))
+            return CAPTURE_IGNORED;
+        return CAPTURE_PRESS;
+    }
+    if (final == '~') {
+        if (!count)
+            return CAPTURE_IGNORED;
+        if (count >= 3 && values[0] == 27) {
+            if (!capture_code((unsigned)values[2], modifier, binding))
+                return CAPTURE_IGNORED;
+        } else if (!capture_number(values[0], modifier, binding))
+            return CAPTURE_IGNORED;
+        return CAPTURE_PRESS;
+    }
+    if (final >= 'A' && final <= 'Z') {
+        static const char finals[] = "ABDCHF";
+        static const key_binding_code codes[] = {KEY_BINDING_UP,   KEY_BINDING_DOWN,
+                                                 KEY_BINDING_LEFT, KEY_BINDING_RIGHT,
+                                                 KEY_BINDING_HOME, KEY_BINDING_END};
+        for (size_t i = 0; i < sizeof(codes) / sizeof(codes[0]); ++i)
+            if (final == finals[i]) {
+                binding->kind = KEY_BINDING_KEY;
+                binding->code = codes[i];
+                binding->modifiers = modifier;
+                return CAPTURE_PRESS;
+            }
+        static const char function_finals[] = "PQRS";
+        for (size_t i = 0; i < sizeof(function_finals) - 1; ++i)
+            if (final == function_finals[i]) {
+                binding->kind = KEY_BINDING_KEY;
+                binding->code = KEY_BINDING_F1 + (unsigned)i;
+                binding->modifiers = modifier;
+                return CAPTURE_PRESS;
+            }
+        if (final == 'Z') {
+            binding->kind = KEY_BINDING_KEY;
+            binding->code = KEY_BINDING_TAB;
+            binding->modifiers = KEY_BINDING_SHIFT;
+            return CAPTURE_PRESS;
+        }
+    }
+    return CAPTURE_IGNORED;
+}
+
+static capture_result capture_ss3(key_binding *binding)
+{
+    uint32_t next;
+    int type = text_read_raw(&next);
+    if (type == ERR) {
+        binding->kind = KEY_BINDING_CHAR;
+        binding->code = 'O';
+        binding->modifiers = KEY_BINDING_ALT;
+        return CAPTURE_PRESS;
+    }
+    if (type != OK || next < 0x40 || next > 0x7e)
+        return CAPTURE_IGNORED;
+    char final = (char)next;
+    if (final >= 'A' && final <= 'D') {
+        binding->kind = KEY_BINDING_KEY;
+        binding->code = KEY_BINDING_UP + (unsigned)(final - 'A');
+        binding->modifiers = 0;
+        return CAPTURE_PRESS;
+    }
+    if (final == 'H' || final == 'F') {
+        binding->kind = KEY_BINDING_KEY;
+        binding->code = final == 'H' ? KEY_BINDING_HOME : KEY_BINDING_END;
+        binding->modifiers = 0;
+        return CAPTURE_PRESS;
+    }
+    if (final >= 'P' && final <= 'S') {
+        binding->kind = KEY_BINDING_KEY;
+        binding->code = KEY_BINDING_F1 + (unsigned)(final - 'P');
+        binding->modifiers = 0;
+        return CAPTURE_PRESS;
+    }
+    return CAPTURE_IGNORED;
+}
+
+static capture_result capture_parse(key_binding *binding)
+{
+    uint32_t first;
+    int type = text_read_raw(&first);
+    if (type == ERR)
+        return CAPTURE_NONE;
+    if (type == KEY_CODE_YES)
+        return first == KEY_RESIZE ? CAPTURE_RESIZE : CAPTURE_IGNORED;
+    if (first == 27) {
+        uint32_t second;
+        type = text_read_raw(&second);
+        if (type == ERR)
+            return CAPTURE_CANCELLED;
+        if (type == KEY_CODE_YES)
+            return second == KEY_RESIZE ? CAPTURE_RESIZE : CAPTURE_IGNORED;
+        if (second == '[')
+            return capture_csi(binding);
+        if (second == 'O')
+            return capture_ss3(binding);
+        if (second == 27) {
+            binding->kind = KEY_BINDING_KEY;
+            binding->code = KEY_BINDING_ESCAPE;
+            binding->modifiers = KEY_BINDING_ALT;
+            return CAPTURE_PRESS;
+        }
+        if (capture_printable(second, KEY_BINDING_ALT, binding))
+            return CAPTURE_PRESS;
+        if (capture_control(second, KEY_BINDING_ALT, binding))
+            return CAPTURE_PRESS;
+        return CAPTURE_IGNORED;
+    }
+    if (first < 0x20 || first == 0x7f) {
+        if (capture_control(first, 0, binding))
+            return CAPTURE_PRESS;
+        return CAPTURE_IGNORED;
+    }
+    if (capture_printable(first, 0, binding))
+        return CAPTURE_PRESS;
+    return CAPTURE_IGNORED;
+}
+
+static void capture_finish(void)
+{
+    capture.active = false;
+    capture.have = false;
+    if (stdscr)
+        keypad(stdscr, TRUE);
+    if (capture.pushed) {
+        fputs("\033[<u", stdout);
+        capture.pushed = false;
+    }
+    if (keyboard_active)
+        fputs(keyboard_events_requested ? "\033[=3u" : "\033[=1u", stdout);
+    fflush(stdout);
+    keyboard_events_active = keyboard_active && keyboard_events_requested;
+}
+
+bool text_capture_begin(void)
+{
+    if (!stdscr)
+        return false;
+    if (capture.active) {
+        capture.have = false;
+        return true;
+    }
+    capture.active = true;
+    capture.have = false;
+    keypad(stdscr, FALSE);
+    if (input_active) {
+        /* Ask for disambiguated keys, event types and every key as an escape
+         * sequence while curses is bypassed. The previous flags are popped on
+         * completion. */
+        fputs("\033[>11u", stdout);
+        fflush(stdout);
+        capture.pushed = true;
+    }
+    return true;
+}
+
+bool text_capture_active(void)
+{
+    return capture.active;
+}
+
+void text_capture_cancel(void)
+{
+    if (capture.active)
+        capture_finish();
+}
+
+bool text_capture_take(key_binding *binding)
+{
+    if (!capture.active || !capture.have || !binding)
+        return false;
+    *binding = capture.binding;
+    capture_finish();
+    return true;
+}
+
+static int capture_read(uint32_t *key)
+{
+    key_binding binding;
+    capture_result result = capture_parse(&binding);
+    if (result == CAPTURE_NONE)
+        return ERR;
+    if (result == CAPTURE_CANCELLED) {
+        capture_finish();
+        *key = TEXT_CAPTURE_CANCELLED;
+        return KEY_CODE_YES;
+    }
+    if (result == CAPTURE_PRESS) {
+        capture.binding = binding;
+        capture.have = true;
+        *key = TEXT_CAPTURED;
+        return KEY_CODE_YES;
+    }
+    if (result == CAPTURE_RESIZE) {
+        *key = KEY_RESIZE;
+        return KEY_CODE_YES;
+    }
+    *key = TEXT_IGNORED;
+    return KEY_CODE_YES;
+}
+
+void text_input_event_reporting(bool enabled)
+{
+    keyboard_events_requested = enabled;
+    if (capture.active)
+        return;
+    if (!enabled) {
+        if (keyboard_active && keyboard_events_active) {
+            fputs("\033[=1u", stdout);
+            fflush(stdout);
+            keyboard_events_active = false;
+        }
+        return;
+    }
+    if (!keyboard_active)
+        return; /* The support reply registers the keys before the mode starts. */
+    bool refresh = !event_keys_defined;
+    define_event_keys();
+    if (refresh)
+        ptt_apply();
+    if (!keyboard_events_active) {
+        fputs("\033[=3u", stdout);
+        fflush(stdout);
+        keyboard_events_active = true;
+    }
+}
+bool text_keyboard_events_supported(void)
+{
+    return keyboard_active;
+}
 bool text_terminal_focused(void)
 {
     return focus_known && terminal_focused;
@@ -209,18 +1129,34 @@ int text_read_raw(uint32_t *key)
 
 int text_input_read(uint32_t *key)
 {
+    if (capture.active)
+        return capture_read(key);
     /* The input loop polls often enough to close a pending keyboard request. */
     ui_mouse_keyboard_poll();
     int type = text_read_raw(key);
     if (type == KEY_CODE_YES && *key == TEXT_KEYBOARD_SUPPORTED) {
         if (input_active && !keyboard_active) {
-            /* Only disambiguate keys. Leave text, repeats and release events
-             * in their ordinary form; curses decodes the registered keys. */
-            fputs("\033[>1u", stdout);
+            /* The event-type variants must exist before the terminal starts
+             * sending them, otherwise the release tail reaches the editor. */
+            if (keyboard_events_requested)
+                define_event_keys();
+            ptt_apply();
+            /* Disambiguate and request press/repeat/release events. Text keys
+             * remain ordinary UTF-8; registered releases are consumed. */
+            fputs(keyboard_events_requested ? "\033[>3u" : "\033[>1u", stdout);
             fflush(stdout);
             keyboard_active = true;
+            keyboard_events_active = keyboard_events_requested;
         }
         return ERR;
+    }
+    if (type == KEY_CODE_YES && *key == TEXT_PTT_TOGGLE) {
+        int64_t now = g_get_monotonic_time();
+        if (ptt_toggle_last && now - ptt_toggle_last < PTT_TOGGLE_REPEAT_US) {
+            ptt_toggle_last = now;
+            return ERR;
+        }
+        ptt_toggle_last = now;
     }
     if (type == KEY_CODE_YES && (*key == TEXT_FOCUS_IN || *key == TEXT_FOCUS_OUT)) {
         focus_known = true;
@@ -234,11 +1170,22 @@ int text_input_read(uint32_t *key)
 }
 void text_input_terminal_active(bool active)
 {
+    if (!active && capture.active) {
+        capture.active = false;
+        capture.have = false;
+        if (stdscr)
+            keypad(stdscr, TRUE);
+        if (capture.pushed) {
+            fputs("\033[<u", stdout);
+            capture.pushed = false;
+        }
+    }
     if (active && !input_active)
         fputs("\033[?u", stdout);
     if (!active && keyboard_active) {
         fputs("\033[<u", stdout);
         keyboard_active = false;
+        keyboard_events_active = false;
     }
     input_active = active;
     fputs(active ? "\033[?1004h" : "\033[?1004l", stdout);

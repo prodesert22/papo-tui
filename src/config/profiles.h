@@ -2,6 +2,7 @@
 #define PAPO_PROFILES_H
 
 #include "config/app_mode.h"
+#include "config/audio.h"
 #include "config/player_volume.h"
 #include <stdbool.h>
 #include <stddef.h>
@@ -30,6 +31,7 @@ typedef struct profile_config {
     app_mode mode;
     bool members_by_status;
     int player_volume;
+    audio_config audio;
     int directory;
     bool writable, existed;
     struct stat revision;
@@ -41,6 +43,7 @@ typedef struct profile_config {
 } profile_config;
 
 bool profiles_set_mode(profile_config *config, app_mode mode);
+bool profiles_set_settings(profile_config *config, app_mode mode, const audio_config *audio);
 bool profiles_set_member_grouping(profile_config *config, bool by_status);
 bool profiles_set_player_volume(profile_config *config, int level);
 profile_config *profiles_create(void);

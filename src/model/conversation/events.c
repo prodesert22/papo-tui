@@ -141,6 +141,19 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
     if (!h || !auth_has_session(h->auth) || generation != h->context ||
         generation != auth_context_generation(h->auth))
         return false;
+    const char *voice_type = history_internal_str(event, "type");
+    if (voice_type &&
+        (!strncmp(voice_type, "voice_", 6) || !strcmp(voice_type, "active_speaker_update") ||
+         (!strcmp(voice_type, "error") && history_internal_str(event, "code") &&
+          g_str_has_prefix(history_internal_str(event, "code"), "voice-")))) {
+        bool valid = voice_event(h->voice, event);
+        h->want_authors = true;
+        return valid;
+    }
+    if (voice_type && !strcmp(voice_type, "presence_sync")) {
+        voice_event(h->voice, event);
+        h->want_authors = true;
+    }
     if (h->r8 && !h->replaying &&
         strcmp(history_internal_str((json_t *)event, "type")
                    ? history_internal_str((json_t *)event, "type")

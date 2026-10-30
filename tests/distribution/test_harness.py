@@ -40,6 +40,7 @@ class HarnessTests(unittest.TestCase):
         script = ROOT / "tests/terminal/test_media_terminal.py"
         cases = [case for case in discover(script) if "floating_panels" in case]
         panels = {
+            "configuracoes",
             "ajuda-do-contexto",
             "ajuda-global",
             "anexar-arquivos",

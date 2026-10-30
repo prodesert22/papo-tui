@@ -57,7 +57,11 @@ enum {
     MEMBERS_BUTTON,
     MEMBERS_PANEL,
     SEARCH_BUTTON,
-    PINS_BUTTON
+    PINS_BUTTON,
+    VOICE_OUTPUT_BUTTON,
+    VOICE_MICROPHONE_BUTTON,
+    VOICE_LEAVE_BUTTON,
+    VOICE_PTT_BUTTON
 };
 typedef enum {
     DRAW_ALL,
@@ -121,6 +125,7 @@ typedef struct {
     history *model;
     r8_modal *r8;
     app_settings settings;
+    bool settings_presented;
     help_modal help;
     bool list_dms, initial_channel_pending;
     int list_button;
@@ -141,6 +146,7 @@ typedef struct {
         editor_rows, editor_padding, attachment_top, attachment_rows;
     size_t highlighted, active_tab, tab_cursor, first_tab;
     click_range members_hit;
+    click_range voice_output_hit, voice_microphone_hit, voice_leave_hit, voice_ptt_hit;
     click_range tab_hits[INSTANCE_LIMIT], add_hit, back_hit, next_hit, channels_hit,
         conversation_hit, search_hit, pins_hit, attach_button_hit, emoji_button_hit;
     char anchor[37];
@@ -148,6 +154,7 @@ typedef struct {
     const char *feedback;
     status_bar status;
     uint64_t notice_revisions[HISTORY_NOTICE_COUNT];
+    uint64_t voice_revision;
     uint64_t copy_revision;
     uint64_t retry_id;
     uint64_t unseen;
@@ -173,6 +180,9 @@ help_context conversation_help_context(view *ui, const char **area);
 const char *conversation_str(const json_t *obj, const char *key);
 size_t conversation_list_index(view *ui, size_t row);
 size_t conversation_list_count(view *ui);
+size_t conversation_list_visual_row(view *ui, size_t channel);
+size_t conversation_list_visual_hit(view *ui, size_t row, const char **participant);
+int conversation_list_rows(view *ui);
 json_t *conversation_list_channel(view *ui, size_t row);
 bool conversation_list_selectable(view *ui, size_t row);
 size_t conversation_list_find(view *ui, size_t row, int direction);
@@ -200,7 +210,7 @@ void conversation_message_hit(view *ui, const char *id, int kind, int y, int x, 
                               int width, size_t index);
 bool conversation_accept_reaction(view *ui);
 const char *conversation_reply_target(view *ui);
-void conversation_draw_tabs(view *ui, auth_client *auth);
+void conversation_draw_tabs(view *ui);
 void conversation_release_layout(view *ui, cached_layout *c);
 cached_layout *conversation_find_layout(view *ui, size_t index, int width);
 void conversation_account_layout(view *ui, cached_layout *c);

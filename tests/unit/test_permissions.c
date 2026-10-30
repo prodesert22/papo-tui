@@ -85,7 +85,8 @@ int main(void)
     assert(permissions_channel(p, CHANNEL, PERMISSION_READ_CHANNEL) == PERMISSION_ALLOWED);
     assert(permissions_channel(p, CHANNEL, PERMISSION_SEND_MESSAGES) == PERMISSION_ALLOWED);
     assert(permissions_channel(p, CHANNEL, PERMISSION_DELETE_MESSAGES) == PERMISSION_DENIED);
-    assert(permissions_channel(p, CHANNEL, PERMISSION_CONNECT_VOICE) == PERMISSION_DENIED);
+    /* Open channels (no role entries) also allow voice, as the backend does. */
+    assert(permissions_channel(p, CHANNEL, PERMISSION_CONNECT_VOICE) == PERMISSION_ALLOWED);
     json_t *mine = load("{\"channel_id\":\"" CHANNEL "\",\"author_id\":\"" USER "\"}");
     json_t *theirs = load("{\"channel_id\":\"" CHANNEL "\",\"author_id\":\"" OTHER "\"}");
     assert(permissions_message(p, mine, false) == PERMISSION_ALLOWED);
@@ -108,6 +109,7 @@ int main(void)
            "\",\"permissions\":{\"read_channel\":true,\"delete_messages\":true}},{\"role_id\":"
            "\"" SECOND "\",\"permissions\":{\"delete_messages\":false}}]}]}");
     assert(permissions_channel(p, CHANNEL, PERMISSION_SEND_MESSAGES) == PERMISSION_DENIED);
+    assert(permissions_channel(p, CHANNEL, PERMISSION_CONNECT_VOICE) == PERMISSION_DENIED);
     assert(permissions_message(p, theirs, false) == PERMISSION_ALLOWED);
     assert(permissions_message(p, theirs, true) == PERMISSION_DENIED);
     event(p, "{\"type\":\"role_remove\",\"user_id\":\"" USER "\",\"role_id\":\"" ROLE "\"}");

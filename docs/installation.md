@@ -119,11 +119,25 @@ apt install ./papo-tui-0.5.0-termux-aarch64.deb
 papo-tui
 ```
 
-APT installs the required Termux libraries. The Ubuntu/Debian packages use a
-different runtime and cannot be installed in Termux. This build uses the terminal
-file picker and asks you to sign in each time; desktop credential storage and
-desktop notification popups are unavailable. Use Light mode if your terminal
-does not display graphics correctly.
+APT installs the required Termux libraries. The Unicode text segmentation
+library is included in the package, so no extra library is required. The
+Ubuntu/Debian packages use a different runtime and cannot be installed in
+Termux. This build uses the terminal file picker and asks you to sign in each
+time; desktop credential storage and desktop notification popups are
+unavailable. Voice calls are also unavailable, because the GStreamer WebRTC
+stack is not published for Android. Use Light mode if your terminal does not
+display graphics correctly.
+
+If APT reports that a dependency cannot be installed, run `pkg update` and
+check that Termux uses the standard repository:
+
+```sh
+apt edit-sources
+```
+
+The entry must point to the main Termux repository
+(`deb https://packages-cf.termux.dev/apt/termux-main/ stable main`). Older
+mirrors carry fewer packages and cannot satisfy every dependency.
 
 ## Windows
 

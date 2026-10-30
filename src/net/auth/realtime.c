@@ -151,6 +151,16 @@ bool auth_connect_ws(auth_client *client)
     return ws_connect(client->websocket, client->base);
 }
 
+void auth_recover_ws(auth_client *client)
+{
+    if (!client || !auth_has_session(client))
+        return;
+    ws_abort(client->websocket);
+    uint64_t now = 0;
+    net_now_ms(&now);
+    auth_internal_reconnect_later(client, now);
+}
+
 void auth_realtime_active(auth_client *client, bool active)
 {
     if (!client)

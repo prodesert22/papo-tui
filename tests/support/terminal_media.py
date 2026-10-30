@@ -192,6 +192,12 @@ class GraphicsStream:
 class MediaTerminal(unittest.TestCase):
     wait = history_tests.HistoryTerminal.wait
 
+    def settled(self, terminal, predicate, seconds=6):
+        deadline = time.monotonic() + seconds
+        while not predicate() and time.monotonic() < deadline:
+            terminal.read(0.03)
+        self.assertTrue(predicate(), "\n".join(terminal.screen.display))
+
     @classmethod
     def setUpClass(cls):
         from media_assets import load

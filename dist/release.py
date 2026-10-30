@@ -5,7 +5,7 @@ import argparse
 from pathlib import Path
 import re
 import subprocess
-from bootstrap import sha256
+from checksums import MANIFEST, write_manifest
 
 ROOT = Path(__file__).resolve().parents[1]
 SEMVER = re.compile(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\Z")
@@ -123,19 +123,16 @@ def assets(version):
 
 def check_assets(directory, version):
     expected = assets(version)
-    actual = {p.name for p in directory.iterdir() if p.is_file()}
+    actual = {p.name for p in directory.iterdir() if p.is_file() and p.name != MANIFEST}
     if expected != actual:
         raise ValueError(
             f"Assets differ: missing={sorted(expected - actual)}, extra={sorted(actual - expected)}"
         )
-    lines = []
     for name in sorted(expected):
         path = directory / name
         if path.stat().st_size == 0:
             raise ValueError(f"Empty artifact: {name}")
-        digest = sha256(path)
-        lines.append(f"{digest}  {name}\n")
-    (directory / "SHA256SUMS").write_text("".join(lines))
+    write_manifest(directory)
 
 
 def main():

@@ -377,7 +377,7 @@ if(BUILD_TESTING)
         NAME login-terminal COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_terminal.py $<TARGET_FILE:papo-tui>)
     add_executable(text-test tests/unit/test_text.c src/ui/input/text.c src/ui/input/mouse.c
-                             src/model/text/mentions.c)
+                             src/model/text/mentions.c src/config/key_binding.c)
     target_include_directories(text-test PRIVATE src)
     target_link_libraries(text-test PRIVATE PkgConfig::GLIB PkgConfig::NCURSES PkgConfig::UNIBREAK
                                             PkgConfig::JANSSON)

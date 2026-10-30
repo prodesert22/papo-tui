@@ -5,6 +5,13 @@ chat in channels or direct messages, with message editing, deletion, replies,
 reactions, pinned messages, server message search, notifications, mentions, emojis
 and media in supported terminals.
 
+Join a voice channel with Enter or a click. The buttons **🔊 🎤** beside the
+gear toggle call audio and microphone independently; text terminals use **♪ ●**.
+Configure devices, volumes, microphone testing and push-to-talk in
+**Ctrl+S → Áudio**. Voice uses GStreamer WebRTC and Opus in every application mode.
+The Termux package has no voice calls, because the WebRTC stack is not published
+for Android.
+
 Press **Ctrl+G** for a table of shortcuts and mouse controls for the focused
 area, or **Ctrl+/** for the global reference. The footer keeps only the help
 hint alongside operational notices. Global help includes a search field for
@@ -47,8 +54,9 @@ Enter the instance URL and your credentials. Use **Tab** to move focus,
 
 The [usage guide](docs/usage.md) covers essential controls and common problems.
 
-Press **Ctrl+S**, or click the gear beside your name below the channels, to choose
-an application mode: **Normal** uses terminal graphics with a Chafa fallback;
+Press **Ctrl+S**, or click the gear below your name at the bottom of the channel
+list, to choose an application mode: **Normal** uses terminal graphics with a
+Chafa fallback;
 **Light** draws images and animated GIFs with Chafa characters and disables
 video; **Ultralight** uses text only and releases the media libraries.
 Video decoding can use compatible GPU drivers, with automatic CPU fallback;

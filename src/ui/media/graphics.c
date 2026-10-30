@@ -268,9 +268,11 @@ int graphics_terminal_input(uint32_t *key)
                 used = 0;
                 continue;
             }
-            /* Unmapped CSI-u reports must not insert modifier numbers into
-             * the draft or act as Escape. Known keys are decoded by curses. */
-            if (*key == 'u') {
+            /* Unmapped CSI-u reports and legacy key events carry modifier
+             * numbers that must not reach the draft or act as Escape. Known
+             * keys are decoded by curses. */
+            if (*key == 'u' ||
+                ((*key == '~' || (*key >= 'A' && *key <= 'Z')) && strchr(pending, ':'))) {
                 used = 0;
                 *key = TEXT_IGNORED;
                 return KEY_CODE_YES;

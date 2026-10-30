@@ -536,6 +536,7 @@ class AppModes(unittest.TestCase):
         ).stdout
         for mode in ("normal", "light"):
             for key, title in panels(
+                ("\x13", "Configurações"),
                 ("\x07", "Ajuda do contexto"),
                 ("\x1f", "Ajuda global"),
                 ("\x0f", "Anexar arquivos"),
@@ -615,6 +616,7 @@ class AppModes(unittest.TestCase):
                             )
                             title_x = t.screen.display[top].index(title)
                             if title in (
+                                "Configurações",
                                 "Notificações",
                                 "Ajuda do contexto",
                                 "Ajuda global",
@@ -668,6 +670,7 @@ class AppModes(unittest.TestCase):
                             self.wait(t, lambda: exposed <= red_cells())
                             self.assertEqual(t.stream.frames, [])
                             if title in (
+                                "Configurações",
                                 "Menções",
                                 "Notificações",
                                 "Ajuda do contexto",
@@ -680,6 +683,9 @@ class AppModes(unittest.TestCase):
                                 "Ir para mensagem",
                             ):
                                 active_title = title
+                                if title == "Configurações":
+                                    t.send("\x1bOC\x1bOC")
+                                    self.helper.wait(t, "Entrada:")
                                 if title == "Notificações":
                                     t.send("\x1bOC\ngeral")
                                     active_title = "Selecionar canal"
@@ -872,12 +878,169 @@ class AppModes(unittest.TestCase):
             finally:
                 self.assertTrue(restarted.close())
 
+    def test_audio_settings_save_cancel_and_small_terminal(self):
+        self.seed("ultralight")
+        with self.helper.serve(media.MediaTerminal.images["png"], "image/png") as server:
+            t = self.open(server)
+            try:
+                if not test_terminal.voice_supported(t):
+                    self.skipTest("Build without the GStreamer WebRTC stack.")
+                t.send("draft audio settings\x13")
+                self.helper.wait(t, "Configurações")
+                self.helper.wait(t, "Geral")
+                row = next(
+                    y
+                    for y, line in enumerate(t.screen.display)
+                    if "Geral" in line and "Áudio" in line
+                )
+                self.assertIn("Aparência", t.screen.display[row])
+                self.assertIn("Acessibilidade", t.screen.display[row])
+                self.assertIn("Atalhos", t.screen.display[row])
+                t.click(row, t.screen.display[row].index("Áudio"))
+                self.helper.wait(t, "Entrada:")
+                self.helper.wait(t, "Atualizar dispositivos")
+                for text in (
+                    "Entrada:",
+                    "Saída:",
+                    "Volume do microfone: < 100% >",
+                    "Volume da chamada: < 100% >",
+                    "teste do microfone",
+                    "Pressionar para falar: < Desativado >",
+                    "Tecla para falar:",
+                ):
+                    self.assertIn(text, "\n".join(t.screen.display))
+                t.send("\t\x1bOB\x1bOB\x1bOD")
+                self.helper.wait(t, "Volume do microfone: < 95% >")
+                t.send("\x1bOB\x1bOD")
+                self.helper.wait(t, "Volume da chamada: < 95% >")
+                t.send("\x1bOB\x1bOB\n")
+                self.helper.wait(t, "Pressionar para falar: < Ativado >")
+                t.resize(22, 44)
+                self.helper.wait(t, "Configurações")
+                t.send("\t\n")
+                self.wait(
+                    t,
+                    lambda: (
+                        json.loads(self.config.read_text())
+                        .get("audio", {})
+                        .get("push_to_talk", {})
+                        .get("enabled")
+                    ),
+                )
+                saved = json.loads(self.config.read_text())
+                self.assertEqual(saved["audio"]["microphone_volume"], 95)
+                self.assertEqual(saved["audio"]["output_volume"], 95)
+                t.resize(24, 80)
+                t.send("\x13\x1bOC\x1bOC\t\x1bOB\x1bOB\x1bOD\x1b")
+                self.helper.wait(t, "draft audio settings")
+                self.assertEqual(json.loads(self.config.read_text())["audio"], saved["audio"])
+                self.assert_no_media_libs(t)
+            finally:
+                self.assertTrue(t.close())
+
+    def test_audio_push_to_talk_captures_keyboard_and_mouse(self):
+        self.seed("ultralight")
+        with self.helper.serve(media.MediaTerminal.images["png"], "image/png") as server:
+            t = self.open(server)
+            try:
+                if not test_terminal.voice_supported(t):
+                    self.skipTest("Build without the GStreamer WebRTC stack.")
+                t.send("\x13")
+                self.helper.wait(t, "Configurações")
+                row = next(
+                    y
+                    for y, line in enumerate(t.screen.display)
+                    if "Geral" in line and "Áudio" in line
+                )
+                t.click(row, t.screen.display[row].index("Áudio"))
+                self.helper.wait(t, "Tecla para falar:")
+                t.send("\t" + "\x1bOB" * 6)
+                self.helper.wait(t, "Enter captura qualquer combinação")
+                t.send("\n")
+                self.helper.wait(t, "pressione uma combinação")
+                # Kitty reports Ctrl/Alt alone as private-use characters; they
+                # must not become a binding or end the capture.
+                t.send(
+                    "\x1b[57442;5u\x1b[57442;5:3u"  # left Ctrl press/release
+                    "\x1b[57443;3u\x1b[57443;3:3u"  # left Alt press/release
+                )
+                t.send("\x1b[121;5u")
+                self.helper.wait(t, "Tecla para falar: < Ctrl+Y >")
+                self.helper.wait(t, "Enter captura qualquer combinação")
+                t.send("\n")
+                self.helper.wait(t, "pressione uma combinação")
+                # The terminal reports the release after the capture ends. An
+                # unmapped legacy event report must not close the modal.
+                t.send("\x1b[109;6u\x1b[109;6:3u\x1b[1;5:3A")
+                self.helper.wait(t, "Tecla para falar: < Ctrl+Shift+M >")
+                t.send("\x1bOB")
+                self.helper.wait(t, "←/→ ajusta; Enter alterna.")
+                t.send("\x1bOA")
+                self.helper.wait(t, "Enter captura qualquer combinação")
+                t.send("\n")
+                self.helper.wait(t, "pressione uma combinação")
+                t.send("\x1b[<64;10;5M")
+                self.helper.wait(t, "Tecla para falar: < Mouse 4 >")
+                t.send("\n")
+                self.helper.wait(t, "pressione uma combinação")
+                t.send("\x1b[<65;10;5M")
+                self.helper.wait(t, "Tecla para falar: < Mouse 5 >")
+                t.send("\n")
+                self.helper.wait(t, "pressione uma combinação")
+                t.send("\x1b")
+                self.helper.wait(t, "Enter captura qualquer combinação")
+                self.assertIn("Tecla para falar: < Mouse 5 >", "\n".join(t.screen.display))
+                self.assertIn("Configurações", "\n".join(t.screen.display))
+                t.send("\t\n")
+                self.wait(
+                    t,
+                    lambda: (
+                        json.loads(self.config.read_text())
+                        .get("audio", {})
+                        .get("push_to_talk", {})
+                        .get("key")
+                        == "mouse5"
+                    ),
+                )
+            finally:
+                self.assertTrue(t.close())
+
+    def test_sidebar_name_and_controls_use_separate_rows(self):
+        self.seed("normal")
+        with self.helper.serve(media.MediaTerminal.images["png"], "image/png") as server:
+            t = self.open(server)
+            try:
+                self.wait(
+                    t,
+                    lambda: (
+                        any("Foco: " in line for line in t.screen.display)
+                        and any("josé" in line for line in t.screen.display)
+                    ),
+                )
+                header = next(y for y, line in enumerate(t.screen.display) if "Foco: " in line)
+                self.assertNotIn(
+                    "josé",
+                    t.screen.display[header],
+                    "The header must not repeat the signed-in name",
+                )
+                name = next(y for y, line in enumerate(t.screen.display) if "josé" in line)
+                self.assertGreater(name, header)
+                self.assertNotIn("⚙", t.screen.display[name])
+                controls = t.screen.display[name + 1]
+                self.assertIn("⚙", controls)
+                if "♪" in controls:
+                    self.assertLess(controls.index("♪"), controls.index("⚙"))
+                    self.assertLess(controls.index("●"), controls.index("⚙"))
+            finally:
+                self.assertTrue(t.close())
+
     def test_gear_cancel_placeholders_and_legacy_migration(self):
         self.seed("normal", version=1)
         with self.helper.serve(media.MediaTerminal.images["png"], "image/png") as server:
             t = self.open(server)
             try:
-                t.click(19, 21)
+                row = next(y for y, line in enumerate(t.screen.display) if "⚙" in line)
+                t.click(row, t.screen.display[row].index("⚙"))
                 self.helper.wait(t, "Configurações")
                 t.send("\x1bOC")
                 self.helper.wait(t, "Em breve")
@@ -887,7 +1050,7 @@ class AppModes(unittest.TestCase):
                 self.assertEqual(json.loads(self.config.read_text(encoding="utf-8"))["version"], 1)
                 t.resize(24, 80)
                 self.choose(t, "ultralight")
-                self.assertEqual(json.loads(self.config.read_text(encoding="utf-8"))["version"], 6)
+                self.assertEqual(json.loads(self.config.read_text(encoding="utf-8"))["version"], 7)
             finally:
                 self.assertTrue(t.close())
 

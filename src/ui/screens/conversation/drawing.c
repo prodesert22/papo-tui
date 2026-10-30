@@ -82,7 +82,7 @@ int conversation_tab_width(view *ui, size_t index, int available)
     return width > available ? available : width;
 }
 
-void conversation_draw_tabs(view *ui, auth_client *auth)
+void conversation_draw_tabs(view *ui)
 {
     bool focused = ui->focus == SERVER_TABS;
     int width = getmaxx(ui->tabs), button_width = 13;
@@ -148,11 +148,25 @@ void conversation_draw_tabs(view *ui, auth_client *auth)
     button_draw(ui->tabs, 0, ui->add_hit.x, ui->add_hit.width,
                 adding ? ">+ Adicionar<" : "[+ Adicionar]", adding ? BUTTON_FOCUSED : BUTTON_NORMAL,
                 BUTTON_PANEL);
-    const char *areas[] = {"Abas",       "Canais",        "Histórico", "Mensagem", "Emojis",
-                           "Canais/DMs", "Configurações", "Anexos",    "Anexar",   "Membros",
-                           "Membros",    "Buscar",        "Fixadas"};
+    const char *areas[] = {"Abas",
+                           "Canais",
+                           "Histórico",
+                           "Mensagem",
+                           "Emojis",
+                           "Canais/DMs",
+                           "Configurações",
+                           "Anexos",
+                           "Anexar",
+                           "Membros",
+                           "Membros",
+                           "Buscar",
+                           "Fixadas",
+                           "Áudio",
+                           "Microfone",
+                           "Sair da chamada",
+                           "Pressionar para falar"};
     char summary[1200];
-    snprintf(summary, sizeof(summary), "%s · Foco: %s", auth_username(auth),
+    snprintf(summary, sizeof(summary), "Foco: %s",
              ui->navigating              ? "Seleção"
              : ui->focus == CHANNEL_LIST ? ui->list_dms ? "DMs" : "Canais"
                                          : areas[ui->focus]);
@@ -167,14 +181,11 @@ void conversation_draw_tabs(view *ui, auth_client *auth)
         text_label(ui->tabs, 1, ui->conversation_hit.x, 10, "[Conversa]");
     } else
         text_label(ui->tabs, 1, 0, width, summary);
-    wattrset(ui->tabs,
-             COLOR_PAIR(theme_member_pair(history_member_color(ui->model, auth_user_id(auth)),
-                                          focused ? THEME_FOCUS_MUTED : THEME_PANEL_MUTED)));
-    text_label(ui->tabs, 1, 0, COLS < 80 ? width - 20 : width, auth_username(auth));
 }
 
 bool conversation_collect_notices(view *ui, auth_client *auth)
 {
+    voice_client *call = voice_active();
     const char *connection = NULL;
     if (!auth_has_session(auth))
         connection = auth_ws_epoch(auth) && auth_ws_state(auth) != WS_OPEN
@@ -226,6 +237,19 @@ bool conversation_collect_notices(view *ui, auth_client *auth)
                                           ? desktop_notice(ui->connections->desktop)
                                           : "",
                                       "Desktop indisponível");
+    char voice_status[1024];
+    snprintf(voice_status, sizeof(voice_status), "%s", voice_notice(history_voice(ui->model)));
+    if (call)
+        snprintf(voice_status, sizeof(voice_status), "%s · %s · microfone %s · áudio %s%s",
+                 voice_get_state(call) == VOICE_CONNECTED ? "Chamada conectada"
+                                                          : "Conectando/saindo da chamada",
+                 voice_instance(call), voice_microphone_enabled() ? "ativado" : "desativado",
+                 voice_output_enabled() ? "ativado" : "desativado",
+                 voice_testing()       ? " · teste local"
+                 : voice_ptt_pressed() ? " · transmitindo"
+                                       : "");
+    changed |= status_bar_set_compact(&ui->status, STATUS_VOICE, voice_status,
+                                      call ? "Chamada de voz" : "Falha de voz");
     changed |= status_bar_set_compact(
         &ui->status, STATUS_SEND, *ui->editor_channel ? send_editor_feedback(ui->editor) : NULL,
         *ui->editor_channel ? send_editor_compact_notice(ui->editor) : NULL);
@@ -372,11 +396,21 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         scope = DRAW_ALL;
     bool paint_history = scope == DRAW_ALL || scope == DRAW_CONVERSATION;
     bool paint_navigation = paint_history || scope == DRAW_NAVIGATION;
+    bool simple = app_mode_get() != APP_MODE_NORMAL ||
+                  graphics_terminal_get().protocol == GRAPHICS_TEXT ||
+                  graphics_terminal_get().protocol == GRAPHICS_CHAFA;
     bool paint_media =
         paint_history || paint_navigation || scope == DRAW_MEDIA || scope == DRAW_EDITOR ||
         emoji_picker_open(ui->emojis) || emoji_picker_suggesting(ui->emojis) || ui->reactors_open ||
         mention_popup_open(ui->mentions) || r8_modal_is_open(ui->r8) || ui->help.open;
     graphics_update_begin();
+    /* Opening or closing the floating settings panel recomposes the screen.
+     * Force one fresh pixel presentation so terminals that anchor images to
+     * text cells keep the uncovered history imagery. */
+    if (ui->settings_presented != ui->settings.open) {
+        ui->settings_presented = ui->settings.open;
+        graphics_frame_invalidate();
+    }
     curs_set(0);
     if (paint_history) {
         media_view_begin(ui->media);
@@ -412,7 +446,7 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
             mvwvline(ui->frame, CONTENT_Y, ui->side + 1, ACS_VLINE, LINES - CONTENT_Y - 3);
     }
     if (paint_navigation)
-        conversation_draw_tabs(ui, auth);
+        conversation_draw_tabs(ui);
     conversation_draw_footer(ui);
     if (ui->list && paint_navigation) {
         bool focused = ui->focus == CHANNEL_LIST || ui->focus == LIST_BUTTONS;
@@ -421,7 +455,7 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         wattrset(ui->list, COLOR_PAIR(focused ? THEME_FOCUS_MUTED : THEME_PANEL_MUTED) | A_BOLD);
         conversation_list_button(ui, 0, 1, 9, "[Canais]");
         conversation_list_button(ui, 1, 11, 8, "[DMs]");
-        int rows = getmaxy(ui->list) - 4;
+        int rows = conversation_list_rows(ui);
         if (rows < 1)
             rows = 1;
         size_t count = conversation_list_count(ui);
@@ -429,16 +463,48 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
             text_label(ui->list, 1, 1, ui->side - 2,
                        ui->list_dms ? "Nenhuma DM disponível." : "Nenhum canal disponível.");
         conversation_list_normalize(ui);
-        if ((int)ui->highlighted < ui->first_channel)
-            ui->first_channel = (int)ui->highlighted;
-        if ((int)ui->highlighted >= ui->first_channel + rows)
-            ui->first_channel = (int)ui->highlighted - rows + 1;
+        int selected_row = (int)conversation_list_visual_row(ui, ui->highlighted);
+        if (selected_row < ui->first_channel)
+            ui->first_channel = selected_row;
+        if (selected_row >= ui->first_channel + rows)
+            ui->first_channel = selected_row - rows + 1;
         if (auth_has_session(auth))
             for (int row = 0; row < rows; ++row) {
-                size_t index = (size_t)(ui->first_channel + row);
+                const char *participant = NULL;
+                size_t index = conversation_list_visual_hit(ui, (size_t)(ui->first_channel + row),
+                                                            &participant);
                 json_t *c = conversation_list_channel(ui, index);
                 if (!c)
                     break;
+                if (participant) {
+                    const char *channel = conversation_str(c, "id");
+                    voice_client *call = history_voice(ui->model);
+                    bool speaking = voice_speaking(call, channel, participant);
+                    int muted = voice_muted(call, channel, participant);
+                    const char *microphone = NULL;
+                    int microphone_width = 0;
+                    if (muted >= 0 && ui->side >= 14) {
+                        microphone = simple ? (muted ? "[●×]" : "[●]") : (muted ? "[🎤×]" : "[🎤]");
+                        microphone_width = text_label(NULL, 0, 0, 32, microphone);
+                    }
+                    int background = focused ? THEME_FOCUS_AREA : THEME_PANEL;
+                    wattrset(ui->list, COLOR_PAIR(theme_member_pair(
+                                           speaking ? 0x100ff00 : 0x1ffffff, background)) |
+                                           (speaking ? A_BOLD : 0));
+                    char name[512];
+                    snprintf(name, sizeof(name), "  %s%s", speaking ? "● " : "  ",
+                             history_author(ui->model, participant));
+                    int microphone_x = ui->side - 1 - microphone_width;
+                    int name_width = microphone ? MAX(1, microphone_x - 2) : ui->side - 2;
+                    text_label(ui->list, row + 1, 1, name_width, name);
+                    if (microphone) {
+                        wattrset(ui->list, COLOR_PAIR(theme_member_pair(
+                                               muted ? 0x1ff7b72 : 0x1a0a4af, background)) |
+                                               (muted ? A_BOLD : 0));
+                        text_label(ui->list, row + 1, microphone_x, microphone_width, microphone);
+                    }
+                    continue;
+                }
                 const char *type = conversation_str(c, "type");
                 bool muted =
                     inbox_conversation_muted(history_inbox(ui->model), conversation_str(c, "id"));
@@ -491,21 +557,77 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
             }
     }
     if (ui->list && paint_navigation) {
-        int y = getmaxy(ui->list) - 3, w = getmaxx(ui->list);
+        int y = getmaxy(ui->list) - 4, w = getmaxx(ui->list);
         wattrset(ui->list, COLOR_PAIR(THEME_BORDER));
         mvwaddch(ui->list, y, 0, ACS_ULCORNER);
         mvwhline(ui->list, y, 1, ACS_HLINE, w - 2);
         mvwaddch(ui->list, y, w - 1, ACS_URCORNER);
-        mvwaddch(ui->list, y + 1, 0, ACS_VLINE);
-        mvwaddch(ui->list, y + 1, w - 1, ACS_VLINE);
-        mvwaddch(ui->list, y + 2, 0, ACS_LLCORNER);
-        mvwhline(ui->list, y + 2, 1, ACS_HLINE, w - 2);
-        mvwaddch(ui->list, y + 2, w - 1, ACS_LRCORNER);
+        for (int row = y + 1; row <= y + 2; ++row) {
+            mvwaddch(ui->list, row, 0, ACS_VLINE);
+            mvwaddch(ui->list, row, w - 1, ACS_VLINE);
+        }
+        mvwaddch(ui->list, y + 3, 0, ACS_LLCORNER);
+        mvwhline(ui->list, y + 3, 1, ACS_HLINE, w - 2);
+        mvwaddch(ui->list, y + 3, w - 1, ACS_LRCORNER);
+        /* The signed-in name keeps a row of its own; the controls that used
+         * to share it sit on the row below. */
         wattrset(ui->list, COLOR_PAIR(theme_member_pair(
                                history_member_color(ui->model, auth_user_id(auth)), THEME_PANEL)));
-        text_label(ui->list, y + 1, 2, w - 9, auth_username(auth));
-        button_draw(ui->list, y + 1, w - 6, 5, papo_unicode_width(0x2699) == 1 ? "[⚙]" : "[*]",
+        text_label(ui->list, y + 1, 2, MAX(1, w - 3), auth_username(auth));
+        bool voice = voice_available();
+        /* Settings keeps the rightmost slot; the call controls sit to its left. */
+        button_draw(ui->list, y + 2, w - 6, 5, papo_unicode_width(0x2699) == 1 ? "[⚙]" : "[*]",
                     ui->focus == SETTINGS_BUTTON ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
+        ui->voice_output_hit = (click_range){0, 0};
+        ui->voice_microphone_hit = (click_range){0, 0};
+        if (voice) {
+            ui->voice_output_hit = (click_range){w - 16, 5};
+            ui->voice_microphone_hit = (click_range){w - 11, 5};
+            button_draw(ui->list, y + 2, w - 16, 5,
+                        simple ? (voice_output_enabled() ? "[♪]" : "[♪×]")
+                               : (voice_output_enabled() ? "[🔊]" : "[🔇]"),
+                        ui->focus == VOICE_OUTPUT_BUTTON ? BUTTON_FOCUSED : BUTTON_NORMAL,
+                        BUTTON_PANEL);
+            button_draw(ui->list, y + 2, w - 11, 5,
+                        simple ? (voice_microphone_enabled() ? "[●]" : "[●×]")
+                               : (voice_microphone_enabled() ? "[🎤]" : "[🎤×]"),
+                        ui->focus == VOICE_MICROPHONE_BUTTON ? BUTTON_FOCUSED : BUTTON_NORMAL,
+                        BUTTON_PANEL);
+        }
+        ui->voice_leave_hit = ui->voice_ptt_hit = (click_range){0, 0};
+        if (voice_active()) {
+            voice_client *call = voice_active();
+            char label[256];
+            const char *channel_name = voice_channel(call);
+            const char *instance_name = voice_instance(call);
+            for (size_t i = 0; i < ui->connections->count; ++i)
+                if (!strcmp(ui->connections->items[i].url, voice_instance(call))) {
+                    history *model = ui->connections->items[i].model;
+                    instance_name = ui->connections->items[i].name;
+                    for (size_t j = 0; j < history_channel_count(model); ++j) {
+                        json_t *channel = history_channel(model, j);
+                        if (!strcmp(conversation_str(channel, "id"), voice_channel(call)))
+                            channel_name = conversation_str(channel, "name");
+                    }
+                }
+            snprintf(label, sizeof(label), "%s · %s", channel_name, instance_name);
+            wattrset(ui->list, COLOR_PAIR(THEME_PANEL_ACCENT));
+            text_label(ui->list, y - 2, 1, w - 2, label);
+            const char *state = voice_get_state(call) == VOICE_CONNECTED ? "[Sair da chamada]"
+                                                                         : "[Cancelar conexão]";
+            ui->voice_leave_hit = (click_range){1, MIN(20, w - 2)};
+            button_draw(ui->list, y - 1, 1, ui->voice_leave_hit.width, state,
+                        ui->focus == VOICE_LEAVE_BUTTON ? BUTTON_FOCUSED : BUTTON_NORMAL,
+                        BUTTON_PANEL);
+            if (ui->connections->config && ui->connections->config->audio.push_to_talk) {
+                /* Replace the instance label with the mouse hold target on narrow rails. */
+                ui->voice_ptt_hit = (click_range){1, w - 2};
+                button_draw(ui->list, y - 2, 1, w - 2,
+                            voice_ptt_pressed() ? "[Transmitindo]" : "[Segure para falar]",
+                            ui->focus == VOICE_PTT_BUTTON ? BUTTON_FOCUSED : BUTTON_NORMAL,
+                            BUTTON_PANEL);
+            }
+        }
     }
     if (ui->body && (paint_history || scope == DRAW_EDITOR)) {
         json_t *c = history_channel(ui->model, history_selected(ui->model));
@@ -731,7 +853,7 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
     }
     if (!caret)
         setsyx(-1, -1);
-    if (paint_media && (ui->settings.open || media_view_modal(ui->media) || ui->duplicate_modal))
+    if (paint_media && (media_view_modal(ui->media) || ui->duplicate_modal))
         icons_begin(ui->icons);
     if (emoji_picker_open(ui->emojis)) {
         emoji_picker_draw(ui->emojis);
@@ -754,8 +876,12 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         icons_overlay(ui->icons, getbegy(help_window), getbegx(help_window), getmaxy(help_window),
                       getmaxx(help_window));
     }
+    settings_draw(&ui->settings);
+    if (ui->settings.open && ui->settings.window)
+        icons_overlay(ui->icons, getbegy(ui->settings.window), getbegx(ui->settings.window),
+                      getmaxy(ui->settings.window), getmaxx(ui->settings.window));
     if (paint_media) {
-        if (!ui->duplicate_modal && !ui->settings.open)
+        if (!ui->duplicate_modal)
             media_view_prepare(ui->media);
         icons_prepare(ui->icons);
         /* The player owns a direct raster rather than a cached preview. Keep
@@ -763,9 +889,11 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         if (help_window)
             graphics_frame_occlude(getbegy(help_window), getbegx(help_window), getmaxy(help_window),
                                    getmaxx(help_window));
+        if (ui->settings.open && ui->settings.window)
+            graphics_frame_occlude(getbegy(ui->settings.window), getbegx(ui->settings.window),
+                                   getmaxy(ui->settings.window), getmaxx(ui->settings.window));
         graphics_frame_prepare();
     }
-    settings_draw(&ui->settings);
     if (r8_modal_is_open(ui->r8) || ui->settings.open) {
         caret = !ui->settings.open && r8_modal_cursor(ui->r8);
         if (!caret)

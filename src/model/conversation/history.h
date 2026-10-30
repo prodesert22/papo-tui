@@ -4,6 +4,7 @@
 #include "model/notifications/inbox.h"
 #include "model/text/mentions.h"
 #include "net/auth/client.h"
+#include "net/voice/client.h"
 
 #define HISTORY_CHANNEL_LIMIT 500
 #define HISTORY_MESSAGE_LIMIT 1000
@@ -21,6 +22,7 @@ typedef enum {
  * event, confirmation, selection, reload or destroy. Callers retain anchors
  * by UUID, not pointer. */
 history *history_create(auth_client *auth);
+voice_client *history_voice(history *h); /* Borrowed, owned by this instance's model. */
 /* Valid live embed updates also invalidate media in inactive conversations. */
 void history_set_media_updates(history *h, void (*update)(void *, const json_t *), void *context);
 void history_destroy(history *h);

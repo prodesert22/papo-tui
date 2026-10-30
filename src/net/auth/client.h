@@ -182,6 +182,9 @@ const char *auth_username(const auth_client *client);
 const char *auth_server_name(const auth_client *client);
 /* WS is explicitly started after REST confirms the session. */
 bool auth_connect_ws(auth_client *client);
+/* Abort an uncertain realtime operation and recover through REST validation.
+ * Does not repeat mutations or rejoin voice calls. */
+void auth_recover_ws(auth_client *client);
 /* Enables automatic recovery only for the foreground context. Existing open
  * sockets still receive maintenance when inactive. No REST or WS I/O here. */
 void auth_realtime_active(auth_client *client, bool active);

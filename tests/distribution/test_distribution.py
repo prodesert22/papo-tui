@@ -257,6 +257,26 @@ class DistributionTests(unittest.TestCase):
                 self.assertIn("-L" + str(prefix / "lib"), flags)
                 self.assertNotIn("/d/cache/deps", (pc / (name + ".pc")).read_text(encoding="utf-8"))
 
+    def test_termux_recipe_bundles_unicode_segmentation_library(self):
+        recipe = (ROOT / "dist/termux/build.sh").read_text(encoding="utf-8")
+        depends = re.search(r'TERMUX_PKG_DEPENDS="([^"]*)"', recipe)
+        self.assertIsNotNone(depends)
+        packages = [name.strip() for name in depends.group(1).split(",")]
+        self.assertTrue(packages)
+        self.assertEqual(len(packages), len(set(packages)))
+        # Termux does not publish the Unicode segmentation library on every
+        # repository, so the package must not depend on it.
+        self.assertNotIn("libunibreak", packages)
+        # The library is built from the locked source and linked statically.
+        self.assertIn("dist/dependencies.json", recipe)
+        self.assertIn("--disable-shared", recipe)
+        self.assertIn("--enable-static", recipe)
+        self.assertIn("CMAKE_FIND_ROOT_PATH", recipe)
+        lock = json.loads((ROOT / "dist/dependencies.json").read_text(encoding="utf-8"))
+        entry = next(item for item in lock["sources"] if item["name"] == "libunibreak")
+        self.assertRegex(entry["sha256"], r"^[a-f0-9]{64}$")
+        self.assertTrue(entry["url"].startswith("https://"))
+
     def test_archive_rejects_traversal_and_external_symlinks(self):
         for name, link in [
             ("../escaped", None),
@@ -299,7 +319,7 @@ class DistributionTests(unittest.TestCase):
             (root / "dist/resources.json").write_text(
                 '{"files": [{"name": "NotoColorEmoji.ttf"}]}', encoding="utf-8"
             )
-            for name in ("bootstrap.py", "resources.py"):
+            for name in ("bootstrap.py", "resources.py", "voice_dependencies.py"):
                 (root / "dist" / name).write_text("# synthetic fixture", encoding="utf-8")
             with (
                 patch.object(package, "ROOT", root),
@@ -312,6 +332,7 @@ class DistributionTests(unittest.TestCase):
             with tarfile.open(archive) as source:
                 files = source.getnames()
                 self.assertIn("dependency-sources/font-resources/NotoColorEmoji.ttf", files)
+                self.assertIn("dependency-sources/dist/voice_dependencies.py", files)
                 self.assertFalse(any("test-fonts" in name for name in files))
 
     def test_source_archive_marks_container_checkout_safe(self):

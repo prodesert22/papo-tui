@@ -390,8 +390,7 @@ session_scope *session_scope_open(const profile_config *config, char *notice, si
     scope->lock = INVALID_HANDLE_VALUE;
     scope->directory = config && config->directory_path ? papo_win_directory(true) : NULL;
     if (scope->directory) {
-        scope->scope =
-            g_compute_checksum_for_string(G_CHECKSUM_SHA256, config->directory_path, -1);
+        scope->scope = g_compute_checksum_for_string(G_CHECKSUM_SHA256, config->directory_path, -1);
         char *name = g_strdup_printf("sessions-%s.lock", scope->scope);
         char *path = g_build_filename(scope->directory, name, NULL);
         scope->lock = papo_win_lock(path);

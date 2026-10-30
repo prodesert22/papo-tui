@@ -133,6 +133,16 @@ def editor_column(terminal):
     return prompt + 2
 
 
+# The footer carries the call buttons only in a build with the WebRTC stack.
+VOICE_BUTTONS = ("[🔊]", "[🔇]", "[♪]", "[♪×]", "[🎤]", "[🎤×]", "[●]", "[●×]")
+
+
+def voice_supported(terminal):
+    """Report whether the running program was built with voice support."""
+    screen = "\n".join(terminal.screen.display)
+    return any(marker in screen for marker in VOICE_BUTTONS)
+
+
 def wait_for_screen(terminal, predicate, description, seconds=5):
     """Observe a postcondition; sending input is not a rendering barrier."""
     deadline = time.monotonic() + seconds

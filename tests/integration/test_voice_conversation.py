@@ -2,14 +2,16 @@
 
 from test_context import main as test_main
 
+import json
 import time
 import unittest
+from pathlib import Path
 from urllib.parse import urlsplit
 
 from history_mock import HistoryMock, CHANNEL, VOICE, uuid
 from realtime_mock import RealtimeMock
 from r8_mock import R8Mock
-from terminal_support import Terminal
+from terminal_support import Terminal, voice_supported
 
 
 class VoiceRealtimeMock(RealtimeMock):
@@ -28,6 +30,359 @@ class VoiceRealtimeMock(RealtimeMock):
 
 
 class VoiceConversation(unittest.TestCase):
+    def require_voice(self, t):
+        """Skip when the program was built without the WebRTC voice support."""
+        if not voice_supported(t):
+            self.skipTest("Build without the GStreamer WebRTC stack.")
+
+    def test_live_members_and_speakers_stay_below_voice_channel(self):
+        with RealtimeMock() as server:
+            t = self.login(server)
+            self.require_voice(t)
+            self.wait(t, "Tempo real conectado")
+            t.send("\x1bOB\n")
+            self.wait(t, "Mensagem 0003")
+            t.send("rascunho preservado")
+            server.emit(
+                dict(
+                    type="presence_sync",
+                    members=[
+                        dict(
+                            user_id=uuid(21), status="online", status_message="", user_voice=[VOICE]
+                        )
+                    ],
+                )
+            )
+            deadline = time.monotonic() + 8
+
+            def participant():
+                for y, line in enumerate(t.screen.display):
+                    if "Apelido" in line[:25] and "voz" in t.screen.display[y - 1][:25]:
+                        return y, line.index("Apelido")
+                return None
+
+            while not participant() and time.monotonic() < deadline:
+                t.read(0.03)
+            self.assertIsNotNone(participant(), self.screen(t))
+
+            def participant_line():
+                found = participant()
+                return t.screen.display[found[0]] if found else ""
+
+            def wait_line(text):
+                deadline = time.monotonic() + 5
+                while text not in participant_line() and time.monotonic() < deadline:
+                    t.read(0.03)
+                self.assertIn(text, participant_line(), self.screen(t))
+
+            server.emit(
+                dict(
+                    type="voice_state_update",
+                    channel_id=VOICE,
+                    user_id=uuid(21),
+                    muted=False,
+                    camera_on=False,
+                    screen_sharing=False,
+                )
+            )
+            wait_line("[●]")
+            y, x = participant()
+            idle = t.screen.buffer[y][x].fg
+            server.emit(dict(type="active_speaker_update", channel_id=VOICE, user_ids=[uuid(21)]))
+            deadline = time.monotonic() + 5
+            while t.screen.buffer[y][x].fg == idle and time.monotonic() < deadline:
+                t.read(0.03)
+            self.assertIn(t.screen.buffer[y][x].fg, (46, "00ff00"), self.screen(t))
+            server.emit(dict(type="active_speaker_update", channel_id=VOICE, user_ids=[]))
+            deadline = time.monotonic() + 5
+            while t.screen.buffer[y][x].fg != idle and time.monotonic() < deadline:
+                t.read(0.03)
+            self.assertEqual(t.screen.buffer[y][x].fg, idle)
+            server.emit(
+                dict(
+                    type="voice_state_update",
+                    channel_id=VOICE,
+                    user_id=uuid(21),
+                    muted=True,
+                    camera_on=False,
+                    screen_sharing=False,
+                )
+            )
+            wait_line("[●×]")
+            self.assertNotIn(t.screen.buffer[y][x].fg, (46, "00ff00"), self.screen(t))
+            server.emit(dict(type="voice_leave", channel_id=VOICE, user_id=uuid(21)))
+            deadline = time.monotonic() + 5
+            while participant() and time.monotonic() < deadline:
+                t.read(0.03)
+            self.assertIsNone(participant())
+            self.assertIn("rascunho preservado", self.screen(t))
+            self.assertFalse(
+                any(e.get("type", "").startswith("voice_") for e in server.ws_messages)
+            )
+
+    def test_own_name_turns_green_only_in_member_list(self):
+        with RealtimeMock() as server:
+            t = self.login(server)
+            self.require_voice(t)
+            self.assertTrue(self.join_call(t, server), (server.ws_messages, self.screen(t)))
+            server.emit(
+                dict(
+                    type="voice_joined",
+                    channel_id=VOICE,
+                    members=[
+                        dict(
+                            user_id=uuid(1),
+                            muted=False,
+                            camera_on=False,
+                            screen_sharing=False,
+                        )
+                    ],
+                    active_speakers=[],
+                )
+            )
+
+            def positions():
+                voice_row = next(
+                    (y for y, line in enumerate(t.screen.display) if "♪ voz" in line[:25]), None
+                )
+                if voice_row is None or "josé" not in t.screen.display[voice_row + 1]:
+                    return None
+                member = (voice_row + 1, t.screen.display[voice_row + 1].index("josé"))
+                top = next(
+                    (
+                        (y, t.screen.display[y].index("josé"))
+                        for y in range(len(t.screen.display) - 1, -1, -1)
+                        if "josé" in t.screen.display[y]
+                    ),
+                    None,
+                )
+                if top is None or top[0] <= member[0]:
+                    return None
+                return member, top
+
+            def colors():
+                found = positions()
+                return None if found is None else [t.screen.buffer[y][x].fg for y, x in found]
+
+            deadline = time.monotonic() + 8
+            while colors() is None and time.monotonic() < deadline:
+                t.read(0.03)
+            self.assertIsNotNone(colors(), self.screen(t))
+            idle = colors()
+            self.assertFalse(idle[0] in (46, "00ff00"))
+            server.emit(dict(type="active_speaker_update", channel_id=VOICE, user_ids=[uuid(1)]))
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                current = colors()
+                if current and current[0] in (46, "00ff00") and current[1] == idle[1]:
+                    break
+                t.read(0.03)
+            else:
+                self.fail(self.screen(t))
+            server.emit(dict(type="active_speaker_update", channel_id=VOICE, user_ids=[]))
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                if colors() == idle:
+                    break
+                t.read(0.03)
+            else:
+                self.fail(self.screen(t))
+
+    def test_audio_and_microphone_buttons_toggle_independently(self):
+        with RealtimeMock() as server:
+            t = self.login(server)
+            self.require_voice(t)
+            t.send("\x1bOB\n")
+            self.wait(t, "Mensagem 0003")
+            t.send("rascunho preservado")
+            row = next(y for y, line in enumerate(t.screen.display) if "⚙" in line)
+            t.click(row, t.screen.display[row].index("♪"))
+            self.wait(t, "[♪×]")
+            t.click(row, t.screen.display[row].index("●"))
+            self.wait(t, "[●×]")
+            t.click(row, t.screen.display[row].index("♪"))
+            self.wait(t, "[♪]")
+            self.assertIn("●×", t.screen.display[row])
+            t.click(row, t.screen.display[row].index("●"))
+            self.wait(t, "[●]")
+            self.assertIn("rascunho preservado", self.screen(t))
+            self.assertFalse(
+                any(e.get("type", "").startswith("voice_") for e in server.ws_messages)
+            )
+
+    def test_configured_key_and_mouse_push_to_talk_control_transmission(self):
+        with RealtimeMock() as server:
+            t = self.login(server)
+            self.require_voice(t)
+            # The synthetic terminal answers the keyboard-capability query so
+            # press/release events use the same CSI-u path as a real terminal.
+            t.send("\x1b[?1u")
+            self.configure_ptt(t, "\x1b[109;6u", "Ctrl+Shift+M", "ctrl+shift+m")
+            self.assertTrue(self.join_call(t, server), (server.ws_messages, self.screen(t)))
+            self.wait(t, "Chamada de voz")
+            server.emit(dict(type="voice_joined", channel_id=VOICE, members=[], active_speakers=[]))
+            self.wait(t, "Segure para falar")
+            t.send("\x1b[109;6:1u")
+            self.wait(t, "[Transmitindo]")
+            t.send("\x1b[109;6:3u")
+            self.wait(t, "Segure para falar")
+            self.configure_ptt(t, "\x1b[<64;10;5M", "Mouse 4", "mouse4", enable=False)
+            t.send("\x1b[<64;10;5M")
+            self.wait(t, "[Transmitindo]")
+            t.send("\x1b[<64;10;5M")
+            self.wait(t, "Segure para falar")
+            self.cancel_call(t)
+            self.assertTrue(self.wait_event(t, server, "voice_leave"), server.ws_messages)
+
+    def test_legacy_ctrl_letter_push_to_talk_toggles_transmission(self):
+        with RealtimeMock() as server:
+            t = self.login(server)
+            self.require_voice(t)
+            # This terminal does not answer the keyboard-capability query, so
+            # Ctrl+Y arrives as the legacy 0x19 byte and has no release event.
+            self.configure_ptt(t, "\x19", "Ctrl+Y", "ctrl+y")
+            self.assertTrue(self.join_call(t, server), (server.ws_messages, self.screen(t)))
+            self.wait(t, "Chamada de voz")
+            server.emit(dict(type="voice_joined", channel_id=VOICE, members=[], active_speakers=[]))
+            self.wait(t, "Segure para falar")
+            t.send("\x19")
+            self.wait(t, "[Transmitindo]")
+            # The second press must not be mistaken for a key repeat.
+            deadline = time.monotonic() + 0.75
+            while time.monotonic() < deadline:
+                t.read(0.03)
+            t.send("\x19")
+            self.wait(t, "Segure para falar")
+
+    def settings_tab_row(self, t):
+        deadline = time.monotonic() + 8
+        while time.monotonic() < deadline:
+            for row, line in enumerate(t.screen.display):
+                if "Geral" in line and "Áudio" in line:
+                    return row
+            t.read(0.03)
+        self.fail(self.screen(t))
+
+    def configure_ptt(self, t, sequence, expected, saved_key, *, enable=True):
+        t.send("\x13")
+        self.wait(t, "Configurações")
+        row = self.settings_tab_row(t)
+        t.click(row, t.screen.display[row].index("Áudio"))
+        self.wait(t, "Tecla para falar:")
+        if enable:
+            t.send("\t" + "\x1bOB" * 5 + "\n")
+            self.wait(t, "Pressionar para falar: < Ativado >")
+            t.send("\x1bOB\n")
+        else:
+            t.send("\t" + "\x1bOB" * 6 + "\n")
+        self.wait(t, "pressione uma combinação")
+        t.send(sequence)
+        self.wait(t, f"Tecla para falar: < {expected} >")
+        t.send("\t\n")
+        path = Path(t.configuration.name, "papo-tui", "config.json")
+        deadline = time.monotonic() + 8
+        while time.monotonic() < deadline:
+            if path.exists():
+                audio = json.loads(path.read_text()).get("audio", {})
+                if audio.get("push_to_talk", {}).get("key") == saved_key:
+                    self.assertTrue(audio["push_to_talk"]["enabled"])
+                    return
+            t.read(0.03)
+        self.fail(self.screen(t))
+
+    def test_join_reads_ice_servers_negotiates_and_leaves_the_call(self):
+        with RealtimeMock() as server:
+            t = self.login(server)
+            self.require_voice(t)
+            self.assertTrue(self.join_call(t, server), (server.ws_messages, self.screen(t)))
+            self.assertTrue(
+                any(r[1].endswith("/voice/ice-servers") for r in server.requests), server.requests
+            )
+            joins = [e for e in server.ws_messages if e.get("type") == "voice_join"]
+            self.assertEqual(len(joins), 1)
+            self.assertEqual(joins[0]["channel_id"], VOICE)
+            self.wait(t, "Chamada de voz")
+            server.emit(dict(type="voice_joined", channel_id=VOICE, members=[], active_speakers=[]))
+            # The engine answers with an offer when a device is reachable and
+            # gives up otherwise; both prove the join was processed.
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline and not any(
+                e.get("type") in ("voice_offer", "voice_leave") for e in server.ws_messages
+            ):
+                t.read(0.05)
+            self.assertTrue(
+                any(e.get("type") in ("voice_offer", "voice_leave") for e in server.ws_messages),
+                server.ws_messages,
+            )
+            self.cancel_call(t)
+            self.assertTrue(self.wait_event(t, server, "voice_leave"), server.ws_messages)
+
+    def test_open_voice_channel_allows_a_member_who_is_not_the_owner(self):
+        with HistoryMock(count=1) as server:
+            server.owner_id = "00000000-0000-4000-8000-000000000099"
+            t = self.login(server)
+            self.require_voice(t)
+            self.assertTrue(self.join_call(t, server), (server.ws_messages, self.screen(t)))
+            self.assertNotIn("sem permissão", self.screen(t))
+            self.cancel_call(t)
+            self.assertTrue(self.wait_event(t, server, "voice_leave"), server.ws_messages)
+
+    def test_denied_voice_channel_reports_the_notice_once(self):
+        with HistoryMock(count=1) as server:
+            server.owner_id = "00000000-0000-4000-8000-000000000099"
+            role = uuid(30)
+            server.user_roles = [dict(id=role, color="#ffffff")]
+            server.roles = [dict(id=role, name="Membro", color="#ffffff", permissions={})]
+            for channel in server.channels:
+                if channel["type"] == "voice":
+                    channel["permissions"] = [
+                        dict(
+                            role_id=role,
+                            permissions=dict(
+                                read_channel=True,
+                                send_messages=True,
+                                delete_messages=False,
+                                connect_voice=False,
+                            ),
+                        )
+                    ]
+            t = self.login(server)
+            self.require_voice(t)
+            t.resize(30, 200)
+            self.wait(t, "♪ voz")
+            row = next(y for y, line in enumerate(t.screen.display) if "♪ voz" in line[:40])
+            t.click(row, 5)
+            self.wait(t, "Voz indisponível ou sem permissão de conexão.")
+            self.assertEqual(self.screen(t).count("Voz indisponível ou sem permissão"), 1)
+            self.assertFalse(
+                any(e.get("type") == "voice_join" for e in server.ws_messages), server.ws_messages
+            )
+
+    def join_call(self, t, server):
+        """Click the voice channel once and wait for the join request."""
+        row = next((y for y, line in enumerate(t.screen.display) if "♪ voz" in line[:25]), None)
+        self.assertIsNotNone(row, self.screen(t))
+        t.click(row, 5)
+        return self.wait_event(t, server, "voice_join", 15)
+
+    def cancel_call(self, t):
+        """Leave the call with the focused button."""
+        for _ in range(20):
+            t.send("\t")
+            if "Foco: Sair da chamada" in self.screen(t):
+                break
+        self.wait(t, "Foco: Sair da chamada")
+        t.send("\n")
+
+    def wait_event(self, t, server, kind, seconds=10):
+        """Wait until the client sends an event of the given kind."""
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            if any(e.get("type") == kind for e in server.ws_messages):
+                return True
+            t.read(0.05)
+        return False
+
     def screen(self, t):
         return "\n".join(t.screen.display)
 

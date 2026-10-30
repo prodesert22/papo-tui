@@ -116,20 +116,22 @@ static bool decode(profile_config *config, json_t *root)
 {
     config->mode = APP_MODE_NORMAL;
     config->player_volume = PLAYER_VOLUME_DEFAULT;
+    audio_config_default(&config->audio);
     if (!json_is_object(root) || !json_is_integer(json_object_get(root, "version")))
         return false;
     json_int_t version = json_integer_value(json_object_get(root, "version"));
     if (version == 1) {
         if (json_object_size(root) != 3)
             return false;
-    } else if (version == 2 || version == 3 || version == 4 || version == 5 || version == 6) {
+    } else if (version >= 2 && version <= 7) {
         json_t *rate = json_object_get(root, "requests_per_second");
         json_t *burst = json_object_get(root, "request_burst");
         if (json_object_size(root) != (version == 2   ? 5U
                                        : version == 3 ? 7U
                                        : version == 4 ? 8U
                                        : version == 5 ? 9U
-                                                      : 10U) ||
+                                       : version == 6 ? 10U
+                                                      : 11U) ||
             !json_is_number(rate) || !json_is_integer(burst) || json_integer_value(burst) <= 0 ||
             json_integer_value(burst) > UINT_MAX ||
             !net_rate_parameters_valid(json_number_value(rate),
@@ -163,6 +165,8 @@ static bool decode(profile_config *config, json_t *root)
             return false;
         config->player_volume = (int)json_integer_value(volume);
     }
+    if (version >= 7 && !audio_config_decode(&config->audio, json_object_get(root, "audio")))
+        return false;
     json_t *array = json_object_get(root, "profiles");
     json_t *selected = json_object_get(root, "selected_profile");
     if (!json_is_array(array) || json_array_size(array) > PROFILE_LIMIT)
@@ -198,6 +202,7 @@ bool profiles_reload(profile_config *config)
     config->requests_per_second = PAPO_REQUESTS_PER_SECOND;
     config->request_burst = PAPO_REQUEST_BURST;
     config->desktop_notifications = config->notification_preview = true;
+    audio_config_default(&config->audio);
     config->player_volume = PLAYER_VOLUME_DEFAULT;
     player_volume_set(PLAYER_VOLUME_DEFAULT);
     if (!profiles_storage_open(config))
@@ -227,6 +232,7 @@ bool profiles_reload(profile_config *config)
         config->requests_per_second = PAPO_REQUESTS_PER_SECOND;
         config->request_burst = PAPO_REQUEST_BURST;
         config->desktop_notifications = config->notification_preview = true;
+        audio_config_default(&config->audio);
         config->player_volume = PLAYER_VOLUME_DEFAULT;
         player_volume_set(PLAYER_VOLUME_DEFAULT);
         return error(
@@ -277,7 +283,7 @@ static bool save_locked(profile_config *config)
     }
     json_t *selection = *config->selected ? json_string(config->selected) : json_null();
     json_t *root =
-        selection ? json_pack("{s:i,s:O,s:O,s:f,s:I,s:b,s:b,s:s,s:b,s:i}", "version", 6, "profiles",
+        selection ? json_pack("{s:i,s:O,s:O,s:f,s:I,s:b,s:b,s:s,s:b,s:i}", "version", 7, "profiles",
                               array, "selected_profile", selection, "requests_per_second",
                               config->requests_per_second, "request_burst",
                               (json_int_t)config->request_burst, "desktop_notifications",
@@ -288,6 +294,12 @@ static bool save_locked(profile_config *config)
                   : NULL;
     json_decref(selection);
     json_decref(array);
+    json_t *audio = audio_config_encode(&config->audio);
+    if (!root || !audio || json_object_set(root, "audio", audio) < 0) {
+        json_decref(root);
+        root = NULL;
+    }
+    json_decref(audio);
     char *serialized = root ? json_dumps(root, JSON_INDENT(2) | JSON_SORT_KEYS) : NULL;
     json_decref(root);
     if (!serialized)
@@ -447,6 +459,18 @@ bool profiles_set_mode(profile_config *config, app_mode mode)
     if (!copy)
         return false;
     copy->mode = mode;
+    return commit(config, copy);
+}
+
+bool profiles_set_settings(profile_config *config, app_mode mode, const audio_config *audio)
+{
+    if (mode < APP_MODE_NORMAL || mode > APP_MODE_ULTRALIGHT || !audio_config_valid(audio))
+        return error(config, "Configuração de áudio inválida.");
+    profile_config *copy = candidate(config);
+    if (!copy)
+        return false;
+    copy->mode = mode;
+    copy->audio = *audio;
     return commit(config, copy);
 }
 

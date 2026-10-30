@@ -736,7 +736,7 @@ static int scope_directory(const profile_config *configuration, char scope[65])
 #endif
 }
 session_slot *session_slot_create(const profile_config *configuration, unsigned sequence,
-                                   bool restore)
+                                  bool restore)
 {
     session_slot *s = calloc(1, sizeof(*s));
     if (!s)
@@ -1003,8 +1003,9 @@ session_scope *session_scope_open(const profile_config *config, char *notice, si
 {
     session_scope *scope = calloc(1, sizeof(*scope));
     if (!scope) {
-        snprintf(notice, size, "Não foi possível abrir o estado privado. A sessão fica apenas "
-                               "nesta execução.");
+        snprintf(notice, size,
+                 "Não foi possível abrir o estado privado. A sessão fica apenas "
+                 "nesta execução.");
         return NULL;
     }
     scope->lock = -1;
@@ -1015,8 +1016,9 @@ session_scope *session_scope_open(const profile_config *config, char *notice, si
         scope->lock = openat(scope->directory, name,
                              O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK, 0600);
     if (scope->directory < 0 || scope->lock < 0 || !private_file(scope->lock, 0600)) {
-        snprintf(notice, size, "Não foi possível abrir o estado privado. A sessão fica apenas "
-                               "nesta execução.");
+        snprintf(notice, size,
+                 "Não foi possível abrir o estado privado. A sessão fica apenas "
+                 "nesta execução.");
         session_scope_close(scope);
         return NULL;
     }

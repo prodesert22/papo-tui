@@ -35,7 +35,7 @@ class ReleaseFlow(unittest.TestCase):
         ):
             self.git("config", key, value)
         (self.source / "dist").mkdir()
-        for name in ("release.py", "bootstrap.py"):
+        for name in ("release.py", "bootstrap.py", "checksums.py"):
             shutil.copy2(ROOT / "dist" / name, self.source / "dist" / name)
         (self.source / "releases").mkdir()
         self.write_version("0.3.0")

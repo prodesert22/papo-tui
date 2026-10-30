@@ -660,9 +660,11 @@ bool conversation_interactions_mouse(view *ui, const MEVENT *event)
         return false;
     if (right && ui->list) {
         int y = event->y, x = event->x;
-        if (wmouse_trafo(ui->list, &y, &x, false) && y >= 1 && y < getmaxy(ui->list) - 3) {
-            size_t row = (size_t)(ui->first_channel + y - 1);
-            if (conversation_list_selectable(ui, row)) {
+        if (wmouse_trafo(ui->list, &y, &x, false) && y >= 1 && y <= conversation_list_rows(ui)) {
+            const char *participant = NULL;
+            size_t row =
+                conversation_list_visual_hit(ui, (size_t)(ui->first_channel + y - 1), &participant);
+            if (!participant && conversation_list_selectable(ui, row)) {
                 ui->highlighted = row;
                 if (ui->list_dms)
                     open_dm_context(ui, event);
@@ -729,7 +731,8 @@ void conversation_interactions_draw(view *ui)
     int y = ui->reactors_open ? (LINES - height) / 2 : CLAMP(ui->menu_y, 0, LINES - height);
     int x = ui->reactors_open ? (COLS - width) / 2 : CLAMP(ui->menu_x, 0, COLS - width);
     if ((*ui->dm_context_id || *ui->channel_context_id) && ui->list) {
-        int row = getbegy(ui->list) + 1 + (int)ui->highlighted - ui->first_channel;
+        int row = getbegy(ui->list) + 1 + (int)conversation_list_visual_row(ui, ui->highlighted) -
+                  ui->first_channel;
         int left = getbegx(ui->list) - width - 1;
         int right = getbegx(ui->list) + getmaxx(ui->list) + 1;
         y = CLAMP(row, 0, LINES - height);

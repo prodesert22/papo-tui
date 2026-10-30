@@ -11,6 +11,10 @@ import shutil
 import subprocess
 import tarfile
 import urllib.request
+from voice_dependencies import (
+    cmake_options as voice_cmake_options,
+    meson_options as voice_meson_options,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -187,6 +191,14 @@ def build(entry, source, work, prefix, jobs, env):
 
     name = entry["name"]
     binary = work / "build"
+    if name == "webrtc-audio-processing":
+        run(
+            "patch",
+            "-p1",
+            "--forward",
+            "--input",
+            unix_path(ROOT / "dist/patches/webrtc-audio-processing-cstdint.patch"),
+        )
     if entry["buildsystem"] == "cmake":
         options = [
             "-DBUILD_SHARED_LIBS=ON",
@@ -217,6 +229,7 @@ def build(entry, source, work, prefix, jobs, env):
                 "-DJANSSON_BUILD_DOCS=OFF",
                 "-DJANSSON_WITHOUT_TESTS=ON",
             ]
+        options += voice_cmake_options(name)
         run("cmake", "-S", source, "-B", binary, "-G", "Ninja", *options)
         run("cmake", "--build", binary, "--parallel", jobs)
         run("cmake", "--install", binary)
@@ -290,6 +303,7 @@ def build(entry, source, work, prefix, jobs, env):
             "--buildtype=release",
             "--default-library=shared",
             "--auto-features=disabled",
+            "--wrap-mode=nodownload",
         ]
         if name == "mpv":
             options += [
@@ -331,6 +345,7 @@ def build(entry, source, work, prefix, jobs, env):
             ]
         elif name == "libass":
             options += ["-Dfontconfig=enabled", "-Dlibunibreak=enabled", "-Dasm=auto"]
+        options += voice_meson_options(name, windows=os.name == "nt")
         run("meson", "setup", binary, source, *options)
         run("meson", "compile", "-C", binary, "-j", jobs)
         run("meson", "install", "-C", binary)
@@ -370,7 +385,7 @@ def main():
     unknown = selected - {x["name"] for x in lock["sources"]}
     if unknown:
         parser.error(f"Unknown sources: {sorted(unknown)}")
-    recipe = sha256(Path(__file__))
+    recipe = sha256(Path(__file__)) + sha256(ROOT / "dist/voice_dependencies.py")
     compiler = subprocess.check_output(
         [*shlex.split(os.environ.get("CC", "clang" if os.name == "nt" else "cc")), "--version"],
         text=True,
@@ -393,6 +408,9 @@ def main():
                 if os.name == "nt" and entry["name"] == "ncurses"
                 else "windows-native-threads-posix-prefix-v1"
                 if os.name == "nt" and entry["name"] == "mpv"
+                else "cstdint-v1-"
+                + sha256(ROOT / "dist/patches/webrtc-audio-processing-cstdint.patch")
+                if entry["name"] == "webrtc-audio-processing"
                 else None
             ),
             "system": os.name,
@@ -425,6 +443,8 @@ def main():
                 ("COPYING", "LICENSE", "COPYRIGHT", "AUTHORS")
             ):
                 shutil.copy2(candidate, licenses / candidate.name)
+        if entry["name"] == "gst-plugins-bad":
+            shutil.copy2(source / "ext/sctp/usrsctp/LICENSE.md", licenses / "usrsctp-LICENSE.md")
         stamp.write_text(json.dumps(identity, indent=2) + "\n")
     print(prefix)
 

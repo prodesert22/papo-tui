@@ -75,7 +75,7 @@ class ProfilesTests(unittest.TestCase):
                 self.assertEqual(self.probe("list")["app_mode"], "normal")
                 self.assertTrue(self.probe("mode", "light")["ok"])
                 saved = json.loads(self.path.read_text(encoding="utf-8"))
-                self.assertEqual((saved["version"], saved["app_mode"]), (6, "light"))
+                self.assertEqual((saved["version"], saved["app_mode"]), (7, "light"))
                 self.assertEqual(saved["request_burst"], 7 if version >= 2 else 25)
                 self.assertEqual(saved["player_volume"], 50)
                 self.assertEqual(self.probe("list")["app_mode"], "light")
@@ -89,7 +89,7 @@ class ProfilesTests(unittest.TestCase):
         self.assertTrue(self.probe("volume", "80")["ok"])
         self.assertEqual(self.probe("list")["player_volume"], 80)
         saved = json.loads(self.path.read_text())
-        self.assertEqual((saved["version"], saved["player_volume"]), (6, 80))
+        self.assertEqual((saved["version"], saved["player_volume"]), (7, 80))
         self.assertTrue(self.probe("volume", "0")["ok"])
         self.assertTrue(self.probe("volume", "100")["ok"])
         self.assertEqual(self.probe("list")["player_volume"], 100)
@@ -164,6 +164,7 @@ class ProfilesTests(unittest.TestCase):
                 "app_mode",
                 "members_by_status",
                 "player_volume",
+                "audio",
             },
         )
         self.assertTrue(all(set(item) == {"id", "name", "url"} for item in persisted["profiles"]))
@@ -220,7 +221,7 @@ class ProfilesTests(unittest.TestCase):
         self.assertEqual(self.probe("list")["requests_per_second"], 10)
         self.assertEqual(self.path.read_bytes(), before)
         self.assertTrue(self.probe("rate", "2.5", "3")["ok"])
-        self.assertEqual(json.loads(self.path.read_text(encoding="utf-8"))["version"], 6)
+        self.assertEqual(json.loads(self.path.read_text(encoding="utf-8"))["version"], 7)
         restored = self.probe("list")
         self.assertEqual(
             (restored["requests_per_second"], restored["request_burst"], restored["selected"]),
@@ -256,7 +257,7 @@ class ProfilesTests(unittest.TestCase):
         self.assertFalse(loaded["desktop_notifications"])
         self.assertFalse(loaded["notification_preview"])
         valid = json.loads(self.path.read_text(encoding="utf-8"))
-        self.assertEqual(valid["version"], 6)
+        self.assertEqual(valid["version"], 7)
         valid["notification_preview"] = "false"
         self.seed(valid)
         before = self.path.read_bytes()

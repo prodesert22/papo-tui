@@ -5,9 +5,10 @@ else()
 endif()
 set(CMAKE_GET_RUNTIME_DEPENDENCIES_TOOL objdump)
 set(CMAKE_GET_RUNTIME_DEPENDENCIES_COMMAND "@CMAKE_OBJDUMP@")
+set(voice_plugins "@PAPO_VOICE_PLUGINS@")
 file(GET_RUNTIME_DEPENDENCIES
     EXECUTABLES "$<TARGET_FILE:papo-tui>" "$<TARGET_FILE:papo-media-worker>"
-    MODULES "$<TARGET_FILE:papo_image_codec>" "$<TARGET_FILE:papo_video_player>"
+    MODULES "$<TARGET_FILE:papo_image_codec>" "$<TARGET_FILE:papo_video_player>" ${voice_plugins}
     DIRECTORIES @PAPO_RUNTIME_SEARCH_DIRS@
     RESOLVED_DEPENDENCIES_VAR resolved UNRESOLVED_DEPENDENCIES_VAR unresolved
     PRE_EXCLUDE_REGEXES "^lib(c|m|dl|pthread|rt|resolv)\\.so" "^ld-linux" "^[Aa][Pp][Ii]-[Mm][Ss]-" "^[Ee][Xx][Tt]-[Mm][Ss]-"
@@ -35,6 +36,18 @@ if(NOT WIN32)
         endif()
     endforeach()
 endif()
+set(plugin_destination "${CMAKE_INSTALL_PREFIX}/@CMAKE_INSTALL_BINDIR@/papo-backends/gstreamer-1.0")
+foreach(plugin IN LISTS voice_plugins)
+    file(INSTALL "${plugin}" DESTINATION "${plugin_destination}")
+    if(NOT WIN32)
+        get_filename_component(plugin_name "${plugin}" NAME)
+        execute_process(COMMAND "${PATCHELF}" --set-rpath
+            "$ORIGIN/../../../@CMAKE_INSTALL_LIBDIR@/papo-tui"
+            "$ENV{DESTDIR}${plugin_destination}/${plugin_name}" COMMAND_ERROR_IS_FATAL ANY)
+    endif()
+endforeach()
+list(APPEND resolved ${voice_plugins})
+list(REMOVE_DUPLICATES resolved)
 set(manifest "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/@CMAKE_INSTALL_DATADIR@/doc/papo-tui/runtime-libraries.json")
 get_filename_component(manifest_dir "${manifest}" DIRECTORY)
 file(MAKE_DIRECTORY "${manifest_dir}")

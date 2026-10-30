@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 
+#include "config/key_binding.h"
 #include "model/text/mentions.h"
 #include <graphemebreak.h>
 #include <ncurses.h>
@@ -86,16 +87,34 @@ enum {
     TEXT_SHIFT_PAGE_UP,
     TEXT_SHIFT_PAGE_DOWN,
     TEXT_KEYBOARD_SUPPORTED,
-    TEXT_CONTROL_BASE
+    TEXT_CONTROL_BASE,
+    /* Synthetic events from the configured push-to-talk binding. Toggle is
+     * used by terminals that report a control byte but no key release. */
+    TEXT_PTT_PRESS = TEXT_CONTROL_BASE + 32,
+    TEXT_PTT_RELEASE,
+    TEXT_PTT_TOGGLE,
+    TEXT_CAPTURED,
+    TEXT_CAPTURE_CANCELLED
 }; /* Followed by the encoded ASCII key value. */
 
 void text_input_init(void);
+/* Maps the configured push-to-talk combination to synthetic press/release
+ * events while a call is active. Passing NULL restores ordinary handling. */
+void text_push_to_talk_configure(const key_binding *binding);
+/* Captures one raw key combination with curses key decoding disabled. The
+ * caller keeps polling; take() reports the combination even when invalid. */
+bool text_capture_begin(void);
+bool text_capture_active(void);
+void text_capture_cancel(void);
+bool text_capture_take(key_binding *binding);
 int text_read_raw(uint32_t *key);
 int text_input_read(uint32_t *key);
 /* Focus reporting and negotiated keyboard mode; restore the mode on shutdown. */
 void text_input_terminal_active(bool active);
 bool text_terminal_focused(void);
 bool text_terminal_focus_unknown(void);
+bool text_keyboard_events_supported(void);
+void text_input_event_reporting(bool enabled);
 bool text_selection(const text_buffer *buffer, size_t *start, size_t *end);
 void text_unselect(text_buffer *buffer);
 /* Common editing controls; returns whether this key belongs to the input. */

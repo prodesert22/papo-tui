@@ -8,6 +8,10 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from bootstrap import ROOT, ncurses_options, sha256
+from voice_dependencies import (
+    cmake_options as voice_cmake_options,
+    meson_options as voice_meson_options,
+)
 
 APP_ID = "io.github.prodesert22.PapoTUI"
 RUNTIME = "26.08"
@@ -50,7 +54,7 @@ def module(entry):
                 "-DCURL_ZSTD=OFF",
                 "-DCURL_USE_LIBSSH2=OFF",
             ]
-        else:
+        elif name == "jansson":
             result["config-opts"] += [
                 "-DJANSSON_BUILD_SHARED_LIBS=ON",
                 "-DJANSSON_BUILD_DOCS=OFF",
@@ -132,6 +136,21 @@ def module(entry):
                 "install -Dm644 /run/build/libdisplay-info/LICENSE "
                 "/app/share/licenses/libdisplay-info/LICENSE"
             ]
+    if entry["buildsystem"] == "cmake":
+        result["config-opts"] += voice_cmake_options(name)
+    elif result.get("buildsystem") == "meson":
+        result["config-opts"] += ["--wrap-mode=nodownload", *voice_meson_options(name)]
+    if name == "webrtc-audio-processing":
+        result["sources"].append(
+            {
+                "type": "patch",
+                "path": str(ROOT / "dist/patches/webrtc-audio-processing-cstdint.patch"),
+            }
+        )
+    if name == "gst-plugins-bad":
+        result["post-install"] = [
+            "install -Dm644 ext/sctp/usrsctp/LICENSE.md /app/share/licenses/usrsctp/LICENSE.md"
+        ]
     return result
 
 

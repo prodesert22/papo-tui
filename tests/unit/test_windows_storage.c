@@ -53,10 +53,10 @@ static void check_pending_restore(profile_config *config)
 {
     char *scope = g_compute_checksum_for_string(G_CHECKSUM_SHA256, config->directory_path, -1);
     char legacy_snapshot[] = "synthetic-restore-fixture", added_snapshot[] = "synthetic-added";
-    saved_slot legacy = save_slot(config->directory_path, scope, 0, "https://one.example.test",
-                                  legacy_snapshot);
-    saved_slot added = save_slot(config->directory_path, scope, 1, "https://two.example.test",
-                                 added_snapshot);
+    saved_slot legacy =
+        save_slot(config->directory_path, scope, 0, "https://one.example.test", legacy_snapshot);
+    saved_slot added =
+        save_slot(config->directory_path, scope, 1, "https://two.example.test", added_snapshot);
     char *store_lock = g_strdup_printf("%s/sessions-%s.lock", config->directory_path, scope);
     session_store *store = session_store_create(config, true);
     assert(store && session_store_restoring(store));

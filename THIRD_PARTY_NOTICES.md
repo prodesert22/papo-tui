@@ -20,6 +20,13 @@ data/emoji/LICENSE.
 | libplacebo / libass | libmpv dependencies | LGPL-2.1-or-later / ISC |
 | libva / libdrm | Linux hardware video decoding | MIT/X11 |
 | Noto Emoji | Emoji font | OFL-1.1 |
+| GStreamer core and base/good/bad plugins | WebRTC, audio devices, meters and DSP | LGPL-2.1-or-later in distributed configurations |
+| libnice | ICE/STUN/TURN | MPL-1.1 OR LGPL-2.1-only |
+| Opus | Voice encoding and decoding | BSD-3-Clause |
+| libsrtp | Secure RTP | BSD-3-Clause |
+| WebRTC Audio Processing | Echo cancellation and noise suppression | BSD-3-Clause, with upstream notices |
+| Abseil | WebRTC Audio Processing dependency | Apache-2.0 |
+| usrsctp (inside GStreamer) | WebRTC transport dependency | BSD-3-Clause |
 
 Packages that bundle libraries must include their exact licenses and publish
 the corresponding sources, patches and build options alongside the binaries.

@@ -82,6 +82,10 @@ class HistoryMock(MockServer):
 
     def route(self, method, path, body):
         url = urlsplit(path)
+        if url.path.endswith("/voice/ice-servers") and method == "GET":
+            # The contract allows an empty list; no STUN or TURN server is
+            # reachable from the synthetic environment.
+            return 200, {"ice_servers": []}
         if url.path.endswith("/channels") and method == "GET":
             if self.case == "channels-invalid":
                 return 200, {"channels": [{"id": "../bad"}]}

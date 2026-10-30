@@ -496,6 +496,7 @@ class MediaTerminal(support.MediaTerminal):
     def test_floating_panels_preserve_uncovered_attachment_pixels(self):
         for protocol in protocols("kitty", "sixel", "iterm2"):
             for key, title in panels(
+                ("\x13", "Configurações"),
                 ("\x07", "Ajuda do contexto"),
                 ("\x1f", "Ajuda global"),
                 ("\x0f", "Anexar arquivos"),
@@ -577,6 +578,7 @@ class MediaTerminal(support.MediaTerminal):
                         display = t.screen.display
                         top = next(i for i, line in enumerate(display) if title in line)
                         if title in (
+                            "Configurações",
                             "Notificações",
                             "Ajuda do contexto",
                             "Ajuda global",
@@ -667,6 +669,7 @@ class MediaTerminal(support.MediaTerminal):
                                 ),
                             )
                         if title in (
+                            "Configurações",
                             "Menções",
                             "Notificações",
                             "Ajuda do contexto",
@@ -680,6 +683,9 @@ class MediaTerminal(support.MediaTerminal):
                             "Ir para mensagem",
                         ):
                             active_title = title
+                            if title == "Configurações":
+                                t.send("\x1bOC\x1bOC")
+                                self.wait(t, "Entrada:")
                             if title == "Notificações":
                                 # Search, keyboard filter/date controls and clearing
                                 # the query must preserve the same exposed pixels.
@@ -727,6 +733,187 @@ class MediaTerminal(support.MediaTerminal):
                         self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), 1)
                     finally:
                         self.assertTrue(t.close())
+
+    def test_settings_preserve_history_avatars_and_inline_icons(self):
+        # Settings is a floating panel: only the cells it covers may disappear.
+        # This covers the avatar and inline-icon paths that attachments do not.
+        avatar = base64.b64encode(self.images["png"]).decode()
+        for protocol in protocols("kitty", "sixel", "iterm2"):
+            with (
+                self.subTest(protocol=protocol),
+                self.serve(self.images["png"], "image/png") as server,
+            ):
+                server.messages[0]["content"] = "Mensagem com 😀"
+                parent = server.api_handler
+
+                def route(method, path, body):
+                    if path.split("?")[0].endswith("/users/profile_batch"):
+                        return 200, {
+                            "profiles": [
+                                {
+                                    "id": user_id,
+                                    "avatar_blob": avatar,
+                                    "avatar_format": "PNG",
+                                }
+                                for user_id in body["ids"]
+                            ]
+                        }
+                    return parent(method, path, body)
+
+                server.api_handler = route
+                self.include_icons = True
+                t = self.open(server, protocol=protocol, size=(48, 160))
+                try:
+                    self.wait_frames(t)
+                    t.send("draft ")
+
+                    def history_images(first_frame=0, first_placement=0, *, live=False):
+                        if protocol == "kitty":
+                            dimensions = {
+                                int(header[b"i"]): (int(header[b"s"]), int(header[b"v"]))
+                                for header, _ in t.stream.kitty_frames
+                            }
+                            # Kitty placements survive text redraws. When a
+                            # floating panel opens, retained placements are
+                            # evidence that the uncovered pixels are still
+                            # displayed; the client only re-sends moved ones.
+                            start = 0 if live else first_placement
+                            latest = {
+                                (int(p[b"i"]), int(p[b"p"])): position
+                                for p, position in zip(
+                                    t.stream.placements[start:],
+                                    t.stream.placement_positions[start:],
+                                )
+                            }
+                            images = [
+                                (dimensions.get(pair[0], (0, 0)), position)
+                                for pair, position in latest.items()
+                                if pair in t.stream.live_placements
+                            ]
+                        else:
+                            images = [
+                                (self.raster_size(t, i), t.stream.frame_positions[i])
+                                for i in range(first_frame, len(t.stream.frames))
+                            ]
+                        return [
+                            (size, position)
+                            for size, position in images
+                            if size in ((48, 48), (16, 16))
+                            and position[0] > 2
+                            and position[1] >= 24
+                        ]
+
+                    self.settled(
+                        t,
+                        lambda: any(size == (48, 48) for size, _ in history_images()),
+                        seconds=10,
+                    )
+                    before = history_images()
+                    self.assertTrue(
+                        any(size == (48, 48) for size, _ in before),
+                        "The history avatar did not load\n" + "\n".join(t.screen.display),
+                    )
+                    self.assertTrue(
+                        any(size == (16, 16) for size, _ in before),
+                        "The inline emoji icon did not load\n" + "\n".join(t.screen.display),
+                    )
+
+                    def settings_frame():
+                        display = t.screen.display
+                        title_row = next(
+                            i for i, line in enumerate(display) if "Configurações" in line
+                        )
+                        # The title is inside the frame; its top border is the
+                        # row above.
+                        top = title_row - 1
+                        title_x = wcswidth(display[title_row].split("Configurações")[0])
+                        left = next(
+                            x
+                            for x in range(title_x, -1, -1)
+                            if t.screen.buffer[top][x].data in ("l", "┌")
+                        )
+                        right = (
+                            next(
+                                x
+                                for x in range(title_x, t.screen.columns)
+                                if t.screen.buffer[top][x].data in ("k", "┐")
+                            )
+                            + 1
+                        )
+                        bottom = None
+                        deadline = time.monotonic() + 8
+                        while bottom is None and time.monotonic() < deadline:
+                            bottom = next(
+                                (
+                                    y
+                                    for y in range(top + 1, t.screen.lines)
+                                    if t.screen.buffer[y][left].data in ("m", "└")
+                                    and t.screen.buffer[y][right - 1].data in ("j", "┘")
+                                ),
+                                None,
+                            )
+                            if bottom is None:
+                                t.read(0.03)
+                        self.assertIsNotNone(bottom, "\n".join(t.screen.display))
+                        return top, left, bottom + 1, right
+
+                    def assert_outside_modal(images, label):
+                        top, left, bottom, right = settings_frame()
+                        self.assertTrue(images, label + "\n" + "\n".join(t.screen.display))
+                        for size, (y, x) in images:
+                            rows, columns = (size[1] + 15) // 16, (size[0] + 7) // 8
+                            self.assertTrue(
+                                y + rows <= top or y >= bottom or x + columns <= left or x >= right,
+                                (label, size, (y, x, rows, columns), (top, left, bottom, right)),
+                            )
+
+                    frames = len(t.stream.frames)
+                    placements = len(t.stream.placements)
+                    t.send("\x13")
+                    self.wait(t, "Configurações")
+                    self.wait(t, "Áudio")
+                    self.settled(
+                        t,
+                        lambda: bool(history_images(frames, placements, live=True)),
+                        seconds=10,
+                    )
+                    after = history_images(frames, placements, live=True)
+                    self.assertTrue(
+                        any(size == (48, 48) for size, _ in after),
+                        "The history avatar disappeared behind settings\n"
+                        + "\n".join(t.screen.display),
+                    )
+                    self.assertTrue(
+                        any(size == (16, 16) for size, _ in after),
+                        "Inline history icons disappeared behind settings\n"
+                        + "\n".join(t.screen.display),
+                    )
+                    assert_outside_modal(after, "History pixels overlap settings")
+
+                    frames = len(t.stream.frames)
+                    placements = len(t.stream.placements)
+                    t.resize(44, 144)
+                    self.wait(t, "Configurações")
+                    self.settled(
+                        t,
+                        lambda: bool(history_images(frames, placements)),
+                        seconds=10,
+                    )
+                    assert_outside_modal(
+                        history_images(frames, placements),
+                        "History pixels disappeared after resize",
+                    )
+
+                    t.send("\x1b")
+                    self.settled(
+                        t, lambda: "Configurações" not in "\n".join(t.screen.display), seconds=8
+                    )
+                    self.assertTrue(
+                        any(size == (48, 48) for size, _ in history_images()),
+                        "The history avatar did not return after settings closed",
+                    )
+                finally:
+                    self.assertTrue(t.close())
 
     def test_visible_video_has_automatic_static_poster_and_reuses_download(self):
         for protocol in protocols("kitty", "sixel", "iterm2"):

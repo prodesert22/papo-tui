@@ -16,6 +16,18 @@ pkg_check_modules(SWSCALE REQUIRED IMPORTED_TARGET libswscale>=5)
 pkg_check_modules(PANGO REQUIRED IMPORTED_TARGET pangocairo>=1.50)
 pkg_check_modules(FONTCONFIG REQUIRED IMPORTED_TARGET fontconfig>=2.13)
 find_package(Threads REQUIRED)
+option(PAPO_VOICE "Enable voice calls through the GStreamer WebRTC stack" ON)
+if(PAPO_VOICE)
+    pkg_check_modules(
+        GSTREAMER
+        REQUIRED
+        IMPORTED_TARGET
+        gstreamer-1.0>=1.28
+        gstreamer-webrtc-1.0>=1.28
+        gstreamer-sdp-1.0>=1.28
+        gstreamer-audio-1.0>=1.28
+        gstreamer-rtp-1.0>=1.28)
+endif()
 option(PAPO_DESKTOP_SESSIONS "Enable optional desktop credential managers" ON)
 option(PAPO_DESKTOP_NOTIFICATIONS "Enable optional asynchronous desktop notifications" ON)
 if(WIN32)

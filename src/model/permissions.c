@@ -247,8 +247,12 @@ permission_decision permissions_channel(const permissions *p, const char *id,
     if (owner(p))
         return PERMISSION_ALLOWED;
     json_t *entries = json_object_get(channel, "permissions");
+    /* A channel without role entries is open: the backend frees reading,
+     * sending and connecting to voice for every member (CanConnectVoice uses
+     * the same freeIfOpen rule as CanReadChannel). */
     if (!json_array_size(entries) &&
-        (permission == PERMISSION_READ_CHANNEL || permission == PERMISSION_SEND_MESSAGES))
+        (permission == PERMISSION_READ_CHANNEL || permission == PERMISSION_SEND_MESSAGES ||
+         permission == PERMISSION_CONNECT_VOICE))
         return PERMISSION_ALLOWED;
     if (!p->identity_known)
         return PERMISSION_UNKNOWN;

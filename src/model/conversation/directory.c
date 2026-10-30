@@ -566,6 +566,21 @@ bool history_internal_request_authors(history *h)
         }
     }
     history_internal_actions_users(h, ids, seen);
+    for (size_t channel = 0; channel < history_channel_count(h); ++channel) {
+        const json_t *participants =
+            voice_members(h->voice, history_internal_str(history_channel(h, channel), "id"));
+        size_t member_index;
+        json_t *participant;
+        json_array_foreach(participants, member_index, participant)
+        {
+            const char *id = json_string_value(participant);
+            if (history_uuid(id) && !user_resolved(h, id) && !json_object_get(h->queried, id) &&
+                !json_object_get(seen, id) && json_array_size(ids) < 1000 &&
+                json_object_size(h->queried) + json_array_size(ids) < 10000)
+                ok &= json_array_append(ids, participant) == 0 &&
+                      json_object_set_new(seen, id, json_true()) == 0;
+        }
+    }
     json_array_foreach(h->messages, i, m)
     {
         const char *id = history_internal_str(m, "author_id");

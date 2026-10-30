@@ -1,4 +1,5 @@
 #include "ui/components/help.h"
+#include "net/voice/client.h"
 #include "ui/components/button.h"
 #include "ui/components/theme.h"
 #include "ui/input/mouse.h"
@@ -45,7 +46,15 @@ static const help_row rows[] = {
      "Clicar para abrir busca, mensagens fixadas ou membros"},
     {HELP_CHANNELS, "↑↓ / Home / End", "Escolher um canal ou DM; categorias são ignoradas"},
     {HELP_CHANNELS, "PgUp / PgDn", "Percorrer páginas da lista"},
-    {HELP_CHANNELS, "Enter / →", "Abrir um canal de texto ou DM; voz ainda não inicia chamadas"},
+    {HELP_CHANNELS, "Enter / →", "Abrir um canal de texto ou DM"},
+    {HELP_CHANNELS | HELP_VOICE, "Enter em voz", "Conectar à chamada do canal de voz"},
+    {HELP_CHANNELS | HELP_SETTINGS_BUTTON | HELP_VOICE, "🔊 / 🎤 / ♪ / ●",
+     "Alternar áudio e microfone nos botões ao lado de Configurações"},
+    {HELP_CHANNELS | HELP_VOICE, "[Sair da chamada]",
+     "Encerrar a chamada; navegar preserva a conexão"},
+    {HELP_CONVERSATION | HELP_VOICE, "Tecla configurada / segurar botão",
+     "Transmitir com pressionar para falar; a combinação ou o botão 4/5 do mouse é "
+     "escolhido em Configurações > Áudio"},
     {HELP_CHANNELS, "Ctrl+O / Shift+Enter",
      "Abrir o histórico do canal selecionado, inclusive voz"},
     {HELP_CHANNELS | HELP_MEMBERS, "Ctrl+Espaço / m", "Abrir o menu de contexto da seleção"},
@@ -140,9 +149,15 @@ static const help_row rows[] = {
     {HELP_FILES, "Espaço", "Marcar ou desmarcar um arquivo"},
     {HELP_FILES, "Ctrl+V", "Colar arquivos ou imagens quando o clipboard está disponível"},
     {HELP_FILES, "Esc", "Cancelar a seleção de arquivos"},
-    {HELP_SETTINGS, "Tab / ↑↓ / ←→",
-     "Percorrer as configurações e os modos Normal, Light e Ultralight"},
+    {HELP_SETTINGS, "Tab / ↑↓", "Percorrer as configurações e os modos Normal, Light e Ultralight"},
+    {HELP_SETTINGS, "←→ / clique nas abas",
+     "Trocar entre Geral, Aparência, Áudio, Acessibilidade e Atalhos"},
     {HELP_SETTINGS, "Enter / clique", "Aplicar ou cancelar as configurações"},
+    {HELP_SETTINGS, "Áudio: ↑↓ / ←→ / Enter",
+     "Escolher dispositivos, ajustar volumes, testar o microfone e configurar pressionar para "
+     "falar"},
+    {HELP_SETTINGS, "Tecla para falar: Enter",
+     "Capturar qualquer combinação ou os botões 4/5 do mouse; Esc cancela a captura"},
     {HELP_SETTINGS, "Esc / Ctrl+S", "Fechar as configurações"},
     {HELP_IMAGE, "← / →", "Trocar a imagem na galeria"},
     {HELP_MEDIA, "Ctrl+B / i / [Info]", "Mostrar ou ocultar as propriedades da mídia"},
@@ -234,15 +249,16 @@ static void filter_rows(help_modal *h)
         query[0] = 0;
     char *needle = g_utf8_casefold(query, -1);
     for (size_t i = 0; i < G_N_ELEMENTS(rows); ++i) {
+        bool visible = !(rows[i].contexts & HELP_VOICE) || voice_available();
         if (!needle || !*needle) {
-            h->matches[i] = true;
+            h->matches[i] = visible;
             continue;
         }
         char entry[768];
         snprintf(entry, sizeof(entry), "%s %s %s", rows[i].keys, row_scope(rows[i].contexts),
                  rows[i].function);
         char *fold = g_utf8_casefold(entry, -1);
-        h->matches[i] = fold && strstr(fold, needle);
+        h->matches[i] = visible && fold && strstr(fold, needle);
         g_free(fold);
     }
     g_free(needle);
@@ -457,6 +473,8 @@ WINDOW *help_draw(help_modal *h)
     int heights[sizeof(rows) / sizeof(*rows)] = {0};
     int total = 0;
     for (size_t i = 0; i < sizeof(rows) / sizeof(*rows); ++i) {
+        if ((rows[i].contexts & HELP_VOICE) && !voice_available())
+            continue;
         if (h->global ? !h->matches[i] : !(rows[i].contexts & h->context))
             continue;
         text_buffer text;

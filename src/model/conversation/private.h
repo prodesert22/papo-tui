@@ -28,7 +28,8 @@ enum request_kind {
     ACTIONS,
     DISCOVERY,
     MEMBERS,
-    CHANNEL_SETTINGS
+    CHANNEL_SETTINGS,
+    VOICE_ICE_SERVERS
 };
 #define TYPING_LIMIT 128U
 #define TYPING_TIMEOUT_MS 6000U
@@ -48,6 +49,7 @@ typedef struct {
     bool ok;
 } protected_users;
 struct history {
+    voice_client *voice;
     struct history_members *members;
     bool members_active;
     struct history_actions *actions;

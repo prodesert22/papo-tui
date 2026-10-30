@@ -31,6 +31,7 @@ CMake checks these library requirements, even in Light or Ultralight mode:
 | Fontconfig | 2.13 |
 | libmpv | API 2.0 |
 | FFmpeg | avformat/avcodec 58, avutil 56, swscale 5 |
+| GStreamer, for voice calls | 1.28: core, webrtc, sdp, audio and rtp development packages |
 | libsecret, optional on Linux | 0.20 |
 | Noto Color Emoji | System font or verified font resource |
 
@@ -40,6 +41,11 @@ can meet the version requirement while lacking WebSocket support. The locked
 recipe enables the required features. Do not skip these dependencies based only
 on the versions provided by the distribution.
 
+Voice calls need the GStreamer WebRTC stack. Configure with `-DPAPO_VOICE=OFF`
+to build without it; the program then reports that voice is unavailable and
+omits the call buttons and the **Áudio** settings. The Termux package uses this
+option, because the WebRTC stack is not published for Android.
+
 ## Linux
 
 Install the host packages for your distribution, then follow
@@ -47,6 +53,14 @@ Install the host packages for your distribution, then follow
 compiler, build tools and system libraries used by the dependency recipes.
 The recipes build ncurses, curl, Jansson, libunibreak, libsixel, Chafa, FFmpeg,
 libplacebo, libass, libmpv and libsecret in the private prefix.
+They also build GStreamer, libnice, Opus, libsrtp, WebRTC Audio Processing and
+Abseil for voice. The compiler must support C++17 for these dependencies.
+GStreamer runtime plugins must include coreelements, audioconvert, audiomixer,
+audioresample, volume, opus, level, rtp, rtpmanager, nice, dtls, srtp, sctp,
+webrtc, webrtcdsp and autodetect, plus ALSA/PulseAudio on Linux or WASAPI2 on
+Windows. Bundled packages install these beside the media helpers. The audio
+worker starts lazily when devices or voice are used; Ultralight still supports
+voice without enabling images or video.
 
 The media recipes enable VA-API decoding through DRM on Linux and D3D11VA on
 Windows. Hardware decoding needs a compatible driver on the runtime host;
@@ -180,7 +194,7 @@ pacman -S --needed base-devel git autoconf automake libtool nasm \
     "${MINGW_PACKAGE_PREFIX}-pango" "${MINGW_PACKAGE_PREFIX}-fontconfig" \
     "${MINGW_PACKAGE_PREFIX}-libass" "${MINGW_PACKAGE_PREFIX}-libplacebo" \
     "${MINGW_PACKAGE_PREFIX}-ffmpeg" "${MINGW_PACKAGE_PREFIX}-libgcrypt" \
-    "${MINGW_PACKAGE_PREFIX}-vulkan-headers"
+    "${MINGW_PACKAGE_PREFIX}-vulkan-headers" "${MINGW_PACKAGE_PREFIX}-openssl"
 ```
 
 Vulkan headers are needed by libplacebo's stubs even with Vulkan disabled.
@@ -346,6 +360,22 @@ CI sets `PAPO_TEST_REQUIRED=1`: an ignored case fails unless its exact ID and
 reason are declared for that platform in `tests/platforms.json`. Ad hoc local
 runs still report capability skips explicitly.
 
+### Voice call diagnostics
+
+To diagnose a voice call against a real instance, set `PAPO_VOICE_DIAGNOSTICS`
+to a file path, for example
+`PAPO_VOICE_DIAGNOSTICS=build/voice-call.log ./build/papo-tui`. On Linux the
+file is created with mode 0600. It records the voice signalling events, both SDP
+descriptions, the transport and type of each local ICE candidate, the
+microphone packet gate and, every 2 seconds, the RTP statistics:
+
+- outbound packets sent;
+- the server's receiver reports for your audio;
+- inbound packets for each audio slot.
+
+ICE credentials, DTLS fingerprints, candidate addresses and connection
+addresses are removed. Keep these files under `build/`.
+
 ### Update test dependencies
 
 `requirements-dev.txt` is the input; the native CI locks include transitive
@@ -426,6 +456,14 @@ WebSocket probe result because the Termux libcurl package provides that feature.
 The post-install step checks `--version` and `--help` using the build system's
 Android runtime emulation; it does not replace testing on an Android device.
 The resulting DEB is written under the build system's `output/` directory.
+
+Termux does not publish the Unicode segmentation library on every repository,
+so the recipe builds `libunibreak` from the source locked in
+`dist/dependencies.json` and links it statically. The private build directory
+is added to `CMAKE_FIND_ROOT_PATH`, because CMake otherwise selects the shared
+library of the build environment. The package therefore declares no
+`libunibreak` dependency and its program records no `libunibreak.so`
+requirement; the upstream license travels with the package.
 
 ### Prepare a Linux packaging build
 
@@ -633,6 +671,23 @@ This final check requires the complete asset set, including source archives;
 it rejects missing or extra artifacts. It does not publish a release. For a
 single local package, use its per-format commands above without this final
 all-platform check.
+
+To generate checksums manually for any local selection of packages, run:
+
+```sh
+python3 dist/checksums.py build/artifacts
+python3 dist/checksums.py build/artifacts --check
+```
+
+Replace `build/artifacts` with your package directory, for example
+`build/manual-0.5.0/assets`. The script requires only Python's standard library.
+It writes `SHA256SUMS` in that directory, covering all regular files directly
+inside it, sorted by filename. Subdirectories and the manifest itself are
+excluded; symbolic links are rejected. Running it again replaces the manifest.
+`--check` verifies both the hashes and the file list without rewriting it.
+You can also verify with `cd build/artifacts && sha256sum --check SHA256SUMS`.
+Generate the manifest after the packages are finalized and distribute it
+alongside them. This manual command does not validate release completeness.
 
 Prepare versions on `dev` and open a pull request to `main`. Release-preparation
 commit titles use English and start with `Release MAJOR.MINOR.PATCH: ...`.

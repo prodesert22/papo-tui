@@ -166,13 +166,15 @@ history *history_create(auth_client *auth)
     h->selected = SIZE_MAX;
     h->active = true;
     h->inbox = inbox_create(auth);
+    h->voice = voice_create(auth);
     h->context = auth_context_generation(auth);
     h->want_channels = true;
     h->users = json_object();
     h->directory = json_array();
     h->queried = json_object();
     h->read_messages = json_object();
-    if (!h->assets || !h->users || !h->directory || !h->queried || !h->inbox || !h->read_messages) {
+    if (!h->voice || !h->assets || !h->users || !h->directory || !h->queried || !h->inbox ||
+        !h->read_messages) {
         history_destroy(h);
         return NULL;
     }
@@ -193,6 +195,7 @@ void history_destroy(history *h)
 {
     if (!h)
         return;
+    voice_destroy(h->voice);
     save_reads(h);
     history_internal_members_destroy(h);
     if (h->pending != NONE)
@@ -215,6 +218,11 @@ void history_enable_r8(history *h)
 {
     h->r8 = true;
     load_reads(h);
+}
+
+voice_client *history_voice(history *h)
+{
+    return h ? h->voice : NULL;
 }
 
 inbox *history_inbox(history *h)
@@ -641,6 +649,12 @@ static int process_response(history *h, uint64_t maintenance_now)
     long code;
     uint64_t generation;
     json_t *body = auth_take_response(h->auth, &code, &generation);
+    if (h->pending == VOICE_ICE_SERVERS) {
+        voice_ice_response(h->voice, body, code, generation);
+        json_decref(body);
+        h->pending = NONE;
+        return 3;
+    }
     if (h->pending == CHANNEL_SETTINGS) {
         if (generation == h->context && h->request_context == h->context)
             history_internal_channel_settings_response(h, body, code, uncertain);
@@ -804,6 +818,7 @@ bool history_poll(history *h)
     uint64_t maintenance_now = 0;
     net_now_ms(&maintenance_now);
     bool changed = history_maintain(h, maintenance_now);
+    changed |= voice_poll(h->voice);
     if (h->context != auth_context_generation(h->auth)) {
         history_internal_actions_destroy(h);
         history_internal_members_destroy(h);
@@ -875,6 +890,7 @@ bool history_poll(history *h)
         json_decref(event);
         changed = true;
     }
+    changed |= voice_poll(h->voice);
     changed |= sync_permissions(h);
     int response = process_response(h, maintenance_now);
     history_internal_notification_reads(h);
@@ -908,6 +924,11 @@ bool history_poll(history *h)
     if (now < h->retry_at)
         return changed;
     if (h->pending == NONE && auth_has_session(h->auth) && !auth_busy(h->auth)) {
+        if (voice_wants_ice(h->voice) && auth_get_json(h->auth, "/voice/ice-servers")) {
+            h->pending = VOICE_ICE_SERVERS;
+            h->request_context = h->context;
+            return true;
+        }
         if (*h->read_visible) {
             json_t *channel = history_channel(h, h->selected);
             const char *latest =

@@ -51,7 +51,39 @@ if(EXISTS "${PAPO_RESOURCE_DIR}/NotoColorEmoji.ttf")
         RENAME Noto-OFL.txt)
 endif()
 option(PAPO_BUNDLE_RUNTIME "Include non-system runtime libraries in the installation" OFF)
-if(PAPO_BUNDLE_RUNTIME)
+if(PAPO_BUNDLE_RUNTIME AND PAPO_VOICE)
+    pkg_get_variable(PAPO_GST_PLUGIN_DIR gstreamer-1.0 pluginsdir)
+    set(voice_plugins
+        coreelements
+        audioconvert
+        audioresample
+        audiomixer
+        volume
+        opus
+        level
+        rtp
+        rtpmanager
+        dtls
+        srtp
+        sctp
+        webrtc
+        nice
+        autodetect
+        webrtcdsp)
+    if(WIN32)
+        list(APPEND voice_plugins wasapi2)
+    else()
+        list(APPEND voice_plugins alsa pulseaudio)
+    endif()
+    set(PAPO_VOICE_PLUGINS "")
+    foreach(plugin IN LISTS voice_plugins)
+        find_file(
+            voice_plugin_${plugin}
+            NAMES "${CMAKE_SHARED_MODULE_PREFIX}gst${plugin}${CMAKE_SHARED_MODULE_SUFFIX}"
+            PATHS "${PAPO_GST_PLUGIN_DIR}"
+            NO_DEFAULT_PATH REQUIRED)
+        list(APPEND PAPO_VOICE_PLUGINS "${voice_plugin_${plugin}}")
+    endforeach()
     configure_file(${PROJECT_SOURCE_DIR}/cmake/BundleRuntime.cmake.in
                    ${PROJECT_BINARY_DIR}/BundleRuntime.in @ONLY)
     file(

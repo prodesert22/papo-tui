@@ -16,6 +16,7 @@ typedef enum {
     STATUS_CLIPBOARD,
     STATUS_NOTIFICATIONS,
     STATUS_DESKTOP,
+    STATUS_VOICE,
     STATUS_CONTEXT_COUNT
 } status_context;
 

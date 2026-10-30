@@ -80,13 +80,12 @@ help_context conversation_help_context(view *ui, const char **area)
 
 static void open_settings(view *ui, const profile_config *config)
 {
-    media_view_suspend(ui->media);
     mention_popup_close(ui->mentions);
     emoji_picker_close(ui->emojis);
     conversation_interactions_close(ui);
     ui->reaction_picker = false;
     r8_modal_close(ui->r8);
-    settings_open(&ui->settings, config);
+    settings_open(&ui->settings, config, history_voice(ui->model));
 }
 
 bool conversation_poll_editor(view *ui, auth_client *auth)
@@ -263,11 +262,27 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
     /* The player volume only reaches the profile once the player closes, so a
      * running player never writes the file for every key press. */
     int saved_volume = player_volume_get();
+    if (connections->config)
+        voice_configure(&connections->config->audio);
     while (!*interrupted) {
         if (ui->layout_failed)
             break;
         uint64_t visible_now = 0;
         net_now_ms(&visible_now);
+        text_input_event_reporting(ui->settings.open ? ui->settings.audio.push_to_talk
+                                                     : connections->config &&
+                                                           connections->config->audio.push_to_talk);
+        bool voice_modal = ui->help.open || ui->settings.open || r8_modal_is_open(ui->r8) ||
+                           ui->duplicate_modal || ui->context_open || ui->reactors_open ||
+                           ui->remove_confirm || file_picker_open(ui->files) ||
+                           emoji_picker_open(ui->emojis) || mention_popup_open(ui->mentions) ||
+                           media_view_modal(ui->media) || conversation_members_modal(ui);
+        if (voice_ptt_pressed() &&
+            (voice_modal || (!text_terminal_focus_unknown() && !text_terminal_focused())))
+            voice_ptt(false);
+        const audio_config *audio = connections->config ? &connections->config->audio : NULL;
+        text_push_to_talk_configure(
+            audio && audio->push_to_talk && voice_active() && !voice_modal ? &audio->ptt : NULL);
         if (ui->help.open || !ui->body || !ui->at_end || r8_modal_is_open(ui->r8) ||
             ui->settings.open || ui->duplicate_modal || file_picker_open(ui->files) ||
             ui->remove_confirm || mention_popup_open(ui->mentions) ||
@@ -465,7 +480,23 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                              : graphics_terminal_input(&key);
         if (type == ERR)
             continue;
+        if (type == KEY_CODE_YES &&
+            (key == TEXT_PTT_PRESS || key == TEXT_PTT_RELEASE || key == TEXT_PTT_TOGGLE)) {
+            if (key == TEXT_PTT_RELEASE)
+                voice_ptt(false);
+            else if (!voice_modal && voice_active() && audio && audio->push_to_talk) {
+                if (key == TEXT_PTT_TOGGLE)
+                    voice_ptt(!voice_ptt_pressed());
+                else if (text_keyboard_events_supported())
+                    voice_ptt(true);
+            }
+            redraw = true;
+            scope = DRAW_ALL;
+            continue;
+        }
         if (type == KEY_CODE_YES && (key == TEXT_FOCUS_IN || key == TEXT_FOCUS_OUT)) {
+            if (key == TEXT_FOCUS_OUT)
+                voice_ptt(false);
             ui->view_requested_until = 0;
             redraw = true;
             scope = DRAW_ALL;
@@ -779,7 +810,9 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             continue;
         }
         if ((type == OK && key == '\t') || (type == KEY_CODE_YES && key == KEY_BTAB)) {
-            int order[13] = {SERVER_TABS, LIST_BUTTONS, CHANNEL_LIST, SETTINGS_BUTTON,
+            /* The order follows the screen. The voice buttons come last, so the
+             * existing areas keep their relative order. */
+            int order[20] = {SERVER_TABS, LIST_BUTTONS, CHANNEL_LIST, SETTINGS_BUTTON,
                              HISTORY_PANEL};
             int count = 5, at = 0;
             if (conversation_input(ui)) {
@@ -796,6 +829,15 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             order[count++] = MEMBERS_BUTTON;
             if (ui->members_open)
                 order[count++] = MEMBERS_PANEL;
+            if (voice_available()) {
+                order[count++] = VOICE_OUTPUT_BUTTON;
+                order[count++] = VOICE_MICROPHONE_BUTTON;
+                if (voice_active()) {
+                    order[count++] = VOICE_LEAVE_BUTTON;
+                    if (connections->config && connections->config->audio.push_to_talk)
+                        order[count++] = VOICE_PTT_BUTTON;
+                }
+            }
             while (at < count && order[at] != ui->focus)
                 ++at;
             conversation_set_focus(ui, order[(at + (type == OK ? 1 : count - 1)) % count]);
@@ -818,6 +860,24 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             size_t count = ui_mouse_events(events, 64);
             for (size_t event_index = 0; event_index < count; ++event_index) {
                 MEVENT e = events[event_index];
+                if (audio && audio->push_to_talk && voice_active() && !voice_modal &&
+                    audio->ptt.kind == KEY_BINDING_MOUSE &&
+                    ((audio->ptt.code == 4 && (e.bstate & BUTTON4_PRESSED)) ||
+                     (audio->ptt.code == 5 && (e.bstate & BUTTON5_PRESSED)))) {
+                    voice_ptt(!voice_ptt_pressed());
+                    scope = DRAW_ALL;
+                    continue;
+                }
+                if (e.bstate & BUTTON1_RELEASED)
+                    voice_ptt(false);
+                if (ui->list && voice_active() && ui->voice_ptt_hit.width &&
+                    e.y == getbegy(ui->list) + getmaxy(ui->list) - 6 &&
+                    conversation_hit(ui->voice_ptt_hit, e.x - getbegx(ui->list)) &&
+                    (e.bstate & BUTTON1_PRESSED)) {
+                    voice_ptt(true);
+                    scope = DRAW_ALL;
+                    continue;
+                }
                 if (ui->footer && (e.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED)) &&
                     e.y == getbegy(ui->footer) + 1 && e.x >= getbegx(ui->footer) + 1 &&
                     e.x < getbegx(ui->footer) + 1 + text_label(NULL, 0, 0, 128, UI_HELP_HINT)) {
@@ -983,21 +1043,41 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 y = e.y;
                 x = e.x;
                 if (ui->list && wmouse_trafo(ui->list, &y, &x, false)) {
-                    if (y >= getmaxy(ui->list) - 3) {
-                        if (y == getmaxy(ui->list) - 2 && x >= getmaxx(ui->list) - 6) {
-                            open_settings(ui, connections->config);
+                    if (voice_active() && y == getmaxy(ui->list) - 5 &&
+                        conversation_hit(ui->voice_leave_hit, x)) {
+                        voice_leave(voice_active());
+                        scope = DRAW_ALL;
+                        continue;
+                    }
+                    if (y >= getmaxy(ui->list) - 4) {
+                        if (y == getmaxy(ui->list) - 2) {
+                            if (conversation_hit(ui->voice_output_hit, x)) {
+                                voice_output_toggle();
+                                ui->feedback = voice_output_enabled()
+                                                   ? "Áudio da chamada ativado."
+                                                   : "Áudio da chamada desativado.";
+                            } else if (conversation_hit(ui->voice_microphone_hit, x)) {
+                                voice_microphone_toggle();
+                                ui->feedback = voice_microphone_enabled() ? "Microfone ativado."
+                                                                          : "Microfone desativado.";
+                            } else if (x >= getmaxx(ui->list) - 6 && x < getmaxx(ui->list) - 1)
+                                open_settings(ui, connections->config);
                             scope = DRAW_ALL;
                         }
                         continue;
                     }
-                    size_t index = y >= 1 ? (size_t)(ui->first_channel + y - 1) : SIZE_MAX;
+                    const char *participant = NULL;
+                    size_t index = y >= 1 && y <= conversation_list_rows(ui)
+                                       ? conversation_list_visual_hit(
+                                             ui, (size_t)(ui->first_channel + y - 1), &participant)
+                                       : SIZE_MAX;
                     if (y == 0 && x >= 1 && x < 19) {
                         conversation_switch_list(ui, x >= 11);
                         ui->navigating = false;
                         conversation_set_focus(ui, ui->list_dms ? CHANNEL_LIST : LIST_BUTTONS);
                         scope = DRAW_ALL;
-                    } else if (y < getmaxy(ui->list) - 3 && index < conversation_list_count(ui)) {
-                        if (conversation_list_selectable(ui, index)) {
+                    } else if (y < getmaxy(ui->list) - 4 && index < conversation_list_count(ui)) {
+                        if (!participant && conversation_list_selectable(ui, index)) {
                             ui->highlighted = index;
                             conversation_open_channel(ui, false);
                             if (ui->list_dms && COLS >= 80) {
@@ -1031,10 +1111,25 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             }
             continue;
         }
-        if (ui->focus == SETTINGS_BUTTON) {
-            if (enter || (type == OK && key == ' '))
-                open_settings(ui, connections->config);
-            else if (type == KEY_CODE_YES && key == KEY_UP)
+        if (ui->focus == SETTINGS_BUTTON || ui->focus == VOICE_OUTPUT_BUTTON ||
+            ui->focus == VOICE_MICROPHONE_BUTTON || ui->focus == VOICE_LEAVE_BUTTON ||
+            ui->focus == VOICE_PTT_BUTTON) {
+            if (enter || (type == OK && key == ' ')) {
+                if (ui->focus == SETTINGS_BUTTON)
+                    open_settings(ui, connections->config);
+                else if (ui->focus == VOICE_OUTPUT_BUTTON) {
+                    voice_output_toggle();
+                    ui->feedback = voice_output_enabled() ? "Áudio da chamada ativado."
+                                                          : "Áudio da chamada desativado.";
+                } else if (ui->focus == VOICE_MICROPHONE_BUTTON) {
+                    voice_microphone_toggle();
+                    ui->feedback =
+                        voice_microphone_enabled() ? "Microfone ativado." : "Microfone desativado.";
+                } else if (ui->focus == VOICE_LEAVE_BUTTON)
+                    voice_leave(voice_active());
+                else
+                    ui->feedback = "Segure com o mouse ou use a tecla configurada em Áudio.";
+            } else if (type == KEY_CODE_YES && key == KEY_UP)
                 conversation_set_focus(ui, CHANNEL_LIST);
             else if (type == KEY_CODE_YES && key == KEY_DOWN)
                 conversation_set_focus(ui, HISTORY_PANEL);
@@ -1237,6 +1332,9 @@ finished:
     for (size_t i = 0; i < HISTORY_MESSAGE_LIMIT; ++i)
         conversation_release_layout(ui, &ui->layouts[i]);
     settings_close(&ui->settings);
+    voice_ptt(false);
+    text_push_to_talk_configure(NULL);
+    text_input_event_reporting(false);
     media_view_suspend(ui->media);
     conversation_destroy_layout(ui);
     if (ui->model)
