@@ -758,8 +758,11 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
         if (!blank(b, false, false, false, 0))
             goto error;
         bool app = history_message_webhook(m);
+        /* Optimistic entries carry a local status, shown at the right edge. */
+        const char *status = str(m, "_papo_status");
+        int status_width = *status ? text_label(NULL, 0, 0, 40, status) : 0;
         int metadata = text_label(NULL, 0, 0, 200, timestamp) + (*str(m, "edited_at") ? 12 : 3) +
-                       (app ? 6 : 0);
+                       (app ? 6 : 0) + (status_width ? status_width + 2 : 0);
         int author_width = width - author_x - metadata;
         if (author_width < 4)
             author_width = 4;
@@ -786,6 +789,14 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
         size_t header_end;
         if (!column(b, 0, "header", label, author_x, width - author_x, true, false, 0, &header_end))
             goto error;
+        if (status_width && status_width < width - author_x) {
+            size_t status_end;
+            if (!column(b, 0, "status", status, width - status_width, status_width,
+                        !strcmp(status, "falhou"), false, 0, &status_end))
+                goto error;
+            message_row *first = &b->rows[0];
+            first->segments[first->count - 1].muted = strcmp(status, "falhou") != 0;
+        }
         for (size_t i = 0; i < header_end; ++i) {
             message_segment *segment = &b->rows[i].segments[0];
             text_buffer text;

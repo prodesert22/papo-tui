@@ -21,6 +21,7 @@ typedef struct {
 } draft;
 typedef struct {
     uint64_t id, generation, revision;
+    int64_t submitted_at; /* Wall-clock seconds, for the optimistic history entry. */
     outbox_state state;
     long status;
     char channel[64];
@@ -353,6 +354,7 @@ static outbox_submit_result enqueue(outbox *box, const char *channel, const char
         dispose_operation(slot);
     slot->id = ++box->next_id;
     slot->generation = box->generation;
+    slot->submitted_at = g_get_real_time() / G_USEC_PER_SEC;
     slot->revision = editor ? editor->revision : 0;
     snprintf(slot->reply, sizeof(slot->reply), "%s", reply ? reply : "");
     slot->reply_revision = editor ? editor->reply_revision : 0;
@@ -367,34 +369,7 @@ static outbox_submit_result enqueue(outbox *box, const char *channel, const char
     return OUTBOX_ACCEPTED;
 }
 
-outbox_submit_result outbox_submit(outbox *box, const char *channel, bool accept_duplicate,
-                                   uint64_t *id)
-{
-    if (!box || !valid_channel(channel))
-        return OUTBOX_INVALID;
-    if (!synchronize(box))
-        return OUTBOX_NO_SESSION;
-    draft *item = find_draft(box, channel, false);
-    return enqueue(box, channel, item && item->text ? item->text : "", item ? item->reply : "",
-                   item ? item->files : NULL, accept_duplicate, id);
-}
-
-outbox_submit_result outbox_retry(outbox *box, uint64_t id, bool accept_duplicate, uint64_t *new_id)
-{
-    if (!box || !synchronize(box))
-        return OUTBOX_NO_SESSION;
-    operation *item = find_operation(box, id);
-    if (!item)
-        return OUTBOX_INVALID;
-    if (item->state != OUTBOX_FAILED && item->state != OUTBOX_UNCERTAIN)
-        return OUTBOX_BUSY;
-    if (item->state == OUTBOX_UNCERTAIN && !accept_duplicate)
-        return OUTBOX_CONFIRM_DUPLICATION;
-    return enqueue(box, item->channel, item->text, item->reply, item->files, accept_duplicate,
-                   new_id);
-}
-
-static void consume_confirmation(outbox *box, operation *item)
+static void consume_draft(outbox *box, operation *item)
 {
     draft *editor = find_draft(box, item->channel, false);
     if (!editor)
@@ -420,6 +395,52 @@ static void consume_confirmation(outbox *box, operation *item)
     ++editor->revision;
 }
 
+outbox_submit_result outbox_submit(outbox *box, const char *channel, bool accept_duplicate,
+                                   uint64_t *id)
+{
+    if (!box || !valid_channel(channel))
+        return OUTBOX_INVALID;
+    if (!synchronize(box))
+        return OUTBOX_NO_SESSION;
+    draft *item = find_draft(box, channel, false);
+    uint64_t accepted = 0;
+    outbox_submit_result result =
+        enqueue(box, channel, item && item->text ? item->text : "", item ? item->reply : "",
+                item ? item->files : NULL, accept_duplicate, &accepted);
+    if (result == OUTBOX_ACCEPTED) {
+        /* The message appears in the history at once; its text, reply and files
+         * leave the editor now and stay retryable in the operation. */
+        operation *sent = find_operation(box, accepted);
+        consume_draft(box, sent);
+        sent->prefix_untouched = false;
+    }
+    if (id)
+        *id = accepted;
+    return result;
+}
+
+outbox_submit_result outbox_retry(outbox *box, uint64_t id, bool accept_duplicate, uint64_t *new_id)
+{
+    if (!box || !synchronize(box))
+        return OUTBOX_NO_SESSION;
+    operation *item = find_operation(box, id);
+    if (!item)
+        return OUTBOX_INVALID;
+    if (item->state != OUTBOX_FAILED && item->state != OUTBOX_UNCERTAIN)
+        return OUTBOX_BUSY;
+    if (item->state == OUTBOX_UNCERTAIN && !accept_duplicate)
+        return OUTBOX_CONFIRM_DUPLICATION;
+    uint64_t accepted = 0;
+    outbox_submit_result result = enqueue(box, item->channel, item->text, item->reply, item->files,
+                                          accept_duplicate, &accepted);
+    /* The retry replaces the failed entry instead of showing the text twice. */
+    if (result == OUTBOX_ACCEPTED && (item = find_operation(box, id)))
+        dispose_operation(item);
+    if (new_id)
+        *new_id = accepted;
+    return result;
+}
+
 void outbox_poll(outbox *box)
 {
     if (!box)
@@ -440,7 +461,7 @@ void outbox_poll(outbox *box)
             if (item->state == OUTBOX_CONFIRMED) {
                 item->confirmed = message;
                 message = NULL;
-                consume_confirmation(box, item);
+                consume_draft(box, item);
             }
         }
         json_decref(message);
@@ -497,7 +518,32 @@ static void view(const operation *item, outbox_operation *value)
                                 .content = item->text ? item->text : "",
                                 .reply_to = item->reply,
                                 .transmitted = item->transmitted,
-                                .cancelled = item->cancelled};
+                                .cancelled = item->cancelled,
+                                .submitted_at = item->submitted_at,
+                                .file_count = item->files ? item->files->len : 0};
+}
+
+size_t outbox_unconfirmed(outbox *box, const char *channel, outbox_operation *values, size_t limit)
+{
+    if (!box || !valid_channel(channel) || !synchronize(box))
+        return 0;
+    size_t count = 0;
+    uint64_t after = 0;
+    while (count < limit) {
+        operation *next = NULL;
+        for (size_t i = 0; i < OUTBOX_OPERATION_LIMIT; ++i) {
+            operation *item = &box->operations[i];
+            if (item->id > after && item->state != OUTBOX_CONFIRMED &&
+                item->generation == box->generation && !strcmp(item->channel, channel) &&
+                (!next || item->id < next->id))
+                next = item;
+        }
+        if (!next)
+            break;
+        view(next, &values[count++]);
+        after = next->id;
+    }
+    return count;
 }
 
 bool outbox_get_operation(outbox *box, uint64_t id, outbox_operation *value)

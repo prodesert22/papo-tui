@@ -41,7 +41,7 @@ class Sending(unittest.TestCase):
             )
             self.assertEqual(server.sent_messages[0]["content"], "")
 
-    def test_new_attachment_does_not_bypass_uncertain_send_confirmation(self):
+    def test_attachment_added_after_uncertain_send_is_a_new_message(self):
         with tempfile.TemporaryDirectory() as folder, MockServer("send-drop") as server:
             first, later = Path(folder, "first.txt"), Path(folder, "later.txt")
             first.write_text("first")
@@ -53,8 +53,11 @@ class Sending(unittest.TestCase):
                 PAPO_SEND_FILES=str(first),
                 PAPO_SEND_LATER_FILE=str(later),
             )
-            self.assertTrue(result["need_confirmation"])
-            self.assertEqual(result["draft_files"], 2)
+            # The uncertain send kept its file; the later file is a new draft,
+            # not a resubmission, so it needs no duplication confirmation.
+            self.assertFalse(result["need_confirmation"])
+            self.assertEqual(result["operation_files"], 1)
+            # The uncertain send itself is never replayed.
             self.assertEqual(server.message_count, 1)
 
     def test_attachment_rejections_and_uncertain_retry_preserve_original_bytes(self):
@@ -76,7 +79,10 @@ class Sending(unittest.TestCase):
                     all(parts[0]["data"] == b"\x00original\xff" for parts in server.uploads)
                 )
                 self.assertEqual(server.message_count, 2 if mode == "retry" else 1)
-                self.assertEqual(result["draft_files"], 0 if mode == "retry" else 1)
+                # Submitted files leave the draft and stay in the retryable operation.
+                self.assertEqual(result["draft_files"], 0)
+                if mode != "retry":
+                    self.assertEqual(result["operation_files"], 1)
 
     def probe(self, server, mode="send", **settings):
         result = subprocess.run(
@@ -126,7 +132,7 @@ class Sending(unittest.TestCase):
                 self.assertEqual(result["draft"], expected)
                 self.assertEqual(server.message_count, 1)
 
-    def test_rejections_preserve_draft_without_retry(self):
+    def test_rejections_keep_text_retryable_without_retry(self):
         for scenario, code in (
             ("send-validation", 400),
             ("send-auth", 401),
@@ -138,7 +144,8 @@ class Sending(unittest.TestCase):
                 result = self.probe(server)
                 self.assertEqual(result["state"], FAILED)
                 self.assertEqual(result["status"], code)
-                self.assertEqual(result["draft"], TEXT)
+                self.assertEqual(result["draft"], "")
+                self.assertEqual(result["content"], TEXT)
                 self.assertEqual(server.message_count, 1)
                 if code == 401:
                     self.assertEqual(server.refresh_count, 1)
@@ -155,7 +162,8 @@ class Sending(unittest.TestCase):
             with self.subTest(scenario=scenario), MockServer(scenario) as server:
                 result = self.probe(server)
                 self.assertEqual(result["state"], UNCERTAIN)
-                self.assertEqual(result["draft"], TEXT)
+                self.assertEqual(result["draft"], "")
+                self.assertEqual(result["content"], TEXT)
                 self.assertEqual(server.message_count, 1)
                 self.assertEqual(result["confirmed_count"], 0)
 
@@ -163,7 +171,8 @@ class Sending(unittest.TestCase):
         with MockServer("send-timeout") as server:
             result = self.probe(server)
             self.assertEqual(result["state"], UNCERTAIN)
-            self.assertEqual(result["draft"], TEXT)
+            self.assertEqual(result["draft"], "")
+            self.assertEqual(result["content"], TEXT)
             self.assertTrue(result["transmitted"])
             self.assertEqual(server.message_count, 1)
             self.assertEqual(len(server.sent_messages), 1)
@@ -197,7 +206,7 @@ class Sending(unittest.TestCase):
             self.assertEqual(result["state"], FAILED)
             self.assertFalse(result["transmitted"])
             self.assertEqual(server.message_count, 0)
-            self.assertEqual(result["draft"], TEXT)
+            self.assertEqual(result["content"], TEXT)
         with tempfile.TemporaryDirectory() as folder, MockServer("send-cancel") as server:
             received = Path(folder, "received")
             server.message_hook = lambda _message: received.touch()
@@ -205,7 +214,7 @@ class Sending(unittest.TestCase):
             self.assertEqual(result["state"], UNCERTAIN)
             self.assertTrue(result["transmitted"])
             self.assertEqual(server.message_count, 1)
-            self.assertEqual(result["draft"], TEXT)
+            self.assertEqual(result["content"], TEXT)
 
     def test_instance_switch_does_not_share_same_uuid_drafts_or_results(self):
         with MockServer() as first, MockServer() as second:

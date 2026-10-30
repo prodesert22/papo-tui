@@ -109,7 +109,7 @@ class PermissionsIntegration(unittest.TestCase):
         )
         return json.loads(line)
 
-    def test_revocation_cancels_rate_queued_send_without_http_or_draft_loss(self):
+    def test_revocation_cancels_rate_queued_send_without_http_or_text_loss(self):
         with PermissionServer() as server:
             process = self.start_probe(server)
             self.assertTrue(self.command(process, "queue-send")["accepted"])
@@ -118,7 +118,7 @@ class PermissionsIntegration(unittest.TestCase):
             self.assertEqual(result["send"], DENIED)
             self.assertEqual(result["manage_roles"], DENIED)
             self.assertEqual(result["state"], 3)
-            self.assertEqual(result["draft"], "Preserved queued draft")
+            self.assertEqual(result["content"], "Preserved queued draft")
             self.assertEqual(server.message_count, 0)
             self.assertTrue(result["session"])
 
@@ -134,8 +134,8 @@ class PermissionsIntegration(unittest.TestCase):
             result = self.command(process, "poll-long")
             self.assertEqual(result["send"], ALLOWED)
             self.assertEqual(result["state"], 3)
-            self.assertEqual(result["draft_files"], 1)
-            self.assertEqual(result["draft"], "Preserved attachment draft")
+            self.assertEqual(result["operation_files"], 1)
+            self.assertEqual(result["content"], "Preserved attachment draft")
             self.assertEqual(server.message_count, 0)
 
     def test_pin_role_revocation_blocks_queued_pin_and_unpin(self):

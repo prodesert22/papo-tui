@@ -88,6 +88,61 @@ static void open_settings(view *ui, const profile_config *config)
     settings_open(&ui->settings, config, history_voice(ui->model));
 }
 
+/* Rebuilds the optimistic entries of the open conversation when the outbox
+ * changes. Each shows the submitted text with a status tag until the server
+ * confirms it and the definitive message replaces it. */
+static bool refresh_pending(view *ui, auth_client *auth)
+{
+    outbox_operation operations[OUTBOX_OPERATION_LIMIT];
+    size_t count = *ui->editor_channel
+                       ? outbox_unconfirmed(send_editor_outbox(ui->editor), ui->editor_channel,
+                                            operations, OUTBOX_OPERATION_LIMIT)
+                       : 0;
+    uint64_t signature = 1469598103934665603ULL ^ auth_context_generation(auth);
+    for (size_t i = 0; i < count; ++i)
+        signature = (signature ^ (operations[i].id * 31 + operations[i].state)) * 1099511628211ULL;
+    signature = (signature ^ count) * 1099511628211ULL;
+    if (ui->pending && signature == ui->pending_signature)
+        return false;
+    json_t *entries = json_array();
+    if (!entries)
+        return false;
+    for (size_t i = 0; i < count; ++i) {
+        const outbox_operation *operation = &operations[i];
+        if (operation->generation != auth_context_generation(auth))
+            continue;
+        char id[48];
+        snprintf(id, sizeof(id), "pending-%llu", (unsigned long long)operation->id);
+        GDateTime *time = g_date_time_new_from_unix_utc(operation->submitted_at);
+        char *created = time ? g_date_time_format(time, "%Y-%m-%dT%H:%M:%SZ") : NULL;
+        if (time)
+            g_date_time_unref(time);
+        char *content =
+            operation->file_count
+                ? g_strdup_printf("%s%s📎 %zu %s", operation->content,
+                                  *operation->content ? "\n" : "", operation->file_count,
+                                  operation->file_count == 1 ? "anexo" : "anexos")
+                : g_strdup(operation->content);
+        const char *status = operation->state == OUTBOX_FAILED      ? "falhou"
+                             : operation->state == OUTBOX_UNCERTAIN ? "não confirmado"
+                                                                    : "enviando";
+        json_t *entry = json_pack("{s:s,s:s,s:s,s:s,s:s,s:s,s:s}", "id", id, "channel_id",
+                                  ui->editor_channel, "author_id", auth_user_id(auth), "content",
+                                  content ? content : "", "created_at", created ? created : "",
+                                  "reply_to", operation->reply_to, "_papo_status", status);
+        g_free(content);
+        g_free(created);
+        if (!entry || json_array_append_new(entries, entry)) {
+            json_decref(entries);
+            return false;
+        }
+    }
+    json_decref(ui->pending);
+    ui->pending = entries;
+    ui->pending_signature = signature;
+    return true;
+}
+
 bool conversation_poll_editor(view *ui, auth_client *auth)
 {
     const char *notice = send_editor_notice(ui->editor);
@@ -109,6 +164,7 @@ bool conversation_poll_editor(view *ui, auth_client *auth)
         outbox_reconciled(send_editor_outbox(ui->editor), operation.id);
         changed = true;
     }
+    changed |= refresh_pending(ui, auth);
     if (!auth_has_session(auth) && ui->duplicate_modal) {
         conversation_close_confirmation(ui);
         changed = true;
@@ -245,6 +301,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         r8_modal_destroy(ui->r8);
         conversation_destroy_layout(ui);
         g_hash_table_destroy(ui->layout_index);
+        json_decref(ui->pending);
         free(ui);
         return HISTORY_ACCOUNT;
     }
@@ -1342,6 +1399,7 @@ finished:
     help_destroy(&ui->help);
     r8_modal_destroy(ui->r8);
     g_hash_table_destroy(ui->layout_index);
+    json_decref(ui->pending);
     free(ui);
     touchwin(stdscr);
     return result;

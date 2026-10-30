@@ -680,7 +680,7 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
             if (!auth_has_session(auth))
                 text_label(ui->body, ui->history_top, 2, getmaxx(ui->body) - 4,
                            "Revalidando sessão…");
-            else if (history_message_count(ui->model)) {
+            else if (conversation_entry_count(ui)) {
                 int ignored;
                 ui->first = conversation_position(ui);
                 conversation_walk(ui, ui->first, true, false, &ignored);

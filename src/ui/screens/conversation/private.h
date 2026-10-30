@@ -151,6 +151,10 @@ typedef struct {
         conversation_hit, search_hit, pins_hit, attach_button_hit, emoji_button_hit;
     char anchor[37];
     char editor_channel[64];
+    /* Optimistic history entries for unconfirmed sends, owned; rebuilt when
+     * an operation of the open conversation changes state. */
+    json_t *pending;
+    uint64_t pending_signature;
     const char *feedback;
     status_bar status;
     uint64_t notice_revisions[HISTORY_NOTICE_COUNT];
@@ -213,6 +217,11 @@ const char *conversation_reply_target(view *ui);
 void conversation_draw_tabs(view *ui);
 void conversation_release_layout(view *ui, cached_layout *c);
 cached_layout *conversation_find_layout(view *ui, size_t index, int width);
+/* History messages followed by optimistic entries on the latest page. Only the
+ * walk and scrolling see these entries; selection and actions use the model. */
+size_t conversation_entry_count(view *ui);
+json_t *conversation_entry(view *ui, size_t index);
+bool conversation_entry_pending(view *ui, size_t index);
 void conversation_account_layout(view *ui, cached_layout *c);
 int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor);
 int conversation_position(view *ui);

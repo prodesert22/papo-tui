@@ -100,7 +100,14 @@ int main(int argc, char **argv)
     }
     outbox_submit_result submitted =
         !strcmp(mode, "read") ? OUTBOX_EMPTY : outbox_submit(box, channel, false, &id);
-    bool busy = id && outbox_submit(box, channel, false, NULL) == OUTBOX_BUSY;
+    /* An accepted send empties the draft; a new text cannot start a second send
+     * of the same channel while the first is in flight. */
+    bool busy = false;
+    if (id && strcmp(mode, "files-uncertain-append")) {
+        outbox_set_draft(box, channel, "Segundo envio");
+        busy = outbox_submit(box, channel, false, NULL) == OUTBOX_BUSY;
+        outbox_set_draft(box, channel, "");
+    }
     if (id && paths) {
         gchar **files = g_strsplit(paths, "\n", -1);
         for (size_t i = 0; files[i]; ++i)
@@ -130,10 +137,11 @@ int main(int argc, char **argv)
                 !strcmp(mode, "grapheme") || !strcmp(mode, "emoji-append") ||
                 !strcmp(mode, "channels"))
                 tick(session, box, 40);
-            if (!strcmp(mode, "append") || !strcmp(mode, "emoji-append") ||
-                !strcmp(mode, "restore")) {
-                if (!strcmp(mode, "restore"))
-                    outbox_set_draft(box, channel, "Rascunho alterado");
+            /* The editor is already empty: typing continues a new draft. */
+            if (!strcmp(mode, "append") || !strcmp(mode, "emoji-append"))
+                outbox_set_draft(box, channel, " continuação");
+            if (!strcmp(mode, "restore")) {
+                outbox_set_draft(box, channel, "Rascunho alterado");
                 char edited[OUTBOX_TEXT_BYTES];
                 snprintf(edited, sizeof(edited), "%s continuação", text);
                 outbox_set_draft(box, channel, edited);
@@ -230,6 +238,9 @@ int main(int argc, char **argv)
     json_object_set_new(result, "session", json_boolean(auth_has_session(session)));
     const GPtrArray *files = outbox_attachments(box, channel);
     json_object_set_new(result, "draft_files", json_integer(files ? files->len : 0));
+    json_object_set_new(result, "content", json_string(result_ready ? operation.content : ""));
+    json_object_set_new(result, "operation_files",
+                        json_integer(result_ready ? (json_int_t)operation.file_count : 0));
     if (last_message)
         json_object_set(result, "message", last_message);
     if (!strcmp(mode, "read")) {

@@ -100,6 +100,7 @@ class MockServer:
         self.multipart_types = []
         self.uploads = []
         self.message_received = threading.Event()
+        self.send_release = threading.Event()  # Releases a held send-held POST.
         self.name = "Comunidade"
         self.cookie_max_age = None
         self.redirect_url = "/different"
@@ -471,6 +472,8 @@ class MockServer:
                 scenario = outer.scenario
                 if scenario == "send-delayed":
                     outer.stopping.wait(0.3)
+                if scenario == "send-held":
+                    outer.send_release.wait(10)
                 codes = {
                     "send-validation": 400,
                     "send-auth": 401,

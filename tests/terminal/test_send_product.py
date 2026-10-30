@@ -10,6 +10,40 @@ import terminal_send as support
 
 
 class SendProduct(support.SendProduct):
+    def history_text(self, terminal):
+        first, _ = editor_region(terminal)
+        return "\n".join(terminal.screen.display[:first])
+
+    def test_optimistic_message_shows_sending_until_confirmed(self):
+        with HistoryMock(count=0) as server:
+            server.scenario = "send-held"
+            terminal = self.open(server)
+            try:
+                terminal.send("Mensagem otimista\n")
+                self.wait(terminal, "enviando")
+                # The POST is still held: the text already left the editor.
+                self.assertIn("Mensagem otimista", self.history_text(terminal))
+                self.assertNotIn("Mensagem otimista", self.editor_text(terminal))
+                self.assertIn("josé", self.history_text(terminal))
+                # No server identity yet: a right click opens no message actions.
+                row = next(
+                    y
+                    for y, line in enumerate(terminal.screen.display)
+                    if "Mensagem otimista" in line
+                )
+                column = terminal.screen.display[row].index("Mensagem otimista")
+                terminal.send(f"\x1b[<2;{column + 1};{row + 1}M\x1b[<2;{column + 1};{row + 1}m")
+                terminal.read(0.3)
+                self.assertNotIn("Responder", self.screen(terminal))
+                server.send_release.set()
+                self.wait(terminal, "Mensagem confirmada")
+                self.assertNotIn("enviando", self.screen(terminal))
+                self.assertEqual(self.history_text(terminal).count("Mensagem otimista"), 1)
+                self.assertEqual(server.message_count, 1)
+            finally:
+                server.send_release.set()
+                self.assertTrue(terminal.close())
+
     def test_confirmed_message_merges_without_get_and_keeps_later_edits(self):
         with HistoryMock(count=0) as server:
             server.scenario = "send-delayed"
@@ -83,19 +117,23 @@ class SendProduct(support.SendProduct):
             finally:
                 self.assertTrue(terminal.close())
 
-    def test_permission_error_retains_draft_and_manual_retry(self):
+    def test_permission_error_keeps_failed_message_and_manual_retry(self):
         with HistoryMock(count=0) as server:
             server.scenario = "send-forbidden"
             terminal = self.open(server)
             try:
                 terminal.send("Texto preservado\n")
                 self.wait(terminal, "Sem permissão")
-                self.assertIn("Texto preservado", self.editor_text(terminal))
+                self.wait(terminal, "falhou")
+                self.assertIn("Texto preservado", self.history_text(terminal))
+                self.assertNotIn("Texto preservado", self.editor_text(terminal))
                 server.scenario = "public"
                 terminal.send("\x19")
                 self.wait(terminal, "Mensagem confirmada")
                 self.assertEqual(server.message_count, 2)
-                self.assertNotIn("Texto preservado", self.editor_text(terminal))
+                # The retry replaces the failed entry instead of showing it twice.
+                self.assertNotIn("falhou", self.screen(terminal))
+                self.assertEqual(self.history_text(terminal).count("Texto preservado"), 1)
             finally:
                 self.assertTrue(terminal.close())
 
@@ -112,7 +150,7 @@ class SendProduct(support.SendProduct):
             finally:
                 self.assertTrue(terminal.close())
 
-    def test_send_failures_keep_draft_and_401_refresh_never_replays(self):
+    def test_send_failures_keep_failed_message_and_401_refresh_never_replays(self):
         cases = [
             ("send-validation", "Mensagem recusada"),
             ("send-missing", "Conversa indisponível"),
@@ -129,7 +167,10 @@ class SendProduct(support.SendProduct):
                     self.wait(terminal, notice)
                     terminal.read(0.4)
                     self.assertEqual(server.message_count, 1)
-                    self.assertIn("Texto após falha", self.editor_text(terminal))
+                    tag = "não confirmado" if scenario == "send-server" else "falhou"
+                    self.wait(terminal, tag)
+                    self.assertIn("Texto após falha", self.history_text(terminal))
+                    self.assertNotIn("Texto após falha", self.editor_text(terminal))
                     if scenario == "send-auth":
                         self.assertEqual(server.refresh_count, 1)
                 finally:
@@ -142,7 +183,8 @@ class SendProduct(support.SendProduct):
             try:
                 terminal.send("Mensagem incerta\n")
                 self.wait(terminal, "Envio sem confirmação")
-                terminal.send("\n")
+                self.wait(terminal, "não confirmado")
+                terminal.send("\x19")
                 self.wait(terminal, "Reenviar mensagem?")
                 terminal.send("\n")  # Default is Cancelar, never another POST.
                 self.assertEqual(server.message_count, 1)

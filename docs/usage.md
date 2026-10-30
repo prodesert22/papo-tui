@@ -46,6 +46,20 @@ leading selection marker. Type in the editor and press **Enter** to send;
 also inserts a new line. Pasting text does not send the message automatically.
 Switching conversations preserves drafts during the current run.
 
+A sent message appears at the end of the history at once, and the editor is
+cleared. Until the server confirms it, its header shows a tag at the right:
+
+- **enviando** (sending): the server has not confirmed the message yet. The tag
+  disappears when it does.
+- **falhou** (failed): the server rejected the message. Press **Ctrl+Y** to send
+  it again.
+- **não confirmado** (not confirmed): the connection failed after the message
+  may have reached the server. Check the history before pressing **Ctrl+Y**,
+  which asks for confirmation because it can duplicate the message.
+
+Messages that are still sending or failed cannot be selected, replied to,
+edited or reacted to, and they are not kept after the application closes.
+
 In terminals that support window titles, the title shows **channel | server**
 (or **DM com name | server** for a direct message). A count such as **(3)**
 shows the total known unread mentions across connected instances, including
@@ -600,9 +614,11 @@ original do not change an already prepared attachment. Local limits are **25
 files per message**, **512 MiB** of temporary attachment data across drafts and
 pending sends, and **64 MiB** per clipboard image. The server can reject uploads
 under its own policy. Read failures or insufficient temporary space show a
-notice; prepared files and your text remain available. Failed sends require an
-explicit retry with Ctrl+Y. If the result is uncertain, check history before
-confirming a retry, which can duplicate the message.
+notice; prepared files and your text remain available. A message with files
+shows **📎** and the number of files while it is sending. Failed sends keep
+their files and require an explicit retry with Ctrl+Y. If the result is
+uncertain, check history before confirming a retry, which can duplicate the
+message.
 
 ## Pinned messages and server search
 

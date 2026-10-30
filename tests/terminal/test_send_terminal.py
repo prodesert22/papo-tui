@@ -52,14 +52,16 @@ class SendTerminal(unittest.TestCase):
             finally:
                 self.assertTrue(terminal.close())
 
-    def test_rejection_keeps_editor_and_can_exit_while_sending(self):
+    def test_rejection_keeps_text_retryable_and_can_exit_while_sending(self):
         with MockServer("send-forbidden") as server:
             terminal = Terminal((server.url,))
             try:
                 self.wait(terminal, "Canal A")
                 terminal.send("Texto que deve ficar\n")
                 self.wait(terminal, "Sem permissão")
-                self.assertIn("Texto que deve ficar", terminal.screen.display[9])
+                # The editor empties on submit; the rejected text stays retryable.
+                self.assertNotIn("Texto que deve ficar", terminal.screen.display[9])
+                self.assertIn("Pendente: Texto que deve ficar", terminal.screen.display[4])
                 self.assertEqual(server.message_count, 1)
             finally:
                 self.assertTrue(terminal.close())
@@ -81,12 +83,15 @@ class SendTerminal(unittest.TestCase):
                 terminal.send("Mensagem incerta\n")
                 self.wait(terminal, "Envio sem confirmação")
                 self.assertEqual(server.message_count, 1)
-                terminal.send("\n")
+                terminal.send("\n")  # The editor is empty: Enter never resends.
+                terminal.read(0.2)
+                self.assertEqual(server.message_count, 1)
+                terminal.send("\x19")
                 self.wait(terminal, "Reenviar pode duplicar")
                 self.assertEqual(server.message_count, 1)
                 terminal.send("\x1b")
                 self.assertEqual(server.message_count, 1)
-                terminal.send("\n\n")
+                terminal.send("\x19\n")
                 self.wait(terminal, "Mensagem confirmada")
                 self.assertEqual(server.message_count, 2)
             finally:

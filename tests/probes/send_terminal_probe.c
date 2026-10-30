@@ -68,6 +68,7 @@ int main(int argc, char **argv)
         return 2;
     int selected = 0;
     bool paste = false, cr = false, confirm = false, quitting = false;
+    uint64_t retry_id = 0;
     const char *notice = "Enter envia · Tab troca canal · Ctrl+N quebra linha · Ctrl+Q sai";
     char confirmed[TEXT_UTF8_BYTES] = "";
     if (!initscr())
@@ -108,6 +109,13 @@ int main(int argc, char **argv)
         curs_set(0);
         text_label(stdscr, 1, 2, COLS - 4, "Validação do envio de texto");
         text_label(stdscr, 3, 2, COLS - 4, selected ? "Canal B" : "Canal A");
+        /* Accepted text leaves the editor at once; show the latest unconfirmed one. */
+        outbox_operation pending;
+        char line[TEXT_UTF8_BYTES + 32] = "";
+        if (outbox_latest(send_editor_outbox(editor), channels[selected], &pending) &&
+            pending.state != OUTBOX_CONFIRMED)
+            snprintf(line, sizeof(line), "Pendente: %s", pending.content);
+        text_label(stdscr, 4, 2, COLS - 4, line);
         text_label(stdscr, 5, 2, COLS - 4, "Última confirmação:");
         text_label(stdscr, 6, 2, COLS - 4, confirmed);
         text_label(stdscr, 8, 2, COLS - 4, "Mensagem:");
@@ -152,7 +160,10 @@ int main(int argc, char **argv)
         bool enter = type == OK && (key == '\n' || key == '\r');
         if (confirm) {
             if (!paste && enter) {
-                send_editor_submit(editor, true);
+                if (retry_id)
+                    send_editor_retry(editor, retry_id, true);
+                else
+                    send_editor_submit(editor, true);
                 confirm = false;
             } else if (!paste && type == OK && key == 27)
                 confirm = false;
@@ -166,7 +177,17 @@ int main(int argc, char **argv)
             continue;
         }
         if (!paste && enter) {
+            retry_id = 0;
             confirm = send_editor_submit(editor, false) == OUTBOX_CONFIRM_DUPLICATION;
+            continue;
+        }
+        if (!paste && type == OK && key == 25) { /* Ctrl+Y retries the latest failed send. */
+            outbox_operation latest;
+            if (outbox_latest(send_editor_outbox(editor), channels[selected], &latest) &&
+                (latest.state == OUTBOX_FAILED || latest.state == OUTBOX_UNCERTAIN)) {
+                retry_id = latest.id;
+                confirm = send_editor_retry(editor, latest.id, false) == OUTBOX_CONFIRM_DUPLICATION;
+            }
             continue;
         }
         if (!buffer || LINES < 14 || COLS < 44)

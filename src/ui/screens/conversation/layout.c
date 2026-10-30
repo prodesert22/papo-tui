@@ -68,9 +68,31 @@ void conversation_release_layout(view *ui, cached_layout *c)
     message_blocks_free(&c->blocks);
 }
 
+size_t conversation_entry_count(view *ui)
+{
+    size_t count = history_message_count(ui->model);
+    if (ui->pending && !history_has_newer(ui->model))
+        count += json_array_size(ui->pending);
+    return count;
+}
+
+json_t *conversation_entry(view *ui, size_t index)
+{
+    size_t count = history_message_count(ui->model);
+    if (index < count)
+        return history_message(ui->model, index);
+    return index < conversation_entry_count(ui) ? json_array_get(ui->pending, index - count) : NULL;
+}
+
+bool conversation_entry_pending(view *ui, size_t index)
+{
+    return index >= history_message_count(ui->model) && index < conversation_entry_count(ui);
+}
+
 cached_layout *conversation_find_layout(view *ui, size_t index, int width)
 {
-    json_t *m = history_message(ui->model, index);
+    json_t *m = conversation_entry(ui, index);
+    bool pending = conversation_entry_pending(ui, index);
     const char *id = conversation_str(m, "id");
     cached_layout *c = g_hash_table_lookup(ui->layout_index, id);
     if (!c) {
@@ -92,7 +114,8 @@ cached_layout *conversation_find_layout(view *ui, size_t index, int width)
         snprintf(c->id, sizeof(c->id), "%s", id);
         g_hash_table_insert(ui->layout_index, c->id, c);
     }
-    uint64_t revision = history_message_revision(ui->model, index),
+    uint64_t revision =
+                 pending ? ui->pending_signature : history_message_revision(ui->model, index),
              names = history_users_revision(ui->model);
     bool has_media = json_array_size(json_object_get(m, "attachments")) ||
                      json_array_size(json_object_get(m, "embeds"));
@@ -101,7 +124,9 @@ cached_layout *conversation_find_layout(view *ui, size_t index, int width)
         *conversation_str(m, "reply_to") ? history_reference_revision(ui->model) : 0;
     graphics_terminal terminal = graphics_terminal_get();
     bool graphics = terminal.supported && ui->media;
-    bool continuation = index && message_same_author(history_message(ui->model, index - 1), m);
+    /* An optimistic entry keeps its own header, which carries the status tag. */
+    bool continuation =
+        !pending && index && message_same_author(conversation_entry(ui, index - 1), m);
     uint64_t assets = chat_assets_emoji_revision(history_assets(ui->model));
     if (c->continuation != continuation || c->assets != assets ||
         c->calendar_day != ui->calendar_day || c->cell_width != terminal.cell_width ||
@@ -171,8 +196,9 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
             : 1;
     int group_start = 0;
     *anchor = 0;
-    for (size_t i = 0; i < history_message_count(ui->model); ++i) {
-        json_t *m = history_message(ui->model, i);
+    size_t entries = conversation_entry_count(ui);
+    for (size_t i = 0; i < entries; ++i) {
+        json_t *m = conversation_entry(ui, i);
         bool selected = (ui->navigating || ui->context_open || ui->reactors_open) &&
                         !strcmp(ui->selected_message, conversation_str(m, "id"));
         bool editing = !strcmp(ui->edit_message, conversation_str(m, "id"));
@@ -191,8 +217,9 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
         bool continuation = cached->continuation;
         if (!continuation)
             group_start = total;
-        bool followed = message_same_author(m, history_message(ui->model, i + 1));
-        bool compact_end = ui->visible == 1 && i + 1 == history_message_count(ui->model);
+        bool followed = !conversation_entry_pending(ui, i + 1) &&
+                        message_same_author(m, conversation_entry(ui, i + 1));
+        bool compact_end = ui->visible == 1 && i + 1 == entries;
         int measured_rows = cached->height;
         if (!bordered && (followed || compact_end) && measured_rows && cached->tail_gap)
             --measured_rows;
@@ -276,9 +303,11 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
             ui->selected_end = total + height;
         if (paint && ui->body && total + height > first && border_start < first + ui->visible) {
             int top = MAX(border_start, first), bottom = MIN(total + height, first + ui->visible);
-            conversation_message_hit(ui, conversation_str(m, "id"), MESSAGE_HIT,
-                                     getbegy(ui->body) + ui->history_top + top - first,
-                                     getbegx(ui->body), bottom - top, getmaxx(ui->body), 0);
+            /* Unconfirmed sends have no server identity to select or act on. */
+            if (!conversation_entry_pending(ui, i))
+                conversation_message_hit(ui, conversation_str(m, "id"), MESSAGE_HIT,
+                                         getbegy(ui->body) + ui->history_top + top - first,
+                                         getbegx(ui->body), bottom - top, getmaxx(ui->body), 0);
             if (bordered) {
                 if (selected && ui->selected_media >= blocks->media_count)
                     ui->selected_media = 0;

@@ -250,6 +250,18 @@ outbox_submit_result send_editor_submit(send_editor *editor, bool accept_duplica
     }
     outbox_submit_result result =
         outbox_submit(editor->box, editor->channel, accept_duplicate, NULL);
+    if (result == OUTBOX_ACCEPTED) {
+        /* The accepted text left the draft for the optimistic history entry;
+         * load the emptied draft before the next sync can write it back. */
+        uint64_t revision;
+        const char *draft = outbox_draft(editor->box, editor->channel, &revision);
+        text_buffer next;
+        if (draft && text_decode(&next, draft)) {
+            editor->text = next;
+            editor->revision = revision;
+            save_cursor(editor);
+        }
+    }
     submit_notice(editor, result);
     return result;
 }

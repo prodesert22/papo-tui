@@ -153,6 +153,10 @@ int main(int argc, char **argv)
                             json_integer(permissions_channel(p, argv[2], PERMISSION_READ_CHANNEL)));
         const GPtrArray *files = outbox_attachments(box, argv[2]);
         json_object_set_new(report, "draft_files", json_integer(files ? files->len : 0));
+        /* An accepted send leaves the draft; its text and files stay in the operation. */
+        json_object_set_new(report, "content", json_string(state >= 0 ? operation.content : ""));
+        json_object_set_new(report, "operation_files",
+                            json_integer(state >= 0 ? (json_int_t)operation.file_count : 0));
         json_object_set_new(report, "direct_status", json_integer(direct_status));
         const char *message_id = json_string_value(json_object_get(history_message(h, 0), "id"));
         json_object_set_new(report, "pin_state", json_integer(history_pin_state(h, message_id)));

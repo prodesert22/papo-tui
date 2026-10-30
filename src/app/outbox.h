@@ -33,6 +33,8 @@ typedef struct {
     long status;
     const char *channel_id, *content, *reply_to; /* Borrowed until update/removal/destruction. */
     bool transmitted, cancelled;
+    int64_t submitted_at; /* Wall-clock seconds when the send was accepted locally. */
+    size_t file_count;
 } outbox_operation;
 
 /* Borrows auth_client, which must outlive the outbox. All calls use the event
@@ -53,16 +55,22 @@ const char *outbox_reply(outbox *box, const char *channel_id);
 const GPtrArray *outbox_attachments(outbox *box, const char *channel_id);
 bool outbox_add_attachment(outbox *box, const char *channel_id, attachment_file *file);
 bool outbox_remove_attachment(outbox *box, const char *channel_id, guint64 file_id);
+/* Accepted text, reply and files leave the draft at once (optimistic send). */
 outbox_submit_result outbox_submit(outbox *box, const char *channel_id,
                                    bool accept_possible_duplicate, uint64_t *operation_id);
-/* Retries the captured text, preserving the current editor. An uncertain
- * result requires explicit acknowledgement of possible duplication. */
+/* Retries the captured text, preserving the current editor, and replaces the
+ * failed operation. An uncertain result requires explicit acknowledgement of
+ * possible duplication. */
 outbox_submit_result outbox_retry(outbox *box, uint64_t operation_id,
                                   bool accept_possible_duplicate, uint64_t *new_operation_id);
 /* Call after auth_poll(). Dispatches a bounded queue one request at a time. */
 void outbox_poll(outbox *box);
 bool outbox_cancel(outbox *box, uint64_t operation_id);
 bool outbox_get_operation(outbox *box, uint64_t operation_id, outbox_operation *operation);
+/* Operations of channel not yet confirmed by the server (queued, sending, failed or
+ * uncertain), oldest first, for optimistic history entries. Values borrow text. */
+size_t outbox_unconfirmed(outbox *box, const char *channel, outbox_operation *operations,
+                          size_t limit);
 bool outbox_latest(outbox *box, const char *channel_id, outbox_operation *operation);
 /* Transfers one confirmed Message reference to the caller for merge by ID.
  * Channel and generation are returned in operation. Caller json_decref(). */
