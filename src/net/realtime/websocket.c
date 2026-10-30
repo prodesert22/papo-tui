@@ -230,6 +230,10 @@ bool ws_connect(ws_client *client, const char *base)
     SET(CURLOPT_SHARE, client->cookies);
     SET(CURLOPT_COOKIEFILE, "");
     SET(CURLOPT_CONNECT_ONLY, 2L);
+#ifdef CURLWS_NOAUTOPONG
+    /* libcurl's automatic PONG waits for the next send; read_events replies. */
+    SET(CURLOPT_WS_OPTIONS, (long)CURLWS_NOAUTOPONG);
+#endif
     SET(CURLOPT_PROTOCOLS_STR, "ws,wss");
     SET(CURLOPT_FOLLOWLOCATION, 0L);
     SET(CURLOPT_SSL_VERIFYPEER, 1L);
@@ -276,6 +280,35 @@ static bool enqueue(ws_client *client, char *data, size_t length, unsigned flags
     client->output_bytes += length;
     if (heartbeat)
         client->heartbeat_queued = true;
+    return true;
+}
+
+/* Queues a PONG ahead of pending events, after a frame already partly sent.
+ * Servers commonly renew their read deadline only when a PONG arrives. */
+static bool enqueue_pong(ws_client *client, const char *payload, size_t length)
+{
+    uint64_t now;
+    if (length > 125 || !net_now_ms(&now))
+        return false;
+    if (client->output_count == WS_QUEUE_LIMIT || length > WS_QUEUE_BYTES - client->output_bytes) {
+        fail(client, "A fila de envio de tempo real excedeu o limite.");
+        return false;
+    }
+    char *data = malloc(length ? length : 1);
+    if (!data) {
+        fail(client, "Não foi possível preparar o tempo real.");
+        return false;
+    }
+    if (length)
+        memcpy(data, payload, length);
+    size_t skip = client->output_count && client->output[client->output_head].offset ? 1 : 0;
+    for (size_t i = client->output_count; i > skip; --i)
+        client->output[(client->output_head + i) % WS_QUEUE_LIMIT] =
+            client->output[(client->output_head + i - 1) % WS_QUEUE_LIMIT];
+    client->output[(client->output_head + skip) % WS_QUEUE_LIMIT] =
+        (output_item){data, length, 0, CURLWS_PONG, false, now + 10000};
+    ++client->output_count;
+    client->output_bytes += length;
     return true;
 }
 
@@ -433,8 +466,14 @@ static void read_events(ws_client *client, uint64_t now)
                 begin_close(client, client->close_payload, client->close_length, now);
             return;
         }
-        if (flags & (CURLWS_PING | CURLWS_PONG))
-            continue; /* libcurl replies to ping. */
+        if (flags & CURLWS_PING) {
+            /* Control frames are never fragmented and carry at most 125 bytes. */
+            if (remaining == 0 && !enqueue_pong(client, buffer, bytes))
+                return;
+            continue;
+        }
+        if (flags & CURLWS_PONG)
+            continue;
         if (client->state == WS_CLOSING)
             continue;
         if ((flags & CURLWS_BINARY) || (!(flags & CURLWS_TEXT) && !client->receiving)) {
@@ -546,6 +585,10 @@ void ws_poll(ws_client *client)
             json_decref(heartbeat);
             if (!queued)
                 return;
+            /* An unsolicited PONG (RFC 6455) keeps servers that time out on
+             * missing PONGs alive even where libcurl cannot report PINGs. */
+            if (!enqueue_pong(client, NULL, 0))
+                return;
         }
     }
     if (client->state == WS_OPEN || client->state == WS_CLOSING) {
@@ -553,6 +596,9 @@ void ws_poll(ws_client *client)
         if (client->state == WS_ERROR)
             return;
         read_events(client, now);
+        /* Answer PINGs read in this tick before the application can close. */
+        if (client->state == WS_OPEN && client->output_count)
+            flush(client, now);
         if (client->state == WS_CLOSING &&
             ((client->peer_closed && !client->output_count) || now >= client->close_deadline)) {
             release(client);

@@ -9,7 +9,7 @@ struct voice_client {
     voice_audio *audio;
     json_t *rooms, *speakers, *mutes, *devices, *ice, *early_remote, *early_local, *outgoing;
     voice_state state;
-    uint64_t context, ws_epoch, epoch, revision, deadline, token_time, speaking_until;
+    uint64_t context, ws_epoch, epoch, revision, deadline, token_time, speaking_until, polled_at;
     double tokens, rms, peak;
     bool server_muted, requested_muted, remote_description, local_description, engine, speaking;
     char channel[37], next_channel[37], notice[192], pending[37];
@@ -573,11 +573,25 @@ bool voice_poll(voice_client *v)
         return false;
     uint64_t before = v->revision, now = 0;
     net_now_ms(&now);
+    /* A stalled event loop delays WebSocket heartbeats and can end the call. */
+    if (v->polled_at && now - v->polled_at > 1000 && v->state != VOICE_IDLE)
+        voice_audio_diagnostic("event loop gap %llu ms, ws state=%d",
+                               (unsigned long long)(now - v->polled_at),
+                               (int)auth_ws_state(v->auth));
+    v->polled_at = now;
     if (v->context != auth_context_generation(v->auth) || v->ws_epoch != auth_ws_epoch(v->auth) ||
         (!auth_has_session(v->auth) &&
          (v->state != VOICE_IDLE || v->engine || json_object_size(v->rooms))) ||
         (v->state > VOICE_ICE && v->state < VOICE_FAILED && auth_ws_state(v->auth) != WS_OPEN)) {
         bool in_call = v->state != VOICE_IDLE && v->state != VOICE_FAILED;
+        if (in_call)
+            voice_audio_diagnostic(
+                "call ended by session/realtime change: context %s, ws epoch %llu -> %llu, "
+                "session=%d, ws state=%d (%s), call state=%d",
+                v->context != auth_context_generation(v->auth) ? "changed" : "same",
+                (unsigned long long)v->ws_epoch, (unsigned long long)auth_ws_epoch(v->auth),
+                auth_has_session(v->auth), (int)auth_ws_state(v->auth), auth_ws_message(v->auth),
+                (int)v->state);
         idle(v);
         json_object_clear(v->rooms);
         json_object_clear(v->speakers);
