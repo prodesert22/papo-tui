@@ -1,4 +1,4 @@
-#include "app/session_store.h"
+#include "app/session_slot.h"
 #include "config/profiles.h"
 #include "platform/windows/files.h"
 #include <gio/gio.h>
@@ -8,7 +8,7 @@
 #include <wincred.h>
 
 enum operation { LOOKUP, INVALIDATE, SAVE, DELETE_CREDENTIAL };
-struct session_store {
+struct session_slot {
     char *path, *target, *pending, *saved, *resume;
     char url[2049], notice[192];
     HANDLE lock;
@@ -17,16 +17,17 @@ struct session_store {
     unsigned refs;
     uint64_t revision, committed, generation;
     bool restoring, available, had_session, busy, dirty, deleting, gate, failed, dying;
+    bool allowed; /* Last committed marker value. */
 };
 typedef struct {
-    session_store *store;
+    session_slot *store;
     enum operation operation;
     uint64_t revision;
     char url[2049];
     char *snapshot;
     bool ok;
 } session_job;
-static void release(session_store *s)
+static void release(session_slot *s)
 {
     if (--s->refs)
         return;
@@ -109,7 +110,7 @@ static void done(GObject *source, GAsyncResult *result, gpointer data)
     (void)source;
     (void)data;
     session_job *job = g_task_get_task_data(G_TASK(result));
-    session_store *s = job->store;
+    session_slot *s = job->store;
     s->busy = false;
     if (s->dying)
         return;
@@ -121,6 +122,7 @@ static void done(GObject *source, GAsyncResult *result, gpointer data)
             s->restoring = false;
     } else if (job->ok) {
         s->committed = job->revision;
+        s->allowed = job->operation == SAVE;
         if (job->operation == SAVE && job->revision == s->revision) {
             auth_session_free(&s->saved);
             s->saved = job->snapshot;
@@ -134,7 +136,7 @@ static void done(GObject *source, GAsyncResult *result, gpointer data)
                  "Não foi possível salvar a sessão no cofre. Entre novamente ao reabrir.");
     }
 }
-static void start(session_store *s, enum operation op)
+static void start(session_slot *s, enum operation op)
 {
     if (s->busy || s->dying)
         return;
@@ -163,7 +165,7 @@ static void start(session_store *s, enum operation op)
     g_object_unref(task);
     g_main_context_pop_thread_default(s->context);
 }
-static void invalidate(session_store *s)
+static void invalidate(session_slot *s)
 {
     ++s->revision;
     s->dirty = true;
@@ -172,7 +174,7 @@ static void invalidate(session_store *s)
 }
 static int rotation_gate(void *context, auth_client *client)
 {
-    session_store *s = context;
+    session_slot *s = context;
     if (s->active != client)
         return 1;
     if (s->failed)
@@ -188,9 +190,14 @@ static int rotation_gate(void *context, auth_client *client)
     s->gate = false;
     return 1;
 }
-session_store *session_store_create(const profile_config *config, bool restore)
+/* Slot 0 keeps the single-session names; later slots append their sequence. */
+static char *slot_name(const char *scope, unsigned sequence)
 {
-    session_store *s = calloc(1, sizeof(*s));
+    return sequence ? g_strdup_printf("%s-%u", scope, sequence) : g_strdup(scope);
+}
+session_slot *session_slot_create(const profile_config *config, unsigned sequence, bool restore)
+{
+    session_slot *s = calloc(1, sizeof(*s));
     if (!s)
         return NULL;
     s->refs = 1;
@@ -199,7 +206,9 @@ session_store *session_store_create(const profile_config *config, bool restore)
     char *directory = config && config->directory_path ? papo_win_directory(true) : NULL;
     if (!directory)
         goto disabled;
-    char *scope = g_compute_checksum_for_string(G_CHECKSUM_SHA256, config->directory_path, -1);
+    char *digest = g_compute_checksum_for_string(G_CHECKSUM_SHA256, config->directory_path, -1);
+    char *scope = slot_name(digest, sequence);
+    g_free(digest);
     char *name = g_strdup_printf("session-%s", scope);
     char *path = g_build_filename(directory, name, NULL);
     s->path = malloc(strlen(path) + 6);
@@ -241,8 +250,8 @@ session_store *session_store_create(const profile_config *config, bool restore)
 #ifdef PAPO_WINDOWS_CREDENTIALS
     s->available = true;
 #endif
-    s->restoring = s->available && restore && *s->url &&
-                   json_is_true(json_object_get(root, "restore_allowed"));
+    s->allowed = *s->url && json_is_true(json_object_get(root, "restore_allowed"));
+    s->restoring = s->available && restore && s->allowed;
     json_decref(root);
     if (s->restoring)
         start(s, LOOKUP);
@@ -253,7 +262,7 @@ disabled:
              "Cofre indisponível ou em uso por outra janela. Sessão somente nesta execução.");
     return s;
 }
-bool session_store_poll(session_store *s, auth_client *active)
+bool session_slot_poll(session_slot *s, auth_client *active)
 {
     if (!s)
         return false;
@@ -305,7 +314,7 @@ bool session_store_poll(session_store *s, auth_client *active)
     }
     return changed;
 }
-void session_store_unwatch(session_store *s, auth_client *client)
+void session_slot_unwatch(session_slot *s, auth_client *client)
 {
     if (!s || !client)
         return;
@@ -313,19 +322,27 @@ void session_store_unwatch(session_store *s, auth_client *client)
     if (s->active == client)
         s->active = NULL;
 }
-const char *session_store_last_url(const session_store *s)
+bool session_slot_busy(const session_slot *s)
+{
+    return s && !s->failed && (s->busy || s->dirty || s->deleting || s->pending);
+}
+bool session_slot_saved(const session_slot *s)
+{
+    return s && s->allowed;
+}
+const char *session_slot_url(const session_slot *s)
 {
     return s ? s->url : "";
 }
-const char *session_store_notice(const session_store *s)
+const char *session_slot_notice(const session_slot *s)
 {
     return s ? s->notice : "";
 }
-bool session_store_restoring(const session_store *s)
+bool session_slot_restoring(const session_slot *s)
 {
     return s && s->restoring;
 }
-char *session_store_take_resume(session_store *s)
+char *session_slot_take_resume(session_slot *s)
 {
     if (!s)
         return NULL;
@@ -335,14 +352,14 @@ char *session_store_take_resume(session_store *s)
         s->restoring = false;
     return resume;
 }
-void session_store_cancel_resume(session_store *s)
+void session_slot_cancel_resume(session_slot *s)
 {
     if (s) {
         s->restoring = false;
         auth_session_free(&s->resume);
     }
 }
-void session_store_destroy(session_store *s)
+void session_slot_destroy(session_slot *s)
 {
     if (!s)
         return;
@@ -352,9 +369,91 @@ void session_store_destroy(session_store *s)
     gint64 end = g_get_monotonic_time() + 2500000;
     while ((s->busy || s->dirty || s->deleting || s->pending) && !s->failed &&
            g_get_monotonic_time() < end) {
-        session_store_poll(s, NULL);
+        session_slot_poll(s, NULL);
         g_usleep(1000);
     }
     s->dying = true;
     release(s);
+}
+
+struct session_scope {
+    char *directory, *scope;
+    HANDLE lock;
+};
+session_scope *session_scope_open(const profile_config *config, char *notice, size_t size)
+{
+    session_scope *scope = calloc(1, sizeof(*scope));
+    if (!scope) {
+        snprintf(notice, size, "Cofre indisponível. Sessão somente nesta execução.");
+        return NULL;
+    }
+    scope->lock = INVALID_HANDLE_VALUE;
+    scope->directory = config && config->directory_path ? papo_win_directory(true) : NULL;
+    if (scope->directory) {
+        scope->scope =
+            g_compute_checksum_for_string(G_CHECKSUM_SHA256, config->directory_path, -1);
+        char *name = g_strdup_printf("sessions-%s.lock", scope->scope);
+        char *path = g_build_filename(scope->directory, name, NULL);
+        scope->lock = papo_win_lock(path);
+        g_free(path);
+        g_free(name);
+    }
+    if (scope->lock == INVALID_HANDLE_VALUE) {
+        snprintf(notice, size,
+                 "Cofre indisponível ou em uso por outra janela. Sessão somente nesta execução.");
+        session_scope_close(scope);
+        return NULL;
+    }
+    return scope;
+}
+static int ascending(const void *a, const void *b)
+{
+    unsigned x = *(const unsigned *)a, y = *(const unsigned *)b;
+    return (x > y) - (x < y);
+}
+size_t session_scope_list(const session_scope *scope, unsigned *sequences, size_t limit)
+{
+    GDir *directory = scope ? g_dir_open(scope->directory, 0, NULL) : NULL;
+    if (!directory)
+        return 0;
+    size_t count = 0;
+    const char *entry;
+    while (count < limit && (entry = g_dir_read_name(directory))) {
+        /* Accept only names this backend would generate for that sequence. */
+        const char *digits = strrchr(entry, '-');
+        guint64 value = 0;
+        if (digits && digits[1] >= '1' && digits[1] <= '9') {
+            char *end = NULL;
+            value = g_ascii_strtoull(digits + 1, &end, 10);
+            if (!end || strcmp(end, ".json") || value > 0xffffffffu)
+                value = 0;
+        }
+        for (int legacy = 0; legacy < 2; ++legacy) {
+            unsigned sequence = legacy ? 0 : (unsigned)value;
+            if (!legacy && !value)
+                continue;
+            char *name = slot_name(scope->scope, sequence);
+            char *file = g_strdup_printf("session-%s.json", name);
+            bool same = !strcmp(file, entry);
+            g_free(file);
+            g_free(name);
+            if (same) {
+                sequences[count++] = sequence;
+                break;
+            }
+        }
+    }
+    g_dir_close(directory);
+    qsort(sequences, count, sizeof(*sequences), ascending);
+    return count;
+}
+void session_scope_close(session_scope *scope)
+{
+    if (!scope)
+        return;
+    if (scope->lock != INVALID_HANDLE_VALUE)
+        CloseHandle(scope->lock);
+    g_free(scope->scope);
+    free(scope->directory);
+    free(scope);
 }

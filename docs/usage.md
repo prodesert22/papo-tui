@@ -18,8 +18,10 @@ For the Windows ZIP, open PowerShell in the extracted folder and run:
 For Flatpak, run `flatpak run io.github.prodesert22.PapoTUI`. To run a local
 Linux build from the project folder, use `./build/papo-tui`.
 
-The application attempts to restore the last session when the system credential
-store is available.
+When the system credential store is available, the application restores the
+session of every server you were signed in to. Each server opens as a tab in
+the top bar, and the most recently added one is selected. Use **[+ Adicionar]**
+(Add) in that bar to sign in to another server.
 
 Use `papo-tui --help` to list command-line options and `papo-tui --version`
 to check the installed version.
@@ -65,9 +67,10 @@ key; GNOME Terminal keeps Shift+PageUp/PageDown for its own scrollback. The next
 page loads as you approach either edge. A loading indicator appears if you reach
 the edge before the messages arrive.
 
-Closing the application discards drafts. Signing out also disables session
-recovery. If a send remains unconfirmed, check the history before resending:
-the message may already have reached the server.
+Closing the application discards drafts. Signing out of a server also stops
+restoring that server; the other servers keep their saved sessions. If a send
+remains unconfirmed, check the history before resending: the message may
+already have reached the server.
 
 To open messages in a voice channel, select it in the channel list and press
 **Shift+Enter** or **Ctrl+O**. Voice calls are not available yet.
@@ -734,7 +737,8 @@ above.
   ZIP, keep the DLLs and the `papo-backends` folder alongside the program.
 - **Session is not remembered:** unlock the system credential store. Without an
   available store, you must sign in at the next start; cookies are not saved as
-  plain text.
+  plain text. A second window of the application does not restore or save
+  sessions while the first one is open.
 - **Small screen or intercepted keys:** enlarge the window and check the
   terminal's reserved shortcuts. Use the mouse if a shortcut does not reach
   the application.

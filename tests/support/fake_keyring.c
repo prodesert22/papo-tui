@@ -27,6 +27,7 @@ static const char xml[] =
     "<method name='Counts'><arg type='u' direction='out'/><arg type='u' direction='out'/><arg "
     "type='u' direction='out'/></method>"
     "<method name='Tamper'><arg type='s' direction='in'/></method>"
+    "<method name='Rekey'><arg type='s' direction='in'/><arg type='s' direction='in'/></method>"
     "</interface>"
     "<interface name='org.kde.KWallet'>"
     "<method name='networkWallet'><arg type='s' direction='out'/></method>"
@@ -192,6 +193,15 @@ static void method(GDBusConnection *c, const gchar *sender, const gchar *path,
         } else if (!strcmp(name, "Counts")) {
             answer(call, g_variant_new("(uuu)", loads, stores, deletes), false);
             return;
+        } else if (!strcmp(name, "Rekey")) {
+            /* Moves one wallet entry, e.g. to reproduce a former storage name. */
+            const char *from, *to;
+            g_variant_get(args, "(&s&s)", &from, &to);
+            item *i = find(from, NULL);
+            if (i && !find(to, NULL)) {
+                g_free(i->key);
+                i->key = g_strdup(to);
+            }
         } else if (!strcmp(name, "Tamper")) {
             const char *kind;
             g_variant_get(args, "(&s)", &kind);

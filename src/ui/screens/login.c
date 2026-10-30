@@ -94,6 +94,79 @@ static int visible_field_count(const login_ui *ui)
 static volatile sig_atomic_t interrupted;
 /* Owned for this invocation of the login/application loop. */
 static instance_connections *connections;
+/* Other saved instances restored at startup; owned here until each validated
+ * session becomes a tab. They never request history before being opened. */
+static auth_client *restored[INSTANCE_LIMIT];
+static size_t restored_count;
+static void restore_instance(const char *url, const char *snapshot, bool allow_local_http)
+{
+    auth_client *client = restored_count < INSTANCE_LIMIT - 1 ? auth_create() : NULL;
+    if (!client)
+        return;
+    auth_session_restore(client, snapshot, url, allow_local_http);
+    session_store_watch(connections->sessions, client);
+    restored[restored_count++] = client;
+}
+static void drop_restored(size_t index)
+{
+    /* Let the slot observe a rejected snapshot before forgetting the client. */
+    session_store_poll(connections->sessions, NULL);
+    session_store_unwatch(connections->sessions, restored[index]);
+    auth_destroy(restored[index]);
+    memmove(restored + index, restored + index + 1,
+            (restored_count - index - 1) * sizeof(*restored));
+    --restored_count;
+}
+/* Returns true while a restored instance still validates its session. */
+static bool poll_restored(void)
+{
+    bool pending = false;
+    for (size_t i = 0; i < restored_count;) {
+        auth_client *client = restored[i];
+        auth_realtime_active(client, false);
+        auth_poll(client);
+        json_t *event;
+        while ((event = auth_next_event(client)))
+            json_decref(event);
+        if (auth_response_ready(client))
+            json_decref(auth_take_response(client, NULL, NULL));
+        if (!auth_has_session(client) && !auth_busy(client)) {
+            drop_restored(i);
+            continue;
+        }
+        pending |= !auth_has_session(client);
+        ++i;
+    }
+    return pending;
+}
+static int restored_order(const void *a, const void *b)
+{
+    unsigned x = session_store_order(connections->sessions, *(auth_client *const *)a),
+             y = session_store_order(connections->sessions, *(auth_client *const *)b);
+    return (x > y) - (x < y);
+}
+/* Adds validated instances as tabs in the order they were first saved. */
+static void attach_restored(void)
+{
+    qsort(restored, restored_count, sizeof(*restored), restored_order);
+    for (size_t i = 0; i < restored_count; ++i) {
+        if (instances_attach(connections, restored[i]))
+            auth_connect_ws(restored[i]);
+        else {
+            session_store_unwatch(connections->sessions, restored[i]);
+            auth_destroy(restored[i]);
+        }
+    }
+    restored_count = 0;
+}
+static void destroy_restored(void)
+{
+    while (restored_count) {
+        --restored_count;
+        session_store_unwatch(connections->sessions, restored[restored_count]);
+        auth_destroy(restored[restored_count]);
+    }
+}
 static void on_signal(int signal_number)
 {
     (void)signal_number;
@@ -911,9 +984,12 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
     text_input_terminal_active(true);
     terminal_title_begin();
     int result = layout(&ui) ? 0 : 1;
-    bool startup_restore = !open_profiles;
-    if (!result && !open_profiles && *session_store_last_url(connections->sessions) &&
-        !instance_form(&ui, client, session_store_last_url(connections->sessions)))
+    bool startup_restore = !open_profiles, main_restored = false;
+    /* The newest saved instance restores into the visible form; the others
+     * become tabs once the form opens its conversations. */
+    char main_url[2049];
+    snprintf(main_url, sizeof(main_url), "%s", session_store_last_url(connections->sessions));
+    if (!result && !open_profiles && *main_url && !instance_form(&ui, client, main_url))
         result = 1;
     bool quit = false;
     if (!result && open_profiles) {
@@ -933,17 +1009,24 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         if (session_store_poll(connections->sessions, client))
             redraw = true;
         if (startup_restore) {
-            char *snapshot = session_store_take_resume(connections->sessions);
-            if (snapshot) {
-                auth_session_restore(client, snapshot,
-                                     session_store_last_url(connections->sessions),
-                                     allow_local_http);
+            const char *url;
+            char *snapshot;
+            while ((snapshot = session_store_take_resume(connections->sessions, &url))) {
+                if (!main_restored && !strcmp(url, main_url)) {
+                    auth_session_restore(client, snapshot, url, allow_local_http);
+                    session_store_watch(connections->sessions, client);
+                    main_restored = true;
+                } else
+                    restore_instance(url, snapshot, allow_local_http);
                 auth_session_free(&snapshot);
-                startup_restore = false;
                 redraw = true;
-            } else if (!session_store_restoring(connections->sessions))
+            }
+            if (!session_store_restoring(connections->sessions))
                 startup_restore = false;
         }
+        bool restoring_tabs = restored_count && poll_restored();
+        if (restored_count && !restoring_tabs && !startup_restore)
+            attach_restored();
         auth_state before = auth_get_state(client);
         bool before_busy = auth_busy(client);
         bool before_session = auth_has_session(client);
@@ -1015,7 +1098,8 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
             graphics_terminal_probe();
             redraw = false;
         }
-        if (ui.open_chat && !ui.help.open && auth_has_session(client) && !ui.paste) {
+        if (ui.open_chat && !ui.help.open && auth_has_session(client) && !ui.paste &&
+            !restoring_tabs && !startup_restore) {
             int action = open_history(&ui, &client, &config);
             if (action < 0)
                 result = 1;
@@ -1194,6 +1278,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         session_store_unwatch(connections->sessions, client);
         auth_destroy(client);
     }
+    destroy_restored();
     media_service_stop();
     instances_destroy(connections);
     connections = NULL;

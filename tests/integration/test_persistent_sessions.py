@@ -58,7 +58,7 @@ class Persistence(unittest.TestCase):
         )
         self.assertEqual(self.provider.stdout.readline(), b"ready\n")
 
-    def control(self, method, value=None):
+    def control(self, method, *values):
         dest = (
             "org.freedesktop.secrets"
             if self.provider_type == "secret"
@@ -76,8 +76,7 @@ class Persistence(unittest.TestCase):
             "--method",
             "org.papo.SessionTest." + method,
         ]
-        if value is not None:
-            command.append(value)
+        command.extend(values)
         return subprocess.check_output(
             command, env=dict(os.environ, **self.env), text=True, timeout=5
         )
@@ -93,27 +92,31 @@ class Persistence(unittest.TestCase):
             t.read(0.03)
         self.assertIn(text, "\n".join(t.screen.display))
 
-    def state(self):
-        files = list(Path(self.env["XDG_STATE_HOME"]).glob("papo-tui/session-*.json"))
-        return json.loads(files[0].read_text(encoding="utf-8")) if files else {}
+    def markers(self):
+        return sorted(Path(self.env["XDG_STATE_HOME"]).glob("papo-tui/session-*.json"))
+
+    def state(self, url=None):
+        """The marker of url, or the only marker of single-server tests."""
+        for file in self.markers():
+            state = json.loads(file.read_text(encoding="utf-8"))
+            if url is None or state.get("url") == url:
+                return state
+        return {}
 
     def saved(self, t, url):
         deadline = time.monotonic() + 8
         while time.monotonic() < deadline:
-            s = self.state()
-            if s.get("url") == url and s.get("restore_allowed"):
+            if self.state(url).get("restore_allowed"):
                 return
             t.read(0.03)
         self.fail("Credential was not committed; notice=" + "\n".join(t.screen.display))
 
     def login(self, server):
         server.cookie_max_age = 30 * 86400
-        if self.state():
-            state = self.state()
+        for file in self.markers():
+            state = json.loads(file.read_text(encoding="utf-8"))
             state["restore_allowed"] = False
-            next(Path(self.env["XDG_STATE_HOME"]).glob("papo-tui/session-*.json")).write_text(
-                json.dumps(state)
-            )
+            file.write_text(json.dumps(state))
         t = self.terminal()
         if server.url in "\n".join(t.screen.display):
             t.send("\x1b[Z\x15")
@@ -124,6 +127,15 @@ class Persistence(unittest.TestCase):
 
     def login_count(self, server):
         return sum(r[1].endswith("/auth/login") for r in server.requests)
+
+    def add_server(self, t, server):
+        server.cookie_max_age = 30 * 86400
+        row = t.screen.display[1]
+        t.click(1, row.index("[+ Adicionar]") + 2)
+        self.wait(t, "URL do servidor")
+        t.send(server.url + "\tjosé\tSynthetic!123\n")
+        self.wait(t, "[" + server.name + "]")
+        self.saved(t, server.url)
 
     def test_native_wallet6_restart_and_no_cookie_on_disk(self):
         self.keyring()
@@ -267,31 +279,88 @@ class Persistence(unittest.TestCase):
                     self.assertEqual(len(server.requests), before)
                 t.close()
 
-    def test_last_server_only_and_second_window_is_memory_only(self):
+    def test_every_saved_server_restores_as_a_tab_and_second_window_is_memory_only(self):
         self.keyring()
         with HistoryMock() as first, HistoryMock() as second:
             second.name = "Trabalho"
-            second.cookie_max_age = 30 * 86400
             t = self.login(first)
             extra = self.terminal()
             self.wait(extra, "URL do servidor")
             self.assertNotIn("geral", "\n".join(extra.screen.display))
             self.assertEqual(self.login_count(first), 1)
             extra.close()
-            row = t.screen.display[1]
-            t.click(1, row.index("[+ Adicionar]") + 2)
-            self.wait(t, "URL do servidor")
-            t.send(second.url + "\tjosé\tSynthetic!123\n")
-            self.wait(t, "[Trabalho]")
-            self.saved(t, second.url)
+            self.add_server(t, second)
             t.close()
+            self.assertEqual(len(self.markers()), 2)
             before = len(first.requests)
             t = self.terminal()
             self.wait(t, "[Trabalho]")
-            self.assertNotIn("Comunidade", t.screen.display[1])
-            self.assertEqual(len(first.requests), before)
+            row = t.screen.display[1]
+            self.assertIn("Comunidade", row)
+            self.assertLess(row.index("Comunidade"), row.index("[Trabalho]"))
+            self.assertEqual(self.login_count(first), 1)
+            self.assertEqual(self.login_count(second), 1)
+            restored = first.requests[before:]
+            self.assertTrue(any(r[1].endswith("/auth/whoami") for r in restored))
+            # The inactive tab validates its session without reading history.
+            self.assertFalse(any("/messages" in r[1] for r in restored))
+            t.close()
+
+    @unittest.skipUnless(os.environ.get("PAPO_TEST_SECRET"), "libsecret adapter not built")
+    def test_secret_service_restores_every_server(self):
+        self.keyring("secret")
+        with HistoryMock() as first, HistoryMock() as second:
+            second.name = "Trabalho"
+            t = self.login(first)
+            self.add_server(t, second)
+            t.close()
+            t = self.terminal()
+            self.wait(t, "[Trabalho]")
+            self.assertIn("Comunidade", t.screen.display[1])
+            self.assertEqual(self.login_count(first), 1)
             self.assertEqual(self.login_count(second), 1)
             t.close()
+
+    def test_logout_forgets_only_that_server(self):
+        self.keyring()
+        with HistoryMock() as first, HistoryMock() as second:
+            second.name = "Trabalho"
+            t = self.login(first)
+            self.add_server(t, second)
+            self.wait(t, "geral")
+            t.send("\x0c")
+            self.wait(t, "Você saiu da conta")
+            t.close()
+            self.assertFalse(self.state(second.url)["restore_allowed"])
+            self.assertTrue(self.state(first.url)["restore_allowed"])
+            t = self.terminal()
+            self.wait(t, "[Comunidade]")
+            self.wait(t, "geral")
+            self.assertNotIn("Trabalho", t.screen.display[1])
+            self.assertEqual(self.login_count(first), 1)
+            self.assertEqual(self.login_count(second), 1)
+            t.close()
+
+    def test_session_saved_before_multiple_servers_restores_without_login(self):
+        self.keyring()
+        with HistoryMock() as server:
+            t = self.login(server)
+            t.close()
+            (marker,) = self.markers()
+            key = marker.stem.removeprefix("session-")
+            scope, sequence = key.rsplit("-", 1)
+            self.assertEqual(sequence, "1")
+            # Recreate the names of the former single-session store.
+            legacy = marker.with_name("session-" + scope + ".json")
+            marker.rename(legacy)
+            self.control("Rekey", '"' + key + '"', '"' + scope + '"')
+            t = self.terminal()
+            self.wait(t, "geral")
+            self.assertEqual(self.login_count(server), 1)
+            t.read(0.2)
+            t.close()
+            self.assertEqual(self.markers(), [legacy])
+            self.assertTrue(self.state()["restore_allowed"])
 
     def test_failed_write_and_locked_provider_fall_back_to_login(self):
         self.keyring()

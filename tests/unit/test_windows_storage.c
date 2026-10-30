@@ -10,55 +10,93 @@
 #include <string.h>
 #include <wincred.h>
 
+typedef struct {
+    char *path, *lock;
+    gunichar2 *target;
+} saved_slot;
+/* Writes a committed marker and credential with the names of one slot; slot 0
+ * keeps the names of the former single-session store. */
+static saved_slot save_slot(const char *directory, const char *scope, unsigned sequence,
+                            const char *url, char *snapshot)
+{
+    char *name = sequence ? g_strdup_printf("%s-%u", scope, sequence) : g_strdup(scope);
+    char *file = g_strdup_printf("session-%s.json", name);
+    char *target = g_strdup_printf("PapoTUI/%s", name);
+    saved_slot slot = {g_build_filename(directory, file, NULL),
+                       g_strdup_printf("%s/session-%s.lock", directory, name),
+                       g_utf8_to_utf16(target, -1, NULL, NULL, NULL)};
+    CREDENTIALW credential = {.Type = CRED_TYPE_GENERIC,
+                              .TargetName = (LPWSTR)slot.target,
+                              .CredentialBlobSize = (DWORD)strlen(snapshot),
+                              .CredentialBlob = (LPBYTE)snapshot,
+                              .Persist = CRED_PERSIST_LOCAL_MACHINE};
+    assert(slot.target && CredWriteW(&credential, 0));
+    char *marker = g_strdup_printf("{\"version\":1,\"url\":\"%s\",\"restore_allowed\":true,"
+                                   "\"provider\":4,\"revision\":1}",
+                                   url);
+    assert(papo_win_write_private(slot.path, marker, strlen(marker)));
+    g_free(marker);
+    g_free(target);
+    g_free(file);
+    g_free(name);
+    return slot;
+}
+static void remove_slot(saved_slot *slot)
+{
+    assert(CredDeleteW((LPCWSTR)slot->target, CRED_TYPE_GENERIC, 0));
+    assert(g_unlink(slot->path) == 0 && g_unlink(slot->lock) == 0);
+    g_free(slot->target);
+    g_free(slot->lock);
+    g_free(slot->path);
+}
 static void check_pending_restore(profile_config *config)
 {
     char *scope = g_compute_checksum_for_string(G_CHECKSUM_SHA256, config->directory_path, -1);
-    char *name = g_strdup_printf("session-%s.json", scope);
-    char *path = g_build_filename(config->directory_path, name, NULL);
-    char *lock = g_strdup_printf("%s/session-%s.lock", config->directory_path, scope);
-    char *target = g_strdup_printf("PapoTUI/%s", scope);
-    gunichar2 *wide = g_utf8_to_utf16(target, -1, NULL, NULL, NULL);
-    char snapshot[] = "synthetic-restore-fixture";
-    CREDENTIALW credential = {.Type = CRED_TYPE_GENERIC,
-                              .TargetName = (LPWSTR)wide,
-                              .CredentialBlobSize = sizeof(snapshot) - 1,
-                              .CredentialBlob = (LPBYTE)snapshot,
-                              .Persist = CRED_PERSIST_LOCAL_MACHINE};
-    assert(wide && CredWriteW(&credential, 0));
-    const char marker[] = "{\"version\":1,\"url\":\"https://one.example.test\","
-                          "\"restore_allowed\":true,\"provider\":4,\"revision\":1}";
-    assert(papo_win_write_private(path, marker, sizeof(marker) - 1));
+    char legacy_snapshot[] = "synthetic-restore-fixture", added_snapshot[] = "synthetic-added";
+    saved_slot legacy = save_slot(config->directory_path, scope, 0, "https://one.example.test",
+                                  legacy_snapshot);
+    saved_slot added = save_slot(config->directory_path, scope, 1, "https://two.example.test",
+                                 added_snapshot);
+    char *store_lock = g_strdup_printf("%s/sessions-%s.lock", config->directory_path, scope);
     session_store *store = session_store_create(config, true);
     assert(store && session_store_restoring(store));
-    /* The lookup callback has not been dispatched yet. An empty take must
-     * preserve the pending operation, regardless of worker completion timing. */
-    assert(!session_store_take_resume(store));
+    /* The lookup callbacks have not been dispatched yet. An empty take must
+     * preserve the pending operations, regardless of worker completion timing. */
+    const char *url = NULL;
+    assert(!session_store_take_resume(store, &url));
     assert(session_store_restoring(store));
     gint64 deadline = g_get_monotonic_time() + 5000000;
-    char *resume = NULL;
-    while (!resume && g_get_monotonic_time() < deadline) {
+    bool one = false, two = false;
+    while (!(one && two) && g_get_monotonic_time() < deadline) {
         session_store_poll(store, NULL);
-        resume = session_store_take_resume(store);
-        if (!resume)
+        char *resume = session_store_take_resume(store, &url);
+        if (resume) {
+            if (!strcmp(url, "https://one.example.test")) {
+                assert(!one && !strcmp(resume, legacy_snapshot));
+                one = true;
+            } else {
+                assert(!two && !strcmp(url, "https://two.example.test") &&
+                       !strcmp(resume, added_snapshot));
+                two = true;
+            }
+            auth_session_free(&resume);
+        } else
             g_usleep(1000);
     }
-    assert(resume && !strcmp(resume, snapshot));
-    assert(!session_store_restoring(store) && !session_store_take_resume(store));
-    auth_session_free(&resume);
+    assert(one && two);
+    assert(!strcmp(session_store_last_url(store), "https://two.example.test"));
+    assert(!session_store_restoring(store) && !session_store_take_resume(store, &url));
     session_store_destroy(store);
 
     store = session_store_create(config, true);
     assert(store && session_store_restoring(store));
     session_store_cancel_resume(store);
-    assert(!session_store_restoring(store) && !session_store_take_resume(store));
+    assert(!session_store_restoring(store) && !session_store_take_resume(store, &url));
     session_store_destroy(store);
-    assert(CredDeleteW((LPCWSTR)wide, CRED_TYPE_GENERIC, 0));
-    assert(g_unlink(path) == 0 && g_unlink(lock) == 0);
-    g_free(wide);
-    g_free(target);
-    g_free(lock);
-    g_free(path);
-    g_free(name);
+    remove_slot(&legacy);
+    remove_slot(&added);
+    assert(g_unlink(store_lock) == 0);
+    g_free(store_lock);
     g_free(scope);
 }
 

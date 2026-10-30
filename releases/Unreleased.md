@@ -2,3 +2,4 @@
 - Fixed Flatpak package builds by bundling the display information library required for hardware-assisted video decoding.
 - Arch packages now declare the certificate, font configuration and ALSA runtime dependencies needed for a complete installation.
 - Fixed private library placement in packaged installations so DEB packages start correctly on clean systems.
+- Reopening the application now restores every server you were signed in to as a tab in the top bar, instead of only the last one, with the most recently added server selected. Signing out of a server forgets only that server's saved session, and a session saved by an earlier version still restores without signing in again.
