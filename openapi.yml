@@ -1584,7 +1584,7 @@ paths:
   /channels/{channel_id}/messages:
     get:
       tags: [Messages]
-      summary: Lista mensagens do canal (Limite de 100; paginação por since + last_id; order asc/desc)
+      summary: Lista mensagens do canal (Limite de 100; página padrão de 30; paginação por since + last_id; order asc/desc)
       parameters:
         - $ref: '#/components/parameters/ChannelId'
         - name: since
@@ -1609,6 +1609,15 @@ paths:
             enum: [asc, desc]
             default: desc
           description: Direção da paginação e ordenação; has_more se refere a esta direção
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 30
+          description: Tamanho da página em mensagens (1 a 100); fora desse intervalo responde 400
       responses:
         '200':
           description: Mensagens do canal
@@ -1616,6 +1625,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MessageListResponse'
+        '400':
+          description: Parâmetro de query inválido (since, order ou limit)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':

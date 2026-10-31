@@ -450,7 +450,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         if (*ui->notification_message && !r8_modal_locating(ui->r8)) {
             inbox_cancel_open(box);
             ui->notification_channel[0] = ui->notification_message[0] = ui->notification_time[0] =
-                0;
+                ui->notification_hint[0] = 0;
         }
         if (ui->inbox_revision != inbox_revision(box)) {
             ui->inbox_revision = inbox_revision(box);
@@ -465,6 +465,8 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                      r8_modal_destination_message(ui->r8));
             snprintf(ui->notification_time, sizeof(ui->notification_time), "%s",
                      r8_modal_destination_time(ui->r8));
+            snprintf(ui->notification_hint, sizeof(ui->notification_hint), "%s",
+                     r8_modal_destination_hint(ui->r8));
         }
         const char *destination = *opened ? opened : r8_modal_destination(ui->r8);
         if (*destination) {
@@ -484,7 +486,14 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                     !strcmp(destination,
                             conversation_str(
                                 history_channel(ui->model, history_selected(ui->model)), "id"))) {
-                    if (history_jump_at(ui->model, ui->notification_message, ui->notification_time))
+                    /* The exact message time allows a centered cursor lookup;
+                     * otherwise the notification time bounds the search. */
+                    bool located = *ui->notification_time || !*ui->notification_hint
+                                       ? history_jump_at(ui->model, ui->notification_message,
+                                                         ui->notification_time)
+                                       : history_jump_near(ui->model, ui->notification_message,
+                                                           ui->notification_hint);
+                    if (located)
                         r8_modal_location_started(ui->r8);
                     else
                         r8_modal_location_error(ui->r8, "Mensagem não disponível.");

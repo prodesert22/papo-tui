@@ -28,6 +28,8 @@ struct r8_modal {
     bool locating, location_started, location_failed;
     uint64_t location_frame;
     char destination_time[65], location_channel[37], location_message[37], location_time[65];
+    /* Notification time: an upper bound for the message, never its own time. */
+    char destination_hint[65], location_hint[65];
     char location_notice[192];
     size_t selected, first, detail_scroll;
     int focus, field_first;
@@ -399,6 +401,7 @@ static void begin_location(r8_modal *m)
     snprintf(m->location_channel, sizeof(m->location_channel), "%s", m->destination);
     snprintf(m->location_message, sizeof(m->location_message), "%s", m->destination_message);
     snprintf(m->location_time, sizeof(m->location_time), "%s", m->destination_time);
+    snprintf(m->location_hint, sizeof(m->location_hint), "%s", m->destination_hint);
 }
 static void activate(r8_modal *m)
 {
@@ -427,6 +430,9 @@ static void activate(r8_modal *m)
              * observed message's own timestamp as a cursor hint. */
             snprintf(m->destination_time, sizeof(m->destination_time), "%s",
                      s(message(m, n), "created_at"));
+            /* The server creates a notification after its message, so the
+             * notification time bounds an otherwise unknown message time. */
+            snprintf(m->destination_hint, sizeof(m->destination_hint), "%s", s(n, "created_at"));
             if (*m->destination_message)
                 begin_location(m);
             else
@@ -574,6 +580,7 @@ bool r8_modal_key(r8_modal *m, int type, uint32_t key)
             snprintf(m->destination_message, sizeof(m->destination_message), "%s",
                      m->location_message);
             snprintf(m->destination_time, sizeof(m->destination_time), "%s", m->location_time);
+            snprintf(m->destination_hint, sizeof(m->destination_hint), "%s", m->location_hint);
             begin_location(m);
         }
         return true;
@@ -587,6 +594,7 @@ bool r8_modal_key(r8_modal *m, int type, uint32_t key)
                      message_browser_destination_message(m->browser));
             snprintf(m->destination_time, sizeof(m->destination_time), "%s",
                      message_browser_destination_time(m->browser));
+            m->destination_hint[0] = 0;
             message_browser_destination_clear(m->browser);
             begin_location(m);
         }
@@ -1043,6 +1051,10 @@ const char *r8_modal_destination_time(const r8_modal *m)
 {
     return m->destination_time;
 }
+const char *r8_modal_destination_hint(const r8_modal *m)
+{
+    return m->destination_hint;
+}
 bool r8_modal_locating(const r8_modal *m)
 {
     return m && m->open && m->locating;
@@ -1106,6 +1118,6 @@ void r8_modal_destination_clear(r8_modal *m)
 {
     m->destination[0] = 0;
     m->destination_message[0] = 0;
-    m->destination_time[0] = 0;
+    m->destination_time[0] = m->destination_hint[0] = 0;
     message_browser_destination_clear(m->browser);
 }

@@ -32,6 +32,34 @@ class R8Terminal(support.R8Terminal):
                 self.assertEqual(after - before, 0 if already_open else 1)
                 self.assertEqual(server.marked, [[uuid(4001)]])
 
+    def test_old_notification_starts_at_its_own_time_instead_of_scanning(self):
+        with R8Mock(count=1) as server:
+            target = self.notification_target(server, 320, 40)
+            # The message time is unknown to the client; the notification was
+            # created right after message 0045 in the server timeline.
+            hint = "2026-10-12T12:00:01Z"
+            server.notifications[0]["created_at"] = hint
+            for message in server.messages[45:]:
+                message["created_at"] = "2026-10-12T12:00:02Z"
+            terminal = self.login(server)
+            terminal.resize(32, 100)
+            terminal.click(8, 4)
+            self.wait(terminal, "Conteúdo do outro canal")
+            before = len(server.requests)
+            self.open_notification_target(terminal)
+            self.assert_centered_target(terminal, target["content"])
+            reads = [
+                path
+                for method, path, _, _ in server.requests[before:]
+                if method == "GET" and CHANNEL + "/messages" in path
+            ]
+            # One page ending at the notification time, not a walk from the end.
+            self.assertEqual(len(reads), 2, reads)
+            self.assertIn("last_id=ffffffff-ffff-ffff-ffff-ffffffffffff", reads[1])
+            self.assertIn("since=2026-10-12T12%3A00%3A01Z", reads[1])
+            message_reads = [path for method, path, _, _ in server.requests if "/messages?" in path]
+            self.assertTrue(all("limit=100" in path for path in message_reads), message_reads)
+
     def test_notification_opens_old_webhook_target_from_another_channel(self):
         from history_mock import OTHER
 

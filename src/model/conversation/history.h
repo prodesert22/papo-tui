@@ -8,6 +8,8 @@
 
 #define HISTORY_CHANNEL_LIMIT 500
 #define HISTORY_MESSAGE_LIMIT 1000
+/* Messages per history request; the server answers 30 when limit is absent. */
+#define HISTORY_PAGE_LIMIT 100
 #define HISTORY_BYTE_LIMIT (4U * 1024U * 1024U)
 
 typedef struct history history;
@@ -51,6 +53,9 @@ uint64_t history_reference_revision(history *h);
 bool history_jump(history *h, const char *id);
 /* A known message timestamp allows a bounded cursor lookup in the active channel. */
 bool history_jump_at(history *h, const char *id, const char *created_at);
+/* hint bounds the target from above, such as the time of its notification:
+ * one page usually contains it, otherwise scanning starts from that page. */
+bool history_jump_near(history *h, const char *id, const char *hint);
 void history_cancel_jump(history *h);
 const char *history_jump_error(history *h);
 bool history_take_jump(history *h, char id[37]);

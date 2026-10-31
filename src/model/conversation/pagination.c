@@ -465,8 +465,8 @@ bool history_internal_request_messages(history *h)
         char *timestamp = curl_easy_escape(NULL, h->recovery_time, 0);
         if (!timestamp)
             return false;
-        snprintf(path, sizeof(path), "/channels/%s/messages?order=%s&since=%s&last_id=%s", id,
-                 h->ascending ? "asc" : "desc", timestamp, h->recovery_id);
+        snprintf(path, sizeof(path), "/channels/%s/messages?order=%s&since=%s&last_id=%s&limit=%d",
+                 id, h->ascending ? "asc" : "desc", timestamp, h->recovery_id, HISTORY_PAGE_LIMIT);
         curl_free(timestamp);
     } else if ((h->older || h->newer) && !h->recovering) {
         snprintf(h->page_time, sizeof(h->page_time), "%s",
@@ -475,10 +475,11 @@ bool history_internal_request_messages(history *h)
         char *timestamp = curl_easy_escape(NULL, h->page_time, 0);
         if (!timestamp)
             return false;
-        snprintf(path, sizeof(path), "/channels/%s/messages?order=%s&since=%s&last_id=%s", id,
-                 h->newer ? "asc" : "desc", timestamp, h->page_id);
+        snprintf(path, sizeof(path), "/channels/%s/messages?order=%s&since=%s&last_id=%s&limit=%d",
+                 id, h->newer ? "asc" : "desc", timestamp, h->page_id, HISTORY_PAGE_LIMIT);
         curl_free(timestamp);
     } else
-        snprintf(path, sizeof(path), "/channels/%s/messages?order=desc", id);
+        snprintf(path, sizeof(path), "/channels/%s/messages?order=desc&limit=%d", id,
+                 HISTORY_PAGE_LIMIT);
     return auth_get_json(h->auth, path);
 }

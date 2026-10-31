@@ -62,6 +62,11 @@ class RealtimeMock(HistoryMock):
             if self.recovery_status:
                 return self.recovery_status, None
             query = parse_qs(url.query)
+            # Like the backend: 30 per page by default, 1 to 100 when requested.
+            size = query.get("limit", ["30"])[0]
+            if not size.isdigit() or not 1 <= int(size) <= 100:
+                return 400, None
+            size = int(size)
             cursor = query.get("last_id", [None])[0]
             ascending = query.get("order") == ["asc"]
             with self.lock:
@@ -80,10 +85,10 @@ class RealtimeMock(HistoryMock):
                 ]
             if not ascending:
                 messages.reverse()
-            page = messages[:100]
+            page = messages[:size]
             self.snapshot_started.set()
             if self.delay:
                 time.sleep(self.delay)
-            return 200, {"channel_id": CHANNEL, "messages": page, "has_more": len(messages) > 100}
+            return 200, {"channel_id": CHANNEL, "messages": page, "has_more": len(messages) > size}
         response = super().route(method, path, body)
         return copy.deepcopy(response)

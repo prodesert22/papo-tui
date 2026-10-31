@@ -125,6 +125,11 @@ class HistoryMock(MockServer):
                 ], None
             query = parse_qs(url.query)
             assert query.get("order") in (["desc"], ["asc"])
+            # Like the backend: 30 per page by default, 1 to 100 when requested.
+            size = query.get("limit", ["30"])[0]
+            if not size.isdigit() or not 1 <= int(size) <= 100:
+                return 400, None
+            size = int(size)
             cursor = query.get("last_id", [None])[0]
             if query.get("order") == ["asc"]:
                 self.newer_calls += 1
@@ -136,15 +141,17 @@ class HistoryMock(MockServer):
                     self.messages.append(self.message(self.count + 1))
                 if self.case == "overlap":
                     lower -= 1
-                page = source[lower : lower + 100]
-                more = lower + 100 < len(source)
+                page = source[lower : lower + size]
+                more = lower + size < len(source)
                 if self.case == "empty-newer":
                     page, more = [], True
                 if self.case == "repeat-newer":
-                    page, more = source[max(0, lower - 100) : lower], True
+                    page, more = source[max(0, lower - size) : lower], True
                 return 200, {"channel_id": channel, "messages": page, "has_more": more}
             upper = self.count
-            if cursor:
+            if cursor == "ffffffff-ffff-ffff-ffff-ffffffffffff":
+                pass  # Every message shares STAMP: all were created up to since.
+            elif cursor:
                 self.older_calls += 1
                 assert query["since"] == [STAMP]
                 upper = int(cursor.split("-")[-1], 16) - (100 if channel == CHANNEL else 500) - 1
@@ -152,12 +159,12 @@ class HistoryMock(MockServer):
                     upper += 1
                 if self.case == "older-error" and self.older_calls == 1:
                     return 503, None
-            page = list(reversed(source[max(0, upper - 100) : upper]))
-            more = upper > 100
+            page = list(reversed(source[max(0, upper - size) : upper]))
+            more = upper > size
             if not cursor and self.sent_messages:
                 messages = source + [m for m in self.sent_messages if m["channel_id"] == channel]
-                page = list(reversed(messages[-100:]))
-                more = len(messages) > 100
+                page = list(reversed(messages[-size:]))
+                more = len(messages) > size
             if self.case == "empty-page" and cursor:
                 page, more = [], True
             if self.case == "empty":
@@ -171,7 +178,7 @@ class HistoryMock(MockServer):
             if self.case == "too-many":
                 page += [self.message(1)]
             if self.case == "repeat" and cursor:
-                page, more = list(reversed(source[-100:])), True
+                page, more = list(reversed(source[-size:])), True
             return 200, {"channel_id": channel, "messages": page, "has_more": more}
         if url.path.endswith("/users/user_summary_batch") and method == "POST":
             self.summary_calls += 1

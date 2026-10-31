@@ -20,6 +20,9 @@ struct history_actions {
     char scan_id[37], scan_time[65], page_id[37], page_time[65];
     char jump[37], ready[37], reactors[37], user_id[37], user_time[65];
     char jump_time[65];
+    /* Approximate upper bound for the target (a notification time): one
+     * descending page usually contains it; otherwise scanning starts there. */
+    char jump_hint[65];
     bool jump_located, jump_missing, jump_silent;
     char mutation_message[37], mutation_channel[37], requested_message[37];
     bool end, failed, want_users, users_more, users_failed, queued, remove, restart_scan,
@@ -65,7 +68,7 @@ void history_internal_actions_reset(history *h)
     json_array_clear(a->users);
     a->bytes = 0;
     a->scan_id[0] = a->scan_time[0] = a->jump[0] = a->ready[0] = a->reactors[0] = 0;
-    a->jump_time[0] = 0;
+    a->jump_time[0] = a->jump_hint[0] = 0;
     a->jump_located = a->jump_missing = false;
     a->end = a->failed = a->want_users = a->users_more = a->users_failed = false;
     a->restart_scan = a->yield_scan = a->edit_ready = false;
@@ -244,7 +247,7 @@ bool history_jump_at(history *h, const char *id, const char *created_at)
     a->failed = false;
     a->jump_silent = true;
     a->jump_missing = a->jump_located = false;
-    a->jump_time[0] = 0;
+    a->jump_time[0] = a->jump_hint[0] = 0;
     a->jump[0] = a->ready[0] = 0;
     if (history_internal_find(h->messages, id) != SIZE_MAX)
         snprintf(a->ready, sizeof(a->ready), "%s", id);
@@ -266,8 +269,21 @@ void history_cancel_jump(history *h)
         return;
     if (*a->jump && json_is_null(json_object_get(a->references, a->jump)))
         json_object_del(a->references, a->jump);
-    a->jump[0] = a->ready[0] = a->jump_time[0] = 0;
+    a->jump[0] = a->ready[0] = a->jump_time[0] = a->jump_hint[0] = 0;
     a->jump_missing = a->jump_located = false;
+}
+
+bool history_jump_near(history *h, const char *id, const char *hint)
+{
+    uint64_t parsed;
+    if (!hint || strlen(hint) >= sizeof(((struct history_actions *)0)->jump_hint) ||
+        !session_time_parse(hint, &parsed))
+        return history_jump_at(h, id, NULL);
+    if (!history_jump_at(h, id, NULL))
+        return false;
+    if (*h->actions->jump)
+        snprintf(h->actions->jump_hint, sizeof(h->actions->jump_hint), "%s", hint);
+    return true;
 }
 const char *history_jump_error(history *h)
 {
@@ -291,7 +307,8 @@ bool history_take_jump(history *h, char id[37])
         h->actions->jump[0] = 0;
     }
     if (h->actions && h->actions->request == ACTION_IDLE && h->actions->end &&
-        !h->actions->failed && !*h->actions->jump_time && *h->actions->jump &&
+        !h->actions->failed && !*h->actions->jump_time && !*h->actions->jump_hint &&
+        *h->actions->jump &&
         !json_is_object(json_object_get(h->actions->references, h->actions->jump))) {
         json_object_set_new(h->actions->references, h->actions->jump, json_false());
         h->actions->jump[0] = 0;
@@ -472,14 +489,19 @@ const char *history_reactors_notice(history *h)
            : a->users_more                               ? "Role para carregar mais · Esc fechar"
                                                          : "Fim da lista · Esc fechar";
 }
+/* messages adds the page size the message list accepts; other lists keep
+ * their own server default. */
 static bool page_path(char *path, size_t capacity, const char *base, const char *time,
-                      const char *id)
+                      const char *id, bool messages)
 {
     char *encoded = *id ? curl_easy_escape(NULL, time, 0) : NULL;
     if (*id && !encoded)
         return false;
-    snprintf(path, capacity, "%s?order=desc%s%s%s%s", base, *id ? "&since=" : "",
-             encoded ? encoded : "", *id ? "&last_id=" : "", id);
+    char limit[24] = "";
+    if (messages)
+        snprintf(limit, sizeof(limit), "&limit=%d", HISTORY_PAGE_LIMIT);
+    snprintf(path, capacity, "%s?order=desc%s%s%s%s%s", base, *id ? "&since=" : "",
+             encoded ? encoded : "", *id ? "&last_id=" : "", id, limit);
     curl_free(encoded);
     return true;
 }
@@ -551,7 +573,7 @@ bool history_internal_actions_dispatch(history *h, bool foreground)
     } else if (*a->reactors && a->want_users && a->users_more &&
                json_array_size(a->users) < HISTORY_MESSAGE_LIMIT) {
         snprintf(base, sizeof(base), "/channels/%s/messages/%s/reactions", channel, a->reactors);
-        if (!page_path(path, sizeof(path), base, a->user_time, a->user_id) ||
+        if (!page_path(path, sizeof(path), base, a->user_time, a->user_id, false) ||
             !auth_get_json(h->auth, path))
             return false;
         kind = ACTION_USERS;
@@ -560,25 +582,33 @@ bool history_internal_actions_dispatch(history *h, bool foreground)
     } else if (*a->jump && *a->jump_time && !a->failed && !h->want_messages && !h->want_channels) {
         snprintf(base, sizeof(base), "/channels/%s/messages", channel);
         if (a->jump_located) {
-            if (!page_path(path, sizeof(path), base, a->page_time, a->page_id))
+            if (!page_path(path, sizeof(path), base, a->page_time, a->page_id, true))
                 return false;
             kind = ACTION_JUMP;
         } else {
             char *encoded = curl_easy_escape(NULL, a->jump_time, 0);
             if (!encoded)
                 return false;
-            snprintf(path, sizeof(path), "%s?order=asc&since=%s&last_id=%s", base, encoded,
-                     a->jump);
+            snprintf(path, sizeof(path), "%s?order=asc&since=%s&last_id=%s&limit=%d", base, encoded,
+                     a->jump, HISTORY_PAGE_LIMIT);
             curl_free(encoded);
             kind = ACTION_LOCATE;
         }
         if (!auth_get_json(h->auth, path))
             return false;
+    } else if (*a->jump && *a->jump_hint && !a->failed && !h->want_messages && !h->want_channels) {
+        /* Newest first up to the hint, including messages at that instant. */
+        snprintf(base, sizeof(base), "/channels/%s/messages", channel);
+        if (!page_path(path, sizeof(path), base, a->jump_hint,
+                       "ffffffff-ffff-ffff-ffff-ffffffffffff", true) ||
+            !auth_get_json(h->auth, path))
+            return false;
+        kind = ACTION_JUMP;
     } else if (*a->jump && !a->failed && json_is_object(json_object_get(a->references, a->jump))) {
         json_t *target = json_object_get(a->references, a->jump);
         snprintf(base, sizeof(base), "/channels/%s/messages", channel);
         if (!page_path(path, sizeof(path), base, s(target, "_reply_page_time"),
-                       s(target, "_reply_page_id")) ||
+                       s(target, "_reply_page_id"), true) ||
             !auth_get_json(h->auth, path))
             return false;
         kind = ACTION_JUMP;
@@ -601,7 +631,7 @@ bool history_internal_actions_dispatch(history *h, bool foreground)
             snprintf(a->scan_time, sizeof(a->scan_time), "%s", s(oldest, "created_at"));
         }
         snprintf(base, sizeof(base), "/channels/%s/messages", channel);
-        if (!page_path(path, sizeof(path), base, a->scan_time, a->scan_id) ||
+        if (!page_path(path, sizeof(path), base, a->scan_time, a->scan_id, true) ||
             !auth_get_json(h->auth, path))
             return false;
         snprintf(a->page_id, sizeof(a->page_id), "%s", a->scan_id);
@@ -887,7 +917,26 @@ void history_internal_actions_response(history *h, json_t *body, long code, bool
             snprintf(a->page_time, sizeof(a->page_time), "%s", s(next, "created_at"));
             a->jump_located = true;
         }
+    } else if (kind == ACTION_JUMP && ok && *a->jump_hint &&
+               !history_internal_contains(page, a->jump) &&
+               !json_is_null(json_object_get(h->patches, a->jump))) {
+        /* The target is older than this page: scan older pages from here
+         * instead of from the loaded window. */
+        a->jump_hint[0] = 0;
+        json_t *oldest = json_array_get(page, json_array_size(page) - 1);
+        if (oldest && json_is_true(json_object_get(body, "has_more"))) {
+            history_reference_request(h, a->jump);
+            snprintf(a->scan_id, sizeof(a->scan_id), "%s", s(oldest, "id"));
+            snprintf(a->scan_time, sizeof(a->scan_time), "%s", s(oldest, "created_at"));
+        } else {
+            json_object_set_new(a->references, a->jump, json_false());
+            a->jump[0] = 0;
+            a->jump_missing = true;
+            if (!a->jump_silent)
+                history_internal_status(h, "Mensagem não disponível.");
+        }
     } else if (kind == ACTION_JUMP && ok) {
+        a->jump_hint[0] = 0;
         if (!history_internal_contains(page, a->jump) ||
             json_is_null(json_object_get(h->patches, a->jump))) {
             json_object_set_new(a->references, a->jump, json_false());

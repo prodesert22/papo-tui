@@ -106,7 +106,7 @@ typedef struct {
     int channel_menu; /* 0 context actions, 1 mute duration, 2 notifications. */
     char centered_message[37];
     char notification_channel[37], notification_message[37];
-    char notification_time[65];
+    char notification_time[65], notification_hint[65];
     char reactor_emoji[37], reactor_unicode[65];
     uint64_t action_generation;
     size_t selected_media;
