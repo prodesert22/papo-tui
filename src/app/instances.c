@@ -217,6 +217,8 @@ bool instances_poll(instance_connections *connections, auth_client *active)
             outbox_operation operation;
             json_t *confirmed;
             while ((confirmed = outbox_take_confirmed(box, &operation))) {
+                /* Its cached conversation fetches the sent message on return. */
+                history_conversation_changed(connections->items[i].model, operation.channel_id);
                 json_decref(confirmed);
                 outbox_reconciled(box, operation.id);
             }

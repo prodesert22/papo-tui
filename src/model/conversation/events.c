@@ -76,6 +76,8 @@ void history_recover(history *h)
     }
     history_internal_discovery_recover(h);
     history_internal_members_recover(h);
+    /* Recovery means events may have been missed for every conversation. */
+    history_internal_stash_clear(h);
     ++h->selection;
     history_internal_actions_reset(h);
     json_decref(h->fresh);
@@ -228,6 +230,8 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
                                       "Erro remoto");
         return true;
     }
+    if (!strcmp(type, "message_pin") || !strcmp(type, "react_update"))
+        history_internal_stash_forget_message(h, history_internal_str(event, "message_id"));
     if (!strcmp(type, "message_pin")) {
         if (!history_internal_discovery_event(h, event))
             goto invalid;
@@ -301,6 +305,14 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
     bool active = !strcmp(channel, history_internal_str(history_channel(h, h->selected), "id")
                                        ? history_internal_str(history_channel(h, h->selected), "id")
                                        : "");
+    /* Closed conversations drop events, so their cached windows follow them:
+     * a new message is fetched on return, other changes reload the window. */
+    if (!active && !h->replaying) {
+        if (message)
+            history_internal_stash_touch(h, channel);
+        else if (edit || del || embeds || remove)
+            history_internal_stash_forget(h, channel);
+    }
     bool relevant = create || update || remove || active;
     if (relevant && !h->replaying &&
         (h->recovering || h->pending == CHANNELS || h->pending == MESSAGES ||

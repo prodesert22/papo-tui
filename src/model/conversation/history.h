@@ -19,10 +19,10 @@ typedef enum {
     HISTORY_NOTICE_MUTATION,
     HISTORY_NOTICE_COUNT
 } history_notice_kind;
-/* Owns all JSON models; borrows the auth client. One active conversation, no
- * inactive history cache. Returned objects/strings are borrowed until poll,
- * event, confirmation, selection, reload or destroy. Callers retain anchors
- * by UUID, not pointer. */
+/* Owns all JSON models; borrows the auth client. One active conversation;
+ * recently shown ones are kept in a bounded cache while realtime is connected.
+ * Returned objects/strings are borrowed until poll, event, confirmation,
+ * selection, reload or destroy. Callers retain anchors by UUID, not pointer. */
 history *history_create(auth_client *auth);
 voice_client *history_voice(history *h); /* Borrowed, owned by this instance's model. */
 /* Valid live embed updates also invalidate media in inactive conversations. */
@@ -78,7 +78,24 @@ bool history_interactions_retry(history *h);
 bool history_recovering(const history *h);
 uint64_t history_insertions(const history *h);
 void history_reload_channels(history *h);
+/* Where the reader was in a conversation, kept with its cached window. */
+typedef struct {
+    char anchor[37], block[128];
+    size_t offset;
+    bool at_end;
+} history_reading;
+/* Shows channel: a cached window opens at once without a request, unless new
+ * messages arrived while it was closed; otherwise the latest page loads. */
 bool history_select(history *h, size_t channel);
+/* The reading position of the open conversation, cached with it when another
+ * one is selected. */
+void history_keep_reading(history *h, const history_reading *reading);
+/* A message of a closed conversation was confirmed or changed outside the
+ * realtime events: its cached window fetches the latest messages on return. */
+void history_conversation_changed(history *h, const char *channel);
+/* After history_select: true when the window came from the cache, with the
+ * reading position to restore. */
+bool history_restored_reading(const history *h, history_reading *reading);
 /* Metadata remains available internally even for channels hidden in the rail. */
 bool history_channel_visible(const history *h, size_t index);
 permission_decision history_permission(const history *h, channel_permission permission);

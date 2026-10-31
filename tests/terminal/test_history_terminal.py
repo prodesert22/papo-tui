@@ -242,7 +242,8 @@ class HistoryTerminal(support.HistoryTerminal):
                     self.wait(terminal, "# geral · Histórico")
                     self.wait(terminal, "Mensagem 0001")
                     self.assertNotIn("Conteúdo do outro canal", "\n".join(terminal.screen.display))
-                self.assertEqual(sum("/messages" in r[1] for r in server.requests), 9)
+                # Each channel is read once; later switches reopen cached windows.
+                self.assertEqual(sum("/messages" in r[1] for r in server.requests), 2)
             finally:
                 self.assertTrue(terminal.close())
 

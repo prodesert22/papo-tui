@@ -232,6 +232,11 @@ void conversation_open_channel(view *ui, bool voice_history)
         ui->feedback = "Não foi possível trocar o editor; rascunho preservado.";
         return;
     }
+    /* The reading position is cached with the conversation being left. */
+    history_reading reading = {.offset = ui->offset, .at_end = ui->at_end};
+    snprintf(reading.anchor, sizeof(reading.anchor), "%s", ui->anchor);
+    snprintf(reading.block, sizeof(reading.block), "%s", ui->block);
+    history_keep_reading(ui->model, &reading);
     if (history_select(ui->model, conversation_list_index(ui, ui->highlighted))) {
         for (int context = STATUS_HISTORY; context <= STATUS_CLIPBOARD; ++context)
             status_bar_set(&ui->status, (status_context)context, NULL);
@@ -243,6 +248,13 @@ void conversation_open_channel(view *ui, bool voice_history)
         ui->waiting_page = 0;
         ui->at_end = true;
         ui->anchor[0] = 0;
+        /* A cached conversation reopens where the reader left it. */
+        if (history_restored_reading(ui->model, &reading) && !reading.at_end && *reading.anchor) {
+            ui->at_end = false;
+            snprintf(ui->anchor, sizeof(ui->anchor), "%s", reading.anchor);
+            snprintf(ui->block, sizeof(ui->block), "%s", reading.block);
+            ui->offset = reading.offset;
+        }
         conversation_set_focus(ui, HISTORY_PANEL);
     }
 }

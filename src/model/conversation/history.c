@@ -155,6 +155,164 @@ static void clear_messages(history *h)
     history_internal_notice(h, HISTORY_NOTICE_EVENT, "");
 }
 
+static size_t stash_find(const history *h, const char *channel)
+{
+    for (size_t i = 0; channel && i < h->stash_count; ++i)
+        if (!strcmp(h->stash[i].channel, channel))
+            return i;
+    return SIZE_MAX;
+}
+/* Moves entry i out of the cache; the caller owns its messages. */
+static channel_stash stash_take(history *h, size_t i)
+{
+    channel_stash entry = h->stash[i];
+    memmove(h->stash + i, h->stash + i + 1, (h->stash_count - i - 1) * sizeof(h->stash[0]));
+    --h->stash_count;
+    memset(&h->stash[h->stash_count], 0, sizeof(h->stash[0]));
+    return entry;
+}
+static void stash_remove(history *h, size_t i)
+{
+    channel_stash entry = stash_take(h, i);
+    json_decref(entry.messages);
+}
+void history_internal_stash_clear(history *h)
+{
+    while (h->stash_count)
+        stash_remove(h, h->stash_count - 1);
+}
+void history_internal_stash_forget(history *h, const char *channel)
+{
+    size_t i = stash_find(h, channel);
+    if (i != SIZE_MAX)
+        stash_remove(h, i);
+}
+void history_internal_stash_forget_message(history *h, const char *message)
+{
+    for (size_t i = h->stash_count; message && i > 0; --i)
+        if (history_internal_find(h->stash[i - 1].messages, message) != SIZE_MAX)
+            stash_remove(h, i - 1);
+}
+void history_internal_stash_touch(history *h, const char *channel)
+{
+    size_t i = stash_find(h, channel);
+    if (i != SIZE_MAX)
+        h->stash[i].dirty = true;
+}
+/* Cached windows stay exact only while realtime delivers every change. */
+static bool stash_connected(const history *h)
+{
+    return auth_has_session(h->auth) && auth_ws_state(h->auth) == WS_OPEN;
+}
+/* Moves the open window into the cache before another one replaces it. Only a
+ * settled window is kept: no request, failure, recovery or pending deletion. */
+static void stash_current(history *h)
+{
+    bool reading = h->reading_set;
+    h->reading_set = false;
+    const char *id = history_internal_str(history_channel(h, h->selected), "id");
+    if (!history_uuid(id) || !h->messages || !stash_connected(h) || h->recovering ||
+        h->failed != NONE || h->want_messages || h->pending == MESSAGES || h->journal ||
+        h->patches || h->bytes > HISTORY_STASH_BYTES)
+        return;
+    history_internal_stash_forget(h, id);
+    size_t total = h->bytes;
+    for (size_t i = 0; i < h->stash_count; ++i)
+        total += h->stash[i].bytes;
+    while (h->stash_count &&
+           (h->stash_count == HISTORY_STASH_LIMIT || total > HISTORY_STASH_BYTES)) {
+        size_t oldest = 0;
+        for (size_t i = 1; i < h->stash_count; ++i)
+            if (h->stash[i].used < h->stash[oldest].used)
+                oldest = i;
+        total -= h->stash[oldest].bytes;
+        stash_remove(h, oldest);
+    }
+    channel_stash *entry = &h->stash[h->stash_count++];
+    *entry = (channel_stash){.messages = h->messages,
+                             .bytes = h->bytes,
+                             .more = h->more,
+                             .newer_more = h->newer_more,
+                             .evicted = h->evicted,
+                             .reading = reading ? h->reading : (history_reading){.at_end = true},
+                             .used = ++h->stash_tick};
+    snprintf(entry->channel, sizeof(entry->channel), "%s", id);
+    snprintf(entry->cursor_time, sizeof(entry->cursor_time), "%s", h->cursor_time);
+    snprintf(entry->cursor_id, sizeof(entry->cursor_id), "%s", h->cursor_id);
+    snprintf(entry->newer_time, sizeof(entry->newer_time), "%s", h->newer_time);
+    snprintf(entry->newer_id, sizeof(entry->newer_id), "%s", h->newer_id);
+    h->messages = NULL; /* Now owned by the cache; clear_messages keeps it. */
+}
+/* Reopens a cached window of the selected channel. New messages that arrived
+ * while it was closed load as the latest page when the reader was at the end,
+ * or as newer pages when they scroll down, so nothing is read in advance. */
+static bool stash_restore(history *h, const char *channel)
+{
+    size_t i = stash_find(h, channel);
+    if (i == SIZE_MAX)
+        return false;
+    channel_stash entry = stash_take(h, i);
+    if (!stash_connected(h)) {
+        json_decref(entry.messages);
+        return false;
+    }
+    h->messages = entry.messages;
+    h->more = entry.more;
+    h->newer_more = entry.newer_more;
+    h->evicted = entry.evicted;
+    snprintf(h->cursor_time, sizeof(h->cursor_time), "%s", entry.cursor_time);
+    snprintf(h->cursor_id, sizeof(h->cursor_id), "%s", entry.cursor_id);
+    snprintf(h->newer_time, sizeof(h->newer_time), "%s", entry.newer_time);
+    snprintf(h->newer_id, sizeof(h->newer_id), "%s", entry.newer_id);
+    /* Rebuild byte accounting; the window was within the limits when kept. */
+    if (!history_internal_trim(h, h->messages, true)) {
+        clear_messages(h);
+        return false;
+    }
+    size_t count = history_message_count(h);
+    if (entry.dirty && !h->newer_more) {
+        if (entry.reading.at_end || !count)
+            h->want_messages = true;
+        else {
+            json_t *latest = history_message(h, count - 1);
+            h->newer_more = true;
+            snprintf(h->newer_time, sizeof(h->newer_time), "%s",
+                     history_internal_str(latest, "created_at"));
+            snprintf(h->newer_id, sizeof(h->newer_id), "%s", history_internal_str(latest, "id"));
+        }
+    }
+    h->want_authors = count > 0;
+    h->restored = entry.reading;
+    h->restored_set = true;
+    history_internal_status(h, h->want_messages ? "Carregando histórico…"
+                               : count          ? h->newer_more
+                                                      ? "Role para baixo para carregar posteriores."
+                                                  : h->more ? "Role para cima para carregar anteriores."
+                                                            : "Início do histórico alcançado."
+                                                : "Nenhuma mensagem neste canal.");
+    return true;
+}
+void history_conversation_changed(history *h, const char *channel)
+{
+    if (h)
+        history_internal_stash_touch(h, channel);
+}
+void history_keep_reading(history *h, const history_reading *reading)
+{
+    if (!h || !reading)
+        return;
+    h->reading = *reading;
+    h->reading_set = true;
+}
+bool history_restored_reading(const history *h, history_reading *reading)
+{
+    if (!h || !h->restored_set)
+        return false;
+    if (reading)
+        *reading = h->restored;
+    return true;
+}
+
 history *history_create(auth_client *auth)
 {
     history *h = calloc(1, sizeof(*h));
@@ -202,6 +360,7 @@ void history_destroy(history *h)
         auth_cancel_read(h->auth);
     chat_assets_destroy(h->assets);
     clear_messages(h);
+    history_internal_stash_clear(h);
     inbox_destroy(h->inbox);
     json_decref(h->channels);
     json_decref(h->read_messages);
@@ -236,6 +395,8 @@ void history_active(history *h, bool active)
         return;
     h->active = active;
     if (!active) {
+        /* Before cancelling: a window still loading is not kept. */
+        stash_current(h);
         if (h->pending != NONE && h->pending != INBOX && !history_internal_actions_mutating(h) &&
             !history_internal_members_mutating(h) && h->pending != CHANNEL_SETTINGS) {
             if (h->pending == MEMBERS)
@@ -436,6 +597,7 @@ void history_reload_channels(history *h)
     chat_assets_cancel(h->assets);
     ++h->selection;
     clear_messages(h);
+    history_internal_stash_clear(h);
     json_decref(h->channels);
     h->channels = NULL;
     h->selected = SIZE_MAX;
@@ -443,7 +605,7 @@ void history_reload_channels(history *h)
     history_internal_status(h, "Carregando canais…");
 }
 
-bool history_select(history *h, size_t index)
+static bool select_channel(history *h, size_t index, bool cached)
 {
     json_t *c = history_channel(h, index);
     if (!c || !history_channel_visible(h, index) ||
@@ -451,6 +613,12 @@ bool history_select(history *h, size_t index)
         return false;
     if (!h->active)
         return false;
+    const char *id = history_internal_str(c, "id");
+    /* Before cancelling: a window still loading is not kept. */
+    if (cached)
+        stash_current(h);
+    else
+        history_internal_stash_forget(h, id);
     if (h->pending == INBOX && auth_get_state(h->auth) != AUTH_API_MUTATION) {
         auth_cancel_read(h->auth);
         inbox_cancel_read(h->inbox);
@@ -465,18 +633,27 @@ bool history_select(history *h, size_t index)
     }
     chat_assets_cancel(h->assets);
     ++h->selection;
+    h->reading_set = h->restored_set = false;
     clear_messages(h);
     h->selected = index;
     h->older = false;
+    if (cached && stash_restore(h, id))
+        return true;
     h->want_messages = true;
     history_internal_status(h, "Carregando histórico…");
     return true;
 }
 
+bool history_select(history *h, size_t index)
+{
+    return select_channel(h, index, true);
+}
+
+/* An explicit reload always fetches the latest page again. */
 void history_recent(history *h)
 {
     if (h->selected != SIZE_MAX)
-        history_select(h, h->selected);
+        select_channel(h, h->selected, false);
 }
 
 bool history_retry(history *h)
@@ -852,6 +1029,8 @@ bool history_poll(history *h)
     uint64_t epoch = auth_ws_epoch(h->auth);
     bool connected = auth_has_session(h->auth) && auth_ws_state(h->auth) == WS_OPEN;
     if ((h->typing_connected && !connected) || epoch != h->epoch) {
+        /* Events may be lost until realtime reconnects. */
+        history_internal_stash_clear(h);
         if (h->r8)
             inbox_recover(h->inbox);
         h->typing_count = 0;

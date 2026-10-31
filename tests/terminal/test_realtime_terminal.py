@@ -4,9 +4,42 @@ from test_context import main as test_main
 
 import time
 import unittest
+from urllib.parse import urlsplit
 from realtime_mock import RealtimeMock
-from history_mock import CHANNEL, uuid, STAMP, assert_history_reads
+from history_mock import CHANNEL, OTHER, HistoryMock, uuid, STAMP, assert_history_reads
 import terminal_send as product
+
+
+EXTRA = [uuid(700 + n) for n in range(9)]
+
+
+class CacheMock(RealtimeMock):
+    """# outro from HistoryMock and nine empty extra channels beside # geral."""
+
+    def __init__(self, count=3, extra=0):
+        super().__init__(count=count)
+        for n in range(extra):
+            self.channels.append(
+                {"id": EXTRA[n], "name": f"extra{n}", "position": 10 + n, "type": "text"}
+            )
+
+    def route(self, method, path, body):
+        resource = urlsplit(path).path
+        if "/channels/" in resource and resource.endswith("/messages") and method == "GET":
+            channel = resource.split("/")[-2]
+            if channel == OTHER:
+                return HistoryMock.route(self, method, path, body)
+            if channel in EXTRA:
+                return 200, {"channel_id": channel, "messages": [], "has_more": False}
+        return super().route(method, path, body)
+
+
+def reads(server, channel):
+    return sum(
+        1
+        for method, path, *_ in server.requests
+        if method == "GET" and urlsplit(path).path == f"/papo/channels/{channel}/messages"
+    )
 
 
 class RealtimeTerminal(unittest.TestCase):
@@ -155,6 +188,175 @@ class RealtimeTerminal(unittest.TestCase):
                 # the caret is not hidden and shown again, which stops blinking.
                 self.assertNotIn(b"\x1b[?25h", bytes(terminal.output[start:]))
                 self.assertFalse(terminal.screen.cursor.hidden)
+            finally:
+                self.assertTrue(terminal.close())
+
+    def switch_away_and_back(self, terminal):
+        terminal.click(6, 4)
+        self.wait(terminal, "Conteúdo do outro canal")
+        mark = len(terminal.output)
+        terminal.click(5, 4)
+        self.wait(terminal, "# geral · Histórico")
+        return mark
+
+    def test_switching_back_reopens_the_cached_channel_without_reading(self):
+        with CacheMock() as server:
+            terminal = self.open(server)
+            try:
+                self.wait(terminal, "Mensagem 0003")
+                before = reads(server, CHANNEL)
+                mark = self.switch_away_and_back(terminal)
+                self.wait(terminal, "Mensagem 0003")
+                terminal.read(0.4)
+                self.assertNotIn(b"Carregando hist", terminal.output[mark:])
+                self.assertEqual(reads(server, CHANNEL), before)
+                # Returning to # outro also uses its cached window.
+                terminal.click(6, 4)
+                self.wait(terminal, "Conteúdo do outro canal")
+                terminal.read(0.3)
+                self.assertEqual(reads(server, OTHER), 1)
+            finally:
+                self.assertTrue(terminal.close())
+
+    def test_cached_channel_reopens_where_the_reader_left_it(self):
+        with CacheMock(count=50) as server:
+            terminal = self.open(server)
+            try:
+                terminal.send("\x1bOH")
+                self.wait(terminal, "Mensagem 0001")
+                before = reads(server, CHANNEL)
+                self.switch_away_and_back(terminal)
+                self.wait(terminal, "Mensagem 0001")
+                self.assertNotIn("Mensagem 0050", self.screen(terminal))
+                self.assertEqual(reads(server, CHANNEL), before)
+            finally:
+                self.assertTrue(terminal.close())
+
+    def test_message_while_away_loads_on_return_at_the_end(self):
+        with CacheMock() as server:
+            terminal = self.open(server)
+            try:
+                self.wait(terminal, "Mensagem 0003")
+                terminal.click(6, 4)
+                self.wait(terminal, "Conteúdo do outro canal")
+                before = reads(server, CHANNEL)
+                message = dict(server.message(4), content="Chegou enquanto fora")
+                with server.lock:
+                    server.messages.append(message)
+                server.emit(dict(message, type="message"))
+                terminal.read(0.4)
+                terminal.click(5, 4)
+                self.wait(terminal, "Chegou enquanto fora")
+                self.assertIn("Mensagem 0003", self.screen(terminal))
+                # Only the latest page, which also marks the conversation read.
+                self.assertGreaterEqual(reads(server, CHANNEL), before + 1)
+                self.assertLessEqual(reads(server, CHANNEL), before + 2)
+            finally:
+                self.assertTrue(terminal.close())
+
+    def test_message_while_away_waits_for_scrolling_down_when_reading_older(self):
+        with CacheMock(count=50) as server:
+            terminal = self.open(server)
+            try:
+                terminal.send("\x1bOH")
+                self.wait(terminal, "Mensagem 0001")
+                terminal.click(6, 4)
+                self.wait(terminal, "Conteúdo do outro canal")
+                before = reads(server, CHANNEL)
+                message = dict(server.message(51), content="Nova lá embaixo")
+                with server.lock:
+                    server.messages.append(message)
+                server.emit(dict(message, type="message"))
+                terminal.read(0.4)
+                terminal.click(5, 4)
+                self.wait(terminal, "Mensagem 0001")
+                terminal.read(0.4)
+                # Nothing is read in advance while the reader is above it.
+                self.assertEqual(reads(server, CHANNEL), before)
+                terminal.send("\x1bOF")
+                self.wait(terminal, "Nova lá embaixo")
+                self.assertGreater(reads(server, CHANNEL), before)
+            finally:
+                self.assertTrue(terminal.close())
+
+    def test_edit_while_away_reloads_the_cached_channel(self):
+        with CacheMock() as server:
+            terminal = self.open(server)
+            try:
+                self.wait(terminal, "Mensagem 0002")
+                terminal.click(6, 4)
+                self.wait(terminal, "Conteúdo do outro canal")
+                before = reads(server, CHANNEL)
+                with server.lock:
+                    server.messages[1]["content"] = "Editada enquanto fora"
+                    server.messages[1]["edited_at"] = STAMP
+                server.emit(
+                    {
+                        "type": "message_edit",
+                        "id": server.messages[1]["id"],
+                        "channel_id": CHANNEL,
+                        "content": "Editada enquanto fora",
+                        "edited_at": STAMP,
+                    }
+                )
+                terminal.read(0.4)
+                terminal.click(5, 4)
+                self.wait(terminal, "Editada enquanto fora")
+                self.assertGreater(reads(server, CHANNEL), before)
+            finally:
+                self.assertTrue(terminal.close())
+
+    def test_reconnect_and_explicit_retry_drop_the_cached_channel(self):
+        with CacheMock() as server:
+            terminal = self.open(server)
+            try:
+                self.wait(terminal, "Mensagem 0003")
+                self.switch_away_and_back(terminal)  # # outro is now cached.
+                self.wait(terminal, "Mensagem 0003")
+                server.disconnect()
+                self.wait(terminal, "Desconectado")
+                deadline = time.monotonic() + 8
+                while "Desconectado" in self.screen(terminal) and time.monotonic() < deadline:
+                    terminal.read(0.05)
+                self.assertNotIn("Desconectado", self.screen(terminal))
+                before = reads(server, OTHER)
+                terminal.click(6, 4)
+                self.wait(terminal, "Conteúdo do outro canal")
+                terminal.read(0.3)
+                # Events may have been lost while disconnected.
+                self.assertEqual(reads(server, OTHER), before + 1)
+                terminal.click(5, 4)
+                self.wait(terminal, "Mensagem 0003")
+                before = reads(server, CHANNEL)
+                terminal.send("\x12")  # Ctrl+R always reads again.
+                deadline = time.monotonic() + 5
+                while reads(server, CHANNEL) == before and time.monotonic() < deadline:
+                    terminal.read(0.05)
+                self.assertGreater(reads(server, CHANNEL), before)
+            finally:
+                self.assertTrue(terminal.close())
+
+    def test_only_the_eight_most_recent_channels_stay_cached(self):
+        with CacheMock(extra=8) as server:
+            terminal = self.open(server, environment=None)
+            try:
+                terminal.resize(40, 100)
+                self.wait(terminal, "extra7")
+                self.wait(terminal, "Mensagem 0003")
+                before = reads(server, CHANNEL)
+                for n in range(8):
+                    row = next(
+                        i for i, line in enumerate(terminal.screen.display) if f"extra{n}" in line
+                    )
+                    terminal.click(row, terminal.screen.display[row].index(f"extra{n}"))
+                    self.wait(terminal, f"# extra{n} · Histórico")
+                    self.wait(terminal, "Nenhuma mensagem neste canal.")
+                terminal.click(5, 4)
+                self.wait(terminal, "Mensagem 0003")
+                terminal.read(0.3)
+                # # geral was the least recently used of nine: it is read again.
+                self.assertGreater(reads(server, CHANNEL), before)
+                self.assertTrue(all(reads(server, EXTRA[n]) == 1 for n in range(8)))
             finally:
                 self.assertTrue(terminal.close())
 

@@ -44,6 +44,19 @@ typedef struct {
     json_t *ids, *seen;
     bool ok;
 } mention_batch;
+/* A conversation window kept after another one was selected. dirty: a new
+ * message arrived for it, so the latest messages must be fetched on return. */
+#define HISTORY_STASH_LIMIT 8U
+#define HISTORY_STASH_BYTES (2U * HISTORY_BYTE_LIMIT)
+typedef struct {
+    char channel[37];
+    json_t *messages; /* Owned. */
+    size_t bytes;
+    bool more, newer_more, evicted, dirty;
+    char cursor_time[65], cursor_id[37], newer_time[65], newer_id[37];
+    history_reading reading;
+    uint64_t used;
+} channel_stash;
 typedef struct {
     json_t *ids;
     bool ok;
@@ -85,6 +98,11 @@ struct history {
     unsigned failures;
     char recovery_time[65], recovery_id[37];
     size_t selected, bytes;
+    channel_stash stash[HISTORY_STASH_LIMIT];
+    size_t stash_count;
+    uint64_t stash_tick;
+    history_reading reading, restored;
+    bool reading_set, restored_set;
     uint64_t context, selection, request_context, request_selection;
     enum request_kind pending;
     bool retry_requested;
@@ -137,6 +155,13 @@ bool history_internal_remember(history *h, const json_t *event);
 bool history_internal_recovery_response(history *h, json_t *body);
 bool history_internal_authors_response(history *h, json_t *body);
 bool history_internal_request_messages(history *h);
+/* Cached conversation windows: a new message marks one stale, other changes
+ * to its messages drop it; reconnects and reloads drop them all. */
+void history_internal_stash_touch(history *h, const char *channel);
+void history_internal_stash_forget(history *h, const char *channel);
+/* Reaction and pin events name only the message. */
+void history_internal_stash_forget_message(history *h, const char *message);
+void history_internal_stash_clear(history *h);
 bool history_internal_request_authors(history *h);
 
 void history_internal_members_destroy(history *h);

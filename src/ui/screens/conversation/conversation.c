@@ -160,7 +160,8 @@ bool conversation_poll_editor(view *ui, auth_client *auth)
             !strcmp(operation.channel_id, ui->editor_channel)) {
             if (!history_confirm(ui->model, message, operation.generation))
                 ui->feedback = "Envio confirmado; Ctrl+R para consultar o histórico.";
-        }
+        } else if (operation.generation == auth_context_generation(auth))
+            history_conversation_changed(ui->model, operation.channel_id);
         json_decref(message);
         outbox_reconciled(send_editor_outbox(ui->editor), operation.id);
         changed = true;
@@ -1490,8 +1491,14 @@ finished:
     text_input_event_reporting(false);
     media_view_suspend(ui->media);
     conversation_destroy_layout(ui);
-    if (ui->model)
+    if (ui->model) {
+        /* Another tab opens next: cache this conversation where it was read. */
+        history_reading reading = {.offset = ui->offset, .at_end = ui->at_end};
+        snprintf(reading.anchor, sizeof(reading.anchor), "%s", ui->anchor);
+        snprintf(reading.block, sizeof(reading.block), "%s", ui->block);
+        history_keep_reading(ui->model, &reading);
         history_active(ui->model, false);
+    }
     help_destroy(&ui->help);
     r8_modal_destroy(ui->r8);
     g_hash_table_destroy(ui->layout_index);
