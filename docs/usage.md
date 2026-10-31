@@ -740,11 +740,18 @@ settings and currently change nothing.
 | Mode | Behavior |
 | --- | --- |
 | Normal | Uses Kitty, Sixel or iTerm2 graphics when available, with Chafa character rendering as a fallback. Animated GIFs and video playback are enabled. |
-| Light | Draws images and animated GIFs as colored Chafa characters. Uses the terminal's native Unicode emojis and disables video downloads, covers and playback. |
+| Light | Draws images, animated GIFs, video covers and video playback as colored Chafa characters. Uses the terminal's native Unicode emojis. |
 | Ultralight | Text only, with no media downloads or previews. Attachments appear one per line with their type, name and size. Releases the media helper and removes the space reserved for images and avatars. |
 
-In Light, the media helper exits after three seconds without work. Cached
-images remain visible; the helper starts again when needed.
+In Light, the media helper exits after three seconds without work; an open
+video, even paused, keeps it running. Cached images remain visible; the helper
+starts again when needed.
+
+Normal needs Kitty, Sixel or iTerm2 graphics. On a terminal without them, such
+as the Linux console (TTY), the application runs in Light, and **Configurações**
+lists only Light, already marked, and Ultralight. If you saved Normal, the
+preference is kept for terminals that support it; choosing **Salvar e aplicar**
+there saves Light.
 Chafa colors depend on the terminal palette: truecolor terminals preserve RGB
 colors, while other terminals use the nearest available colors.
 

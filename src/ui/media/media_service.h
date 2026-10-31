@@ -6,6 +6,9 @@
 void media_service_stop(void);
 const char *media_service_error(void);
 bool media_service_iterm2(void);
+/* 1 when the environment names an iTerm2-compatible terminal, -1 when it does
+ * not, 0 while unknown. Starts the detection outside Ultralight. */
+int media_service_iterm2_state(void);
 bool media_service_glyph(const char *, const image_decode_request *, graphics_image *);
 /* Update, render and encode in the helper. Only the encoded frame crosses IPC.
  * Success with an empty image means no new frame; info is still refreshed. */

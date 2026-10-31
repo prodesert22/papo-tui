@@ -41,7 +41,7 @@ int main(void)
     assert(!media_image_backend() && !media_video_backend());
 
     app_mode_set(APP_MODE_LIGHT);
-    assert(!media_video_backend());
+    assert(media_video_backend()); /* Light plays videos as Chafa cells. */
     GThread *threads[4];
     for (size_t i = 0; i < G_N_ELEMENTS(threads); ++i)
         threads[i] = g_thread_new("test-encode", encode, NULL);

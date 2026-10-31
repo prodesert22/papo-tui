@@ -595,10 +595,7 @@ static bool media(message_blocks *b, json_t *message, json_t *entry, const char 
                  false, card, color))
         return false;
     size_t image_start = b->count;
-    int height =
-        graphics && (!video || (kind == AUTH_MEDIA_ATTACHMENT && app_mode_get() == APP_MODE_NORMAL))
-            ? 6
-            : 0;
+    int height = graphics && (!video || kind == AUTH_MEDIA_ATTACHMENT) ? 6 : 0;
     int media_width = width - (card ? 4 : 0);
     if (height && b->measure)
         b->measure(b->measure_context, &b->media[n], media_width, &media_width, &height);

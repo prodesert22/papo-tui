@@ -79,6 +79,33 @@ help_context conversation_help_context(view *ui, const char **area)
     return HELP_HEADER;
 }
 
+/* The mode the media stack and cached layouts were last prepared for; it
+ * outlives each run, since media views belong to the connections. */
+static int applied_mode = -1;
+/* Restarts media for the effective mode, after Settings or when the terminal
+ * turns out to lack graphics and Normal becomes Light. */
+static void apply_mode(view *ui)
+{
+    instance_connections *connections = ui->connections;
+    applied_mode = (int)app_mode_get();
+    media_service_stop();
+    icons_begin(ui->icons);
+    for (size_t i = 0; i < connections->count; ++i) {
+        if (connections->items[i].media)
+            media_view_reset(connections->items[i].media);
+        if (app_mode_get() == APP_MODE_ULTRALIGHT)
+            chat_assets_clear_media(history_assets(connections->items[i].model));
+    }
+    g_hash_table_remove_all(ui->layout_index);
+    for (size_t i = 0; i < HISTORY_MESSAGE_LIMIT; ++i) {
+        message_blocks_free(&ui->layouts[i].blocks);
+        memset(&ui->layouts[i], 0, sizeof(ui->layouts[i]));
+    }
+    ui->layout_bytes = 0;
+    ui->layout_sequence = 0;
+    if (app_mode_get() != APP_MODE_ULTRALIGHT)
+        graphics_terminal_probe();
+}
 static void open_settings(view *ui, const profile_config *config)
 {
     mention_popup_close(ui->mentions);
@@ -385,9 +412,17 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
     int saved_volume = player_volume_get();
     if (connections->config)
         voice_configure(&connections->config->audio);
+    if (applied_mode < 0)
+        applied_mode = (int)app_mode_get();
     while (!*interrupted) {
         if (ui->layout_failed)
             break;
+        graphics_terminal_capability();
+        if ((int)app_mode_get() != applied_mode) {
+            apply_mode(ui);
+            redraw = true;
+            scope = DRAW_ALL;
+        }
         uint64_t visible_now = 0;
         net_now_ms(&visible_now);
         text_input_event_reporting(ui->settings.open ? ui->settings.audio.push_to_talk
@@ -758,23 +793,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             if (ui->settings.applied) {
                 ui->settings.applied = false;
                 app_mode_set(connections->config->mode);
-                media_service_stop();
-                icons_begin(ui->icons);
-                for (size_t i = 0; i < connections->count; ++i) {
-                    if (connections->items[i].media)
-                        media_view_reset(connections->items[i].media);
-                    if (app_mode_get() == APP_MODE_ULTRALIGHT)
-                        chat_assets_clear_media(history_assets(connections->items[i].model));
-                }
-                g_hash_table_remove_all(ui->layout_index);
-                for (size_t i = 0; i < HISTORY_MESSAGE_LIMIT; ++i) {
-                    message_blocks_free(&ui->layouts[i].blocks);
-                    memset(&ui->layouts[i], 0, sizeof(ui->layouts[i]));
-                }
-                ui->layout_bytes = 0;
-                ui->layout_sequence = 0;
-                if (app_mode_get() == APP_MODE_NORMAL)
-                    graphics_terminal_probe();
+                apply_mode(ui);
             }
             scope = DRAW_ALL;
             continue;

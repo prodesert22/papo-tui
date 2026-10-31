@@ -202,7 +202,7 @@ typedef struct {
 static GVariant *player_call(remote_player *p, unsigned op, GVariant *payload)
 {
     if (!p || p->broken || p->generation != media_process_generation() ||
-        app_mode_get() != APP_MODE_NORMAL) {
+        app_mode_get() == APP_MODE_ULTRALIGHT) {
         g_variant_ref_sink(payload);
         g_variant_unref(payload);
         return NULL;
@@ -214,7 +214,7 @@ static GVariant *player_call(remote_player *p, unsigned op, GVariant *payload)
 }
 static void *player_open(const char *path)
 {
-    if (app_mode_get() != APP_MODE_NORMAL)
+    if (app_mode_get() == APP_MODE_ULTRALIGHT)
         return NULL;
     uint64_t generation = media_process_generation();
     GVariant *v = result(rpc(MEDIA_RPC_VIDEO_OPEN, g_variant_new_string(path), NULL, NULL));
@@ -300,7 +300,7 @@ const video_player_api *media_video_backend(void)
         sizeof(video_info),     player_open,    player_close,
         player_update,          player_changed, player_render,
         player_wakeup};
-    return app_mode_get() == APP_MODE_NORMAL ? &api : NULL;
+    return app_mode_get() != APP_MODE_ULTRALIGHT ? &api : NULL;
 }
 static gpointer detect(gpointer unused)
 {
@@ -314,14 +314,18 @@ static gpointer detect(gpointer unused)
     }
     return NULL;
 }
-bool media_service_iterm2(void)
+int media_service_iterm2_state(void)
 {
-    if (app_mode_get() != APP_MODE_NORMAL)
-        return false;
+    if (app_mode_get() == APP_MODE_ULTRALIGHT)
+        return 0;
     bool expected = false;
     if (atomic_compare_exchange_strong(&detecting, &expected, true)) {
         GThread *thread = g_thread_new("media-detect", detect, NULL);
         g_thread_unref(thread);
     }
-    return atomic_load(&detected_iterm) == 1;
+    return atomic_load(&detected_iterm);
+}
+bool media_service_iterm2(void)
+{
+    return app_mode_get() == APP_MODE_NORMAL && media_service_iterm2_state() == 1;
 }

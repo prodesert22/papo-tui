@@ -5,6 +5,17 @@
 #include "ui/input/shortcuts.h"
 #include "ui/input/text.h"
 #include <string.h>
+/* Without graphics Normal is not offered, and a saved Normal shows as Light. */
+static int first_mode(app_settings *s)
+{
+    if (app_mode_normal_available())
+        return APP_MODE_NORMAL;
+    if (s->draft == APP_MODE_NORMAL)
+        s->draft = APP_MODE_LIGHT;
+    if (s->selection < APP_MODE_LIGHT)
+        s->selection = APP_MODE_LIGHT;
+    return APP_MODE_LIGHT;
+}
 static const char *sections[] = {"Geral", "Aparência", "Áudio", "Acessibilidade", "Atalhos"};
 void settings_close(app_settings *s)
 {
@@ -253,9 +264,10 @@ void settings_draw(app_settings *s)
     tabs_draw(s, w, width);
     char label[160];
     if (!s->section) {
-        for (int i = 0; i < 3; ++i) {
+        int first = first_mode(s);
+        for (int i = first; i < 3; ++i) {
             int step = height >= 18 ? 3 : 1;
-            int row = 5 + i * step;
+            int row = 5 + (i - first) * step;
             wattrset(w,
                      COLOR_PAIR(s->focus == 1 && s->selection == i ? THEME_FOCUSED : THEME_PANEL) |
                          (!has_colors() && s->focus == 1 && s->selection == i ? A_REVERSE : 0));
@@ -432,8 +444,9 @@ void settings_key(app_settings *s, profile_config *config, int type, uint32_t ke
                 s->focus = 1;
                 audio_adjust(s, x < getmaxx(s->window) / 2 ? -1 : 1);
             }
-        } else if (!s->section && y >= 5 && y < 5 + 3 * (getmaxy(s->window) >= 18 ? 3 : 1)) {
-            s->selection = (y - 5) / (getmaxy(s->window) >= 18 ? 3 : 1);
+        } else if (!s->section && y >= 5 &&
+                   y < 5 + (3 - first_mode(s)) * (getmaxy(s->window) >= 18 ? 3 : 1)) {
+            s->selection = first_mode(s) + (y - 5) / (getmaxy(s->window) >= 18 ? 3 : 1);
             if (s->selection > 2)
                 s->selection = 2;
             s->draft = (app_mode)s->selection;
@@ -480,7 +493,7 @@ void settings_key(app_settings *s, profile_config *config, int type, uint32_t ke
             return;
         }
         if (type == KEY_CODE_YES && (key == KEY_UP || key == KEY_DOWN)) {
-            if (key == KEY_UP && !s->selection)
+            if (key == KEY_UP && s->selection <= first_mode(s))
                 s->focus = 0;
             else {
                 s->selection += (key == KEY_UP ? -1 : 1);

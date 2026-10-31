@@ -1524,6 +1524,8 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
     bool redraw = true;
     while (!result && !quit && !interrupted) {
         connections->config = config;
+        /* Settle whether Normal is available before the conversation opens. */
+        graphics_terminal_capability();
         if (ui.layout_failed) {
             result = 1;
             break;

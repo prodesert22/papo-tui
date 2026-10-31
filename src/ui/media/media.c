@@ -767,8 +767,7 @@ bool media_view_poll(media_view *v, history *h)
     if (terminal.supported)
         for (int i = 0; i < v->visible_count; ++i) {
             cache_entry *e = &v->cache[v->visible[i].entry];
-            if (!e->item.video ||
-                (e->item.kind == AUTH_MEDIA_ATTACHMENT && app_mode_get() == APP_MODE_NORMAL)) {
+            if (!e->item.video || e->item.kind == AUTH_MEDIA_ATTACHMENT) {
                 ensure_resource(v, e);
                 media_resource_use_image(e->resource, !strcmp(e->item.role, "author"), false);
                 placement *p = &v->visible[i];
@@ -987,7 +986,7 @@ bool media_view_open(media_view *v, const message_media *source)
     v->selected_item = item;
     v->modal_entry = cache_find(v, &item);
     v->modal = MODAL_LOADING;
-    if (v->modal_entry >= 0 && v->selected_item.video && app_mode_get() != APP_MODE_NORMAL) {
+    if (v->modal_entry >= 0 && v->selected_item.video && app_mode_get() == APP_MODE_ULTRALIGHT) {
         v->modal_error = "Vídeos desativados neste modo.";
         v->modal = MODAL_ERROR;
     } else if (v->modal_entry < 0 || !graphics_terminal_get().supported) {
@@ -1103,8 +1102,7 @@ bool media_view_key(media_view *v, int type, uint32_t key)
     if (v->modal == MODAL_ERROR &&
         ((type == OK && (key == '\r' || key == '\n')) ||
          (type == KEY_CODE_YES && key == KEY_ENTER)) &&
-        v->modal_entry >= 0 && graphics_terminal_get().supported &&
-        (!v->selected_item.video || app_mode_get() == APP_MODE_NORMAL)) {
+        v->modal_entry >= 0 && graphics_terminal_get().supported) {
         media_resource_retry(v->cache[v->modal_entry].resource);
         delete_entry(&v->cache[v->modal_entry]);
         v->cache[v->modal_entry].item = v->selected_item;

@@ -5,6 +5,7 @@ from test_context import main as test_main, panels
 from test_context import argument
 
 import json
+import re
 import os
 from pathlib import Path
 import shutil
@@ -448,19 +449,37 @@ class AppModes(unittest.TestCase):
             finally:
                 self.assertTrue(t.close())
 
-    def test_light_video_never_downloads_or_loads_player(self):
+    def test_light_video_plays_as_chafa_characters_and_survives_pause(self):
         self.seed("light")
         with self.helper.serve(media.MediaTerminal.video, "video/mp4") as server:
             t = self.open(server)
             try:
                 self.helper.wait(t, "Fixture")
-                t.send("\x0b\n")
-                self.helper.wait(t, "Vídeos desativados")
-                self.assertFalse(any("/attachments/" in req[1] for req in server.requests))
-                for pid in self.children(t):
-                    self.assertNotIn(
-                        "libmpv.", Path(f"/proc/{pid}/maps").read_text(encoding="utf-8")
+                t.send("rascunho do vídeo\x1b\x0b\n")
+                self.helper.wait(t, "Reproduzindo")
+                self.assertNotIn("Vídeos desativados", "\n".join(t.screen.display))
+                self.assertEqual(t.stream.frames, [])
+                self.assertTrue(
+                    any(
+                        "libmpv." in Path(f"/proc/{pid}/maps").read_text(encoding="utf-8")
+                        for pid in self.children(t)
                     )
+                )
+                t.send(" ")
+                self.helper.wait(t, "Pausado")
+                helpers = self.children(t)
+                # Longer than Light's three-second idle exit: the paused
+                # player keeps polling, so the helper stays and resumes.
+                deadline = time.monotonic() + 4
+                while time.monotonic() < deadline:
+                    t.read(0.1)
+                self.assertEqual(self.children(t), helpers)
+                t.send(" ")
+                self.helper.wait(t, "Reproduzindo")
+                t.send("\x1b")
+                self.helper.wait(t, "rascunho do vídeo")
+                # Closing the player lets the idle helper exit again.
+                self.wait(t, lambda: not self.children(t), timeout=8)
             finally:
                 self.assertTrue(t.close())
 
@@ -800,6 +819,79 @@ class AppModes(unittest.TestCase):
                     finally:
                         self.assertTrue(t.close())
 
+    def mode_list(self, t):
+        t.send("\x13")
+        self.helper.wait(t, "Configurações")
+        self.helper.wait(t, "Ultralight")
+        return "\n".join(t.screen.display)
+
+    def assert_light_without_normal(self, t, up="\x1bOA", down="\x1bOB"):
+        screen = self.mode_list(t)
+        self.assertNotIn("Normal", screen)
+        self.assertIn("(*) Light", screen)
+        self.assertIn("( ) Ultralight", screen)
+        # Up from the first listed mode reaches the section tabs, so the hidden
+        # Normal is never selected; Down then Space marks Ultralight.
+        t.send("\t" + up + down + down + " ")
+        self.helper.wait(t, "(*) Ultralight")
+        self.assertIn("( ) Light", "\n".join(t.screen.display))
+        t.send("\x1b")
+        self.wait(t, lambda: "Configurações" not in "\n".join(t.screen.display))
+
+    def red_cells(self, t):
+        return any(
+            "ff0000" in (t.screen.buffer[y][x].fg, t.screen.buffer[y][x].bg)
+            for y in range(8, 16)
+            for x in range(32, 75)
+        )
+
+    def test_terminal_without_graphics_protocols_runs_light_without_normal(self):
+        self.seed("normal")
+        with self.helper.serve(media.MediaTerminal.images["png"], "image/png") as server:
+            t = self.open(server)
+            try:
+                self.wait(t, lambda: self.red_cells(t))
+                # Device attributes without Sixel, after no Kitty reply and
+                # without an iTerm2 environment.
+                t.send("\x1b[?62;22c\x1b[6;16;8t")
+                self.assert_light_without_normal(t)
+                # The image is drawn again in Light, whose idle helper exits.
+                self.wait(t, lambda: self.red_cells(t))
+                self.wait(t, lambda: not self.children(t), timeout=8)
+                self.assertTrue(self.red_cells(t))
+                # The saved preference stays Normal for graphics terminals.
+                self.assertEqual(
+                    json.loads(self.config.read_text(encoding="utf-8"))["app_mode"], "normal"
+                )
+            finally:
+                self.assertTrue(t.close())
+
+    def test_linux_console_runs_light_without_normal(self):
+        self.seed("normal")
+        with self.helper.serve(media.MediaTerminal.images["png"], "image/png") as server:
+            shutil.rmtree(Path(self.root.name, "state"), ignore_errors=True)
+            # The Linux console answers nothing graphic; its arrows are CSI keys.
+            t = test_terminal.Terminal(environment=self.environment, terminal_type="linux")
+            self.addCleanup(lambda: t.close() if t.process.poll() is None else None)
+            t.send(server.url + "\tjosé\tSynthetic!123\n")
+            try:
+                self.helper.wait(t, "Conversar em #geral")
+                self.assert_light_without_normal(t, "\x1b[A", "\x1b[B")
+            finally:
+                self.assertTrue(t.close())
+
+    def test_graphics_terminal_keeps_normal_in_settings(self):
+        self.seed("normal")
+        with self.helper.serve(media.MediaTerminal.images["png"], "image/png") as server:
+            shutil.rmtree(Path(self.root.name, "state"), ignore_errors=True)
+            t = self.helper.open(server, environment=self.environment)
+            try:
+                screen = self.mode_list(t)
+                self.assertIn("(*) Normal", screen)
+                self.assertIn("( ) Light", screen)
+            finally:
+                self.assertTrue(t.close())
+
     def test_light_idle_worker_releases_codecs_and_restarts_for_modal(self):
         self.seed("light")
         with self.helper.serve(media.MediaTerminal.images["png"], "image/png") as server:
@@ -877,7 +969,10 @@ class AppModes(unittest.TestCase):
                 self.assertEqual(
                     json.loads(self.config.read_text(encoding="utf-8"))["app_mode"], "light"
                 )
-                self.assertNotIn(b"\x1b_G", restarted.output)
+                # Light only asks whether Kitty graphics exist, to know if
+                # Normal is available; it never transmits an image.
+                commands = re.findall(rb"\x1b_G([^;\x1b]*)", bytes(restarted.output))
+                self.assertTrue(all(b",a=q," in c for c in commands), commands)
             finally:
                 self.assertTrue(restarted.close())
 

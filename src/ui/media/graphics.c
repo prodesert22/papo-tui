@@ -127,7 +127,8 @@ static int media_color_pair(GHashTable *frame, int fg, int bg, int limit)
 }
 
 static graphics_terminal terminal;
-static bool probed;
+static bool probed, attributes_answered;
+static graphics_capability capability;
 typedef struct {
     graphics_protocol protocol;
     uint32_t id, placement_id;
@@ -183,6 +184,8 @@ bool graphics_terminal_reply(graphics_terminal *t, const char *reply)
         return false;
     t->cell_width = legacy.cell_width;
     t->cell_height = legacy.cell_height;
+    if (t == &terminal && !strncmp(reply, "\033[?", 3) && reply[strlen(reply) - 1] == 'c')
+        attributes_answered = true;
     if (!strncmp(reply, "\033[?", 3) && t->protocol != GRAPHICS_KITTY) {
         if (legacy.supported)
             t->protocol = GRAPHICS_SIXEL;
@@ -192,9 +195,30 @@ bool graphics_terminal_reply(graphics_terminal *t, const char *reply)
     return true;
 }
 
+graphics_capability graphics_terminal_capability(void)
+{
+    if (capability != GRAPHICS_CAPABILITY_UNKNOWN)
+        return capability;
+    const char *term = getenv("TERM");
+    if (!term || !*term || !strcmp(term, "dumb") || !strcmp(term, "linux"))
+        capability = GRAPHICS_CAPABILITY_MISSING;
+    else if (terminal.protocol == GRAPHICS_KITTY || terminal.protocol == GRAPHICS_SIXEL)
+        capability = GRAPHICS_CAPABILITY_AVAILABLE;
+    else if (attributes_answered) {
+        /* Device attributes follow the Kitty reply, so neither protocol is
+         * coming; iTerm2 is recognized from the environment instead. */
+        int iterm = media_service_iterm2_state();
+        if (iterm)
+            capability = iterm > 0 ? GRAPHICS_CAPABILITY_AVAILABLE : GRAPHICS_CAPABILITY_MISSING;
+    }
+    if (capability == GRAPHICS_CAPABILITY_MISSING)
+        app_mode_withdraw_normal();
+    return capability;
+}
+
 void graphics_terminal_probe(void)
 {
-    if (app_mode_get() != APP_MODE_NORMAL)
+    if (app_mode_get() == APP_MODE_ULTRALIGHT)
         return;
     if (probed || !isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO))
         return;

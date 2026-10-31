@@ -51,6 +51,16 @@ typedef struct graphics_image {
 #define GRAPHICS_PROBE_ID 1347440639U
 /* Only the main thread probes, consumes replies or writes the terminal. */
 void graphics_terminal_probe(void);
+typedef enum {
+    GRAPHICS_CAPABILITY_UNKNOWN,
+    GRAPHICS_CAPABILITY_AVAILABLE,
+    GRAPHICS_CAPABILITY_MISSING
+} graphics_capability;
+/* Whether the terminal offers Kitty, Sixel or iTerm2 graphics. Missing means
+ * a Linux console or dumb terminal, or a terminal that answered the probe
+ * without any of them; the answer then stays for the process and withdraws
+ * the Normal mode. Unknown while the terminal has not answered. */
+graphics_capability graphics_terminal_capability(void);
 int graphics_terminal_input(uint32_t *key);
 graphics_terminal graphics_terminal_get(void);
 bool graphics_terminal_reply(graphics_terminal *terminal, const char *reply);
