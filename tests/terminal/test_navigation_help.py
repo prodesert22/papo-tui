@@ -243,6 +243,24 @@ class NavigationHelp(HistoryTerminal):
         wait_for_screen(t, lambda: t.process.poll() is not None, "Quit was blocked by help")
         self.assertEqual(t.process.returncode, 0)
 
+    def test_closing_help_on_login_clears_the_whole_modal(self):
+        t = self.terminal()
+        self.wait(t, "URL do servidor")
+        for close in ("\x1b", "\x07"):
+            self.help(t, "Login e cadastro")
+            t.send(close)
+            # The modal is wider and taller than the login card; none of it may remain.
+            wait_for_screen(
+                t,
+                lambda: (
+                    "Ajuda do contexto" not in self.screen(t)
+                    and "Combinação de teclas" not in self.screen(t)
+                    and "Função" not in self.screen(t)
+                ),
+                "Help modal remained behind the login card",
+            )
+            self.assertIn("URL do servidor", self.screen(t))
+
     def test_obsolete_function_keys_are_inert_and_footer_opens_context_help(self):
         with ChannelPreferencesMock() as server:
             t = self.open(server)

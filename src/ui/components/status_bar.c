@@ -74,14 +74,17 @@ static void label(WINDOW *window, int row, int x, int width, const char *text)
 void status_bar_draw(status_bar *bar, WINDOW *window, int row, const char *full,
                      const char *shorter, const char *minimal)
 {
-    if (!bar || !window || row < 0 || row >= getmaxy(window))
+    if (!bar)
+        return;
+    bar->hint_width = 0;
+    if (!window || row < 0 || row >= getmaxy(window))
         return;
     int available = getmaxx(window) - 2;
     if (available <= 0)
         return;
     status_context ordered[STATUS_CONTEXT_COUNT];
     size_t count = 0;
-    int need = 0;
+    int need = 0; /* Every notice in its compact form, as the layout below reserves it. */
     for (int i = 0; i < STATUS_CONTEXT_COUNT; ++i) {
         status_notice *notice = &bar->notices[i];
         notice->x = notice->width = 0;
@@ -94,7 +97,8 @@ void status_bar_draw(status_bar *bar, WINDOW *window, int row, const char *full,
         }
         ordered[at] = (status_context)i;
         ++count;
-        need += cells(notice->text);
+        int n = cells(*notice->compact ? notice->compact : notice->text);
+        need += n < 24 ? n : 24;
     }
     if (count)
         need += 3 * ((int)count - 1);
@@ -115,6 +119,7 @@ void status_bar_draw(status_bar *bar, WINDOW *window, int row, const char *full,
     int hint_width = cells(hints);
     if (hint_width > available)
         hint_width = available;
+    bar->hint_width = hint_width;
     wattrset(window, COLOR_PAIR(THEME_PANEL_MUTED));
     label(window, row, 1, hint_width, hints);
     if (!count)

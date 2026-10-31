@@ -42,7 +42,10 @@
 
 #define PASTE_START (KEY_MAX + 1)
 #define PASTE_END (KEY_MAX + 2)
-#define CONTENT_Y 5
+/* Wide screens keep one row of server tabs; narrow ones add a row for the
+ * [Canais]/[Conversa] switch. The focus label lives in the footer. */
+#define TABS_ROWS (COLS >= 80 ? 1 : 2)
+#define CONTENT_Y (TABS_ROWS + 3)
 
 enum {
     SERVER_TABS,
@@ -161,6 +164,10 @@ typedef struct {
     uint64_t voice_revision;
     uint64_t copy_revision;
     uint64_t retry_id;
+    /* The confirmation asks to remove the server tab remove_index instead of
+     * resending a message. */
+    bool remove_server;
+    size_t remove_index;
     uint64_t unseen;
     int waiting_page;
     bool paging_notice;
@@ -244,13 +251,15 @@ int conversation_activate_tab(view *ui, size_t index, size_t *selected);
 void conversation_cancel_edit(view *ui);
 void conversation_submit(view *ui, uint64_t retry_id, bool duplicate);
 void conversation_close_confirmation(view *ui);
+void conversation_confirm_remove(view *ui, size_t index);
 bool conversation_poll_editor(view *ui, auth_client *auth);
 bool conversation_poll_model(view *ui, auth_client *auth);
 bool conversation_edit(view *ui, int type, uint32_t key);
 void conversation_dispose_media(void *v);
 void conversation_update_media(void *v, const json_t *event);
 void conversation_idle_media(void *v);
-void conversation_handle_confirmation(view *ui, int type, uint32_t key, bool enter);
+/* Returns true when the user confirmed removing ui->remove_index. */
+bool conversation_handle_confirmation(view *ui, int type, uint32_t key, bool enter);
 const GPtrArray *conversation_attachments(view *ui);
 bool conversation_attachments_poll(view *ui, auth_client *auth);
 void conversation_attachments_open(view *ui, bool clipboard);

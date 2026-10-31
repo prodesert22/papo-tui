@@ -10,6 +10,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 
@@ -295,15 +296,228 @@ class Persistence(unittest.TestCase):
             before = len(first.requests)
             t = self.terminal()
             self.wait(t, "[Trabalho]")
+            self.wait(t, "geral")
             row = t.screen.display[1]
-            self.assertIn("Comunidade", row)
-            self.assertLess(row.index("Comunidade"), row.index("[Trabalho]"))
+            self.assertIn("Comunidade", row, "\n".join(t.screen.display))
+            self.assertLess(row.index("Comunidade"), row.index("[Trabalho"))
             self.assertEqual(self.login_count(first), 1)
             self.assertEqual(self.login_count(second), 1)
             restored = first.requests[before:]
             self.assertTrue(any(r[1].endswith("/auth/whoami") for r in restored))
             # The inactive tab validates its session without reading history.
             self.assertFalse(any("/messages" in r[1] for r in restored))
+            t.close()
+
+    def test_unreachable_newest_server_keeps_tabs_to_open_the_other(self):
+        self.keyring()
+        with HistoryMock() as first, HistoryMock() as second:
+            second.name = "Trabalho"
+            t = self.login(first)
+            self.add_server(t, second)
+            t.close()
+            second.api_handler = lambda method, path, body: (503, None)
+            t = self.terminal()
+            # The newest server opens in the form and fails; the other one
+            # becomes a tab above the form instead of requiring a new login.
+            self.wait(t, "Serviço indisponível")
+            self.wait(t, "Comunidade")
+            row = next(i for i, line in enumerate(t.screen.display) if "Comunidade" in line)
+            self.assertEqual(row, 0)
+            self.assertIn("URL do servidor", "\n".join(t.screen.display))
+            t.click(row, t.screen.display[row].index("Comunidade") + 1)
+            self.wait(t, "[Comunidade]")
+            self.wait(t, "geral")
+            self.assertNotIn("URL do servidor", "\n".join(t.screen.display))
+            self.assertEqual(self.login_count(first), 1)
+            # The unreachable server stays listed with its saved session.
+            self.wait(t, "(offline)")
+            self.assertIn("(offline)", t.screen.display[1])
+            self.assertTrue(self.state(second.url)["restore_allowed"])
+            # Opening it again reads the saved session instead of asking a password.
+            second.api_handler = second.route
+            t.click(1, t.screen.display[1].index("(offline)"))
+            self.wait(t, "[Trabalho]")
+            self.wait(t, "geral")
+            self.assertNotIn("(offline)", t.screen.display[1])
+            self.assertIn("Comunidade", t.screen.display[1])
+            self.assertEqual(self.login_count(second), 1)
+            t.close()
+
+    def test_unreachable_background_server_restores_as_offline_tab(self):
+        self.keyring()
+        with HistoryMock() as first, HistoryMock() as second:
+            second.name = "Trabalho"
+            t = self.login(first)
+            self.add_server(t, second)
+            t.close()
+            first.api_handler = lambda method, path, body: (503, None)
+            t = self.terminal()
+            self.wait(t, "[Trabalho]")
+            self.wait(t, "geral")
+            self.wait(t, "(offline)")
+            row = t.screen.display[1]
+            self.assertIn("(offline)", row, "\n".join(t.screen.display))
+            self.assertLess(row.index("(offline)"), row.index("[Trabalho"))
+            self.assertTrue(self.state(first.url)["restore_allowed"])
+            t.close()
+
+    def test_saved_server_tabs_show_with_the_login_before_validation(self):
+        self.keyring()
+        with HistoryMock() as first, HistoryMock() as second:
+            second.name = "Trabalho"
+            t = self.login(first)
+            self.add_server(t, second)
+            t.close()
+            release = threading.Event()
+            route = second.route
+
+            def slow(method, path, body):
+                if path.endswith("/auth/whoami"):
+                    release.wait(5)
+                return route(method, path, body)
+
+            second.api_handler = slow
+            try:
+                t = self.terminal()
+                # The newest server is still confirming its session, yet the
+                # other saved server is already a tab above the login form.
+                self.wait(t, "Comunidade")
+                self.assertIn("Comunidade", t.screen.display[0])
+                self.wait(t, "Conectando")
+                self.assertIn("URL do servidor", "\n".join(t.screen.display))
+            finally:
+                release.set()
+            self.wait(t, "geral")
+            self.wait(t, "[Trabalho")
+            self.assertIn("Comunidade", t.screen.display[1])
+            self.assertEqual(self.login_count(second), 1)
+            t.close()
+
+    def right_click(self, t, row, column):
+        t.send(f"\x1b[<2;{column + 1};{row + 1}M\x1b[<2;{column + 1};{row + 1}m")
+
+    def deletes(self):
+        return int(self.control("Counts").strip("()\n").split(",")[2].strip().split()[-1])
+
+    def test_offline_server_is_removed_with_its_saved_session(self):
+        self.keyring()
+        with HistoryMock() as first, HistoryMock() as second:
+            second.name = "Trabalho"
+            t = self.login(first)
+            self.add_server(t, second)
+            t.close()
+            second.api_handler = lambda method, path, body: (503, None)
+            t = self.terminal()
+            self.wait(t, "Serviço indisponível")
+            self.wait(t, "Comunidade")
+            t.click(0, t.screen.display[0].index("Comunidade") + 1)
+            self.wait(t, "(offline)")
+            deletes = self.deletes()
+            self.right_click(t, 1, t.screen.display[1].index("(offline)"))
+            self.wait(t, "Remover servidor?")
+            t.send("\x1b")  # Esc keeps the server.
+            t.read(0.3)
+            self.assertNotIn("Remover servidor?", "\n".join(t.screen.display))
+            self.assertIn("(offline)", t.screen.display[1])
+            self.right_click(t, 1, t.screen.display[1].index("(offline)"))
+            self.wait(t, "Remover servidor?")
+            t.send("\x1b[C\n")
+            deadline = time.monotonic() + 8
+            while "(offline)" in t.screen.display[1] and time.monotonic() < deadline:
+                t.read(0.05)
+            self.assertNotIn("(offline)", t.screen.display[1])
+            self.assertIn("[Comunidade]", t.screen.display[1])
+            while self.deletes() == deletes and time.monotonic() < deadline:
+                t.read(0.05)
+            self.assertGreater(self.deletes(), deletes)
+            self.assertEqual(self.state(second.url), {})
+            t.close()
+            second.api_handler = second.route
+            t = self.terminal()
+            self.wait(t, "[Comunidade]")
+            self.wait(t, "geral")
+            self.assertNotIn("127.0.0.1", t.screen.display[1])
+            self.assertEqual(self.login_count(second), 1)
+            t.close()
+
+    def test_online_server_removed_by_keyboard_from_the_tabs(self):
+        self.keyring()
+        with HistoryMock() as first, HistoryMock() as second:
+            second.name = "Trabalho"
+            t = self.login(first)
+            self.add_server(t, second)
+            self.wait(t, "geral")
+            t.send("\x1b\x1b\x1bOA")  # Esc to the channel list, then up to the tabs.
+            deadline = time.monotonic() + 8
+            while "Foco: Abas" not in "\n".join(t.screen.display) and time.monotonic() < deadline:
+                t.send("\x1bOA")
+                t.read(0.1)
+            self.wait(t, "Foco: Abas")
+            t.send("\x1b[3~")  # Delete on the selected Trabalho tab.
+            self.wait(t, "Remover servidor?")
+            self.wait(t, "Trabalho")
+            t.send("\t\n")
+            self.wait(t, "[Comunidade]")
+            self.wait(t, "geral")
+            self.assertNotIn("Trabalho", t.screen.display[1])
+            self.assertEqual(self.state(second.url), {})
+            self.assertTrue(self.state(first.url)["restore_allowed"])
+            t.close()
+            t = self.terminal()
+            self.wait(t, "[Comunidade]")
+            self.wait(t, "geral")
+            self.assertNotIn("Trabalho", t.screen.display[1])
+            self.assertEqual(self.login_count(first), 1)
+            t.close()
+
+    def test_unreachable_form_server_is_removed_from_the_login_tabs(self):
+        self.keyring()
+        with HistoryMock() as first, HistoryMock() as second:
+            second.name = "Trabalho"
+            t = self.login(first)
+            self.add_server(t, second)
+            t.close()
+            second.api_handler = lambda method, path, body: (503, None)
+            t = self.terminal()
+            self.wait(t, "Serviço indisponível")
+            self.wait(t, "Comunidade")
+            t.send("\x1b[A" * 6)  # Up from the first field reaches the tabs.
+            t.send("\x1b[3~")
+            self.wait(t, "Remover servidor?")
+            self.wait(t, "127.0.0.1")
+            t.send("\x1b[C\n")
+            self.wait(t, "[Comunidade]")
+            self.wait(t, "geral")
+            self.assertEqual(self.state(second.url), {})
+            t.close()
+            t = self.terminal()
+            self.wait(t, "[Comunidade]")
+            self.wait(t, "geral")
+            self.assertEqual(self.login_count(first), 1)
+            t.close()
+
+    def test_login_tabs_switch_servers_by_keyboard(self):
+        self.keyring()
+        with HistoryMock() as first, HistoryMock() as second:
+            second.name = "Trabalho"
+            t = self.login(first)
+            self.add_server(t, second)
+            t.close()
+            second.api_handler = lambda method, path, body: (503, None)
+            t = self.terminal()
+            self.wait(t, "Serviço indisponível")
+            self.wait(t, "Comunidade")
+            t.send("\x1b[A" * 6)  # Up from the first field reaches the tabs.
+            self.wait(t, "[127.0.0.1")
+            t.send("\x1b[D")
+            self.wait(t, ">Comunidade<")
+            t.send("\x1b[C")
+            self.wait(t, "[127.0.0.1")
+            self.assertNotIn(">Comunidade<", "\n".join(t.screen.display))
+            t.send("\x1b[D\n")
+            self.wait(t, "[Comunidade]")
+            self.wait(t, "geral")
+            self.assertEqual(self.login_count(first), 1)
             t.close()
 
     @unittest.skipUnless(os.environ.get("PAPO_TEST_SECRET"), "libsecret adapter not built")
@@ -316,6 +530,7 @@ class Persistence(unittest.TestCase):
             t.close()
             t = self.terminal()
             self.wait(t, "[Trabalho]")
+            self.wait(t, "geral")
             self.assertIn("Comunidade", t.screen.display[1])
             self.assertEqual(self.login_count(first), 1)
             self.assertEqual(self.login_count(second), 1)

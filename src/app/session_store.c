@@ -75,6 +75,11 @@ static void attach_client(session_store *s, auth_client *client, bool create)
     session_entry *current = entry_of(s, client), *target = entry_for(s, url);
     if (current && (current == target || !*session_slot_url(current->slot)))
         return;
+    /* A forgotten slot has no URL; reuse it before creating another one. */
+    for (size_t i = 0; !target && create && i < s->count; ++i)
+        if (!s->entries[i].client && !*session_slot_url(s->entries[i].slot) &&
+            !session_slot_busy(s->entries[i].slot))
+            target = &s->entries[i];
     if (!target && create && s->scope && s->count < SESSION_SLOT_LIMIT && s->next) {
         session_slot *slot = session_slot_create(s->config, s->next, false);
         if (slot) {
@@ -181,6 +186,32 @@ void session_store_cancel_resume(session_store *s)
     if (s)
         for (size_t i = 0; i < s->count; ++i)
             session_slot_cancel_resume(s->entries[i].slot);
+}
+bool session_store_saved(const session_store *s, const auth_client *client)
+{
+    if (s)
+        for (size_t i = 0; i < s->count; ++i)
+            if (s->entries[i].client == client)
+                return session_slot_saved(s->entries[i].slot);
+    return false;
+}
+bool session_store_retry(session_store *s, auth_client *client)
+{
+    session_entry *e = s && client ? entry_of(s, client) : NULL;
+    return e && session_slot_retry(e->slot);
+}
+void session_store_forget(session_store *s, auth_client *client)
+{
+    if (!s || !client)
+        return;
+    session_entry *e = entry_of(s, client);
+    if (!e)
+        e = entry_for(s, auth_instance_url(client));
+    if (!e)
+        return;
+    release_entry(e);
+    session_slot_forget(e->slot);
+    session_slot_poll(e->slot, NULL);
 }
 unsigned session_store_order(const session_store *s, const auth_client *client)
 {

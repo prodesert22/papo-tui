@@ -767,7 +767,12 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         bool enter = (type == OK && (key == '\r' || key == '\n')) ||
                      (type == KEY_CODE_YES && key == KEY_ENTER);
         if (ui->duplicate_modal) {
-            conversation_handle_confirmation(ui, type, key, enter);
+            size_t removed = ui->remove_index;
+            if (conversation_handle_confirmation(ui, type, key, enter)) {
+                *selected = removed;
+                result = HISTORY_REMOVE;
+                break;
+            }
             continue;
         }
         if (shortcut_is(type, key, SHORTCUT_ACCOUNT))
@@ -946,7 +951,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 }
                 if (ui->footer && (e.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED)) &&
                     e.y == getbegy(ui->footer) + 1 && e.x >= getbegx(ui->footer) + 1 &&
-                    e.x < getbegx(ui->footer) + 1 + text_label(NULL, 0, 0, 128, UI_HELP_HINT)) {
+                    e.x < getbegx(ui->footer) + 1 + ui->status.hint_width) {
                     const char *area;
                     help_context context = conversation_help_context(ui, &area);
                     help_open(&ui->help, context, area, false);
@@ -996,6 +1001,16 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                     continue;
                 }
                 if (e.bstate & (BUTTON3_PRESSED | BUTTON3_CLICKED)) {
+                    int ty = e.y, tx = e.x;
+                    if (ui->tabs && wmouse_trafo(ui->tabs, &ty, &tx, false)) {
+                        for (size_t i = 0; ty == 0 && i < connections->count; ++i)
+                            if (conversation_hit(ui->tab_hits[i], tx)) {
+                                conversation_confirm_remove(ui, i);
+                                scope = DRAW_ALL;
+                                break;
+                            }
+                        continue;
+                    }
                     if (ui->body && conversation_input(ui) && e.x >= getbegx(ui->body) &&
                         e.x < getbegx(ui->body) + getmaxx(ui->body) &&
                         conversation_input_row(ui, e.y - getbegy(ui->body)))
@@ -1284,7 +1299,10 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         if (ui->focus == SERVER_TABS) {
             if (type == KEY_CODE_YES && key == KEY_DOWN)
                 conversation_set_focus(ui, CHANNEL_LIST);
-            else if (type == KEY_CODE_YES && (key == KEY_LEFT || key == KEY_RIGHT)) {
+            else if (type == KEY_CODE_YES && key == KEY_DC && ui->tab_cursor < connections->count) {
+                conversation_confirm_remove(ui, ui->tab_cursor);
+                scope = DRAW_ALL;
+            } else if (type == KEY_CODE_YES && (key == KEY_LEFT || key == KEY_RIGHT)) {
                 size_t index = ui->tab_cursor;
                 if (key == KEY_LEFT && index)
                     --index;

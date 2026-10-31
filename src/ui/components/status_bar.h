@@ -33,6 +33,7 @@ typedef struct {
     status_notice notices[STATUS_CONTEXT_COUNT];
     uint64_t sequence;
     bool connection_critical;
+    int hint_width; /* Cells of the hints drawn at column 1 by the last draw. */
 } status_bar;
 
 bool status_bar_set(status_bar *bar, status_context context, const char *text);

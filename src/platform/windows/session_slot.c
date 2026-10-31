@@ -314,6 +314,29 @@ bool session_slot_poll(session_slot *s, auth_client *active)
     }
     return changed;
 }
+bool session_slot_retry(session_slot *s)
+{
+    if (!s || !s->available || !s->allowed || s->resume || s->failed)
+        return false;
+    if (!s->restoring) {
+        if (s->busy)
+            return false; /* A write is in flight; the next activation retries. */
+        s->restoring = true;
+        start(s, LOOKUP);
+    }
+    return true;
+}
+void session_slot_forget(session_slot *s)
+{
+    if (!s)
+        return;
+    s->restoring = false;
+    auth_session_free(&s->resume);
+    invalidate(s);
+    s->url[0] = 0;
+    s->had_session = false;
+    s->deleting = true;
+}
 void session_slot_unwatch(session_slot *s, auth_client *client)
 {
     if (!s || !client)

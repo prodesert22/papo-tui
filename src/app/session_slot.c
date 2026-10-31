@@ -913,6 +913,25 @@ void session_slot_cancel_resume(session_slot *s)
     s->restore = false;
     auth_session_free(&s->resume);
 }
+bool session_slot_retry(session_slot *s)
+{
+    if (!s || !s->available || !s->written.allowed || s->resume)
+        return false;
+    s->restore = true;
+    return true;
+}
+void session_slot_forget(session_slot *s)
+{
+    if (!s)
+        return;
+    /* Cancelling would disable the provider; a lookup in flight is discarded. */
+    s->restore = false;
+    auth_session_free(&s->resume);
+    invalidate(s);
+    s->state.url[0] = 0;
+    s->had_session = false;
+    s->delete_wanted = true;
+}
 void session_slot_unwatch(session_slot *s, auth_client *client)
 {
     if (!s || !client)

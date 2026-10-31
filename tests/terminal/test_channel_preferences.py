@@ -221,7 +221,7 @@ class ChannelPreferences(HistoryTerminal):
                 self.menu(t)
                 self.settings(t, 0)
                 wait_for_screen(t, server.setting_started.is_set, "Setting was not transmitted")
-                t.click(8, 4)
+                t.click(7, 4)
                 server.setting_hold.set()
                 self.wait(t, "Notificações do canal atualizadas")
                 self.wait(t, "Conteúdo do outro canal")
@@ -260,7 +260,7 @@ class ChannelPreferences(HistoryTerminal):
                 )
                 self.assertEqual(server.marked, [])
                 self.assertFalse(server.notifications[0]["read"])
-                t.click(8, 4)
+                t.click(7, 4)
                 fresh = server.message(4)
                 server.messages.append(fresh)
                 server.emit(dict(fresh, type="message"))
@@ -269,7 +269,7 @@ class ChannelPreferences(HistoryTerminal):
                     lambda: "[Comunidade 0]" in t.screen.display[1],
                     "Fresh message did not light server badge",
                 )
-                t.click(7, 4)
+                t.click(6, 4)
                 self.wait(t, "Mensagem 0004")
                 wait_for_screen(
                     t,
@@ -361,6 +361,17 @@ class ChannelMenuMedia(MediaTerminal):
             return self.background_parts(t, protocol, *checkpoint, original)
 
         wait_for_screen(t, lambda: bool(parts()), "Uncovered image fragments disappeared")
+
+        # Large fragments of one state can span several output frames; take
+        # them all, so the next checkpoint starts after this state.
+        def frames():
+            return len(t.stream.frames) + len(t.stream.placements)
+
+        deadline, count, quiet = time.monotonic() + 3, frames(), time.monotonic()
+        while time.monotonic() < deadline and time.monotonic() - quiet < 0.4:
+            t.read(0.05)
+            if frames() != count:
+                count, quiet = frames(), time.monotonic()
         for (w, h), (y, x) in parts():
             self.assertTrue(
                 y + (h + 15) // 16 <= top or y >= bottom or x + (w + 7) // 8 <= left or x >= right,
@@ -410,7 +421,7 @@ class ChannelMenuMedia(MediaTerminal):
                             checkpoint = (before, len(t.stream.placements))
                         elif protocol in ("chafa", "light"):
                             fallback = self.wait_fallback(t)
-                        t.send("\x1b[<2;5;8M\x1b[<2;5;8m")
+                        t.send("\x1b[<2;5;7M\x1b[<2;5;7m")
                         self.wait(t, "Silenciar canal…")
                         if protocol in ("chafa", "light"):
                             self.assert_fallback(t, fallback)

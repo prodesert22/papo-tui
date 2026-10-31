@@ -23,6 +23,21 @@ session of every server you were signed in to. Each server opens as a tab in
 the top bar, and the most recently added one is selected. Use **[+ Adicionar]**
 (Add) in that bar to sign in to another server.
 
+The sign-in screen keeps the server tabs at the top while another server is
+open, for example when the selected server is unreachable at startup or you are
+adding a server. Click a tab to open that server, or press ↑ from the first field
+(or Shift+Tab), choose a tab with ←/→ and press Enter.
+
+A server that cannot be reached keeps its tab, marked **(offline)**, and its
+saved session. Open the tab again to retry: the saved session is used, so you do
+not need your password once the server is back.
+
+To remove a server from the list, right-click its tab, or select the tab and
+press Delete, then confirm **Remover** (Remove). This closes the tab and deletes
+the session saved in the system credential store; the server does not come back
+when you reopen the application. It does not sign you out on the server; use
+**Sair da conta** (Sign out) first if you also want to end that session there.
+
 Use `papo-tui --help` to list command-line options and `papo-tui --version`
 to check the installed version.
 

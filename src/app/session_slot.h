@@ -38,4 +38,10 @@ bool session_slot_restoring(const session_slot *slot);
 /* Transfers an owned secret snapshot, wipe with auth_session_free. */
 char *session_slot_take_resume(session_slot *slot);
 void session_slot_cancel_resume(session_slot *slot);
+/* Looks the saved credential up again, for a server that was unreachable.
+ * Returns false when nothing is saved or the provider is unavailable. */
+bool session_slot_retry(session_slot *slot);
+/* Disables restoring, deletes the credential and clears the remembered URL.
+ * The caller unwatches any client of this slot first. */
+void session_slot_forget(session_slot *slot);
 #endif

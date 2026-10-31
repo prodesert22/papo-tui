@@ -41,7 +41,8 @@
 #define EXTRA_FOCUS (FIELD_COUNT + 1)
 #define THEME_PROFILE_FOCUS (FIELD_COUNT + 2)
 #define CHAT_FOCUS (FIELD_COUNT + 3)
-#define FOCUS_COUNT (FIELD_COUNT + 4)
+#define TABS_FOCUS (FIELD_COUNT + 4)
+#define FOCUS_COUNT (FIELD_COUNT + 5)
 #define PROFILE_BUTTON "[Selecionar perfil]"
 #define CARD_HEIGHT 22
 #define MIN_COLS 44
@@ -49,7 +50,12 @@
 #define KEY_PASTE_END (KEY_MAX + 2)
 
 typedef struct {
+    int x, width;
+} tab_hit;
+
+typedef struct {
     help_modal help;
+    WINDOW *tabs; /* Server tabs above the card while another server is open. */
     WINDOW *card;
     WINDOW *header;
     WINDOW *body;
@@ -67,8 +73,18 @@ typedef struct {
     int scroll[FIELD_COUNT];
     bool open_chat;
     size_t previous_instance;
+    /* Entries are the open servers, then the form's own server when it is not
+     * one of them. tab_cursor indexes them while the tabs have focus. */
+    bool tabs_shown;
+    size_t tab_cursor, first_tab, tab_request;
+    tab_hit tab_hits[INSTANCE_LIMIT + 1], back_hit, next_hit;
+    /* Confirmation for removing tab entry remove_index and its saved session. */
+    WINDOW *remove_window;
+    bool remove_open, remove_accept;
+    size_t remove_index;
     bool profile_active;
     bool allow_local_http;
+    bool retrying; /* The saved session of this form is being read again. */
     bool server_password_error;
     bool registering, mode_changed, session_present, layout_failed;
     char validation_message[192];
@@ -94,77 +110,65 @@ static int visible_field_count(const login_ui *ui)
 static volatile sig_atomic_t interrupted;
 /* Owned for this invocation of the login/application loop. */
 static instance_connections *connections;
-/* Other saved instances restored at startup; owned here until each validated
- * session becomes a tab. They never request history before being opened. */
+/* A saved server that could not be reached, as opposed to a rejected session. */
+static bool kept_offline(auth_client *client)
+{
+    return !auth_has_session(client) && !auth_session_rejected(client) &&
+           *auth_instance_url(client) && session_store_saved(connections->sessions, client);
+}
+/* Other saved instances restored at startup become tabs as soon as their
+ * snapshot is read, still connecting. restored borrows them until their first
+ * validation ends. They never request history before being opened. */
 static auth_client *restored[INSTANCE_LIMIT];
 static size_t restored_count;
+static unsigned tab_rank(const auth_client *client, void *context)
+{
+    return session_store_order(context, client);
+}
 static void restore_instance(const char *url, const char *snapshot, bool allow_local_http)
 {
-    auth_client *client = restored_count < INSTANCE_LIMIT - 1 ? auth_create() : NULL;
+    auth_client *client = connections->count < INSTANCE_LIMIT - 1 && restored_count < INSTANCE_LIMIT
+                              ? auth_create()
+                              : NULL;
     if (!client)
         return;
     auth_session_restore(client, snapshot, url, allow_local_http);
     session_store_watch(connections->sessions, client);
+    if (!instances_attach_offline(connections, client)) {
+        session_store_unwatch(connections->sessions, client);
+        auth_destroy(client);
+        return;
+    }
+    /* Keep the order in which the servers were first saved. */
+    instances_order(connections, tab_rank, connections->sessions);
     restored[restored_count++] = client;
 }
-static void drop_restored(size_t index)
+static void forget_restored(const auth_client *client)
 {
-    /* Let the slot observe a rejected snapshot before forgetting the client. */
-    session_store_poll(connections->sessions, NULL);
-    session_store_unwatch(connections->sessions, restored[index]);
-    auth_destroy(restored[index]);
-    memmove(restored + index, restored + index + 1,
-            (restored_count - index - 1) * sizeof(*restored));
-    --restored_count;
+    for (size_t i = 0; i < restored_count; ++i)
+        if (restored[i] == client) {
+            memmove(restored + i, restored + i + 1, (restored_count - i - 1) * sizeof(*restored));
+            --restored_count;
+            return;
+        }
 }
-/* Returns true while a restored instance still validates its session. */
-static bool poll_restored(void)
+/* Ends the startup validation of restored tabs. An unreachable server stays
+ * listed offline with its saved session; a rejected session leaves the list. */
+static void poll_restored(const auth_client *active)
 {
-    bool pending = false;
     for (size_t i = 0; i < restored_count;) {
         auth_client *client = restored[i];
-        auth_realtime_active(client, false);
-        auth_poll(client);
-        json_t *event;
-        while ((event = auth_next_event(client)))
-            json_decref(event);
-        if (auth_response_ready(client))
-            json_decref(auth_take_response(client, NULL, NULL));
-        if (!auth_has_session(client) && !auth_busy(client)) {
-            drop_restored(i);
+        if (auth_busy(client) && !auth_has_session(client)) {
+            ++i;
             continue;
         }
-        pending |= !auth_has_session(client);
-        ++i;
-    }
-    return pending;
-}
-static int restored_order(const void *a, const void *b)
-{
-    unsigned x = session_store_order(connections->sessions, *(auth_client *const *)a),
-             y = session_store_order(connections->sessions, *(auth_client *const *)b);
-    return (x > y) - (x < y);
-}
-/* Adds validated instances as tabs in the order they were first saved. */
-static void attach_restored(void)
-{
-    qsort(restored, restored_count, sizeof(*restored), restored_order);
-    for (size_t i = 0; i < restored_count; ++i) {
-        if (instances_attach(connections, restored[i]))
-            auth_connect_ws(restored[i]);
-        else {
-            session_store_unwatch(connections->sessions, restored[i]);
-            auth_destroy(restored[i]);
+        forget_restored(client);
+        if (!auth_has_session(client) && !kept_offline(client) && client != active) {
+            /* Let the slot observe a rejected snapshot before forgetting the client. */
+            session_store_poll(connections->sessions, NULL);
+            instances_detach(connections, client);
+            auth_destroy(client);
         }
-    }
-    restored_count = 0;
-}
-static void destroy_restored(void)
-{
-    while (restored_count) {
-        --restored_count;
-        session_store_unwatch(connections->sessions, restored[restored_count]);
-        auth_destroy(restored[restored_count]);
     }
 }
 static void on_signal(int signal_number)
@@ -218,7 +222,12 @@ static void destroy_layout(login_ui *ui)
         delwin(ui->header);
     if (ui->card)
         delwin(ui->card);
-    ui->input = ui->footer = ui->body = ui->header = ui->card = NULL;
+    if (ui->tabs)
+        delwin(ui->tabs);
+    if (ui->remove_window)
+        delwin(ui->remove_window);
+    ui->input = ui->footer = ui->body = ui->header = ui->card = ui->tabs = NULL;
+    ui->remove_window = NULL;
 }
 
 static bool layout(login_ui *ui)
@@ -231,9 +240,18 @@ static bool layout(login_ui *ui)
     if (LINES < CARD_HEIGHT || COLS < MIN_COLS)
         return true;
     ui->width = COLS >= 70 ? 64 : COLS - 4;
-    ui->card = newwin(CARD_HEIGHT, ui->width, (LINES - CARD_HEIGHT) / 2, (COLS - ui->width) / 2);
+    /* Keep the card below the tabs; at the minimum height they cover its top border. */
+    int top = (LINES - CARD_HEIGHT) / 2;
+    if (ui->tabs_shown && top < 1 && LINES > CARD_HEIGHT)
+        top = 1;
+    ui->card = newwin(CARD_HEIGHT, ui->width, top, (COLS - ui->width) / 2);
     if (!ui->card)
         return false;
+    if (ui->tabs_shown) {
+        ui->tabs = newwin(1, COLS, 0, 0);
+        if (!ui->tabs)
+            return false;
+    }
     wbkgd(ui->card, COLOR_PAIR(THEME_NORMAL));
     /* Keep the prototype's three terminal regions separate: identity, form,
      * and feedback/controls. The form remains a subwindow of the outer card. */
@@ -307,6 +325,179 @@ static const char *text(WINDOW *window, int y, int x, int width, const char *val
         value += bytes;
     }
     return value;
+}
+
+/* Display cells of value as text() draws it, limited to width. */
+static int text_cells(const char *value, int width)
+{
+    int cells = 0;
+    while (*value && cells < width) {
+        uint32_t character;
+        size_t bytes = papo_utf8_next(value, &character);
+        if (bytes == (size_t)-1 || bytes == (size_t)-2 || !bytes)
+            break;
+        value += bytes;
+        if (!g_unichar_isprint(character))
+            continue;
+        int character_width = papo_unicode_width(character);
+        if (character_width < 0 || cells + character_width > width)
+            break;
+        cells += character_width;
+    }
+    return cells;
+}
+
+/* Tabs are shown while another open server can be reached from this screen,
+ * except while a new session is about to open its conversations. */
+static bool tabs_wanted(const login_ui *ui, auth_client *client)
+{
+    if (ui->open_chat && auth_has_session(client))
+        return false;
+    for (size_t i = 0; i < connections->count; ++i)
+        if (connections->items[i].auth != client)
+            return true;
+    return false;
+}
+
+static size_t tab_total(auth_client *client)
+{
+    return connections->count + !instances_contains(connections, client);
+}
+
+static size_t tab_current(auth_client *client)
+{
+    size_t index = instances_index(connections, client);
+    return index == SIZE_MAX ? connections->count : index;
+}
+
+static size_t tab_cursor(const login_ui *ui, auth_client *client)
+{
+    return ui->focus == TABS_FOCUS && ui->tab_cursor < tab_total(client) ? ui->tab_cursor
+                                                                         : tab_current(client);
+}
+
+/* The form's own server is named by its profile, server or URL host. */
+static void tab_label(const login_ui *ui, auth_client *client, size_t index, char *label,
+                      size_t size)
+{
+    if (index < connections->count) {
+        snprintf(label, size, "%s%s", connections->items[index].name,
+                 instances_offline(connections, index) ? " (offline)" : "");
+        return;
+    }
+    const char *url = auth_instance_url(client), *host = strstr(url, "://");
+    if (ui->profile_active)
+        snprintf(label, size, "%s", ui->profile_name);
+    else if (*auth_server_name(client))
+        snprintf(label, size, "%s", auth_server_name(client));
+    else if (host && host[3]) {
+        host += 3;
+        snprintf(label, size, "%.*s", (int)strcspn(host, "/"), host);
+    } else
+        snprintf(label, size, "Novo servidor");
+}
+
+static int tab_width(const login_ui *ui, auth_client *client, size_t index, int available)
+{
+    char label[192];
+    tab_label(ui, client, index, label, sizeof(label));
+    int width = text_cells(label, 128) + 3;
+    return width > available ? available : width;
+}
+
+static void draw_tabs(login_ui *ui, auth_client *client)
+{
+    WINDOW *w = ui->tabs;
+    int width = getmaxx(w);
+    bool focused = ui->focus == TABS_FOCUS;
+    size_t total = tab_total(client), current = tab_current(client),
+           cursor = tab_cursor(ui, client);
+    wbkgd(w, COLOR_PAIR(THEME_PANEL));
+    werase(w);
+    memset(ui->tab_hits, 0, sizeof(ui->tab_hits));
+    ui->back_hit = ui->next_hit = (tab_hit){0};
+    if (ui->first_tab >= total || cursor < ui->first_tab)
+        ui->first_tab = cursor;
+    for (;;) {
+        int needed = ui->first_tab ? 2 : 0;
+        for (size_t i = ui->first_tab; i <= cursor; ++i)
+            needed += tab_width(ui, client, i, width - 4);
+        if (needed <= width - 2 || ui->first_tab == cursor)
+            break;
+        ++ui->first_tab;
+    }
+    int x = 0;
+    if (ui->first_tab) {
+        wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT));
+        text(w, 0, 0, 1, "‹");
+        ui->back_hit = (tab_hit){0, 1};
+        x = 2;
+    }
+    for (size_t i = ui->first_tab; i < total; ++i) {
+        int size = tab_width(ui, client, i, width - 4);
+        if (x + size > width - 2) {
+            wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT));
+            text(w, 0, width - 1, 1, "›");
+            ui->next_hit = (tab_hit){width - 1, 1};
+            break;
+        }
+        bool selected = i == current, active = focused && i == cursor;
+        wattrset(w, COLOR_PAIR(active     ? THEME_FOCUSED
+                               : selected ? THEME_PANEL_ACTIVE
+                                          : THEME_PANEL_MUTED) |
+                        (selected || active ? A_BOLD : A_NORMAL));
+        char label[192];
+        tab_label(ui, client, i, label, sizeof(label));
+        mvwaddch(w, 0, x, selected ? '[' : active ? '>' : ' ');
+        int used = text_cells(label, size - 3);
+        text(w, 0, x + 1, size - 3, label);
+        mvwaddch(w, 0, x + 1 + used, selected ? ']' : active ? '<' : ' ');
+        ui->tab_hits[i] = (tab_hit){x, size};
+        x += size;
+    }
+}
+
+/* Entries with a server URL can be removed; an empty new form cannot. */
+static void confirm_remove(login_ui *ui, auth_client *client, size_t index)
+{
+    if (index > connections->count ||
+        (index == connections->count &&
+         (instances_contains(connections, client) || !*auth_instance_url(client))))
+        return;
+    ui->remove_open = true;
+    ui->remove_accept = false;
+    ui->remove_index = index;
+}
+
+static void draw_remove(login_ui *ui, auth_client *client)
+{
+    if (!ui->remove_open)
+        return;
+    int width = COLS > 60 ? 56 : COLS - 4;
+    if (!ui->remove_window)
+        ui->remove_window = newwin(9, width, (LINES - 9) / 2, (COLS - width) / 2);
+    WINDOW *w = ui->remove_window;
+    if (!w) {
+        ui->remove_open = false;
+        return;
+    }
+    char label[192];
+    tab_label(ui, client, ui->remove_index, label, sizeof(label));
+    wbkgd(w, COLOR_PAIR(THEME_PANEL));
+    werase(w);
+    wattrset(w, COLOR_PAIR(THEME_BORDER));
+    box(w, 0, 0);
+    wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
+    text(w, 1, 2, width - 4, "Remover servidor?");
+    wattrset(w, COLOR_PAIR(THEME_PANEL));
+    text(w, 3, 2, width - 4, label);
+    text(w, 4, 2, width - 4, "Tira a aba e apaga a sessão salva");
+    text(w, 5, 2, width - 4, "neste computador.");
+    button_draw(w, 7, 2, 12, "[Cancelar]", ui->remove_accept ? BUTTON_NORMAL : BUTTON_FOCUSED,
+                BUTTON_PANEL);
+    button_draw(w, 7, width - 14, 12, "[Remover]",
+                ui->remove_accept ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
+    wnoutrefresh(w);
 }
 
 static const char *primary_button(const login_ui *ui, auth_client *client)
@@ -467,10 +658,14 @@ static void draw(login_ui *ui, auth_client *client)
     while (*remaining == ' ')
         ++remaining;
     text(ui->footer, 3, 2, ui->width - 8, remaining);
-    if (!*ui->validation_message && auth_get_state(client) == AUTH_IDLE &&
-        session_store_restoring(connections->sessions))
-        text(ui->footer, 2, 2, ui->width - 8, "Recuperando sessão… Esc: abrir login");
-    else if (ready && !*remaining)
+    if (!*ui->validation_message && !busy && !ready &&
+        (auth_get_state(client) == AUTH_IDLE || ui->retrying) &&
+        session_store_restoring(connections->sessions)) {
+        mvwhline(ui->footer, 2, 2, ' ', ui->width - 8);
+        mvwhline(ui->footer, 3, 2, ' ', ui->width - 8);
+        text(ui->footer, 2, 2, ui->width - 8,
+             ui->retrying ? "Recuperando sessão salva…" : "Recuperando sessão… Esc: abrir login");
+    } else if (ready && !*remaining)
         text(ui->footer, 3, 2, ui->width - 8, session_store_notice(connections->sessions));
     wattrset(ui->footer, COLOR_PAIR(THEME_MUTED));
     if (ready)
@@ -490,12 +685,21 @@ static void draw(login_ui *ui, auth_client *client)
         text_measure(&ui->values[ui->focus], TEXT_LIMIT * 2 + 1, &measured);
         wmove(ui->input, field_row(ui, ui->focus), measured.cursor_column - ui->scroll[ui->focus]);
     }
+    /* Repaint the blank screen around the card, so a closed modal larger than
+     * the card leaves nothing behind. */
+    touchwin(stdscr);
+    wnoutrefresh(stdscr);
     touchwin(ui->card);
     wnoutrefresh(ui->card);
     wnoutrefresh(ui->header);
     wnoutrefresh(ui->body);
     wnoutrefresh(ui->footer);
     wnoutrefresh(ui->input);
+    if (ui->tabs) {
+        draw_tabs(ui, client);
+        wnoutrefresh(ui->tabs);
+    }
+    draw_remove(ui, client);
     help_draw(&ui->help);
     doupdate();
     curs_set(!ui->help.open && ui->focus < FIELD_COUNT && !busy && !ready ? 1 : 0);
@@ -509,6 +713,8 @@ static void select_focus(login_ui *ui, int selected)
         return;
     if (selected != ui->focus && ui->focus < FIELD_COUNT)
         text_unselect(&ui->values[ui->focus]);
+    if (selected == TABS_FOCUS && ui->focus != TABS_FOCUS)
+        ui->tab_cursor = SIZE_MAX;
     ui->dragging = false;
     ui->focus = selected;
 }
@@ -524,14 +730,17 @@ static bool focus_available(const login_ui *ui, auth_client *client, int selecte
         return !auth_busy(client) || auth_has_session(client);
     if (selected == CHAT_FOCUS)
         return auth_has_session(client);
+    if (selected == TABS_FOCUS)
+        return ui->tabs != NULL;
     return selected == THEME_PROFILE_FOCUS;
 }
 
 /* Tab follows visual reading order; arrows follow rows and columns. */
 static void focus(login_ui *ui, auth_client *client, int direction)
 {
-    const int order[FOCUS_COUNT] = {0,           1,           2,          CONFIRM_FIELD,      3,
-                                    FIELD_COUNT, EXTRA_FOCUS, CHAT_FOCUS, THEME_PROFILE_FOCUS};
+    const int order[FOCUS_COUNT] = {
+        TABS_FOCUS, 0,           1,           2,          CONFIRM_FIELD,
+        3,          FIELD_COUNT, EXTRA_FOCUS, CHAT_FOCUS, THEME_PROFILE_FOCUS};
     int position = 0;
     while (position < FOCUS_COUNT && order[position] != ui->focus)
         ++position;
@@ -546,22 +755,30 @@ static void focus(login_ui *ui, auth_client *client, int direction)
 
 static void focus_vertical(login_ui *ui, auth_client *client, int direction)
 {
+    const int order[FIELD_COUNT + 1] = {0, 1, 2, CONFIRM_FIELD, 3, FIELD_COUNT};
     int selected = ui->focus;
-    if (selected < FIELD_COUNT) {
+    if (selected == TABS_FOCUS) {
+        for (int next = 0; direction > 0 && next <= FIELD_COUNT; ++next)
+            if (focus_available(ui, client, order[next])) {
+                selected = order[next];
+                break;
+            }
+    } else if (selected < FIELD_COUNT) {
         if (!focus_available(ui, client, selected))
             selected = THEME_PROFILE_FOCUS;
         else {
-            const int order[FIELD_COUNT + 1] = {0, 1, 2, CONFIRM_FIELD, 3, FIELD_COUNT};
             int position = 0;
             while (position < FIELD_COUNT && order[position] != selected)
                 ++position;
-            for (int next = position + direction; next >= 0 && next <= FIELD_COUNT;
-                 next += direction) {
+            int next = position + direction;
+            for (; next >= 0 && next <= FIELD_COUNT; next += direction) {
                 if (focus_available(ui, client, order[next])) {
                     selected = order[next];
                     break;
                 }
             }
+            if (next < 0 && focus_available(ui, client, TABS_FOCUS))
+                selected = TABS_FOCUS;
         }
     } else if (selected == THEME_PROFILE_FOCUS) {
         if (direction < 0 && focus_available(ui, client, FIELD_COUNT))
@@ -570,6 +787,8 @@ static void focus_vertical(login_ui *ui, auth_client *client, int direction)
         selected = THEME_PROFILE_FOCUS;
     else if (focus_available(ui, client, 3))
         selected = 3;
+    else if (focus_available(ui, client, TABS_FOCUS))
+        selected = TABS_FOCUS;
     if (focus_available(ui, client, selected))
         select_focus(ui, selected);
 }
@@ -672,6 +891,35 @@ static bool click_event(login_ui *ui, auth_client *client, MEVENT event)
     if (!(event.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED | BUTTON3_PRESSED | BUTTON3_CLICKED)) ||
         (event.bstate & REPORT_MOUSE_POSITION))
         return false;
+    if (ui->tabs && event.y == 0 && (event.bstate & (BUTTON3_PRESSED | BUTTON3_CLICKED))) {
+        for (size_t i = 0; i < tab_total(client); ++i)
+            if (ui->tab_hits[i].width && event.x >= ui->tab_hits[i].x &&
+                event.x < ui->tab_hits[i].x + ui->tab_hits[i].width) {
+                confirm_remove(ui, client, i);
+                break;
+            }
+        return false;
+    }
+    if (ui->tabs && event.y == 0 && (event.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED))) {
+        size_t total = tab_total(client);
+        if (ui->back_hit.width && event.x < ui->back_hit.x + ui->back_hit.width) {
+            select_focus(ui, TABS_FOCUS);
+            ui->tab_cursor = ui->first_tab ? ui->first_tab - 1 : 0;
+        } else if (ui->next_hit.width && event.x >= ui->next_hit.x) {
+            select_focus(ui, TABS_FOCUS);
+            size_t last = ui->first_tab;
+            while (last + 1 < total && ui->tab_hits[last + 1].width)
+                ++last;
+            ui->tab_cursor = last + 1 < total ? last + 1 : last;
+        } else
+            for (size_t i = 0; i < total; ++i)
+                if (ui->tab_hits[i].width && event.x >= ui->tab_hits[i].x &&
+                    event.x < ui->tab_hits[i].x + ui->tab_hits[i].width) {
+                    ui->tab_request = i;
+                    break;
+                }
+        return false;
+    }
     int y = event.y, x = event.x;
     if (!wmouse_trafo(ui->card, &y, &x, false))
         return false;
@@ -856,10 +1104,147 @@ static bool instance_form(login_ui *ui, auth_client *client, const char *url)
     ui->profile_id[0] = ui->profile_name[0] = ui->validation_message[0] = '\0';
     ui->session_present = auth_has_session(client);
     ui->focus = url && *url ? 1 : 0;
+    ui->tabs_shown = tabs_wanted(ui, client);
     if (url) {
         snprintf(ui->saved[0], sizeof(ui->saved[0]), "%s", url);
     }
     return layout(ui);
+}
+
+/* Leaving a form that is not a tab: a saved server that could not be reached
+ * stays listed offline, any other pending form is discarded. */
+static void leave_form(auth_client *client)
+{
+    if (instances_contains(connections, client))
+        return;
+    if (kept_offline(client) && !auth_busy(client) && instances_attach_offline(connections, client))
+        return;
+    session_store_unwatch(connections->sessions, client);
+    auth_destroy(client);
+}
+
+/* The form's or an offline tab's client waiting for the session of url. */
+static auth_client *resume_target(auth_client *client, const char *url)
+{
+    if (!auth_has_session(client) && !auth_busy(client) && !strcmp(auth_instance_url(client), url))
+        return client;
+    for (size_t i = 0; i < connections->count; ++i) {
+        auth_client *item = connections->items[i].auth;
+        if (!auth_has_session(item) && !auth_busy(item) && !strcmp(auth_instance_url(item), url))
+            return item;
+    }
+    return NULL;
+}
+
+/* Reads the saved session of an offline server again; the main loop restores
+ * it when the credential provider answers. */
+static void retry_saved(login_ui *ui, auth_client *client)
+{
+    ui->retrying = !auth_has_session(client) && !auth_busy(client) &&
+                   session_store_retry(connections->sessions, client);
+}
+
+/* Opens another server from the login tabs. Activating the current offline
+ * server tries its saved session again. */
+static bool switch_tab(login_ui *ui, auth_client **client, size_t index)
+{
+    if (index >= connections->count || connections->items[index].auth == *client) {
+        retry_saved(ui, *client);
+        return true;
+    }
+    auth_client *target = connections->items[index].auth;
+    leave_form(*client);
+    *client = target;
+    index = instances_index(connections, target);
+    /* Set first: a server about to open its conversations shows no tabs. */
+    ui->open_chat = auth_has_session(*client);
+    if (!instance_form(ui, *client, connections->items[index].url))
+        return false;
+    if (!ui->open_chat && ui->form)
+        select_focus(ui, TABS_FOCUS);
+    if (!ui->open_chat)
+        retry_saved(ui, *client);
+    return true;
+}
+
+/* Removes tab entry index, which may be the form's own server, and forgets its
+ * saved session. The form moves to a neighbouring server, or to an empty form
+ * when none is left. Returns false on allocation or layout failure. */
+static bool remove_instance(login_ui *ui, auth_client **client, size_t index)
+{
+    bool attached = index < connections->count;
+    auth_client *target = attached ? connections->items[index].auth : *client;
+    if (!attached && (index != connections->count || instances_contains(connections, *client)))
+        return true;
+    session_store_forget(connections->sessions, target);
+    forget_restored(target);
+    if (attached)
+        instances_detach(connections, target);
+    if (ui->previous_instance != SIZE_MAX && attached && ui->previous_instance >= index)
+        ui->previous_instance =
+            ui->previous_instance == index ? SIZE_MAX : ui->previous_instance - 1;
+    bool visible = target == *client;
+    auth_destroy(target);
+    if (!visible)
+        return layout(ui);
+    ui->retrying = false;
+    if (connections->count) {
+        size_t next = index < connections->count ? index : connections->count - 1;
+        *client = connections->items[next].auth;
+        ui->open_chat = auth_has_session(*client);
+        if (!instance_form(ui, *client, connections->items[next].url))
+            return false;
+        if (!ui->open_chat)
+            retry_saved(ui, *client);
+        return true;
+    }
+    *client = auth_create();
+    return *client && instance_form(ui, *client, NULL);
+}
+
+/* Returns true when the open confirmation was accepted. */
+static bool remove_key(login_ui *ui, int type, uint32_t key)
+{
+    bool enter =
+        (type == OK && (key == '\n' || key == '\r')) || (type == KEY_CODE_YES && key == KEY_ENTER);
+    bool accept = false, close = type == OK && key == 27;
+    if ((type == OK && key == '\t') || (type == KEY_CODE_YES && key == KEY_BTAB))
+        ui->remove_accept = !ui->remove_accept;
+    else if (type == KEY_CODE_YES && (key == KEY_LEFT || key == KEY_RIGHT))
+        ui->remove_accept = key == KEY_RIGHT;
+    else if (enter) {
+        accept = ui->remove_accept;
+        close = true;
+    } else if (type == KEY_CODE_YES && key == KEY_MOUSE && ui->remove_window) {
+        MEVENT events[64];
+        size_t count = ui_mouse_events(events, 64);
+        for (size_t i = 0; i < count; ++i) {
+            int y = events[i].y, x = events[i].x;
+            if (!(events[i].bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED)) ||
+                !wmouse_trafo(ui->remove_window, &y, &x, false) || y != 7)
+                continue;
+            int width = getmaxx(ui->remove_window);
+            if (x >= 2 && x < 14)
+                close = true;
+            else if (x >= width - 14 && x < width - 2)
+                accept = close = true;
+        }
+    }
+    if (close) {
+        ui->remove_open = false;
+        if (ui->remove_window)
+            delwin(ui->remove_window);
+        ui->remove_window = NULL;
+        touchwin(stdscr);
+    }
+    return accept;
+}
+
+static bool take_tab_request(login_ui *ui, auth_client **client)
+{
+    size_t index = ui->tab_request;
+    ui->tab_request = SIZE_MAX;
+    return index == SIZE_MAX || switch_tab(ui, client, index);
 }
 
 static int open_history(login_ui *ui, auth_client **client, profile_config **config)
@@ -872,16 +1257,26 @@ static int open_history(login_ui *ui, auth_client **client, profile_config **con
     for (;;) {
         size_t selected = SIZE_MAX;
         action = history_run(*client, connections, &selected, focus_tabs, &interrupted);
+        focus_tabs = true;
+        if (action == HISTORY_REMOVE) {
+            if (selected >= connections->count || !remove_instance(ui, client, selected))
+                return -1;
+            ui->open_chat = false;
+            if (auth_has_session(*client) && instances_contains(connections, *client))
+                continue;
+            return 0;
+        }
         if (action != HISTORY_SWITCH)
             break;
         if (selected >= connections->count)
             return -1;
         *client = connections->items[selected].auth;
-        focus_tabs = true;
         if (!instance_form(ui, *client, connections->items[selected].url))
             return -1;
-        if (!auth_has_session(*client) && !auth_busy(*client))
+        if (!auth_has_session(*client) && !auth_busy(*client)) {
+            retry_saved(ui, *client);
             return 0;
+        }
     }
     if (action == HISTORY_ADD) {
         if (connections->count == INSTANCE_LIMIT) {
@@ -921,7 +1316,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         fputs("Não foi possível preparar a comunicação com o servidor.\n", stderr);
         return 1;
     }
-    login_ui ui = {.previous_instance = SIZE_MAX};
+    login_ui ui = {.previous_instance = SIZE_MAX, .tab_request = SIZE_MAX};
     connections = instances_create();
     if (!connections) {
         auth_destroy(client);
@@ -1008,25 +1403,31 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         }
         if (session_store_poll(connections->sessions, client))
             redraw = true;
-        if (startup_restore) {
-            const char *url;
-            char *snapshot;
-            while ((snapshot = session_store_take_resume(connections->sessions, &url))) {
-                if (!main_restored && !strcmp(url, main_url)) {
-                    auth_session_restore(client, snapshot, url, allow_local_http);
-                    session_store_watch(connections->sessions, client);
-                    main_restored = true;
-                } else
-                    restore_instance(url, snapshot, allow_local_http);
-                auth_session_free(&snapshot);
-                redraw = true;
-            }
-            if (!session_store_restoring(connections->sessions))
-                startup_restore = false;
+        const char *resume_url;
+        char *snapshot;
+        while ((snapshot = session_store_take_resume(connections->sessions, &resume_url))) {
+            auth_client *target = NULL;
+            if (startup_restore && !main_restored && !strcmp(resume_url, main_url)) {
+                target = client;
+                main_restored = true;
+            } else
+                target = resume_target(client, resume_url);
+            if (target) {
+                /* A retried offline server restores into its own client. */
+                auth_session_restore(target, snapshot, resume_url, allow_local_http);
+                session_store_watch(connections->sessions, target);
+            } else if (startup_restore)
+                restore_instance(resume_url, snapshot, allow_local_http);
+            auth_session_free(&snapshot);
+            redraw = true;
         }
-        bool restoring_tabs = restored_count && poll_restored();
-        if (restored_count && !restoring_tabs && !startup_restore)
-            attach_restored();
+        if (ui.retrying && !session_store_restoring(connections->sessions)) {
+            ui.retrying = false;
+            redraw = true;
+        }
+        if (startup_restore && !session_store_restoring(connections->sessions))
+            startup_restore = false;
+        poll_restored(client);
         auth_state before = auth_get_state(client);
         bool before_busy = auth_busy(client);
         bool before_session = auth_has_session(client);
@@ -1093,13 +1494,24 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         file_transfer_tasks_poll();
         if (clipboard_poll())
             redraw = true;
+        if (ui.tabs_shown != tabs_wanted(&ui, client)) {
+            /* Restored servers can open after the form; tabs move the card. */
+            ui.tabs_shown = !ui.tabs_shown;
+            if (!layout(&ui)) {
+                result = 1;
+                break;
+            }
+            if (!ui.tabs_shown && ui.focus == TABS_FOCUS)
+                focus(&ui, client, 1);
+            redraw = true;
+        }
         if (redraw) {
             draw(&ui, client);
             graphics_terminal_probe();
             redraw = false;
         }
         if (ui.open_chat && !ui.help.open && auth_has_session(client) && !ui.paste &&
-            !restoring_tabs && !startup_restore) {
+            !startup_restore) {
             int action = open_history(&ui, &client, &config);
             if (action < 0)
                 result = 1;
@@ -1157,6 +1569,11 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
             break;
         if (!ui.paste && help_key(&ui.help, type, key))
             continue;
+        if (!ui.paste && ui.remove_open) {
+            if (remove_key(&ui, type, key) && !remove_instance(&ui, &client, ui.remove_index))
+                result = 1;
+            continue;
+        }
         if (!ui.paste &&
             (shortcut_is(type, key, SHORTCUT_HELP) || shortcut_is(type, key, SHORTCUT_HELP_ALL))) {
             help_open(&ui.help,
@@ -1174,8 +1591,11 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
             continue;
         }
         bool choose_profile = type == KEY_CODE_YES && key == KEY_MOUSE;
-        if (choose_profile && !click(&ui, client))
+        if (choose_profile && !click(&ui, client)) {
+            if (!take_tab_request(&ui, &client))
+                result = 1;
             continue;
+        }
         bool chat_enter = (type == OK && (key == '\n' || key == '\r')) ||
                           (type == KEY_CODE_YES && key == KEY_ENTER);
         if (!ui.paste && auth_has_session(client) &&
@@ -1217,10 +1637,11 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
             } else if (!auth_has_session(client) && !instances_contains(connections, client) &&
                        ui.previous_instance < connections->count &&
                        auth_has_session(connections->items[ui.previous_instance].auth)) {
-                session_store_unwatch(connections->sessions, client);
-                auth_destroy(client);
-                client = connections->items[ui.previous_instance].auth;
-                if (!instance_form(&ui, client, connections->items[ui.previous_instance].url)) {
+                auth_client *previous = connections->items[ui.previous_instance].auth;
+                leave_form(client);
+                client = previous;
+                size_t index = instances_index(connections, client);
+                if (!instance_form(&ui, client, connections->items[index].url)) {
                     result = 1;
                     break;
                 }
@@ -1240,9 +1661,32 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
             focus_vertical(&ui, client, key == KEY_DOWN ? 1 : -1);
             continue;
         }
+        if (!ui.paste && type == KEY_CODE_YES && ui.focus == TABS_FOCUS && key == KEY_DC) {
+            confirm_remove(&ui, client, tab_cursor(&ui, client));
+            continue;
+        }
+        if (!ui.paste && type == KEY_CODE_YES && ui.focus == TABS_FOCUS &&
+            (key == KEY_LEFT || key == KEY_RIGHT)) {
+            size_t cursor = tab_cursor(&ui, client), total = tab_total(client);
+            if (key == KEY_LEFT && cursor)
+                --cursor;
+            else if (key == KEY_RIGHT && cursor + 1 < total)
+                ++cursor;
+            ui.tab_cursor = cursor;
+            continue;
+        }
         if (!ui.paste && type == KEY_CODE_YES && ui.focus >= FIELD_COUNT &&
             (key == KEY_LEFT || key == KEY_RIGHT)) {
             focus_horizontal(&ui, client, key == KEY_RIGHT ? 1 : -1);
+            continue;
+        }
+        if (enter && ui.focus == TABS_FOCUS) {
+            size_t cursor = tab_cursor(&ui, client);
+            if (cursor == tab_current(client)) {
+                retry_saved(&ui, client);
+                focus_vertical(&ui, client, 1);
+            } else if (!switch_tab(&ui, &client, cursor))
+                result = 1;
             continue;
         }
         if (enter) {
@@ -1278,7 +1722,6 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         session_store_unwatch(connections->sessions, client);
         auth_destroy(client);
     }
-    destroy_restored();
     media_service_stop();
     instances_destroy(connections);
     connections = NULL;

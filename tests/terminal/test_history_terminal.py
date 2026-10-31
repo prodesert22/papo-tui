@@ -46,10 +46,10 @@ class HistoryTerminal(support.HistoryTerminal):
                 reads = [r[1] for r in server.requests if "/messages" in r[1]]
                 self.assertEqual(len(reads), 1)
                 self.assertIn(CHANNEL, reads[0])
-                self.assertEqual(terminal.screen.buffer[7][2].data, "#")
+                self.assertEqual(terminal.screen.buffer[6][2].data, "#")
                 for row in range(6, 10):
                     self.assertNotIn(">", terminal.screen.display[row][1:24])
-                self.assertIn("Categoria", terminal.screen.display[6])
+                self.assertIn("Categoria", terminal.screen.display[5])
             finally:
                 self.assertTrue(terminal.close())
 
@@ -86,42 +86,42 @@ class HistoryTerminal(support.HistoryTerminal):
             terminal = self.open(server)
             try:
                 self.wait(terminal, "Mensagem 0001")
-                terminal.click(6, 4)
-                self.assertIn("Foco: Histórico", terminal.screen.display[2])
+                terminal.click(5, 4)
+                self.assertIn("Foco: Histórico", terminal.screen.display[-2])
                 terminal.send("\x1bOD")  # history -> channels
                 self.wait(terminal, "Foco: Canais")
                 wait_for_screen(
                     terminal,
-                    lambda: terminal.screen.buffer[7][2].fg != terminal.screen.buffer[10][2].fg,
+                    lambda: terminal.screen.buffer[6][2].fg != terminal.screen.buffer[9][2].fg,
                     "Focused channel highlight did not arrive",
                 )
-                selected = terminal.screen.buffer[7][2].fg
+                selected = terminal.screen.buffer[6][2].fg
 
                 def highlighted(row):
                     self.assertEqual(terminal.screen.buffer[row][2].fg, selected)
-                    for category in (6, 8, 9, 12):
+                    for category in (5, 7, 8, 11):
                         self.assertNotEqual(terminal.screen.buffer[category][2].fg, selected)
 
-                highlighted(7)
+                highlighted(6)
                 for key, row in (
-                    ("\x1bOB", 10),
-                    ("\x1bOA", 7),
-                    ("\x1bOF", 11),
-                    ("\x1b[6~", 11),
-                    ("\x1bOH", 7),
-                    ("\x1b[5~", 7),
+                    ("\x1bOB", 9),
+                    ("\x1bOA", 6),
+                    ("\x1bOF", 10),
+                    ("\x1b[6~", 10),
+                    ("\x1bOH", 6),
+                    ("\x1b[5~", 6),
                 ):
                     terminal.send(key)
                     highlighted(row)
                 terminal.send("\x1bOA")
                 self.wait(terminal, "Foco: Canais/DMs")
                 terminal.send("\x1bOB\x1bOB")
-                highlighted(10)
+                highlighted(9)
                 reads = [r for r in server.requests if "/messages" in r[1]]
-                for category in (6, 8, 9, 12):
+                for category in (5, 7, 8, 11):
                     terminal.click(category, 4)
-                    highlighted(10)
-                    self.assertIn("Foco: Canais", terminal.screen.display[2])
+                    highlighted(9)
+                    self.assertIn("Foco: Canais", terminal.screen.display[-2])
                 self.assertEqual([r for r in server.requests if "/messages" in r[1]], reads)
                 terminal.send("\n")
                 self.wait(terminal, "Conteúdo do outro canal")
@@ -170,7 +170,7 @@ class HistoryTerminal(support.HistoryTerminal):
                         previous = current
                     if time.monotonic() - stable_since >= 0.3:
                         break
-                before = terminal.screen.display[8][26:]
+                before = terminal.screen.display[7][26:]
                 requests = [r for r in server.requests if "/messages" in r[1]]
                 screen = ConversationObserver(80, 24)
                 stream = TerminalStream(screen)
@@ -190,23 +190,23 @@ class HistoryTerminal(support.HistoryTerminal):
                 # Return the highlight to the open channel and confirm it.
                 terminal.send("\x1bOH\n")
                 terminal.read(0.5)
-                self.assertEqual(terminal.screen.display[8][26:], before)
+                self.assertEqual(terminal.screen.display[7][26:], before)
                 self.assertIn("Rascunho preservado", "\n".join(terminal.screen.display))
-                for action in (lambda: terminal.click(7, 4), lambda: terminal.send("\x1bOD\x1bOC")):
+                for action in (lambda: terminal.click(6, 4), lambda: terminal.send("\x1bOD\x1bOC")):
                     output = len(terminal.output)
                     action()
                     terminal.read(0.5)
                     self.assertNotIn(b"Carregando hist", terminal.output[output:])
-                    self.assertEqual(terminal.screen.display[8][26:], before)
+                    self.assertEqual(terminal.screen.display[7][26:], before)
                 self.assertEqual([r for r in server.requests if "/messages" in r[1]], requests)
                 # Clicking the sidebar heading focuses navigation, not a read.
-                terminal.click(5, 4)
+                terminal.click(4, 4)
                 terminal.send("\x1bOB")
-                self.assertIn("Foco: Canais", terminal.screen.display[2])
-                self.assertEqual(terminal.screen.display[8][26:], before)
+                self.assertIn("Foco: Canais", terminal.screen.display[-2])
+                self.assertEqual(terminal.screen.display[7][26:], before)
                 self.assertEqual([r for r in server.requests if "/messages" in r[1]], requests)
                 # A different channel must still make exactly one new read.
-                terminal.click(8, 4)
+                terminal.click(7, 4)
                 self.wait(terminal, "Conteúdo do outro canal")
                 self.assertEqual(
                     len([r for r in server.requests if "/messages" in r[1]]), len(requests) + 1
@@ -221,7 +221,7 @@ class HistoryTerminal(support.HistoryTerminal):
                 self.wait(terminal, "Nenhuma mensagem neste canal")
                 requests = [r for r in server.requests if "/messages" in r[1]]
                 output = len(terminal.output)
-                terminal.click(7, 4)
+                terminal.click(6, 4)
                 terminal.send("\x1bOD\x1bOC")
                 terminal.read(0.2)
                 self.assertIn("Nenhuma mensagem neste canal", "\n".join(terminal.screen.display))
@@ -238,7 +238,7 @@ class HistoryTerminal(support.HistoryTerminal):
                 for _ in range(4):
                     terminal.send("\x1bOD\x1bOB\n")
                     self.wait(terminal, "Conteúdo do outro canal")
-                    terminal.click(7, 4)
+                    terminal.click(6, 4)
                     self.wait(terminal, "# geral · Histórico")
                     self.wait(terminal, "Mensagem 0001")
                     self.assertNotIn("Conteúdo do outro canal", "\n".join(terminal.screen.display))
@@ -269,9 +269,9 @@ class HistoryTerminal(support.HistoryTerminal):
                     # Real clicks deliver a press and a later release, with a
                     # frame/network poll between them. No subsequent input may
                     # be needed to complete the new channel's HTTP response.
-                    terminal.send("\x1b[<0;5;8M")
+                    terminal.send("\x1b[<0;5;7M")
                     self.wait(terminal, "# geral · Histórico")
-                    terminal.send("\x1b[<0;5;8m")
+                    terminal.send("\x1b[<0;5;7m")
                     self.wait(terminal, "Mensagem 0001")
                     self.assertNotIn("Conteúdo do outro canal", "\n".join(terminal.screen.display))
                 finally:
@@ -282,7 +282,7 @@ class HistoryTerminal(support.HistoryTerminal):
             terminal = self.open(server)
             try:
                 self.assertTrue(server.history_started.wait(1))
-                terminal.click(7, 4)
+                terminal.click(6, 4)
                 terminal.send("\x1bOD\x1bOC")
                 self.wait(terminal, "Mensagem 0250")
                 terminal.read(0.5)
@@ -569,7 +569,7 @@ class HistoryTerminal(support.HistoryTerminal):
             try:
                 self.assertTrue(server.history_started.wait(1))
                 # click another channel before the delayed history completes
-                t.click(8, 4)
+                t.click(7, 4)
                 self.wait(t, "Conteúdo do outro canal")
                 self.assertNotIn("Mensagem 0250", "\n".join(t.screen.display))
                 self.assertTrue(any(OTHER in r[1] for r in server.requests))
@@ -784,7 +784,13 @@ class HistoryTerminal(support.HistoryTerminal):
                 self.assertNotIn("URL do servidor", "\n".join(t.screen.display))
                 self.click_text(t, "[+ Adicionar]")
                 self.wait(t, "URL do servidor")
+                # At the minimum height the tabs cover only the card's top border.
+                self.wait(t, "[Novo servidor]")
+                self.assertIn(" Comunidade ", t.screen.display[0])
+                self.assertIn("papo", t.screen.display[1])
                 t.resize(24, 80)
+                self.wait(t, "[Novo servidor]")
+                self.assertIn(" Comunidade ", t.screen.display[0])
                 t.send("\x1b")
                 self.wait(t, "[Comunidade]")
             finally:

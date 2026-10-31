@@ -74,12 +74,39 @@ void conversation_list_button(view *ui, int button, int column, int width, const
 
 int conversation_tab_width(view *ui, size_t index, int available)
 {
-    int width = text_label(NULL, 0, 0, 128, ui->connections->items[index].name) + 4;
+    int width = text_label(NULL, 0, 0, 128, ui->connections->items[index].name) + 4 +
+                (instances_offline(ui->connections, index) ? 10 : 0);
     inbox *box = history_inbox(ui->connections->items[index].model);
     size_t mentions = inbox_unread_mentions(box, NULL);
     if (history_instance_unread(ui->connections->items[index].model))
         width += 1 + server_badge(ui, NULL, 0, 0, mentions, 0);
     return width > available ? available : width;
+}
+
+/* "Foco: area": in the footer on wide screens, above the panels on narrow ones. */
+static void conversation_focus_label(view *ui, char *label, size_t size)
+{
+    const char *areas[] = {"Abas",
+                           "Canais",
+                           "Histórico",
+                           "Mensagem",
+                           "Emojis",
+                           "Canais/DMs",
+                           "Configurações",
+                           "Anexos",
+                           "Anexar",
+                           "Membros",
+                           "Membros",
+                           "Buscar",
+                           "Fixadas",
+                           "Áudio",
+                           "Microfone",
+                           "Sair da chamada",
+                           "Pressionar para falar"};
+    snprintf(label, size, "Foco: %s",
+             ui->navigating              ? "Seleção"
+             : ui->focus == CHANNEL_LIST ? ui->list_dms ? "DMs" : "Canais"
+                                         : areas[ui->focus]);
 }
 
 void conversation_draw_tabs(view *ui)
@@ -91,7 +118,7 @@ void conversation_draw_tabs(view *ui)
     wbkgd(ui->tabs, COLOR_PAIR(focused ? THEME_FOCUS_AREA : THEME_PANEL));
     werase(ui->tabs);
     memset(ui->tab_hits, 0, sizeof(ui->tab_hits));
-    ui->back_hit = ui->next_hit = ui->channels_hit = ui->conversation_hit = (click_range){0};
+    ui->back_hit = ui->next_hit = (click_range){0};
     size_t cursor = ui->tab_cursor < ui->connections->count ? ui->tab_cursor : ui->active_tab;
     if (cursor < ui->first_tab)
         ui->first_tab = cursor;
@@ -127,11 +154,12 @@ void conversation_draw_tabs(view *ui)
         size_t mentions = inbox_unread_mentions(box, NULL);
         bool notified = history_instance_unread(ui->connections->items[i].model);
         int badge_width = notified ? server_badge(ui, NULL, 0, 0, mentions, 0) : 0;
-        snprintf(label, sizeof(label), "%c%s",
+        snprintf(label, sizeof(label), "%c%s%s",
                  selected ? '['
                  : active ? '>'
                           : ' ',
-                 ui->connections->items[i].name);
+                 ui->connections->items[i].name,
+                 instances_offline(ui->connections, i) ? " (offline)" : "");
         int used = text_label(ui->tabs, 0, x, size - 3 - badge_width - (notified ? 1 : 0), label);
         if (notified) {
             mvwaddch(ui->tabs, 0, x + used++, ' ');
@@ -148,39 +176,21 @@ void conversation_draw_tabs(view *ui)
     button_draw(ui->tabs, 0, ui->add_hit.x, ui->add_hit.width,
                 adding ? ">+ Adicionar<" : "[+ Adicionar]", adding ? BUTTON_FOCUSED : BUTTON_NORMAL,
                 BUTTON_PANEL);
-    const char *areas[] = {"Abas",
-                           "Canais",
-                           "Histórico",
-                           "Mensagem",
-                           "Emojis",
-                           "Canais/DMs",
-                           "Configurações",
-                           "Anexos",
-                           "Anexar",
-                           "Membros",
-                           "Membros",
-                           "Buscar",
-                           "Fixadas",
-                           "Áudio",
-                           "Microfone",
-                           "Sair da chamada",
-                           "Pressionar para falar"};
-    char summary[1200];
-    snprintf(summary, sizeof(summary), "Foco: %s",
-             ui->navigating              ? "Seleção"
-             : ui->focus == CHANNEL_LIST ? ui->list_dms ? "DMs" : "Canais"
-                                         : areas[ui->focus]);
+    ui->channels_hit = ui->conversation_hit = (click_range){0};
+    if (TABS_ROWS < 2)
+        return;
+    /* Narrow screens show one panel at a time; this row switches between them
+     * and keeps the focus label, since their footer is too short for both. */
+    char summary[160];
+    conversation_focus_label(ui, summary, sizeof(summary));
     wattrset(ui->tabs, COLOR_PAIR(focused ? THEME_FOCUS_MUTED : THEME_PANEL_MUTED));
-    if (COLS < 80) {
-        text_label(ui->tabs, 1, 0, width - 20, summary);
-        ui->channels_hit = (click_range){width - 19, 8};
-        ui->conversation_hit = (click_range){width - 10, 10};
-        wattrset(ui->tabs, COLOR_PAIR(ui->show_channels ? THEME_PANEL_ACCENT : THEME_PANEL_MUTED));
-        text_label(ui->tabs, 1, ui->channels_hit.x, 8, "[Canais]");
-        wattrset(ui->tabs, COLOR_PAIR(ui->show_channels ? THEME_PANEL_MUTED : THEME_PANEL_ACCENT));
-        text_label(ui->tabs, 1, ui->conversation_hit.x, 10, "[Conversa]");
-    } else
-        text_label(ui->tabs, 1, 0, width, summary);
+    text_label(ui->tabs, 1, 0, width - 20, summary);
+    ui->channels_hit = (click_range){width - 19, 8};
+    ui->conversation_hit = (click_range){width - 10, 10};
+    wattrset(ui->tabs, COLOR_PAIR(ui->show_channels ? THEME_PANEL_ACCENT : THEME_PANEL_MUTED));
+    text_label(ui->tabs, 1, ui->channels_hit.x, 8, "[Canais]");
+    wattrset(ui->tabs, COLOR_PAIR(ui->show_channels ? THEME_PANEL_MUTED : THEME_PANEL_ACCENT));
+    text_label(ui->tabs, 1, ui->conversation_hit.x, 10, "[Conversa]");
 }
 
 bool conversation_collect_notices(view *ui, auth_client *auth)
@@ -314,7 +324,14 @@ void conversation_draw_footer(view *ui)
     werase(ui->footer);
     wattrset(ui->footer, COLOR_PAIR(THEME_BORDER));
     mvwhline(ui->footer, 0, 0, ACS_HLINE, getmaxx(ui->footer));
-    status_bar_draw(&ui->status, ui->footer, 1, UI_HELP_HINT, UI_HELP_HINT, UI_HELP_HINT);
+    char hint[200] = UI_HELP_HINT;
+    if (TABS_ROWS < 2) {
+        char focus[160];
+        conversation_focus_label(ui, focus, sizeof(focus));
+        snprintf(hint, sizeof(hint), "%s · %s", focus, UI_HELP_HINT);
+    }
+    /* Notices outrank the focus label when the line is too short for both. */
+    status_bar_draw(&ui->status, ui->footer, 1, hint, UI_HELP_HINT, UI_HELP_HINT);
 }
 
 void conversation_draw_confirmation(view *ui)
@@ -337,14 +354,21 @@ void conversation_draw_confirmation(view *ui)
     wattrset(modal, COLOR_PAIR(THEME_BORDER));
     box(modal, 0, 0);
     wattrset(modal, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
-    text_label(modal, 1, 2, width - 4, "Reenviar mensagem?");
+    bool removing = ui->remove_server && ui->remove_index < ui->connections->count;
+    text_label(modal, 1, 2, width - 4, removing ? "Remover servidor?" : "Reenviar mensagem?");
     wattrset(modal, COLOR_PAIR(THEME_PANEL));
-    text_label(modal, 3, 2, width - 4, "O servidor pode já ter criado");
-    text_label(modal, 4, 2, width - 4, "esta mensagem. Reenviar pode");
-    text_label(modal, 5, 2, width - 4, "criar uma duplicata.");
+    if (removing) {
+        text_label(modal, 3, 2, width - 4, ui->connections->items[ui->remove_index].name);
+        text_label(modal, 4, 2, width - 4, "Tira a aba e apaga a sessão salva");
+        text_label(modal, 5, 2, width - 4, "neste computador.");
+    } else {
+        text_label(modal, 3, 2, width - 4, "O servidor pode já ter criado");
+        text_label(modal, 4, 2, width - 4, "esta mensagem. Reenviar pode");
+        text_label(modal, 5, 2, width - 4, "criar uma duplicata.");
+    }
     button_draw(modal, 7, 2, 12, "[Cancelar]", ui->reenviar ? BUTTON_NORMAL : BUTTON_FOCUSED,
                 BUTTON_PANEL);
-    button_draw(modal, 7, width - 14, 12, "[Reenviar]",
+    button_draw(modal, 7, width - 14, 12, removing ? "[Remover]" : "[Reenviar]",
                 ui->reenviar ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     wnoutrefresh(modal);
 }

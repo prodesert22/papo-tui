@@ -38,6 +38,15 @@ void instances_destroy(instance_connections *connections);
 bool instances_contains(const instance_connections *connections, const auth_client *auth);
 /* Takes ownership on success, replacing an older connection to the same URL. */
 bool instances_attach(instance_connections *connections, auth_client *auth);
+/* Keeps a saved server that could not be reached as a tab without a session,
+ * so it can be retried or removed later. Takes ownership on success. */
+bool instances_attach_offline(instance_connections *connections, auth_client *auth);
+/* Stable reorder of the tabs by ascending rank; call only while no screen
+ * holds a tab index. */
+void instances_order(instance_connections *connections,
+                     unsigned (*rank)(const auth_client *auth, void *context), void *context);
+/* The tab has no session and is not connecting. */
+bool instances_offline(const instance_connections *connections, size_t index);
 /* Transfers ownership back to caller, removing this tab without destroying it. */
 void instances_detach(instance_connections *connections, auth_client *auth);
 size_t instances_index(const instance_connections *connections, const auth_client *auth);

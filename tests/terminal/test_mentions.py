@@ -230,7 +230,7 @@ class Mentions(unittest.TestCase):
                     return route(method, path, body)
 
                 s.api_handler = other_channel
-                t.click(8, 4)
+                t.click(7, 4)
                 self.wait(t, "Bob no outro canal")
                 t.send("@")
                 self.wait(t, "@alice")

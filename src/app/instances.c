@@ -88,10 +88,8 @@ void instances_visible(instance_connections *connections, auth_client *auth, con
     snprintf(connections->visible_channel, sizeof(connections->visible_channel), "%s",
              channel ? channel : "");
 }
-bool instances_attach(instance_connections *connections, auth_client *auth)
+static bool attach(instance_connections *connections, auth_client *auth)
 {
-    if (!connections || !auth_has_session(auth))
-        return false;
     size_t index = instances_index(connections, auth);
     if (index == SIZE_MAX) {
         send_editor *editor = send_editor_create(auth);
@@ -136,9 +134,41 @@ bool instances_attach(instance_connections *connections, auth_client *auth)
     instance_connection *item = &connections->items[index];
     item->auth = auth;
     snprintf(item->url, sizeof(item->url), "%s", auth_instance_url(auth));
-    snprintf(item->name, sizeof(item->name), "%s",
-             *auth_server_name(auth) ? auth_server_name(auth) : "Servidor");
+    const char *url = auth_instance_url(auth), *host = strstr(url, "://");
+    if (*auth_server_name(auth))
+        snprintf(item->name, sizeof(item->name), "%s", auth_server_name(auth));
+    else if (!*item->name && host && host[3])
+        snprintf(item->name, sizeof(item->name), "%.*s", (int)strcspn(host + 3, "/"), host + 3);
+    else if (!*item->name)
+        snprintf(item->name, sizeof(item->name), "Servidor");
     return true;
+}
+bool instances_attach(instance_connections *connections, auth_client *auth)
+{
+    return connections && auth_has_session(auth) && attach(connections, auth);
+}
+bool instances_attach_offline(instance_connections *connections, auth_client *auth)
+{
+    return connections && auth && *auth_instance_url(auth) && attach(connections, auth);
+}
+void instances_order(instance_connections *connections,
+                     unsigned (*rank)(const auth_client *auth, void *context), void *context)
+{
+    for (size_t i = 1; i < connections->count; ++i) {
+        instance_connection item = connections->items[i];
+        unsigned key = rank(item.auth, context);
+        size_t j = i;
+        while (j && rank(connections->items[j - 1].auth, context) > key) {
+            connections->items[j] = connections->items[j - 1];
+            --j;
+        }
+        connections->items[j] = item;
+    }
+}
+bool instances_offline(const instance_connections *connections, size_t index)
+{
+    const auth_client *auth = connections->items[index].auth;
+    return !auth_has_session(auth) && !auth_busy(auth);
 }
 void instances_detach(instance_connections *connections, auth_client *auth)
 {
@@ -178,6 +208,10 @@ bool instances_poll(instance_connections *connections, auth_client *active)
             auth_state before = auth_get_state(auth);
             bool session = auth_has_session(auth);
             auth_poll(auth);
+            /* A restored tab that validates in the background opens its own
+             * realtime connection and takes the server's name. */
+            if (!session && auth_has_session(auth))
+                auth_connect_ws(auth);
             send_editor_poll(connections->items[i].editor);
             outbox *box = send_editor_outbox(connections->items[i].editor);
             outbox_operation operation;
@@ -191,6 +225,10 @@ bool instances_poll(instance_connections *connections, auth_client *active)
             changed |= before != auth_get_state(auth) || session != auth_has_session(auth);
         }
         instance_connection *item = &connections->items[i];
+        if (*auth_server_name(auth) && strcmp(item->name, auth_server_name(auth))) {
+            snprintf(item->name, sizeof(item->name), "%s", auth_server_name(auth));
+            changed = true;
+        }
         char key[80];
         desktop_key(item, key);
         if (item->desktop_generation != auth_context_generation(auth) || !auth_has_session(auth)) {

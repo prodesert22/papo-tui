@@ -24,6 +24,14 @@ bool session_store_restoring(const session_store *store);
  * the instance of that snapshot until the store is destroyed. */
 char *session_store_take_resume(session_store *store, const char **url);
 void session_store_cancel_resume(session_store *store);
+/* The client is bound to a slot whose credential may be restored. */
+bool session_store_saved(const session_store *store, const auth_client *client);
+/* Reads the client's saved session again; session_store_take_resume returns it
+ * once the provider answers. False when there is nothing to retry. */
+bool session_store_retry(session_store *store, auth_client *client);
+/* Forgets the saved session of the client's instance: unbinds the client,
+ * deletes its credential and the remembered URL. */
+void session_store_forget(session_store *store, auth_client *client);
 /* Ascending creation order of a bound client's slot, for restoring tab order. */
 unsigned session_store_order(const session_store *store, const auth_client *client);
 #endif

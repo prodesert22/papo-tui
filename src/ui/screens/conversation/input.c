@@ -307,9 +307,20 @@ void conversation_submit(view *ui, uint64_t retry_id, bool duplicate)
     }
 }
 
+void conversation_confirm_remove(view *ui, size_t index)
+{
+    if (index >= ui->connections->count)
+        return;
+    conversation_interactions_close(ui);
+    mention_popup_close(ui->mentions);
+    ui->duplicate_modal = ui->remove_server = true;
+    ui->remove_index = index;
+    ui->reenviar = false; /* Cancelar keeps the default focus. */
+}
+
 void conversation_close_confirmation(view *ui)
 {
-    ui->duplicate_modal = false;
+    ui->duplicate_modal = ui->remove_server = false;
     if (ui->confirm) {
         delwin(ui->confirm);
         ui->confirm = NULL;
@@ -334,12 +345,13 @@ bool conversation_edit(view *ui, int type, uint32_t key)
     return handled;
 }
 
-void conversation_handle_confirmation(view *ui, int type, uint32_t key, bool enter)
+bool conversation_handle_confirmation(view *ui, int type, uint32_t key, bool enter)
 {
     if (type == OK && key == 27) {
         conversation_close_confirmation(ui);
-        return;
+        return false;
     }
+    bool removing = ui->remove_server;
     if ((type == OK && key == '\t') || (type == KEY_CODE_YES && key == KEY_BTAB))
         ui->reenviar = !ui->reenviar;
     else if (type == KEY_CODE_YES && key == KEY_LEFT)
@@ -350,6 +362,8 @@ void conversation_handle_confirmation(view *ui, int type, uint32_t key, bool ent
         bool retry = ui->reenviar;
         uint64_t id = ui->retry_id;
         conversation_close_confirmation(ui);
+        if (retry && removing)
+            return true;
         if (retry)
             conversation_submit(ui, id, true);
     } else if (type == KEY_CODE_YES && key == KEY_MOUSE && ui->confirm) {
@@ -362,11 +376,13 @@ void conversation_handle_confirmation(view *ui, int type, uint32_t key, bool ent
                 uint64_t id = ui->retry_id;
                 if (cancel || retry) {
                     conversation_close_confirmation(ui);
+                    if (retry && removing)
+                        return true;
                     if (retry)
                         conversation_submit(ui, id, true);
                 }
             }
         }
     }
-    return;
+    return false;
 }
