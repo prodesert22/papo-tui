@@ -134,6 +134,30 @@ class RealtimeTerminal(unittest.TestCase):
             finally:
                 self.assertTrue(terminal.close())
 
+    def test_background_events_leave_the_add_server_caret_alone(self):
+        with RealtimeMock() as server:
+            terminal = self.open(server)
+            try:
+                self.wait(terminal, "Tempo real conectado")
+                terminal.click(1, terminal.screen.display[1].index("[+ Adicionar]") + 2)
+                self.wait(terminal, "URL do servidor")
+                terminal.read(0.5)
+                self.assertFalse(terminal.screen.cursor.hidden)
+                start = len(terminal.output)
+                # The connected server keeps receiving events behind the form.
+                for n in range(8):
+                    status = "online" if n % 2 else "idle"
+                    server.emit(dict(type="presence_update", user_id=uuid(21), status=status))
+                    server.emit(dict(type="typing_start", channel_id=CHANNEL, user_id=uuid(21)))
+                    terminal.read(0.1)
+                terminal.read(0.3)
+                # Its tab label is unchanged, so the form is not repainted and
+                # the caret is not hidden and shown again, which stops blinking.
+                self.assertNotIn(b"\x1b[?25h", bytes(terminal.output[start:]))
+                self.assertFalse(terminal.screen.cursor.hidden)
+            finally:
+                self.assertTrue(terminal.close())
+
     def test_reconnect_keeps_draft_resize_and_offline_changes(self):
         with RealtimeMock() as server:
             terminal = self.open(server)

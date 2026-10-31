@@ -76,6 +76,7 @@ typedef struct {
     /* Entries are the open servers, then the form's own server when it is not
      * one of them. tab_cursor indexes them while the tabs have focus. */
     bool tabs_shown;
+    uint64_t tabs_signature;
     size_t tab_cursor, first_tab, tab_request;
     tab_hit tab_hits[INSTANCE_LIMIT + 1], back_hit, next_hit;
     /* Confirmation for removing tab entry remove_index and its saved session. */
@@ -405,6 +406,28 @@ static int tab_width(const login_ui *ui, auth_client *client, size_t index, int 
     return width > available ? available : width;
 }
 
+/* Background servers change often (presence, typing, history), but this screen
+ * shows only their tab labels. Redrawing for anything else would re-show the
+ * caret on every event and keep the terminal from blinking it. */
+static bool tabs_changed(login_ui *ui, auth_client *client)
+{
+    uint64_t hash = 1469598103934665603ULL;
+    size_t total = tab_total(client);
+    for (size_t i = 0; i < total; ++i) {
+        char label[192];
+        tab_label(ui, client, i, label, sizeof(label));
+        for (const unsigned char *p = (const unsigned char *)label;; ++p) {
+            hash = (hash ^ *p) * 1099511628211ULL;
+            if (!*p)
+                break;
+        }
+    }
+    hash = (hash ^ total) * 1099511628211ULL;
+    bool changed = hash != ui->tabs_signature;
+    ui->tabs_signature = hash;
+    return changed;
+}
+
 static void draw_tabs(login_ui *ui, auth_client *client)
 {
     WINDOW *w = ui->tabs;
@@ -696,13 +719,18 @@ static void draw(login_ui *ui, auth_client *client)
     wnoutrefresh(ui->footer);
     wnoutrefresh(ui->input);
     if (ui->tabs) {
+        /* At the minimum height the tabs cover the card's top border. The
+         * terminal cursor follows the last refreshed window: refreshing the
+         * unchanged input again only moves it back into the focused field. */
         draw_tabs(ui, client);
         wnoutrefresh(ui->tabs);
+        wnoutrefresh(ui->input);
     }
     draw_remove(ui, client);
     help_draw(&ui->help);
     doupdate();
-    curs_set(!ui->help.open && ui->focus < FIELD_COUNT && !busy && !ready ? 1 : 0);
+    curs_set(!ui->help.open && !ui->remove_open && ui->focus < FIELD_COUNT && !busy && !ready ? 1
+                                                                                              : 0);
 }
 
 static void select_focus(login_ui *ui, int selected)
@@ -1435,7 +1463,8 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         auth_realtime_active(client, true);
         auth_poll(client);
         send_editor_poll(instances_editor(connections, client));
-        if (instances_poll(connections, client))
+        instances_poll(connections, client);
+        if (tabs_changed(&ui, client))
             redraw = true;
         if (before != auth_get_state(client) || before_busy != auth_busy(client))
             redraw = true;

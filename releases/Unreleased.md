@@ -14,3 +14,4 @@
 - Fixed the help dialog leaving parts of itself on the sign-in screen after closing it.
 - On screens 80 columns or wider, the server tab bar now uses a single row and the **Foco** (focus) label moved to the footer, to the left of **Ctrl+G: ajuda**, giving the history one more row. Narrow screens keep the label next to the **[Canais]**/**[Conversa]** switch.
 - Fixed a server tab staying on **Conectando tempo real…** (connecting realtime) forever when it was opened after losing focus before its realtime connection finished, for example a saved server restored in the background. New messages only appeared after reopening the channel; the connection now opens as soon as the tab is shown again.
+- Fixed the text cursor on the sign-in and add-server screen not blinking while other servers were connected. Their presence, typing and message events no longer repaint the form; it now only updates when a server tab changes.

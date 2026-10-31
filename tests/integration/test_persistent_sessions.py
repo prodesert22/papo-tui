@@ -531,6 +531,19 @@ class Persistence(unittest.TestCase):
             self.wait(t, "Comunidade")
             t.send("\x1b[A" * 6)  # Up from the first field reaches the tabs.
             self.wait(t, "[127.0.0.1")
+            # Back in the URL field, the terminal cursor is inside the field,
+            # not left on the tab bar drawn above the card.
+            t.send("\x1b[B")
+            deadline = time.monotonic() + 8
+            while time.monotonic() < deadline and (
+                t.screen.cursor.hidden or second.url not in t.screen.display[t.screen.cursor.y]
+            ):
+                t.read(0.03)
+            self.assertFalse(t.screen.cursor.hidden)
+            self.assertIn(second.url, t.screen.display[t.screen.cursor.y])
+            t.send("\x1b[A")
+            t.read(0.2)
+            self.assertTrue(t.screen.cursor.hidden)
             t.send("\x1b[D")
             self.wait(t, ">Comunidade<")
             t.send("\x1b[C")
