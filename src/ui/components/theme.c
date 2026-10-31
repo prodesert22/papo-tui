@@ -148,12 +148,15 @@ void theme_init(ui_theme *theme)
     init_extended_pair(THEME_BORDER, colors[RULE], colors[BACKGROUND]);
     init_extended_pair(THEME_FOCUS_AREA, colors[TEXT], colors[RAISED]);
     init_extended_pair(THEME_FOCUS_MUTED, colors[SECONDARY], colors[RAISED]);
-    init_extended_pair(THEME_FOCUS_BORDER, colors[RULE], colors[RAISED]);
+    /* With 8 or 16 colors (such as the Linux console) the focus backgrounds
+     * are black like the rest, so focused borders take the accent instead. */
+    int focus_rule = COLORS < 256 ? colors[ORANGE] : colors[RULE];
+    init_extended_pair(THEME_FOCUS_BORDER, focus_rule, colors[RAISED]);
     init_extended_pair(THEME_HISTORY_AREA, colors[TEXT], colors[HISTORY_BACKGROUND]);
     init_extended_pair(THEME_HISTORY_MUTED, colors[SECONDARY], colors[HISTORY_BACKGROUND]);
     init_extended_pair(THEME_HISTORY_ACCENT, colors[ORANGE], colors[HISTORY_BACKGROUND]);
     init_extended_pair(THEME_HISTORY_ERROR, colors[RED], colors[HISTORY_BACKGROUND]);
-    init_extended_pair(THEME_HISTORY_BORDER, colors[RULE], colors[HISTORY_BACKGROUND]);
+    init_extended_pair(THEME_HISTORY_BORDER, focus_rule, colors[HISTORY_BACKGROUND]);
     init_extended_pair(THEME_PROFILE_TEXT, colors[PROFILE_WHITE], colors[BACKGROUND]);
     init_extended_pair(THEME_PROFILE_PANEL, colors[PROFILE_WHITE], colors[SURFACE]);
     init_extended_pair(THEME_PROFILE_SELECTED, colors[PROFILE_WHITE], colors[WARM]);

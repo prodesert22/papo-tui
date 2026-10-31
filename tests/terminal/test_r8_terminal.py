@@ -687,6 +687,52 @@ class R8Terminal(support.R8Terminal):
             self.wait(terminal, "[Comunidade 100]")
             self.assertNotIn("+", terminal.screen.display[1].split("]", 1)[0])
 
+    def test_basic_color_console_marks_the_focused_box_border(self):
+        # The Linux console has 8 colors: focus backgrounds are as black as
+        # the rest, so the focused box border must change color instead.
+        with R8Mock(count=1) as server:
+            t = self.login(server, terminal_type="linux")
+            self.wait(t, "Mensagem 0001")
+            self.wait(t, "Conversar em #geral")
+            column = 40
+
+            def rule_rows():
+                return [
+                    y
+                    for y in range(len(t.screen.buffer))
+                    if t.screen.buffer[y][column].data in ("q", "─")
+                ]
+
+            def colors(rows):
+                return [t.screen.buffer[y][column].fg for y in rows]
+
+            def until(condition):
+                end = time.monotonic() + 4
+                while not condition() and time.monotonic() < end:
+                    t.read(0.03)
+                self.assertTrue(condition(), "\n".join(t.screen.display))
+
+            editor = next(y for y, line in enumerate(t.screen.display) if "Conversar em" in line)
+            # The history separator, then the editor's top and bottom edges;
+            # the frame's own edges above and below them are excluded.
+            body = [y for y in rule_rows() if 2 < y < len(t.screen.buffer) - 4]
+            separator = body[0]
+            edges = [max(y for y in body if y < editor), min(y for y in body if y > editor)]
+            # The console has no mouse reporting; move the focus by keyboard.
+            t.send("\x1b[B\n")
+            self.wait(t, "Foco: Histórico")
+            until(lambda: colors([separator]) == ["brown"])
+            self.assertEqual(colors(edges), ["white", "white"])
+            t.send("x")  # Typing moves the focus to the editor.
+            self.wait(t, "Foco: Mensagem")
+            until(lambda: colors(edges) == ["brown", "brown"])
+            self.assertEqual(colors([separator]), ["white"])
+            t.send("\x1b")
+            self.wait(t, "Foco: Histórico")
+            t.send("\x1b[D")
+            self.wait(t, "Foco: Canais")
+            until(lambda: colors([separator] + edges) == ["white"] * 3)
+
     def test_black_background_and_sidebar_focus_include_both_buttons(self):
         with R8Mock(count=0) as server:
             t = self.login(server, environment={"KITTY_WINDOW_ID": "r8-theme-fixture"})
