@@ -17,6 +17,7 @@ import unittest
 KEYRING = argument(1)
 from terminal_support import Terminal  # consumes the TUI binary  # noqa: E402 - path and test arguments are prepared above
 from history_mock import HistoryMock  # noqa: E402 - path and test arguments are prepared above
+from realtime_mock import RealtimeMock  # noqa: E402 - path and test arguments are prepared above
 
 
 class Persistence(unittest.TestCase):
@@ -306,6 +307,27 @@ class Persistence(unittest.TestCase):
             self.assertTrue(any(r[1].endswith("/auth/whoami") for r in restored))
             # The inactive tab validates its session without reading history.
             self.assertFalse(any("/messages" in r[1] for r in restored))
+            t.close()
+
+    def test_background_restored_tab_connects_realtime_when_opened(self):
+        self.keyring()
+        with RealtimeMock() as first, RealtimeMock() as second:
+            second.name = "Trabalho"
+            t = self.login(first)
+            self.add_server(t, second)
+            t.close()
+            t = self.terminal()
+            t.resize(30, 120)
+            self.wait(t, "[Trabalho")
+            self.wait(t, "Tempo real conectado")
+            # The other server validated in the background, where its realtime
+            # connection waits; opening its tab must connect it.
+            t.click(1, t.screen.display[1].index("Comunidade") + 1)
+            self.wait(t, "[Comunidade")
+            self.wait(t, "Tempo real conectado")
+            message = dict(first.message(4), content="Chegou pelo tempo real")
+            first.emit(dict(message, type="message"))
+            self.wait(t, message["content"])
             t.close()
 
     def test_unreachable_newest_server_keeps_tabs_to_open_the_other(self):

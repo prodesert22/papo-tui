@@ -32,8 +32,11 @@ void auth_poll(auth_client *client)
         !client->logout_requested && !client->queued && !client->attached &&
         client->state == AUTH_READY && tick >= client->ws_retry_at) {
         ws_state state = ws_get_state(client->websocket);
+        /* A connection aborted while its tab was inactive may already be
+         * validated again when the tab returns, before it ever opened. */
         if (state == WS_ERROR || state == WS_CLOSED ||
-            (state == WS_IDLE && (client->ws_epoch || client->ws_validate))) {
+            (state == WS_IDLE &&
+             (client->ws_epoch || client->ws_validate || client->ws_validated))) {
             if (client->ws_validated && auth_has_session(client)) {
                 client->ws_validated = false;
                 ws_connect(client->websocket, client->base);
