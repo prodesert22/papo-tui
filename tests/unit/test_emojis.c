@@ -343,9 +343,15 @@ static void grouping(void)
     json_object_set_new(b, "channel_id", json_string(other));
     assert(!message_same_author(a, b));
     json_object_set_new(b, "channel_id", json_string(id));
-    json_object_set_new(b, "created_at", json_string("2026-10-15T12:34:56Z"));
+    json_object_set_new(b, "created_at", json_string("2026-10-14T13:34:56Z"));
     assert(message_same_author(a, b));
-    json_object_set_new(b, "edited_at", json_string("2026-10-15T12:35:56Z"));
+    json_object_set_new(b, "created_at", json_string("2026-10-14T13:34:57Z"));
+    assert(!message_same_author(a, b) && !message_same_author(b, a));
+    json_object_set_new(b, "created_at", json_string("2026-10-15T12:34:56Z"));
+    assert(!message_same_author(a, b));
+    json_object_set_new(b, "created_at", json_string("2026-10-14T12:50:00Z"));
+    assert(message_same_author(a, b));
+    json_object_set_new(b, "edited_at", json_string("2026-10-14T12:51:00Z"));
     assert(!message_same_author(a, b));
     json_object_del(b, "edited_at");
     json_object_set_new(a, "author_id", json_null());

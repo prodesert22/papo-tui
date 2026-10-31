@@ -85,7 +85,8 @@ typedef struct {
 void message_reaction_label(chat_assets *assets, const json_t *emoji, char *label, size_t capacity);
 uint64_t message_media_version(const json_t *entry);
 /* Adjacent messages can share a header only within the same channel and
- * author identity. Webhook display overrides remain distinct. */
+ * author identity, sent at most one hour apart. Webhook display overrides
+ * remain distinct. */
 bool message_same_author(const json_t *previous, const json_t *message);
 bool message_blocks_build(message_blocks *out, json_t *message, const char *author,
                           const char *reply, int width, bool graphics);

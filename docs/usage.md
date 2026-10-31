@@ -569,6 +569,10 @@ an already submitted request may still finish. Changing conversation or server
 closes editing; the send draft stays with its conversation. Changing account or
 session also closes editing.
 
+Consecutive messages from the same author share one header with the avatar,
+name and time. A message sent more than an hour after the previous one starts
+a new header, as do edited messages and replies.
+
 Replies show a gray **↰ Author: excerpt** above their content. Click it to
 scroll to and highlight the original. Older originals are looked up automatically
 in the active conversation, without changing your scroll position. This may

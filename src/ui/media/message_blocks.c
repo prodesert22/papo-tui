@@ -4,6 +4,7 @@
 #include "ui/media/message_blocks.h"
 #include "config/app_mode.h"
 #include "model/conversation/history.h"
+#include "net/auth/session_time.h"
 #include "ui/components/theme.h"
 #include "ui/input/text.h"
 #include "ui/media/graphics.h"
@@ -16,6 +17,8 @@
 #include <string.h>
 #include <time.h>
 #define IMAGE_GAP_COLUMNS 2
+/* Messages further apart than this start a new group with their own header. */
+#define GROUP_GAP_MS UINT64_C(3600000)
 static const char *str(const json_t *obj, const char *key)
 {
     const char *s = json_string_value(json_object_get(obj, key));
@@ -49,10 +52,20 @@ static bool attachment_is_video(const char *mime, const char *name)
         return false;
     return video_extension(name);
 }
+/* A message without a readable time keeps the author grouping. */
+static bool close_in_time(const json_t *previous, const json_t *message)
+{
+    uint64_t a, b;
+    if (!session_time_parse(str(previous, "created_at"), &a) ||
+        !session_time_parse(str(message, "created_at"), &b))
+        return true;
+    return (a > b ? a - b : b - a) <= GROUP_GAP_MS;
+}
 bool message_same_author(const json_t *previous, const json_t *message)
 {
     if (!json_is_object(previous) || !json_is_object(message) ||
-        strcmp(str(previous, "channel_id"), str(message, "channel_id")))
+        strcmp(str(previous, "channel_id"), str(message, "channel_id")) ||
+        !close_in_time(previous, message))
         return false;
     bool app = history_message_webhook(message);
     if (app != history_message_webhook(previous))

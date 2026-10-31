@@ -1378,6 +1378,56 @@ class EmojiTerminal(support.EmojiTerminal):
             finally:
                 self.assertTrue(t.close())
 
+    def test_author_messages_more_than_an_hour_apart_start_another_group(self):
+        times = ["2026-10-12T12:00:00Z", "2026-10-12T13:00:01Z", "2026-10-12T13:02:00Z"]
+        with self.server(count=3, realtime=True) as s:
+            for i, m in enumerate(s.messages):
+                m.update(author_id=uuid(21), content=f"Hora {i + 1}", created_at=times[i])
+            t = self.open(s, protocol="kitty")
+            try:
+                t.resize(40, 100)
+                self.wait(t, "Hora 3")
+                self.until(t, lambda: sum("Apelido" in row for row in t.screen.display) == 2)
+
+                def rows(count):
+                    return [
+                        next(i for i, row in enumerate(t.screen.display) if f"Hora {n}" in row)
+                        for n in range(1, count + 1)
+                    ]
+
+                first, second, third = rows(3)
+                self.assertIn("Apelido", t.screen.display[first - 1])
+                self.assertIn("Apelido", t.screen.display[second - 1])
+                self.assertEqual(third - second, 1)
+                self.until(t, lambda: bool(s.peers))
+                # Exactly one hour after the previous message still joins it.
+                s.emit(
+                    dict(
+                        s.message(4),
+                        type="message",
+                        author_id=uuid(21),
+                        content="Hora 4",
+                        created_at="2026-10-12T14:02:00Z",
+                    )
+                )
+                self.wait(t, "Hora 4")
+                self.assertEqual(sum("Apelido" in row for row in t.screen.display), 2)
+                self.assertEqual(rows(4)[3] - rows(4)[2], 1)
+                s.emit(
+                    dict(
+                        s.message(5),
+                        type="message",
+                        author_id=uuid(21),
+                        content="Hora 5",
+                        created_at="2026-10-12T15:02:01Z",
+                    )
+                )
+                self.wait(t, "Hora 5")
+                self.until(t, lambda: sum("Apelido" in row for row in t.screen.display) == 3)
+                self.assertIn("Apelido", t.screen.display[rows(5)[4] - 1])
+            finally:
+                self.assertTrue(t.close())
+
     def test_deleting_intervening_author_joins_neighboring_groups(self):
         with self.server(count=3, realtime=True) as s:
             for i, m in enumerate(s.messages):
