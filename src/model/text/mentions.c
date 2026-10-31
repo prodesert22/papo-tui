@@ -97,6 +97,25 @@ bool mention_message_contains(const json_t *message, const char *id)
     mention_visit_message(message, match_user, &match);
     return match.found;
 }
+bool mention_everyone(const char *text)
+{
+    for (const char *p = text ? text : ""; (p = strchr(p, '@')); ++p) {
+        if (!g_ascii_strncasecmp(p + 1, "everyone", 8) && !g_ascii_isalnum(p[9]) && p[9] != '_')
+            return true;
+    }
+    return false;
+}
+bool mention_notifies(const json_t *message, const char *id, const char *reply_author)
+{
+    const char *author = json_string_value(json_object_get(message, "author_id"));
+    if (!id || !*id || (author && !strcasecmp(author, id)))
+        return false;
+    if (mention_message_contains(message, id) || (reply_author && !strcasecmp(reply_author, id)))
+        return true;
+    /* Webhooks never ping @everyone. */
+    return author && *author &&
+           mention_everyone(json_string_value(json_object_get(message, "content")));
+}
 void mention_cleanup(void)
 {
     g_clear_pointer(&expression, g_regex_unref);

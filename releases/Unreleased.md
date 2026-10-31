@@ -27,3 +27,4 @@
 - Fixed the red unread dot appearing on startup for conversations you had already read: your own latest message, or a deleted last-read message, no longer marks a channel unread.
 - Notifications for messages before the point where you read a conversation, in this client or another one, are now marked read with that read, so they leave the notification count and the badges instead of staying unread in the notification center.
 - Fixed **Ctrl+R** sometimes doing nothing in a conversation when it was pressed while notifications, author names or a read were still loading in the background; the reload now runs as soon as that request finishes.
+- Replies to your messages and `@everyone` messages are now highlighted in the history with the same colored bar as mentions of you, so every message that reaches the notification center stands out, whatever the channel's notification setting. Your own messages are no longer highlighted when they mention you.

@@ -133,6 +133,23 @@ int main(void)
     assert(plain_bold);
     message_blocks_free(&blocks);
     json_decref(m);
+    /* Highlight follows the notification center: mention, reply, @everyone. */
+    assert(mention_everyone("aviso @everyone!") && mention_everyone("@EveryOne"));
+    assert(!mention_everyone("@everyones") && !mention_everyone("@every") &&
+           !mention_everyone("@everyone_x") && !mention_everyone(NULL));
+    const char *other = "00000000-0000-4000-8000-000000000002";
+    json_t *reply = json_pack("{s:s,s:s}", "author_id", other, "content", "Sem menção");
+    assert(reply && !mention_notifies(reply, id, NULL) && !mention_notifies(reply, id, other));
+    assert(mention_notifies(reply, id, id)); /* Reply to your message. */
+    json_object_set_new(reply, "content", json_string("Atenção @everyone"));
+    assert(mention_notifies(reply, id, NULL));
+    json_object_set_new(reply, "author_id", json_null()); /* Webhooks never ping everyone. */
+    assert(!mention_notifies(reply, id, NULL));
+    json_object_set_new(reply, "content", json_string(token));
+    assert(mention_notifies(reply, id, NULL));                /* Webhooks still mention directly. */
+    json_object_set_new(reply, "author_id", json_string(id)); /* Your own message. */
+    assert(!mention_notifies(reply, id, id));
+    json_decref(reply);
     mention_cleanup();
     return 0;
 }

@@ -750,7 +750,8 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
     b->icon_resolver = icons;
     b->icon_painter = painter;
     b->icon_context = icon_context;
-    b->self_mention = mention_message_contains(m, self);
+    b->self_mention =
+        mention_notifies(m, self, json_string_value(json_object_get(m, "_reply_author")));
     if (width < 8)
         width = 8;
     graphics_terminal terminal = graphics_terminal_get();

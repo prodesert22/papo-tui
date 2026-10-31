@@ -245,6 +245,12 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
             json_t *display = json_deep_copy(m);
             if (!display)
                 continue;
+            /* Replies to your messages are highlighted like mentions. */
+            json_t *replied = *conversation_str(m, "reply_to")
+                                  ? history_find_message(ui->model, conversation_str(m, "reply_to"))
+                                  : NULL;
+            if (json_is_object(replied) && *conversation_str(replied, "author_id"))
+                json_object_set(display, "_reply_author", json_object_get(replied, "author_id"));
             size_t reaction_index;
             json_t *reaction;
             json_array_foreach(json_object_get(display, "reactions"), reaction_index, reaction)

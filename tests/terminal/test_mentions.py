@@ -386,6 +386,38 @@ class Mentions(unittest.TestCase):
             finally:
                 self.assertTrue(t.close())
 
+    def test_replies_to_you_and_everyone_mark_the_left_edge_like_mentions(self):
+        # Messages that reach the notification center are highlighted, whatever
+        # the channel's notification setting; your own messages never are.
+        for case in ("reply", "everyone"):
+            with self.subTest(case=case), MentionServer(2) as s:
+                t = self.open(s)
+                try:
+
+                    def bar():
+                        return any(t.screen.buffer[y][26].data in ("│", "x") for y in range(7, 15))
+
+                    mine = dict(
+                        s.message(1), id=uuid(900), author_id=uuid(1), content="Minha pergunta"
+                    )
+                    s.emit(dict(mine, type="message"))
+                    self.wait(t, "Minha pergunta")
+                    t.read(0.3)
+                    self.assertFalse(bar())
+                    other = dict(s.message(2), id=uuid(901))
+                    if case == "reply":
+                        other.update(reply_to=mine["id"], content="Resposta para você")
+                    else:
+                        other.update(content="Aviso para @everyone")
+                    s.emit(dict(other, type="message"))
+                    self.wait(t, other["content"])
+                    deadline = time.monotonic() + 4
+                    while not bar() and time.monotonic() < deadline:
+                        t.read(0.03)
+                    self.assertTrue(bar())
+                finally:
+                    self.assertTrue(t.close())
+
     def test_embed_mentions_resolve_highlight_and_follow_live_updates(self):
         with MentionServer(2) as s:
             t = self.open(s)

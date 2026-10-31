@@ -395,6 +395,12 @@ that do not report Ctrl+/ can reach global help through contextual help's
 Type `@` in the editor to choose a person to mention; confirm with Tab or Enter.
 After closing the chooser, Enter sends the message.
 
+Messages that reach your notification center are marked with a colored bar at
+the left edge of the history: mentions of you, replies to your messages and
+`@everyone` sent by people (applications cannot use `@everyone`). The bar does
+not depend on the channel's **Notificações…** setting or on system
+notifications. Your own messages are never marked.
+
 Press Ctrl+D to open notifications. Type in **Buscar** (Search) to match message text,
 displayed mentions, authors or conversation names. Click the filter on the next
 row, or use ←/→ from the results, to choose **Todos** (All), **Canais** (Channels)
