@@ -753,6 +753,38 @@ class Persistence(unittest.TestCase):
             self.assertIn("URL do servidor", "\n".join(t.screen.display))
             t.close()
 
+    def test_quitting_during_a_renewal_keeps_the_saved_server(self):
+        self.keyring()
+        with HistoryMock() as server:
+            t = self.login(server)
+            server.scenario = "refresh-slow"  # The reply takes 1.5s.
+            t.send("\x14")
+            self.wait(t, "[Renovar]")
+            t.send("\x12")
+            deadline = time.monotonic() + 5
+            while server.refresh_count < 1 and time.monotonic() < deadline:
+                t.read(0.03)
+            self.assertEqual(server.refresh_count, 1)
+            # The renewal has withdrawn the saved session until its new
+            # cookie is stored; quitting now must wait for it.
+            self.assertFalse(self.state()["restore_allowed"])
+            t.send("\x11")
+            t.process.wait(timeout=10)
+            t.close()
+            self.assertTrue(self.state()["restore_allowed"])
+            server.scenario = ""
+            t = self.terminal()
+            self.wait(t, "geral")
+            self.assertEqual(self.login_count(server), 1)
+            self.assertTrue(
+                any(
+                    r[2] == "Auth=rotated-fixture-1"
+                    for r in server.requests
+                    if r[1].endswith("/auth/whoami")
+                )
+            )
+            t.close()
+
     def test_cancel_wallet_unlock_allows_memory_only_login(self):
         self.keyring()
         with HistoryMock() as server:

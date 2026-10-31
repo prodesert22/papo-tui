@@ -177,6 +177,9 @@ void auth_poll(auth_client *client);
 void auth_cancel(auth_client *client);
 auth_state auth_get_state(const auth_client *client);
 bool auth_busy(const auth_client *client);
+/* A session renewal, through the identity check that follows it, is queued
+ * or in flight. The saved session stays withdrawn until it completes. */
+bool auth_renewing(const auth_client *client);
 const char *auth_message(const auth_client *client);
 const char *auth_username(const auth_client *client);
 const char *auth_server_name(const auth_client *client);

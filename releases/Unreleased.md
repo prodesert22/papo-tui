@@ -22,3 +22,4 @@
 - The message context menu has a new **Ver perfil** (View profile) option that opens the author's profile without opening the member drawer. It is not shown for messages sent by applications.
 - Light mode now shows video covers and plays videos as colored characters, like images and animated GIFs.
 - On terminals without Kitty, Sixel or iTerm2 graphics, such as the Linux console (TTY), the application now runs in Light, and Settings lists only Light, already marked, and Ultralight instead of offering Normal. A saved Normal preference is kept for other terminals.
+- Fixed a saved server disappearing from the tabs after quitting the application while it was renewing that server's session, for example about 30 seconds after opening it. Quitting now waits up to five seconds for a renewal already in progress, so its new session is saved.

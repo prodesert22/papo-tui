@@ -364,6 +364,11 @@ bool auth_busy(const auth_client *client)
            client->state == AUTH_MESSAGE_SEND;
 }
 
+bool auth_renewing(const auth_client *client)
+{
+    return client && client->after_refresh && (client->queued || client->attached);
+}
+
 const char *auth_message(const auth_client *client)
 {
     switch (client->state) {

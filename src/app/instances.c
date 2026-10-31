@@ -43,10 +43,30 @@ static void release_model(instance_connections *c, size_t i)
     json_decref(c->items[i].alerts);
     history_destroy(c->items[i].model);
 }
+/* A renewal withdraws the saved session until its new cookie is stored, so
+ * quitting in the middle of one would lose the server on the next start. Let
+ * renewals already started finish, within a bound, before the clients go. */
+static void finish_renewals(instance_connections *connections)
+{
+    gint64 end = g_get_monotonic_time() + 5 * G_USEC_PER_SEC;
+    for (;;) {
+        bool renewing = false;
+        for (size_t i = 0; i < connections->count; ++i)
+            if (auth_renewing(connections->items[i].auth)) {
+                auth_poll(connections->items[i].auth);
+                renewing = true;
+            }
+        session_store_poll(connections->sessions, NULL);
+        if (!renewing || g_get_monotonic_time() >= end)
+            return;
+        g_usleep(1000);
+    }
+}
 void instances_destroy(instance_connections *connections)
 {
     if (!connections)
         return;
+    finish_renewals(connections);
     for (size_t i = 0; i < connections->count; ++i) {
         session_store_unwatch(connections->sessions, connections->items[i].auth);
         if (connections->items[i].media_destroy)
