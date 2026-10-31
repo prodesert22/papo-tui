@@ -48,7 +48,7 @@ bool conversation_layout(view *ui)
     if (!ui->frame)
         return false;
     wbkgd(ui->frame, COLOR_PAIR(THEME_NORMAL));
-    ui->tabs = derwin(ui->frame, TABS_ROWS, COLS - 2, 1, 1);
+    ui->tabs = derwin(ui->frame, TABS_ROWS, COLS, 0, 0);
     ui->footer = derwin(ui->frame, 2, COLS - 2, LINES - 3, 1);
     if (wide || ui->show_channels)
         ui->list = derwin(ui->frame, rows, ui->side, CONTENT_Y, 1);

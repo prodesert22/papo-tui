@@ -20,7 +20,7 @@ class RealtimeTerminal(unittest.TestCase):
             terminal = self.open(server)
             try:
                 terminal.send("Rascunho ao navegar\x1b")
-                terminal.click(4, 4)
+                terminal.click(3, 4)
                 terminal.send("\x1bOB\x1bOB")  # buttons -> list -> other channel; keep geral open
                 self.assertIn("Foco: Canais", terminal.screen.display[-2])
                 self.assertIn("# geral · Histórico", self.screen(terminal))
@@ -37,12 +37,12 @@ class RealtimeTerminal(unittest.TestCase):
                 # Late author summaries legitimately redraw the old messages;
                 # settle that update before asserting the new event won't scroll.
                 self.wait(terminal, "Apelido")
-                before = [row[26:] for row in terminal.screen.display[8:12]]
+                before = [row[26:] for row in terminal.screen.display[7:11]]
                 message = server.message(5)
                 message["content"] = "Recebida sem deslocar a leitura"
                 server.emit(dict(message, type="message"))
                 self.wait(terminal, "1 novas mensagens")
-                self.assertEqual(before, [row[26:] for row in terminal.screen.display[8:12]])
+                self.assertEqual(before, [row[26:] for row in terminal.screen.display[7:11]])
                 terminal.send("\x1bOA\x1bOC\x1bOF")
                 self.wait(terminal, message["content"])
                 self.assertIn("Rascunho ao navegar", self.editor_text(terminal))
@@ -119,12 +119,12 @@ class RealtimeTerminal(unittest.TestCase):
                 terminal.send("\x1bOH")
                 self.wait(terminal, "Mensagem 0001")
                 self.wait(terminal, "Apelido")
-                before = terminal.screen.display[8:12]
+                before = terminal.screen.display[7:11]
                 m = server.message(51)
                 m["content"] = "Novidade fora da leitura"
                 server.emit(dict(m, type="message"))
                 self.wait(terminal, "1 novas mensagens")
-                self.assertEqual(before, terminal.screen.display[8:12])
+                self.assertEqual(before, terminal.screen.display[7:11])
                 server.emit({"type": "message_delete", "channel_id": CHANNEL, "id": uuid(101)})
                 terminal.read(0.3)
                 self.assertIn("Mensagem 0002", self.screen(terminal))
@@ -139,7 +139,7 @@ class RealtimeTerminal(unittest.TestCase):
             terminal = self.open(server)
             try:
                 self.wait(terminal, "Tempo real conectado")
-                terminal.click(1, terminal.screen.display[1].index("[+ Adicionar]") + 2)
+                terminal.click(0, terminal.screen.display[0].index("[+ Adicionar]") + 2)
                 self.wait(terminal, "URL do servidor")
                 terminal.read(0.5)
                 self.assertFalse(terminal.screen.cursor.hidden)

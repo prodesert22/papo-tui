@@ -42,10 +42,11 @@
 
 #define PASTE_START (KEY_MAX + 1)
 #define PASTE_END (KEY_MAX + 2)
-/* Wide screens keep one row of server tabs; narrow ones add a row for the
- * [Canais]/[Conversa] switch. The focus label lives in the footer. */
+/* Server tabs take the top rows, like on the sign-in screen: one row on wide
+ * screens, plus the [Canais]/[Conversa] switch on narrow ones. The frame starts
+ * below them. The focus label lives in the footer. */
 #define TABS_ROWS (COLS >= 80 ? 1 : 2)
-#define CONTENT_Y (TABS_ROWS + 3)
+#define CONTENT_Y (TABS_ROWS + 2)
 
 enum {
     SERVER_TABS,

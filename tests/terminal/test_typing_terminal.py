@@ -160,7 +160,7 @@ class TypingTerminal(unittest.TestCase):
             self.wait(terminal, "digitando", absent=True)
             server.typing()
             self.wait(terminal, "Pessoa1 está digitando…")
-            terminal.click(7, 4)
+            terminal.click(6, 4)
             self.wait(terminal, "# outro · Histórico")
             self.assertNotIn("digitando", self.line(terminal))
             assert_history_reads(self, server, {CHANNEL: (1, 2), OTHER: (1, 1)})

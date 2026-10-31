@@ -184,7 +184,7 @@ class DesktopTests(unittest.TestCase):
             t.wait_text("Conversar em #geral")
 
             def menu():
-                t.send("\x1b[<2;5;7M\x1b[<2;5;7m")
+                t.send("\x1b[<2;5;6M\x1b[<2;5;6m")
                 t.wait_text("Notificações…")
 
             def emit(n, content):

@@ -132,8 +132,8 @@ class Persistence(unittest.TestCase):
 
     def add_server(self, t, server):
         server.cookie_max_age = 30 * 86400
-        row = t.screen.display[1]
-        t.click(1, row.index("[+ Adicionar]") + 2)
+        row = t.screen.display[0]
+        t.click(0, row.index("[+ Adicionar]") + 2)
         self.wait(t, "URL do servidor")
         t.send(server.url + "\tjosé\tSynthetic!123\n")
         self.wait(t, "[" + server.name + "]")
@@ -298,7 +298,7 @@ class Persistence(unittest.TestCase):
             t = self.terminal()
             self.wait(t, "[Trabalho]")
             self.wait(t, "geral")
-            row = t.screen.display[1]
+            row = t.screen.display[0]
             self.assertIn("Comunidade", row, "\n".join(t.screen.display))
             self.assertLess(row.index("Comunidade"), row.index("[Trabalho"))
             self.assertEqual(self.login_count(first), 1)
@@ -322,7 +322,7 @@ class Persistence(unittest.TestCase):
             self.wait(t, "Tempo real conectado")
             # The other server validated in the background, where its realtime
             # connection waits; opening its tab must connect it.
-            t.click(1, t.screen.display[1].index("Comunidade") + 1)
+            t.click(0, t.screen.display[0].index("Comunidade") + 1)
             self.wait(t, "[Comunidade")
             self.wait(t, "Tempo real conectado")
             message = dict(first.message(4), content="Chegou pelo tempo real")
@@ -353,15 +353,15 @@ class Persistence(unittest.TestCase):
             self.assertEqual(self.login_count(first), 1)
             # The unreachable server stays listed with its saved session.
             self.wait(t, "(offline)")
-            self.assertIn("(offline)", t.screen.display[1])
+            self.assertIn("(offline)", t.screen.display[0])
             self.assertTrue(self.state(second.url)["restore_allowed"])
             # Opening it again reads the saved session instead of asking a password.
             second.api_handler = second.route
-            t.click(1, t.screen.display[1].index("(offline)"))
+            t.click(0, t.screen.display[0].index("(offline)"))
             self.wait(t, "[Trabalho]")
             self.wait(t, "geral")
-            self.assertNotIn("(offline)", t.screen.display[1])
-            self.assertIn("Comunidade", t.screen.display[1])
+            self.assertNotIn("(offline)", t.screen.display[0])
+            self.assertIn("Comunidade", t.screen.display[0])
             self.assertEqual(self.login_count(second), 1)
             t.close()
 
@@ -377,7 +377,7 @@ class Persistence(unittest.TestCase):
             self.wait(t, "[Trabalho]")
             self.wait(t, "geral")
             self.wait(t, "(offline)")
-            row = t.screen.display[1]
+            row = t.screen.display[0]
             self.assertIn("(offline)", row, "\n".join(t.screen.display))
             self.assertLess(row.index("(offline)"), row.index("[Trabalho"))
             self.assertTrue(self.state(first.url)["restore_allowed"])
@@ -411,7 +411,7 @@ class Persistence(unittest.TestCase):
                 release.set()
             self.wait(t, "geral")
             self.wait(t, "[Trabalho")
-            self.assertIn("Comunidade", t.screen.display[1])
+            self.assertIn("Comunidade", t.screen.display[0])
             self.assertEqual(self.login_count(second), 1)
             t.close()
 
@@ -435,20 +435,20 @@ class Persistence(unittest.TestCase):
             t.click(0, t.screen.display[0].index("Comunidade") + 1)
             self.wait(t, "(offline)")
             deletes = self.deletes()
-            self.right_click(t, 1, t.screen.display[1].index("(offline)"))
+            self.right_click(t, 0, t.screen.display[0].index("(offline)"))
             self.wait(t, "Remover servidor?")
             t.send("\x1b")  # Esc keeps the server.
             t.read(0.3)
             self.assertNotIn("Remover servidor?", "\n".join(t.screen.display))
-            self.assertIn("(offline)", t.screen.display[1])
-            self.right_click(t, 1, t.screen.display[1].index("(offline)"))
+            self.assertIn("(offline)", t.screen.display[0])
+            self.right_click(t, 0, t.screen.display[0].index("(offline)"))
             self.wait(t, "Remover servidor?")
             t.send("\x1b[C\n")
             deadline = time.monotonic() + 8
-            while "(offline)" in t.screen.display[1] and time.monotonic() < deadline:
+            while "(offline)" in t.screen.display[0] and time.monotonic() < deadline:
                 t.read(0.05)
-            self.assertNotIn("(offline)", t.screen.display[1])
-            self.assertIn("[Comunidade]", t.screen.display[1])
+            self.assertNotIn("(offline)", t.screen.display[0])
+            self.assertIn("[Comunidade]", t.screen.display[0])
             while self.deletes() == deletes and time.monotonic() < deadline:
                 t.read(0.05)
             self.assertGreater(self.deletes(), deletes)
@@ -458,7 +458,7 @@ class Persistence(unittest.TestCase):
             t = self.terminal()
             self.wait(t, "[Comunidade]")
             self.wait(t, "geral")
-            self.assertNotIn("127.0.0.1", t.screen.display[1])
+            self.assertNotIn("127.0.0.1", t.screen.display[0])
             self.assertEqual(self.login_count(second), 1)
             t.close()
 
@@ -481,14 +481,14 @@ class Persistence(unittest.TestCase):
             t.send("\t\n")
             self.wait(t, "[Comunidade]")
             self.wait(t, "geral")
-            self.assertNotIn("Trabalho", t.screen.display[1])
+            self.assertNotIn("Trabalho", t.screen.display[0])
             self.assertEqual(self.state(second.url), {})
             self.assertTrue(self.state(first.url)["restore_allowed"])
             t.close()
             t = self.terminal()
             self.wait(t, "[Comunidade]")
             self.wait(t, "geral")
-            self.assertNotIn("Trabalho", t.screen.display[1])
+            self.assertNotIn("Trabalho", t.screen.display[0])
             self.assertEqual(self.login_count(first), 1)
             t.close()
 
@@ -566,7 +566,7 @@ class Persistence(unittest.TestCase):
             t = self.terminal()
             self.wait(t, "[Trabalho]")
             self.wait(t, "geral")
-            self.assertIn("Comunidade", t.screen.display[1])
+            self.assertIn("Comunidade", t.screen.display[0])
             self.assertEqual(self.login_count(first), 1)
             self.assertEqual(self.login_count(second), 1)
             t.close()
@@ -586,7 +586,7 @@ class Persistence(unittest.TestCase):
             t = self.terminal()
             self.wait(t, "[Comunidade]")
             self.wait(t, "geral")
-            self.assertNotIn("Trabalho", t.screen.display[1])
+            self.assertNotIn("Trabalho", t.screen.display[0])
             self.assertEqual(self.login_count(first), 1)
             self.assertEqual(self.login_count(second), 1)
             t.close()

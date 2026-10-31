@@ -175,7 +175,7 @@ class MediaTerminal(support.MediaTerminal):
                                 for p in t.stream.placements
                             )
                         )
-                    t.click(7, 4)
+                    t.click(6, 4)
                     self.wait(t, "Conteúdo do outro canal")
                     t.read(0.15)
                     frames = len(t.stream.frames)
@@ -254,7 +254,7 @@ class MediaTerminal(support.MediaTerminal):
                     self.assertNotIn("OK", "\n".join(t.screen.display))
                     live = t.stream.live_ids.copy()
                     self.assertTrue(live)
-                    t.click(7, 4)
+                    t.click(6, 4)
                     self.wait(t, "Conteúdo do outro canal")
                     self.assertFalse(t.stream.live_ids)
                     self.assertTrue(live.issubset(t.stream.deleted_ids))
@@ -336,7 +336,7 @@ class MediaTerminal(support.MediaTerminal):
                 try:
                     self.wait_frames(t)
                     self.wait(t, "[Comunidade ❶ ]")
-                    self.assertNotIn("+", t.screen.display[1].split("]", 1)[0])
+                    self.assertNotIn("+", t.screen.display[0].split("]", 1)[0])
                     if protocol == "kitty":
 
                         def badges():
@@ -345,7 +345,7 @@ class MediaTerminal(support.MediaTerminal):
                                 for (header, pixels), position in zip(
                                     t.stream.kitty_frames, t.stream.frame_positions
                                 )
-                                if position[0] == 1
+                                if position[0] == 0
                                 and header[b"v"] == b"16"
                                 and any(
                                     min(pixels[i : i + 3]) > 230 for i in range(0, len(pixels), 4)
@@ -387,7 +387,7 @@ class MediaTerminal(support.MediaTerminal):
                                 "Mention number must be centered inside the badge",
                             )
                         before = len(badges())
-                        t.click(1, t.screen.display[1].index("Comunidade") + 1)
+                        t.click(0, t.screen.display[0].index("Comunidade") + 1)
                         self.wait(t, "Foco: Abas")
                         deadline = time.monotonic() + 8
                         while len(badges()) <= before and time.monotonic() < deadline:
@@ -1346,7 +1346,7 @@ class MediaTerminal(support.MediaTerminal):
                     self.assertEqual(len({header[b"i"] for header, _ in t.stream.kitty_frames}), 1)
                     t.send("Shared pixels")
                     self.assertEqual(len(t.stream.live_placements), 4)
-                    t.click(7, 4)
+                    t.click(6, 4)
                     self.wait(t, "Conteúdo do outro canal")
                     t.read(0.1)
                     self.assertFalse(t.stream.live_ids)
@@ -1806,7 +1806,7 @@ class MediaTerminal(support.MediaTerminal):
             t = self.open(server, environment={"TMPDIR": directory})
             try:
                 self.wait(t, "Carregando imagem")
-                t.click(7, 4)
+                t.click(6, 4)
                 self.wait(t, "Conteúdo do outro canal")
                 t.read(2.2)
                 self.assertEqual(t.stream.frames, [])

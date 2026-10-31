@@ -29,7 +29,7 @@ class ChannelPreferences(HistoryTerminal):
                 (
                     (y, line)
                     for y, line in enumerate(t.screen.display)
-                    if y >= 6 and f"# {name}" in line[:25]
+                    if y >= 5 and f"# {name}" in line[:25]
                 ),
                 None,
             )
@@ -221,7 +221,7 @@ class ChannelPreferences(HistoryTerminal):
                 self.menu(t)
                 self.settings(t, 0)
                 wait_for_screen(t, server.setting_started.is_set, "Setting was not transmitted")
-                t.click(7, 4)
+                t.click(6, 4)
                 server.setting_hold.set()
                 self.wait(t, "Notificações do canal atualizadas")
                 self.wait(t, "Conteúdo do outro canal")
@@ -255,30 +255,30 @@ class ChannelPreferences(HistoryTerminal):
                 self.wait(t, "Mensagem 0003")
                 wait_for_screen(
                     t,
-                    lambda: "[Comunidade]" in t.screen.display[1],
+                    lambda: "[Comunidade]" in t.screen.display[0],
                     "Read channel kept a server activity badge",
                 )
                 self.assertEqual(server.marked, [])
                 self.assertFalse(server.notifications[0]["read"])
-                t.click(7, 4)
+                t.click(6, 4)
                 fresh = server.message(4)
                 server.messages.append(fresh)
                 server.emit(dict(fresh, type="message"))
                 wait_for_screen(
                     t,
-                    lambda: "[Comunidade 0]" in t.screen.display[1],
+                    lambda: "[Comunidade 0]" in t.screen.display[0],
                     "Fresh message did not light server badge",
                 )
-                t.click(6, 4)
+                t.click(5, 4)
                 self.wait(t, "Mensagem 0004")
                 wait_for_screen(
                     t,
-                    lambda: "[Comunidade]" in t.screen.display[1],
+                    lambda: "[Comunidade]" in t.screen.display[0],
                     "Read cursor did not clear server badge",
                 )
                 server.emit(dict(server.message(2), type="message"))
                 t.read(0.3)
-                self.assertIn("[Comunidade]", t.screen.display[1])
+                self.assertIn("[Comunidade]", t.screen.display[0])
             finally:
                 self.assertTrue(t.close())
 

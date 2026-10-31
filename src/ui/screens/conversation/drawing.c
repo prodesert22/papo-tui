@@ -461,10 +461,11 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
     if (scope == DRAW_ALL) {
         werase(ui->frame);
         wattrset(ui->frame, COLOR_PAIR(THEME_BORDER));
+        /* The tabs cover the box's top rows; its top edge is drawn below them. */
         box(ui->frame, 0, 0);
         mvwhline(ui->frame, CONTENT_Y - 2, 1, ACS_HLINE, COLS - 2);
-        mvwaddch(ui->frame, CONTENT_Y - 2, 0, ACS_LTEE);
-        mvwaddch(ui->frame, CONTENT_Y - 2, COLS - 1, ACS_RTEE);
+        mvwaddch(ui->frame, CONTENT_Y - 2, 0, ACS_ULCORNER);
+        mvwaddch(ui->frame, CONTENT_Y - 2, COLS - 1, ACS_URCORNER);
         mvwhline(ui->frame, LINES - 4, 1, ACS_HLINE, COLS - 2);
         if (COLS >= 80)
             mvwvline(ui->frame, CONTENT_Y, ui->side + 1, ACS_VLINE, LINES - CONTENT_Y - 3);
