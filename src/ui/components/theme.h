@@ -2,6 +2,7 @@
 #define PAPO_THEME_H
 
 #include <stdbool.h>
+#include <stdint.h>
 
 enum {
     THEME_NORMAL = 1,
@@ -63,6 +64,10 @@ void theme_restore(ui_theme *theme);
 /* Tagged RGB foreground, preserving the existing background and palette. */
 int theme_rgb_pair(unsigned rgb, int fallback);
 int theme_member_pair(unsigned rgb, int background);
+/* RGB the terminal shows behind pair (0xRRGGBB): exact with direct color or a
+ * redefined palette, else its 256-color or basic approximation. Media blends
+ * transparent pixels into it, so they match the cells around them. */
+uint32_t theme_background_rgb(int pair);
 /* Fixed palette colors: green through 60%, yellow through 85%, then red. */
 int theme_volume_pair(int percent);
 

@@ -390,8 +390,14 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         }
         icons_assets(ui->icons, history_assets(ui->model), media_view_cache(ui->media),
                      auth_context_generation(auth));
-        if (icons_poll(ui->icons)) {
-            if (!redraw)
+        bool appeared = false;
+        if (icons_poll(ui->icons, &appeared)) {
+            if (appeared)
+                /* Repaint the history text under it; keep a wider pending scope. */
+                scope = redraw && (scope == DRAW_ALL || scope == DRAW_NAVIGATION)
+                            ? DRAW_ALL
+                            : DRAW_CONVERSATION;
+            else if (!redraw)
                 scope = DRAW_MEDIA;
             else if (scope == DRAW_NAVIGATION)
                 scope = DRAW_ALL;

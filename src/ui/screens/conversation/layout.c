@@ -288,16 +288,19 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
         }
         if (!followed && !compact_end && total + height < group_start + avatar_rows)
             height = group_start + avatar_rows - total;
+        /* Avatars may be transparent: once one is painted, its initials
+         * must not show through from the cells underneath. */
+        bool avatar_painted = false;
         if (paint && avatar_visible && !media_view_modal(ui->media)) {
             int top = first > total ? first - total : 0;
             int bottom = total + avatar_rows > first + ui->visible
                              ? total + avatar_rows - first - ui->visible
                              : 0;
             if (top + bottom < avatar_rows)
-                icons_message_avatar(ui->icons, m,
-                                     getbegy(ui->body) + ui->history_top + total + top - first,
-                                     getbegx(ui->body) + 2, top, bottom,
-                                     ui->focus == HISTORY_PANEL ? THEME_HISTORY_AREA : THEME_PANEL);
+                avatar_painted = icons_message_avatar(
+                    ui->icons, m, getbegy(ui->body) + ui->history_top + total + top - first,
+                    getbegx(ui->body) + 2, top, bottom,
+                    ui->focus == HISTORY_PANEL ? THEME_HISTORY_AREA : THEME_PANEL);
         }
         if (selected)
             ui->selected_end = total + height;
@@ -376,6 +379,15 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
                         : history_member_color(ui->model, conversation_str(m, "author_id"));
                 message_row_draw(ui->body, r, y, 2 + r->x, width - r->x, pair, accent,
                                  author_color);
+                if (avatar_painted)
+                    for (int k = 0; k < r->count; ++k)
+                        if (!strcmp(r->segments[k].key, "header:avatar")) {
+                            wattrset(ui->body,
+                                     COLOR_PAIR(ui->focus == HISTORY_PANEL ? THEME_HISTORY_AREA
+                                                                           : THEME_PANEL));
+                            mvwhline(ui->body, y, 2 + r->x + r->indent + r->segments[k].x, ' ',
+                                     r->segments[k].width);
+                        }
                 if (r->count && !strcmp(r->segments[0].key, "reply"))
                     conversation_message_hit(
                         ui, conversation_str(m, "id"), REPLY_HIT, getbegy(ui->body) + y,
@@ -451,9 +463,14 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
                         getbegy(ui->body) + ui->history_top + (start > first ? start - first : 0);
                     if (!region->height)
                         graphics_y = getbegy(ui->body) + y;
+                    /* Transparent media blends into the card or history behind it. */
+                    int behind = r->card                      ? THEME_EMBED_AREA
+                                 : ui->focus == HISTORY_PANEL ? THEME_HISTORY_AREA
+                                                              : THEME_PANEL;
                     media_view_offer(ui->media, &blocks->media[region->index], graphics_y,
                                      getbegx(ui->body) + 2 + r->x + r->indent + region->x,
-                                     region->width, region->height, top, bottom);
+                                     region->width, region->height, top, bottom,
+                                     theme_background_rgb(behind));
                 }
             }
         }

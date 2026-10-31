@@ -1268,6 +1268,31 @@ static bool equal_request(const image_decode_request *a, const image_decode_requ
            a->terminal.cell_width == b->terminal.cell_width &&
            a->terminal.cell_height == b->terminal.cell_height;
 }
+/* The background only shows through transparent pixels on protocols without
+ * alpha, and in the margins of letterboxed output. Elsewhere one encoding
+ * serves every background, so focus changes do not retransmit the image. */
+static void normalize_background(const image_object *o, image_decode_request *request)
+{
+    const animation *a = o->frames;
+    if (!a || o->glyph || !a->source_width || !a->source_height)
+        return;
+    bool transparent = false;
+    for (size_t i = 0; i < a->count && !transparent; ++i)
+        transparent = a->rgba[i];
+    bool alpha = request->terminal.protocol == GRAPHICS_KITTY ||
+                 request->terminal.protocol == GRAPHICS_ITERM2;
+    double ratio = request->cover ? fmax((double)request->width / a->source_width,
+                                         (double)request->height / a->source_height)
+                                  : fmin((double)request->width / a->source_width,
+                                         (double)request->height / a->source_height);
+    if (request->native && ratio > 1)
+        ratio = 1;
+    int sw = (int)fmax(1, a->source_width * ratio), sh = (int)fmax(1, a->source_height * ratio);
+    bool margins =
+        !request->native && !request->cover && (sw < request->width || sh < request->height);
+    if (transparent ? alpha : !margins)
+        request->background = 0;
+}
 const graphics_image *media_resource_image(media_resource *r, bool author,
                                            image_decode_request request, uint64_t now)
 {
@@ -1276,6 +1301,7 @@ const graphics_image *media_resource_image(media_resource *r, bool author,
     image_object *o = r->objects[author ? 1 : 0];
     if (!o || o->failed)
         return NULL;
+    normalize_background(o, &request);
     o->pinned = true;
     o->used = now;
     int decode_width = request.width, decode_height = request.height;

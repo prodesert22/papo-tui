@@ -2,6 +2,7 @@
 #include "model/assets/catalog.h"
 #include "model/conversation/history.h"
 #include "model/text/emoji_catalog.h"
+#include "ui/components/theme.h"
 #include "ui/media/icons.h"
 #include "ui/media/message_blocks.h"
 #include "ui/media/message_time.h"
@@ -396,10 +397,25 @@ static void grouping(void)
     json_decref(a);
     json_decref(b);
 }
+/* Media blends transparency into the background of the cells it covers, so
+ * each pair must report the theme's own background, not a stale constant. */
+static void media_backgrounds_follow_the_theme(void)
+{
+    assert(theme_background_rgb(THEME_PANEL) == 0x000000);
+    assert(theme_background_rgb(THEME_NORMAL) == 0x000000);
+    assert(theme_background_rgb(THEME_EMBED_AREA) == 0x000000);
+    assert(theme_background_rgb(THEME_HISTORY_AREA) == 0x15171b);
+    assert(theme_background_rgb(THEME_FOCUS_AREA) == 0x1d2026);
+    assert(theme_background_rgb(THEME_PANEL_ACTIVE) == 0x302419);
+    assert(theme_background_rgb(THEME_PROFILE_BUTTON_FOCUS) == 0x50381f);
+    assert(theme_background_rgb(THEME_NOTIFICATION_BUTTON_FOCUS) == 0x50381f);
+    assert(theme_background_rgb(THEME_TEXT_SELECTION) == 0xffb347);
+}
 int main(void)
 {
     assert(setlocale(LC_ALL, "C.UTF-8"));
     init_graphemebreak();
+    media_backgrounds_follow_the_theme();
     sequences();
     assets();
     avatar_refresh_keeps_last_good_image();

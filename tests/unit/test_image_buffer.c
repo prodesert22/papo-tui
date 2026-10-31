@@ -78,6 +78,18 @@ static bool region(const unsigned char *pixels, int width, int height, int top, 
     return encode(pixels + ((size_t)top * width + left) * 3, width - left - right,
                   height - top - bottom, terminal, id, image);
 }
+static bool encode_rgba(const unsigned char *pixels, int width, int height, int top, int bottom,
+                        int left, int right, bool preview, graphics_terminal terminal, uint32_t id,
+                        graphics_image *image)
+{
+    (void)preview;
+    assert(top >= 0 && bottom >= 0 && top + bottom < height);
+    assert(left >= 0 && right >= 0 && left + right < width);
+    /* Read the last pixel so the guard page catches an undersized buffer. */
+    volatile unsigned char last = pixels[((size_t)height * width) * 4 - 1];
+    (void)last;
+    return encode(pixels, width - left - right, height - top - bottom, terminal, id, image);
+}
 int main(int argc, char **argv)
 {
     assert(argc == 3);
@@ -95,6 +107,7 @@ int main(int argc, char **argv)
                              encode,
                              encode,
                              region,
+                             encode_rgba,
                              release_frames,
                              allocate,
                              allocate_zero,

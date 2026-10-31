@@ -45,6 +45,30 @@ static bool encode_pixels(const image_decode_request *j, const unsigned char *pi
     }
     return ok;
 }
+/* Kitty and iTerm2 composite unassociated RGBA over the terminal's own cells,
+ * so transparent pixels keep showing whatever is behind them. */
+static bool keeps_alpha(const image_decode_request *j)
+{
+    return j->terminal.protocol == GRAPHICS_KITTY || j->terminal.protocol == GRAPHICS_ITERM2;
+}
+static bool encode_alpha_pixels(const image_decode_request *j, const unsigned char *rgba, int w,
+                                int h, int source_w, int source_h, graphics_image *out)
+{
+    int top = j->terminal.protocol == GRAPHICS_KITTY && !j->region ? 0 : j->top;
+    int bottom = j->terminal.protocol == GRAPHICS_KITTY && !j->region ? 0 : j->bottom;
+    if (top < 0 || bottom < 0 || top >= h || bottom >= h || top >= h - bottom)
+        return false;
+    bool ok =
+        host.encode_rgba(rgba, w, h, top, bottom, j->region ? j->left : 0, j->region ? j->right : 0,
+                         !j->region && j->preview, j->terminal, j->image_id, out);
+    if (ok) {
+        out->source_width = source_w;
+        out->source_height = source_h;
+        out->crop_top = top;
+        out->crop_bottom = bottom;
+    }
+    return ok;
+}
 static bool decode_file(const image_decode_request *j, graphics_image *out, animation **animated,
                         bool (*cancelled)(void *context), void *context)
 {
@@ -238,7 +262,7 @@ static bool decode_file(const image_decode_request *j, graphics_image *out, anim
                     if (inside)
                         memcpy(rgb + at, rgba + pos, 4);
                 } else {
-                    uint32_t background = j->matte ? j->background : 0x15181e;
+                    uint32_t background = j->matte ? j->background : 0x000000;
                     for (int c = 0; c < 3; ++c) {
                         unsigned opacity = inside ? rgba[pos + 3] : 0;
                         unsigned color = inside ? rgba[pos + (size_t)c] : 0;
@@ -304,7 +328,10 @@ static bool encode_frame(const image_decode_request *request, graphics_image *ou
     if (w == a->width && h == a->height && !a->rgba[request->frame] && !request->cover)
         return encode_pixels(request, a->pixels[request->frame], w, h, a->source_width,
                              a->source_height, out);
-    unsigned char *pixels = host.allocate_zero(1, image_frame_bytes(w, h));
+    bool alpha_out = a->rgba[request->frame] && keeps_alpha(request);
+    size_t output_channels = alpha_out ? 4U : 3U;
+    unsigned char *pixels = host.allocate_zero(
+        1, alpha_out ? (size_t)w * h * 4U + IMAGE_PIXEL_PADDING : image_frame_bytes(w, h));
     unsigned char *scaled = host.allocate_zero(1, (size_t)sw * sh * 4 + IMAGE_PIXEL_PADDING);
     if (!pixels || !scaled) {
         host.release(pixels);
@@ -319,7 +346,7 @@ static bool encode_frame(const image_decode_request *request, graphics_image *ou
     uint8_t *dst[] = {scaled, NULL, NULL, NULL};
     int strides[] = {a->width * channels, 0, 0, 0}, dest_strides[] = {sw * 4, 0, 0, 0};
     bool ok = scale && sws_scale(scale, src, strides, 0, a->height, dst, dest_strides) == sh;
-    uint32_t background = request->matte ? request->background : 0x15181e;
+    uint32_t background = request->matte ? request->background : 0x000000;
     if (ok)
         for (int y = 0; y < h; ++y)
             for (int x = 0; x < w; ++x) {
@@ -327,8 +354,14 @@ static bool encode_frame(const image_decode_request *request, graphics_image *ou
                 int py = y - (request->center ? (h - sh) / 2 : 0);
                 bool inside = px >= 0 && py >= 0 && px < sw && py < sh;
                 size_t source = inside ? ((size_t)py * sw + px) * 4 : 0,
-                       at = ((size_t)y * w + x) * 3;
+                       at = ((size_t)y * w + x) * output_channels;
                 unsigned alpha = inside ? scaled[source + 3] : 0;
+                if (alpha_out) {
+                    /* Outside the scaled image stays fully transparent. */
+                    if (inside)
+                        memcpy(pixels + at, scaled + source, 4);
+                    continue;
+                }
                 for (int c = 0; c < 3; ++c) {
                     unsigned color = inside ? scaled[source + (size_t)c] : 0;
                     unsigned bg = (background >> (16 - 8 * c)) & 255;
@@ -337,7 +370,10 @@ static bool encode_frame(const image_decode_request *request, graphics_image *ou
                 }
             }
     if (ok)
-        ok = encode_pixels(request, pixels, w, h, a->source_width, a->source_height, out);
+        ok =
+            alpha_out
+                ? encode_alpha_pixels(request, pixels, w, h, a->source_width, a->source_height, out)
+                : encode_pixels(request, pixels, w, h, a->source_width, a->source_height, out);
     sws_freeContext(scale);
     host.release(scaled);
     host.release(pixels);
@@ -351,8 +387,9 @@ G_MODULE_EXPORT const image_codec_api *papo_image_backend(const image_codec_host
         callbacks->request_size != sizeof(image_decode_request) ||
         callbacks->animation_size != sizeof(animation) ||
         callbacks->graphics_size != sizeof(graphics_image) || !callbacks->encode ||
-        !callbacks->preview || !callbacks->region || !callbacks->release_frames ||
-        !callbacks->allocate || !callbacks->allocate_zero || !callbacks->release)
+        !callbacks->preview || !callbacks->region || !callbacks->encode_rgba ||
+        !callbacks->release_frames || !callbacks->allocate || !callbacks->allocate_zero ||
+        !callbacks->release)
         return NULL;
     host = *callbacks;
     av_log_set_level(AV_LOG_QUIET);

@@ -64,6 +64,12 @@ bool graphics_image_encode_id(const unsigned char *pixels, int width, int height
 bool graphics_image_encode_region_id(const unsigned char *pixels, int width, int height, int top,
                                      int bottom, int left, int right, graphics_terminal terminal,
                                      uint32_t id, graphics_image *image);
+/* Unassociated RGBA8888 for terminals that composite alpha themselves (Kitty,
+ * iTerm2); false for other protocols, which need pixels blended into RGB. The
+ * crop and preview arguments follow the region and preview encoders. */
+bool graphics_image_encode_rgba(const unsigned char *rgba, int width, int height, int top,
+                                int bottom, int left, int right, bool preview,
+                                graphics_terminal terminal, uint32_t id, graphics_image *image);
 /* Pre-encode the small inline preview crops in the worker. */
 bool graphics_image_encode_preview(const unsigned char *pixels, int width, int height,
                                    graphics_terminal terminal, uint32_t id, graphics_image *image);

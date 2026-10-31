@@ -16,7 +16,9 @@ void icons_begin_overlay(icon_view *v);
 void icons_begin_navigation(icon_view *v);
 bool icons_notification(icon_view *v, WINDOW *w, int y, int x, int columns, size_t count, int pair);
 void icons_overlay(icon_view *v, int y, int x, int rows, int columns);
-bool icons_poll(icon_view *v);
+/* appeared reports an icon showing its first image: transparent pixels would
+ * reveal the text drawn in its place, so the caller repaints that text. */
+bool icons_poll(icon_view *v, bool *appeared);
 void icons_prepare(icon_view *v);
 void icons_scope(icon_view *v, const char *scope, size_t offset);
 size_t icons_resolve(void *context, const uint32_t *text, size_t length, size_t at, uint32_t *icon);

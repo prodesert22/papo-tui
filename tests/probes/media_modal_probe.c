@@ -67,7 +67,7 @@ int main(void)
                  media_view_modal(view) ? "Modal aberto" : "Modal fechado", channel_clicks);
         text_label(stdscr, LINES - 1, 0, COLS, status);
         media_view_begin(view);
-        media_view_offer(view, &item, 8, 28, 4, 3, 0, 0);
+        media_view_offer(view, &item, 8, 28, 4, 3, 0, 0, 0);
         wnoutrefresh(stdscr);
         media_view_draw(view);
         doupdate();

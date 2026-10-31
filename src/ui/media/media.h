@@ -26,9 +26,11 @@ void media_view_measure(void *context, const message_media *item, int available_
 void media_view_viewport(media_view *v, int rows);
 void media_view_frame(media_view *v);
 void media_view_begin(media_view *v);
-/* y/x are absolute cells; top/bottom clipping is measured in image rows. */
+/* y/x are absolute cells; top/bottom clipping is measured in image rows.
+ * background is the RGB around the item (0xRRGGBB): transparent pixels blend
+ * into it, and a change re-encodes the item from its cached pixels. */
 void media_view_offer(media_view *v, const message_media *item, int y, int x, int width, int height,
-                      int crop_top, int crop_bottom);
+                      int crop_top, int crop_bottom, uint32_t background);
 void media_view_draw(media_view *v);
 void media_view_prepare(media_view *v);
 bool media_view_modal(const media_view *v);

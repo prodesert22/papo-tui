@@ -44,6 +44,7 @@ typedef struct {
 } cache_entry;
 typedef struct {
     int entry, y, x, width, height, top, bottom;
+    uint32_t background;      /* Shown around the media; transparency blends into it. */
     graphics_image image;     /* Borrowed raster protected by resource + a cache pin. */
     media_resource *resource; /* Owned position reference. */
     image_decode_request request;
@@ -590,7 +591,7 @@ void media_view_begin(media_view *v)
     }
 }
 void media_view_offer(media_view *v, const message_media *item, int y, int x, int width, int height,
-                      int top, int bottom)
+                      int top, int bottom, uint32_t background)
 {
     if (!v || v->visible_count == VISIBLE_COUNT)
         return;
@@ -606,7 +607,8 @@ void media_view_offer(media_view *v, const message_media *item, int y, int x, in
                      .width = width,
                      .height = height,
                      .top = top,
-                     .bottom = bottom};
+                     .bottom = bottom,
+                     .background = background};
     p->resource = e->resource;
     media_resource_ref(p->resource);
     graphics_terminal t = graphics_terminal_get();
@@ -619,6 +621,8 @@ void media_view_offer(media_view *v, const message_media *item, int y, int x, in
                                         .height = h,
                                         .native = native_media(item),
                                         .terminal = t,
+                                        .matte = true,
+                                        .background = background,
                                         .top = top * t.cell_height,
                                         .bottom = bottom * t.cell_height};
         p->request = request;
@@ -859,7 +863,9 @@ bool media_view_poll(media_view *v, history *h)
             image_decode_request request = {.width = v->modal_width,
                                             .height = v->modal_height,
                                             .native = true,
-                                            .terminal = terminal};
+                                            .terminal = terminal,
+                                            .matte = true,
+                                            .background = theme_background_rgb(THEME_PANEL)};
             int source_w = 0, source_h = 0;
             if (media_resource_dimensions(e->resource, author, &source_w, &source_h)) {
                 /* Fit the canvas first so enlargement preserves the aspect
@@ -901,6 +907,8 @@ bool media_view_poll(media_view *v, history *h)
                                         .height = height,
                                         .native = native_media(&e->item),
                                         .terminal = terminal,
+                                        .matte = true,
+                                        .background = p->background,
                                         .top = p->top * terminal.cell_height,
                                         .bottom = p->bottom * terminal.cell_height};
         p->request = request;

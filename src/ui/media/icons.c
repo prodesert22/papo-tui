@@ -51,17 +51,7 @@ static uint64_t hash(const char *s)
 }
 static uint32_t background(int pair)
 {
-    if (pair == THEME_PANEL_ACTIVE)
-        return 0x302419;
-    if (pair == THEME_FOCUS_AREA || pair == THEME_FOCUS_MUTED || pair == THEME_PROFILE_BUTTON_FOCUS)
-        return 0x1d2026;
-    if (pair == THEME_HISTORY_AREA || pair == THEME_HISTORY_ACCENT || pair == THEME_HISTORY_MUTED)
-        return 0x15171b;
-    if (pair == THEME_EMBED_AREA || pair == THEME_EMBED_ACCENT || pair == THEME_EMBED_MUTED)
-        return 0x1d2026;
-    if (pair == THEME_TEXT_SELECTION)
-        return 0xffb347;
-    return 0x15181e;
+    return theme_background_rgb(pair);
 }
 bool icons_render_unicode(const char *text, int width, int height, uint32_t bg,
                           graphics_terminal terminal, uint32_t id, graphics_image *image)
@@ -327,7 +317,9 @@ static bool offer(icon_view *v, media_resource *resource, image_decode_request r
     memcpy(p->fragments, slot->fragments, sizeof(p->fragments));
     uint64_t now = 0;
     net_now_ms(&now);
-    return media_resource_image(resource, false, request, now) != NULL;
+    /* A previous variant keeps being painted while this one encodes. */
+    return media_resource_image(resource, false, request, now) ||
+           media_resource_fallback_image(resource, request);
 }
 bool icons_notification(icon_view *v, WINDOW *w, int y, int x, int columns, size_t count, int pair)
 {
@@ -342,10 +334,7 @@ bool icons_notification(icon_view *v, WINDOW *w, int y, int x, int columns, size
         snprintf(label, sizeof(label), "●");
     snprintf(scope, sizeof(scope), "notification:%d:%d", getbegy(w) + y, getbegx(w) + x);
     icons_scope(v, scope, 0);
-    uint32_t bg = pair == THEME_NOTIFICATION_BUTTON_FOCUS ? 0x50381f
-                  : pair == THEME_NOTIFICATION_SELECTED   ? 0x302419
-                  : pair == THEME_NOTIFICATION_FOCUS      ? 0x1d2026
-                                                          : 0;
+    uint32_t bg = background(pair);
     image_decode_request request = {.width = columns * terminal.cell_width,
                                     .height = terminal.cell_height,
                                     .terminal = terminal,
@@ -452,8 +441,10 @@ static const graphics_image *placement_image(icon_placement *p, uint64_t now)
     const graphics_image *image = media_resource_image(p->resource, false, p->request, now);
     return image ? image : media_resource_fallback_image(p->resource, p->request);
 }
-bool icons_poll(icon_view *v)
+bool icons_poll(icon_view *v, bool *appeared)
 {
+    if (appeared)
+        *appeared = false;
     if (!v)
         return false;
     uint64_t now = 0;
@@ -462,6 +453,9 @@ bool icons_poll(icon_view *v)
     for (size_t i = 0; i < v->placement_count; ++i) {
         const graphics_image *image = placement_image(&v->placements[i], now);
         changed |= image && image->revision != v->placements[i].revision;
+        /* Never presented: its cells still hold the text drawn in its place. */
+        if (appeared && image && !v->placements[i].revision)
+            *appeared = true;
     }
     return changed;
 }

@@ -7,9 +7,9 @@
 #include <stdlib.h>
 #include <string.h>
 static atomic_uint_fast64_t next_revision = 1;
-static bool kitty_compressed(const unsigned char *pixels, graphics_image *out)
+static bool kitty_compressed(const unsigned char *pixels, int channels, graphics_image *out)
 {
-    size_t raw = (size_t)out->width * out->height * 3;
+    size_t raw = (size_t)out->width * out->height * (size_t)channels;
     /* GIO supplies the ZLIB codec. A bounded spare block covers expansion;
      * unusual conversion failures fall back to Chafa's existing transport. */
     unsigned char *compressed = malloc(raw + 64U * 1024U);
@@ -39,8 +39,8 @@ static bool kitty_compressed(const unsigned char *pixels, graphics_image *out)
         return false;
     }
     int header =
-        snprintf(data, capacity, "\033_Ga=t,f=24,s=%d,v=%d,c=%d,r=%d,i=%u,o=z,m=1,q=2,C=1;\033\\",
-                 out->width, out->height, out->columns, out->rows, out->id);
+        snprintf(data, capacity, "\033_Ga=t,f=%d,s=%d,v=%d,c=%d,r=%d,i=%u,o=z,m=1,q=2,C=1;\033\\",
+                 channels * 8, out->width, out->height, out->columns, out->rows, out->id);
     size_t at = header > 0 ? (size_t)header : capacity;
     for (size_t offset = 0; offset < written && at < capacity; offset += 3072) {
         size_t count = MIN((size_t)written - offset, 3072U);
@@ -76,12 +76,16 @@ bool graphics_image_encode(const unsigned char *pixels, int width, int height, g
     return graphics_image_encode_id(pixels, width, height, t, graphics_image_next_id(), out);
 }
 
-bool graphics_image_encode_id(const unsigned char *pixels, int width, int height,
-                              graphics_terminal t, uint32_t id, graphics_image *out)
+/* channels is 3 (RGB888) or 4 (unassociated RGBA8888). Only Kitty and iTerm2
+ * accept 4: they composite the alpha over the terminal's own cells. */
+static bool encode_channels(const unsigned char *pixels, int channels, int width, int height,
+                            graphics_terminal t, uint32_t id, graphics_image *out)
 {
     memset(out, 0, sizeof(*out));
     if (!pixels || !graphics_image_capacity(width, height) || t.protocol == GRAPHICS_TEXT ||
-        t.cell_width < 1 || t.cell_width > 128 || t.cell_height < 1 || t.cell_height > 128)
+        t.cell_width < 1 || t.cell_width > 128 || t.cell_height < 1 || t.cell_height > 128 ||
+        (channels != 3 &&
+         (channels != 4 || (t.protocol != GRAPHICS_KITTY && t.protocol != GRAPHICS_ITERM2))))
         return false;
     out->protocol = t.protocol;
     out->id = id;
@@ -92,7 +96,7 @@ bool graphics_image_encode_id(const unsigned char *pixels, int width, int height
     out->cell_height = t.cell_height;
     out->columns = (width + t.cell_width - 1) / t.cell_width;
     out->rows = (height + t.cell_height - 1) / t.cell_height;
-    if (t.protocol == GRAPHICS_KITTY && kitty_compressed(pixels, out))
+    if (t.protocol == GRAPHICS_KITTY && kitty_compressed(pixels, channels, out))
         return true;
     if (t.protocol == GRAPHICS_CHAFA) {
         ChafaCanvasConfig *config = chafa_canvas_config_new();
@@ -159,7 +163,9 @@ bool graphics_image_encode_id(const unsigned char *pixels, int width, int height
     canvas = chafa_canvas_new(config);
     if (!canvas)
         goto done;
-    frame = chafa_frame_new_borrow(pixels, CHAFA_PIXEL_RGB8, width, height, width * 3);
+    frame = chafa_frame_new_borrow(
+        pixels, channels == 4 ? CHAFA_PIXEL_RGBA8_UNASSOCIATED : CHAFA_PIXEL_RGB8, width, height,
+        width * channels);
     source = chafa_image_new();
     if (!frame || !source)
         goto done;
@@ -200,9 +206,15 @@ done:
     return ok;
 }
 
-bool graphics_image_encode_region_id(const unsigned char *pixels, int width, int height, int top,
-                                     int bottom, int left, int right, graphics_terminal t,
-                                     uint32_t id, graphics_image *out)
+bool graphics_image_encode_id(const unsigned char *pixels, int width, int height,
+                              graphics_terminal t, uint32_t id, graphics_image *out)
+{
+    return encode_channels(pixels, 3, width, height, t, id, out);
+}
+
+static bool encode_region(const unsigned char *pixels, int channels, int width, int height, int top,
+                          int bottom, int left, int right, graphics_terminal t, uint32_t id,
+                          graphics_image *out)
 {
     memset(out, 0, sizeof(*out));
     if (!pixels || !graphics_image_capacity(width, height) || top < 0 || bottom < 0 || left < 0 ||
@@ -210,23 +222,31 @@ bool graphics_image_encode_region_id(const unsigned char *pixels, int width, int
         right >= width - left)
         return false;
     int w = width - left - right, h = height - top - bottom;
+    size_t pixel = (size_t)channels;
     if (!left && !right)
-        return graphics_image_encode_id(pixels + (size_t)top * width * 3, w, h, t, id, out);
-    unsigned char *packed = calloc(1, (size_t)w * h * 3 + 64);
+        return encode_channels(pixels + (size_t)top * width * pixel, channels, w, h, t, id, out);
+    unsigned char *packed = calloc(1, (size_t)w * h * pixel + 64);
     if (!packed)
         return false;
     for (int row = 0; row < h; ++row)
-        memcpy(packed + (size_t)row * w * 3, pixels + ((size_t)(row + top) * width + left) * 3,
-               (size_t)w * 3);
-    bool ok = graphics_image_encode_id(packed, w, h, t, id, out);
+        memcpy(packed + (size_t)row * w * pixel,
+               pixels + ((size_t)(row + top) * width + left) * pixel, (size_t)w * pixel);
+    bool ok = encode_channels(packed, channels, w, h, t, id, out);
     free(packed);
     return ok;
 }
 
-bool graphics_image_encode_preview(const unsigned char *pixels, int width, int height,
-                                   graphics_terminal t, uint32_t id, graphics_image *out)
+bool graphics_image_encode_region_id(const unsigned char *pixels, int width, int height, int top,
+                                     int bottom, int left, int right, graphics_terminal t,
+                                     uint32_t id, graphics_image *out)
 {
-    if (!graphics_image_encode_id(pixels, width, height, t, id, out))
+    return encode_region(pixels, 3, width, height, top, bottom, left, right, t, id, out);
+}
+
+static bool encode_preview(const unsigned char *pixels, int channels, int width, int height,
+                           graphics_terminal t, uint32_t id, graphics_image *out)
+{
+    if (!encode_channels(pixels, channels, width, height, t, id, out))
         return false;
     if (t.protocol == GRAPHICS_KITTY || t.protocol == GRAPHICS_CHAFA)
         return true;
@@ -252,9 +272,9 @@ bool graphics_image_encode_preview(const unsigned char *pixels, int width, int h
             if (h < 1)
                 continue;
             graphics_image *crop = &out->crops[at++];
-            if (!graphics_image_encode_id(pixels + (size_t)top * (size_t)t.cell_height *
-                                                       (size_t)width * 3,
-                                          width, h, t, id, crop)) {
+            if (!encode_channels(pixels + (size_t)top * (size_t)t.cell_height * (size_t)width *
+                                              (size_t)channels,
+                                 channels, width, h, t, id, crop)) {
                 graphics_image_free(out);
                 return false;
             }
@@ -262,4 +282,22 @@ bool graphics_image_encode_preview(const unsigned char *pixels, int width, int h
             crop->crop_bottom = crop_bottom;
         }
     return true;
+}
+
+bool graphics_image_encode_preview(const unsigned char *pixels, int width, int height,
+                                   graphics_terminal t, uint32_t id, graphics_image *out)
+{
+    return encode_preview(pixels, 3, width, height, t, id, out);
+}
+
+bool graphics_image_encode_rgba(const unsigned char *rgba, int width, int height, int top,
+                                int bottom, int left, int right, bool preview, graphics_terminal t,
+                                uint32_t id, graphics_image *out)
+{
+    memset(out, 0, sizeof(*out));
+    if (t.protocol != GRAPHICS_KITTY && t.protocol != GRAPHICS_ITERM2)
+        return false;
+    if (preview && !top && !bottom && !left && !right)
+        return encode_preview(rgba, 4, width, height, t, id, out);
+    return encode_region(rgba, 4, width, height, top, bottom, left, right, t, id, out);
 }

@@ -1,12 +1,42 @@
 #define _POSIX_C_SOURCE 200809L
 #include "ui/media/image_decode.h"
 #include <assert.h>
+#include <glib.h>
 #include <stdio.h>
 #include <string.h>
 static bool cancelled(void *context)
 {
     (void)context;
     return true;
+}
+/* The iTerm2 payload is a little-endian TIFF: alpha needs four samples per
+ * pixel (tag 277) and an ExtraSamples entry (tag 338). */
+static bool iterm2_tiff_has_alpha(const graphics_image *image)
+{
+    const char *start = memmem(image->data, image->length, ":", 1);
+    const char *end =
+        start ? memchr(start, '\a', image->length - (size_t)(start - image->data)) : NULL;
+    if (!start || !end)
+        return false;
+    char *text = g_strndup(start + 1, (gsize)(end - start - 1));
+    gsize size = 0;
+    guchar *tiff = g_base64_decode(text, &size);
+    g_free(text);
+    bool samples = false, extra = false;
+    if (size >= 8 && !memcmp(tiff, "II*\0", 4)) {
+        guint32 at = tiff[4] | tiff[5] << 8 | tiff[6] << 16 | (guint32)tiff[7] << 24;
+        if (at + 2 <= size) {
+            unsigned count = tiff[at] | tiff[at + 1] << 8;
+            for (unsigned i = 0; i < count && at + 2 + 12 * (i + 1) <= size; ++i) {
+                const guchar *entry = tiff + at + 2 + 12 * i;
+                unsigned tag = entry[0] | entry[1] << 8, value = entry[8] | entry[9] << 8;
+                samples |= tag == 277 && value == 4;
+                extra |= tag == 338;
+            }
+        }
+    }
+    g_free(tiff);
+    return samples && extra;
 }
 int main(int argc, char **argv)
 {
@@ -157,11 +187,30 @@ int main(int argc, char **argv)
     transparent.terminal =
         (graphics_terminal){.protocol = GRAPHICS_KITTY, .cell_width = 8, .cell_height = 16};
     transparent.image_id = 42;
+    /* Kitty and iTerm2 receive the alpha itself, whatever the background. */
+    const graphics_protocol alpha_protocols[] = {GRAPHICS_KITTY, GRAPHICS_ITERM2};
+    for (size_t i = 0; i < 2; ++i) {
+        transparent.terminal.protocol = alpha_protocols[i];
+        transparent.background = 0xff0000;
+        assert(image_encode_frame(&transparent, &red));
+        transparent.background = 0x0000ff;
+        assert(image_encode_frame(&transparent, &blue));
+        assert(red.width == 48 && red.height == 48 && blue.width == 48 && blue.height == 48);
+        assert(red.length == blue.length && !memcmp(red.data, blue.data, red.length));
+        if (alpha_protocols[i] == GRAPHICS_KITTY)
+            assert(memmem(red.data, red.length, "f=32,", 5));
+        else
+            assert(memmem(red.data, red.length, "\033]1337;File=", 12) &&
+                   iterm2_tiff_has_alpha(&red));
+        graphics_image_free(&red);
+        graphics_image_free(&blue);
+    }
+    /* Sixel has no partial transparency: it blends into the given background. */
+    transparent.terminal.protocol = GRAPHICS_SIXEL;
     transparent.background = 0xff0000;
     assert(image_encode_frame(&transparent, &red));
     transparent.background = 0x0000ff;
     assert(image_encode_frame(&transparent, &blue));
-    assert(red.width == 48 && red.height == 48 && blue.width == 48 && blue.height == 48);
     assert(red.length != blue.length || memcmp(red.data, blue.data, red.length));
     graphics_image_free(&red);
     graphics_image_free(&blue);

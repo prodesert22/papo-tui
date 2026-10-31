@@ -23,6 +23,94 @@ enum {
     NOTIFICATION_RED
 };
 
+static const unsigned char rgb[THEME_COLOR_COUNT][3] = {
+    {0x00, 0x00, 0x00}, /* #000000 canvas */
+    {0x00, 0x00, 0x00}, /* #000000 panels; keep focus colors distinct */
+    {0x1d, 0x20, 0x26}, /* #1d2026 subtle panel focus */
+    {0xe4, 0xe6, 0xeb}, /* #e4e6eb text */
+    {0xa0, 0xa4, 0xaf}, /* #a0a4af secondary text */
+    {0xff, 0xb3, 0x47}, /* #ffb347 accent requested by the user */
+    {0xff, 0x7b, 0x72}, /* #ff7b72 errors */
+    {0xa7, 0xc9, 0x8b}, /* #a7c98b success */
+    {0x38, 0x3e, 0x49}, /* #383e49 separators */
+    {0x30, 0x24, 0x19}, /* #302419 selected conversation */
+    {0x15, 0x17, 0x1b}, /* #15171b subtle history focus */
+    {0xff, 0xff, 0xff}, /* #ffffff profile labels and controls */
+    {0x50, 0x38, 0x1f}, /* #50381f dark orange profile focus */
+    {0xff, 0x00, 0x00}, /* #ff0000 unread notification dot */
+};
+
+/* Pseudo color: the separator rule, or the accent where focus backgrounds
+ * cannot be shown (8 or 16 colors). */
+#define FOCUS_RULE THEME_COLOR_COUNT
+static const struct {
+    int pair, foreground, background;
+} pair_colors[] = {
+    {THEME_NORMAL, TEXT, BACKGROUND},
+    {THEME_MUTED, SECONDARY, BACKGROUND},
+    {THEME_ACCENT, ORANGE, BACKGROUND},
+    {THEME_INPUT, TEXT, SURFACE},
+    {THEME_FOCUSED, ORANGE, RAISED},
+    {THEME_ERROR, RED, BACKGROUND},
+    {THEME_SUCCESS, GREEN, BACKGROUND},
+    {THEME_PANEL, TEXT, SURFACE},
+    {THEME_PANEL_MUTED, SECONDARY, SURFACE},
+    {THEME_PANEL_ACCENT, ORANGE, SURFACE},
+    {THEME_PANEL_BRIGHT, PROFILE_WHITE, SURFACE},
+    {THEME_PANEL_ACTIVE, ORANGE, WARM},
+    {THEME_BORDER, RULE, BACKGROUND},
+    {THEME_FOCUS_AREA, TEXT, RAISED},
+    {THEME_FOCUS_MUTED, SECONDARY, RAISED},
+    {THEME_FOCUS_BORDER, FOCUS_RULE, RAISED},
+    {THEME_HISTORY_AREA, TEXT, HISTORY_BACKGROUND},
+    {THEME_HISTORY_MUTED, SECONDARY, HISTORY_BACKGROUND},
+    {THEME_HISTORY_ACCENT, ORANGE, HISTORY_BACKGROUND},
+    {THEME_HISTORY_ERROR, RED, HISTORY_BACKGROUND},
+    {THEME_HISTORY_BORDER, FOCUS_RULE, HISTORY_BACKGROUND},
+    {THEME_PROFILE_TEXT, PROFILE_WHITE, BACKGROUND},
+    {THEME_PROFILE_PANEL, PROFILE_WHITE, SURFACE},
+    {THEME_PROFILE_SELECTED, PROFILE_WHITE, WARM},
+    {THEME_PROFILE_FOCUS, PROFILE_WHITE, PROFILE_HIGHLIGHT},
+    {THEME_PROFILE_BUTTON_SELECTED, ORANGE, WARM},
+    {THEME_PROFILE_BUTTON_FOCUS, ORANGE, PROFILE_HIGHLIGHT},
+    {THEME_EMBED_AREA, TEXT, SURFACE},
+    {THEME_EMBED_MUTED, SECONDARY, SURFACE},
+    {THEME_EMBED_ACCENT, RULE, SURFACE},
+    {THEME_TEXT_SELECTION, BACKGROUND, ORANGE},
+    {THEME_NOTIFICATION, NOTIFICATION_RED, SURFACE},
+    {THEME_NOTIFICATION_FOCUS, NOTIFICATION_RED, RAISED},
+    {THEME_NOTIFICATION_SELECTED, NOTIFICATION_RED, WARM},
+    {THEME_NOTIFICATION_BUTTON_FOCUS, NOTIFICATION_RED, PROFILE_HIGHLIGHT},
+    {THEME_DESTRUCTIVE, PROFILE_WHITE, NOTIFICATION_RED},
+};
+/* Color numbers given to ncurses and the RGB the terminal shows for them. */
+static int color_numbers[THEME_COLOR_COUNT];
+static uint32_t shown_rgb[THEME_COLOR_COUNT];
+static bool shown_ready;
+
+static uint32_t packed(int index)
+{
+    return (uint32_t)rgb[index][0] << 16 | (uint32_t)rgb[index][1] << 8 | rgb[index][2];
+}
+/* The xterm 256-color palette, which terminals keep for indices 16-255. */
+static uint32_t xterm_rgb(int index)
+{
+    if (index >= 232) {
+        uint32_t gray = 8 + 10 * (uint32_t)(index - 232);
+        return gray << 16 | gray << 8 | gray;
+    }
+    static const uint32_t levels[] = {0, 95, 135, 175, 215, 255};
+    int cube = index - 16;
+    return levels[cube / 36] << 16 | levels[cube / 6 % 6] << 8 | levels[cube % 6];
+}
+/* Approximate VGA values of the eight basic colors, as on the Linux console. */
+static uint32_t basic_rgb(int color)
+{
+    static const uint32_t vga[] = {0x000000, 0xaa0000, 0x00aa00, 0xaa5500,
+                                   0x0000aa, 0xaa00aa, 0x00aaaa, 0xaaaaaa};
+    return color >= 0 && color < 8 ? vga[color] : 0;
+}
+
 static short component(unsigned char value)
 {
     /* ncurses accepts RGB components in the range 0..1000. */
@@ -83,26 +171,11 @@ void theme_init(ui_theme *theme)
 {
     memset(theme, 0, sizeof(*theme));
     rgb_pair_count = 0;
+    shown_ready = false;
     if (!has_colors() || start_color() == ERR)
         return;
     const char *term = getenv("TERM"), *kitty_window = getenv("KITTY_WINDOW_ID");
     bool kitty = (term && !strcmp(term, "xterm-kitty")) || (kitty_window && *kitty_window);
-    static const unsigned char rgb[THEME_COLOR_COUNT][3] = {
-        {0x00, 0x00, 0x00}, /* #000000 canvas */
-        {0x00, 0x00, 0x00}, /* #000000 panels; keep focus colors distinct */
-        {0x1d, 0x20, 0x26}, /* #1d2026 subtle panel focus */
-        {0xe4, 0xe6, 0xeb}, /* #e4e6eb text */
-        {0xa0, 0xa4, 0xaf}, /* #a0a4af secondary text */
-        {0xff, 0xb3, 0x47}, /* #ffb347 accent requested by the user */
-        {0xff, 0x7b, 0x72}, /* #ff7b72 errors */
-        {0xa7, 0xc9, 0x8b}, /* #a7c98b success */
-        {0x38, 0x3e, 0x49}, /* #383e49 separators */
-        {0x30, 0x24, 0x19}, /* #302419 selected conversation */
-        {0x15, 0x17, 0x1b}, /* #15171b subtle history focus */
-        {0xff, 0xff, 0xff}, /* #ffffff profile labels and controls */
-        {0x50, 0x38, 0x1f}, /* #50381f dark orange profile focus */
-        {0xff, 0x00, 0x00}, /* #ff0000 unread notification dot */
-    };
     /* Fixed xterm palette approximations. Never redefine the first 16 colors. */
     int colors[THEME_COLOR_COUNT] = {16,  16,  234, 254, 247, 215, 210,
                                      150, 238, 235, 233, 231, 94,  196};
@@ -133,46 +206,22 @@ void theme_init(ui_theme *theme)
             colors[i] = index;
         }
     }
-    init_extended_pair(THEME_NORMAL, colors[TEXT], colors[BACKGROUND]);
-    init_extended_pair(THEME_MUTED, colors[SECONDARY], colors[BACKGROUND]);
-    init_extended_pair(THEME_ACCENT, colors[ORANGE], colors[BACKGROUND]);
-    init_extended_pair(THEME_INPUT, colors[TEXT], colors[SURFACE]);
-    init_extended_pair(THEME_FOCUSED, colors[ORANGE], colors[RAISED]);
-    init_extended_pair(THEME_ERROR, colors[RED], colors[BACKGROUND]);
-    init_extended_pair(THEME_SUCCESS, colors[GREEN], colors[BACKGROUND]);
-    init_extended_pair(THEME_PANEL, colors[TEXT], colors[SURFACE]);
-    init_extended_pair(THEME_PANEL_MUTED, colors[SECONDARY], colors[SURFACE]);
-    init_extended_pair(THEME_PANEL_ACCENT, colors[ORANGE], colors[SURFACE]);
-    init_extended_pair(THEME_PANEL_BRIGHT, colors[PROFILE_WHITE], colors[SURFACE]);
-    init_extended_pair(THEME_PANEL_ACTIVE, colors[ORANGE], colors[WARM]);
-    init_extended_pair(THEME_BORDER, colors[RULE], colors[BACKGROUND]);
-    init_extended_pair(THEME_FOCUS_AREA, colors[TEXT], colors[RAISED]);
-    init_extended_pair(THEME_FOCUS_MUTED, colors[SECONDARY], colors[RAISED]);
     /* With 8 or 16 colors (such as the Linux console) the focus backgrounds
      * are black like the rest, so focused borders take the accent instead. */
     int focus_rule = COLORS < 256 ? colors[ORANGE] : colors[RULE];
-    init_extended_pair(THEME_FOCUS_BORDER, focus_rule, colors[RAISED]);
-    init_extended_pair(THEME_HISTORY_AREA, colors[TEXT], colors[HISTORY_BACKGROUND]);
-    init_extended_pair(THEME_HISTORY_MUTED, colors[SECONDARY], colors[HISTORY_BACKGROUND]);
-    init_extended_pair(THEME_HISTORY_ACCENT, colors[ORANGE], colors[HISTORY_BACKGROUND]);
-    init_extended_pair(THEME_HISTORY_ERROR, colors[RED], colors[HISTORY_BACKGROUND]);
-    init_extended_pair(THEME_HISTORY_BORDER, focus_rule, colors[HISTORY_BACKGROUND]);
-    init_extended_pair(THEME_PROFILE_TEXT, colors[PROFILE_WHITE], colors[BACKGROUND]);
-    init_extended_pair(THEME_PROFILE_PANEL, colors[PROFILE_WHITE], colors[SURFACE]);
-    init_extended_pair(THEME_PROFILE_SELECTED, colors[PROFILE_WHITE], colors[WARM]);
-    init_extended_pair(THEME_PROFILE_FOCUS, colors[PROFILE_WHITE], colors[PROFILE_HIGHLIGHT]);
-    init_extended_pair(THEME_PROFILE_BUTTON_SELECTED, colors[ORANGE], colors[WARM]);
-    init_extended_pair(THEME_PROFILE_BUTTON_FOCUS, colors[ORANGE], colors[PROFILE_HIGHLIGHT]);
-    init_extended_pair(THEME_EMBED_AREA, colors[TEXT], colors[SURFACE]);
-    init_extended_pair(THEME_EMBED_MUTED, colors[SECONDARY], colors[SURFACE]);
-    init_extended_pair(THEME_EMBED_ACCENT, colors[RULE], colors[SURFACE]);
-    init_extended_pair(THEME_TEXT_SELECTION, colors[BACKGROUND], colors[ORANGE]);
-    init_extended_pair(THEME_NOTIFICATION, colors[NOTIFICATION_RED], colors[SURFACE]);
-    init_extended_pair(THEME_NOTIFICATION_FOCUS, colors[NOTIFICATION_RED], colors[RAISED]);
-    init_extended_pair(THEME_NOTIFICATION_SELECTED, colors[NOTIFICATION_RED], colors[WARM]);
-    init_extended_pair(THEME_NOTIFICATION_BUTTON_FOCUS, colors[NOTIFICATION_RED],
-                       colors[PROFILE_HIGHLIGHT]);
-    init_extended_pair(THEME_DESTRUCTIVE, colors[PROFILE_WHITE], colors[NOTIFICATION_RED]);
+    for (size_t i = 0; i < sizeof(pair_colors) / sizeof(pair_colors[0]); ++i)
+        init_extended_pair(pair_colors[i].pair,
+                           pair_colors[i].foreground == FOCUS_RULE
+                               ? focus_rule
+                               : colors[pair_colors[i].foreground],
+                           colors[pair_colors[i].background]);
+    for (int i = 0; i < THEME_COLOR_COUNT; ++i) {
+        color_numbers[i] = colors[i];
+        shown_rgb[i] = COLORS >= 0x1000000 || theme->colors[i].changed ? packed(i)
+                       : COLORS >= 256                                 ? xterm_rgb(colors[i])
+                                                                       : basic_rgb(colors[i]);
+    }
+    shown_ready = true;
     /* Do not redefine palette entries: Kitty/Konsole can reload them at runtime. */
     static const int ramp[] = {22,  28,  34,  40,  46,  46,  82,  82,  118, 118, 154,
                                154, 154, 226, 226, 220, 220, 220, 203, 196, 196};
@@ -217,4 +266,22 @@ void theme_restore(ui_theme *theme)
                    theme->colors[i].blue);
         theme->colors[i].changed = false;
     }
+}
+
+uint32_t theme_background_rgb(int pair)
+{
+    int index = -1;
+    for (size_t i = 0; i < sizeof(pair_colors) / sizeof(pair_colors[0]) && index < 0; ++i)
+        if (pair_colors[i].pair == pair)
+            index = pair_colors[i].background;
+    if (index < 0 && pair >= THEME_VOLUME_FIRST && pair <= THEME_VOLUME_LAST)
+        index = SURFACE;
+    if (index < 0 && shown_ready && pair >= THEME_PAIR_END &&
+        pair < THEME_PAIR_END + rgb_pair_count)
+        for (int i = 0; i < THEME_COLOR_COUNT && index < 0; ++i)
+            if (color_numbers[i] == rgb_pairs[pair - THEME_PAIR_END].bg)
+                index = i;
+    if (index < 0)
+        index = BACKGROUND;
+    return shown_ready ? shown_rgb[index] : packed(index);
 }

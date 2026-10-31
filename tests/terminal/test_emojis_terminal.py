@@ -13,6 +13,7 @@ import re
 import struct
 import subprocess
 import termios
+import zlib
 import threading
 import terminal_media as media_tests
 from history_mock import CHANNEL, STAMP, uuid
@@ -709,6 +710,86 @@ class EmojiTerminal(support.EmojiTerminal):
                 finally:
                     release.set()
                     self.assertTrue(t.close())
+
+    @staticmethod
+    def transparent_png(size=48):
+        """A red disk on a fully transparent square, as an RGBA PNG."""
+        rows = b"".join(
+            b"\x00"
+            + b"".join(
+                b"\xff\x00\x00\xff"
+                if (x - size / 2) ** 2 + (y - size / 2) ** 2 < (size / 4) ** 2
+                else b"\x00\x00\x00\x00"
+                for x in range(size)
+            )
+            for y in range(size)
+        )
+
+        def chunk(kind, data):
+            return (
+                struct.pack(">I", len(data))
+                + kind
+                + data
+                + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+            )
+
+        header = struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0)
+        return (
+            b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", header)
+            + chunk(b"IDAT", zlib.compress(rows))
+            + chunk(b"IEND", b"")
+        )
+
+    def test_transparent_avatar_keeps_alpha_and_hides_its_initials(self):
+        blob = base64.b64encode(self.transparent_png()).decode()
+        for protocol in ("kitty", "iterm2"):
+            with self.subTest(protocol=protocol), self.server() as s:
+                s.messages[0]["author_id"] = uuid(40)
+                route = s.api_handler
+
+                def profiles(method, path, body):
+                    if path.endswith("/users/profile_batch"):
+                        return 200, {
+                            "profiles": [
+                                {
+                                    "id": id,
+                                    "username": "Autor",
+                                    "avatar_blob": blob,
+                                    "avatar_format": "PNG",
+                                }
+                                for id in body["ids"]
+                            ]
+                        }
+                    return route(method, path, body)
+
+                s.api_handler = profiles
+                t = self.open(s, protocol=protocol, size=(30, 100))
+                self.wait(t, "Mensagem 0001")
+
+                def header():
+                    return next(
+                        (line for line in t.screen.display if "Autor" in line and "·" in line), ""
+                    )
+
+                # The avatar gutter is blank once the image is painted: its
+                # transparent corners would otherwise reveal the initial.
+                self.until(t, lambda: header() and not header()[28:33].strip())
+                if protocol == "kitty":
+                    self.until(t, lambda: bool(self.avatar_positions(t)))
+                    header_, pixels = next(
+                        (h, p)
+                        for h, p in t.stream.kitty_frames
+                        if h.get(b"s") == b"48" and h.get(b"v") == b"48"
+                    )
+                    self.assertEqual(header_[b"f"], b"32")
+                    self.assertEqual(pixels[3], 0, "The avatar corner must stay transparent")
+                    self.assertEqual(
+                        pixels[(24 * 48 + 24) * 4 : (24 * 48 + 24) * 4 + 4], b"\xff\x00\x00\xff"
+                    )
+                else:
+                    self.until(t, lambda: any(b"1337;File=" in f for f in t.stream.frames))
+                t.close()
 
     def test_large_member_avatars_survive_redraw_and_channel_return(self):
         with self.server(count=6) as s:
