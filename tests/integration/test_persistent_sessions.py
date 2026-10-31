@@ -94,6 +94,12 @@ class Persistence(unittest.TestCase):
             t.read(0.03)
         self.assertIn(text, "\n".join(t.screen.display))
 
+    def until(self, t, predicate):
+        deadline = time.monotonic() + 8
+        while not predicate() and time.monotonic() < deadline:
+            t.read(0.03)
+        self.assertTrue(predicate())
+
     def markers(self):
         return sorted(Path(self.env["XDG_STATE_HOME"]).glob("papo-tui/session-*.json"))
 
@@ -478,13 +484,23 @@ class Persistence(unittest.TestCase):
             t.click(0, t.screen.display[0].index("Comunidade") + 1)
             self.wait(t, "(offline)")
             deletes = self.deletes()
+            # A right-click opens the tab's menu under it, not the confirmation.
             self.right_click(t, 0, t.screen.display[0].index("(offline)"))
+            self.until(t, lambda: "Remover servidor" in t.screen.display[2])
+            self.assertNotIn("Remover servidor?", "\n".join(t.screen.display))
+            t.send("\x1b")  # Esc closes the menu.
+            self.until(t, lambda: "Remover servidor" not in "\n".join(t.screen.display))
+            self.right_click(t, 0, t.screen.display[0].index("(offline)"))
+            self.until(t, lambda: "Remover servidor" in t.screen.display[2])
+            t.send("\n")
             self.wait(t, "Remover servidor?")
             t.send("\x1b")  # Esc keeps the server.
             t.read(0.3)
             self.assertNotIn("Remover servidor?", "\n".join(t.screen.display))
             self.assertIn("(offline)", t.screen.display[0])
             self.right_click(t, 0, t.screen.display[0].index("(offline)"))
+            self.until(t, lambda: "Remover servidor" in t.screen.display[2])
+            t.click(2, t.screen.display[2].index("Remover servidor"))
             self.wait(t, "Remover servidor?")
             t.send("\x1b[C\n")
             deadline = time.monotonic() + 8
@@ -533,6 +549,39 @@ class Persistence(unittest.TestCase):
             self.wait(t, "geral")
             self.assertNotIn("Trabalho", t.screen.display[0])
             self.assertEqual(self.login_count(first), 1)
+            t.close()
+
+    def test_online_server_removed_from_its_tab_context_menu(self):
+        self.keyring()
+        with HistoryMock() as first, HistoryMock() as second:
+            second.name = "Trabalho"
+            t = self.login(first)
+            self.add_server(t, second)
+            self.wait(t, "geral")
+            self.wait(t, "[Trabalho")
+            column = t.screen.display[0].index("Trabalho")
+            # A right-click opens the tab's menu under it, titled with the server.
+            self.right_click(t, 0, column)
+            self.until(t, lambda: "Remover servidor" in t.screen.display[2])
+            self.assertIn("Trabalho", t.screen.display[1])
+            self.assertNotIn("Remover servidor?", "\n".join(t.screen.display))
+            t.click(10, 50)  # A click elsewhere closes it and keeps the server.
+            self.until(t, lambda: "Remover servidor" not in "\n".join(t.screen.display))
+            self.assertIn("Trabalho", t.screen.display[0])
+            # m on the focused tab opens the same menu from the keyboard.
+            self.right_click(t, 0, column)
+            self.until(t, lambda: "Remover servidor" in t.screen.display[2])
+            t.send("m")
+            self.until(t, lambda: "Remover servidor" not in "\n".join(t.screen.display))
+            t.send("m")
+            self.until(t, lambda: "Remover servidor" in t.screen.display[2])
+            t.click(2, t.screen.display[2].index("Remover servidor"))
+            self.wait(t, "Remover servidor?")
+            t.send("\t\n")
+            self.wait(t, "[Comunidade]")
+            self.wait(t, "geral")
+            self.assertNotIn("Trabalho", t.screen.display[0])
+            self.assertEqual(self.state(second.url), {})
             t.close()
 
     def test_unreachable_form_server_is_removed_from_the_login_tabs(self):

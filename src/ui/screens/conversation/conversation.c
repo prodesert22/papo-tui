@@ -856,7 +856,8 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             break;
         }
         if (shortcut_is(type, key, SHORTCUT_MENU) &&
-            (ui->context_open || ui->focus == CHANNEL_LIST || ui->focus == HISTORY_PANEL)) {
+            (ui->context_open || ui->focus == CHANNEL_LIST || ui->focus == HISTORY_PANEL ||
+             ui->focus == SERVER_TABS)) {
             if (ui->focus == HISTORY_PANEL && !ui->navigating && !ui->context_open)
                 conversation_interactions_key(ui, OK, SHORTCUT_MESSAGES);
             key = 'm';
@@ -1075,7 +1076,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                     if (ui->tabs && wmouse_trafo(ui->tabs, &ty, &tx, false)) {
                         for (size_t i = 0; ty == 0 && i < connections->count; ++i)
                             if (conversation_hit(ui->tab_hits[i], tx)) {
-                                conversation_confirm_remove(ui, i);
+                                conversation_open_server_menu(ui, i, false);
                                 scope = DRAW_ALL;
                                 break;
                             }

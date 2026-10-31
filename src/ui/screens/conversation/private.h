@@ -107,6 +107,9 @@ typedef struct {
     char selected_message[37], action_channel[37], reaction_target[37];
     char dm_context_id[37];
     char channel_context_id[37];
+    /* The context menu belongs to server tab server_context_index. */
+    bool server_context;
+    size_t server_context_index;
     int channel_menu; /* 0 context actions, 1 mute duration, 2 notifications. */
     char centered_message[37];
     char notification_channel[37], notification_message[37];
@@ -178,7 +181,7 @@ typedef struct {
     int waiting_page;
     bool paging_notice;
     uint64_t menu_permissions;
-    int menu_cached[7], menu_cached_count;
+    int menu_cached[8], menu_cached_count;
     size_t section, offset;
     bool at_end, paste, show_channels, layout_failed, duplicate_modal, reenviar;
     bool dragging, editor_scrolling;
@@ -258,6 +261,8 @@ void conversation_cancel_edit(view *ui);
 void conversation_submit(view *ui, uint64_t retry_id, bool duplicate);
 void conversation_close_confirmation(view *ui);
 void conversation_confirm_remove(view *ui, size_t index);
+/* Opens the context menu of server tab index, below the tab. */
+void conversation_open_server_menu(view *ui, size_t index, bool keyboard);
 bool conversation_poll_editor(view *ui, auth_client *auth);
 bool conversation_poll_model(view *ui, auth_client *auth);
 bool conversation_edit(view *ui, int type, uint32_t key);
@@ -273,6 +278,8 @@ void conversation_attachments_close(view *ui);
 bool conversation_attachments_key(view *ui, int type, uint32_t key);
 bool conversation_attachments_mouse(view *ui, const MEVENT *event);
 void conversation_members_toggle(view *ui);
+/* Opens the profile card of user id, without the drawer when it is closed. */
+void conversation_members_profile(view *ui, const char *id);
 void conversation_members_destroy(view *ui);
 bool conversation_members_poll(view *ui);
 bool conversation_members_key(view *ui, int type, uint32_t key);

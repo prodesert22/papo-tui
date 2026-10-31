@@ -510,6 +510,11 @@ class MediaTerminal(support.MediaTerminal):
                 ("\x02", "Mensagens fixadas"),
                 ("\x02", "Detalhes da mensagem"),
                 ("\x02", "Ir para mensagem"),
+                # Message menu, down to its last item: Ver perfil.
+                (
+                    "\x0bm\x1bOB\x1bOB\x1bOB\x1bOB\x1bOB\x1bOB\x1bOB\x1bOB\n",
+                    "Perfil do membro",
+                ),
             ):
                 with (
                     self.subTest(protocol=protocol, modal=title),
@@ -580,6 +585,7 @@ class MediaTerminal(support.MediaTerminal):
                         if title in (
                             "Configurações",
                             "Notificações",
+                            "Perfil do membro",
                             "Ajuda do contexto",
                             "Ajuda global",
                             "Remover anexo?",

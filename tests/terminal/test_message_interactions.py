@@ -66,27 +66,29 @@ class MessageInteractions(support.MessageInteractions):
                 terminal.send("Preserved draft\x0bm")
 
                 def check_position(message):
+                    # The message row stays within the menu's frame, from the
+                    # border above its first item to the one below its last.
+                    def rows_of(rows):
+                        def find(text):
+                            return next((i for i, line in enumerate(rows) if text in line), None)
+
+                        return find(message), find("Ver quem reagiu"), find("Ver perfil")
+
                     def positioned():
                         rows = terminal.screen.display
-                        message_row = next(
-                            (i for i, line in enumerate(rows) if message in line), None
-                        )
-                        menu_row = next(
-                            (i for i, line in enumerate(rows) if "Ver quem reagiu" in line), None
-                        )
+                        message_row, menu_row, last_row = rows_of(rows)
                         return (
-                            message_row is not None
-                            and menu_row is not None
-                            and abs(menu_row - message_row) <= 4
+                            None not in (message_row, menu_row, last_row)
+                            and menu_row - 1 <= message_row <= last_row + 1
                             and rows[menu_row].index("Ver quem reagiu")
                             > rows[message_row].index(message) + len(message)
                         )
 
                     self.settled(terminal, positioned)
                     rows = terminal.screen.display
-                    message_row = next(i for i, line in enumerate(rows) if message in line)
-                    menu_row = next(i for i, line in enumerate(rows) if "Ver quem reagiu" in line)
-                    self.assertLessEqual(abs(menu_row - message_row), 4, self.screen(terminal))
+                    message_row, menu_row, last_row = rows_of(rows)
+                    self.assertLessEqual(menu_row - 1, message_row, self.screen(terminal))
+                    self.assertLessEqual(message_row, last_row + 1, self.screen(terminal))
                     self.assertGreater(
                         rows[menu_row].index("Ver quem reagiu"),
                         rows[message_row].index(message) + len(message),

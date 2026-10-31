@@ -54,6 +54,7 @@ class HarnessTests(unittest.TestCase):
             "mensagens-fixadas",
             "detalhes-da-mensagem",
             "ir-para-mensagem",
+            "perfil-do-membro",
         }
         expected = {
             "MediaTerminal.test_floating_panels_preserve_uncovered_attachment_pixels"

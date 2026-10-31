@@ -83,6 +83,10 @@ typedef struct {
     WINDOW *remove_window;
     bool remove_open, remove_accept;
     size_t remove_index;
+    /* Context menu of tab entry menu_index, opened under the tab. */
+    WINDOW *menu_window;
+    bool menu_open;
+    size_t menu_index;
     bool profile_active;
     bool allow_local_http;
     bool retrying; /* The saved session of this form is being read again. */
@@ -229,8 +233,10 @@ static void destroy_layout(login_ui *ui)
         delwin(ui->tabs);
     if (ui->remove_window)
         delwin(ui->remove_window);
+    if (ui->menu_window)
+        delwin(ui->menu_window);
     ui->input = ui->footer = ui->body = ui->header = ui->card = ui->tabs = NULL;
-    ui->remove_window = NULL;
+    ui->remove_window = ui->menu_window = NULL;
 }
 
 static bool layout(login_ui *ui)
@@ -483,15 +489,103 @@ static void draw_tabs(login_ui *ui, auth_client *client)
 }
 
 /* Entries with a server URL can be removed; an empty new form cannot. */
+static bool removable(auth_client *client, size_t index)
+{
+    return index < connections->count ||
+           (index == connections->count && !instances_contains(connections, client) &&
+            *auth_instance_url(client));
+}
+
 static void confirm_remove(login_ui *ui, auth_client *client, size_t index)
 {
-    if (index > connections->count ||
-        (index == connections->count &&
-         (instances_contains(connections, client) || !*auth_instance_url(client))))
+    if (!removable(client, index))
         return;
     ui->remove_open = true;
     ui->remove_accept = false;
     ui->remove_index = index;
+}
+
+static void open_tab_menu(login_ui *ui, auth_client *client, size_t index)
+{
+    if (!removable(client, index) || !ui->tabs || !ui->tab_hits[index].width)
+        return;
+    ui->menu_open = true;
+    ui->menu_index = index;
+}
+
+static void close_tab_menu(login_ui *ui)
+{
+    ui->menu_open = false;
+    if (ui->menu_window)
+        delwin(ui->menu_window);
+    ui->menu_window = NULL;
+    touchwin(stdscr);
+}
+
+static void draw_tab_menu(login_ui *ui, auth_client *client)
+{
+    if (!ui->menu_open)
+        return;
+    if (!removable(client, ui->menu_index) || !ui->tab_hits[ui->menu_index].width) {
+        close_tab_menu(ui);
+        return;
+    }
+    int width = COLS < 24 ? COLS : 24;
+    int x = ui->tab_hits[ui->menu_index].x;
+    if (x > COLS - width)
+        x = COLS - width;
+    if (x < 0)
+        x = 0;
+    if (ui->menu_window)
+        delwin(ui->menu_window);
+    ui->menu_window = newwin(3, width, 1, x);
+    WINDOW *w = ui->menu_window;
+    if (!w) {
+        ui->menu_open = false;
+        return;
+    }
+    char label[192];
+    tab_label(ui, client, ui->menu_index, label, sizeof(label));
+    wbkgd(w, COLOR_PAIR(THEME_PANEL));
+    werase(w);
+    wattrset(w, COLOR_PAIR(THEME_BORDER));
+    box(w, 0, 0);
+    wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
+    text(w, 0, 2, width - 4, label);
+    wattrset(w, COLOR_PAIR(THEME_PANEL_ACTIVE));
+    mvwhline(w, 1, 1, ' ', width - 2);
+    text(w, 1, 1, width - 2, "Remover servidor");
+    wnoutrefresh(w);
+}
+
+/* Enter or a click on the item asks to confirm the removal; Esc, m or a click
+ * elsewhere closes the menu. */
+static void tab_menu_key(login_ui *ui, auth_client *client, int type, uint32_t key)
+{
+    bool enter =
+        (type == OK && (key == '\n' || key == '\r')) || (type == KEY_CODE_YES && key == KEY_ENTER);
+    bool choose = enter, close = (type == OK && (key == 27 || key == 'm' || key == 'M'));
+    if (type == KEY_CODE_YES && key == KEY_MOUSE) {
+        MEVENT events[64];
+        size_t count = ui_mouse_events(events, 64);
+        for (size_t i = 0; i < count; ++i) {
+            if (!(events[i].bstate &
+                  (BUTTON1_PRESSED | BUTTON1_CLICKED | BUTTON3_PRESSED | BUTTON3_CLICKED)))
+                continue;
+            int y = events[i].y, x = events[i].x;
+            bool inside = ui->menu_window && wmouse_trafo(ui->menu_window, &y, &x, false);
+            if (inside && y == 1 && (events[i].bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED)))
+                choose = true;
+            else if (!inside)
+                close = true;
+        }
+    }
+    if (!choose && !close)
+        return;
+    size_t index = ui->menu_index;
+    close_tab_menu(ui);
+    if (choose)
+        confirm_remove(ui, client, index);
 }
 
 static void draw_remove(login_ui *ui, auth_client *client)
@@ -728,11 +822,14 @@ static void draw(login_ui *ui, auth_client *client)
         wnoutrefresh(ui->tabs);
         wnoutrefresh(ui->input);
     }
+    draw_tab_menu(ui, client);
     draw_remove(ui, client);
     help_draw(&ui->help);
     doupdate();
-    curs_set(!ui->help.open && !ui->remove_open && ui->focus < FIELD_COUNT && !busy && !ready ? 1
-                                                                                              : 0);
+    curs_set(!ui->help.open && !ui->remove_open && !ui->menu_open && ui->focus < FIELD_COUNT &&
+                     !busy && !ready
+                 ? 1
+                 : 0);
 }
 
 static void select_focus(login_ui *ui, int selected)
@@ -925,7 +1022,7 @@ static bool click_event(login_ui *ui, auth_client *client, MEVENT event)
         for (size_t i = 0; i < tab_total(client); ++i)
             if (ui->tab_hits[i].width && event.x >= ui->tab_hits[i].x &&
                 event.x < ui->tab_hits[i].x + ui->tab_hits[i].width) {
-                confirm_remove(ui, client, i);
+                open_tab_menu(ui, client, i);
                 break;
             }
         return false;
@@ -1607,6 +1704,10 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
             break;
         if (!ui.paste && help_key(&ui.help, type, key))
             continue;
+        if (!ui.paste && ui.menu_open) {
+            tab_menu_key(&ui, client, type, key);
+            continue;
+        }
         if (!ui.paste && ui.remove_open) {
             if (remove_key(&ui, type, key) && !remove_instance(&ui, &client, ui.remove_index))
                 result = 1;
@@ -1701,6 +1802,11 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         }
         if (!ui.paste && type == KEY_CODE_YES && ui.focus == TABS_FOCUS && key == KEY_DC) {
             confirm_remove(&ui, client, tab_cursor(&ui, client));
+            continue;
+        }
+        if (!ui.paste && ui.focus == TABS_FOCUS &&
+            ((type == OK && (key == 'm' || key == 'M')) || shortcut_is(type, key, SHORTCUT_MENU))) {
+            open_tab_menu(&ui, client, tab_cursor(&ui, client));
             continue;
         }
         if (!ui.paste && type == KEY_CODE_YES && ui.focus == TABS_FOCUS &&

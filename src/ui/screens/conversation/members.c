@@ -15,6 +15,9 @@ struct member_drawer {
     char selected[37], restore[37], target[37], notice[256];
     uint64_t users, presence, permissions, generation;
     bool dirty, by_status, accept, opening_dm;
+    /* The profile card was opened from a message while the drawer was closed;
+     * closing the card leaves the drawer closed. */
+    bool standalone;
     int focus, return_focus, cursor, first, menu, menu_y, scroll, field_first;
     int hit_first[256], hit_last[256], hit_index[256], hit_count;
     enum member_modal panel;
@@ -172,6 +175,11 @@ void conversation_members_toggle(view *ui)
     struct member_drawer *d = drawer(ui);
     if (!d)
         return;
+    if (d->standalone) {
+        d->standalone = false;
+        d->panel = MEMBER_NO_MODAL;
+        history_member_close(ui->model);
+    }
     ui->members_open = !ui->members_open;
     history_members_active(ui->model, ui->members_open);
     if (ui->members_open) {
@@ -218,7 +226,8 @@ void conversation_members_destroy(view *ui)
 }
 bool conversation_members_modal(view *ui)
 {
-    return ui->members_open && ui->members && ui->members->panel != MEMBER_NO_MODAL;
+    return ui->members && ui->members->panel != MEMBER_NO_MODAL &&
+           (ui->members_open || ui->members->standalone);
 }
 help_context conversation_members_help(view *ui, const char **area)
 {
@@ -232,9 +241,16 @@ help_context conversation_members_help(view *ui, const char **area)
 }
 bool conversation_members_poll(view *ui)
 {
-    if (!ui->members_open)
-        return false;
     struct member_drawer *d = ui->members;
+    if (!ui->members_open) {
+        if (!d || !d->standalone ||
+            d->generation == auth_context_generation(ui->connections->items[ui->active_tab].auth))
+            return false;
+        d->standalone = false;
+        d->panel = MEMBER_NO_MODAL;
+        history_member_close(ui->model);
+        return true;
+    }
     if (d->generation != auth_context_generation(ui->connections->items[ui->active_tab].auth)) {
         conversation_members_toggle(ui);
         return true;
@@ -379,7 +395,22 @@ static void close_modal(view *ui)
     struct member_drawer *d = ui->members;
     d->panel = MEMBER_NO_MODAL;
     d->notice[0] = 0;
+    d->standalone = false;
     history_member_close(ui->model);
+}
+void conversation_members_profile(view *ui, const char *id)
+{
+    struct member_drawer *d = drawer(ui);
+    if (!d || !history_uuid(id))
+        return;
+    mention_popup_close(ui->mentions);
+    emoji_picker_close(ui->emojis);
+    snprintf(d->target, sizeof(d->target), "%s", id);
+    d->standalone = !ui->members_open;
+    d->generation = auth_context_generation(ui->connections->items[ui->active_tab].auth);
+    open_profile(ui);
+    if (d->panel != MEMBER_CARD)
+        d->standalone = false;
 }
 static void retry_profile_media(view *ui)
 {
@@ -424,7 +455,8 @@ bool conversation_members_key(view *ui, int type, uint32_t key)
         (shortcut_is(type, key, SHORTCUT_SEARCH) || shortcut_is(type, key, SHORTCUT_PINNED) ||
          shortcut_is(type, key, SHORTCUT_NOTIFICATIONS)))
         return false;
-    if (!ui->members_open || (ui->focus != MEMBERS_PANEL && !conversation_members_modal(ui)) ||
+    bool modal = conversation_members_modal(ui);
+    if ((!ui->members_open && !modal) || (ui->focus != MEMBERS_PANEL && !modal) ||
         (type == KEY_CODE_YES && key == KEY_MOUSE))
         return false;
     struct member_drawer *d = ui->members;
@@ -585,7 +617,7 @@ bool conversation_members_mouse(view *ui, const MEVENT *event)
         conversation_members_toggle(ui);
         return true;
     }
-    if (!ui->members_open)
+    if (!ui->members_open && !conversation_members_modal(ui))
         return false;
     struct member_drawer *d = ui->members;
     if (d->panel != MEMBER_NO_MODAL) {
@@ -778,11 +810,8 @@ static void draw_card(view *ui, WINDOW *w)
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     text_label(w, height - 2, 2, width - 4, "↑↓ / roda: rolar · Ctrl+R: atualizar · Esc: voltar");
 }
-void conversation_members_draw(view *ui)
+static void draw_list(view *ui)
 {
-    if (!ui->members_open || ui->settings.open || media_view_modal(ui->media) ||
-        ui->duplicate_modal || COLS < 44 || LINES < 14)
-        return;
     struct member_drawer *d = ui->members;
     refresh_rows(ui);
     int width = 30, height = LINES - CONTENT_Y - 3;
@@ -874,8 +903,19 @@ void conversation_members_draw(view *ui)
     text_label(w, height - 3, 2, width - 4, !strncmp(users_notice, "Tab /", 5) ? "" : users_notice);
     text_label(w, height - 2, 2, width - 4, "m / botão direito: opções");
     wnoutrefresh(w);
+}
+void conversation_members_draw(view *ui)
+{
+    bool standalone = !ui->members_open && conversation_members_modal(ui);
+    if ((!ui->members_open && !standalone) || ui->settings.open || media_view_modal(ui->media) ||
+        ui->duplicate_modal || COLS < 44 || LINES < 14)
+        return;
+    struct member_drawer *d = ui->members;
+    if (!standalone)
+        draw_list(ui);
     if (d->panel == MEMBER_NO_MODAL)
         return;
+    WINDOW *w;
     int items[5];
     const char *labels[5];
     int count = d->panel == MEMBER_MENU ? menu_items(ui, items, labels) : 0;

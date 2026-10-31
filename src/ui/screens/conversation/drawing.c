@@ -416,7 +416,7 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
             mentions += inbox_unread_mentions(history_inbox(connection->model), NULL);
     }
     terminal_title_set(conversation, ui->connections->items[ui->active_tab].name, mentions);
-    if (ui->members_open)
+    if (ui->members_open || conversation_members_modal(ui))
         scope = DRAW_ALL;
     bool paint_history = scope == DRAW_ALL || scope == DRAW_CONVERSATION;
     bool paint_navigation = paint_history || scope == DRAW_NAVIGATION;

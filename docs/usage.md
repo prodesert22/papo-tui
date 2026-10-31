@@ -36,7 +36,10 @@ saved session. Open the tab again to retry: the saved session is used, so you do
 not need your password once the server is back.
 
 To remove a server from the list, right-click its tab, or select the tab and
-press Delete, then confirm **Remover** (Remove). This closes the tab and deletes
+press **m** or Ctrl+Space, to open the tab's menu below it. Choose **Remover
+servidor** (Remove server), then confirm **Remover** (Remove). Esc or a click
+outside closes the menu. Pressing Delete on a selected tab goes straight to the
+confirmation. Removing a server closes the tab and deletes
 the session saved in the system credential store; the server does not come back
 when you reopen the application. It does not sign you out on the server; use
 **Sair da conta** (Sign out) first if you also want to end that session there.
@@ -554,6 +557,10 @@ Esc to close the menu. Use the mouse or ↑/↓ and Enter inside the menu to cho
   background only while focused. Choose it and press Enter, or click that option,
   to delete. Esc cancels. The server permits deletion of your
   own messages or messages covered by your `delete_messages` permission.
+- **Ver perfil** (View profile): the last option. It opens the author's profile,
+  the same one shown from the member drawer, without opening the drawer. Esc or a
+  click outside closes it; with the drawer open, Esc returns to the drawer.
+  Messages sent by applications have no profile and do not show this option.
 
 With the editor focused and empty, press ↑ to edit your newest own message in
 loaded history. This shortcut does not search unloaded pages. With text in the

@@ -337,6 +337,47 @@ class Members(unittest.TestCase):
             terminal.send("m")
             self.wait(terminal, "Bloquear")
 
+    def test_message_menu_opens_author_profile_without_the_drawer(self):
+        with MemberMock() as server:
+            server.messages[0].update(author_id=AUTHOR, content="Mensagem da Bia")
+            server.messages[1].update(
+                author_id=None,
+                webhook_id=uuid(900),
+                content="Aviso do app",
+                external_author={"source": "webhook", "id": "app", "name": "App"},
+            )
+            terminal = self.open(server)
+            self.right_click(terminal, "Mensagem da Bia")
+            self.wait(terminal, "Ver perfil")
+            interactions.MessageInteractions.click(self, terminal, "Ver perfil")
+            self.wait(terminal, "Perfil do membro")
+            self.wait(terminal, "@bob")
+            self.wait(terminal, "Descrição de perfil sintético.")
+            self.assertNotIn("Membros (", self.screen(terminal))
+            profile = f"/users/{AUTHOR}/profile"
+            self.assertEqual(sum(r[1].endswith(profile) for r in server.requests), 1)
+            self.assertEqual(server.member_calls, [])
+            terminal.send("\x1b")
+            self.settled(terminal, lambda: "Perfil do membro" not in self.screen(terminal))
+            self.assertNotIn("Membros (", self.screen(terminal))
+            self.wait(terminal, "Mensagem da Bia")
+            # An application message has no user profile to open.
+            self.right_click(terminal, "Aviso do app")
+            self.wait(terminal, "Ver quem reagiu")
+            self.assertNotIn("Ver perfil", self.screen(terminal))
+            terminal.send("\x1b")
+            self.settled(terminal, lambda: "Ver quem reagiu" not in self.screen(terminal))
+            # With the drawer open, Esc returns from the profile to the drawer.
+            self.drawer(terminal)
+            self.right_click(terminal, "Mensagem da Bia")
+            self.wait(terminal, "Ver perfil")
+            interactions.MessageInteractions.click(self, terminal, "Ver perfil")
+            self.wait(terminal, "Perfil do membro")
+            self.wait(terminal, "@bob")
+            terminal.send("\x1b")
+            self.settled(terminal, lambda: "Perfil do membro" not in self.screen(terminal))
+            self.assertIn("Membros (", self.screen(terminal))
+
     def test_ban_unban_and_reset_require_confirmation(self):
         with MemberMock() as server:
             terminal = self.open(server)
