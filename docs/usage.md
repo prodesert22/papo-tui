@@ -20,8 +20,11 @@ Linux build from the project folder, use `./build/papo-tui`.
 
 When the system credential store is available, the application restores the
 session of every server you were signed in to. Each server opens as a tab in
-the top bar, and the most recently added one is selected. Use **[+ Adicionar]**
-(Add) in that bar to sign in to another server.
+the top bar. The server you used last is selected, on the channel or direct
+message you had open there; each other tab also returns to its own last
+conversation. Without that record, for example on the first start after an
+update, the most recently added server is selected. Use **[+ Adicionar]** (Add)
+in that bar to sign in to another server.
 
 The sign-in screen keeps the server tabs at the top while another server is
 open, for example when the selected server is unreachable at startup or you are

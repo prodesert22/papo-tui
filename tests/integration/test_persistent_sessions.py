@@ -330,6 +330,49 @@ class Persistence(unittest.TestCase):
             self.wait(t, message["content"])
             t.close()
 
+    def click_text(self, t, text, columns=25):
+        row = next(i for i, line in enumerate(t.screen.display) if text in line[:columns])
+        t.click(row, t.screen.display[row].index(text) + 1)
+
+    def test_reopens_the_last_used_server_and_conversation(self):
+        self.keyring()
+        with HistoryMock() as first, HistoryMock() as second:
+            second.name = "Trabalho"
+            t = self.login(first)
+            self.add_server(t, second)
+            self.wait(t, "geral")
+            # Use the older server last, on its second channel.
+            t.click(0, t.screen.display[0].index("Comunidade") + 1)
+            self.wait(t, "[Comunidade]")
+            self.wait(t, "# geral · Histórico")
+            self.click_text(t, "# outro")
+            self.wait(t, "Conteúdo do outro canal")
+            self.wait(t, "# outro · Histórico")
+            t.close()
+            reads = sum("/messages" in r[1] for r in first.requests)
+            t = self.terminal()
+            # Not the newest server: the one used last, on its last channel.
+            self.wait(t, "[Comunidade]")
+            self.wait(t, "# outro · Histórico")
+            self.wait(t, "Conteúdo do outro canal")
+            # Tabs keep the order in which the servers were added.
+            row = t.screen.display[0]
+            self.assertIn("Trabalho", row)
+            self.assertLess(row.index("Comunidade"), row.index("Trabalho"), row)
+            self.assertEqual(self.login_count(first), 1)
+            # Only the restored channel's history is read, not the first one.
+            self.assertEqual(sum("/messages" in r[1] for r in first.requests), reads + 1)
+            # The other server keeps its own last channel.
+            t.click(0, t.screen.display[0].index("Trabalho") + 1)
+            self.wait(t, "[Trabalho")
+            self.wait(t, "# geral · Histórico")
+            t.close()
+            state = json.loads(
+                (Path(self.env["XDG_STATE_HOME"]) / "papo-tui" / "view-state.json").read_text()
+            )
+            self.assertEqual(state["contexts"][-1]["url"], second.url)
+            self.assertNotIn("cookie", json.dumps(state).lower())
+
     def test_unreachable_newest_server_keeps_tabs_to_open_the_other(self):
         self.keyring()
         with HistoryMock() as first, HistoryMock() as second:

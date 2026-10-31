@@ -1,5 +1,6 @@
 #include "app/session_store.h"
 #include "app/session_slot.h"
+#include "config/view_state.h"
 #include <glib.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -145,6 +146,21 @@ const char *session_store_last_url(const session_store *s)
                 return session_slot_url(slot);
         }
     return "";
+}
+const char *session_store_open_url(const session_store *s)
+{
+    if (!s)
+        return "";
+    /* The saved server used last opens first, then the newest one. */
+    const char *urls[SESSION_SLOT_LIMIT];
+    size_t count = 0;
+    for (size_t i = 0; i < s->count; ++i) {
+        const session_slot *slot = s->entries[i].slot;
+        if (*session_slot_url(slot) && session_slot_saved(slot))
+            urls[count++] = session_slot_url(slot);
+    }
+    size_t latest = view_state_latest(urls, count);
+    return latest < count ? urls[latest] : session_store_last_url(s);
 }
 const char *session_store_notice(const session_store *s)
 {

@@ -1,3 +1,4 @@
+#include "config/view_state.h"
 #include "ui/screens/conversation/private.h"
 
 help_context conversation_help_context(view *ui, const char **area)
@@ -172,6 +173,56 @@ bool conversation_poll_editor(view *ui, auth_client *auth)
     return changed;
 }
 
+/* Opens the conversation last shown on this server once it is listed. DMs
+ * may arrive after the channels, so a missing one is awaited for a few
+ * seconds before the first channel opens instead. */
+static bool conversation_restore_channel(view *ui)
+{
+    for (size_t i = 0; i < history_channel_count(ui->model); ++i) {
+        json_t *c = history_channel(ui->model, i);
+        if (strcmp(ui->restore_conversation, conversation_str(c, "id")))
+            continue;
+        ui->restore_conversation[0] = 0;
+        ui->initial_channel_pending = false;
+        int focus = ui->focus;
+        bool show_channels = ui->show_channels;
+        conversation_switch_list(ui, json_is_true(json_object_get(c, "_dm")));
+        for (size_t j = 0; j < conversation_list_count(ui); ++j)
+            if (conversation_list_index(ui, j) == i)
+                ui->highlighted = j;
+        conversation_open_channel(ui, true);
+        conversation_set_focus(ui, focus);
+        if (ui->show_channels != show_channels) {
+            ui->show_channels = show_channels;
+            if (COLS < 80)
+                conversation_layout(ui);
+        }
+        return true;
+    }
+    uint64_t now = 0;
+    net_now_ms(&now);
+    if (!history_channel_count(ui->model))
+        return false;
+    if (!ui->restore_deadline)
+        ui->restore_deadline = now + 3000;
+    else if (now >= ui->restore_deadline)
+        ui->restore_conversation[0] = 0; /* Gone or inaccessible: use the first channel. */
+    return false;
+}
+/* Records the shown conversation, which also marks this server as used last. */
+static void conversation_save_view(view *ui, auth_client *auth)
+{
+    if (ui->initial_channel_pending)
+        return;
+    json_t *c = history_channel(ui->model, history_selected(ui->model));
+    const char *id = c ? conversation_str(c, "id") : "";
+    if (!*id || !strcmp(id, ui->saved_conversation))
+        return;
+    /* Written once per change; a failed write is not retried every tick. */
+    snprintf(ui->saved_conversation, sizeof(ui->saved_conversation), "%s", id);
+    view_state_save(auth_instance_url(auth), id);
+}
+
 bool conversation_poll_model(view *ui, auth_client *auth)
 {
     char highlighted[37];
@@ -200,7 +251,10 @@ bool conversation_poll_model(view *ui, auth_client *auth)
         if (!strcmp(highlighted, conversation_str(conversation_list_channel(ui, i), "id")))
             ui->highlighted = i;
     conversation_list_normalize(ui);
-    if (ui->initial_channel_pending && !ui->list_dms &&
+    if (ui->initial_channel_pending && *ui->restore_conversation &&
+        conversation_restore_channel(ui))
+        changed = true;
+    if (ui->initial_channel_pending && !ui->list_dms && !*ui->restore_conversation &&
         conversation_list_selectable(ui, ui->highlighted)) {
         ui->initial_channel_pending = false;
         int focus = ui->focus;
@@ -214,6 +268,7 @@ bool conversation_poll_model(view *ui, auth_client *auth)
         }
         changed = true;
     }
+    conversation_save_view(ui, auth);
     if (!ui->at_end && count) {
         bool found = false;
         for (size_t i = 0; i < history_message_count(ui->model); ++i)
@@ -285,6 +340,14 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                            : NULL;
     ui->at_end = ui->show_channels = true;
     ui->initial_channel_pending = true;
+    /* Returning to a tab keeps its conversation; a new process reopens the
+     * one shown last on this server. */
+    json_t *shown = ui->model ? history_channel(ui->model, history_selected(ui->model)) : NULL;
+    if (shown)
+        snprintf(ui->restore_conversation, sizeof(ui->restore_conversation), "%s",
+                 conversation_str(shown, "id"));
+    else
+        view_state_conversation(auth_instance_url(auth), ui->restore_conversation);
     ui->focus = focus_tabs ? SERVER_TABS : CHANNEL_LIST;
     if (!ui->model || !ui->r8 || !ui->mentions || !ui->icons || !ui->emojis || !ui->editor ||
         ui->active_tab == SIZE_MAX || !conversation_layout(ui)) {

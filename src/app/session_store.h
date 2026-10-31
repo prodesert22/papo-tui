@@ -18,6 +18,9 @@ void session_store_watch(session_store *store, auth_client *client);
 void session_store_unwatch(session_store *store, auth_client *client);
 /* The newest saved instance, or the newest remembered URL. */
 const char *session_store_last_url(const session_store *store);
+/* The saved server to open at startup: the one used last (see view_state),
+ * else session_store_last_url. */
+const char *session_store_open_url(const session_store *store);
 const char *session_store_notice(const session_store *store);
 bool session_store_restoring(const session_store *store);
 /* Transfers an owned secret snapshot, wipe with auth_session_free. url borrows

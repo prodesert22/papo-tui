@@ -10,8 +10,10 @@
 #include <unistd.h>
 struct read_storage {
     int directory, lock;
+    const char *stem;
+    bool (*validate)(json_t *root);
+    char file[64];
 };
-static const char *file_name = "read-cursors.json";
 static bool private_file(int fd)
 {
     struct stat st;
@@ -57,7 +59,7 @@ static int native_directory_open(void)
 json_t *read_storage_load(read_storage *storage)
 {
     int directory = storage->directory;
-    int fd = openat(directory, file_name, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK);
+    int fd = openat(directory, storage->file, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK);
     if (fd < 0)
         return errno == ENOENT ? json_pack("{s:i,s:[]}", "version", 1, "contexts") : NULL;
     struct stat st;
@@ -89,7 +91,7 @@ json_t *read_storage_load(read_storage *storage)
     close(fd);
     json_t *root = ok ? json_loadb(buffer, length, JSON_REJECT_DUPLICATES, NULL) : NULL;
     free(buffer);
-    if (root && !read_state_validate(root)) {
+    if (root && !storage->validate(root)) {
         json_decref(root);
         root = NULL;
     }
@@ -112,7 +114,8 @@ bool read_storage_write(read_storage *storage, json_t *root)
     char temporary[96];
     int fd = -1;
     for (int attempt = 0; attempt < 16 && fd < 0; ++attempt) {
-        snprintf(temporary, sizeof(temporary), "read-cursors.%ld.%d.tmp", (long)getpid(), attempt);
+        snprintf(temporary, sizeof(temporary), "%s.%ld.%d.tmp", storage->stem, (long)getpid(),
+                 attempt);
         fd = openat(directory, temporary, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC,
                     0600);
         if (fd < 0 && errno != EEXIST)
@@ -134,7 +137,7 @@ bool read_storage_write(read_storage *storage, json_t *root)
         ok = false;
     if (fd >= 0 && close(fd))
         ok = false;
-    if (ok && renameat(directory, temporary, directory, file_name))
+    if (ok && renameat(directory, temporary, directory, storage->file))
         ok = false;
     if (ok && fsync(directory))
         ok = false;
@@ -142,8 +145,10 @@ bool read_storage_write(read_storage *storage, json_t *root)
         unlinkat(directory, temporary, 0);
     return ok;
 }
-read_storage *read_storage_open(void)
+read_storage *read_storage_open_named(const char *stem, bool (*validate)(json_t *root))
 {
+    if (!stem || !*stem || strlen(stem) > 40 || strchr(stem, '/') || !validate)
+        return NULL;
     int directory = native_directory_open();
     if (directory < 0)
         return NULL;
@@ -152,8 +157,13 @@ read_storage *read_storage_open(void)
         close(directory);
         return NULL;
     }
-    *storage = (read_storage){directory, -1};
+    *storage = (read_storage){directory, -1, stem, validate, ""};
+    snprintf(storage->file, sizeof(storage->file), "%s.json", stem);
     return storage;
+}
+read_storage *read_storage_open(void)
+{
+    return read_storage_open_named("read-cursors", read_state_validate);
 }
 void read_storage_close(read_storage *storage)
 {
@@ -166,7 +176,9 @@ void read_storage_close(read_storage *storage)
 }
 bool read_storage_lock(read_storage *storage)
 {
-    storage->lock = openat(storage->directory, "read-cursors.lock",
+    char name[64];
+    snprintf(name, sizeof(name), "%s.lock", storage->stem);
+    storage->lock = openat(storage->directory, name,
                            O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK, 0600);
     return storage->lock >= 0 && private_file(storage->lock) &&
            !flock(storage->lock, LOCK_EX | LOCK_NB);

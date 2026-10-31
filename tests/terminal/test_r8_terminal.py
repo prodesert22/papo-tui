@@ -943,6 +943,23 @@ class R8Terminal(support.R8Terminal):
             self.assertNotEqual(restarted.screen.buffer[4][23].data, "●")
             self.assertEqual(sum("/messages" in r[1] for r in server.requests), before + 1)
 
+    def test_restart_reopens_the_last_direct_message(self):
+        with R8Mock(count=3) as server, tempfile.TemporaryDirectory(prefix="r8-view-") as state:
+            environment = {"XDG_STATE_HOME": state}
+            t = self.login(server, environment=environment)
+            t.click(3, 13)
+            self.wait(t, "Bia ·")
+            t.send("\x1bOB\n")
+            self.wait(t, "DM com Bia · Histórico")
+            self.wait(t, "Mensagem direta")
+            t.close()
+            # DMs are listed after the channels; the restart still waits for
+            # the last conversation instead of opening the first channel.
+            restarted = self.login(server, environment=environment)
+            self.wait(restarted, "DM com Bia · Histórico")
+            self.wait(restarted, "Mensagem direta")
+            self.assertNotIn("# geral · Histórico", "\n".join(restarted.screen.display))
+
     def test_restart_preserves_reading_when_remote_cursor_stays_old(self):
         with R8Mock(count=3) as server, tempfile.TemporaryDirectory(prefix="r8-reading-") as state:
             server.touch_read = lambda _channel, _messages: None

@@ -164,11 +164,13 @@ static void poll_restored(const auth_client *active)
             continue;
         }
         forget_restored(client);
-        if (!auth_has_session(client) && !kept_offline(client) && client != active) {
+        if (!auth_has_session(client) && !kept_offline(client)) {
             /* Let the slot observe a rejected snapshot before forgetting the client. */
             session_store_poll(connections->sessions, NULL);
             instances_detach(connections, client);
-            auth_destroy(client);
+            /* The sign-in form keeps its own client to sign in again. */
+            if (client != active)
+                auth_destroy(client);
         }
     }
 }
@@ -1411,7 +1413,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
     /* The newest saved instance restores into the visible form; the others
      * become tabs once the form opens its conversations. */
     char main_url[2049];
-    snprintf(main_url, sizeof(main_url), "%s", session_store_last_url(connections->sessions));
+    snprintf(main_url, sizeof(main_url), "%s", session_store_open_url(connections->sessions));
     if (!result && !open_profiles && *main_url && !instance_form(&ui, client, main_url))
         result = 1;
     bool quit = false;
@@ -1444,6 +1446,13 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
                 /* A retried offline server restores into its own client. */
                 auth_session_restore(target, snapshot, resume_url, allow_local_http);
                 session_store_watch(connections->sessions, target);
+                /* The server opened first need not be the newest: list it at
+                 * its saved position now, like the other restored servers. */
+                if (target == client && startup_restore && restored_count < INSTANCE_LIMIT &&
+                    instances_attach_offline(connections, client)) {
+                    instances_order(connections, tab_rank, connections->sessions);
+                    restored[restored_count++] = client;
+                }
             } else if (startup_restore)
                 restore_instance(resume_url, snapshot, allow_local_http);
             auth_session_free(&snapshot);

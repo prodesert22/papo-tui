@@ -132,6 +132,11 @@ typedef struct {
     bool settings_presented;
     help_modal help;
     bool list_dms, initial_channel_pending;
+    /* Conversation to open first: the one shown last on this server. The
+     * initial channel waits briefly for it before falling back to the first. */
+    char restore_conversation[37];
+    uint64_t restore_deadline;
+    char saved_conversation[37]; /* Last conversation recorded in view_state. */
     int list_button;
     size_t highlights[2];
     uint64_t inbox_revision;
