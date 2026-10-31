@@ -267,6 +267,7 @@ static bool notification_valid(json_t *n)
            json_is_boolean(json_object_get(n, "read")) && text_field(n, "created_at", 64, false) &&
            session_time_parse(s(n, "created_at"), &time);
 }
+static void read_covered(inbox *b);
 static bool notifications_response(inbox *b, json_t *body, enum operation kind)
 {
     json_t *page = json_object_get(body, "notifications"),
@@ -330,6 +331,7 @@ static bool notifications_response(inbox *b, json_t *body, enum operation kind)
     }
     if (!sort(b->notifications) || !trim(b->notifications, 1000, 4U * 1024U * 1024U, true))
         return false;
+    read_covered(b);
     if (count) {
         json_t *newest = kind == NEWER ? last : json_array_get(b->notifications, 0);
         int time = compare_time(s(newest, "created_at"), b->newest_time);
@@ -907,14 +909,34 @@ static bool read_covers(const inbox *b, const char *channel, const char *id, con
     int order = compare_time(s(cursor, "created_at"), time);
     return order > 0 || (!order && strcmp(s(cursor, "id"), id) >= 0);
 }
-void inbox_read_through(inbox *b, const char *channel, const json_t *cursor)
+static bool covered(const inbox *b, const json_t *n, bool event)
+{
+    const char *id = s(n, "message_id");
+    const char *channel = event ? inbox_message_channel(b, id) : s(n, "channel_id");
+    json_t *preview = json_object_get(b->previews, id);
+    const char *time = *s(preview, "created_at") ? s(preview, "created_at") : s(n, "created_at");
+    return read_covers(b, channel, id, time);
+}
+/* Live events before a read position need no attention. Persisted records
+ * are marked read by the server when the read is registered there. */
+static void read_covered(inbox *b)
+{
+    size_t i;
+    json_t *n;
+    json_array_foreach(b->events, i,
+                       n) if (!json_is_true(json_object_get(n, "_viewed")) && covered(b, n, true))
+    {
+        json_object_set_new(n, "_viewed", json_true());
+        ++b->revision;
+    }
+}
+void inbox_read_until(inbox *b, const char *channel, const char *id, const char *time)
 {
     uint64_t ignored;
-    if (!history_uuid(channel) || !uuid_field(cursor, "id") ||
-        !session_time_parse(s(cursor, "created_at"), &ignored) ||
-        read_covers(b, channel, s(cursor, "id"), s(cursor, "created_at")))
+    if (!history_uuid(channel) || !history_uuid(id) || !time || strlen(time) > 64 ||
+        !session_time_parse(time, &ignored) || read_covers(b, channel, id, time))
         return;
-    json_t *copy = json_deep_copy(cursor);
+    json_t *copy = json_pack("{s:s,s:s}", "id", id, "created_at", time);
     if (!copy || !bounded_key(b->conversation_reads, channel, copy)) {
         json_decref(copy);
         return;
@@ -923,7 +945,29 @@ void inbox_read_through(inbox *b, const char *channel, const json_t *cursor)
     json_t *mark = json_object_get(b->unseen, channel);
     if (mark && read_covers(b, channel, s(mark, "id"), s(mark, "created_at")))
         json_object_del(b->unseen, channel);
+    read_covered(b);
     ++b->revision;
+}
+bool inbox_unread_before(const inbox *b, const char *channel, const char *id, const char *time)
+{
+    size_t i;
+    json_t *n;
+    json_array_foreach(b->notifications, i, n)
+    {
+        if (json_is_true(json_object_get(n, "read")) || strcmp(s(n, "channel_id"), channel))
+            continue;
+        json_t *preview = json_object_get(b->previews, s(n, "message_id"));
+        const char *at = *s(preview, "created_at") ? s(preview, "created_at") : s(n, "created_at");
+        int order = compare_time(at, time);
+        if (order < 0 || (!order && strcmp(s(n, "message_id"), id) <= 0))
+            return true;
+    }
+    return false;
+}
+void inbox_read_through(inbox *b, const char *channel, const json_t *cursor)
+{
+    inbox_read_until(b, channel, s(cursor, "id"),
+                     json_string_value(json_object_get(cursor, "created_at")));
 }
 static bool badge_eligible(const inbox *b, const json_t *n, bool event)
 {
@@ -931,9 +975,7 @@ static bool badge_eligible(const inbox *b, const json_t *n, bool event)
         return false;
     const char *id = s(n, "message_id");
     const char *channel = event ? inbox_message_channel(b, id) : s(n, "channel_id");
-    json_t *preview = json_object_get(b->previews, id);
-    const char *time = *s(preview, "created_at") ? s(preview, "created_at") : s(n, "created_at");
-    return !inbox_conversation_muted(b, channel) && !read_covers(b, channel, id, time);
+    return !inbox_conversation_muted(b, channel) && !covered(b, n, event);
 }
 bool inbox_has_activity(const inbox *b)
 {

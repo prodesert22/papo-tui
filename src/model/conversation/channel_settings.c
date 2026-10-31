@@ -101,8 +101,11 @@ void history_internal_notification_reads(history *h)
     json_object_foreach(h->read_messages, id, cursor) inbox_read_through(h->inbox, id, cursor);
     for (size_t i = 0; i < history_channel_count(h); ++i) {
         json_t *c = history_channel(h, i), *latest = json_object_get(c, "last_message");
+        const char *read, *time;
         id = history_internal_str(c, "id");
-        if (!history_channel_unread(NULL, c))
+        if (history_internal_server_read(h, c, &read, &time))
+            inbox_read_until(h->inbox, id, read, time);
+        else if (!history_channel_unread(NULL, c))
             inbox_read_through(h->inbox, id, latest);
     }
 }
@@ -120,4 +123,118 @@ bool history_instance_unread(const history *h)
             return true;
     }
     return false;
+}
+/* Reads are registered explicitly: listing messages does not move the server's
+ * read position. PUT /channels/{id}/read advances it (forward only) and marks
+ * the user's notifications in that channel up to the message read. */
+static bool cursor_before(const char *at, const char *a, const char *bt, const char *b)
+{
+    int ordering;
+    if (!session_time_compare(at, bt, &ordering))
+        return false;
+    return ordering < 0 || (!ordering && strcasecmp(a, b) < 0);
+}
+static json_t *read_channel(const history *h, const char *id)
+{
+    for (size_t i = 0; i < history_channel_count(h); ++i)
+        if (!strcmp(history_internal_str(history_channel(h, i), "id"), id))
+            return history_channel(h, i);
+    return NULL;
+}
+bool history_internal_read_needed(const history *h, const json_t *channel)
+{
+    json_t *latest = json_object_get(channel, "last_message");
+    const char *last = history_internal_str(latest, "id"),
+               *time = history_internal_str(latest, "created_at"),
+               *type = history_internal_str(channel, "type"),
+               *read = history_internal_str(channel, "last_read_message"), *read_time;
+    if (!history_uuid(last) || (type && !strcmp(type, "category")))
+        return false;
+    /* The channel summary may omit created_at: compare identifiers then. */
+    bool behind = time && history_internal_server_read(h, channel, &read, &read_time)
+                      ? cursor_before(read_time, read, time, last)
+                      : !read || strcasecmp(read, last);
+    return behind ||
+           (time && inbox_unread_before(h->inbox, history_internal_str(channel, "id"), last, time));
+}
+bool history_internal_read_send(history *h, const char *channel, const char *id, const char *time)
+{
+    char path[96];
+    if (!time)
+        time = "";
+    if (!history_uuid(channel) || !history_uuid(id) || strlen(time) >= sizeof(h->read_time))
+        return false;
+    snprintf(path, sizeof(path), "/channels/%s/read", channel);
+    json_t *body = json_pack("{s:s}", "message_id", id);
+    bool started = body && auth_mutate_json(h->auth, "PUT", path, body);
+    json_decref(body);
+    /* Recorded even when it cannot start: never repeated automatically. */
+    json_t *sent = json_string(id);
+    if (!sent || json_object_set_new(h->sent_reads, channel, sent))
+        return false;
+    if (!started)
+        return false;
+    snprintf(h->read_channel, sizeof(h->read_channel), "%s", channel);
+    snprintf(h->read_message, sizeof(h->read_message), "%s", id);
+    snprintf(h->read_time, sizeof(h->read_time), "%s", time);
+    h->pending = CHANNEL_READ;
+    h->request_context = h->context;
+    return true;
+}
+/* Notification records before a known read position stay unread on the
+ * server until a read is registered there; register it once per position.
+ * Never fetches history. */
+bool history_internal_read_dispatch(history *h)
+{
+    if (!h->r8)
+        return false;
+    for (size_t i = 0; i < history_channel_count(h); ++i) {
+        json_t *c = history_channel(h, i),
+               *local = json_object_get(h->read_messages, history_internal_str(c, "id"));
+        const char *channel = history_internal_str(c, "id"), *id = NULL, *time = NULL;
+        if (!history_internal_server_read(h, c, &id, &time))
+            id = time = NULL;
+        if (local && (!id || cursor_before(time, id, history_internal_str(local, "created_at"),
+                                           history_internal_str(local, "id")))) {
+            id = history_internal_str(local, "id");
+            time = history_internal_str(local, "created_at");
+        }
+        const char *sent = json_string_value(json_object_get(h->sent_reads, channel));
+        if (!id || !time || (sent && !strcasecmp(sent, id)) ||
+            !inbox_unread_before(h->inbox, channel, id, time))
+            continue;
+        if (history_internal_read_send(h, channel, id, time))
+            return true;
+    }
+    return false;
+}
+void history_internal_read_response(history *h, long code)
+{
+    json_t *c = read_channel(h, h->read_channel);
+    if (code == 204 && c) {
+        json_t *latest = json_object_get(c, "last_message");
+        const char *read, *time;
+        const char *last = history_internal_str(latest, "id");
+        if (*h->read_time && last && !strcasecmp(h->read_message, last)) {
+            json_t *message = json_pack("{s:s,s:s,s:s}", "id", h->read_message, "created_at",
+                                        h->read_time, "channel_id", h->read_channel);
+            if (message)
+                history_internal_remember_read(h, message);
+            json_decref(message);
+        }
+        if (!*h->read_time)
+            json_object_set_new(c, "last_read_message", json_string(h->read_message));
+        else if (!history_internal_server_read(h, c, &read, &time) ||
+                 cursor_before(time, read, h->read_time, h->read_message)) {
+            json_object_set_new(c, "last_read_message", json_string(h->read_message));
+            json_object_set_new(c, "last_read_at", json_string(h->read_time));
+        }
+        /* Reload only what the server changed with this read. */
+        if (json_is_true(json_object_get(c, "_dm")))
+            inbox_read_conversation(h->inbox, h->read_channel);
+        if (*h->read_time &&
+            inbox_unread_before(h->inbox, h->read_channel, h->read_message, h->read_time))
+            inbox_refresh(h->inbox);
+    }
+    h->read_channel[0] = h->read_message[0] = h->read_time[0] = 0;
 }

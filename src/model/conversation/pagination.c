@@ -110,7 +110,7 @@ int history_internal_message_compare(json_t *a, json_t *b)
     return time ? time : strcmp(history_internal_str(a, "id"), history_internal_str(b, "id"));
 }
 
-static bool remember_read(history *h, json_t *message)
+bool history_internal_remember_read(history *h, json_t *message)
 {
     if (!message)
         return true;
@@ -330,7 +330,7 @@ bool history_internal_messages_response(history *h, json_t *body)
         h->newer_more = count && json_is_true(more);
     else
         h->more = count && json_is_true(more);
-    if (!remember_read(h, json_array_get(page, h->newer && count ? count - 1 : 0)))
+    if (!history_internal_remember_read(h, json_array_get(page, h->newer && count ? count - 1 : 0)))
         return false;
     if (count) {
         if (h->newer) {
@@ -342,18 +342,10 @@ bool history_internal_messages_response(history *h, json_t *body)
                      history_internal_str(edge, "created_at"));
             snprintf(h->cursor_id, sizeof(h->cursor_id), "%s", history_internal_str(edge, "id"));
         }
-        if (!h->older && !h->newer)
-            snprintf(h->read_attempt, sizeof(h->read_attempt), "%s",
-                     history_internal_str(json_array_get(page, 0), "id"));
     }
+    /* Listing does not mark the conversation read on the server; reaching the
+     * latest message sends PUT /channels/{id}/read (history_read_visible). */
     h->want_authors = history_message_count(h) > 0;
-    if (h->r8 && !h->older && !h->newer && history_channel(h, h->selected)) {
-        json_t *channel = history_channel(h, h->selected);
-        if (json_is_true(json_object_get(channel, "_dm")))
-            inbox_read_conversation(h->inbox, history_internal_str(channel, "id"));
-        else
-            h->want_channels = true;
-    }
     history_internal_status(h, history_message_count(h)
                                    ? h->newer_more ? "Role para baixo para carregar posteriores."
                                      : h->more     ? "Role para cima para carregar anteriores."
@@ -384,7 +376,8 @@ bool history_internal_recovery_response(history *h, json_t *body)
     for (size_t i = 0; i < count; ++i)
         if (!history_internal_upsert(h, &h->fresh, json_array_get(page, i), true, false))
             return false;
-    if (!remember_read(h, json_array_get(page, h->ascending && count ? count - 1 : 0)))
+    if (!history_internal_remember_read(
+            h, json_array_get(page, h->ascending && count ? count - 1 : 0)))
         return false;
     bool next = count && json_is_true(more);
     if (h->ascending) {

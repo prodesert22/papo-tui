@@ -51,20 +51,41 @@ class R8Mock(RealtimeMock):
     def summary(message):
         return {key: message[key] for key in ("id", "created_at")}
 
-    def touch_read(self, channel_id, messages):
-        if not messages:
-            return
-        latest = max(messages, key=lambda m: (m["created_at"], m["id"]))
-        channel = next((c for c in self.channels + self.dms if c["id"] == channel_id), None)
-        if channel is None:
-            return
-        # All fixture messages share STAMP; IDs break ties as in the backend.
-        previous = channel.get("last_read_message")
-        if previous is None or latest["id"] >= previous:
-            channel["last_read_message"] = latest["id"]
-            channel["last_read_at"] = "2026-10-15T12:00:00Z"
-            if channel_id == DM:
-                channel["unread_count"] = 0
+    def other_rows(self):
+        return [dict(self.message(1), channel_id=OTHER, content="Conteúdo do outro canal")]
+
+    def find_message(self, channel_id, message_id):
+        for message in self.dm_messages + self.other_rows():
+            if message["id"] == message_id and message["channel_id"] == channel_id:
+                return message
+        for n in self.notifications:
+            if n["message_id"] == message_id and n["channel_id"] == channel_id:
+                return dict(id=message_id, created_at=n["created_at"])
+        for channel in self.dms:
+            last = channel.get("last_message") or {}
+            if channel["id"] == channel_id and last.get("id") == message_id:
+                return last
+        return super().find_message(channel_id, message_id)
+
+    def read_targets(self):
+        return self.channels + self.dms
+
+    def register_read(self, channel_id, message_id):
+        message = super().register_read(channel_id, message_id)
+        if message is None:
+            return None
+        if channel_id == DM:
+            self.dms[0]["unread_count"] = 0
+        # The backend also marks this channel's notifications up to the message.
+        for n in self.notifications:
+            if n["channel_id"] == channel_id:
+                target = self.find_message(channel_id, n["message_id"]) or n
+                if (target["created_at"], n["message_id"]) <= (
+                    message["created_at"],
+                    message["id"],
+                ):
+                    n["read"] = True
+        return message
 
     def emit(self, event, **kwargs):
         if event.get("type") == "message":
@@ -123,14 +144,11 @@ class R8Mock(RealtimeMock):
             if method == "GET":
                 return (200, self.dms[0]) if self.dms else (404, None)
         if u.path.endswith("/channels/" + DM + "/messages"):
-            self.touch_read(DM, self.dm_messages)
             return 200, dict(
                 channel_id=DM, messages=list(reversed(self.dm_messages)), has_more=False
             )
         if u.path.endswith("/channels/" + OTHER + "/messages"):
-            rows = [dict(self.message(1), channel_id=OTHER, content="Conteúdo do outro canal")]
-            self.touch_read(OTHER, rows)
-            return 200, dict(channel_id=OTHER, messages=rows, has_more=False)
+            return 200, dict(channel_id=OTHER, messages=self.other_rows(), has_more=False)
         if u.path.endswith("/users") and method == "GET":
             return 200, dict(
                 users=[
@@ -140,13 +158,4 @@ class R8Mock(RealtimeMock):
                 ],
                 has_more=False,
             )
-        response = super().route(method, path, body)
-        if (
-            method == "GET"
-            and "/channels/" in u.path
-            and u.path.endswith("/messages")
-            and response
-            and response[0] == 200
-        ):
-            self.touch_read(response[1]["channel_id"], response[1]["messages"])
-        return response
+        return super().route(method, path, body)

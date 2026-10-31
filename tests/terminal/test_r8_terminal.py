@@ -32,7 +32,11 @@ class R8Terminal(support.R8Terminal):
                 # The target is in the open window, or in the cached window of
                 # # geral, which was read before switching to # outro.
                 self.assertEqual(after - before, 0)
-                self.assertEqual(server.marked, [[uuid(4001)]])
+                # Reaching the latest message of # geral registered the read,
+                # and the server marked the earlier notification with it.
+                self.assertIn((CHANNEL, uuid(160)), server.channel_reads)
+                self.assertTrue(server.notifications[0]["read"])
+                self.assertEqual(server.marked, [])
 
     def test_old_notification_starts_at_its_own_time_instead_of_scanning(self):
         with R8Mock(count=1) as server:
@@ -551,7 +555,16 @@ class R8Terminal(support.R8Terminal):
             self.wait(t, "Bot de avisos")
             t.send("\x1b\x1b")
             self.wait(t, "[Canais]")
-            self.assertEqual(t.screen.buffer[5][23].data, "●")
+            # Back at the latest message of the open channel, the read is
+            # registered and its dot clears; the unread DM keeps the server dot.
+            end = time.monotonic() + 5
+            while (CHANNEL, webhook["id"]) not in server.channel_reads and time.monotonic() < end:
+                t.read(0.03)
+            self.assertIn((CHANNEL, webhook["id"]), server.channel_reads)
+            end = time.monotonic() + 4
+            while t.screen.buffer[5][23].data == "●" and time.monotonic() < end:
+                t.read(0.03)
+            self.assertNotEqual(t.screen.buffer[5][23].data, "●")
             self.assertIn("[Comunidade 0]", t.screen.display[0])
             self.assertNotIn("❶", t.screen.display[0])
             self.assertEqual(server.marked, [])  # Ephemeral events have no readable row.
@@ -794,6 +807,9 @@ class R8Terminal(support.R8Terminal):
 
     def test_history_read_clears_even_if_backend_cursor_lags_but_failed_get_does_not(self):
 
+        # Listing never reads on the server: reaching the latest message sends
+        # PUT /channels/{id}/read once. The local cursor clears the dot even
+        # when the server fails to store the read; a failed GET does not.
         for case in ("empty", "header-only", "denied", "cursor-write-failed"):
             with self.subTest(case=case), R8Mock(count=3) as server:
                 for channel in server.channels:
@@ -802,7 +818,11 @@ class R8Terminal(support.R8Terminal):
                 original = server.api_handler
 
                 def route(method, path, body):
-                    if "/channels/" + CHANNEL + "/messages" in path:
+                    if method == "PUT" and path.endswith("/channels/" + CHANNEL + "/read"):
+                        if case == "cursor-write-failed":
+                            server.channel_reads.append((CHANNEL, body["message_id"]))
+                            return 500, None
+                    elif "/channels/" + CHANNEL + "/messages" in path:
                         if case == "denied":
                             return 403, None
                         rows = (
@@ -812,10 +832,8 @@ class R8Terminal(support.R8Terminal):
                                 dict(server.message(3), content=None, embeds=None, attachments=[])
                             ]
                         )
-                        if case != "cursor-write-failed":
-                            channel = next(c for c in server.channels if c["id"] == CHANNEL)
-                            channel["last_message"] = server.summary(rows[0]) if rows else None
-                            server.touch_read(CHANNEL, rows)
+                        channel = next(c for c in server.channels if c["id"] == CHANNEL)
+                        channel["last_message"] = server.summary(rows[0]) if rows else None
                         return 200, dict(channel_id=CHANNEL, messages=rows, has_more=False)
                     return original(method, path, body)
 
@@ -831,13 +849,22 @@ class R8Terminal(support.R8Terminal):
                         break
                 self.assertEqual(t.screen.buffer[5][23].data == "●", case == "denied")
                 self.assertEqual(server.marked, [])
-                if case == "cursor-write-failed":
+                reads = [r for r in server.channel_reads if r[0] == CHANNEL]
+                if case in ("header-only", "cursor-write-failed"):
+                    end = time.monotonic() + 5
+                    while not reads and time.monotonic() < end:
+                        t.read(0.03)
+                        reads = [r for r in server.channel_reads if r[0] == CHANNEL]
                     t.read(0.5)
+                    reads = [r for r in server.channel_reads if r[0] == CHANNEL]
+                    self.assertEqual(reads, [(CHANNEL, uuid(103))])
                     self.assertNotEqual(t.screen.buffer[5][23].data, "●")
                     self.assertEqual(
                         sum("/channels/" + CHANNEL + "/messages" in r[1] for r in server.requests),
                         1,
                     )
+                else:
+                    self.assertEqual(reads, [])
 
     def test_cursor_dots_overlay_buttons_and_long_names_and_ignore_notification_read(self):
 
@@ -945,6 +972,54 @@ class R8Terminal(support.R8Terminal):
             self.wait(restarted, "Bia ·")
             self.assertNotEqual(restarted.screen.buffer[4][23].data, "●")
             self.assertEqual(sum("/messages" in r[1] for r in server.requests), before + 1)
+
+    def test_startup_reads_notifications_before_the_server_cursor_without_stale_dots(self):
+        with R8Mock(count=2) as server:
+            # Open "outro" first, so these closed channels keep the server state.
+            for channel in server.channels:
+                if channel["id"] == CHANNEL:
+                    channel["position"] = 3
+                    # Read on another device, then your own reply is the latest.
+                    channel["last_read_message"] = uuid(103)
+                    channel["last_read_at"] = "2026-10-12T12:05:00Z"
+                    channel["last_message"] = dict(
+                        id=uuid(104), created_at="2026-10-12T12:30:00Z", author_id=uuid(1)
+                    )
+                elif channel["id"] == OTHER:
+                    channel["position"] = 2
+            # The last read message was deleted; the latest is older than the read.
+            server.channels.append(
+                dict(
+                    id=uuid(13),
+                    name="apagado",
+                    position=5,
+                    topic=None,
+                    type="text",
+                    last_message=dict(id=uuid(102), created_at="2026-10-12T12:00:00Z"),
+                    last_read_message=uuid(199),
+                    last_read_at="2026-10-12T12:05:00Z",
+                )
+            )
+            server.dms[0]["last_read_message"] = server.dm_messages[0]["id"]
+            server.dms[0]["unread_count"] = 0
+            server.notifications[0]["created_at"] = "2026-10-12T11:00:00Z"
+            server.notifications[1]["created_at"] = "2026-10-12T12:20:00Z"
+            t = self.login(server)
+            end = time.monotonic() + 5
+            while not server.channel_reads and time.monotonic() < end:
+                t.read(0.03)
+            # The read is registered again at the server's own position, without
+            # fetching history; the server marks only the notification before it.
+            self.assertEqual(server.channel_reads, [(CHANNEL, uuid(103))])
+            self.wait(t, "1 notificação")
+            t.read(0.3)
+            self.assertEqual(server.channel_reads, [(CHANNEL, uuid(103))])
+            self.assertEqual([n["read"] for n in server.notifications], [True, False])
+            self.assertEqual(server.marked, [])
+            for name in ("geral", "apagado"):
+                line = next(line for line in t.screen.display if name in line)
+                self.assertNotIn("●", line, name)
+            self.assert_initial_history_only(server, OTHER)
 
     def test_restart_reopens_the_last_direct_message(self):
         with R8Mock(count=3) as server, tempfile.TemporaryDirectory(prefix="r8-view-") as state:

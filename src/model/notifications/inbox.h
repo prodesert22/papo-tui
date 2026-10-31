@@ -33,9 +33,13 @@ json_t *inbox_notification_event(const inbox *box, size_t index);
 bool inbox_has_more(const inbox *box);
 size_t inbox_unread(const inbox *box);
 /* Activity badges exclude notification records covered by successful reads.
- * Reading a conversation does not mark its notification-center records read. */
+ * The server marks records read when a conversation read is registered. */
 bool inbox_has_activity(const inbox *box);
 void inbox_read_through(inbox *box, const char *channel, const json_t *cursor);
+/* Same as inbox_read_through with a borrowed (time, id) read position. */
+void inbox_read_until(inbox *box, const char *channel, const char *id, const char *time);
+/* Unread notification records in channel at or before (time, id). */
+bool inbox_unread_before(const inbox *box, const char *channel, const char *id, const char *time);
 bool inbox_preferences_poll(inbox *box);
 bool inbox_conversation_muted(const inbox *box, const char *channel);
 bool inbox_mute_conversation(inbox *box, const char *channel, int seconds);

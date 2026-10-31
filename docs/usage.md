@@ -450,17 +450,21 @@ unread activity without a confirmed mention.
 Counts cover loaded previews, which can be truncated, rather than a server-wide
 total. Opening a notification clears its mention badge after confirmation.
 The server dot also covers notifications with missing mention metadata.
-Old notification records covered by a successful conversation read no longer
-keep the activity dot lit; they remain in the notification center until marked
-read there. Delayed copies of already-read messages do not restore the dot.
-The unread-message dot remains until the conversation is read. Webhook names
-come from their message and remain available when later events omit attribution.
+A conversation counts as read when its latest message is visible at the bottom
+of the history while the terminal has focus; only then is the read sent to the
+server. Opening a conversation or scrolling through older messages does not mark
+it read. Notifications for messages up to the point where you read a
+conversation, in this client or another one, are marked read with it and leave
+the notification count. Delayed copies of already-read messages do not restore the dot.
+The unread-message dot remains until the conversation is read. Your own messages
+never light it, and deleting the last message you read does not light it again.
+Webhook names come from their message and remain available when later events omit attribution.
 If an author is missing from a notification in the active conversation, its
 message is looked up to recover the name without moving your reading position.
 For other conversations, **Autor ainda não carregado** (Author not loaded yet)
 means the notification omitted attribution. Opening the conversation loads the
 message and its author. The client does not fetch inactive conversation histories
-just to fill author names, because history reads also mark conversations read.
+just to fill author names.
 
 System notification previews show user mentions as **@username**, rather than
 the stored `@mention(<@uuid>)` token. They use the username, even when the person

@@ -182,6 +182,30 @@ static void persisted_read(auth_client *auth)
     assert((previous ? setenv("XDG_STATE_HOME", previous, 1) : unsetenv("XDG_STATE_HOME")) == 0);
     free(previous);
 }
+/* Your own latest message is not unread, and a known read message time wins
+ * over last_read_at, which only bounds it. */
+static void own_and_known_reads(auth_client *auth, json_t *channel)
+{
+    fixture_user = author_id;
+    history *h = model(auth, channel);
+    assert(history_channel_unread(h, history_channel(h, 0)));
+    json_object_set_new(json_object_get(history_channel(h, 0), "last_message"), "author_id",
+                        json_string(author_id));
+    assert(!history_channel_unread(h, history_channel(h, 0)));
+    assert(history_channel_unread(NULL, history_channel(h, 0)));
+    history_destroy(h);
+    json_object_set_new(channel, "last_read_at", json_string("2026-10-15T12:01:00Z"));
+    h = model(auth, channel);
+    assert(!history_channel_unread(h, history_channel(h, 0)));
+    json_t *read = message(previous_id);
+    json_object_set_new(read, "created_at", json_string("2026-10-15T11:58:00Z"));
+    inbox_observe_message(history_inbox(h), read);
+    json_decref(read);
+    assert(history_channel_unread(h, history_channel(h, 0)));
+    history_destroy(h);
+    json_object_set_new(channel, "last_read_at", json_string("2026-10-15T11:59:00Z"));
+    fixture_user = "";
+}
 int main(void)
 {
     assert(curl_global_init(CURL_GLOBAL_DEFAULT) == CURLE_OK);
@@ -219,13 +243,13 @@ int main(void)
     assert(event && inbox_event(history_inbox(first), event));
     json_decref(event);
     assert(inbox_unread(history_inbox(first)) == 1);
-    /* A read cursor clears activity without deleting or reading notification
-     * records. A delayed copy of an old WS message must not resurrect it. */
+    /* A read cursor clears activity and reads notifications before it. A
+     * delayed copy of an old WS message must not resurrect it. */
     json_t *old = message(previous_id);
     inbox_observe_message(history_inbox(first), old);
     history_internal_notification_reads(first);
     assert(!history_instance_unread(first));
-    assert(inbox_unread(history_inbox(first)) == 1);
+    assert(inbox_unread(history_inbox(first)) == 0);
     json_object_set_new(old, "type", json_string("message"));
     assert(inbox_event(history_inbox(first), old));
     assert(!history_instance_unread(first));
@@ -239,6 +263,12 @@ int main(void)
     history_destroy(restart);
     json_object_set_new(channel, "last_read_message", json_string(previous_id));
     assert(history_channel_unread(NULL, channel)); /* Distinct ID, even equal timestamp. */
+    /* The read message was deleted after the latest one: the backend moved
+     * last_read_at with it, so the older latest message is read. */
+    json_object_set_new(channel, "last_read_at", json_string("2026-10-15T12:01:00Z"));
+    assert(!history_channel_unread(NULL, channel));
+    json_object_set_new(channel, "last_read_at", json_string("2026-10-15T11:59:00Z"));
+    own_and_known_reads(auth, channel);
     json_object_set_new(channel, "last_read_message", json_null());
     json_object_set_new(channel, "last_read_at", json_null());
     assert(history_channel_unread(NULL, channel));
@@ -260,9 +290,13 @@ int main(void)
     assert(!history_channel_unread(NULL, channel));
     json_decref(channel);
 
-    /* A successful recent GET covers the latest message. A lagging metadata
-     * response must not resurrect the badge during this session. */
+    /* A successful recent GET covers the latest message locally, but listing
+     * does not read on the server: reaching the latest message registers it
+     * with PUT /channels/{id}/read. A lagging metadata response must not
+     * resurrect the badge during this session. The backend cursor is stale:
+     * it was read before the latest message existed. */
     channel = conversation(previous_id);
+    json_object_set_new(channel, "last_read_at", json_string("2026-10-15T11:59:00Z"));
     history *h = model(auth, channel);
     assert(history_select(h, 0));
     h->want_messages = false;
@@ -270,11 +304,17 @@ int main(void)
                              message(latest_id), "has_more", false);
     assert(body && history_internal_messages_response(h, body));
     json_decref(body);
-    assert(!history_channel_unread(h, history_channel(h, 0)) && h->want_channels);
-    assert(!strcmp(h->read_attempt, latest_id));
+    assert(!history_channel_unread(h, history_channel(h, 0)) && !*h->read_attempt);
+    history_read_visible(h, latest_id);
+    assert(!strcmp(h->read_visible, latest_id));
+    history_read_visible(h, NULL);
+    snprintf(h->read_channel, sizeof(h->read_channel), "%s", channel_id);
+    snprintf(h->read_message, sizeof(h->read_message), "%s", latest_id);
+    snprintf(h->read_time, sizeof(h->read_time), "%s", stamp);
+    history_internal_read_response(h, 204);
+    assert(!strcmp(history_internal_str(history_channel(h, 0), "last_read_message"), latest_id));
     history_read_visible(h, latest_id);
     assert(!*h->read_visible); /* No retry loop. */
-    assert(!strcmp(history_internal_str(history_channel(h, 0), "last_read_message"), previous_id));
     body = json_pack("{s:[O]}", "channels", channel);
     assert(body && history_internal_channels_response(h, body));
     json_decref(body);
@@ -331,6 +371,13 @@ int main(void)
     history_poll(h);
     assert(!h->retry_requested && h->failed == NONE);
     h->want_messages = false;
+    /* Ctrl+R during a background read or inbox refresh is deferred, not lost. */
+    h->pending = CHANNEL_READ;
+    assert(history_retry(h) && h->retry_requested);
+    h->retry_requested = false;
+    h->pending = MESSAGES; /* A history load already reads again. */
+    assert(history_retry(h) && !h->retry_requested);
+    h->pending = NONE;
     history_active(h, false);
     history_read_visible(h, "00000000-0000-4000-8000-000000000104");
     assert(!*h->read_visible);

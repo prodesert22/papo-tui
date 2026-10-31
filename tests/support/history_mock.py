@@ -65,6 +65,34 @@ class HistoryMock(MockServer):
             },
         ]
         self.messages = [self.message(n) for n in range(1, count + 1)]
+        self.channel_reads = []
+
+    def find_message(self, channel_id, message_id):
+        for message in self.messages + getattr(self, "sent_messages", []):
+            if message["id"] == message_id and message["channel_id"] == channel_id:
+                return message
+        for channel in self.channels:
+            last = channel.get("last_message") or {}
+            if channel["id"] == channel_id and last.get("id") == message_id:
+                return dict(last, created_at=last.get("created_at", STAMP))
+        return None
+
+    def read_targets(self):
+        return self.channels
+
+    def register_read(self, channel_id, message_id):
+        # As the backend: listing never reads; PUT advances only forward.
+        channel = next((c for c in self.read_targets() if c["id"] == channel_id), None)
+        message = self.find_message(channel_id, message_id)
+        if channel is None or message is None:
+            return None
+        previous = channel.get("last_read_message")
+        stored = previous and self.find_message(channel_id, previous)
+        old = (stored["created_at"], stored["id"]) if stored else ("", "")
+        if old < (message["created_at"], message["id"]):
+            channel["last_read_message"] = message["id"]
+            channel["last_read_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        return message
 
     def message(self, n):
         return {
@@ -82,6 +110,10 @@ class HistoryMock(MockServer):
 
     def route(self, method, path, body):
         url = urlsplit(path)
+        if method == "PUT" and url.path.endswith("/read") and "/channels/" in url.path:
+            channel = url.path.split("/")[-2]
+            self.channel_reads.append((channel, body["message_id"]))
+            return (204, None) if self.register_read(channel, body["message_id"]) else (404, None)
         if url.path.endswith("/voice/ice-servers") and method == "GET":
             # The contract allows an empty list; no STUN or TURN server is
             # reachable from the synthetic environment.

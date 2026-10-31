@@ -70,7 +70,8 @@ void history_recover(history *h)
     if (!h || !auth_has_session(h->auth))
         return;
     if (h->pending != NONE && h->pending != INBOX && !history_internal_actions_mutating(h) &&
-        !history_internal_members_mutating(h) && h->pending != CHANNEL_SETTINGS) {
+        !history_internal_members_mutating(h) && h->pending != CHANNEL_SETTINGS &&
+        h->pending != CHANNEL_READ) {
         auth_cancel_read(h->auth);
         h->pending = NONE;
     }
@@ -361,7 +362,8 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
         if (!ok)
             goto invalid;
         if (remove && was_active) {
-            if (h->pending != NONE && h->pending != CHANNEL_SETTINGS) {
+            if (h->pending != NONE && h->pending != CHANNEL_SETTINGS &&
+                h->pending != CHANNEL_READ) {
                 auth_cancel_read(h->auth);
                 h->pending = NONE;
             }

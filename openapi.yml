@@ -1559,6 +1559,50 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /channels/{channel_id}/read:
+    put:
+      tags: [Notifications]
+      summary: Registra a leitura do canal pelo usuário até uma mensagem
+      description: >
+        Permission Check: usuário com permissão de leitura no canal
+        (read_channel; canal aberto ou role com a permissão; dono do servidor
+        bypassa). Avança o last_read do usuário somente para frente e marca
+        como lidas as notificações do usuário nesse canal até a mensagem
+        informada. Listar mensagens NÃO avança o last_read; este endpoint é o
+        ponto de registro do read (chamado quando o usuário alcança a mensagem
+        mais nova do canal).
+      parameters:
+        - $ref: '#/components/parameters/ChannelId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message_id]
+              properties:
+                message_id:
+                  type: string
+                  format: uuid
+                  description: Mensagem até a qual o canal foi lido (deve pertencer ao canal)
+      responses:
+        '204':
+          description: Leitura registrada
+        '400':
+          description: Campo ausente ou inválido
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /voice/ice-servers:
     get:
       tags: [Voice]

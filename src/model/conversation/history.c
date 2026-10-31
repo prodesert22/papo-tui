@@ -331,8 +331,9 @@ history *history_create(auth_client *auth)
     h->directory = json_array();
     h->queried = json_object();
     h->read_messages = json_object();
-    if (!h->voice || !h->assets || !h->users || !h->directory || !h->queried || !h->inbox ||
-        !h->read_messages) {
+    h->sent_reads = json_object();
+    if (!h->sent_reads || !h->voice || !h->assets || !h->users || !h->directory || !h->queried ||
+        !h->inbox || !h->read_messages) {
         history_destroy(h);
         return NULL;
     }
@@ -364,6 +365,7 @@ void history_destroy(history *h)
     inbox_destroy(h->inbox);
     json_decref(h->channels);
     json_decref(h->read_messages);
+    json_decref(h->sent_reads);
     json_decref(h->users);
     json_decref(h->directory);
     json_decref(h->queried);
@@ -398,7 +400,8 @@ void history_active(history *h, bool active)
         /* Before cancelling: a window still loading is not kept. */
         stash_current(h);
         if (h->pending != NONE && h->pending != INBOX && !history_internal_actions_mutating(h) &&
-            !history_internal_members_mutating(h) && h->pending != CHANNEL_SETTINGS) {
+            !history_internal_members_mutating(h) && h->pending != CHANNEL_SETTINGS &&
+            h->pending != CHANNEL_READ) {
             if (h->pending == MEMBERS)
                 history_internal_members_recover(h);
             auth_cancel_read(h->auth);
@@ -524,6 +527,34 @@ uint64_t history_insertions(const history *h)
     return h->insertions;
 }
 
+static bool same_id(const char *a, const char *b)
+{
+    return a && b && !strcasecmp(a, b);
+}
+
+/* (time, id) of the server's read message. The backend moves last_read_at only
+ * together with last_read_message, so that moment stands in for the message
+ * time when the message is unknown here: read on another device or deleted. */
+bool history_internal_server_read(const history *h, const json_t *channel, const char **id,
+                                  const char **time)
+{
+    const char *read = history_internal_str(channel, "last_read_message");
+    if (!history_uuid(read))
+        return false;
+    json_t *latest = json_object_get(channel, "last_message");
+    json_t *local =
+        h ? json_object_get(h->read_messages, history_internal_str(channel, "id")) : NULL;
+    json_t *preview = h ? inbox_message_preview(h->inbox, read) : NULL;
+    *id = read;
+    *time = same_id(read, history_internal_str(latest, "id"))
+                ? history_internal_str(latest, "created_at")
+            : same_id(read, history_internal_str(local, "id"))
+                ? history_internal_str(local, "created_at")
+            : preview ? history_internal_str(preview, "created_at")
+                      : history_internal_str(channel, "last_read_at");
+    return *time != NULL;
+}
+
 bool history_channel_unread(const history *h, const json_t *channel)
 {
     const char *type = history_internal_str(channel, "type");
@@ -533,6 +564,10 @@ bool history_channel_unread(const history *h, const json_t *channel)
     const char *last = history_internal_str(latest, "id"),
                *read = history_internal_str(channel, "last_read_message");
     if (!history_uuid(last))
+        return false;
+    /* Sending does not move the server's read cursor, but your own message is
+     * never news to you; the backend's DM counter skips it as well. */
+    if (h && same_id(history_internal_str(latest, "author_id"), auth_user_id(h->auth)))
         return false;
     json_t *local =
         h ? json_object_get(h->read_messages, history_internal_str(channel, "id")) : NULL;
@@ -546,9 +581,13 @@ bool history_channel_unread(const history *h, const json_t *channel)
              (!ordering && strcasecmp(history_internal_str(local, "id"), last) > 0)))
             return false;
     }
+    const char *read_id, *read_time;
+    int ordering;
+    if (history_internal_server_read(h, channel, &read_id, &read_time) &&
+        session_time_compare(read_time, history_internal_str(latest, "created_at"), &ordering))
+        return ordering < 0 || (!ordering && strcasecmp(read_id, last) < 0);
     if (read && *read)
         return strcasecmp(last, read) != 0;
-    int ordering;
     if (session_time_compare(history_internal_str(channel, "last_read_at"),
                              history_internal_str(latest, "created_at"), &ordering))
         return ordering < 0;
@@ -566,7 +605,7 @@ void history_read_visible(history *h, const char *id)
     if (!h->r8 || !h->active || h->recovering || h->newer_more ||
         (h->failed != NONE && h->failed != AUTHORS) || h->want_messages || h->pending == MESSAGES ||
         !history_uuid(id) || !latest || strcmp(id, latest) || !strcmp(id, h->read_attempt) ||
-        !history_channel_unread(h, channel))
+        !history_internal_read_needed(h, channel))
         return;
     snprintf(h->read_visible, sizeof(h->read_visible), "%s", id);
 }
@@ -588,7 +627,8 @@ int history_paging_direction(const history *h)
 void history_reload_channels(history *h)
 {
     if (h->pending != NONE && h->pending != INBOX && !history_internal_actions_mutating(h) &&
-        !history_internal_members_mutating(h) && h->pending != CHANNEL_SETTINGS) {
+        !history_internal_members_mutating(h) && h->pending != CHANNEL_SETTINGS &&
+        h->pending != CHANNEL_READ) {
         if (h->pending == MEMBERS)
             history_internal_members_recover(h);
         auth_cancel_read(h->auth);
@@ -625,7 +665,8 @@ static bool select_channel(history *h, size_t index, bool cached)
         h->pending = NONE;
     }
     if (h->pending != NONE && h->pending != INBOX && !history_internal_actions_mutating(h) &&
-        !history_internal_members_mutating(h) && h->pending != CHANNEL_SETTINGS) {
+        !history_internal_members_mutating(h) && h->pending != CHANNEL_SETTINGS &&
+        h->pending != CHANNEL_READ) {
         if (h->pending == MEMBERS)
             history_internal_members_recover(h);
         auth_cancel_read(h->auth);
@@ -662,8 +703,9 @@ bool history_retry(history *h)
     if (history_interactions_retry(h))
         return true;
     if (h->pending != NONE) {
-        /* A background inbox/author request must not consume the user's retry. */
-        if (h->failed != NONE)
+        /* A background inbox/author/read request must not consume the user's
+         * retry; it runs once that request finishes. */
+        if (h->failed != NONE || (h->pending != MESSAGES && h->pending != CHANNELS))
             h->retry_requested = true;
         return true;
     }
@@ -799,7 +841,8 @@ static bool sync_permissions(history *h)
     if (h->selected != SIZE_MAX &&
         history_permission(h, PERMISSION_READ_CHANNEL) == PERMISSION_DENIED) {
         if (h->pending != NONE && h->pending != INBOX && !history_internal_actions_mutating(h) &&
-            !history_internal_members_mutating(h) && h->pending != CHANNEL_SETTINGS) {
+            !history_internal_members_mutating(h) && h->pending != CHANNEL_SETTINGS &&
+            h->pending != CHANNEL_READ) {
             if (h->pending == MEMBERS)
                 history_internal_members_recover(h);
             auth_cancel_read(h->auth);
@@ -835,6 +878,13 @@ static int process_response(history *h, uint64_t maintenance_now)
     if (h->pending == CHANNEL_SETTINGS) {
         if (generation == h->context && h->request_context == h->context)
             history_internal_channel_settings_response(h, body, code, uncertain);
+        json_decref(body);
+        h->pending = NONE;
+        return 3;
+    }
+    if (h->pending == CHANNEL_READ) {
+        if (generation == h->context && h->request_context == h->context)
+            history_internal_read_response(h, code);
         json_decref(body);
         h->pending = NONE;
         return 3;
@@ -1011,6 +1061,7 @@ bool history_poll(history *h)
         inbox_reset(h->inbox);
         h->activity_sent = 0;
         json_object_clear(h->read_messages);
+        json_object_clear(h->sent_reads);
         json_object_clear(h->users);
         json_array_clear(h->directory);
         json_object_clear(h->queried);
@@ -1113,17 +1164,22 @@ bool history_poll(history *h)
             const char *latest =
                 history_internal_str(json_object_get(channel, "last_message"), "id");
             if (!h->active || (h->failed != NONE && h->failed != AUTHORS) || !latest ||
-                strcmp(latest, h->read_visible) || !history_channel_unread(h, channel))
+                strcmp(latest, h->read_visible) || !history_internal_read_needed(h, channel))
                 h->read_visible[0] = 0;
             else if (!h->want_channels && now >= h->read_after) {
                 snprintf(h->read_attempt, sizeof(h->read_attempt), "%s", h->read_visible);
                 h->read_visible[0] = 0;
                 h->read_after = now + 2000;
-                h->older = h->newer = false;
-                h->want_messages = true;
+                if (history_internal_read_send(
+                        h, history_internal_str(channel, "id"), latest,
+                        history_internal_str(json_object_get(channel, "last_message"),
+                                             "created_at")))
+                    return true;
             }
         }
         if (history_internal_channel_settings_dispatch(h))
+            return true;
+        if (history_internal_read_dispatch(h))
             return true;
         if (history_internal_members_dispatch(h))
             return true;

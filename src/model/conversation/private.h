@@ -29,6 +29,7 @@ enum request_kind {
     DISCOVERY,
     MEMBERS,
     CHANNEL_SETTINGS,
+    CHANNEL_READ,
     VOICE_ICE_SERVERS
 };
 #define TYPING_LIMIT 128U
@@ -79,6 +80,10 @@ struct history {
     bool r8, active;
     uint64_t activity_sent;
     char read_attempt[37], read_visible[37];
+    /* PUT /channels/{id}/read in flight; sent_reads maps channel -> last
+     * message sent, so a read is never repeated automatically. */
+    char read_channel[37], read_message[37], read_time[65];
+    json_t *sent_reads;
     uint64_t read_after;
     uint64_t read_save_after;
     char read_url[2049], read_user[37];
@@ -185,6 +190,16 @@ bool history_internal_channel_settings_dispatch(history *h);
 void history_internal_channel_settings_response(history *h, json_t *body, long code,
                                                 bool uncertain);
 void history_internal_notification_reads(history *h);
+bool history_internal_remember_read(history *h, json_t *message);
+/* The server read position is behind the channel's latest message, or unread
+ * notification records remain that a read would clear on the server. */
+bool history_internal_read_needed(const history *h, const json_t *channel);
+bool history_internal_read_send(history *h, const char *channel, const char *id, const char *time);
+bool history_internal_read_dispatch(history *h);
+void history_internal_read_response(history *h, long code);
+/* Server read position of a channel as (time, id); borrowed strings. */
+bool history_internal_server_read(const history *h, const json_t *channel, const char **id,
+                                  const char **time);
 void history_internal_reference_event(history *h, const json_t *event);
 bool history_internal_react_event(history *h, const json_t *event);
 #endif
