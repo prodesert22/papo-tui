@@ -29,3 +29,4 @@
 - Fixed **Ctrl+R** sometimes doing nothing in a conversation when it was pressed while notifications, author names or a read were still loading in the background; the reload now runs as soon as that request finishes.
 - Replies to your messages and `@everyone` messages are now highlighted in the history with the same colored bar as mentions of you, so every message that reaches the notification center stands out, whatever the channel's notification setting. Your own messages are no longer highlighted when they mention you.
 - You can now select text in the conversation history by dragging with the mouse; it is copied to the clipboard as soon as you release the button. Dragging past the top or bottom of the history scrolls it to continue the selection, and another click clears it.
+- The context menu of a voice channel now starts with **Abrir chat** (Open chat), which opens the channel's messages without joining the call.

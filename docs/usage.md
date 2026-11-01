@@ -127,7 +127,8 @@ remains unconfirmed, check the history before resending: the message may
 already have reached the server.
 
 To open messages in a voice channel, select it in the channel list and press
-**Shift+Enter** or **Ctrl+O**.
+**Shift+Enter** or **Ctrl+O**, or choose **Abrir chat** (Open chat) in its
+context menu.
 
 ## Voice calls and audio settings
 
@@ -215,6 +216,8 @@ the menu does not load that channel's messages. Categories have no context menu.
 Use ↑/↓ and Enter, or click an option. In a submenu, ← or Esc returns to the
 channel menu; m/M closes it. Closing a menu preserves your draft.
 
+- **Abrir chat** (Open chat), first in the menu of a voice channel, opens its
+  messages without joining the call.
 - **Silenciar canal…** (Mute channel) offers **10 minutos**, **30 minutos**,
   **1 hora**, **4 horas**, **12 horas**, **24 horas**, and **Até eu reativar**
   (until you reactivate it). A muted channel shows **(silenciado)** in the list;

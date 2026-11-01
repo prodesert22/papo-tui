@@ -8,7 +8,7 @@ import tempfile
 import threading
 import time
 from channel_preferences import ChannelPreferencesMock
-from history_mock import CHANNEL, OTHER, uuid
+from history_mock import CHANNEL, OTHER, HistoryMock, uuid
 from terminal_history import HistoryTerminal
 from terminal_support import Terminal, wait_for_screen
 from terminal_media import MediaTerminal
@@ -55,6 +55,63 @@ class ChannelPreferences(HistoryTerminal):
             (y, line) for y, line in enumerate(t.screen.display) if "Todas as mensagens" in line
         )
         t.click(row + index, line.index("Todas as mensagens"))
+
+    def voice_menu(self, t):
+        wait_for_screen(
+            t,
+            lambda: any("♪ voz" in line[:25] for line in t.screen.display),
+            "Voice channel row was not rendered",
+        )
+        row, line = next(
+            (y, line) for y, line in enumerate(t.screen.display) if "♪ voz" in line[:25]
+        )
+        column = line.index("♪")
+        t.send(f"\x1b[<2;{column + 1};{row + 1}M\x1b[<2;{column + 1};{row + 1}m")
+        self.wait(t, "Abrir chat")
+        title = next(
+            y for y, line in enumerate(t.screen.display) if "Canal" in line[25:] and "q" in line
+        )
+        self.assertIn("Abrir chat", t.screen.display[title + 1])
+        self.assertIn("Silenciar canal…", t.screen.display[title + 2])
+        self.assertIn("Notificações…", t.screen.display[title + 3])
+        return title
+
+    def test_voice_channel_menu_opens_its_chat_first_without_joining(self):
+        for mouse in (False, True):
+            # HistoryMock serves the voice channel's messages.
+            with self.subTest(mouse=mouse), HistoryMock(count=1) as server:
+                t = self.open(server)
+                try:
+                    title = self.voice_menu(t)
+                    if mouse:
+                        t.click(title + 1, t.screen.display[title + 1].index("Abrir chat"))
+                    else:
+                        t.send("\n")
+                    self.wait(t, "Conversa de voz 0001")
+                    self.assertNotIn("Abrir chat", "\n".join(t.screen.display))
+                    self.assertFalse(
+                        [r for r in server.requests if "/voice" in r[1]], server.requests
+                    )
+                finally:
+                    self.assertTrue(t.close())
+
+    def test_voice_channel_menu_keeps_mute_and_notification_options(self):
+        with ChannelPreferencesMock() as server:
+            t = self.open(server)
+            try:
+                self.voice_menu(t)
+                t.send("\x1bOB\n")
+                self.wait(t, "Até eu reativar")
+                # Back from the submenu, the selection returns to its option.
+                t.send("\x1bOD")
+                self.wait(t, "Abrir chat")
+                t.send("\n")
+                self.wait(t, "Até eu reativar")
+                t.send("\x1bOD\x1bOB\n")
+                self.wait(t, "Todas as mensagens")
+                self.assertNotIn("Conversa de voz 0001", "\n".join(t.screen.display))
+            finally:
+                self.assertTrue(t.close())
 
     def test_menu_changes_inactive_channel_without_reading_its_history(self):
         with ChannelPreferencesMock() as server:

@@ -155,6 +155,24 @@ static json_t *context_channel(view *ui)
     }
     return NULL;
 }
+/* Voice channels list Abrir chat first; the other options follow it. */
+static int channel_menu_first(view *ui)
+{
+    json_t *channel = context_channel(ui);
+    return channel && !strcmp(conversation_str(channel, "type"), "voice") ? 1 : 0;
+}
+static void open_context_chat(view *ui)
+{
+    char id[37];
+    snprintf(id, sizeof(id), "%s", ui->channel_context_id);
+    conversation_interactions_close(ui);
+    for (size_t row = 0; row < conversation_list_count(ui); ++row)
+        if (!strcmp(conversation_str(conversation_list_channel(ui, row), "id"), id)) {
+            ui->highlighted = row;
+            conversation_open_channel(ui, true);
+            return;
+        }
+}
 static void open_channel_context(view *ui, const MEVENT *event)
 {
     json_t *channel = conversation_list_channel(ui, ui->highlighted);
@@ -181,6 +199,12 @@ static void channel_menu_activate(view *ui)
         return;
     }
     if (!ui->channel_menu) {
+        int first = channel_menu_first(ui);
+        if (first && !ui->menu_selected) {
+            open_context_chat(ui);
+            return;
+        }
+        ui->menu_selected -= first;
         if (!ui->menu_selected && inbox_conversation_muted(box, ui->channel_context_id)) {
             if (!inbox_mute_conversation(box, ui->channel_context_id, 0))
                 ui->feedback = "Não foi possível salvar o silenciamento; arquivo preservado.";
@@ -428,9 +452,9 @@ static int menu_actions(view *ui, int items[8])
 static int menu_count(view *ui)
 {
     int items[8];
-    return *ui->channel_context_id                    ? ui->channel_menu == 1   ? 7
-                                                        : ui->channel_menu == 2 ? 3
-                                                                                : 2
+    return *ui->channel_context_id ? ui->channel_menu == 1   ? 7
+                                     : ui->channel_menu == 2 ? 3
+                                                             : 2 + channel_menu_first(ui)
            : *ui->dm_context_id || ui->server_context ? 1
            : ui->delete_confirm                       ? 2
                                                       : menu_actions(ui, items);
@@ -534,7 +558,7 @@ bool conversation_interactions_key(view *ui, int type, uint32_t key)
             return false;
         if (*ui->channel_context_id && ui->channel_menu &&
             ((type == OK && key == 27) || (type == KEY_CODE_YES && key == KEY_LEFT))) {
-            ui->menu_selected = ui->channel_menu == 2 ? 1 : 0;
+            ui->menu_selected = (ui->channel_menu == 2 ? 1 : 0) + channel_menu_first(ui);
             ui->channel_menu = 0;
             return true;
         }
@@ -832,13 +856,16 @@ void conversation_interactions_draw(view *ui)
                 snprintf(label, sizeof(label), "[%c] %s",
                          current && !strcmp(current, notification_modes[i]) ? 'x' : ' ',
                          notify_labels[i]);
-            else
+            else {
+                int option = i - channel_menu_first(ui);
                 snprintf(
                     label, sizeof(label), "%s",
-                    i ? "Notificações…"
+                    option < 0 ? "Abrir chat"
+                    : option   ? "Notificações…"
                     : inbox_conversation_muted(history_inbox(ui->model), ui->channel_context_id)
                         ? "Reativar canal"
                         : "Silenciar canal…");
+            }
             text_label(w, i + 1, 1, width - 2, label);
         }
     } else if (*ui->dm_context_id) {
