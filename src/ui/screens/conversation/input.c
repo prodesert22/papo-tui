@@ -281,6 +281,7 @@ void conversation_cancel_edit(view *ui)
     mention_popup_close(ui->mentions);
     emoji_picker_dismiss(ui->emojis);
     ui->dragging = ui->editor_scrolling = false;
+    conversation_selection_clear(ui);
 }
 
 void conversation_submit(view *ui, uint64_t retry_id, bool duplicate)

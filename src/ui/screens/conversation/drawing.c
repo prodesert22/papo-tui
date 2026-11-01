@@ -702,6 +702,7 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
             }
             wattrset(ui->body, COLOR_PAIR(ui->focus == HISTORY_PANEL ? THEME_HISTORY_MUTED
                                                                      : THEME_PANEL_MUTED));
+            conversation_selection_rows(ui);
             if (!auth_has_session(auth))
                 text_label(ui->body, ui->history_top, 2, getmaxx(ui->body) - 4,
                            "Revalidando sessão…");

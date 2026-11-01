@@ -1,8 +1,11 @@
 #include "platform/clipboard.h"
 #include "net/clock.h"
 #include <glib.h>
+#include <stdlib.h>
+#include <string.h>
 #include <windows.h>
-static char pending[TEXT_UTF8_BYTES];
+static char *pending; /* Owned UTF-8, wiped before it is freed. */
+static size_t pending_length;
 static uint64_t started, until, revision;
 static const char *notice;
 static bool busy;
@@ -16,7 +19,11 @@ static void feedback(const char *value)
 }
 static void wipe(void)
 {
-    SecureZeroMemory(pending, sizeof(pending));
+    if (pending)
+        SecureZeroMemory(pending, pending_length);
+    free(pending);
+    pending = NULL;
+    pending_length = 0;
     busy = false;
 }
 bool clipboard_copy(const text_buffer *buffer)
@@ -24,6 +31,12 @@ bool clipboard_copy(const text_buffer *buffer)
     size_t lo, hi;
     if (busy || !text_selection(buffer, &lo, &hi))
         return false;
+    pending_length = TEXT_UTF8_BYTES;
+    if (!(pending = malloc(pending_length))) {
+        pending_length = 0;
+        feedback("Falha ao copiar texto");
+        return false;
+    }
     text_buffer selected = {0}, projected;
     selected.length = hi - lo;
     memcpy(selected.data, buffer->data + lo, selected.length * sizeof(selected.data[0]));
@@ -39,6 +52,25 @@ bool clipboard_copy(const text_buffer *buffer)
         feedback("Falha ao copiar texto");
         return false;
     }
+    net_now_ms(&started);
+    busy = true;
+    return true;
+}
+bool clipboard_copy_text(const char *utf8)
+{
+    size_t length = utf8 ? strlen(utf8) : 0;
+    if (busy || !length)
+        return false;
+    if (length > CLIPBOARD_TEXT_LIMIT) {
+        feedback("Seleção grande demais para copiar");
+        return false;
+    }
+    if (!(pending = malloc(length + 1))) {
+        feedback("Falha ao copiar texto");
+        return false;
+    }
+    pending_length = length + 1;
+    memcpy(pending, utf8, length + 1);
     net_now_ms(&started);
     busy = true;
     return true;

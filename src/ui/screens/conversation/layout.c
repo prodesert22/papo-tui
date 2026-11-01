@@ -23,6 +23,8 @@ void conversation_destroy_layout(view *ui)
 bool conversation_layout(view *ui)
 {
     graphics_frame_invalidate();
+    /* Selected columns belong to the previous width. */
+    conversation_selection_clear(ui);
     conversation_destroy_layout(ui);
     /* Consume stdscr's resize damage without flushing a blank screen. The
      * replacement windows are composed before the next single doupdate(). */
@@ -179,6 +181,49 @@ void conversation_account_layout(view *ui, cached_layout *c)
     }
 }
 
+message_blocks *conversation_entry_blocks(view *ui, size_t i, cached_layout *cached, int width)
+{
+    json_t *m = conversation_entry(ui, i);
+    bool continuation = cached->continuation;
+    message_blocks *blocks = &cached->blocks;
+    char reply[TEXT_UTF8_BYTES];
+    conversation_reply_label(ui, conversation_str(m, "reply_to"), width - 12, reply, sizeof(reply));
+    if (!blocks->rows) {
+        json_t *display = json_deep_copy(m);
+        if (!display)
+            return NULL;
+        /* Replies to your messages are highlighted like mentions. */
+        json_t *replied = *conversation_str(m, "reply_to")
+                              ? history_find_message(ui->model, conversation_str(m, "reply_to"))
+                              : NULL;
+        if (json_is_object(replied) && *conversation_str(replied, "author_id"))
+            json_object_set(display, "_reply_author", json_object_get(replied, "author_id"));
+        size_t reaction_index;
+        json_t *reaction;
+        json_array_foreach(json_object_get(display, "reactions"), reaction_index, reaction)
+        {
+            const server_emoji *emoji = chat_assets_emoji_id(
+                history_assets(ui->model), conversation_str(reaction, "emoji_id"));
+            if (*conversation_str(reaction, "emoji_id"))
+                chat_assets_emojis_request(history_assets(ui->model), false);
+            if (emoji)
+                json_object_set_new(reaction, "_display_name", json_string(emoji->name));
+        }
+        bool ok = message_blocks_build_visual(
+            blocks, display, history_message_author(ui->model, m), reply, width,
+            graphics_terminal_get().supported && ui->media, media_view_measure, ui->media,
+            history_mention_name, ui->model,
+            auth_user_id(ui->connections->items[ui->active_tab].auth), icons_resolve, icons_paint,
+            ui->icons, continuation);
+        json_decref(display);
+        if (!ok)
+            return NULL;
+    }
+    if (!cached->bytes)
+        conversation_account_layout(ui, cached);
+    return blocks;
+}
+
 int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
 {
     uint64_t now = 0;
@@ -232,48 +277,19 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
             (!paint || (!avatar_visible &&
                         (total + measured_rows <= first || total >= first + ui->visible))) &&
             (!save || first < border_start || first >= total + measured_rows)) {
+            if (ui->select_mapping)
+                for (int line = MAX(border_start, first);
+                     line < MIN(total + measured_rows, first + ui->visible); ++line)
+                    conversation_selection_row(ui, line - first, conversation_str(m, "id"),
+                                               line - total);
             total += measured_rows;
             if (selected)
                 ui->selected_end = total;
             continue;
         }
-        char reply[TEXT_UTF8_BYTES];
-        conversation_reply_label(ui, conversation_str(m, "reply_to"), width - 12, reply,
-                                 sizeof(reply));
-        message_blocks *blocks = &cached->blocks;
-        if (!blocks->rows) {
-            json_t *display = json_deep_copy(m);
-            if (!display)
-                continue;
-            /* Replies to your messages are highlighted like mentions. */
-            json_t *replied = *conversation_str(m, "reply_to")
-                                  ? history_find_message(ui->model, conversation_str(m, "reply_to"))
-                                  : NULL;
-            if (json_is_object(replied) && *conversation_str(replied, "author_id"))
-                json_object_set(display, "_reply_author", json_object_get(replied, "author_id"));
-            size_t reaction_index;
-            json_t *reaction;
-            json_array_foreach(json_object_get(display, "reactions"), reaction_index, reaction)
-            {
-                const server_emoji *emoji = chat_assets_emoji_id(
-                    history_assets(ui->model), conversation_str(reaction, "emoji_id"));
-                if (*conversation_str(reaction, "emoji_id"))
-                    chat_assets_emojis_request(history_assets(ui->model), false);
-                if (emoji)
-                    json_object_set_new(reaction, "_display_name", json_string(emoji->name));
-            }
-            bool ok = message_blocks_build_visual(
-                blocks, display, history_message_author(ui->model, m), reply, width,
-                graphics_terminal_get().supported && ui->media, media_view_measure, ui->media,
-                history_mention_name, ui->model,
-                auth_user_id(ui->connections->items[ui->active_tab].auth), icons_resolve,
-                icons_paint, ui->icons, continuation);
-            json_decref(display);
-            if (!ok)
-                continue;
-        }
-        if (!cached->bytes)
-            conversation_account_layout(ui, cached);
+        message_blocks *blocks = conversation_entry_blocks(ui, i, cached, width);
+        if (!blocks)
+            continue;
         if (anchored)
             *anchor = bordered && !strcmp(ui->block, "selection-border") ? border_start : total;
         if (save && bordered && first == border_start) {
@@ -310,6 +326,11 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
         }
         if (selected)
             ui->selected_end = total + height;
+        if (paint || ui->select_mapping)
+            for (int line = MAX(border_start, first);
+                 line < MIN(total + height, first + ui->visible); ++line)
+                conversation_selection_row(ui, line - first, conversation_str(m, "id"),
+                                           line - total);
         if (paint && ui->body && total + height > first && border_start < first + ui->visible) {
             int top = MAX(border_start, first), bottom = MIN(total + height, first + ui->visible);
             /* Unconfirmed sends have no server identity to select or act on. */
@@ -385,6 +406,7 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
                         : history_member_color(ui->model, conversation_str(m, "author_id"));
                 message_row_draw(ui->body, r, y, 2 + r->x, width - r->x, pair, accent,
                                  author_color);
+                conversation_selection_paint(ui, i, r, y);
                 if (avatar_painted)
                     for (int k = 0; k < r->count; ++k)
                         if (!strcmp(r->segments[k].key, "header:avatar")) {

@@ -229,6 +229,7 @@ add_executable(
     src/ui/screens/conversation/reactions.c
     src/ui/screens/conversation/members.c
     src/ui/screens/conversation/layout.c
+    src/ui/screens/conversation/selection.c
     src/ui/components/settings.c
     src/ui/screens/message_browser.c
     src/ui/screens/inbox.c

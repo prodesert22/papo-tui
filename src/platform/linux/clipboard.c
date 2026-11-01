@@ -17,18 +17,24 @@
 
 extern char **environ;
 static struct {
-    char data[TEXT_UTF8_BYTES];
+    char *data; /* Owned; wiped before it is freed. */
     size_t length, sent;
     pid_t child;
     int socket;
     uint64_t started, until, revision;
     const char *notice;
 } copy = {.socket = -1};
+static void scrub(char *data, size_t length)
+{
+    volatile unsigned char *bytes = (volatile unsigned char *)data;
+    for (size_t i = 0; data && i < length; ++i)
+        bytes[i] = 0;
+}
 static void wipe(void)
 {
-    volatile unsigned char *bytes = (volatile unsigned char *)copy.data;
-    for (size_t i = 0; i < sizeof(copy.data); ++i)
-        bytes[i] = 0;
+    scrub(copy.data, copy.length);
+    free(copy.data);
+    copy.data = NULL;
     copy.length = copy.sent = 0;
 }
 static void feedback(const char *text)
@@ -41,16 +47,11 @@ static void feedback(const char *text)
 }
 static bool terminal_copy(void)
 {
-    char encoded[((TEXT_UTF8_BYTES + 2) / 3) * 4 + 1];
-    int state = 0, save = 0;
-    size_t length =
-        g_base64_encode_step((const guchar *)copy.data, copy.length, false, encoded, &state, &save);
-    length += g_base64_encode_close(false, encoded + length, &state, &save);
-    encoded[length] = 0;
-    bool ok = fprintf(stdout, "\033]52;c;%s\a", encoded) >= 0 && fflush(stdout) == 0;
-    volatile char *p = encoded;
-    for (size_t i = 0; i < sizeof(encoded); ++i)
-        p[i] = 0;
+    gchar *encoded = g_base64_encode((const guchar *)copy.data, copy.length);
+    bool ok = encoded && fprintf(stdout, "\033]52;c;%s\a", encoded) >= 0 && fflush(stdout) == 0;
+    if (encoded)
+        scrub(encoded, strlen(encoded));
+    g_free(encoded);
     wipe();
     feedback(ok ? "Texto copiado" : "Falha ao copiar texto");
     return ok;
@@ -92,6 +93,19 @@ static bool native_copy(char *const arguments[])
     copy.notice = NULL;
     return true;
 }
+/* Takes ownership of data, which holds length bytes of UTF-8. */
+static bool start(char *data, size_t length)
+{
+    copy.data = data;
+    copy.length = length;
+    copy.sent = 0;
+    char *wayland[] = {"wl-copy", "--type", "text/plain;charset=utf-8", NULL};
+    char *x11[] = {"xclip", "-selection", "clipboard", "-in", NULL};
+    if ((getenv("WAYLAND_DISPLAY") && *getenv("WAYLAND_DISPLAY") && native_copy(wayland)) ||
+        (getenv("DISPLAY") && *getenv("DISPLAY") && native_copy(x11)))
+        return true;
+    return terminal_copy();
+}
 bool clipboard_copy(const text_buffer *buffer)
 {
     size_t lo, hi;
@@ -108,7 +122,8 @@ bool clipboard_copy(const text_buffer *buffer)
     selected.resolver = buffer->resolver;
     selected.resolver_context = buffer->resolver_context;
     text_project(&selected, &visible);
-    bool ok = text_encode(&visible, copy.data);
+    char *data = malloc(TEXT_UTF8_BYTES);
+    bool ok = data && text_encode(&visible, data);
     volatile unsigned char *p = (volatile unsigned char *)&selected;
     for (size_t i = 0; i < sizeof(selected); ++i)
         p[i] = 0;
@@ -116,18 +131,33 @@ bool clipboard_copy(const text_buffer *buffer)
     for (size_t i = 0; i < sizeof(visible); ++i)
         p[i] = 0;
     if (!ok) {
-        wipe();
+        scrub(data, data ? TEXT_UTF8_BYTES : 0);
+        free(data);
         feedback("Falha ao copiar texto");
         return false;
     }
-    copy.length = strlen(copy.data);
-    copy.sent = 0;
-    char *wayland[] = {"wl-copy", "--type", "text/plain;charset=utf-8", NULL};
-    char *x11[] = {"xclip", "-selection", "clipboard", "-in", NULL};
-    if ((getenv("WAYLAND_DISPLAY") && *getenv("WAYLAND_DISPLAY") && native_copy(wayland)) ||
-        (getenv("DISPLAY") && *getenv("DISPLAY") && native_copy(x11)))
-        return true;
-    return terminal_copy();
+    return start(data, strlen(data));
+}
+bool clipboard_copy_text(const char *utf8)
+{
+    size_t length = utf8 ? strlen(utf8) : 0;
+    if (!length)
+        return false;
+    if (copy.child) {
+        feedback("Cópia em andamento");
+        return false;
+    }
+    if (length > CLIPBOARD_TEXT_LIMIT) {
+        feedback("Seleção grande demais para copiar");
+        return false;
+    }
+    char *data = malloc(length + 1);
+    if (!data) {
+        feedback("Falha ao copiar texto");
+        return false;
+    }
+    memcpy(data, utf8, length + 1);
+    return start(data, length);
 }
 bool clipboard_poll(void)
 {

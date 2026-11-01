@@ -67,6 +67,7 @@ static const help_row rows[] = {
     {HELP_DM_LIST, "Ctrl+W", "Fechar a DM selecionada"},
     {HELP_CHANNELS, "↑ no início / Esc", "Voltar aos controles da lista ou ao histórico"},
     {HELP_HISTORY, "↑↓ / roda", "Rolar o histórico sem mudar de conversa"},
+    {HELP_HISTORY, "Arrastar o mouse", "Selecionar texto do histórico e copiá-lo ao soltar"},
     {HELP_HISTORY, "PgUp / PgDn", "Rolar uma página e carregar mensagens ao chegar às bordas"},
     {HELP_HISTORY, "Home / End", "Ir ao início ou ao fim do histórico carregado"},
     {HELP_HISTORY | HELP_EDITOR | HELP_SELECTION, "Ctrl+K",

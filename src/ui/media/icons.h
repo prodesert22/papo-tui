@@ -29,6 +29,8 @@ bool icons_paint_size(icon_view *v, WINDOW *w, uint32_t icon, int y, int x, int 
 bool icons_paint_clipped(icon_view *v, WINDOW *w, uint32_t icon, int y, int x, int pair,
                          size_t offset, int pixels, int top, int bottom);
 bool icons_literal(const uint32_t *text, size_t at);
+/* The text an icon stands for: the emoji itself, or :name: for a custom one. */
+bool icons_text(icon_view *v, uint32_t icon, char *out, size_t size);
 bool icons_avatar(icon_view *v, const char *id, const char *message, int y, int x, int top,
                   int bottom, int pair);
 bool icons_member_picture(icon_view *v, const char *id, bool banner, const char *scope, int y,

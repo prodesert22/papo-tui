@@ -110,6 +110,17 @@ key; GNOME Terminal keeps Shift+PageUp/PageDown for its own scrollback. The next
 page loads as you approach either edge. A loading indicator appears if you reach
 the edge before the messages arrive.
 
+To copy text from the history, press the left mouse button on it and drag; the
+selected text is highlighted and copied to the clipboard when you release the
+button, and **Texto copiado** (Text copied) appears in the footer. Dragging past
+the top or bottom of the history scrolls it, so a selection can span messages
+that did not fit on the screen. Author names and times in the selected rows are
+copied too; avatar initials and images are not, and custom emoji are copied as
+their `:name:`. Another click clears the selection. On Linux the text goes
+through `wl-copy` or `xclip`, as when copying from the editor, or through the
+terminal (OSC 52) when no desktop session is available; Windows uses the native
+clipboard.
+
 Closing the application discards drafts. Signing out of a server also stops
 restoring that server; the other servers keep their saved sessions. If a send
 remains unconfirmed, check the history before resending: the message may
@@ -360,6 +371,7 @@ that do not report Ctrl+/ can reach global help through contextual help's
 | Ctrl+Q | Quit |
 | Ctrl+C | Clear the field; quit when outside a field |
 | ↑ / ↓ or mouse wheel over history | Scroll the conversation |
+| Drag with the mouse over history | Select text and copy it when the button is released |
 | PageUp / PageDown in history | Scroll by a page; nearby pages load automatically |
 | PageUp / PageDown in the editor | Scroll the conversation one line per press; Shift+PageUp/PageDown scroll a page where the terminal reports the modified key |
 | Home / End in history | Go to the start of loaded history / recent messages |

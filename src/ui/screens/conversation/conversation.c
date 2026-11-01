@@ -1050,6 +1050,16 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 }
                 if (!ui->frame)
                     continue;
+                if (ui->select_dragging &&
+                    (e.bstate & (BUTTON1_RELEASED | REPORT_MOUSE_POSITION))) {
+                    conversation_selection_drag(ui, e.y, e.x, (e.bstate & BUTTON1_RELEASED) != 0);
+                    scope = DRAW_CONVERSATION;
+                    continue;
+                }
+                /* Another click ends the shown selection, wherever it lands. */
+                if ((e.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED)) &&
+                    (ui->select_shown || ui->select_dragging))
+                    conversation_selection_clear(ui);
                 if (conversation_members_mouse(ui, &e)) {
                     scope = DRAW_ALL;
                     continue;
@@ -1266,9 +1276,12 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 y = e.y;
                 x = e.x;
                 if (ui->body && wmouse_trafo(ui->body, &y, &x, false)) {
-                    if (y < ui->history_top + ui->visible)
+                    if (y < ui->history_top + ui->visible) {
                         conversation_set_focus(ui, HISTORY_PANEL);
-                    else if (conversation_input(ui) && conversation_input_row(ui, y)) {
+                        /* Dragging over the history selects its text. */
+                        if ((e.bstate & BUTTON1_PRESSED) && y >= ui->history_top)
+                            conversation_selection_begin(ui, e.y, e.x);
+                    } else if (conversation_input(ui) && conversation_input_row(ui, y)) {
                         text_buffer *editor = conversation_input(ui);
                         text_click(editor, conversation_input_width(ui),
                                    y - conversation_input_top(ui) + editor->first_row,
@@ -1511,6 +1524,7 @@ finished:
     text_input_event_reporting(false);
     media_view_suspend(ui->media);
     conversation_destroy_layout(ui);
+    conversation_selection_destroy(ui);
     if (ui->model) {
         /* Another tab opens next: cache this conversation where it was read. */
         history_reading reading = {.offset = ui->offset, .at_end = ui->at_end};

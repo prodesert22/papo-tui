@@ -91,6 +91,18 @@ typedef struct {
     message_blocks blocks;
 } cached_layout;
 enum { MESSAGE_HIT, REPLY_HIT, REACTION_HIT };
+/* A cell of the history in message coordinates: the line within the message,
+ * counted from its first row, and the body column. Survives scrolling and
+ * pages loaded before it. */
+typedef struct {
+    char id[37];
+    int line, column;
+} history_point;
+/* What the last paint showed on one history row. */
+typedef struct {
+    char id[37];
+    int line;
+} history_row;
 typedef struct {
     char id[37];
     int kind, y, x, height, width;
@@ -185,6 +197,15 @@ typedef struct {
     size_t section, offset;
     bool at_end, paste, show_channels, layout_failed, duplicate_modal, reenviar;
     bool dragging, editor_scrolling;
+    /* Mouse text selection in the history: dragging while the button is held,
+     * shown until another click. Rows are owned and sized to the history. */
+    history_point select_anchor, select_head;
+    /* Anchor and head in history order, resolved before each paint. */
+    history_point select_from, select_to;
+    size_t select_from_index, select_to_index;
+    bool select_dragging, select_shown, select_mapping;
+    history_row *select_rows;
+    int select_row_count;
     file_picker *files;
     GTask *attachment_task;
     GCancellable *attachment_cancel;
@@ -240,6 +261,16 @@ json_t *conversation_entry(view *ui, size_t index);
 bool conversation_entry_pending(view *ui, size_t index);
 void conversation_account_layout(view *ui, cached_layout *c);
 int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor);
+/* Builds released blocks again; NULL when the message cannot be laid out. */
+message_blocks *conversation_entry_blocks(view *ui, size_t index, cached_layout *cached, int width);
+/* History text selection with the mouse; copied when the button is released. */
+void conversation_selection_rows(view *ui);
+void conversation_selection_row(view *ui, int row, const char *id, int line);
+void conversation_selection_paint(view *ui, size_t index, const message_row *r, int y);
+bool conversation_selection_begin(view *ui, int y, int x);
+void conversation_selection_drag(view *ui, int y, int x, bool released);
+void conversation_selection_clear(view *ui);
+void conversation_selection_destroy(view *ui);
 int conversation_position(view *ui);
 void conversation_scroll_history(view *ui, int delta, bool paginate);
 text_buffer *conversation_input(view *ui);

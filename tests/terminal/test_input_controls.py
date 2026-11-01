@@ -798,6 +798,87 @@ class InputControls(unittest.TestCase):
             self.wait(t, "Mensagem confirmada")
             self.assertEqual(server.sent_messages[-1]["content"], "Novo")
 
+    def history_text(self, t, text):
+        for row, line in enumerate(t.screen.display):
+            if text in line:
+                return row, line.index(text)
+        self.fail(f"Missing history text: {text}")
+
+    def test_history_drag_copies_selected_text_on_release(self):
+        with HistoryMock(count=3) as server:
+            t = self.open(server)
+            self.wait(t, "Mensagem 0003")
+            self.wait(t, "Autor 4")  # Names arrive after the history.
+            row, column = self.history_text(t, "Mensagem 0002")
+            last, start = self.history_text(t, "Mensagem 0003")
+            header = t.screen.display[last - 1][start:-2].rstrip()
+            self.assertTrue(header.startswith("Autor 4"), header)
+            ordinary = t.screen.buffer[row][column]
+            expected = f"sagem 0002\n\n{header}\nMensagem"
+            self.mouse(t, row, column + 3, 0)
+            self.mouse(t, last, start + 7, 32)
+            wait_for_screen(
+                t,
+                lambda: t.screen.buffer[last][start + 7].bold,
+                "Dragged history text was not highlighted",
+            )
+            self.assertNotIn(b"\x1b]52;c;", t.output)
+            self.mouse(t, last, start + 7, 0, release=True)
+            self.wait_copied(t, expected)
+            self.wait(t, "Texto copiado")
+            for cell in ((row, column + 3), (last, start)):
+                selected = t.screen.buffer[cell[0]][cell[1]]
+                self.assertNotEqual((selected.fg, selected.bg), (ordinary.fg, ordinary.bg))
+            # Neither the avatar initials nor text before the start are selected.
+            self.assertFalse(t.screen.buffer[row][column + 2].bold)
+            self.assertFalse(t.screen.buffer[last - 1][start - 4].bold)
+
+            # A click clears the selection and copies nothing.
+            copies = t.observed_copies
+            self.mouse(t, row, column, 0)
+            self.mouse(t, row, column, 0, release=True)
+            wait_for_screen(
+                t,
+                lambda: not t.screen.buffer[last][start].bold,
+                "A click did not clear the history selection",
+            )
+            t.read(0.3)
+            self.assertEqual(len(re.findall(rb"\x1b\]52;c;", t.output)), copies)
+
+            # Dragging upward copies the same text in reading order.
+            self.mouse(t, last, start + 7, 0)
+            self.mouse(t, row, column + 3, 32)
+            self.mouse(t, row, column + 3, 0, release=True)
+            self.wait_copied(t, expected)
+
+    def test_history_drag_past_the_top_scrolls_and_copies_hidden_messages(self):
+        with HistoryMock(count=30) as server:
+            t = self.open(server)
+            self.wait(t, "Mensagem 0030")
+            shown = sorted(
+                int(number) for number in re.findall(r"Mensagem (\d{4})", self.screen(t))
+            )
+            last, start = self.history_text(t, "Mensagem 0030")
+            # The first history row sits below the border under the topic.
+            top = next(row for row in range(last, 0, -1) if "q" * 20 in t.screen.display[row - 1])
+            self.mouse(t, last, start + 12, 0)
+            # Every report past the edge scrolls one row.
+            for _ in range(12):
+                self.mouse(t, top - 1, start, 32)
+            self.mouse(t, top - 1, start, 0, release=True)
+            copied = []
+
+            def received():
+                matches = re.findall(rb"\x1b\]52;c;([A-Za-z0-9+/=]*)\x07", t.output)
+                copied[:] = [base64.b64decode(match).decode() for match in matches]
+                return bool(copied)
+
+            wait_for_screen(t, received, "Selection past the top was not copied")
+            numbers = [int(number) for number in re.findall(r"Mensagem (\d{4})", copied[-1])]
+            self.assertTrue(copied[-1].endswith("Mensagem 0030"), copied[-1])
+            self.assertLess(numbers[0], shown[0], copied[-1])
+            self.assertEqual(numbers, list(range(numbers[0], 31)), copied[-1])
+
 
 if __name__ == "__main__":
     test_main(

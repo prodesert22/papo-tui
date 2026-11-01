@@ -231,6 +231,27 @@ size_t icons_resolve(void *context, const uint32_t *text, size_t length, size_t 
     *icon = (uint32_t)(emoji_catalog_index(e) + 1);
     return consumed;
 }
+bool icons_text(icon_view *v, uint32_t icon, char *out, size_t size)
+{
+    if (!out || !size)
+        return false;
+    *out = 0;
+    int written = -1;
+    if (icon & ICON_CUSTOM) {
+        const server_emoji *e = v ? chat_assets_emoji(v->assets, (icon & ~ICON_CUSTOM) - 1) : NULL;
+        if (e)
+            written = snprintf(out, size, ":%s:", e->name);
+    } else if (icon) {
+        const unicode_emoji *e = emoji_catalog_get(icon - 1);
+        if (e && e->text)
+            written = snprintf(out, size, "%s", e->text);
+    }
+    if (written < 0 || (size_t)written >= size) {
+        *out = 0;
+        return false;
+    }
+    return true;
+}
 static occurrence *occurrence_slot(icon_view *v, uint64_t key)
 {
     occurrence *slot = NULL;
