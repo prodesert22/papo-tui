@@ -12,7 +12,8 @@ static json_t *settings_channel(const history *h, const char *id)
                ? c
                : NULL;
 }
-const char *history_channel_notifications(const history *h, const char *id)
+/* The mode saved on the server, or its default when none was saved. */
+static const char *server_notifications(const history *h, const char *id)
 {
     json_t *c = h && history_uuid(id) ? settings_channel(h, id) : NULL;
     if (!c)
@@ -24,17 +25,64 @@ const char *history_channel_notifications(const history *h, const char *id)
                ? mode
                : NULL;
 }
+const char *history_channel_notifications(const history *h, const char *id)
+{
+    const char *server = server_notifications(h, id);
+    const char *local = server ? inbox_local_notifications(h->inbox, id) : NULL;
+    return local ? local : server;
+}
+bool history_channel_notifications_synced(const history *h, const char *id)
+{
+    return !h || !inbox_local_notifications(h->inbox, id);
+}
+static bool settings_allowed(const history *h, const char *id)
+{
+    return h && auth_has_session(h->auth) && h->context == auth_context_generation(h->auth) &&
+           history_uuid(id) && settings_channel(h, id) &&
+           permissions_channel(auth_permissions(h->auth), id, PERMISSION_READ_CHANNEL) ==
+               PERMISSION_ALLOWED;
+}
+bool history_refresh_channel_settings(history *h)
+{
+    if (!h || !auth_has_session(h->auth) || !h->channels || h->recovering || h->want_channels ||
+        h->pending == CHANNELS)
+        return false;
+    h->want_channels = h->background_channels = true;
+    return true;
+}
+bool history_set_channel_notifications_synced(history *h, const char *id, bool synced)
+{
+    if (!settings_allowed(h, id) || synced == history_channel_notifications_synced(h, id))
+        return false;
+    /* Turning sync off keeps the current mode on this device; turning it on
+     * returns to the server's preference without sending the device mode. */
+    if (!inbox_set_local_notifications(h->inbox, id, synced ? NULL : server_notifications(h, id))) {
+        history_internal_notice(h, HISTORY_NOTICE_MUTATION,
+                                "Não foi possível salvar a preferência; arquivo preservado.");
+        return false;
+    }
+    history_internal_notice(h, HISTORY_NOTICE_MUTATION,
+                            synced ? "Notificações do canal sincronizadas com o servidor."
+                                   : "Notificações do canal salvas só neste dispositivo.");
+    return true;
+}
 bool history_channel_notifications_pending(const history *h)
 {
     return h && (h->notification_queued || h->pending == CHANNEL_SETTINGS);
 }
 bool history_set_channel_notifications(history *h, const char *id, const char *mode)
 {
-    if (!h || !auth_has_session(h->auth) || h->context != auth_context_generation(h->auth) ||
-        !history_uuid(id) || !valid_mode(mode) || !settings_channel(h, id) ||
-        history_channel_notifications_pending(h) ||
-        permissions_channel(auth_permissions(h->auth), id, PERMISSION_READ_CHANNEL) !=
-            PERMISSION_ALLOWED)
+    if (!settings_allowed(h, id) || !valid_mode(mode))
+        return false;
+    if (!history_channel_notifications_synced(h, id)) {
+        bool saved = inbox_set_local_notifications(h->inbox, id, mode);
+        history_internal_notice(h, HISTORY_NOTICE_MUTATION,
+                                saved
+                                    ? "Notificações do canal salvas neste dispositivo."
+                                    : "Não foi possível salvar a preferência; arquivo preservado.");
+        return saved;
+    }
+    if (history_channel_notifications_pending(h))
         return false;
     snprintf(h->notification_channel, sizeof(h->notification_channel), "%s", id);
     snprintf(h->notification_mode, sizeof(h->notification_mode), "%s", mode);

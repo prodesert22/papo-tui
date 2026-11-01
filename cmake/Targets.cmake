@@ -37,7 +37,9 @@ add_library(
     src/platform/${PAPO_PLATFORM}/profiles_storage.c
     src/config/read_state.c
     src/config/view_state.c
+    src/config/channel_store.c
     src/config/channel_mutes.c
+    src/config/channel_notifications.c
     src/platform/${PAPO_PLATFORM}/read_storage.c
     src/model/conversation/discovery.c
     src/model/conversation/members.c

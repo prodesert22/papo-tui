@@ -996,7 +996,9 @@ static int process_response(history *h, uint64_t maintenance_now)
             json_decref(h->summary_ids);
             h->summary_ids = NULL;
         }
-        if (!ok) {
+        if (!ok && kind == CHANNELS && h->request_background) {
+            /* The list already shown stays; the next refresh tries again. */
+        } else if (!ok) {
             json_t *channel = history_channel(h, h->selected);
             if (code == 403 && json_is_true(json_object_get(channel, "_dm")))
                 permissions_dm(auth_permissions(h->auth), history_internal_str(channel, "id"),
@@ -1135,6 +1137,16 @@ bool history_poll(history *h)
     uint64_t now;
     if (!net_now_ms(&now))
         return changed;
+    /* The server sends no event when a notification preference changes on
+     * another device. The channel list carries it, so refresh the list every
+     * few minutes; its failures stay silent and it never reads any history. */
+    if (!connected || !h->channels || h->recovering || h->want_channels || h->pending == CHANNELS ||
+        !h->settings_refresh_at)
+        h->settings_refresh_at = now + SETTINGS_REFRESH_MS;
+    else if (now >= h->settings_refresh_at) {
+        h->want_channels = h->background_channels = true;
+        h->settings_refresh_at = now + SETTINGS_REFRESH_MS;
+    }
     if (h->read_dirty && now >= h->read_save_after) {
         changed |= save_reads(h);
         h->read_save_after = now + 2000;
@@ -1230,9 +1242,11 @@ bool history_poll(history *h)
             h->request_selection = h->selection;
             if (!h->recovering)
                 history_internal_clear_journal(h);
-            if (kind == CHANNELS)
+            if (kind == CHANNELS) {
                 h->want_channels = false;
-            else if (kind == MESSAGES)
+                h->request_background = h->background_channels;
+                h->background_channels = false;
+            } else if (kind == MESSAGES)
                 h->want_messages = false;
             else if (kind == AUTHORS)
                 h->want_authors = false;

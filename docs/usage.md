@@ -224,9 +224,21 @@ channel menu; m/M closes it. Closing a menu preserves your draft.
   its menu offers **Reativar canal** (Reactivate channel).
 - **Notificações…** (Notifications) offers **Todas as mensagens** (All messages),
   **Apenas menções** (Mentions only), and **Nada** (None). The checked option is
-  the confirmed server preference. Mentions include direct mentions, replies to
+  the preference in effect. Mentions include direct mentions, replies to
   your messages and `@everyone`, following the server's rules. The default is
   mentions only when the server has no saved preference.
+- **Sincronizar com o servidor** (Sync with the server), last in the
+  **Notificações…** submenu, is checked by default: the chosen option is saved
+  on the server and follows you to other devices. Uncheck it to keep this
+  channel's option only on this device; the current option is kept, later
+  choices are not sent to the server, and the setting survives restarts for
+  this account and server. Checking it again uses the server's saved option,
+  without sending the device option. The submenu stays open after toggling it.
+  The server does not announce preference changes, so opening
+  **Notificações…** asks it again for the options saved on other devices; the
+  checked option updates as soon as the answer arrives. The client also checks
+  every five minutes while connected. A device-only option changed in another
+  Papo TUI window on the same computer appears within a second.
 
 Muting pauses this client's system notifications and channel/server activity
 indicators for that channel. It does not mark messages or notifications read,

@@ -62,6 +62,8 @@ typedef struct {
     json_t *ids;
     bool ok;
 } protected_users;
+/* Channel list refresh period for notification preferences changed elsewhere. */
+#define SETTINGS_REFRESH_MS 300000U
 struct history {
     voice_client *voice;
     struct history_members *members;
@@ -109,6 +111,9 @@ struct history {
     history_reading reading, restored;
     bool reading_set, restored_set;
     uint64_t context, selection, request_context, request_selection;
+    /* Periodic channel list refresh for preferences changed on other devices. */
+    uint64_t settings_refresh_at;
+    bool background_channels, request_background;
     enum request_kind pending;
     bool retry_requested;
     bool want_channels, want_messages, want_authors, older, newer, more, newer_more, evicted;

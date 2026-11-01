@@ -113,6 +113,117 @@ class ChannelPreferences(HistoryTerminal):
             finally:
                 self.assertTrue(t.close())
 
+    def notifications(self, t):
+        self.menu(t)
+        t.send("\x1bOB\n")
+        self.wait(t, "Sincronizar com o servidor")
+
+    def test_device_only_notifications_never_call_the_server_and_survive_restart(self):
+        with (
+            tempfile.TemporaryDirectory() as first,
+            tempfile.TemporaryDirectory() as second,
+            ChannelPreferencesMock() as server,
+        ):
+            digest = hashlib.sha256(f"{server.url}\n{uuid(1)}".encode()).hexdigest()
+            local = Path("papo-tui/channel-notifications", digest + ".json")
+            t = self.open(server, environment={"XDG_CONFIG_HOME": first})
+            try:
+                self.notifications(t)
+                self.wait(t, "[x] Sincronizar com o servidor")  # Synced by default.
+                # The cursor starts on the mode in effect, Apenas menções.
+                t.send("\x1bOB\x1bOB\n")
+                self.wait(t, "[ ] Sincronizar com o servidor")
+                self.wait(t, "salvas só neste dispositivo")
+                self.wait(t, "[x] Apenas menções")  # The submenu stays open.
+                t.send("\x1bOA\n")
+                self.wait(t, "salvas neste dispositivo")
+                self.assertNotIn("Sincronizar com o servidor", "\n".join(t.screen.display))
+                self.assertEqual(server.setting_calls, [])
+                path = Path(first, local)
+                self.assertEqual(
+                    json.loads(path.read_text()), dict(version=1, channels={OTHER: "off"})
+                )
+                self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            finally:
+                self.assertTrue(t.close())
+
+            # Another start reads the device mode back.
+            restored = Path(second, local)
+            restored.parent.mkdir(parents=True)
+            restored.write_text(path.read_text())
+            restored.chmod(0o600)
+            t = self.open(server, environment={"XDG_CONFIG_HOME": second})
+            try:
+                self.notifications(t)
+                self.wait(t, "[x] Nada")
+                self.wait(t, "[ ] Sincronizar com o servidor")
+                # Syncing again shows the server's mode and never sends the device one.
+                t.send("\x1bOB\n")
+                self.wait(t, "[x] Sincronizar com o servidor")
+                self.wait(t, "[x] Apenas menções")
+                self.wait(t, "sincronizadas com o servidor")
+                self.assertEqual(server.setting_calls, [])
+                self.assertEqual(json.loads(restored.read_text()), dict(version=1, channels={}))
+                t.send("\x1bOA\x1bOA\x1bOA\n")
+                self.wait(t, "Notificações do canal atualizadas")
+                self.assertEqual(server.setting_calls, [(OTHER, "all")])
+            finally:
+                self.assertTrue(t.close())
+
+    def test_opening_notifications_fetches_the_preference_saved_elsewhere(self):
+        with ChannelPreferencesMock() as server:
+            t = self.open(server)
+
+            def listings():
+                return sum(r[0] == "GET" and r[1].endswith("/channels") for r in server.requests)
+
+            try:
+                self.menu(t)
+                listed = listings()
+                # Another device saves Nada; the server sends no event for it.
+                next(c for c in server.channels if c["id"] == OTHER)["notification_settings"] = (
+                    "off"
+                )
+                t.send("\x1bOB\n")
+                self.wait(t, "[x] Nada")
+                self.assertIn("[x] Sincronizar com o servidor", "\n".join(t.screen.display))
+                self.assertEqual(listings(), listed + 1)
+                self.assertFalse(any(OTHER + "/messages" in r[1] for r in server.requests))
+                self.assertEqual(server.setting_calls, [])
+                # Leaving the submenu fetches nothing more.
+                t.send("\x1bOD")
+                self.wait(t, "Notificações…")
+                t.read(1)
+                self.assertEqual(listings(), listed + 1)
+            finally:
+                self.assertTrue(t.close())
+
+    def test_device_only_mode_saved_by_another_instance_reaches_the_open_menu(self):
+        with tempfile.TemporaryDirectory() as root, ChannelPreferencesMock() as server:
+            digest = hashlib.sha256(f"{server.url}\n{uuid(1)}".encode()).hexdigest()
+            path = Path(root, "papo-tui/channel-notifications", digest + ".json")
+            t = self.open(server, environment={"XDG_CONFIG_HOME": root})
+            try:
+                self.notifications(t)
+                self.wait(t, "[x] Sincronizar com o servidor")
+                # Another instance replaces the file as the client does.
+                path.parent.mkdir(parents=True, exist_ok=True)
+                staged = path.with_suffix(".tmp")
+                staged.write_text(json.dumps(dict(version=1, channels={OTHER: "off"})))
+                staged.chmod(0o600)
+                staged.replace(path)
+                self.wait(t, "[ ] Sincronizar com o servidor")
+                self.wait(t, "[x] Nada")
+                # A choice here builds on the other instance's file.
+                t.send("\x1bOA\x1bOA\n")
+                self.wait(t, "salvas neste dispositivo")
+                self.assertEqual(
+                    json.loads(path.read_text()), dict(version=1, channels={OTHER: "all"})
+                )
+                self.assertEqual(server.setting_calls, [])
+            finally:
+                self.assertTrue(t.close())
+
     def test_menu_changes_inactive_channel_without_reading_its_history(self):
         with ChannelPreferencesMock() as server:
             t = self.open(server)

@@ -3,6 +3,7 @@
 #endif
 #include "model/notifications/inbox.h"
 #include "config/channel_mutes.h"
+#include "config/channel_notifications.h"
 #include "model/conversation/history.h"
 #include "net/auth/session_time.h"
 #include "net/clock.h"
@@ -14,6 +15,8 @@
 enum operation { NONE, DMS, RECENT, OLDER, NEWER, OPEN, CLOSE, READ, RESOLVE };
 struct inbox {
     channel_mutes *mutes;
+    channel_notifications *local_notifications;
+    uint64_t local_checked;
     char mute_url[2049], mute_user[37];
     json_t *conversation_reads;
     auth_client *auth;
@@ -195,6 +198,7 @@ void inbox_destroy(inbox *b)
     json_decref(b->previews);
     json_decref(b->conversation_reads);
     channel_mutes_destroy(b->mutes);
+    channel_notifications_destroy(b->local_notifications);
     free(b);
 }
 void inbox_reset(inbox *b)
@@ -214,6 +218,8 @@ void inbox_reset(inbox *b)
     json_object_clear(b->conversation_reads);
     channel_mutes_destroy(b->mutes);
     b->mutes = NULL;
+    channel_notifications_destroy(b->local_notifications);
+    b->local_notifications = NULL;
     b->mute_url[0] = b->mute_user[0] = 0;
     b->presence_partial = b->open_cancelled = false;
     json_decref(b->batch);
@@ -874,11 +880,19 @@ bool inbox_preferences_poll(inbox *b)
     if (strcmp(url, b->mute_url) || strcmp(user, b->mute_user)) {
         channel_mutes_destroy(b->mutes);
         b->mutes = channel_mutes_create(url, user);
+        channel_notifications_destroy(b->local_notifications);
+        b->local_notifications = channel_notifications_create(url, user);
         snprintf(b->mute_url, sizeof(b->mute_url), "%s", url);
         snprintf(b->mute_user, sizeof(b->mute_user), "%s", user);
         changed = true;
     }
     changed |= channel_mutes_expire(b->mutes, wall_seconds());
+    /* Another instance on this device may change the device-only modes. */
+    uint64_t now = 0;
+    if (net_now_ms(&now) && now >= b->local_checked + 1000) {
+        b->local_checked = now;
+        changed |= channel_notifications_refresh(b->local_notifications);
+    }
     if (changed)
         ++b->revision;
     return changed;
@@ -892,6 +906,19 @@ bool inbox_mute_conversation(inbox *b, const char *channel, int seconds)
     inbox_preferences_poll(b);
     if (!auth_has_session(b->auth) ||
         !channel_mutes_set(b->mutes, channel, seconds, wall_seconds()))
+        return false;
+    ++b->revision;
+    return true;
+}
+const char *inbox_local_notifications(const inbox *b, const char *channel)
+{
+    return b ? channel_notifications_mode(b->local_notifications, channel) : NULL;
+}
+bool inbox_set_local_notifications(inbox *b, const char *channel, const char *mode)
+{
+    inbox_preferences_poll(b);
+    if (!auth_has_session(b->auth) ||
+        !channel_notifications_set(b->local_notifications, channel, mode))
         return false;
     ++b->revision;
     return true;

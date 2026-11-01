@@ -216,6 +216,8 @@ static void channel_menu_activate(view *ui)
         ui->channel_menu = ui->menu_selected ? 2 : 1;
         ui->menu_selected = 0;
         if (ui->channel_menu == 2) {
+            /* Show what other devices saved; the option updates when it arrives. */
+            history_refresh_channel_settings(ui->model);
             const char *current = history_channel_notifications(ui->model, ui->channel_context_id);
             for (int i = 0; i < 3; ++i)
                 if (current && !strcmp(current, notification_modes[i]))
@@ -229,11 +231,22 @@ static void channel_menu_activate(view *ui)
             ui->feedback = "Não foi possível salvar o silenciamento; arquivo preservado.";
         else
             ui->feedback = "Canal silenciado neste cliente.";
+    } else if (ui->menu_selected == 3) {
+        /* The toggle keeps the submenu open, showing the mode now in effect. */
+        history_set_channel_notifications_synced(
+            ui->model, ui->channel_context_id,
+            !history_channel_notifications_synced(ui->model, ui->channel_context_id));
+        ui->feedback = NULL;
+        return;
     } else {
+        bool synced = history_channel_notifications_synced(ui->model, ui->channel_context_id);
         bool ok = history_set_channel_notifications(ui->model, ui->channel_context_id,
                                                     notification_modes[ui->menu_selected]);
+        /* A device-only save reports its own result. */
         ui->feedback =
-            ok ? NULL : "Aguarde a configuração pendente ou atualize os canais e tente novamente.";
+            ok || !synced
+                ? NULL
+                : "Aguarde a configuração pendente ou atualize os canais e tente novamente.";
     }
     conversation_interactions_close(ui);
 }
@@ -453,7 +466,7 @@ static int menu_count(view *ui)
 {
     int items[8];
     return *ui->channel_context_id ? ui->channel_menu == 1   ? 7
-                                     : ui->channel_menu == 2 ? 3
+                                     : ui->channel_menu == 2 ? 4
                                                              : 2 + channel_menu_first(ui)
            : *ui->dm_context_id || ui->server_context ? 1
            : ui->delete_confirm                       ? 2
@@ -852,6 +865,11 @@ void conversation_interactions_draw(view *ui)
             char label[96];
             if (ui->channel_menu == 1)
                 snprintf(label, sizeof(label), "%s", mute_labels[i]);
+            else if (ui->channel_menu == 2 && i == 3)
+                snprintf(label, sizeof(label), "[%c] Sincronizar com o servidor",
+                         history_channel_notifications_synced(ui->model, ui->channel_context_id)
+                             ? 'x'
+                             : ' ');
             else if (ui->channel_menu == 2)
                 snprintf(label, sizeof(label), "[%c] %s",
                          current && !strcmp(current, notification_modes[i]) ? 'x' : ' ',

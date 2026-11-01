@@ -115,8 +115,17 @@ json_t *history_channel(const history *h, size_t index);
 bool history_channel_unread(const history *h, const json_t *channel);
 /* Notification preference changes share the authenticated, non-replayed REST queue.
  * Menus can address an inactive channel without reading its history. */
+/* The effective mode: the one kept on this device when the channel does not
+ * sync, otherwise the server's. Setting it on such a channel never calls the
+ * server. */
 const char *history_channel_notifications(const history *h, const char *channel);
 bool history_set_channel_notifications(history *h, const char *channel, const char *mode);
+/* Channels sync their notification mode with the server by default. */
+bool history_channel_notifications_synced(const history *h, const char *channel);
+bool history_set_channel_notifications_synced(history *h, const char *channel, bool synced);
+/* Fetches the channel list again in the background for preferences saved on
+ * other devices; the server sends no event for them. */
+bool history_refresh_channel_settings(history *h);
 bool history_channel_notifications_pending(const history *h);
 bool history_instance_unread(const history *h);
 /* Schedule a coalesced read of the active, actually visible latest message.

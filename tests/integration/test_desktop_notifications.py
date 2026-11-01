@@ -14,7 +14,7 @@ import unittest
 FAKE = argument(1)
 from r8_mock import R8Mock, AUTHOR, uuid  # noqa: E402 - path and test arguments are prepared above
 from channel_preferences import ChannelPreferencesMock  # noqa: E402 - shared fixture
-from terminal_support import Terminal  # noqa: E402 - path and test arguments are prepared above
+from terminal_support import Terminal, wait_for_screen  # noqa: E402 - path and test arguments are prepared above
 
 
 class DesktopTests(unittest.TestCase):
@@ -227,6 +227,51 @@ class DesktopTests(unittest.TestCase):
             emit(4, "Fresh all messages")
             self.assertEqual(self.receive(t)["body"], "Fresh all messages")
             self.assertEqual(server.marked, [])
+
+    def test_device_only_off_suppresses_alerts_without_calling_the_server(self):
+        with ChannelPreferencesMock() as server:
+            t = self.login(server)
+            t.resize(30, 120)
+            t.wait_text("Conversar em #geral")
+
+            def notifications():
+                t.send("\x1b[<2;5;6M\x1b[<2;5;6m")
+                t.wait_text("Notificações…")
+                t.send("\x1bOB\n")
+                t.wait_text("Sincronizar com o servidor")
+
+            def choose(label):
+                row, line = next(
+                    (y, line) for y, line in enumerate(t.screen.display) if label in line
+                )
+                t.click(row, line.index(label))
+
+            def emit(n, content):
+                message = dict(server.message(n + 3), content=content)
+                server.emit(dict(message, type="message"))
+                server.emit(dict(self.event(n, content), message_id=message["id"]))
+
+            def shown(text):
+                # Curses rewrites only changed cells, so similar notices never
+                # reach the output whole; check the screen instead.
+                wait_for_screen(t, lambda: text in "\n".join(t.screen.display), text)
+
+            notifications()
+            choose("Sincronizar com o servidor")
+            shown("[ ] Sincronizar com o servidor")
+            choose("Nada")
+            shown("salvas neste dispositivo")
+            t.send("\x1b[O")
+            emit(1, "Device-only off")
+            t.read(2.5)
+            self.assertFalse(select.select([self.daemon.stdout], [], [], 0)[0])
+            notifications()
+            choose("Sincronizar com o servidor")
+            shown("sincronizadas com o servidor")
+            t.send("m")
+            emit(2, "Synced with the server again")
+            self.assertEqual(self.receive(t)["body"], "Synced with the server again")
+            self.assertEqual(server.setting_calls, [])
 
 
 if __name__ == "__main__":

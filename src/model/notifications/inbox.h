@@ -43,6 +43,10 @@ bool inbox_unread_before(const inbox *box, const char *channel, const char *id, 
 bool inbox_preferences_poll(inbox *box);
 bool inbox_conversation_muted(const inbox *box, const char *channel);
 bool inbox_mute_conversation(inbox *box, const char *channel, int seconds);
+/* The notification mode kept on this device for channel, or NULL when the
+ * channel syncs it with the server. NULL mode syncs it again. */
+const char *inbox_local_notifications(const inbox *box, const char *channel);
+bool inbox_set_local_notifications(inbox *box, const char *channel, const char *mode);
 /* Known explicit mentions, deduplicated by notification/message promotion.
  * NULL channel counts the whole instance; previews may be truncated. */
 size_t inbox_unread_mentions(const inbox *box, const char *channel);
