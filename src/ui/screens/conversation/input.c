@@ -274,8 +274,7 @@ int conversation_activate_tab(view *ui, size_t index, size_t *selected)
 
 void conversation_cancel_edit(view *ui)
 {
-    ui->edit_message[0] = ui->edit_submitted[0] = 0;
-    ui->edit_pending = false;
+    ui->edit_message[0] = 0;
     ui->feedback = NULL;
     text_clear(&ui->edit_input);
     mention_popup_close(ui->mentions);
@@ -294,12 +293,15 @@ void conversation_submit(view *ui, uint64_t retry_id, bool duplicate)
         return;
     ui->feedback = NULL;
     if (*ui->edit_message) {
-        if (retry_id || ui->edit_pending) {
-            ui->feedback = "Edição em andamento; aguarde ou pressione Esc para cancelar.";
+        if (retry_id) {
+            ui->feedback = "Edição aberta; Enter edita ou Esc cancela.";
             return;
         }
         char content[TEXT_UTF8_BYTES];
-        if (!text_encode(&ui->edit_input, content) || !*content) {
+        bool encoded = text_encode(&ui->edit_input, content);
+        if (encoded && !*content && conversation_confirm_delete_edit(ui))
+            return;
+        if (!encoded || !*content) {
             ui->feedback = "Escreva uma mensagem antes de editar; Esc cancela.";
             return;
         }
@@ -307,8 +309,12 @@ void conversation_submit(view *ui, uint64_t retry_id, bool duplicate)
             ui->feedback = "Não foi possível preparar a edição; aguarde ou tente novamente.";
             return;
         }
-        snprintf(ui->edit_submitted, sizeof(ui->edit_submitted), "%s", content);
-        ui->edit_pending = true;
+        /* Optimistic: the history shows the text at once and the send draft
+         * returns; a failed edit keeps the text for the next edit. */
+        snprintf(ui->edit_sent, sizeof(ui->edit_sent), "%s", ui->edit_message);
+        snprintf(ui->edit_sent_text, sizeof(ui->edit_sent_text), "%s", content);
+        ui->edit_sent_failed = false;
+        conversation_cancel_edit(ui);
         return;
     }
     outbox_submit_result result = retry_id ? send_editor_retry(ui->editor, retry_id, duplicate)

@@ -41,6 +41,7 @@ class MessageMutations(unittest.TestCase):
             server.mutation_broadcast = False  # REST confirmation must suffice.
             terminal = self.open(server)
             try:
+                self.settled(terminal, lambda: bool(server.peers))
                 terminal.send("x\x03\x1bOA")
                 self.wait(terminal, "Editando mensagem")
                 self.assertIn("Mensagem 0002", self.editor_text(terminal))
@@ -54,6 +55,16 @@ class MessageMutations(unittest.TestCase):
                 self.assertEqual(server.message_count, 0)
                 self.assertEqual(target["embeds"], [])
                 self.assertNotIn("Olá", self.editor_text(terminal))
+                # The confirmed body is applied as is: with realtime open, the
+                # history is not reloaded after the edit. A reload would start
+                # right after the answer, within the observed interval.
+                self.wait(terminal, "Mensagem editada")
+                terminal.read(0.5)
+                put = next(i for i, r in enumerate(server.requests) if r[0] == "PUT")
+                self.assertEqual(
+                    [r[1] for r in server.requests[put:] if r[0] == "GET" and "/messages" in r[1]],
+                    [],
+                )
             finally:
                 self.assertTrue(terminal.close())
 
@@ -151,7 +162,7 @@ class MessageMutations(unittest.TestCase):
                 finally:
                     self.assertTrue(terminal.close())
 
-    def test_empty_edit_is_refused_and_draft_reply_survives_cancel(self):
+    def test_empty_edit_asks_to_delete_and_cancel_keeps_editing_and_the_reply_draft(self):
         with InteractionMock(count=1) as server:
             self.own(server)
             terminal = self.open(server)
@@ -165,27 +176,98 @@ class MessageMutations(unittest.TestCase):
                 terminal.send("\x03")
                 self.wait(terminal, "Novo texto da mensagem")
                 terminal.send("\n")
-                self.wait(terminal, "Escreva uma mensagem antes de editar")
+                self.wait(terminal, "Excluir mensagem?")
                 self.assertEqual(server.mutation_calls, [])
+                terminal.send("\n")  # Cancel is selected initially.
+                self.settled(terminal, lambda: "Excluir mensagem?" not in self.screen(terminal))
+                self.assertIn("Editando mensagem", self.screen(terminal))
+                self.assertIn("Novo texto da mensagem", self.screen(terminal))
+                terminal.send("\n")
+                self.wait(terminal, "Excluir mensagem?")
+                terminal.send("\x1b")
+                self.settled(terminal, lambda: "Excluir mensagem?" not in self.screen(terminal))
+                self.assertIn("Editando mensagem", self.screen(terminal))
                 terminal.send("\x1b")
                 self.wait(terminal, "Respondendo a")
                 self.assertIn("Reply draft", self.editor_text(terminal))
+                self.assertIn("Mensagem 0001", self.screen(terminal))
+                self.assertEqual(server.mutation_calls, [])
             finally:
                 self.assertTrue(terminal.close())
 
-    def test_typing_during_pending_edit_keeps_edit_mode_and_enter_does_not_duplicate(self):
+    def test_confirming_an_empty_edit_deletes_the_message_and_restores_the_draft(self):
         with InteractionMock(count=1) as server:
-            self.own(server)
-            server.mutation_delay = 0.6
+            target = self.own(server)
+            server.mutation_broadcast = False
             terminal = self.open(server)
             try:
+                terminal.send("Preserved draft")
                 self.edit_from_menu(terminal, "Mensagem 0001")
-                terminal.send("\x03Submitted edit\n\n continued")
+                terminal.send("\x03")
+                self.wait(terminal, "Novo texto da mensagem")
+                terminal.send("\n")
+                self.wait(terminal, "Excluir mensagem?")
+                terminal.send("\x1bOB\n")
+                self.settled(terminal, lambda: "Mensagem 0001" not in self.screen(terminal))
+                self.assertNotIn("Editando mensagem", self.screen(terminal))
+                self.assertEqual(server.mutation_calls, [("DELETE", target["id"], None)])
+                self.assertIn("Preserved draft", self.editor_text(terminal))
+                self.assertEqual(server.message_count, 0)
+            finally:
+                self.assertTrue(terminal.close())
+
+    def test_edit_shows_at_once_and_returns_to_the_draft_before_the_server_answers(self):
+        with InteractionMock(count=1) as server:
+            self.own(server)
+            server.mutation_delay = 0.8
+            terminal = self.open(server)
+            try:
+                terminal.send("Kept draft")
+                self.edit_from_menu(terminal, "Mensagem 0001")
+                terminal.send("\x03Submitted edit\n")
+                self.settled(terminal, lambda: len(server.mutation_calls) == 1)
+                # The server is still sleeping: the history already shows the
+                # text with its tag, and the editor is back on the draft.
+                self.wait(terminal, "editando")
+                screen = self.screen(terminal)
+                self.assertIn("Submitted edit", screen)
+                self.assertNotIn("Mensagem 0001", screen)
+                self.assertNotIn("Editando mensagem", screen)
+                self.assertNotIn("Mensagem editada", screen)
+                terminal.send(" more")
                 self.wait(terminal, "Mensagem editada")
-                self.assertIn("Submitted edit continued", self.editor_text(terminal))
-                self.assertIn("Editando mensagem", self.screen(terminal))
+                self.settled(terminal, lambda: "editando" not in self.screen(terminal))
+                self.assertIn("editado", self.screen(terminal))
+                self.assertIn("Submitted edit", self.screen(terminal))
+                self.assertIn("Kept draft more", self.editor_text(terminal))
                 self.assertEqual(len(server.mutation_calls), 1)
+                self.assertEqual(server.message_count, 0)
+            finally:
+                self.assertTrue(terminal.close())
+
+    def test_failed_edit_shows_the_server_text_and_keeps_the_typed_one_for_later(self):
+        with InteractionMock(count=1) as server:
+            self.own(server)
+            server.mutation_status = 403
+            terminal = self.open(server)
+            try:
+                terminal.send("Kept draft")
+                self.edit_from_menu(terminal, "Mensagem 0001")
+                terminal.send("\x03Rejected edit\n")
+                self.wait(terminal, "Sem permissão")
+                self.wait(terminal, "Edição não salva")
+                self.settled(terminal, lambda: "Mensagem 0001" in self.screen(terminal))
+                self.assertNotIn("Rejected edit", self.screen(terminal))
+                self.assertNotIn("editando", self.screen(terminal))
+                # A draft in progress is never replaced by the failed edit.
+                self.assertNotIn("Editando mensagem", self.screen(terminal))
+                self.assertIn("Kept draft", self.editor_text(terminal))
+                self.edit_from_menu(terminal, "Mensagem 0001")
+                self.assertIn("Rejected edit", self.editor_text(terminal))
                 terminal.send("\x1b")
+                self.assertIn("Kept draft", self.editor_text(terminal))
+                terminal.read(0.4)
+                self.assertEqual(len(server.mutation_calls), 1)
                 self.assertEqual(server.message_count, 0)
             finally:
                 self.assertTrue(terminal.close())
@@ -310,19 +392,24 @@ class MessageMutations(unittest.TestCase):
         with InteractionMock(count=1) as server:
             self.own(server)
             server.mutation_delay = 0.6
+            # Without the realtime echo, only the answer can refresh the window
+            # of the channel left meanwhile.
+            server.mutation_broadcast = False
             terminal = self.open(server)
             try:
                 self.edit_from_menu(terminal, "Mensagem 0001")
                 terminal.send("\x03Edited in geral\n")
                 self.settled(terminal, lambda: len(server.mutation_calls) == 1)
-                terminal.send("\x1b\x1b\x1b\x1bOB\nOther draft")
+                terminal.send("\x1b\x1b\x1bOB\nOther draft")
                 self.wait(terminal, "# outro · Histórico")
-                terminal.read(0.8)
+                self.wait(terminal, "Mensagem editada")
                 self.assertIn("Other draft", self.editor_text(terminal))
                 self.assertNotIn("Edited in geral", self.screen(terminal))
                 self.assertNotIn("Editando mensagem", self.screen(terminal))
                 terminal.send("\x1b\x1b\x1bOA\n")
+                self.wait(terminal, "# geral · Histórico")
                 self.wait(terminal, "Edited in geral")
+                self.assertNotIn("editando", self.screen(terminal))
                 self.assertEqual(len(server.mutation_calls), 1)
             finally:
                 self.assertTrue(terminal.close())

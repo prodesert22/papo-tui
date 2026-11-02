@@ -111,9 +111,18 @@ typedef struct {
 typedef struct {
     struct member_drawer *members;
     bool members_open;
-    bool delete_confirm, edit_pending;
-    char edit_message[37], edit_submitted[TEXT_UTF8_BYTES];
+    bool delete_confirm;
+    char edit_message[37];
     text_buffer edit_input;
+    /* The last submitted edit: the editor closes at once and the history shows
+     * the text until the server answers. A failed edit keeps its text for the
+     * next edit of that message. */
+    char edit_sent[37], edit_sent_text[TEXT_UTF8_BYTES];
+    bool edit_sent_failed;
+    /* Owned copy of the history message with the pending edit's text, keyed by
+     * the model's message revision and the text's signature. */
+    json_t *edit_view;
+    uint64_t edit_view_revision, edit_view_signature;
     bool navigating, context_open, context_keyboard, reactors_open, reaction_picker,
         reactor_users_focus;
     char selected_message[37], action_channel[37], reaction_target[37];
@@ -254,8 +263,9 @@ const char *conversation_reply_target(view *ui);
 void conversation_draw_tabs(view *ui);
 void conversation_release_layout(view *ui, cached_layout *c);
 cached_layout *conversation_find_layout(view *ui, size_t index, int width);
-/* History messages followed by optimistic entries on the latest page. Only the
- * walk and scrolling see these entries; selection and actions use the model. */
+/* History messages followed by optimistic entries on the latest page, with a
+ * pending edit's text over its message. Only the walk and scrolling see these
+ * entries; selection and actions use the model. */
 size_t conversation_entry_count(view *ui);
 json_t *conversation_entry(view *ui, size_t index);
 bool conversation_entry_pending(view *ui, size_t index);
@@ -289,6 +299,9 @@ void conversation_open_emojis(view *ui);
 void conversation_open_channel(view *ui, bool voice_history);
 int conversation_activate_tab(view *ui, size_t index, size_t *selected);
 void conversation_cancel_edit(view *ui);
+/* Saving an edit without text asks whether to delete the message instead.
+ * False when deletion is not allowed; Cancel returns to the open edit. */
+bool conversation_confirm_delete_edit(view *ui);
 void conversation_submit(view *ui, uint64_t retry_id, bool duplicate);
 void conversation_close_confirmation(view *ui);
 void conversation_confirm_remove(view *ui, size_t index);

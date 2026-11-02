@@ -52,6 +52,15 @@ static struct history_actions *actions(history *h)
     }
     return h->actions;
 }
+/* Publishes the receipt of the edit held in mutation_message. The UI stops
+ * showing its optimistic text, so the history needs a new layout. */
+static void edit_settled(history *h, struct history_actions *a, bool success)
+{
+    snprintf(a->edited_message, sizeof(a->edited_message), "%s", a->mutation_message);
+    a->edit_ready = true;
+    a->edit_success = success;
+    ++h->messages_revision;
+}
 bool history_internal_actions_mutating(history *h)
 {
     return h->pending == ACTIONS && h->actions &&
@@ -76,11 +85,8 @@ void history_internal_actions_reset(history *h)
     if (!history_internal_actions_mutating(h)) {
         /* A queued edit can be canceled by a refresh before dispatch. Release
          * the editor's pending state even when no HTTP receipt will arrive. */
-        if (a->queued && a->mutation == ACTION_EDIT) {
-            snprintf(a->edited_message, sizeof(a->edited_message), "%s", a->mutation_message);
-            a->edit_ready = true;
-            a->edit_success = false;
-        }
+        if (a->queued && a->mutation == ACTION_EDIT)
+            edit_settled(h, a, false);
         if (a->queued && (a->mutation == ACTION_PIN || a->mutation == ACTION_UNPIN)) {
             snprintf(a->pin_message, sizeof(a->pin_message), "%s", a->mutation_message);
             a->pin_ready = true;
@@ -411,6 +417,8 @@ static bool queue_message_mutation(history *h, const char *message, const char *
     a->mutation = kind;
     a->queued = true;
     a->pin_ready = false;
+    if (kind == ACTION_EDIT)
+        ++h->messages_revision; /* The UI now shows the submitted text. */
     history_internal_notice(h, HISTORY_NOTICE_MUTATION,
                             kind == ACTION_PIN || kind == ACTION_UNPIN ? "Fixação aguardando envio…"
                             : kind == ACTION_EDIT ? "Edição aguardando envio…"
@@ -438,6 +446,18 @@ bool history_take_pin_result(history *h, char message[37], bool *success)
     memcpy(message, h->actions->pin_message, 37);
     *success = h->actions->pin_success;
     h->actions->pin_ready = false;
+    return true;
+}
+bool history_pending_edit(history *h, const char *message, const char **content)
+{
+    struct history_actions *a = h ? h->actions : NULL;
+    if (!a || a->mutation != ACTION_EDIT || !(a->queued || a->request == ACTION_EDIT) || !message ||
+        strcmp(a->mutation_message, message) ||
+        strcmp(a->mutation_channel, s(history_channel(h, h->selected), "id")) ||
+        !json_is_string(json_object_get(a->payload, "content")))
+        return false;
+    if (content)
+        *content = s(a->payload, "content");
     return true;
 }
 bool history_take_edit_result(history *h, char message[37], bool *success)
@@ -532,11 +552,8 @@ bool history_internal_actions_dispatch(history *h, bool foreground)
             a->queued = false;
             json_decref(a->payload);
             a->payload = NULL;
-            if (a->mutation == ACTION_EDIT) {
-                snprintf(a->edited_message, sizeof(a->edited_message), "%s", a->mutation_message);
-                a->edit_ready = true;
-                a->edit_success = false;
-            }
+            if (a->mutation == ACTION_EDIT)
+                edit_settled(h, a, false);
             if (a->mutation == ACTION_PIN || a->mutation == ACTION_UNPIN) {
                 snprintf(a->pin_message, sizeof(a->pin_message), "%s", a->mutation_message);
                 a->pin_ready = true;
@@ -824,15 +841,19 @@ void history_internal_actions_response(history *h, json_t *body, long code, bool
                     uncertain = true;
                 json_decref(event);
             }
-            /* Reconcile embeds and races through the active conversation only.
-             * Recovery resets auxiliary state, so publish the receipt afterward. */
-            if (ok || uncertain)
+            /* A confirmed edit is already applied from its body, and realtime
+             * delivers its embeds as message_embeds_update. Reload only when the
+             * outcome is unknown or realtime is down; a deletion still reloads. */
+            if (uncertain || (ok && (!edit || auth_ws_state(h->auth) != WS_OPEN)))
                 history_recover(h);
-            if (edit) {
-                snprintf(a->edited_message, sizeof(a->edited_message), "%s", a->mutation_message);
-                a->edit_ready = true;
-                a->edit_success = ok;
-            }
+        } else if (ok || uncertain || code == 404)
+            /* The cached window of the channel left meanwhile may predate it. */
+            history_internal_stash_forget(h, a->mutation_channel);
+        /* Recovery resets auxiliary state, so publish the receipt afterward.
+         * An edit reports its outcome even after the reader left its channel. */
+        if (edit)
+            edit_settled(h, a, ok);
+        if (current || edit)
             history_internal_notice(
                 h, HISTORY_NOTICE_MUTATION,
                 ok            ? edit ? "Mensagem editada." : "Mensagem excluída."
@@ -842,7 +863,6 @@ void history_internal_actions_response(history *h, json_t *body, long code, bool
                 : uncertain
                     ? "Alteração sem confirmação. Confira o histórico antes de tentar novamente."
                     : "Não foi possível alterar a mensagem.");
-        }
         json_decref(a->payload);
         a->payload = NULL;
         return;

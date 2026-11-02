@@ -63,7 +63,8 @@ static bool close_in_time(const json_t *previous, const json_t *message)
 }
 bool message_same_author(const json_t *previous, const json_t *message)
 {
-    if (!json_is_object(previous) || !json_is_object(message) ||
+    /* A local status (sending, editing) is shown in the message's own header. */
+    if (!json_is_object(previous) || !json_is_object(message) || *str(message, "_papo_status") ||
         strcmp(str(previous, "channel_id"), str(message, "channel_id")) ||
         !close_in_time(previous, message))
         return false;

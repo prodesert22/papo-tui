@@ -76,7 +76,7 @@ static const help_row rows[] = {
     {HELP_HISTORY, "Digite texto", "Focar o editor e continuar o rascunho"},
     {HELP_HISTORY, "← / Esc", "Voltar à lista de canais"},
     {HELP_HISTORY, "↑ no início", "Focar os botões Busca, Fixadas e Membros"},
-    {HELP_EDITOR, "Enter", "Enviar a mensagem ou confirmar a edição, se permitido"},
+    {HELP_EDITOR, "Enter", "Enviar ou confirmar a edição; sem texto, perguntar se exclui"},
     {HELP_EDITOR, "Shift+Enter / Ctrl+N", "Inserir uma quebra de linha sem enviar"},
     {HELP_EDITOR | HELP_HISTORY, "Ctrl+E", "Abrir ou fechar o seletor de emojis"},
     {HELP_EDITOR | HELP_HISTORY, "Ctrl+O / 📎", "Escolher arquivos para anexar"},

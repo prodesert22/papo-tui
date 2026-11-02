@@ -280,6 +280,27 @@ static void reveal(view *ui)
     if (goal != first)
         conversation_scroll_history(ui, goal - first, false);
 }
+static bool begin_edit(view *ui, json_t *m);
+/* The history already shows the server's text again. Reopen the failed text
+ * when the reader is at an empty send editor, so Enter can try again; any
+ * other time, the next edit of that message starts from it. */
+static void edit_failed(view *ui)
+{
+    ui->edit_sent_failed = true;
+    json_t *m = NULL;
+    for (size_t i = 0; !m && i < history_message_count(ui->model); ++i)
+        if (!strcmp(ui->edit_sent, conversation_str(history_message(ui->model, i), "id")))
+            m = history_message(ui->model, i);
+    text_buffer *draft = conversation_input(ui);
+    if (!m)
+        return;
+    if (!*ui->edit_message && ui->focus == MESSAGE_INPUT && draft && !draft->length &&
+        !*conversation_reply_target(ui) && !ui->context_open && !ui->duplicate_modal &&
+        !ui->reactors_open && !ui->delete_confirm && begin_edit(ui, m))
+        ui->feedback = "Edição não salva; o texto voltou ao editor.";
+    else
+        ui->feedback = "Edição não salva; editar a mensagem de novo recupera o texto.";
+}
 void conversation_interactions_sync(view *ui)
 {
     const char *channel =
@@ -320,14 +341,11 @@ void conversation_interactions_sync(view *ui)
     }
     char edited[37];
     bool success;
-    if (history_take_edit_result(ui->model, edited, &success) && ui->edit_pending &&
-        !strcmp(edited, ui->edit_message)) {
-        ui->edit_pending = false;
-        ui->feedback = NULL;
-        char content[TEXT_UTF8_BYTES];
-        if (success && text_encode(&ui->edit_input, content) &&
-            !strcmp(content, ui->edit_submitted))
-            conversation_cancel_edit(ui);
+    if (history_take_edit_result(ui->model, edited, &success) && !strcmp(edited, ui->edit_sent)) {
+        if (success)
+            ui->edit_sent[0] = 0;
+        else
+            edit_failed(ui);
     }
     if (*ui->edit_message && json_is_false(history_find_message(ui->model, ui->edit_message))) {
         conversation_cancel_edit(ui);
@@ -402,15 +420,25 @@ static bool begin_edit(view *ui, json_t *m)
 {
     if (!message_is_own(ui, m) || !conversation_input(ui))
         return false;
+    const char *id = conversation_str(m, "id"), *content = conversation_str(m, "content");
+    /* Start from a failed edit's text, or from one still awaiting the server. */
+    bool recovered = ui->edit_sent_failed && !strcmp(ui->edit_sent, id);
+    const char *pending;
+    if (recovered)
+        content = ui->edit_sent_text;
+    else if (history_pending_edit(ui->model, id, &pending))
+        content = pending;
     text_buffer next;
-    if (!text_decode(&next, conversation_str(m, "content"))) {
+    if (!text_decode(&next, content)) {
         ui->feedback = "Mensagem excede o limite do editor; edição não iniciada.";
         return false;
     }
+    if (recovered) {
+        ui->edit_sent[0] = 0;
+        ui->edit_sent_failed = false;
+    }
     ui->edit_input = next;
-    snprintf(ui->edit_message, sizeof(ui->edit_message), "%s", conversation_str(m, "id"));
-    ui->edit_pending = false;
-    ui->edit_submitted[0] = 0;
+    snprintf(ui->edit_message, sizeof(ui->edit_message), "%s", id);
     ui->navigating = ui->dragging = ui->editor_scrolling = false;
     ui->feedback = NULL;
     mention_popup_close(ui->mentions);
@@ -549,6 +577,21 @@ static void menu_activate(view *ui)
     int count = menu_actions(ui, items);
     if (ui->menu_selected >= 0 && ui->menu_selected < count)
         message_action(ui, items[ui->menu_selected]);
+}
+bool conversation_confirm_delete_edit(view *ui)
+{
+    json_t *m = history_find_message(ui->model, ui->edit_message);
+    if (!action_allowed(ui, DELETE_MESSAGE, m))
+        return false;
+    conversation_interactions_close(ui);
+    mention_popup_close(ui->mentions);
+    emoji_picker_dismiss(ui->emojis);
+    /* The same confirmation as the menu's Excluir mensagem, beside the message. */
+    snprintf(ui->selected_message, sizeof(ui->selected_message), "%s", ui->edit_message);
+    ui->context_open = ui->delete_confirm = ui->context_keyboard = true;
+    ui->menu_selected = 0;
+    reveal(ui);
+    return true;
 }
 bool conversation_accept_reaction(view *ui)
 {

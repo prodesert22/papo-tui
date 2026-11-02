@@ -67,7 +67,13 @@ bool history_reaction_mine(const json_t *message, const json_t *emoji);
  * content is copied. Results are consumed once and scoped to the active channel/session. */
 bool history_edit_message(history *h, const char *message, const char *content);
 bool history_delete_message(history *h, const char *message);
+/* Every queued or sent edit settles once, with success only for a validated
+ * 200; the result outlives a channel change so the UI can recover the text. */
 bool history_take_edit_result(history *h, char message[37], bool *success);
+/* The edit of message waiting for or awaiting its server answer in the open
+ * channel. content borrows the submitted text until the next poll. History
+ * keeps the server's version; the UI shows this text over it meanwhile. */
+bool history_pending_edit(history *h, const char *message, const char **content);
 bool history_react(history *h, const char *message, const json_t *emoji, bool remove);
 void history_reactors_open(history *h, const char *message);
 void history_reactors_close(history *h);

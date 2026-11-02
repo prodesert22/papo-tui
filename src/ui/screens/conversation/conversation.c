@@ -393,6 +393,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         conversation_destroy_layout(ui);
         g_hash_table_destroy(ui->layout_index);
         json_decref(ui->pending);
+        json_decref(ui->edit_view);
         free(ui);
         return HISTORY_ACCOUNT;
     }
@@ -1537,6 +1538,7 @@ finished:
     r8_modal_destroy(ui->r8);
     g_hash_table_destroy(ui->layout_index);
     json_decref(ui->pending);
+    json_decref(ui->edit_view);
     free(ui);
     touchwin(stdscr);
     return result;

@@ -604,14 +604,28 @@ loaded history. This shortcut does not search unloaded pages. With text in the
 editor, ↑ keeps its usual cursor behavior. Messages exceeding the editor's
 2,048-character limit cannot be loaded for editing.
 
-Editing changes message text and keeps attachments and custom embeds. Empty
-edits are refused. Failed edits keep your text for an explicit retry with Enter;
-429 responses are never retried automatically. If confirmation is uncertain,
-check the refreshed history before retrying. Text typed while an edit is pending
-stays in editing mode after confirmation. Esc after submission closes the editor;
-an already submitted request may still finish. Changing conversation or server
-closes editing; the send draft stays with its conversation. Changing account or
-session also closes editing.
+Editing changes message text and keeps attachments and custom embeds. If you
+erase all the text and press Enter, the **Excluir mensagem?** (Delete message?)
+confirmation opens beside the message, as from the menu: **Excluir mensagem**
+deletes it and closes editing, while **Cancelar** (Cancel) or Esc returns to the
+edit. Where you cannot delete the message, an empty edit is refused. When you
+press Enter, the new text appears in the history at
+once and the editor returns to your send draft. Until the server confirms the
+edit, the message header shows an **editando** (editing) tag at the right; it is
+replaced by **editado** (edited) when the server confirms. Only one edit, deletion,
+reaction or pin is sent at a time, so a second edit submitted meanwhile stays in
+the editor; press Enter again once the first is confirmed.
+
+If the server rejects the edit, or does not confirm it, the message shows the
+server's text again and **Edição não salva** (Edit not saved) appears in the
+status bar with the reason. When the send editor is empty, your text returns to
+the editor in editing mode, so Enter tries again; otherwise, edit the message
+again to get it back. Edits are never retried automatically, including after a
+429 response. If confirmation is uncertain, check the refreshed history before
+retrying. An edit submitted before changing conversation still finishes, and its
+result appears in the status bar. Changing conversation or server closes an open
+edit; the send draft stays with its conversation. Changing account or session
+also closes editing.
 
 Consecutive messages from the same author share one header with the avatar,
 name and time. A message sent more than an hour after the previous one starts

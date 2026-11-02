@@ -730,8 +730,7 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         if (*ui->edit_message) {
             wattrset(ui->body, COLOR_PAIR(THEME_MUTED));
             text_label(ui->body, ui->editor_border, 2, getmaxx(ui->body) - 8,
-                       ui->edit_pending ? "Editando mensagem · aguardando confirmação…"
-                                        : "Editando mensagem · Enter editar · Esc cancelar");
+                       "Editando mensagem · Enter editar · Esc cancelar");
             text_label(ui->body, ui->editor_border, getmaxx(ui->body) - 5, 3, "[x]");
         } else if (*conversation_reply_target(ui)) {
             char reply[TEXT_UTF8_BYTES], label[TEXT_UTF8_BYTES + 64];

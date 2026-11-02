@@ -78,11 +78,41 @@ size_t conversation_entry_count(view *ui)
     return count;
 }
 
+/* A message whose edit awaits the server shows the submitted text with a
+ * status tag, as an optimistic send does; the model keeps the server's copy,
+ * so a failed edit falls back to it without restoring anything. */
+static json_t *edit_overlay(view *ui, size_t index, json_t *m)
+{
+    const char *content;
+    if (!history_pending_edit(ui->model, conversation_str(m, "id"), &content))
+        return m;
+    uint64_t signature = 1469598103934665603ULL;
+    for (const unsigned char *p = (const unsigned char *)content; *p; ++p)
+        signature = (signature ^ *p) * 1099511628211ULL;
+    signature |= 1ULL << 63; /* Never equal to a plain message revision. */
+    uint64_t revision = history_message_revision(ui->model, index);
+    if (ui->edit_view && ui->edit_view_revision == revision &&
+        ui->edit_view_signature == signature &&
+        !strcmp(conversation_str(ui->edit_view, "id"), conversation_str(m, "id")))
+        return ui->edit_view;
+    json_t *copy = json_deep_copy(m);
+    if (!copy || json_object_set_new(copy, "content", json_string(content)) ||
+        json_object_set_new(copy, "_papo_status", json_string("editando"))) {
+        json_decref(copy);
+        return m;
+    }
+    json_decref(ui->edit_view);
+    ui->edit_view = copy;
+    ui->edit_view_revision = revision;
+    ui->edit_view_signature = signature;
+    return copy;
+}
+
 json_t *conversation_entry(view *ui, size_t index)
 {
     size_t count = history_message_count(ui->model);
     if (index < count)
-        return history_message(ui->model, index);
+        return edit_overlay(ui, index, history_message(ui->model, index));
     return index < conversation_entry_count(ui) ? json_array_get(ui->pending, index - count) : NULL;
 }
 
@@ -119,6 +149,8 @@ cached_layout *conversation_find_layout(view *ui, size_t index, int width)
     uint64_t revision =
                  pending ? ui->pending_signature : history_message_revision(ui->model, index),
              names = history_users_revision(ui->model);
+    if (m == ui->edit_view)
+        revision ^= ui->edit_view_signature;
     bool has_media = json_array_size(json_object_get(m, "attachments")) ||
                      json_array_size(json_object_get(m, "embeds"));
     uint64_t dimensions = has_media ? media_view_dimensions_revision(ui->media) : 0;
