@@ -537,6 +537,65 @@ class EmojiTerminal(support.EmojiTerminal):
             finally:
                 self.assertTrue(t.close())
 
+    def test_many_distinct_animated_emojis_in_one_message_all_animate(self):
+        count = 8
+        gifs = [
+            subprocess.run(
+                [
+                    media_tests.FFMPEG,
+                    "-v",
+                    "error",
+                    "-i",
+                    "pipe:0",
+                    "-vf",
+                    f"hue=h={i * 40}",
+                    "-threads",
+                    "1",
+                    "-f",
+                    "gif",
+                    "pipe:1",
+                ],
+                input=self.gif,
+                capture_output=True,
+                check=True,
+            ).stdout
+            for i in range(count)
+        ]
+        self.assertEqual(len(set(gifs)), count)
+        content = "Muitos " + " ".join(f":e{i}:" for i in range(count)) + " fim"
+        with self.server(content=content, animated=True) as server:
+            server.emojis = [
+                {
+                    "id": uuid(900 + i),
+                    "name": f"e{i}",
+                    "format": "GIF",
+                    "image_blob": base64.b64encode(gif).decode(),
+                    "created_at": "2026-10-14T10:00:00.000000Z",
+                }
+                for i, gif in enumerate(gifs)
+            ]
+            t = self.open(server, protocol="kitty", size=(40, 120))
+            try:
+                self.until(t, lambda: ":e0:" not in "\n".join(t.screen.display))
+
+                def animated():
+                    variants = {}
+                    for header, pixels in t.stream.kitty_frames:
+                        if header.get(b"s") == b"16" and header.get(b"v") == b"16":
+                            variants.setdefault(header[b"i"], set()).add(pixels)
+                    return {
+                        pixels
+                        for frames in variants.values()
+                        if len(frames) > 1
+                        for pixels in frames
+                    }
+
+                # Every emoji has its own colors, so all of them animating
+                # shows at least two different rasters per emoji.
+                self.until(t, lambda: len(animated()) >= 2 * count, timeout=15)
+            finally:
+                self.assertTrue(t.close())
+
     def test_animated_server_formats_render_at_message_and_reaction_positions(self):
         for declared in ("GIF", "WEBP", "PNG"):
             with self.subTest(format=declared):

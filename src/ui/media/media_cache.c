@@ -1293,6 +1293,18 @@ static void normalize_background(const image_object *o, image_decode_request *re
     if (transparent ? alpha : !margins)
         request->background = 0;
 }
+/* Decoded frames never exceed the requested size, so a small picture such as
+ * an emoji reserves its own worst case instead of the whole animation cap.
+ * Overestimating it leaves later decodes static and makes room by cutting
+ * the visible animations down to their first frame. */
+static size_t frames_reserve(int width, int height, bool static_only)
+{
+    size_t frame = (size_t)width * (size_t)height * 4U + IMAGE_PIXEL_PADDING;
+    if (static_only)
+        return frame;
+    return frame > ANIMATION_BYTES / ANIMATION_FRAMES ? MAX(frame, ANIMATION_BYTES)
+                                                      : frame * ANIMATION_FRAMES;
+}
 const graphics_image *media_resource_image(media_resource *r, bool author,
                                            image_decode_request request, uint64_t now)
 {
@@ -1327,10 +1339,8 @@ const graphics_image *media_resource_image(media_resource *r, bool author,
         task *pending = o->job;
         int w = pending->request.width > request.width ? pending->request.width : request.width;
         int h = pending->request.height > request.height ? pending->request.height : request.height;
-        size_t raster = image_frame_bytes(w, h);
-        size_t reserve =
-            (pending->request.static_only || raster > ANIMATION_BYTES ? raster : ANIMATION_BYTES) +
-            sizeof(animation) + (size_t)w * h * 4 + IMAGE_PIXEL_PADDING;
+        size_t reserve = frames_reserve(w, h, pending->request.static_only) + sizeof(animation) +
+                         (size_t)w * h * 4 + IMAGE_PIXEL_PADDING;
         size_t extra = reserve > pending->reservation ? reserve - pending->reservation : 0;
         if (!extra || make_room(extra, 0)) {
             pending->request.width = w;
@@ -1349,14 +1359,14 @@ const graphics_image *media_resource_image(media_resource *r, bool author,
         /* Never replace canonical pixels while an encoder still borrows them.
          * Retain existing graphics until the larger decode is published. */
         if (!object_busy(o)) {
-            size_t raster = image_frame_bytes(needed_width, needed_height);
             size_t workspace = (size_t)needed_width * needed_height * 4 + IMAGE_PIXEL_PADDING;
-            size_t reserve = (raster > ANIMATION_BYTES ? raster : ANIMATION_BYTES) +
+            bool static_only = o->video;
+            size_t reserve = frames_reserve(needed_width, needed_height, static_only) +
                              sizeof(animation) + workspace;
             task *t = task_new(r->cache, reserve);
-            bool static_only = o->video;
-            if (!t) {
-                reserve = raster + sizeof(animation) + workspace;
+            if (!t && !static_only) {
+                reserve = frames_reserve(needed_width, needed_height, true) + sizeof(animation) +
+                          workspace;
                 t = task_new(r->cache, reserve);
                 static_only = true;
             }
