@@ -109,7 +109,9 @@ struct media_view {
     int selected, modal_entry, modal_width, modal_height;
     message_media selected_item;
     message_media *gallery; /* Owned metadata; resources stay in the shared cache. */
-    size_t gallery_count, gallery_index, image_count;
+    /* Members are every media of the message the modal can step to; images are the
+     * members that are not video or audio. */
+    size_t gallery_count, gallery_index, image_count, member_count;
     uint64_t modal_token;
     char *modal_source; /* First source this player session used, kept across resizes. */
     graphics_image modal_image;
@@ -410,7 +412,7 @@ static void close_modal(media_view *v)
         return;
     free(v->gallery);
     v->gallery = NULL;
-    v->gallery_count = v->gallery_index = v->image_count = 0;
+    v->gallery_count = v->gallery_index = v->image_count = v->member_count = 0;
     if (!v->audio.active)
         stop_player(v);
     if (v->window) {
@@ -1047,11 +1049,12 @@ static const message_media *embed_video(const message_media *items, size_t count
             return &items[i];
     return NULL;
 }
-static bool gallery_image(const media_view *v, size_t index)
+/* Every media of the message except author avatars and the covers of embed
+ * videos, which open their video instead. */
+static bool gallery_member(const media_view *v, size_t index)
 {
     const message_media *item = &v->gallery[index];
-    return !item->video && strcmp(item->role, "author") &&
-           !embed_video(v->gallery, v->gallery_count, item);
+    return strcmp(item->role, "author") && !embed_video(v->gallery, v->gallery_count, item);
 }
 static void open_message_media(media_view *v, message_media *item)
 {
@@ -1063,7 +1066,7 @@ static void open_message_media(media_view *v, message_media *item)
     const message_media *video = embed_video(blocks.media, blocks.media_count, item);
     if (video)
         *item = *video;
-    if (!item->video && strcmp(item->role, "author")) {
+    if (strcmp(item->role, "author")) {
         size_t selected = SIZE_MAX;
         for (size_t i = 0; i < blocks.media_count; ++i)
             if (blocks.media[i].kind == item->kind && !strcmp(blocks.media[i].id, item->id) &&
@@ -1078,7 +1081,10 @@ static void open_message_media(media_view *v, message_media *item)
             blocks.media = NULL;
             blocks.media_count = 0;
             for (size_t i = 0; i < v->gallery_count; ++i)
-                v->image_count += gallery_image(v, i);
+                if (gallery_member(v, i)) {
+                    ++v->member_count;
+                    v->image_count += !v->gallery[i].video;
+                }
         }
     }
     message_blocks_free(&blocks);
@@ -1141,7 +1147,7 @@ static void gallery_step(media_view *v, bool forward)
                         : (index + v->gallery_count - 1) % v->gallery_count;
         if (index == v->gallery_index)
             return;
-        if (!gallery_image(v, index) || !v->model || !live(v->model, &v->gallery[index]))
+        if (!gallery_member(v, index) || !v->model || !live(v->model, &v->gallery[index]))
             continue;
         message_media item = v->gallery[index];
         bool info_open = v->info_open, info_focused = v->info_focused;
@@ -1231,9 +1237,12 @@ bool media_view_key(media_view *v, int type, uint32_t key)
             select_item(v, v->selected);
         return true;
     }
-    if (!v->selected_item.video && v->image_count > 1 && type == KEY_CODE_YES &&
-        (key == KEY_LEFT || key == KEY_RIGHT)) {
-        gallery_step(v, key == KEY_RIGHT);
+    /* The arrows seek inside a video or audio, so those step with PageUp and
+     * PageDown; with the properties panel open the same keys scroll it. */
+    if (v->member_count > 1 && type == KEY_CODE_YES &&
+        ((!v->selected_item.video && (key == KEY_LEFT || key == KEY_RIGHT)) ||
+         (!v->info_open && (key == KEY_PPAGE || key == KEY_NPAGE)))) {
+        gallery_step(v, key == KEY_RIGHT || key == KEY_NPAGE);
         return true;
     }
     if (v->modal != MODAL_LIST) {
@@ -1752,8 +1761,18 @@ void media_view_draw(media_view *v)
         int image_width = v->layout.area_width;
         int label_x = v->layout.button_x + v->layout.button_width + 2;
         int label_end = v->info_open ? v->layout.info_x - 1 : v->layout.x + width - 2;
-        if (label_end > label_x)
-            text_label(w, 1, label_x - v->layout.x, label_end - label_x, v->selected_item.label);
+        if (label_end > label_x) {
+            char title[MESSAGE_MEDIA_LABEL + 32];
+            if (v->selected_item.video && v->member_count > 1) {
+                size_t number = 0;
+                for (size_t i = 0; i <= v->gallery_index; ++i)
+                    number += gallery_member(v, i);
+                snprintf(title, sizeof(title), "%zu/%zu · PgUp/PgDn · %s", number, v->member_count,
+                         v->selected_item.label);
+            } else
+                snprintf(title, sizeof(title), "%s", v->selected_item.label);
+            text_label(w, 1, label_x - v->layout.x, label_end - label_x, title);
+        }
         button_draw(w, v->layout.button_y - v->layout.y, v->layout.button_x - v->layout.x,
                     v->layout.button_width, "[Info]",
                     v->info_focused ? BUTTON_FOCUSED
@@ -1780,13 +1799,13 @@ void media_view_draw(media_view *v)
             draw_video_controls(v, w);
         else
             text_label(w, height - 3, 3, image_width, v->modal_animated ? "GIF animado" : "Imagem");
-        if (!v->selected_item.video && v->image_count > 1) {
+        if (!v->selected_item.video && v->member_count > 1) {
             size_t number = 0;
             for (size_t i = 0; i <= v->gallery_index; ++i)
-                number += gallery_image(v, i);
+                number += gallery_member(v, i);
             char hint[128];
-            snprintf(hint, sizeof(hint), "%zu/%zu · ←→ imagens · i: informações · Esc: voltar",
-                     number, v->image_count);
+            snprintf(hint, sizeof(hint), "%zu/%zu · ←→ %s · i: informações · Esc: voltar", number,
+                     v->member_count, v->member_count == v->image_count ? "imagens" : "mídias");
             text_label(w, height - 2, 3, image_width, hint);
         } else if (!v->selected_item.video || v->modal != MODAL_PLAYING)
             text_label(w, height - 2, 3, image_width,

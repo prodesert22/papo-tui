@@ -158,6 +158,51 @@ class MediaNavigation(unittest.TestCase):
         server.api_handler = route
         return server
 
+    def test_video_and_audio_join_the_sequence_with_page_keys(self):
+        files = [
+            ("picture.png", media.MediaTerminal.images["png"], "image/png"),
+            ("clip.mp4", media.MediaTerminal.video, "video/mp4"),
+            ("nota.wav", media.MediaTerminal.audio, "audio/wave"),
+        ]
+        with self.helper.serve(media.MediaTerminal.images["png"], "image/png") as server:
+            server.messages[0]["attachments"] = [
+                dict(
+                    id=media.uuid(901 + i),
+                    original_file_name=name,
+                    mime_type=mime,
+                    size_bytes=len(data),
+                    moderation_status="clean",
+                )
+                for i, (name, data, mime) in enumerate(files)
+            ]
+            parent = server.api_handler
+
+            def route(method, path, body):
+                for i, (_, data, mime) in enumerate(files):
+                    if path.split("?")[0].endswith("/" + media.uuid(901 + i)):
+                        return 200, data, None, None, mime
+                return parent(method, path, body)
+
+            server.api_handler = route
+            t = self.helper.open(server, protocol="kitty", size=(38, 100))
+            try:
+                t.send("\x0b\n")
+                self.helper.wait(t, "1/3 · ←→ mídias")
+                t.send("\x1bOC")  # Right arrow steps from an image to the video.
+                self.helper.wait(t, "2/3 · PgUp/PgDn · clip.mp4")
+                t.send("\x1bOC")  # Inside a video the arrows seek instead.
+                t.read(0.3)
+                self.assertIn("2/3 · PgUp/PgDn · clip.mp4", "\n".join(t.screen.display))
+                t.send("\x1b[6~")  # PageDown: next media, the audio.
+                self.helper.wait(t, "3/3 · PgUp/PgDn · nota.wav")
+                t.send("\x1b[6~")  # Wraps to the image.
+                self.helper.wait(t, "1/3 · ←→ mídias")
+                t.send("\x1b[5~")  # PageUp wraps back to the audio.
+                self.helper.wait(t, "3/3 · PgUp/PgDn · nota.wav")
+                t.send("\x1b")
+            finally:
+                self.assertTrue(t.close())
+
     def test_image_arrows_wrap_within_message_and_keep_properties(self):
         for embeds in (False, True):
             for protocol, mode in (

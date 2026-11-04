@@ -964,14 +964,20 @@ messages of the same server. It stops when you switch to another server tab,
 open the account screen or profiles, sign out or change the application mode.
 Opening another audio or a video replaces it, since there is a single player.
 
-### Browse the images of a message
+### Browse the media of a message
 
-While the image viewer is open and the message carries more than one image, press
-← or → to show the previous or the next one. The viewer moves around and shows
-the current position, for example **2/3 · ←→ imagens**. Only the images of the
-opened message are shown; images from other messages never join the sequence.
-The properties panel stays open while you browse, and downloads are reused, so
-switching back to an image already seen does not download it again.
+While the viewer is open and the message carries more than one image, video or
+audio, you can move through all of them without closing it. On an image, press
+← or → for the previous or the next one. On a video or an audio, ← and → seek,
+so use **PageUp** and **PageDown** instead; they work on any media, except
+while the properties panel is open, where they scroll it. The sequence wraps
+around. An image shows the current position, for example **2/3 · ←→ imagens**
+(**←→ mídias** when the message also has a video or audio), and a video or audio
+shows it in its title, for example **2/3 · PgUp/PgDn · clip.mp4**. Only the media
+of the opened message are shown; media from other messages never join the
+sequence, nor do author avatars. Moving to another media stops the one that was
+playing. The properties panel stays open while you browse, and downloads are
+reused, so switching back to a media already seen does not download it again.
 
 When a message carries an embed with a video, pressing Enter on the embed cover
 opens the video player directly. The **Abrir player** entry keeps working as
