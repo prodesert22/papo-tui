@@ -123,6 +123,71 @@ class Downloads(support.MessageInteractions):
                 finally:
                     self.assertTrue(terminal.close())
 
+    def test_more_than_two_attachments_open_a_chooser_for_the_menu_download(self):
+        files = [("one.bin", b"first"), ("two.bin", b"second"), ("three.bin", b"third")]
+        with tempfile.TemporaryDirectory() as folder, self.serve(attachments=files) as server:
+            terminal = self.open(server)
+            try:
+                self.resize(terminal, 40, 100)
+                self.right_click(terminal, "Mensagem 0001")
+                self.click(terminal, "Baixar anexos")
+                self.wait(terminal, "Baixar anexos ")
+                self.wait(terminal, "Escolha os anexos")
+                screen = self.screen(terminal)
+                for label in ("one.bin · 5 bytes", "two.bin · 6 bytes", "three.bin · 5 bytes"):
+                    self.assertIn(label, screen)
+                self.assertEqual(server.downloads, [])
+                # Nothing is marked: confirming asks for at least one.
+                terminal.send("\t\t\n")
+                self.wait(terminal, "Marque ao menos um anexo")
+                terminal.send("\x1b[Z\x1b[Z")  # Back to the list, first item.
+                terminal.send(" \x1bOB\x1bOB \t\t\n")  # Mark one.bin and three.bin.
+                self.save_dialog(terminal, Path(folder, "a.bin"))
+                self.wait(terminal, "three.bin")
+                self.save_dialog(terminal, Path(folder, "b.bin"))
+                deadline = time.monotonic() + 8
+                while not Path(folder, "b.bin").exists() and time.monotonic() < deadline:
+                    terminal.read(0.03)
+                self.assertEqual(Path(folder, "a.bin").read_bytes(), b"first")
+                self.assertEqual(Path(folder, "b.bin").read_bytes(), b"third")
+                self.assertEqual(len(server.downloads), 2)  # two.bin was never requested.
+            finally:
+                self.assertTrue(terminal.close())
+
+    def test_chooser_cancel_and_select_all_and_two_attachments_skip_it(self):
+        files = [("one.bin", b"1"), ("two.bin", b"2"), ("three.bin", b"3")]
+        with tempfile.TemporaryDirectory() as folder, self.serve(attachments=files) as server:
+            terminal = self.open(server)
+            try:
+                self.resize(terminal, 40, 100)
+                self.right_click(terminal, "Mensagem 0001")
+                self.click(terminal, "Baixar anexos")
+                self.wait(terminal, "Escolha os anexos")
+                terminal.send("a")
+                self.wait(terminal, "3 marcado(s)")
+                terminal.send("a")
+                self.wait(terminal, "0 marcado(s)")
+                terminal.send("\x1b")
+                self.wait(terminal, "Download cancelado.")
+                self.assertNotIn("Escolha os anexos", self.screen(terminal))
+                time.sleep(0.3)
+                self.assertEqual(server.downloads, [])
+            finally:
+                self.assertTrue(terminal.close())
+        files = [("one.bin", b"1"), ("two.bin", b"2")]
+        with tempfile.TemporaryDirectory() as folder, self.serve(attachments=files) as server:
+            terminal = self.open(server)
+            try:
+                self.resize(terminal, 40, 100)
+                self.right_click(terminal, "Mensagem 0001")
+                self.click(terminal, "Baixar anexos")
+                self.wait(terminal, "Salvar anexo")  # Straight to the save dialog.
+                self.assertNotIn("Escolha os anexos", self.screen(terminal))
+                terminal.send("\x1b")
+                self.wait(terminal, "Download cancelado.")
+            finally:
+                self.assertTrue(terminal.close())
+
     def test_cancelling_the_dialog_downloads_nothing(self):
         with tempfile.TemporaryDirectory() as folder, self.serve() as server:
             terminal = self.open(server)

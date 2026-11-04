@@ -18,12 +18,12 @@ typedef struct {
     bool directory, exists;
 } save_target;
 struct file_picker {
-    bool open, native, save, resolving;
+    bool open, native, save, resolving, choice;
     char *name, *save_result, *confirm;
     WINDOW *window;
     GTask *task;
     GCancellable *cancel;
-    GPtrArray *entries, *selected, *result;
+    GPtrArray *entries, *selected, *result, *choice_result;
     char *directory;
     char notice[256];
     text_buffer path;
@@ -233,6 +233,7 @@ void file_picker_destroy(file_picker *p)
     g_ptr_array_unref(p->selected);
     g_clear_pointer(&p->entries, g_ptr_array_unref);
     g_clear_pointer(&p->result, g_ptr_array_unref);
+    g_clear_pointer(&p->choice_result, g_ptr_array_unref);
     g_free(p);
 }
 void file_picker_show(file_picker *p)
@@ -240,7 +241,7 @@ void file_picker_show(file_picker *p)
     file_picker_close(p);
     p->open = true;
     p->focus = 0;
-    p->save = false;
+    p->save = p->choice = false;
     g_clear_pointer(&p->result, g_ptr_array_unref);
     if (!PAPO_NATIVE_FILE_DIALOGS) {
         browse(p, p->directory);
@@ -255,6 +256,7 @@ void file_picker_show_save(file_picker *p, const char *name)
 {
     file_picker_close(p);
     p->open = p->save = true;
+    p->choice = false;
     p->focus = 0;
     g_free(p->name);
     p->name = g_strdup(name && *name ? name : "arquivo");
@@ -274,6 +276,30 @@ void file_picker_show_save(file_picker *p, const char *name)
     p->task = file_transfer_task_new(p->cancel);
     g_task_set_task_data(p->task, g_strdup(p->name), g_free);
     g_task_run_in_thread(p->task, native_worker);
+}
+void file_picker_show_choice(file_picker *p, const char *const *labels, size_t count)
+{
+    file_picker_close(p);
+    p->open = p->choice = true;
+    p->save = false;
+    p->focus = 1;
+    p->cursor = p->first = 0;
+    g_clear_pointer(&p->choice_result, g_ptr_array_unref);
+    g_clear_pointer(&p->entries, g_ptr_array_unref);
+    p->entries = g_ptr_array_new_with_free_func(free_entry);
+    for (size_t i = 0; i < count; ++i) {
+        entry *item = g_new0(entry, 1);
+        item->name = g_strdup(labels[i]);
+        item->path = g_strdup_printf("%zu", i);
+        g_ptr_array_add(p->entries, item);
+    }
+    p->notice[0] = 0;
+}
+GPtrArray *file_picker_take_choice(file_picker *p)
+{
+    GPtrArray *result = p->choice_result;
+    p->choice_result = NULL;
+    return result;
 }
 bool file_picker_saving(const file_picker *p)
 {
@@ -411,6 +437,21 @@ static void resolve(file_picker *p)
 }
 static void accept(file_picker *p)
 {
+    if (p->choice) {
+        if (!p->selected->len) {
+            g_strlcpy(p->notice, "Marque ao menos um anexo com Espaço.", sizeof(p->notice));
+            return;
+        }
+        /* Item positions, in list order, whatever order they were marked. */
+        p->choice_result = g_ptr_array_new_with_free_func(g_free);
+        for (guint i = 0; p->entries && i < p->entries->len; ++i) {
+            entry *item = g_ptr_array_index(p->entries, i);
+            if (selected(p, item->path) >= 0)
+                g_ptr_array_add(p->choice_result, g_strdup(item->path));
+        }
+        file_picker_close(p);
+        return;
+    }
     if (p->save) {
         resolve(p);
         return;
@@ -436,10 +477,21 @@ bool file_picker_key(file_picker *p, int type, uint32_t key)
         return true;
     if ((type == OK && key == '\t') || (type == KEY_CODE_YES && key == KEY_BTAB)) {
         p->focus = (p->focus + (type == OK ? 1 : 3)) % 4;
+        if (p->choice && !p->focus)
+            p->focus = type == OK ? 1 : 3;
         return true;
     }
     bool enter =
         (type == OK && (key == '\n' || key == '\r')) || (type == KEY_CODE_YES && key == KEY_ENTER);
+    if (p->choice && p->focus == 1 && type == OK && (key == 'a' || key == 'A') && p->entries) {
+        /* Everything marked becomes unmarked; otherwise mark everything. */
+        bool all = p->selected->len == p->entries->len;
+        g_ptr_array_set_size(p->selected, 0);
+        for (guint i = 0; !all && i < p->entries->len && i < ATTACHMENT_LIMIT; ++i)
+            g_ptr_array_add(p->selected,
+                            g_strdup(((entry *)g_ptr_array_index(p->entries, i))->path));
+        return true;
+    }
     if (p->focus == 0 && p->save) {
         if (enter)
             resolve(p);
@@ -505,7 +557,7 @@ bool file_picker_mouse(file_picker *p, const MEVENT *event)
         file_picker_key(p, KEY_CODE_YES, event->bstate & BUTTON4_PRESSED ? KEY_UP : KEY_DOWN);
     } else if (event->bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED)) {
         if (y == 2)
-            p->focus = 0;
+            p->focus = p->choice ? p->focus : 0;
         else if (y >= 4 && y < height - 4 && p->entries &&
                  y - 4 + p->first < (int)p->entries->len) {
             p->focus = 1;
@@ -541,11 +593,19 @@ WINDOW *file_picker_draw(file_picker *p)
     wattrset(w, COLOR_PAIR(THEME_BORDER));
     box(w, 0, 0);
     wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
-    text_label(w, 0, 2, width - 4, p->save ? " Salvar anexo " : " Anexar arquivos ");
+    text_label(w, 0, 2, width - 4,
+               p->choice ? " Baixar anexos "
+               : p->save ? " Salvar anexo "
+                         : " Anexar arquivos ");
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
-    text_label(w, 1, 2, width - 4, p->save ? "Salvar em (pasta e nome do arquivo):" : "Caminho:");
-    wattrset(w, COLOR_PAIR(p->focus == 0 ? THEME_FOCUSED : THEME_PANEL));
-    text_draw_field(w, &p->path, &p->path_first, 2, 2, width - 4, false);
+    text_label(w, 1, 2, width - 4,
+               p->choice ? "Escolha os anexos que deseja baixar:"
+               : p->save ? "Salvar em (pasta e nome do arquivo):"
+                         : "Caminho:");
+    if (!p->choice) {
+        wattrset(w, COLOR_PAIR(p->focus == 0 ? THEME_FOCUSED : THEME_PANEL));
+        text_draw_field(w, &p->path, &p->path_first, 2, 2, width - 4, false);
+    }
     int rows = height - 8;
     if (p->cursor < p->first)
         p->first = p->cursor;
@@ -566,7 +626,10 @@ WINDOW *file_picker_draw(file_picker *p)
     }
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     char hint[256];
-    if (p->save)
+    if (p->choice)
+        g_snprintf(hint, sizeof(hint), "%u marcado(s) · Espaço marcar · A todos · Tab ações",
+                   p->selected->len);
+    else if (p->save)
         g_strlcpy(hint, "Enter abre pasta ou usa o nome do arquivo · Tab ações", sizeof(hint));
     else
         g_snprintf(hint, sizeof(hint), "%u marcado(s) · Espaço marcar · Tab ações",
@@ -575,7 +638,10 @@ WINDOW *file_picker_draw(file_picker *p)
     text_label(w, height - 3, 2, width - 4, p->notice);
     button_draw(w, height - 2, 2, 12, "Cancelar", p->focus == 2 ? BUTTON_FOCUSED : BUTTON_NORMAL,
                 BUTTON_PANEL);
-    button_draw(w, height - 2, width - 14, 12, p->save ? "Salvar" : "Anexar",
+    button_draw(w, height - 2, width - 14, 12,
+                p->choice ? "Baixar"
+                : p->save ? "Salvar"
+                          : "Anexar",
                 p->focus == 3 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     wnoutrefresh(w);
     return w;

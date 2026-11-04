@@ -16,13 +16,20 @@ typedef struct {
     bool ok;
     char *source;
 } move_state;
-typedef enum { DOWNLOAD_IDLE, DOWNLOAD_DIALOG, DOWNLOAD_TRANSFER, DOWNLOAD_MOVING } download_stage;
+typedef enum {
+    DOWNLOAD_IDLE,
+    DOWNLOAD_CHOOSING, /* picking which attachments of choice_message to save */
+    DOWNLOAD_DIALOG,
+    DOWNLOAD_TRANSFER,
+    DOWNLOAD_MOVING
+} download_stage;
 struct downloads {
     GPtrArray *queue; /* pending; the head is the file in progress. */
     download_stage stage;
     media_download *transfer;
     size_t tab;
     uint64_t generation;
+    char choice_message[37];
     GCancellable *cancel;
     move_state *move;
     int percent;
@@ -105,7 +112,8 @@ static void drop_transfer(struct downloads *d)
 static void abort_all(view *ui, const char *reason)
 {
     struct downloads *d = ui->downloads;
-    if (d->stage == DOWNLOAD_DIALOG && file_picker_saving(ui->files))
+    if ((d->stage == DOWNLOAD_DIALOG || d->stage == DOWNLOAD_CHOOSING) &&
+        file_picker_open(ui->files))
         file_picker_close(ui->files);
     g_ptr_array_set_size(d->queue, 0);
     drop_transfer(d);
@@ -150,7 +158,9 @@ bool conversation_download_available(view *ui, const json_t *message)
     }
     return true;
 }
-bool conversation_download_start(view *ui, const char *message_id, int only)
+/* Queues the attachments picked by only (one position), by chosen (decimal
+ * positions) or, with neither, all of them, and asks for the first. */
+static bool enqueue(view *ui, const char *message_id, int only, const GPtrArray *chosen)
 {
     json_t *message = history_find_message(ui->model, message_id);
     if (!conversation_download_available(ui, message) || !ensure(ui))
@@ -169,7 +179,12 @@ bool conversation_download_start(view *ui, const char *message_id, int only)
     json_t *item;
     json_array_foreach(json_object_get(message, "attachments"), index, item)
     {
-        if (only >= 0 && index != (size_t)only)
+        bool wanted = !chosen && only < 0;
+        if (!chosen && only >= 0)
+            wanted = index == (size_t)only;
+        for (guint k = 0; chosen && k < chosen->len; ++k)
+            wanted |= strtoull(g_ptr_array_index(chosen, k), NULL, 10) == index;
+        if (!wanted)
             continue;
         pending *entry = g_new0(pending, 1);
         g_strlcpy(entry->id, json_string_value(json_object_get(item, "id")), sizeof(entry->id));
@@ -182,6 +197,54 @@ bool conversation_download_start(view *ui, const char *message_id, int only)
         show_head(ui);
     else
         set_status(ui, "Download na fila: %u arquivo(s).", d->queue->len);
+    return true;
+}
+bool conversation_download_start(view *ui, const char *message_id, int only)
+{
+    return enqueue(ui, message_id, only, NULL);
+}
+/* From the context menu: one or two attachments are saved together; with more,
+ * a list asks which of them to save. */
+bool conversation_download_menu(view *ui, const char *message_id)
+{
+    json_t *message = history_find_message(ui->model, message_id);
+    if (!conversation_download_available(ui, message) || !ensure(ui))
+        return false;
+    size_t count = json_array_size(json_object_get(message, "attachments"));
+    if (count <= 2)
+        return enqueue(ui, message_id, -1, NULL);
+    struct downloads *d = ui->downloads;
+    if (d->stage != DOWNLOAD_IDLE || d->queue->len) {
+        ui->feedback = "Aguarde o download atual terminar.";
+        return false;
+    }
+    if (file_picker_open(ui->files) || ui->attachment_task || ui->remove_confirm) {
+        ui->feedback = "Feche o seletor de arquivos aberto antes de baixar.";
+        return false;
+    }
+    char *labels[ATTACHMENT_LIMIT];
+    size_t shown = MIN(count, (size_t)ATTACHMENT_LIMIT);
+    for (size_t i = 0; i < shown; ++i) {
+        json_t *item = json_array_get(json_object_get(message, "attachments"), i);
+        char *name = safe_name(json_string_value(json_object_get(item, "original_file_name")));
+        json_t *size = json_object_get(item, "size_bytes");
+        char text[48];
+        message_file_size_label(json_is_integer(size) ? (int64_t)json_integer_value(size) : -1,
+                                text, sizeof(text));
+        labels[i] = g_strdup_printf("%s · %s", name, text);
+        g_free(name);
+    }
+    conversation_interactions_close(ui);
+    mention_popup_close(ui->mentions);
+    emoji_picker_close(ui->emojis);
+    ui->navigating = ui->dragging = false;
+    g_strlcpy(d->choice_message, message_id, sizeof(d->choice_message));
+    d->tab = ui->active_tab;
+    d->generation = auth_context_generation(tab_auth(ui));
+    d->stage = DOWNLOAD_CHOOSING;
+    file_picker_show_choice(ui->files, (const char *const *)labels, shown);
+    for (size_t i = 0; i < shown; ++i)
+        g_free(labels[i]);
     return true;
 }
 static void move_done(GObject *source, GAsyncResult *result, gpointer data)
@@ -212,7 +275,7 @@ static void begin_move(view *ui, pending *item, char *temporary)
 bool conversation_downloads_poll(view *ui)
 {
     struct downloads *d = ui->downloads;
-    if (!d || !d->queue || !d->queue->len || d->stage == DOWNLOAD_IDLE)
+    if (!d || !d->queue || d->stage == DOWNLOAD_IDLE)
         return false;
     auth_client *auth = tab_auth(ui);
     if (!auth || ui->active_tab != d->tab || !auth_has_session(auth) ||
@@ -220,6 +283,20 @@ bool conversation_downloads_poll(view *ui)
         abort_all(ui, "Download cancelado: a sessão ou a aba mudou.");
         return true;
     }
+    if (d->stage == DOWNLOAD_CHOOSING) {
+        if (file_picker_open(ui->files))
+            return false;
+        GPtrArray *chosen = file_picker_take_choice(ui->files);
+        d->stage = DOWNLOAD_IDLE;
+        if (chosen) {
+            enqueue(ui, d->choice_message, -1, chosen);
+            g_ptr_array_unref(chosen);
+        } else
+            set_status(ui, "Download cancelado.");
+        return true;
+    }
+    if (!d->queue->len)
+        return false;
     pending *item = g_ptr_array_index(d->queue, 0);
     bool changed = false;
     if (d->stage == DOWNLOAD_DIALOG) {

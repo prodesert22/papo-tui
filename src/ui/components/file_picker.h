@@ -9,6 +9,11 @@ void file_picker_show(file_picker *picker);
 /* Save-as variant for downloads: native dialog first, terminal modal when none
  * is available. The chosen path is taken with file_picker_take_save. */
 void file_picker_show_save(file_picker *picker, const char *name);
+/* Marks which of several items to act on, with no file browsing. Labels are
+ * copied. The result, taken once with file_picker_take_choice, holds the
+ * chosen positions as decimal strings in list order; NULL means cancelled. */
+void file_picker_show_choice(file_picker *picker, const char *const *labels, size_t count);
+GPtrArray *file_picker_take_choice(file_picker *picker);
 bool file_picker_saving(const file_picker *picker);
 char *file_picker_take_save(file_picker *picker);
 void file_picker_close(file_picker *picker);

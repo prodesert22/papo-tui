@@ -574,7 +574,7 @@ static void message_action(view *ui, int action)
     } else if (action == ORIGINAL && *original)
         history_jump(ui->model, original);
     else if (action == DOWNLOAD_ATTACHMENT)
-        conversation_download_start(ui, ui->selected_message, -1);
+        conversation_download_menu(ui, ui->selected_message);
     else if (action == VIEW_PROFILE)
         conversation_members_profile(ui, author);
 }

@@ -665,9 +665,13 @@ use the same card. Ultralight mode lists attachments as text, without a button.
 
 To save a file, click **[ ↓ ]** on its card, or open the message's context
 menu (right-click, or `m` during message navigation) and choose **Baixar
-anexo** (Download attachment). When the message has several attachments the
-item reads **Baixar anexos** and saves all of them, one at a time. The
-program always asks where to save before it downloads anything:
+anexo** (Download attachment). When the message has two attachments the
+item reads **Baixar anexos** and saves both, one at a time. With three or more,
+**Baixar anexos** (Download attachments) opens a list with each file name and
+size: ↑/↓ or a click moves, Space or Enter marks a file, **A** marks or unmarks
+all, and Tab moves to **Cancelar** (Cancel) and **Baixar** (Download). Esc
+cancels the whole download. Only the marked files are requested, in list order.
+The program always asks where to save before it downloads anything:
 
 - With a desktop session the system **Salvar anexo** (Save attachment) dialog
   opens, with the file name already filled in.

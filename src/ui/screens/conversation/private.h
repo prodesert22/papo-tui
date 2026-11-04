@@ -322,6 +322,8 @@ bool conversation_attachments_poll(view *ui, auth_client *auth);
 /* Attachment downloads (downloads.c). only < 0 saves every attachment. */
 bool conversation_download_available(view *ui, const json_t *message);
 bool conversation_download_start(view *ui, const char *message_id, int only);
+/* Context-menu entry: with more than two attachments a list asks which to save. */
+bool conversation_download_menu(view *ui, const char *message_id);
 bool conversation_downloads_poll(view *ui);
 void conversation_downloads_close(view *ui);
 void conversation_attachments_open(view *ui, bool clipboard);
