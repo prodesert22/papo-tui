@@ -452,6 +452,15 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
                     conversation_message_hit(
                         ui, conversation_str(m, "id"), REPLY_HIT, getbegy(ui->body) + y,
                         getbegx(ui->body) + 2 + r->indent, 1, width - r->indent, 0);
+                for (size_t k = 0; k < blocks->file_count; ++k) {
+                    const message_file_region *file = &blocks->files[k];
+                    if (file->row != (int)row)
+                        continue;
+                    conversation_message_hit(ui, conversation_str(m, "id"), DOWNLOAD_HIT,
+                                             getbegy(ui->body) + y,
+                                             getbegx(ui->body) + 2 + r->indent + r->x + file->x, 1,
+                                             file->width, file->index);
+                }
                 for (size_t k = 0; k < blocks->reaction_count; ++k) {
                     const message_reaction_region *reaction = &blocks->reactions[k];
                     if (reaction->row != (int)row)

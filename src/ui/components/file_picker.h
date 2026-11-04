@@ -6,6 +6,11 @@ typedef struct file_picker file_picker;
 file_picker *file_picker_create(void);
 void file_picker_destroy(file_picker *picker);
 void file_picker_show(file_picker *picker);
+/* Save-as variant for downloads: native dialog first, terminal modal when none
+ * is available. The chosen path is taken with file_picker_take_save. */
+void file_picker_show_save(file_picker *picker, const char *name);
+bool file_picker_saving(const file_picker *picker);
+char *file_picker_take_save(file_picker *picker);
 void file_picker_close(file_picker *picker);
 bool file_picker_open(const file_picker *picker);
 bool file_picker_poll(file_picker *picker);

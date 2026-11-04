@@ -466,6 +466,10 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             redraw = true;
             scope = DRAW_ALL;
         }
+        if (conversation_downloads_poll(ui)) {
+            redraw = true;
+            scope = DRAW_ALL;
+        }
         if (instances_poll(connections, auth)) {
             redraw = true;
             scope = DRAW_ALL;
@@ -1502,6 +1506,7 @@ finished:
             profiles_set_player_volume(connections->config, level);
     }
     conversation_members_destroy(ui);
+    conversation_downloads_close(ui);
     conversation_attachments_close(ui);
     file_picker_destroy(ui->files);
     instances_visible(connections, NULL, NULL);

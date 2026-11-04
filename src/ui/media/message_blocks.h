@@ -65,9 +65,17 @@ typedef struct {
     size_t index;
     bool mine;
 } message_reaction_region;
+/* Download button of a file card; index is the position in the message's
+ * "attachments" array. Coordinates follow message_reaction_region. */
+typedef struct {
+    int row, x, width;
+    size_t index;
+} message_file_region;
 typedef struct {
     message_reaction_region reactions[20];
     size_t reaction_count;
+    message_file_region *files;
+    size_t file_count;
     message_row *rows;
     size_t count, capacity;
     int height; /* Physical rows after wrapping image tiles. */
@@ -83,6 +91,8 @@ typedef struct {
     void *icon_context;
 } message_blocks;
 void message_reaction_label(chat_assets *assets, const json_t *emoji, char *label, size_t capacity);
+/* "2.46 KB" style size shown in file cards. */
+void message_file_size_label(int64_t bytes, char *label, size_t capacity);
 uint64_t message_media_version(const json_t *entry);
 /* Adjacent messages can share a header only within the same channel and
  * author identity, sent at most one hour apart. Webhook display overrides

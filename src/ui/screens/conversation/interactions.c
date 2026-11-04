@@ -6,13 +6,14 @@ enum {
     ADD_REACTION,
     REPLY,
     ORIGINAL,
+    DOWNLOAD_ATTACHMENT,
     EDIT_MESSAGE,
     DELETE_MESSAGE,
     PIN_MESSAGE,
     VIEW_PROFILE
 };
 static bool action_allowed(view *ui, int action, const json_t *message);
-static int menu_actions(view *ui, int items[8]);
+static int menu_actions(view *ui, int items[9]);
 
 const char *conversation_reply_target(view *ui)
 {
@@ -327,7 +328,7 @@ void conversation_interactions_sync(view *ui)
         ui->reaction_picker = false;
         ui->feedback = "Permissão para reagir indisponível.";
     }
-    int available[8];
+    int available[9];
     if (*ui->dm_context_id && (!ui->list_dms || !dm_channel(ui, ui->dm_context_id)))
         conversation_interactions_close(ui);
     if (*ui->channel_context_id && (ui->list_dms || !context_channel(ui)))
@@ -392,7 +393,7 @@ static void open_context(view *ui, const MEVENT *event)
     conversation_interactions_close(ui);
     if (selected_index(ui) == SIZE_MAX)
         return;
-    int available[8];
+    int available[9];
     if (!menu_actions(ui, available)) {
         ui->feedback = "Permissões ainda não confirmadas. Aguarde ou use Ctrl+R.";
         return;
@@ -457,6 +458,9 @@ static bool action_allowed(view *ui, int action, const json_t *message)
     permissions *p = auth_permissions(ui->connections->items[ui->active_tab].auth);
     if (action == EDIT_MESSAGE || action == DELETE_MESSAGE)
         return permissions_message(p, message, action == EDIT_MESSAGE) == PERMISSION_ALLOWED;
+    if (action == DOWNLOAD_ATTACHMENT)
+        return conversation_download_available(ui, message) &&
+               history_permission(ui->model, PERMISSION_READ_CHANNEL) == PERMISSION_ALLOWED;
     if (action == PIN_MESSAGE && permissions_role(p, PERMISSION_PIN_MESSAGE) != PERMISSION_ALLOWED)
         return false;
     /* Applications have no user profile. */
@@ -467,7 +471,7 @@ static bool action_allowed(view *ui, int action, const json_t *message)
                                              ? PERMISSION_SEND_MESSAGES
                                              : PERMISSION_READ_CHANNEL) == PERMISSION_ALLOWED;
 }
-static int menu_actions(view *ui, int items[8])
+static int menu_actions(view *ui, int items[9])
 {
     json_t *m = history_find_message(ui->model, ui->selected_message);
     int count = 0;
@@ -492,7 +496,7 @@ static int menu_actions(view *ui, int items[8])
 }
 static int menu_count(view *ui)
 {
-    int items[8];
+    int items[9];
     return *ui->channel_context_id ? ui->channel_menu == 1   ? 7
                                      : ui->channel_menu == 2 ? 4
                                                              : 2 + channel_menu_first(ui)
@@ -540,6 +544,8 @@ static void message_action(view *ui, int action)
         }
     } else if (action == ORIGINAL && *original)
         history_jump(ui->model, original);
+    else if (action == DOWNLOAD_ATTACHMENT)
+        conversation_download_start(ui, ui->selected_message, -1);
     else if (action == VIEW_PROFILE)
         conversation_members_profile(ui, author);
 }
@@ -573,7 +579,7 @@ static void menu_activate(view *ui)
         }
         return;
     }
-    int items[8];
+    int items[9];
     int count = menu_actions(ui, items);
     if (ui->menu_selected >= 0 && ui->menu_selected < count)
         message_action(ui, items[ui->menu_selected]);
@@ -829,6 +835,10 @@ bool conversation_interactions_mouse(view *ui, const MEVENT *event)
             history_jump(ui->model, conversation_str(m, "reply_to"));
             return true;
         }
+        if (hit->kind == DOWNLOAD_HIT) {
+            conversation_download_start(ui, hit->id, (int)hit->index);
+            return true;
+        }
         if (hit->kind == REACTION_HIT) {
             json_t *emoji = json_array_get(json_object_get(m, "reactions"), hit->index);
             if (!history_react(ui->model, hit->id, emoji, history_reaction_mine(m, emoji)))
@@ -944,13 +954,17 @@ void conversation_interactions_draw(view *ui)
             "Adicionar reação",
             "Responder",
             "Ir para mensagem original",
+            json_array_size(json_object_get(history_find_message(ui->model, ui->selected_message),
+                                            "attachments")) > 1
+                ? "Baixar anexos"
+                : "Baixar anexo",
             "Editar mensagem",
             "Excluir mensagem",
             history_pin_state(ui->model, ui->selected_message) < 0 ? "Fixação indisponível (Ctrl+R)"
             : history_pin_state(ui->model, ui->selected_message)   ? "Desafixar mensagem"
                                                                    : "Fixar mensagem",
             "Ver perfil"};
-        int items[8];
+        int items[9];
         menu_actions(ui, items);
         if (ui->delete_confirm)
             text_label(w, 0, 2, width - 4, "Excluir mensagem?");

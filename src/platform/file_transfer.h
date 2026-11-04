@@ -14,5 +14,8 @@ void file_transfer_shutdown(void);
 /* Blocking platform operations: worker only. Cancellation is distinct from
  * unavailable support so closing a native dialog never opens another dialog. */
 GPtrArray *platform_pick_files(GCancellable *cancel, GError **error);
+/* Native "save as" dialog suggesting name; returns the chosen path (owned),
+ * or NULL with G_IO_ERROR_CANCELLED when closed and NOT_SUPPORTED otherwise. */
+char *platform_pick_save(const char *name, GCancellable *cancel, GError **error);
 clipboard_content *platform_read_clipboard(GCancellable *cancel, GError **error);
 #endif

@@ -412,6 +412,7 @@ that do not report Ctrl+/ can reach global help through contextual help's
 | `e` during message navigation | Open the reaction picker |
 | Shift+E during message navigation | Show who reacted |
 | Right-click a message | Open its context menu directly |
+| Click **[ ↓ ]** on an attachment card | Choose where to save that attachment |
 | Ctrl+Space, m / M in the channel list, or right-click a channel | Open channel mute and notification settings |
 | ↑ in the focused, empty editor | Edit your newest message in loaded history |
 | Enter while editing a message | Save the edit |
@@ -578,6 +579,9 @@ Esc to close the menu. Use the mouse or ↑/↓ and Enter inside the menu to cho
   directly, `e` opens the reaction picker, and `r` focuses the reply editor.
 - **Adicionar reação** (Add reaction): choose a Unicode or server emoji without
   changing your draft.
+- **Baixar anexo** / **Baixar anexos** (Download attachment / attachments): save
+  the message's attachments to disk. It appears only on messages that have
+  attachments; see [Download attachments](#download-attachments).
 - **Responder** (Reply): prepare a reply in the editor. The strip above the
   editor identifies the original; click **[x]** to cancel the reply.
   The original message stays highlighted while you compose the reply. Press Esc
@@ -645,6 +649,42 @@ confirmed, the client refreshes the history before you try again.
 
 Reply targets are preserved with each conversation's draft during the current
 run, including manual send retries. Confirmed sends clear their reply target.
+
+## Download attachments
+
+A file attached to a message (anything that is not shown as an inline image or
+video) appears as a card with a file icon, its name, its size such as
+`2.46 KB`, and a **[ ↓ ]** button at the right edge. Images and videos that
+cannot be drawn on your terminal (Light mode, or a terminal without graphics)
+use the same card. Ultralight mode lists attachments as text, without a button.
+
+To save a file, click **[ ↓ ]** on its card, or open the message's context
+menu (right-click, or `m` during message navigation) and choose **Baixar
+anexo** (Download attachment). When the message has several attachments the
+item reads **Baixar anexos** and saves all of them, one at a time. The
+program always asks where to save before it downloads anything:
+
+- With a desktop session the system **Salvar anexo** (Save attachment) dialog
+  opens, with the file name already filled in.
+- Without one, or in builds with native dialogs disabled, a terminal dialog
+  with the same title opens. **Salvar em** (Save to) holds the folder and file
+  name: type a path and press Enter, or move through the list with the arrows;
+  Enter on a folder opens it and Enter on a file uses its name. Tab moves
+  through the path, list, **Cancelar** (Cancel) and **Salvar** (Save). It starts
+  in your Downloads folder when there is one. Choosing a file that already
+  exists asks for a second **Salvar** before replacing it. Esc cancels.
+
+Closing the dialog cancels the download (**Download cancelado.**) and nothing
+is requested from the server. The footer shows the progress while the file
+downloads and **Arquivo salvo em** (File saved to) with the path when it ends.
+A file is saved only after it downloads completely, and it can be up to 512
+MiB. A failed download reports the reason (**Falha ao baixar**) and leaves no
+partial file. Switching to another server tab, signing out or quitting stops
+any download in progress.
+
+File names come from the sender, so the program keeps only the name part and
+replaces control characters and characters that file systems refuse with `_`
+before suggesting it.
 
 ## Send files and pasted images
 

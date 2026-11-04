@@ -84,6 +84,75 @@ GPtrArray *platform_pick_files(GCancellable *cancel, GError **error)
     return paths;
 }
 
+typedef struct {
+    IFileSaveDialog *dialog;
+    GCancellable *cancel;
+} save_timer;
+static _Thread_local save_timer *active_save;
+static void CALLBACK cancel_save(HWND window, UINT message, UINT_PTR timer, DWORD now)
+{
+    (void)window;
+    (void)message;
+    (void)timer;
+    (void)now;
+    if (active_save && g_cancellable_is_cancelled(active_save->cancel))
+        IFileSaveDialog_Close(active_save->dialog, HRESULT_FROM_WIN32(ERROR_CANCELLED));
+}
+char *platform_pick_save(const char *name, GCancellable *cancel, GError **error)
+{
+    HRESULT init = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+    IFileSaveDialog *dialog = NULL;
+    HRESULT hr = SUCCEEDED(init)
+                     ? CoCreateInstance(&CLSID_FileSaveDialog, NULL, CLSCTX_INPROC_SERVER,
+                                        &IID_IFileSaveDialog, (void **)&dialog)
+                     : init;
+    char *path = NULL;
+    if (SUCCEEDED(hr)) {
+        FILEOPENDIALOGOPTIONS options;
+        hr = IFileSaveDialog_GetOptions(dialog, &options);
+        if (SUCCEEDED(hr))
+            hr = IFileSaveDialog_SetOptions(dialog, options | FOS_FORCEFILESYSTEM |
+                                                        FOS_OVERWRITEPROMPT | FOS_PATHMUSTEXIST |
+                                                        FOS_NOCHANGEDIR);
+        IFileSaveDialog_SetTitle(dialog, L"Salvar anexo");
+        gunichar2 *wide_name =
+            g_utf8_to_utf16(name && *name ? name : "arquivo", -1, NULL, NULL, NULL);
+        if (wide_name)
+            IFileSaveDialog_SetFileName(dialog, (LPCWSTR)wide_name);
+        g_free(wide_name);
+        save_timer state = {dialog, cancel};
+        active_save = &state;
+        UINT_PTR timer = SetTimer(NULL, 0, 50, cancel_save);
+        if (SUCCEEDED(hr))
+            hr = timer ? IFileSaveDialog_Show(dialog, NULL) : E_FAIL;
+        if (timer)
+            KillTimer(NULL, timer);
+        active_save = NULL;
+        if (SUCCEEDED(hr)) {
+            IShellItem *item = NULL;
+            PWSTR wide = NULL;
+            if (SUCCEEDED(IFileSaveDialog_GetResult(dialog, &item))) {
+                if (SUCCEEDED(IShellItem_GetDisplayName(item, SIGDN_FILESYSPATH, &wide))) {
+                    path = g_utf16_to_utf8((gunichar2 *)wide, -1, NULL, NULL, NULL);
+                    CoTaskMemFree(wide);
+                }
+                IShellItem_Release(item);
+            }
+        }
+        IFileSaveDialog_Release(dialog);
+    }
+    if (SUCCEEDED(init))
+        CoUninitialize();
+    if (!path)
+        g_set_error_literal(error, G_IO_ERROR,
+                            hr == HRESULT_FROM_WIN32(ERROR_CANCELLED) ||
+                                    g_cancellable_is_cancelled(cancel)
+                                ? G_IO_ERROR_CANCELLED
+                                : G_IO_ERROR_NOT_SUPPORTED,
+                            "Seletor nativo indisponível ou fechado.");
+    return path;
+}
+
 static GBytes *bitmap_png(HBITMAP bitmap)
 {
     HRESULT init = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);

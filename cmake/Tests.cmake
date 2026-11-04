@@ -340,6 +340,10 @@ if(BUILD_TESTING)
         NAME attachments-terminal COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_attachments.py $<TARGET_FILE:papo-tui>)
     papo_set_tests_properties(attachments-terminal PROPERTIES TIMEOUT 120)
+    papo_add_test(
+        NAME downloads-terminal COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_downloads.py $<TARGET_FILE:papo-tui>)
+    papo_set_tests_properties(downloads-terminal PROPERTIES TIMEOUT 120)
     add_executable(attachment-files-test tests/unit/test_attachment_files.c)
     target_link_libraries(attachment-files-test PRIVATE papo_auth)
     target_compile_options(attachment-files-test PRIVATE -Wall -Wextra -Wpedantic -Werror)

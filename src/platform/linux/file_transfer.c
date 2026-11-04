@@ -17,7 +17,7 @@ static void portal_response(GDBusConnection *bus, const char *sender, const char
     if (reply->handle && !strcmp(path, reply->handle) && !reply->response)
         reply->response = g_variant_ref(parameters);
 }
-GPtrArray *platform_pick_files(GCancellable *cancel, GError **error)
+static GPtrArray *portal_choose(const char *save_name, GCancellable *cancel, GError **error)
 {
     if ((!g_getenv("DISPLAY") || !*g_getenv("DISPLAY")) &&
         (!g_getenv("WAYLAND_DISPLAY") || !*g_getenv("WAYLAND_DISPLAY")) &&
@@ -37,13 +37,17 @@ GPtrArray *platform_pick_files(GCancellable *cancel, GError **error)
                              : 0;
     GVariantBuilder options;
     g_variant_builder_init(&options, G_VARIANT_TYPE_VARDICT);
-    g_variant_builder_add(&options, "{sv}", "multiple", g_variant_new_boolean(true));
-    g_variant_builder_add(&options, "{sv}", "directory", g_variant_new_boolean(false));
+    if (save_name) {
+        g_variant_builder_add(&options, "{sv}", "current_name", g_variant_new_string(save_name));
+    } else {
+        g_variant_builder_add(&options, "{sv}", "multiple", g_variant_new_boolean(true));
+        g_variant_builder_add(&options, "{sv}", "directory", g_variant_new_boolean(false));
+    }
     GVariant *reply =
         bus ? g_dbus_connection_call_sync(
                   bus, "org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop",
-                  "org.freedesktop.portal.FileChooser", "OpenFile",
-                  g_variant_new("(ss@a{sv})", "", "Anexar arquivos",
+                  "org.freedesktop.portal.FileChooser", save_name ? "SaveFile" : "OpenFile",
+                  g_variant_new("(ss@a{sv})", "", save_name ? "Salvar anexo" : "Anexar arquivos",
                                 g_variant_builder_end(&options)),
                   G_VARIANT_TYPE("(o)"), G_DBUS_CALL_FLAGS_NONE, 2000, cancel, error)
             : NULL;
@@ -98,6 +102,20 @@ GPtrArray *platform_pick_files(GCancellable *cancel, GError **error)
     g_main_context_pop_thread_default(context);
     g_main_context_unref(context);
     return paths;
+}
+
+GPtrArray *platform_pick_files(GCancellable *cancel, GError **error)
+{
+    return portal_choose(NULL, cancel, error);
+}
+char *platform_pick_save(const char *name, GCancellable *cancel, GError **error)
+{
+    GPtrArray *paths = portal_choose(name && *name ? name : "arquivo", cancel, error);
+    char *path = paths && paths->len ? g_strdup(g_ptr_array_index(paths, 0)) : NULL;
+    if (paths && !path)
+        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_CANCELLED, "Seletor nativo fechado.");
+    g_clear_pointer(&paths, g_ptr_array_unref);
+    return path;
 }
 
 static GBytes *helper(const char *const *argv, gsize limit, GCancellable *cancel, GError **error)

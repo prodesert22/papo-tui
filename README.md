@@ -18,7 +18,9 @@ hint alongside operational notices. Global help includes a search field for
 keys, actions and areas. F1 also opens contextual help.
 
 Attach files with **Ctrl+O** or **📎**, or paste copied files and images with
-**Ctrl+V** when the local clipboard is available.
+**Ctrl+V** when the local clipboard is available. Files attached to messages
+appear as cards with a **↓** button; click it, or choose **Baixar anexo** in
+the message's context menu, to save the file where you choose.
 Available channels and message actions follow your account permissions.
 Member names follow their role color, with white as the default.
 Open the member drawer with **👤** or **Ctrl+U** to search people, view profiles,
