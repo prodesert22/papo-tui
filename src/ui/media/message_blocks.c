@@ -685,9 +685,25 @@ static int add_media(message_blocks *b, json_t *message, json_t *entry, const ch
     ++b->media_count;
     return (int)n;
 }
+/* Hosts whose link previews are short silent loops that behave like GIFs. */
+static bool gif_provider(const char *url)
+{
+    static const char *const hosts[] = {"giphy.com", "tenor.com", "klipy.com"};
+    if (!g_str_has_prefix(url, "https://"))
+        return false;
+    const char *host = url + 8;
+    size_t length = strcspn(host, "/:?#");
+    for (size_t i = 0; i < G_N_ELEMENTS(hosts); ++i) {
+        size_t n = strlen(hosts[i]);
+        if (length >= n && !g_ascii_strncasecmp(host + length - n, hosts[i], n) &&
+            (length == n || host[length - n - 1] == '.'))
+            return true;
+    }
+    return false;
+}
 static bool media(message_blocks *b, json_t *message, json_t *entry, const char *key,
                   const char *role, const char *label, auth_media_kind kind, bool video, int width,
-                  bool graphics, bool card, unsigned color)
+                  bool graphics, bool card, unsigned color, bool clip)
 {
     if (app_mode_get() == APP_MODE_ULTRALIGHT)
         return labeled(b, key, video ? "Vídeo: " : "Imagem: ", label, width, false, card, color);
@@ -695,6 +711,7 @@ static bool media(message_blocks *b, json_t *message, json_t *entry, const char 
     if (n < 0)
         return strlen(str(entry, "id")) != 36;
     b->media[n].full_width = true;
+    b->media[n].clip = clip && video && graphics;
     size_t start = b->count;
     /* A graphical preview is the image itself; Ctrl+K is documented in the UI. */
     if ((!graphics || video) &&
@@ -702,7 +719,7 @@ static bool media(message_blocks *b, json_t *message, json_t *entry, const char 
                  false, card, color))
         return false;
     size_t image_start = b->count;
-    int height = graphics && (!video || kind == AUTH_MEDIA_ATTACHMENT) ? 6 : 0;
+    int height = graphics && (!video || kind == AUTH_MEDIA_ATTACHMENT || b->media[n].clip) ? 6 : 0;
     int media_width = width - (card ? 4 : 0);
     if (height && b->measure)
         b->measure(b->measure_context, &b->media[n], media_width, &media_width, &height);
@@ -731,6 +748,87 @@ static bool audio_media(message_blocks *b, json_t *message, json_t *entry, const
     if (!labeled(b, key, "[▶] ", label, width, false, false, 0))
         return false;
     return region(b, n, start, b->count, b->count, 0, width, 0);
+}
+/* A direct link to an animated GIF, APNG or WebP on a site known for GIFs. The text is untrusted,
+ * so only https addresses on these hosts are ever fetched. */
+static bool gif_path(const char *url, size_t length, size_t from)
+{
+    size_t path = from + strcspn(url + from, "?#");
+    if (path > length)
+        return false;
+    static const char *const extensions[] = {".gif", ".apng", ".webp"};
+    for (size_t i = 0; i < G_N_ELEMENTS(extensions); ++i) {
+        size_t n = strlen(extensions[i]);
+        if (path > from + n && !g_ascii_strncasecmp(url + path - n, extensions[i], n))
+            return true;
+    }
+    return false;
+}
+static bool gif_link(const char *url, size_t length)
+{
+    static const char *const hosts[] = {"giphy.com", "tenor.com", "klipy.com", "wikimedia.org"};
+    if (length < 16 || length >= sizeof(((message_media *)0)->url))
+        return false;
+    /* Tests point the GIF search at a local mock; its origin is trusted too. */
+    const char *test = getenv("PAPO_GIF_SEARCH_URL");
+    const char *scheme = test ? strstr(test, "://") : NULL;
+    if (scheme) {
+        size_t origin = (size_t)(scheme + 3 - test) + strcspn(scheme + 3, "/?#");
+        if (length > origin && !strncmp(url, test, origin) && url[origin] == '/')
+            return gif_path(url, length, origin);
+    }
+    if (g_ascii_strncasecmp(url, "https://", 8))
+        return false;
+    size_t host_length = strcspn(url + 8, "/:?#@");
+    if (host_length >= length - 8 || url[8 + host_length] != '/')
+        return false;
+    bool known = false;
+    for (size_t i = 0; i < G_N_ELEMENTS(hosts); ++i) {
+        size_t n = strlen(hosts[i]);
+        known |= host_length > n && !g_ascii_strncasecmp(url + 8 + host_length - n, hosts[i], n) &&
+                 url[8 + host_length - n - 1] == '.';
+    }
+    return known && gif_path(url, length, 8 + host_length);
+}
+/* Draws each such link in the text as a picture that animates in place. */
+static bool gif_links(message_blocks *b, json_t *message, const char *content, int width,
+                      bool graphics)
+{
+    if (!graphics || app_mode_get() == APP_MODE_ULTRALIGHT)
+        return true;
+    int found = 0;
+    for (const char *p = content; *p && found < 3;) {
+        p += strspn(p, " \t\r\n");
+        size_t length = strcspn(p, " \t\r\n");
+        const char *token = p;
+        p += length;
+        while (length && strchr(".,;:!?)>\"'", token[length - 1]))
+            --length;
+        if (!gif_link(token, length))
+            continue;
+        ++found;
+        char url[sizeof(((message_media *)0)->url)];
+        snprintf(url, sizeof(url), "%.*s", (int)length, token);
+        char *digest = g_compute_checksum_for_string(G_CHECKSUM_SHA256, url, -1);
+        if (!digest)
+            return false;
+        char id[37];
+        snprintf(id, sizeof(id), "%.8s-%.4s-%.4s-%.4s-%.12s", digest, digest + 8, digest + 12,
+                 digest + 16, digest + 20);
+        g_free(digest);
+        json_t *entry = json_pack("{s:s}", "id", id);
+        char key[64];
+        snprintf(key, sizeof(key), "link:%d", found);
+        size_t before = b->media_count;
+        bool ok = entry && media(b, message, entry, key, "link", "GIF", AUTH_MEDIA_ATTACHMENT,
+                                 false, width, graphics, false, 0, false);
+        json_decref(entry);
+        if (!ok)
+            return false;
+        if (b->media_count > before)
+            snprintf(b->media[b->media_count - 1].url, sizeof(b->media[0].url), "%s", url);
+    }
+    return true;
 }
 /* Keep each tile's rows, strings and hit regions owned by the message. Position
  * them without merging rows or imposing a fixed number of images per line. */
@@ -974,7 +1072,8 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
     if (*str(m, "content")) {
         bool enlarged;
         if (!emoji_content(b, str(m, "content"), width, graphics, &enlarged) ||
-            (!enlarged && !text(b, "content", str(m, "content"), width, false, false, 0)))
+            (!enlarged && !text(b, "content", str(m, "content"), width, false, false, 0)) ||
+            !gif_links(b, m, str(m, "content"), width, graphics))
             goto error;
     }
     size_t index;
@@ -1028,7 +1127,7 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
         }
         size_t added = b->media_count;
         if ((image || video) && !media(b, m, item, key, "attachment", name, AUTH_MEDIA_ATTACHMENT,
-                                       video, width, graphics, false, 0))
+                                       video, width, graphics, false, 0, false))
             goto error;
         if (svg && b->media_count > added)
             b->media[added].svg = true;
@@ -1055,7 +1154,13 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
         if (!blank(b, true, true, false, color))
             goto error;
         json_t *a = json_object_get(item, "author");
-        bool right_thumbnail = graphics && card_width >= 44 &&
+        json_t *clip_video = json_object_get(item, "video");
+        const char *clip_mime = str(clip_video, "mime_type");
+        /* The still cover would only repeat the first frame of the loop. */
+        bool clip = graphics && json_is_object(clip_video) && strlen(str(item, "id")) == 36 &&
+                    (!strcmp(clip_mime, "video/mp4") || !strcmp(clip_mime, "video/webm")) &&
+                    (gif_provider(str(item, "url")) || gif_provider(str(clip_video, "url")));
+        bool right_thumbnail = graphics && !clip && card_width >= 44 &&
                                json_is_object(json_object_get(item, "thumbnail")) &&
                                strlen(str(item, "id")) == 36 &&
                                (!strcmp(str(item, "source_type"), "custom") ||
@@ -1153,10 +1258,10 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
             f += group;
         }
         snprintf(key, sizeof(key), "%s:thumbnail", root);
-        if (!right_thumbnail && json_is_object(json_object_get(item, "thumbnail"))) {
+        if (!right_thumbnail && !clip && json_is_object(json_object_get(item, "thumbnail"))) {
             if (!blank(b, true, false, false, color) ||
                 !media(b, m, item, key, "thumbnail", "Miniatura", AUTH_MEDIA_EMBED, false,
-                       card_width, graphics, true, color))
+                       card_width, graphics, true, color, false))
                 goto error;
         }
         if (json_is_object(json_object_get(item, "image"))) {
@@ -1176,7 +1281,7 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
                           !strcmp(str(v, "mime_type"), "video/ogg");
             if (direct) {
                 if (!media(b, m, item, key, "video", "Abrir player", AUTH_MEDIA_VIDEO, true,
-                           card_width, graphics, true, color))
+                           card_width, graphics, true, color, clip))
                     goto error;
             } else if (!labeled(b, key, "Vídeo externo: ", str(v, "url"), card_width, false, true,
                                 color))

@@ -8,6 +8,7 @@
 #define MEDIA_EMBED_LIMIT (48U * 1024U * 1024U)
 /* Saved-to-disk attachments of any type; matches the upload storage limit. */
 #define MEDIA_FILE_LIMIT (512U * 1024U * 1024U)
+#define MEDIA_JSON_LIMIT (1U * 1024U * 1024U)
 typedef enum {
     MEDIA_IDLE,
     MEDIA_WAITING,
@@ -29,6 +30,9 @@ bool media_download_svg_request(media_download *m, const char *id);
 bool media_download_file_request(media_download *m, const char *id);
 /* Public avatar URL, bounded to 16 MiB; same asynchronous global rate budget. */
 bool media_download_avatar_request(media_download *m, const char *reference);
+/* Public https JSON document (no cookies, no redirects), bounded to 1 MiB; same
+ * asynchronous global rate budget. The body is kept as a private file. */
+bool media_download_json_request(media_download *m, const char *url);
 bool media_download_poll(media_download *m);
 void media_download_cancel(media_download *m);
 media_state media_download_state(const media_download *m);

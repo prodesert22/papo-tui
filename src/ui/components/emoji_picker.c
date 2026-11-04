@@ -4,6 +4,8 @@
 #include "ui/components/emoji_picker.h"
 #include "model/text/emoji_catalog.h"
 #include "model/text/emoji_usage.h"
+#include "net/clock.h"
+#include "net/gif_search.h"
 #include "ui/components/theme.h"
 #include "ui/input/shortcuts.h"
 #include <glib.h>
@@ -27,7 +29,11 @@ struct emoji_picker {
     char **unicode_search;
     size_t count, selected, first;
     uint64_t revision, generation;
-    bool open, server, suggesting, dismissed, reaction;
+    bool open, server, gif, suggesting, dismissed, reaction;
+    auth_client *gif_auth; /* Borrowed; the search itself is created on first use. */
+    gif_search *gifs;
+    gif_state gif_seen;
+    size_t gif_seen_count;
     json_t *reaction_choice;
     size_t start, end;
     int focus, columns, rows, left, top, width, height, tile_width, tile_height, image_rows;
@@ -71,6 +77,8 @@ static const char *item_key(emoji_picker *p, uint32_t id)
 }
 static void remember(emoji_picker *p)
 {
+    if (p->gif)
+        return;
     snprintf(p->selected_key, sizeof(p->selected_key), "%s",
              p->selected < p->count ? item_key(p, p->matches[p->selected].id) : "");
 }
@@ -193,10 +201,49 @@ void emoji_picker_destroy(emoji_picker *p)
                 g_free(p->unicode_search[i]);
         free(p->unicode_search);
         free(p->matches);
+        gif_search_destroy(p->gifs);
         json_decref(p->reaction_choice);
         emoji_usage_destroy(p->usage);
         free(p);
     }
+}
+void emoji_picker_gifs(emoji_picker *p, auth_client *auth)
+{
+    if (p)
+        p->gif_auth = auth;
+}
+static uint64_t now_ms(void)
+{
+    uint64_t now = 0;
+    net_now_ms(&now);
+    return now;
+}
+/* The GIF source shows what the search returned; typing asks for a new search. */
+static void gif_query(emoji_picker *p)
+{
+    char query[TEXT_UTF8_BYTES];
+    text_encode(&p->search, query);
+    p->count = p->selected = p->first = 0;
+    p->error[0] = 0;
+    gif_search_request(p->gifs, query, now_ms());
+    p->gif_seen = gif_search_state(p->gifs);
+    p->gif_seen_count = 0;
+}
+static void select_source(emoji_picker *p, int source)
+{
+    /* The transfer directory is only created once someone asks for GIFs. */
+    if (source == 2 && !p->gifs && p->gif_auth && !p->reaction)
+        p->gifs = gif_search_create(p->gif_auth);
+    if (source == 2 && (!p->gifs || p->reaction))
+        source = 1;
+    p->server = source == 1;
+    p->gif = source == 2;
+    p->selected_key[0] = 0;
+    p->first = 0;
+    if (p->gif)
+        gif_query(p);
+    else
+        update_matches(p);
 }
 bool emoji_picker_open(const emoji_picker *p)
 {
@@ -222,6 +269,7 @@ void emoji_picker_show(emoji_picker *p, const char *channel, uint64_t generation
     json_decref(p->reaction_choice);
     p->reaction_choice = NULL;
     p->focus = 0;
+    p->gif = false;
     text_clear(&p->search);
     p->selected_key[0] = 0;
     p->selected = p->first = 0;
@@ -259,6 +307,22 @@ bool emoji_picker_update(emoji_picker *p, chat_assets *assets, const char *chann
         p->generation = generation;
     }
     p->assets = assets;
+    if (p->open && p->gif && p->gifs) {
+        bool changed = gif_search_poll(p->gifs, now_ms());
+        size_t count = gif_search_count(p->gifs);
+        gif_state state = gif_search_state(p->gifs);
+        if (changed || state != p->gif_seen || count != p->gif_seen_count) {
+            p->gif_seen = state;
+            p->gif_seen_count = count;
+            p->count = count;
+            if (p->selected >= count)
+                p->selected = count ? count - 1 : 0;
+            snprintf(p->error, sizeof(p->error), "%s",
+                     state == GIF_SEARCH_FAILED ? gif_search_error(p->gifs) : "");
+            return true;
+        }
+        return open != (p->open || p->suggesting);
+    }
     if ((p->open || p->suggesting) && p->revision != chat_assets_emoji_revision(assets)) {
         update_matches(p);
         return true;
@@ -335,8 +399,29 @@ static void move_selection(emoji_picker *p, int delta)
             (size_t)delta >= p->count - p->selected ? p->count - 1 : p->selected + (size_t)delta;
     remember(p);
 }
+static bool choose_gif(emoji_picker *p, text_buffer *editor)
+{
+    const gif_result *r = gif_search_result(p->gifs, p->selected);
+    if (!r || !editor)
+        return false;
+    /* The address goes into the draft: the server turns the link into the
+     * preview, so nothing is promised beyond what the draft already does. */
+    char value[1100];
+    snprintf(value, sizeof(value), "%s ", r->url);
+    text_buffer insertion;
+    text_buffer next = *editor;
+    if (!text_decode(&insertion, value) || !text_insert_buffer(&next, &insertion)) {
+        snprintf(p->error, sizeof(p->error), "O endereço do GIF excede o limite do editor.");
+        return false;
+    }
+    *editor = next;
+    emoji_picker_close(p);
+    return true;
+}
 static bool choose(emoji_picker *p, text_buffer *editor)
 {
+    if (p->gif)
+        return choose_gif(p, editor);
     if (p->selected >= p->count)
         return false;
     uint32_t id = p->matches[p->selected].id;
@@ -407,7 +492,10 @@ bool emoji_picker_key(emoji_picker *p, text_buffer *editor, int type, uint32_t k
         return true;
     }
     if (type == OK && key == 18) {
-        chat_assets_emojis_request(p->assets, true);
+        if (p->gif)
+            gif_query(p);
+        else
+            chat_assets_emojis_request(p->assets, true);
         return true;
     }
     if (type == KEY_CODE_YES && (key == KEY_UP || key == KEY_DOWN)) {
@@ -425,10 +513,9 @@ bool emoji_picker_key(emoji_picker *p, text_buffer *editor, int type, uint32_t k
         return true;
     }
     if (p->focus == 1 && type == KEY_CODE_YES && (key == KEY_LEFT || key == KEY_RIGHT)) {
-        p->server = key == KEY_RIGHT;
-        p->selected_key[0] = 0;
-        p->first = 0;
-        update_matches(p);
+        int source = p->gif ? 2 : p->server ? 1 : 0;
+        select_source(p,
+                      key == KEY_RIGHT ? (source < 2 ? source + 1 : 2) : (source ? source - 1 : 0));
         return true;
     }
     if ((type == OK && (key == '\n' || key == '\r')) ||
@@ -465,7 +552,10 @@ bool emoji_picker_key(emoji_picker *p, text_buffer *editor, int type, uint32_t k
         if (text_edit(&p->search, type, key, p->width > 12 ? p->width - 12 : 20, false)) {
             p->error[0] = p->selected_key[0] = 0;
             p->first = 0;
-            update_matches(p);
+            if (p->gif)
+                gif_query(p);
+            else
+                update_matches(p);
         }
     }
     return true;
@@ -511,12 +601,9 @@ bool emoji_picker_mouse(emoji_picker *p, text_buffer *editor, const MEVENT *even
     if (y == 1) {
         p->focus = 0;
         text_click(&p->search, p->width - 12, 0, x - 9);
-    } else if (y == 2 && x >= 2 && x < 24) {
-        p->server = x >= 13;
+    } else if (y == 2 && x >= 2 && x < 31) {
         p->focus = 1;
-        p->selected_key[0] = 0;
-        p->first = 0;
-        update_matches(p);
+        select_source(p, x >= 25 ? 2 : x >= 13 ? 1 : 0);
     } else if (y >= 4 && y < 4 + p->rows * p->tile_height && x >= 2 &&
                x < 2 + p->columns * p->tile_width) {
         size_t index =
@@ -557,9 +644,16 @@ void emoji_picker_draw(emoji_picker *p)
     p->tile_width = image_columns + 2 > 12 ? image_columns + 2 : 12;
     p->tile_height = p->image_rows + 2;
     p->columns = (width - 4) / p->tile_width;
+    if (p->gif) {
+        p->columns = width >= 48 ? 3 : 2;
+        p->image_rows = 4;
+        p->tile_height = p->image_rows + 2;
+    }
     if (p->columns < 1)
         p->columns = 1;
     p->tile_width = (width - 4) / p->columns;
+    if (p->gif)
+        image_columns = p->tile_width - 2;
     p->rows = (height - 7) / p->tile_height;
     if (p->rows < 1)
         p->rows = 1;
@@ -593,7 +687,27 @@ void emoji_picker_draw(emoji_picker *p)
     wattrset(w, COLOR_PAIR(p->server ? THEME_PANEL_ACCENT : THEME_PANEL_MUTED) |
                     (p->focus == 1 ? A_BOLD : 0));
     text_label(w, 2, 13, 11, "[Servidor]");
-    for (size_t i = p->first; i < p->count && i < p->first + page; ++i) {
+    if (p->gif_auth && !p->reaction) {
+        wattrset(w, COLOR_PAIR(p->gif ? THEME_PANEL_ACCENT : THEME_PANEL_MUTED) |
+                        (p->focus == 1 ? A_BOLD : 0));
+        text_label(w, 2, 25, 5, "[GIF]");
+    }
+    for (size_t i = p->first; p->gif && i < p->count && i < p->first + page; ++i) {
+        const gif_result *r = gif_search_result(p->gifs, i);
+        if (!r)
+            break;
+        int y = 4 + (int)((i - p->first) / (size_t)p->columns) * p->tile_height;
+        int x = 2 + (int)((i - p->first) % (size_t)p->columns) * p->tile_width;
+        int pair = i == p->selected ? THEME_FOCUS_AREA : THEME_PANEL;
+        wattrset(w, COLOR_PAIR(pair));
+        for (int row = 0; row <= p->image_rows; ++row)
+            mvwhline(w, y + row, x, ' ', p->tile_width - 1);
+        /* Without graphics the title alone identifies the tile. */
+        icons_url_picture(p->icons, w, r->thumb_url, "emoji-picker", i, y, x + 1, image_columns,
+                          p->image_rows, pair);
+        text_label(w, y + p->image_rows, x, p->tile_width - 1, r->title);
+    }
+    for (size_t i = p->first; !p->gif && i < p->count && i < p->first + page; ++i) {
         int y = 4 + (int)((i - p->first) / (size_t)p->columns) * p->tile_height;
         int x = 2 + (int)((i - p->first) % (size_t)p->columns) * p->tile_width;
         int image_x = x + (p->tile_width - image_columns) / 2;
@@ -613,13 +727,20 @@ void emoji_picker_draw(emoji_picker *p)
     }
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     if (!p->count)
-        text_label(w, 4, 2, width - 4, "Nenhum emoji encontrado");
+        text_label(w, 4, 2, width - 4,
+                   !p->gif                                           ? "Nenhum emoji encontrado"
+                   : gif_search_state(p->gifs) == GIF_SEARCH_LOADING ? "Buscando GIFs…"
+                   : gif_search_state(p->gifs) == GIF_SEARCH_FAILED  ? "A busca de GIFs falhou"
+                                                                     : "Nenhum GIF encontrado");
     text_label(w, height - 3, 2, width - 4,
-               *p->error                ? p->error
+               *p->error ? p->error
+               : p->gif
+                   ? (p->selected < p->count ? gif_search_result(p->gifs, p->selected)->title : "")
                : p->selected < p->count ? item_name(p, p->matches[p->selected].id)
                                         : "");
     text_label(w, height - 2, 2, width - 4,
-               p->server     ? chat_assets_notice(p->assets)
+               p->gif        ? "Busca no Wikimedia Commons · Enter inserir o link · Ctrl+R repetir"
+               : p->server   ? chat_assets_notice(p->assets)
                : p->reaction ? "↑↓←→ escolher · Enter reagir · Ctrl+R atualizar"
                              : "↑↓←→ escolher · Enter inserir · Ctrl+R atualizar");
     wnoutrefresh(w);

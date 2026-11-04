@@ -7,7 +7,9 @@ from test_context import main as test_main
 import base64
 import json
 from pathlib import Path
+import subprocess
 import tempfile
+import time
 import unittest
 
 import terminal_media as media
@@ -43,6 +45,90 @@ class MediaNavigation(unittest.TestCase):
         self.helper = media.MediaTerminal()
         self.addCleanup(self.helper.doCleanups)
         self.addCleanup(self.helper.tearDown)
+
+    def silent_clip(self):
+        """A one-second loop with no audio track, like the MP4 a GIF site serves."""
+        with tempfile.TemporaryDirectory(prefix="papo-clip-") as directory:
+            path = Path(directory) / "clip.mp4"
+            subprocess.run(
+                [media.FFMPEG, "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=64x48:rate=10"]
+                + ["-t", "1", "-c:v", "mpeg4", "-an", "-threads", "1", "-y", str(path)],
+                check=True,
+                capture_output=True,
+            )
+            return path.read_bytes()
+
+    def test_gif_site_embed_plays_in_place_without_opening_the_player(self):
+        clip = self.silent_clip()
+        for protocol in protocols("kitty", "sixel", "iterm2"):
+            with (
+                self.subTest(protocol=protocol),
+                self.helper.serve(
+                    media.MediaTerminal.images["png"], "image/png", embed=True
+                ) as server,
+            ):
+                server.messages[0]["embeds"] = [
+                    dict(
+                        id=media.uuid(902),
+                        title="A looping reaction",
+                        url="https://giphy.com/gifs/looping-reaction-NrCHowfyhaR3oxTEAz",
+                        thumbnail=dict(mime_type="image/png"),
+                        video=dict(mime_type="video/mp4", url="https://media.giphy.com/x.mp4"),
+                    )
+                ]
+                parent = server.api_handler
+
+                def route(method, path, body):
+                    if path.endswith("/video"):
+                        return 200, clip, None, None, "video/mp4"
+                    return parent(method, path, body)
+
+                server.api_handler = route
+                t = self.helper.open(server, protocol=protocol)
+                try:
+                    self.helper.wait_frames(t, 6)
+                    # Without any key press the tile keeps cycling through new pictures.
+                    self.helper.settled(t, lambda: len(set(t.stream.frames)) >= 4, seconds=10)
+                    self.assertNotIn("Reproduzindo", "\n".join(t.screen.display))
+                    self.assertEqual(sum(r[1].endswith("/video") for r in server.requests), 1)
+                    # The still cover would repeat the first frame, so it is never fetched.
+                    self.assertFalse(
+                        any(r[1] == f"/embeds/{media.uuid(902)}" for r in server.requests)
+                    )
+                    self.assertFalse(any("giphy" in r[1] for r in server.requests))
+                finally:
+                    self.assertTrue(t.close())
+
+    def test_other_site_embed_keeps_the_cover_until_the_player_opens(self):
+        clip = self.silent_clip()
+        with self.helper.serve(
+            media.MediaTerminal.images["png"], "image/png", embed=True
+        ) as server:
+            server.messages[0]["embeds"] = [
+                dict(
+                    id=media.uuid(902),
+                    title="An ordinary video",
+                    url="https://example.invalid/watch",
+                    thumbnail=dict(mime_type="image/png"),
+                    video=dict(mime_type="video/mp4", url="https://example.invalid/v.mp4"),
+                )
+            ]
+            parent = server.api_handler
+
+            def route(method, path, body):
+                if path.endswith("/video"):
+                    return 200, clip, None, None, "video/mp4"
+                return parent(method, path, body)
+
+            server.api_handler = route
+            t = self.helper.open(server, protocol="kitty")
+            try:
+                self.helper.wait_frames(t)
+                time.sleep(1.5)
+                t.read(0.3)
+                self.assertFalse(any(r[1].endswith("/video") for r in server.requests))
+            finally:
+                self.assertTrue(t.close())
 
     def test_enter_on_embed_cover_opens_video_player(self):
         for protocol in protocols("kitty", "sixel", "iterm2"):

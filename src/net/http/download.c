@@ -25,7 +25,7 @@ struct media_download {
     uint64_t generation;
     unsigned retry_after;
     long status;
-    bool attached, overflow, video, public_avatar, raw, svg;
+    bool attached, overflow, video, public_avatar, raw, svg, json;
     const char *error;
 };
 int media_download_temp(media_download *m, char **path)
@@ -140,7 +140,7 @@ static bool begin_request(media_download *m, CURL *easy, auth_media_kind kind, b
     m->kind = kind;
     m->video = video;
     m->public_avatar = avatar;
-    m->raw = m->svg = false;
+    m->raw = m->svg = m->json = false;
     m->generation = auth_context_generation(m->auth);
     m->limit = avatar                     ? MEDIA_AVATAR_LIMIT
                : kind == AUTH_MEDIA_EMBED ? MEDIA_EMBED_LIMIT
@@ -207,6 +207,18 @@ bool media_download_avatar_request(media_download *m, const char *reference)
     return begin_request(m, auth_avatar_easy(m->auth, reference), AUTH_MEDIA_ATTACHMENT, false,
                          true);
 }
+bool media_download_json_request(media_download *m, const char *url)
+{
+    if (!m || !begin_request(m, auth_avatar_easy(m->auth, url), AUTH_MEDIA_ATTACHMENT, false, true))
+        return false;
+    m->json = true;
+    m->limit = MEDIA_JSON_LIMIT;
+    if (curl_easy_setopt(m->easy, CURLOPT_MAXFILESIZE_LARGE, (curl_off_t)m->limit) != CURLE_OK) {
+        media_download_cancel(m);
+        return false;
+    }
+    return true;
+}
 /* The embed relay keeps the documented allowlist. An attachment carries the
  * type the server detected from the file's magic bytes, which recognizes only
  * a few containers; the remaining videos and sounds are served as a generic
@@ -248,7 +260,7 @@ static void finish(media_download *m, CURLcode result)
     release_transfer(m);
     bool type = m->raw                        ? true
                 : m->svg                      ? svg_type(m)
-                : m->kind == AUTH_MEDIA_EMBED ? !strcmp(m->mime, "application/json")
+                : m->json || m->kind == AUTH_MEDIA_EMBED ? !strcmp(m->mime, "application/json")
                 : m->video ? video_type(m)
                            : (!strcmp(m->mime, "image/png") || !strcmp(m->mime, "image/jpeg") ||
                               !strcmp(m->mime, "image/webp") || !strcmp(m->mime, "image/gif"));

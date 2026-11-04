@@ -261,8 +261,26 @@ done:
     g_object_unref(svg);
     return ok;
 }
-static bool decode_file(const image_decode_request *j, graphics_image *out, animation **animated,
-                        bool (*cancelled)(void *context), void *context)
+/* A video that behaves like a GIF: no sound, short, and few enough frames to
+ * keep every one of them decoded. Anything else stays a still cover. */
+static bool loops_like_gif(const AVFormatContext *format, int stream)
+{
+    for (unsigned i = 0; i < format->nb_streams; ++i)
+        if (format->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
+            return false;
+    const AVStream *s = format->streams[stream];
+    if (format->duration <= 0 || format->duration > 20 * (int64_t)AV_TIME_BASE)
+        return false;
+    double fps =
+        s->avg_frame_rate.num > 0 && s->avg_frame_rate.den > 0 ? av_q2d(s->avg_frame_rate) : 0;
+    double frames =
+        s->nb_frames > 0 ? (double)s->nb_frames : fps * (double)format->duration / AV_TIME_BASE;
+    return frames >= 2 && frames < ANIMATION_FRAMES;
+}
+/* With `overflowed` set, an animation whose frames do not fit the memory budget
+ * is abandoned (the flag is raised) so the caller can decode it smaller. */
+static bool decode_attempt(const image_decode_request *j, graphics_image *out, animation **animated,
+                           bool (*cancelled)(void *context), void *context, bool *overflowed)
 {
     memset(out, 0, sizeof(*out));
     *animated = NULL;
@@ -311,7 +329,9 @@ static bool decode_file(const image_decode_request *j, graphics_image *out, anim
     /* Resolve the newer WebP animation codec at runtime so builds against
      * older FFmpeg headers keep working without allowing arbitrary codecs. */
     const AVCodec *webp_animation = avcodec_find_decoder_by_name("webp_anim");
-    bool animated_image = parameters->codec_id == AV_CODEC_ID_GIF ||
+    bool clip = j->video_clip && j->video_poster && !j->static_only && !j->first_frame &&
+                loops_like_gif(format, stream);
+    bool animated_image = clip || parameters->codec_id == AV_CODEC_ID_GIF ||
                           parameters->codec_id == AV_CODEC_ID_APNG ||
                           (webp_animation && parameters->codec_id == webp_animation->id);
     if (!j->video_poster && parameters->codec_id != AV_CODEC_ID_MJPEG &&
@@ -338,8 +358,10 @@ static bool decode_file(const image_decode_request *j, graphics_image *out, anim
         atomic_init(&frames->references, 1);
     if (!frame || !packet || !frames)
         goto done;
-    bool static_only = j->static_only || j->first_frame || j->video_poster;
+    bool static_only = j->static_only || j->first_frame || (j->video_poster && !clip);
     int read_status = 0;
+    bool flushed = false;
+    AVRational rate = format->streams[stream]->avg_frame_rate;
     for (unsigned n = 0; n < 4096; ++n) {
         read_status = av_read_frame(format, packet);
         if (read_status < 0 && (read_status != AVERROR_EOF || !j->video_poster))
@@ -352,10 +374,15 @@ static bool decode_file(const image_decode_request *j, graphics_image *out, anim
         }
         int64_t duration = av_rescale_q(packet->duration, format->streams[stream]->time_base,
                                         (AVRational){1, 1000});
-        if (avcodec_send_packet(decoder, read_status == AVERROR_EOF ? NULL : packet) < 0)
+        /* The decoder is drained once; later reads only collect what it held. */
+        if (!flushed &&
+            avcodec_send_packet(decoder, read_status == AVERROR_EOF ? NULL : packet) < 0)
             goto done;
+        flushed |= read_status == AVERROR_EOF;
         av_packet_unref(packet);
         int decoded = avcodec_receive_frame(decoder, frame);
+        if (decoded == AVERROR_EOF && clip && flushed && frames->count)
+            break;
         /* GIF extensions can form packets without producing an image. */
         if (decoded == AVERROR(EAGAIN)) {
             if (read_status == AVERROR_EOF)
@@ -428,6 +455,10 @@ static bool decode_file(const image_decode_request *j, graphics_image *out, anim
         size_t channels = alpha ? 4U : 3U;
         size_t bytes = (size_t)frames->width * frames->height * channels + IMAGE_PIXEL_PADDING;
         if (bytes > ANIMATION_BYTES || frames->bytes > ANIMATION_BYTES - bytes) {
+            if (overflowed && frames->count && animated_image && !static_only) {
+                *overflowed = true;
+                goto done;
+            }
             static_only = true;
             if (frames->count) {
                 for (size_t i = 1; i < frames->count; ++i) {
@@ -442,6 +473,8 @@ static bool decode_file(const image_decode_request *j, graphics_image *out, anim
                 break;
             }
         }
+        if (clip && rate.num > 0 && rate.den > 0)
+            duration = av_rescale(1000, rate.den, rate.num);
         uint32_t delay = duration > 0 && duration <= 60000 ? (uint32_t)duration : 100;
         if (!store_frame(j, frames, rgba, sw, sh, alpha, bytes, delay))
             goto done;
@@ -470,6 +503,23 @@ done:
     avcodec_free_context(&decoder);
     avformat_close_input(&format);
     return ok;
+}
+/* Frames of a long animation are kept smaller, never dropped: the encoder scales
+ * them back up when drawing, so the picture keeps playing at a lower sharpness. */
+static bool decode_file(const image_decode_request *j, graphics_image *out, animation **animated,
+                        bool (*cancelled)(void *context), void *context)
+{
+    image_decode_request attempt = *j;
+    for (int shrink = 0;; ++shrink) {
+        bool overflowed = false;
+        bool smaller = j->decode_only && shrink < 4 && attempt.width > 48 && attempt.height > 48;
+        bool ok = decode_attempt(&attempt, out, animated, cancelled, context,
+                                 smaller ? &overflowed : NULL);
+        if (!overflowed)
+            return ok;
+        attempt.width = (attempt.width + 1) / 2;
+        attempt.height = (attempt.height + 1) / 2;
+    }
 }
 static bool encode_frame(const image_decode_request *request, graphics_image *out)
 {

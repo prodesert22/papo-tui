@@ -40,7 +40,7 @@ static bool iterm2_tiff_has_alpha(const graphics_image *image)
 }
 int main(int argc, char **argv)
 {
-    assert(argc == 11);
+    assert(argc == 13);
     image_decode_request request = {
         .width = 640,
         .height = 360,
@@ -234,6 +234,33 @@ int main(int argc, char **argv)
     animation_free(still);
     still = NULL;
     assert(!image_decode_file(&poster, &cover, &still, cancelled, NULL));
+    /* A silent clip loops like a GIF, B-frame delay included; sound keeps it a cover. */
+    image_decode_request loop = poster;
+    loop.path = argv[11];
+    loop.video_clip = true;
+    loop.decode_only = loop.retain_static = true;
+    animation *frames = NULL;
+    assert(image_decode_file(&loop, &cover, &frames, NULL, NULL));
+    assert(frames && frames->count == 5 && frames->duration == 500 && frames->delay[0] == 100);
+    animation_free(frames);
+    frames = NULL;
+    loop.path = argv[10];
+    assert(image_decode_file(&loop, &cover, &frames, NULL, NULL));
+    assert(frames && frames->count == 1);
+    animation_free(frames);
+    /* Frames that would not fit the budget at full size stay animated, smaller. */
+    image_decode_request many = {
+        .path = argv[12],
+        .width = 480,
+        .height = 426,
+        .native = true,
+        .decode_only = true,
+        .retain_static = true,
+        .terminal = {.protocol = GRAPHICS_KITTY, .cell_width = 8, .cell_height = 16}};
+    assert(image_decode_file(&many, &cover, &frames, NULL, NULL));
+    assert(frames && frames->count == 150 && frames->duration == 10000);
+    assert(frames->width < 480 && frames->source_width == 480 && frames->bytes <= ANIMATION_BYTES);
+    animation_free(frames);
     puts("GIF frame pixels/delays, native dimensions, proportional limits, crops and cancellation "
          "verified");
     return 0;

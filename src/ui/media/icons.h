@@ -33,6 +33,10 @@ bool icons_literal(const uint32_t *text, size_t at);
 bool icons_text(icon_view *v, uint32_t icon, char *out, size_t size);
 bool icons_avatar(icon_view *v, const char *id, const char *message, int y, int x, int top,
                   int bottom, int pair);
+/* A picture fetched from a public https address, scaled to fit columns x rows;
+ * `slot` tells apart several pictures drawn under one scope. */
+bool icons_url_picture(icon_view *v, WINDOW *w, const char *url, const char *scope, size_t slot,
+                       int y, int x, int columns, int rows, int pair);
 bool icons_member_picture(icon_view *v, const char *id, bool banner, const char *scope, int y,
                           int x, int columns, int rows, int pair);
 bool icons_message_avatar(icon_view *v, const json_t *message, int y, int x, int top, int bottom,

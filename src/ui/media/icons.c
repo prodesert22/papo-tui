@@ -534,3 +534,25 @@ bool icons_member_picture(icon_view *v, const char *id, bool banner, const char 
     icons_scope(v, scope, 0);
     return offer(v, resource, request, y, x, 0, 0, 0);
 }
+bool icons_url_picture(icon_view *v, WINDOW *w, const char *url, const char *scope, size_t slot,
+                       int y, int x, int columns, int rows, int pair)
+{
+    graphics_terminal terminal = graphics_terminal_get();
+    if (!v || !w || !v->store || !url || !terminal.supported ||
+        app_mode_get() == APP_MODE_ULTRALIGHT || terminal.cell_width < 1 ||
+        terminal.cell_height < 1 || columns < 1 || rows < 1)
+        return false;
+    media_resource *resource = media_cache_acquire_url(v->store, url, 0);
+    if (!resource)
+        return false;
+    media_resource_cache_for_session(resource);
+    image_decode_request request = {.width = columns * terminal.cell_width,
+                                    .height = rows * terminal.cell_height,
+                                    .terminal = terminal,
+                                    .center = true,
+                                    .matte = true,
+                                    .background = background(pair),
+                                    .max_side = 1024};
+    icons_scope(v, scope, 0);
+    return offer(v, resource, request, getbegy(w) + y, getbegx(w) + x, 0, 0, slot);
+}

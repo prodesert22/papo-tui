@@ -75,6 +75,23 @@ with tempfile.TemporaryDirectory(prefix="papo-image-decode-") as directory:
         "aac",
         video,
     )
+    clip = root / "clip.mp4"
+    ffmpeg(
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc2=size=32x24:rate=10",
+        "-t",
+        "0.5",
+        "-c:v",
+        "mpeg4",
+        "-bf",
+        "2",
+        "-an",
+        clip,
+    )
+    many = root / "many.gif"
+    ffmpeg("-f", "lavfi", "-i", "testsrc2=size=480x426:rate=15", "-t", "10", many)
     subprocess.run(
         [
             sys.argv[1],
@@ -88,6 +105,8 @@ with tempfile.TemporaryDirectory(prefix="papo-image-decode-") as directory:
             str(large_gif),
             str(transparent),
             str(video),
+            str(clip),
+            str(many),
         ],
         check=True,
     )

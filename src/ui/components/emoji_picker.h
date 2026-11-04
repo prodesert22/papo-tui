@@ -6,6 +6,9 @@ typedef struct emoji_picker emoji_picker;
 emoji_picker *emoji_picker_create(chat_assets *assets, icon_view *icons, const char *instance,
                                   const char *user);
 void emoji_picker_destroy(emoji_picker *p);
+/* Enables the GIF source, which searches Wikimedia Commons through auth's
+ * transport. Without it the picker offers only Unicode and server emojis. */
+void emoji_picker_gifs(emoji_picker *p, auth_client *auth);
 bool emoji_picker_open(const emoji_picker *p);
 void emoji_picker_show(emoji_picker *p, const char *channel, uint64_t generation);
 void emoji_picker_reaction(emoji_picker *p, const char *channel, uint64_t generation);

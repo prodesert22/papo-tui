@@ -29,6 +29,8 @@ typedef struct {
     graphics_terminal terminal;
     uint32_t image_id;
     bool preview, native, video_poster;
+    /* A short silent video decoded as a looping animation, like a GIF. */
+    bool video_clip;
     bool decode_only, retain_static, static_only;
     animation *animation;
     size_t frame;

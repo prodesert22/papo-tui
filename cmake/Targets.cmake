@@ -26,6 +26,7 @@ add_library(
     src/model/text/mentions.c
     src/model/assets/catalog.c
     src/net/http/download.c
+    src/net/gif_search.c
     src/net/auth/session_time.c
     src/net/rate_limit.c
     src/net/realtime/websocket.c

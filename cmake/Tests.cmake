@@ -262,6 +262,24 @@ if(BUILD_TESTING)
         $<TARGET_FILE:papo-tui>
         ${FFMPEG_CLI})
     papo_set_tests_properties(media-navigation-terminal PROPERTIES TIMEOUT 180)
+    papo_add_test(
+        NAME
+        gif-attachments-terminal
+        COMMAND
+        ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_gif_attachments.py
+        $<TARGET_FILE:papo-tui>
+        ${FFMPEG_CLI})
+    papo_set_tests_properties(gif-attachments-terminal PROPERTIES TIMEOUT 180)
+    papo_add_test(
+        NAME
+        gif-picker-terminal
+        COMMAND
+        ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_gif_picker.py
+        $<TARGET_FILE:papo-tui>
+        ${FFMPEG_CLI})
+    papo_set_tests_properties(gif-picker-terminal PROPERTIES TIMEOUT 120)
     find_program(OPENSSL_CLI NAMES openssl REQUIRED)
     add_executable(realtime-probe tests/probes/realtime_probe.c)
     target_link_libraries(realtime-probe PRIVATE papo_auth)

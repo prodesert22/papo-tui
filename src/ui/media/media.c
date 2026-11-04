@@ -125,9 +125,12 @@ static void delete_entry(cache_entry *e)
 static bool ensure_resource(media_view *v, cache_entry *e)
 {
     if (!e->resource)
-        e->resource = e->item.svg ? media_cache_acquire_svg(v->store, e->item.id, e->item.version)
-                                  : media_cache_acquire(v->store, e->item.kind, e->item.id,
-                                                        e->item.version, e->item.video);
+        e->resource = e->item.svg
+                          ? media_cache_acquire_svg(v->store, e->item.id, e->item.version)
+                      : *e->item.url
+                          ? media_cache_acquire_url(v->store, e->item.url, e->item.version)
+                          : media_cache_acquire(v->store, e->item.kind, e->item.id,
+                                                e->item.version, e->item.video);
     return e->resource != NULL;
 }
 static void free_job(job *j)
@@ -722,6 +725,7 @@ void media_view_offer(media_view *v, const message_media *item, int y, int x, in
         image_decode_request request = {.width = w,
                                         .height = h,
                                         .native = native_media(item),
+                                        .video_clip = item->clip,
                                         .terminal = t,
                                         .matte = true,
                                         .background = background,
@@ -871,7 +875,8 @@ bool media_view_poll(media_view *v, history *h)
     if (terminal.supported)
         for (int i = 0; i < v->visible_count; ++i) {
             cache_entry *e = &v->cache[v->visible[i].entry];
-            if (!e->item.audio && (!e->item.video || e->item.kind == AUTH_MEDIA_ATTACHMENT)) {
+            if (!e->item.audio &&
+                (!e->item.video || e->item.kind == AUTH_MEDIA_ATTACHMENT || e->item.clip)) {
                 ensure_resource(v, e);
                 media_resource_use_image(e->resource, !strcmp(e->item.role, "author"), false);
                 placement *p = &v->visible[i];
@@ -1001,7 +1006,8 @@ bool media_view_poll(media_view *v, history *h)
     for (int i = 0; i < v->visible_count; ++i) {
         placement *p = &v->visible[i];
         cache_entry *e = &v->cache[p->entry];
-        if ((e->item.video && e->item.kind != AUTH_MEDIA_ATTACHMENT) || p->height < 1)
+        if ((e->item.video && e->item.kind != AUTH_MEDIA_ATTACHMENT && !e->item.clip) ||
+            p->height < 1)
             continue;
         int source_w = 0, source_h = 0;
         if (media_resource_dimensions(e->resource, !strcmp(e->item.role, "author"), &source_w,
@@ -1017,6 +1023,7 @@ bool media_view_poll(media_view *v, history *h)
         image_decode_request request = {.width = w,
                                         .height = height,
                                         .native = native_media(&e->item),
+                                        .video_clip = e->item.clip,
                                         .terminal = terminal,
                                         .matte = true,
                                         .background = p->background,

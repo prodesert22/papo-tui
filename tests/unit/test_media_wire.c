@@ -17,6 +17,7 @@ int main(void)
                                     .matte = true,
                                     .region = true,
                                     .video_poster = true,
+                                    .video_clip = true,
                                     .notification_badge = true,
                                     .top = 1,
                                     .bottom = 2,
@@ -30,7 +31,8 @@ int main(void)
     assert(!strcmp(path, request.path) && received.cover && received.matte &&
            received.image_id == 123);
     assert(received.width == 32 && received.terminal.protocol == GRAPHICS_CHAFA);
-    assert(received.region && received.video_poster && received.notification_badge &&
+    assert(received.region && received.video_poster && received.video_clip &&
+           received.notification_badge &&
            received.top == 1 && received.bottom == 2 && received.left == 3 && received.right == 4);
     g_free(path);
     g_variant_unref(value);

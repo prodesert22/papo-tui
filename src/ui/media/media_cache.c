@@ -1352,6 +1352,11 @@ const graphics_image *media_resource_image(media_resource *r, bool author,
     }
     bool enlarge =
         o->frames && (needed_width > o->frames->width || needed_height > o->frames->height);
+    /* A long animation decoded smaller to fit its budget would otherwise ask to
+     * be decoded again, forever, whenever it is drawn larger than it is kept. */
+    if (enlarge && o->frames->count > 1 &&
+        (size_t)needed_width * (size_t)needed_height * 4U * o->frames->count > ANIMATION_BYTES)
+        enlarge = false;
     /* Requests collected in one visibility pass share the largest decode
      * admitted for that content before the batch reaches the workers. */
     if (o->job && !o->job->submitted && o->job->kind == TASK_DECODE) {
@@ -1379,7 +1384,7 @@ const graphics_image *media_resource_image(media_resource *r, bool author,
          * Retain existing graphics until the larger decode is published. */
         if (!object_busy(o)) {
             size_t workspace = (size_t)needed_width * needed_height * 4 + IMAGE_PIXEL_PADDING;
-            bool static_only = o->video;
+            bool static_only = o->video && !request.video_clip;
             size_t reserve = frames_reserve(needed_width, needed_height, static_only) +
                              sizeof(animation) + workspace;
             task *t = task_new(r->cache, reserve);
@@ -1402,7 +1407,8 @@ const graphics_image *media_resource_image(media_resource *r, bool author,
                                                     .decode_only = true,
                                                     .retain_static = true,
                                                     .static_only = static_only,
-                                                    .video_poster = o->video};
+                                                    .video_poster = o->video,
+                                                    .video_clip = request.video_clip};
                 if (!t->path) {
                     object_unref(o);
                     free(t);

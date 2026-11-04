@@ -405,6 +405,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
     ui->emojis = ui->icons ? emoji_picker_create(history_assets(ui->model), ui->icons,
                                                  auth_instance_url(auth), auth_user_id(auth))
                            : NULL;
+    emoji_picker_gifs(ui->emojis, auth);
     ui->at_end = ui->show_channels = true;
     ui->initial_channel_pending = true;
     /* Returning to a tab keeps its conversation; a new process reopens the

@@ -72,6 +72,12 @@
   "tests/terminal/test_media_backends.py": {
     "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
   },
+  "tests/terminal/test_gif_attachments.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/terminal/test_gif_picker.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
   "tests/terminal/test_media_modal.py": {
     "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
   },

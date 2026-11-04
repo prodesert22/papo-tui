@@ -2,7 +2,7 @@
 
 Terminal chat client written in C. Connect to independent Papo instances and
 chat in channels or direct messages, with message editing, deletion, replies,
-reactions, pinned messages, server message search, notifications, mentions, emojis
+reactions, pinned messages, server message search, notifications, mentions, emojis, GIF search
 and media in supported terminals.
 
 Join a voice channel with Enter or a click. The buttons **🔊 🎤** beside the

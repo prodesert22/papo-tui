@@ -532,6 +532,23 @@ Messages with text and reaction buttons keep their usual emoji size. Light keeps
 enlarged server emojis static and uses native Unicode emojis; Ultralight keeps
 the text layout.
 
+### Find a GIF
+
+In the emoji picker, choose **[GIF]** (right of **[Servidor]**) to search animated
+GIFs on Wikimedia Commons, a public service that needs no account or key. The
+search starts only when you pick **[GIF]**, never when the picker opens, and it
+waits a moment after you stop typing. Leave the search empty to browse GIFs
+without a topic. Results show an animated preview and a title; use the arrow
+keys or the mouse to choose one and press Enter to put its address in your
+message, then send the message as usual. Ctrl+R repeats the search.
+
+Searches go to `commons.wikimedia.org` and the previews come from
+`upload.wikimedia.org`, so those services see your search terms and address.
+Commons holds openly licensed files, so it has fewer popular reaction GIFs than
+commercial sites. Whether the message shows a preview depends on the instance
+turning the link into an embed. The **[GIF]** button is hidden while reacting to
+a message, and Ultralight lists titles without previews.
+
 ## Permissions and access
 
 The channel list hides channels you cannot read. Message menus show only the
@@ -994,6 +1011,17 @@ from other messages never join the sequence, nor do author avatars. Moving to
 another media stops the one that was playing. The properties panel stays open
 while you browse, and downloads are reused, so switching back to a media already
 seen does not download it again.
+
+Link previews from GIF sites (Giphy, Tenor and Klipy) play in place: the short
+silent video behind the link loops like an attached GIF, with no key press, and
+the **Abrir player** line below it opens the full player. Longer videos, videos
+with sound and previews from other sites keep a still cover. Light mode draws the
+loop with colored characters and Ultralight shows the link as text.
+
+A message that contains a direct link to a `.gif`, `.apng` or `.webp` file on Giphy, Tenor, Klipy or
+Wikimedia (such as a GIF chosen with **[GIF]** in the emoji picker) shows the GIF
+playing in the conversation, up to three per message. The picture is loaded from
+that site, which sees your address, and the link text stays in the message.
 
 When a message carries an embed with a video, pressing Enter on the embed cover
 opens the video player directly. The **Abrir player** entry keeps working as
