@@ -418,6 +418,43 @@ void inbox_observe_message(inbox *b, const json_t *message)
         ++b->revision;
     json_decref(preview);
 }
+/* One desktop alert per message: the server's new_notification and the alert
+ * made here for a device-only "all" channel can both arrive for it. */
+static bool alert_claim(inbox *b, const char *message_id)
+{
+    char key[48];
+    snprintf(key, sizeof(key), "alert:%s", message_id);
+    if (json_object_get(b->seen, key))
+        return false;
+    return bounded_key(b->seen, key, json_true());
+}
+/* The server applies its own preference, so a channel set to "all" only on
+ * this device gets no new_notification for ordinary messages. Raise the alert
+ * from the message itself. */
+static void local_alert(inbox *b, const json_t *event)
+{
+    const char *channel = s(event, "channel_id"), *id = s(event, "id"),
+               *author = s(event, "author_id");
+    const char *mode = inbox_local_notifications(b, channel);
+    if (!mode || strcmp(mode, "all") || !*author || !strcmp(author, auth_user_id(b->auth)) ||
+        json_object_get(b->viewed, id) || !alert_claim(b, id))
+        return;
+    char content[513];
+    const char *source = s(event, "content");
+    size_t length = strlen(source);
+    if (length > sizeof(content) - 1) {
+        length = sizeof(content) - 1;
+        while (length && ((unsigned char)source[length] & 0xc0) == 0x80)
+            --length;
+    }
+    memcpy(content, source, length);
+    content[length] = 0;
+    json_t *alert = json_pack("{s:s,s:s,s:s,s:s,s:s}", "type", "new_notification", "id", id,
+                              "user_id", author, "message_id", id, "message_content", content);
+    if (alert && json_array_append(b->alerts, alert) == 0)
+        trim(b->alerts, 256, 1024U * 1024U, false);
+    json_decref(alert);
+}
 bool inbox_event(inbox *b, const json_t *event)
 {
     const char *type = s(event, "type");
@@ -475,6 +512,7 @@ bool inbox_event(inbox *b, const json_t *event)
             (*s(event, "author_id") && !history_uuid(s(event, "author_id"))))
             return false;
         inbox_observe_message(b, event);
+        local_alert(b, event);
         if (strcmp(s(event, "author_id"), auth_user_id(b->auth)) &&
             !json_object_get(b->viewed, s(event, "id"))) {
             json_t *prior = json_object_get(b->unseen, s(event, "channel_id"));
@@ -536,7 +574,7 @@ bool inbox_event(inbox *b, const json_t *event)
     if (copy && json_object_get(b->viewed, s(event, "message_id")))
         json_object_set_new(copy, "_viewed", json_true());
     if (!copy || (!persisted && json_array_append(b->events, copy)) ||
-        json_array_append(b->alerts, copy)) {
+        (alert_claim(b, s(event, "message_id")) && json_array_append(b->alerts, copy))) {
         json_decref(copy);
         return false;
     }

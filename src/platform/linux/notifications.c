@@ -317,7 +317,9 @@ bool desktop_poll(desktop_notifier *n)
         g_dbus_connection_call(
             n->bus, "org.freedesktop.Notifications", "/org/freedesktop/Notifications",
             "org.freedesktop.Notifications", "Notify",
-            g_variant_new("(susss@as@a{sv}i)", "Papo TUI", s->id, "mail-unread", s->title,
+            /* Never replace the previous id: a daemon that updates a dismissed
+             * or already shown notification in place raises no new popup. */
+            g_variant_new("(susss@as@a{sv}i)", "Papo TUI", 0u, "mail-unread", s->title,
                           escaped ? escaped : body, g_variant_new_strv(NULL, 0),
                           g_variant_builder_end(&hints), -1),
             G_VARIANT_TYPE("(u)"), G_DBUS_CALL_FLAGS_NO_AUTO_START, 2000, n->cancel, sent, d);
