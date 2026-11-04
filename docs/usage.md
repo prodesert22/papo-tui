@@ -655,7 +655,7 @@ run, including manual send retries. Confirmed sends clear their reply target.
 
 A file attached to a message (anything that is not shown as an inline image or
 video) appears as a card with a file icon, its name, its size such as
-`2.46 KB`, and a **[ ↓ ]** button at the right edge. Images and videos that
+`2.46 KB`, and a **[ ↓ ]** button at the right edge, filled with the highlight color. Images and videos that
 cannot be drawn on your terminal (Light mode, or a terminal without graphics)
 use the same card. Ultralight mode lists attachments as text, without a button.
 
