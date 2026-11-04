@@ -419,12 +419,67 @@ static void attachment_layout(void)
     assert(media_rows == 10);
     message_blocks_free(&b);
     assert(message_blocks_build(&b, m, "Sender", "", 80, false));
-    bool metadata = false;
+    /* Without graphics the attachment is a file card: name, size and a
+     * download button, whose region points back at the attachment. */
+    bool name = false, size = false, button = false;
     for (size_t r = 0; r < b.count; ++r)
-        for (int c = 0; c < b.rows[r].count; ++c)
-            metadata |= strstr(b.rows[r].segments[c].text, "Anexo: example.gif") != NULL;
-    assert(metadata);
+        for (int c = 0; c < b.rows[r].count; ++c) {
+            const char *text = b.rows[r].segments[c].text;
+            name |= !strcmp(text, "example.gif");
+            size |= !strcmp(text, "42.54 KB");
+            button |= !strcmp(text, "[ ↓ ]");
+            assert(!strstr(text, "Anexo:") && !strstr(text, "Tipo:"));
+        }
+    assert(name && size && button);
+    assert(b.file_count == 1 && b.files[0].index == 0 && b.files[0].width == 5);
+    assert(b.rows[b.files[0].row].card && b.rows[b.files[0].row].segments[2].x == b.files[0].x);
     message_blocks_free(&b);
+    json_decref(m);
+}
+static void file_card_layout(void)
+{
+    /* Two plain files, one with markup-like and control characters in its
+     * name: the card never emits the control sequence and keeps one button
+     * per attachment, in order. */
+    json_t *m = json_pack("{s:s,s:[{s:s,s:s,s:s,s:i},{s:s,s:s,s:s,s:i,s:s}]}", "id",
+                          "00000000-0000-4000-8000-000000000001", "attachments", "id",
+                          "00000000-0000-4000-8000-000000000002", "mime_type", "application/zip",
+                          "original_file_name", "mouse-scroll-fix-1.0.0.jar", "size_bytes", 2517,
+                          "id", "00000000-0000-4000-8000-000000000003", "mime_type", "text/plain",
+                          "original_file_name", "evil\x1b[2Jname.txt", "size_bytes",
+                          5 * 1024 * 1024, "moderation_status", "blocked");
+    assert(m);
+    app_mode_set(APP_MODE_NORMAL);
+    for (int graphics = 0; graphics < 2; ++graphics) {
+        message_blocks b;
+        assert(message_blocks_build(&b, m, "Sender", "", 80, graphics != 0));
+        assert(b.media_count == 0 && b.file_count == 2);
+        assert(b.files[0].index == 0 && b.files[1].index == 1 && b.files[0].row < b.files[1].row);
+        bool kb = false, mb = false;
+        for (size_t r = 0; r < b.count; ++r)
+            for (int c = 0; c < b.rows[r].count; ++c) {
+                const char *text = b.rows[r].segments[c].text;
+                assert(!strchr(text, 0x1b));
+                kb |= !strcmp(text, "2.46 KB");
+                mb |= strstr(text, "5.00 MB") && strstr(text, "Moderação: blocked");
+            }
+        assert(kb && mb);
+        message_blocks_free(&b);
+    }
+    /* Ultralight keeps plain text: no card, no button. */
+    app_mode_set(APP_MODE_ULTRALIGHT);
+    message_blocks b;
+    assert(message_blocks_build(&b, m, "Sender", "", 80, false));
+    assert(b.file_count == 0);
+    message_blocks_free(&b);
+    app_mode_set(APP_MODE_NORMAL);
+    char label[48];
+    message_file_size_label(0, label, sizeof(label));
+    assert(!strcmp(label, "0 bytes"));
+    message_file_size_label(1024 * 1024 * 3 / 2, label, sizeof(label));
+    assert(!strcmp(label, "1.50 MB"));
+    message_file_size_label(-1, label, sizeof(label));
+    assert(strstr(label, "desconhecido"));
     json_decref(m);
 }
 static void gallery_measure(void *context, const message_media *item, int available_width,
@@ -795,6 +850,7 @@ int main(void)
     preview_crops();
     embed_author_unique();
     attachment_layout();
+    file_card_layout();
     image_gallery();
     embed_gallery();
     modal_geometry();

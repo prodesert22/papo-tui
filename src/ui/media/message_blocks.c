@@ -468,6 +468,67 @@ static void style(message_blocks *b, size_t first, bool muted, bool link)
             b->rows[i].segments[j].link = link;
         }
 }
+void message_file_size_label(int64_t bytes, char *label, size_t capacity)
+{
+    static const char *const units[] = {"bytes", "KB", "MB", "GB"};
+    if (bytes < 0) {
+        snprintf(label, capacity, "tamanho desconhecido");
+        return;
+    }
+    double value = (double)bytes;
+    size_t unit = 0;
+    while (value >= 1024.0 && unit + 1 < G_N_ELEMENTS(units)) {
+        value /= 1024.0;
+        ++unit;
+    }
+    if (unit)
+        snprintf(label, capacity, "%.2f %s", value, units[unit]);
+    else
+        snprintf(label, capacity, "%lld %s", (long long)bytes, units[unit]);
+}
+/* File card: icon, name as a link, size, and a download button on the right.
+ * Every string is remote text and goes through the shared Unicode decoder. */
+static bool file_card(message_blocks *b, const char *key, const char *name, int64_t size,
+                      const char *moderation, size_t index, int width)
+{
+    int card_width = width > 56 ? 56 : width;
+    bool button = card_width >= 16;
+    size_t start = b->count, row, end, button_end;
+    char icon_key[160], button_key[160], detail[96], size_text[48];
+    snprintf(icon_key, sizeof(icon_key), "%s:icon", key);
+    snprintf(button_key, sizeof(button_key), "%s:download", key);
+    if (!blank(b, true, true, false, 0))
+        return false;
+    row = b->count;
+    if (!column(b, row, icon_key, "▤", 2, 1, false, true, 0, &end) ||
+        !column(b, row, key, name, 4, card_width - 4 - (button ? 8 : 2), false, true, 0, &end))
+        return false;
+    int button_x = card_width - 7;
+    if (button && !column(b, row, button_key, "[ ↓ ]", button_x, 5, true, true, 0, &button_end))
+        return false;
+    style(b, row, false, true);
+    message_file_size_label(size, size_text, sizeof(size_text));
+    if (!strcmp(moderation, "sensitive") || !strcmp(moderation, "blocked"))
+        snprintf(detail, sizeof(detail), "%s · Moderação: %s", size_text, moderation);
+    else
+        snprintf(detail, sizeof(detail), "%s", size_text);
+    size_t detail_row = b->count;
+    if (!column(b, detail_row, key, detail, 4, card_width - 6, false, true, 0, &end))
+        return false;
+    style(b, detail_row, true, false);
+    if (!blank(b, true, false, true, 0))
+        return false;
+    for (size_t r = start; r < b->count; ++r)
+        b->rows[r].card_width = card_width;
+    if (button) {
+        message_file_region *files = realloc(b->files, (b->file_count + 1) * sizeof(*files));
+        if (!files)
+            return false;
+        b->files = files;
+        b->files[b->file_count++] = (message_file_region){(int)row, button_x, 5, index};
+    }
+    return true;
+}
 void message_reaction_label(chat_assets *assets, const json_t *emoji, char *label, size_t capacity)
 {
     const char *unicode = str(emoji, "unicode");
@@ -935,12 +996,10 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
             continue;
         }
         if (!graphics || (!image && !video)) {
-            if (!labeled(b, key, "Anexo: ", name, width, true, false, 0))
-                goto error;
-            snprintf(label, sizeof(label), "Tipo: %s · %lld bytes · Moderação: %s", mime,
-                     (long long)json_integer_value(json_object_get(item, "size_bytes")),
-                     str(item, "moderation_status"));
-            if (!text(b, key, label, width, false, false, 0))
+            json_t *size = json_object_get(item, "size_bytes");
+            if (!file_card(b, key, name,
+                           json_is_integer(size) ? (int64_t)json_integer_value(size) : -1,
+                           str(item, "moderation_status"), index, width))
                 goto error;
         }
         if ((image || video) && !media(b, m, item, key, "attachment", name, AUTH_MEDIA_ATTACHMENT,
@@ -1151,6 +1210,7 @@ void message_blocks_free(message_blocks *b)
         free(b->rows[i].icons);
     free(b->rows);
     free(b->media);
+    free(b->files);
     memset(b, 0, sizeof(*b));
 }
 void message_row_draw(WINDOW *w, const message_row *row, int y, int x, int width, int pair,

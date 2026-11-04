@@ -12,8 +12,14 @@ typedef struct {
     GPtrArray *entries;
     char *single;
 } directory_result;
+/* Outcome of checking the typed save destination off the UI thread. */
+typedef struct {
+    char *path;
+    bool directory, exists;
+} save_target;
 struct file_picker {
-    bool open, native;
+    bool open, native, save, resolving;
+    char *name, *save_result, *confirm;
     WINDOW *window;
     GTask *task;
     GCancellable *cancel;
@@ -37,6 +43,12 @@ static void free_directory(gpointer data)
     g_free(result->single);
     g_free(result);
 }
+static void free_target(gpointer data)
+{
+    save_target *target = data;
+    g_free(target->path);
+    g_free(target);
+}
 static gint compare_entry(gconstpointer a, gconstpointer b)
 {
     const entry *left = *(entry *const *)a, *right = *(entry *const *)b;
@@ -49,11 +61,60 @@ static void native_worker(GTask *task, gpointer source, gpointer data, GCancella
     (void)source;
     (void)data;
     GError *error = NULL;
-    GPtrArray *paths = platform_pick_files(cancel, &error);
+    GPtrArray *paths = NULL;
+    const char *name = g_task_get_task_data(task);
+    if (name) {
+        char *path = platform_pick_save(name, cancel, &error);
+        if (path) {
+            paths = g_ptr_array_new_with_free_func(g_free);
+            g_ptr_array_add(paths, path);
+        }
+    } else
+        paths = platform_pick_files(cancel, &error);
     if (paths)
         g_task_return_pointer(task, paths, (GDestroyNotify)g_ptr_array_unref);
     else
         g_task_return_error(task, error);
+}
+static bool existing_directory(GFile *file, GCancellable *cancel)
+{
+    GFileInfo *info = g_file_query_info(file, G_FILE_ATTRIBUTE_STANDARD_TYPE,
+                                        G_FILE_QUERY_INFO_NONE, cancel, NULL);
+    bool result = info && g_file_info_get_file_type(info) == G_FILE_TYPE_DIRECTORY;
+    g_clear_object(&info);
+    return result;
+}
+static void target_worker(GTask *task, gpointer source, gpointer data, GCancellable *cancel)
+{
+    (void)source;
+    GError *error = NULL;
+    GFile *file = g_file_new_for_path(data);
+    GFileInfo *info = g_file_query_info(file, G_FILE_ATTRIBUTE_STANDARD_TYPE,
+                                        G_FILE_QUERY_INFO_NONE, cancel, &error);
+    save_target *target = g_new0(save_target, 1);
+    target->path = g_strdup(data);
+    if (info) {
+        GFileType type = g_file_info_get_file_type(info);
+        target->directory = type == G_FILE_TYPE_DIRECTORY;
+        target->exists = true;
+        if (type != G_FILE_TYPE_DIRECTORY && type != G_FILE_TYPE_REGULAR)
+            g_set_error_literal(&error, G_IO_ERROR, G_IO_ERROR_NOT_REGULAR_FILE,
+                                "O destino não é um arquivo comum.");
+    } else if (g_error_matches(error, G_IO_ERROR, G_IO_ERROR_NOT_FOUND)) {
+        GFile *parent = g_file_get_parent(file);
+        g_clear_error(&error);
+        if (!parent || !existing_directory(parent, cancel))
+            g_set_error_literal(&error, G_IO_ERROR, G_IO_ERROR_NOT_FOUND,
+                                "A pasta do destino não existe.");
+        g_clear_object(&parent);
+    }
+    g_clear_object(&info);
+    g_object_unref(file);
+    if (error) {
+        free_target(target);
+        g_task_return_error(task, error);
+    } else
+        g_task_return_pointer(task, target, free_target);
 }
 static void directory_worker(GTask *task, gpointer source, gpointer data, GCancellable *cancel)
 {
@@ -120,6 +181,7 @@ static void stop_task(file_picker *p)
         g_cancellable_cancel(p->cancel);
     g_clear_object(&p->cancel);
     g_clear_object(&p->task);
+    p->resolving = false;
 }
 static void browse(file_picker *p, const char *path)
 {
@@ -129,7 +191,9 @@ static void browse(file_picker *p, const char *path)
     char *absolute = g_canonicalize_filename(path, p->directory);
     g_free(p->directory);
     p->directory = absolute;
-    char *display = g_filename_to_utf8(absolute, -1, NULL, NULL, NULL);
+    char *shown = p->save && p->name ? g_build_filename(absolute, p->name, NULL) : NULL;
+    char *display = g_filename_to_utf8(shown ? shown : absolute, -1, NULL, NULL, NULL);
+    g_free(shown);
     text_decode(&p->path, display ? display : "");
     g_free(display);
     p->cancel = g_cancellable_new();
@@ -155,6 +219,7 @@ void file_picker_close(file_picker *p)
         delwin(p->window);
     p->window = NULL;
     g_ptr_array_set_size(p->selected, 0);
+    p->resolving = false;
 }
 void file_picker_destroy(file_picker *p)
 {
@@ -162,6 +227,9 @@ void file_picker_destroy(file_picker *p)
         return;
     file_picker_close(p);
     g_free(p->directory);
+    g_free(p->name);
+    g_free(p->save_result);
+    g_free(p->confirm);
     g_ptr_array_unref(p->selected);
     g_clear_pointer(&p->entries, g_ptr_array_unref);
     g_clear_pointer(&p->result, g_ptr_array_unref);
@@ -172,6 +240,7 @@ void file_picker_show(file_picker *p)
     file_picker_close(p);
     p->open = true;
     p->focus = 0;
+    p->save = false;
     g_clear_pointer(&p->result, g_ptr_array_unref);
     if (!PAPO_NATIVE_FILE_DIALOGS) {
         browse(p, p->directory);
@@ -181,6 +250,40 @@ void file_picker_show(file_picker *p)
     p->cancel = g_cancellable_new();
     p->task = file_transfer_task_new(p->cancel);
     g_task_run_in_thread(p->task, native_worker);
+}
+void file_picker_show_save(file_picker *p, const char *name)
+{
+    file_picker_close(p);
+    p->open = p->save = true;
+    p->focus = 0;
+    g_free(p->name);
+    p->name = g_strdup(name && *name ? name : "arquivo");
+    g_clear_pointer(&p->confirm, g_free);
+    g_clear_pointer(&p->save_result, g_free);
+    if (!PAPO_NATIVE_FILE_DIALOGS) {
+        const char *downloads = g_get_user_special_dir(G_USER_DIRECTORY_DOWNLOAD);
+        if (downloads && g_file_test(downloads, G_FILE_TEST_IS_DIR)) {
+            g_free(p->directory);
+            p->directory = g_strdup(downloads);
+        }
+        browse(p, p->directory);
+        return;
+    }
+    p->native = true;
+    p->cancel = g_cancellable_new();
+    p->task = file_transfer_task_new(p->cancel);
+    g_task_set_task_data(p->task, g_strdup(p->name), g_free);
+    g_task_run_in_thread(p->task, native_worker);
+}
+bool file_picker_saving(const file_picker *p)
+{
+    return p && p->open && p->save;
+}
+char *file_picker_take_save(file_picker *p)
+{
+    char *path = p->save_result;
+    p->save_result = NULL;
+    return path;
 }
 bool file_picker_open(const file_picker *p)
 {
@@ -204,7 +307,13 @@ bool file_picker_poll(file_picker *p)
     g_clear_object(&p->cancel);
     if (p->native) {
         p->native = false;
-        if (result) {
+        if (result && p->save) {
+            GPtrArray *paths = result;
+            g_free(p->save_result);
+            p->save_result = paths->len ? g_strdup(g_ptr_array_index(paths, 0)) : NULL;
+            g_ptr_array_unref(paths);
+            file_picker_close(p);
+        } else if (result) {
             p->result = result;
             file_picker_close(p);
         } else if (g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
@@ -214,6 +323,26 @@ bool file_picker_poll(file_picker *p)
             browse(p, path);
             g_free(path);
         }
+    } else if (result && p->resolving) {
+        save_target *target = result;
+        p->resolving = false;
+        if (target->directory) {
+            char *path = g_strdup(target->path);
+            browse(p, path);
+            g_free(path);
+        } else if (target->exists && (!p->confirm || strcmp(p->confirm, target->path))) {
+            g_free(p->confirm);
+            p->confirm = g_strdup(target->path);
+            g_strlcpy(p->notice, "O arquivo já existe. Salve de novo para substituí-lo.",
+                      sizeof(p->notice));
+        } else {
+            g_free(p->save_result);
+            p->save_result = g_strdup(target->path);
+            file_picker_close(p);
+            g_free(p->directory);
+            p->directory = g_path_get_dirname(target->path);
+        }
+        free_target(target);
     } else if (result) {
         directory_result *directory = result;
         if (directory->single) {
@@ -227,10 +356,17 @@ bool file_picker_poll(file_picker *p)
             p->notice[0] = 0;
         }
         free_directory(directory);
+    } else if (p->resolving) {
+        p->resolving = false;
+        g_strlcpy(p->notice,
+                  error && g_error_matches(error, G_IO_ERROR, G_IO_ERROR_NOT_FOUND)
+                      ? error->message
+                      : "Não foi possível usar esse destino. Verifique o acesso.",
+                  sizeof(p->notice));
     } else
         g_strlcpy(p->notice, "Não foi possível listar o caminho. Verifique o acesso.",
                   sizeof(p->notice));
-    if (error && g_error_matches(error, G_IO_ERROR, G_IO_ERROR_NO_SPACE))
+    if (error && !p->resolving && g_error_matches(error, G_IO_ERROR, G_IO_ERROR_NO_SPACE))
         g_strlcpy(p->notice, error->message, sizeof(p->notice));
     g_clear_error(&error);
     return true;
@@ -252,8 +388,33 @@ static void toggle(file_picker *p, entry *item)
     else
         g_strlcpy(p->notice, "Limite local: 25 anexos por mensagem.", sizeof(p->notice));
 }
+/* Save mode: checks the typed destination before the dialog closes. */
+static void resolve(file_picker *p)
+{
+    char utf8[TEXT_UTF8_BYTES];
+    char *path =
+        text_encode(&p->path, utf8) ? g_filename_from_utf8(utf8, -1, NULL, NULL, NULL) : NULL;
+    if (!path || !*path) {
+        g_free(path);
+        g_strlcpy(p->notice, "Informe o caminho do arquivo.", sizeof(p->notice));
+        return;
+    }
+    stop_task(p);
+    char *absolute = g_canonicalize_filename(path, p->directory);
+    g_free(path);
+    p->resolving = true;
+    p->cancel = g_cancellable_new();
+    p->task = file_transfer_task_new(p->cancel);
+    g_task_set_task_data(p->task, absolute, g_free);
+    g_task_run_in_thread(p->task, target_worker);
+    g_strlcpy(p->notice, "Verificando destino…", sizeof(p->notice));
+}
 static void accept(file_picker *p)
 {
+    if (p->save) {
+        resolve(p);
+        return;
+    }
     if (!p->selected->len) {
         g_strlcpy(p->notice, "Marque arquivos com Espaço ou Enter.", sizeof(p->notice));
         return;
@@ -279,7 +440,12 @@ bool file_picker_key(file_picker *p, int type, uint32_t key)
     }
     bool enter =
         (type == OK && (key == '\n' || key == '\r')) || (type == KEY_CODE_YES && key == KEY_ENTER);
-    if (p->focus == 0) {
+    if (p->focus == 0 && p->save) {
+        if (enter)
+            resolve(p);
+        else
+            text_edit(&p->path, type, key, COLS - 10, false);
+    } else if (p->focus == 0) {
         if (enter) {
             char utf8[TEXT_UTF8_BYTES];
             if (text_encode(&p->path, utf8)) {
@@ -304,11 +470,20 @@ bool file_picker_key(file_picker *p, int type, uint32_t key)
                 char *path = g_strdup(item->path);
                 browse(p, path);
                 g_free(path);
-            } else if (!item->directory)
+            } else if (!item->directory && p->save && enter) {
+                g_free(p->name);
+                p->name = g_path_get_basename(item->path);
+                char *display = g_filename_to_utf8(item->path, -1, NULL, NULL, NULL);
+                text_decode(&p->path, display ? display : "");
+                g_free(display);
+                p->focus = 3;
+            } else if (!item->directory && !p->save)
                 toggle(p, item);
         }
     } else if (enter || (type == OK && key == ' ')) {
-        if (p->focus == 2)
+        if (p->focus == 2 && p->save)
+            file_picker_close(p);
+        else if (p->focus == 2)
             file_picker_close(p);
         else
             accept(p);
@@ -366,9 +541,9 @@ WINDOW *file_picker_draw(file_picker *p)
     wattrset(w, COLOR_PAIR(THEME_BORDER));
     box(w, 0, 0);
     wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
-    text_label(w, 0, 2, width - 4, " Anexar arquivos ");
+    text_label(w, 0, 2, width - 4, p->save ? " Salvar anexo " : " Anexar arquivos ");
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
-    text_label(w, 1, 2, width - 4, "Caminho:");
+    text_label(w, 1, 2, width - 4, p->save ? "Salvar em (pasta e nome do arquivo):" : "Caminho:");
     wattrset(w, COLOR_PAIR(p->focus == 0 ? THEME_FOCUSED : THEME_PANEL));
     text_draw_field(w, &p->path, &p->path_first, 2, 2, width - 4, false);
     int rows = height - 8;
@@ -382,6 +557,7 @@ WINDOW *file_picker_draw(file_picker *p)
                                                                             : THEME_PANEL));
         char *label = g_strdup_printf("%s %s%s",
                                       item->directory                ? " / "
+                                      : p->save                      ? "   "
                                       : selected(p, item->path) >= 0 ? "[x]"
                                                                      : "[ ]",
                                       item->name, item->directory ? "/" : "");
@@ -390,12 +566,16 @@ WINDOW *file_picker_draw(file_picker *p)
     }
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     char hint[256];
-    g_snprintf(hint, sizeof(hint), "%u marcado(s) · Espaço marcar · Tab ações", p->selected->len);
+    if (p->save)
+        g_strlcpy(hint, "Enter abre pasta ou usa o nome do arquivo · Tab ações", sizeof(hint));
+    else
+        g_snprintf(hint, sizeof(hint), "%u marcado(s) · Espaço marcar · Tab ações",
+                   p->selected->len);
     text_label(w, height - 4, 2, width - 4, hint);
     text_label(w, height - 3, 2, width - 4, p->notice);
     button_draw(w, height - 2, 2, 12, "Cancelar", p->focus == 2 ? BUTTON_FOCUSED : BUTTON_NORMAL,
                 BUTTON_PANEL);
-    button_draw(w, height - 2, width - 14, 12, "Anexar",
+    button_draw(w, height - 2, width - 14, 12, p->save ? "Salvar" : "Anexar",
                 p->focus == 3 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     wnoutrefresh(w);
     return w;

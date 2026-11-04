@@ -90,7 +90,7 @@ typedef struct {
     size_t bytes;
     message_blocks blocks;
 } cached_layout;
-enum { MESSAGE_HIT, REPLY_HIT, REACTION_HIT };
+enum { MESSAGE_HIT, REPLY_HIT, REACTION_HIT, DOWNLOAD_HIT };
 /* A cell of the history in message coordinates: the line within the message,
  * counted from its first row, and the body column. Survives scrolling and
  * pages loaded before it. */
@@ -203,7 +203,7 @@ typedef struct {
     int waiting_page;
     bool paging_notice;
     uint64_t menu_permissions;
-    int menu_cached[8], menu_cached_count;
+    int menu_cached[9], menu_cached_count;
     size_t section, offset;
     bool at_end, paste, show_channels, layout_failed, duplicate_modal, reenviar;
     bool dragging, editor_scrolling;
@@ -217,6 +217,7 @@ typedef struct {
     history_row *select_rows;
     int select_row_count;
     file_picker *files;
+    struct downloads *downloads; /* attachment saves in progress, or NULL */
     GTask *attachment_task;
     GCancellable *attachment_cancel;
     char attachment_channel[64], attachment_notice[256];
@@ -318,6 +319,11 @@ void conversation_idle_media(void *v);
 bool conversation_handle_confirmation(view *ui, int type, uint32_t key, bool enter);
 const GPtrArray *conversation_attachments(view *ui);
 bool conversation_attachments_poll(view *ui, auth_client *auth);
+/* Attachment downloads (downloads.c). only < 0 saves every attachment. */
+bool conversation_download_available(view *ui, const json_t *message);
+bool conversation_download_start(view *ui, const char *message_id, int only);
+bool conversation_downloads_poll(view *ui);
+void conversation_downloads_close(view *ui);
 void conversation_attachments_open(view *ui, bool clipboard);
 void conversation_attachments_close(view *ui);
 bool conversation_attachments_key(view *ui, int type, uint32_t key);

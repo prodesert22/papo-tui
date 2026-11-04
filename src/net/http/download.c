@@ -25,7 +25,7 @@ struct media_download {
     uint64_t generation;
     unsigned retry_after;
     long status;
-    bool attached, overflow, video, public_avatar;
+    bool attached, overflow, video, public_avatar, raw;
     const char *error;
 };
 int media_download_temp(media_download *m, char **path)
@@ -140,6 +140,7 @@ static bool begin_request(media_download *m, CURL *easy, auth_media_kind kind, b
     m->kind = kind;
     m->video = video;
     m->public_avatar = avatar;
+    m->raw = false;
     m->generation = auth_context_generation(m->auth);
     m->limit = avatar                     ? MEDIA_AVATAR_LIMIT
                : kind == AUTH_MEDIA_EMBED ? MEDIA_EMBED_LIMIT
@@ -177,6 +178,18 @@ bool media_download_request(media_download *m, auth_media_kind kind, const char 
         return false;
     return begin_request(m, auth_media_easy(m->auth, kind, id), kind, video, false);
 }
+bool media_download_file_request(media_download *m, const char *id)
+{
+    if (!m || !auth_has_session(m->auth) || !id || strlen(id) != 36U)
+        return false;
+    if (!begin_request(m, auth_media_easy(m->auth, AUTH_MEDIA_ATTACHMENT, id),
+                       AUTH_MEDIA_ATTACHMENT, false, false))
+        return false;
+    m->raw = true;
+    m->limit = MEDIA_FILE_LIMIT;
+    curl_easy_setopt(m->easy, CURLOPT_MAXFILESIZE_LARGE, (curl_off_t)m->limit);
+    return true;
+}
 bool media_download_avatar_request(media_download *m, const char *reference)
 {
     if (!m)
@@ -211,7 +224,8 @@ static void finish(media_download *m, CURLcode result)
     }
     bool written = m->file && fflush(m->file) == 0 && !ferror(m->file);
     release_transfer(m);
-    bool type = m->kind == AUTH_MEDIA_EMBED ? !strcmp(m->mime, "application/json")
+    bool type = m->raw                        ? true
+                : m->kind == AUTH_MEDIA_EMBED ? !strcmp(m->mime, "application/json")
                 : m->video ? video_type(m)
                            : (!strcmp(m->mime, "image/png") || !strcmp(m->mime, "image/jpeg") ||
                               !strcmp(m->mime, "image/webp") || !strcmp(m->mime, "image/gif"));

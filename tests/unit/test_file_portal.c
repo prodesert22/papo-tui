@@ -4,11 +4,13 @@ typedef struct {
     GDBusConnection *bus;
     char *destination;
     guint status;
-    bool silent;
+    bool silent, save;
 } service;
 typedef struct {
     GCancellable *cancel;
     GPtrArray *paths;
+    char *path;
+    bool save;
     GError *error;
     gint done;
 } request;
@@ -34,15 +36,22 @@ static void open_file(GDBusConnection *connection, const char *sender, const cha
     (void)path;
     (void)interface;
     service *s = data;
-    g_assert_cmpstr(method, ==, "OpenFile");
+    g_assert_cmpstr(method, ==, s->save ? "SaveFile" : "OpenFile");
     const char *parent, *title;
     GVariant *options;
     g_variant_get(parameters, "(&s&s@a{sv})", &parent, &title, &options);
     g_assert_cmpstr(parent, ==, "");
-    g_assert_cmpstr(title, ==, "Anexar arquivos");
-    gboolean multiple = false;
-    g_assert_true(g_variant_lookup(options, "multiple", "b", &multiple));
-    g_assert_true(multiple);
+    if (s->save) {
+        const char *name = NULL;
+        g_assert_cmpstr(title, ==, "Salvar anexo");
+        g_assert_true(g_variant_lookup(options, "current_name", "&s", &name));
+        g_assert_cmpstr(name, ==, "relatório final.pdf");
+    } else {
+        g_assert_cmpstr(title, ==, "Anexar arquivos");
+        gboolean multiple = false;
+        g_assert_true(g_variant_lookup(options, "multiple", "b", &multiple));
+        g_assert_true(multiple);
+    }
     g_variant_unref(options);
     g_free(s->destination);
     s->destination = g_strdup(sender);
@@ -53,7 +62,10 @@ static void open_file(GDBusConnection *connection, const char *sender, const cha
 static gpointer run_request(gpointer data)
 {
     request *r = data;
-    r->paths = platform_pick_files(r->cancel, &r->error);
+    if (r->save)
+        r->path = platform_pick_save("relatório final.pdf", r->cancel, &r->error);
+    else
+        r->paths = platform_pick_files(r->cancel, &r->error);
     g_atomic_int_set(&r->done, 1);
     return NULL;
 }
@@ -80,6 +92,8 @@ static void portal(void)
         "<node><interface name='org.freedesktop.portal.FileChooser'>"
         "<method name='OpenFile'><arg type='s' direction='in'/><arg type='s' direction='in'/>"
         "<arg type='a{sv}' direction='in'/><arg type='o' direction='out'/></method>"
+        "<method name='SaveFile'><arg type='s' direction='in'/><arg type='s' direction='in'/>"
+        "<arg type='a{sv}' direction='in'/><arg type='o' direction='out'/></method>"
         "</interface></node>",
         &error);
     g_assert_no_error(error);
@@ -87,10 +101,12 @@ static void portal(void)
     guint object = g_dbus_connection_register_object(
         s.bus, "/org/freedesktop/portal/desktop", node->interfaces[0], &vtable, &s, NULL, &error);
     g_assert_no_error(error);
-    for (int mode = 0; mode < 3; ++mode) {
+    for (int run = 0; run < 6; ++run) {
+        int mode = run % 3;
         s.status = mode == 1 ? 1 : 0;
         s.silent = mode == 2;
-        request r = {.cancel = g_cancellable_new()};
+        s.save = run >= 3;
+        request r = {.cancel = g_cancellable_new(), .save = run >= 3};
         GThread *thread = g_thread_new("portal-test", run_request, &r);
         gint64 start = g_get_monotonic_time();
         while (!g_atomic_int_get(&r.done) && g_get_monotonic_time() - start < 4000000) {
@@ -102,14 +118,19 @@ static void portal(void)
         }
         g_assert_cmpint(g_atomic_int_get(&r.done), ==, 1);
         g_thread_join(thread);
-        if (!mode) {
+        if (!mode && r.save) {
+            g_assert_no_error(r.error);
+            g_assert_cmpstr(r.path, ==, "/tmp/synthetic résumé.txt");
+        } else if (!mode) {
             g_assert_no_error(r.error);
             g_assert_cmpuint(r.paths->len, ==, 1);
             g_assert_cmpstr(g_ptr_array_index(r.paths, 0), ==, "/tmp/synthetic résumé.txt");
         } else {
             g_assert_null(r.paths);
+            g_assert_null(r.path);
             g_assert_error(r.error, G_IO_ERROR, G_IO_ERROR_CANCELLED);
         }
+        g_free(r.path);
         g_clear_pointer(&r.paths, g_ptr_array_unref);
         g_clear_error(&r.error);
         g_object_unref(r.cancel);
