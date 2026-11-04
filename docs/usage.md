@@ -569,6 +569,10 @@ press **m** while navigating messages to open the menu next to the selected
 message. Enter only opens media during message navigation. Press **m** again or
 Esc to close the menu. Use the mouse or ↑/↓ and Enter inside the menu to choose:
 
+A horizontal line separates four groups of options: reactions, navigation,
+content (download, pin and profile) and, last, actions on your own message. A
+group with no available option leaves no line.
+
 - **Ver quem reagiu** (See who reacted): show participants grouped by emoji.
   The left column shows rendered emojis and their total counts. Use ↑/↓ to
   highlight an emoji; Enter or → selects it and moves to its participants in
@@ -580,14 +584,18 @@ Esc to close the menu. Use the mouse or ↑/↓ and Enter inside the menu to cho
   directly, `e` opens the reaction picker, and `r` focuses the reply editor.
 - **Adicionar reação** (Add reaction): choose a Unicode or server emoji without
   changing your draft.
-- **Baixar anexo** / **Baixar anexos** (Download attachment / attachments): save
-  the message's attachments to disk. It appears only on messages that have
-  attachments; see [Download attachments](#download-attachments).
 - **Responder** (Reply): prepare a reply in the editor. The strip above the
   editor identifies the original; click **[x]** to cancel the reply.
   The original message stays highlighted while you compose the reply. Press Esc
   once in the editor to cancel the reply while keeping your text and editor focus.
 - **Ir para mensagem original** (Go to original message): available on replies.
+- **Baixar anexo** / **Baixar anexos** (Download attachment / attachments): save
+  the message's attachments to disk. It appears only on messages that have
+  attachments; see [Download attachments](#download-attachments).
+- **Ver perfil** (View profile): it opens the author's profile,
+  the same one shown from the member drawer, without opening the drawer. Esc or a
+  click outside closes it; with the drawer open, Esc returns to the drawer.
+  Messages sent by applications have no profile and do not show this option.
 - **Editar mensagem** (Edit message): available on your own messages. The editor
   shows **Editando mensagem** (Editing message). The message scrolls into view
   and stays highlighted with an **✎ Editando** border until editing ends.
@@ -599,10 +607,6 @@ Esc to close the menu. Use the mouse or ↑/↓ and Enter inside the menu to cho
   background only while focused. Choose it and press Enter, or click that option,
   to delete. Esc cancels. The server permits deletion of your
   own messages or messages covered by your `delete_messages` permission.
-- **Ver perfil** (View profile): the last option. It opens the author's profile,
-  the same one shown from the member drawer, without opening the drawer. Esc or a
-  click outside closes it; with the drawer open, Esc returns to the drawer.
-  Messages sent by applications have no profile and do not show this option.
 
 With the editor focused and empty, press ↑ to edit your newest own message in
 loaded history. This shortcut does not search unloaded pages. With text in the

@@ -72,7 +72,7 @@ class MessageInteractions(support.MessageInteractions):
                         def find(text):
                             return next((i for i, line in enumerate(rows) if text in line), None)
 
-                        return find(message), find("Ver quem reagiu"), find("Ver perfil")
+                        return find(message), find("Ver quem reagiu"), find("Excluir mensagem")
 
                     def positioned():
                         rows = terminal.screen.display

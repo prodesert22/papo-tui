@@ -568,8 +568,8 @@ class AppModes(unittest.TestCase):
                 ("\x06\t\t\n", "Filtros da busca"),
                 ("\x02", "Mensagens fixadas"),
                 ("\x02", "Ir para mensagem"),
-                # After Ctrl+K, the message menu down to its last item: Ver perfil.
-                ("m\x1bOB\x1bOB\x1bOB\x1bOB\x1bOB\x1bOB\x1bOB\x1bOB\n", "Perfil do membro"),
+                # After Ctrl+K, the message menu down to Ver perfil, the last content item.
+                ("m\x1bOB\x1bOB\x1bOB\x1bOB\x1bOB\n", "Perfil do membro"),
             ):
                 with self.subTest(mode=mode, modal=title):
                     self.seed(mode)

@@ -510,9 +510,9 @@ class MediaTerminal(support.MediaTerminal):
                 ("\x02", "Mensagens fixadas"),
                 ("\x02", "Detalhes da mensagem"),
                 ("\x02", "Ir para mensagem"),
-                # Message menu, down to its last item: Ver perfil.
+                # Message menu, down to Ver perfil, the last content item.
                 (
-                    "\x0bm\x1bOB\x1bOB\x1bOB\x1bOB\x1bOB\x1bOB\x1bOB\x1bOB\n",
+                    "\x0bm\x1bOB\x1bOB\x1bOB\x1bOB\x1bOB\n",
                     "Perfil do membro",
                 ),
             ):

@@ -93,7 +93,7 @@ class MessageMutations(unittest.TestCase):
                 terminal.send("\x0bm")
                 self.wait(terminal, "Editar mensagem")
                 self.wait(terminal, "Excluir mensagem")
-                terminal.send("\x1bOB" * 3 + "\n")
+                terminal.send("\x1bOB" * 5 + "\n")  # Editar follows the content group.
                 self.wait(terminal, "Editando mensagem")
                 self.assertIn("Mensagem 0001", self.editor_text(terminal))
                 terminal.send("\x03Discarded edit\x1b")
@@ -293,6 +293,41 @@ class MessageMutations(unittest.TestCase):
             finally:
                 self.assertTrue(terminal.close())
 
+    def test_menu_groups_are_separated_by_lines_that_clicks_skip(self):
+        with InteractionMock(count=1) as server:
+            self.own(server)
+            terminal = self.open(server)
+            try:
+                self.right_click(terminal, "Mensagem 0001")
+                self.wait(terminal, "Excluir mensagem")
+                rows = terminal.screen.display
+
+                def row_of(text):
+                    return next(i for i, line in enumerate(rows) if text in line)
+
+                def is_line(i):
+                    # The line-drawing glyph is "q" in the POSIX observer.
+                    return "qqqqqqqq" in rows[i] or "────────" in rows[i]
+
+                reactors, reaction = row_of("Ver quem reagiu"), row_of("Adicionar reação")
+                reply, profile = row_of("Responder"), row_of("Ver perfil")
+                edit, delete = row_of("Editar mensagem"), row_of("Excluir mensagem")
+                self.assertEqual(reaction, reactors + 1)  # Same group: no line.
+                self.assertTrue(is_line(reaction + 1) and reply == reaction + 2)
+                self.assertTrue(is_line(reply + 1))  # Navigation | content.
+                self.assertTrue(is_line(profile + 1) and edit == profile + 2)  # Content | own.
+                self.assertEqual(delete, edit + 1)
+                column = rows[delete].index("Excluir mensagem") + 1
+                terminal.click(reaction + 1, column)  # A divider is not an option.
+                terminal.read(0.3)
+                self.assertIn("Excluir mensagem", self.screen(terminal))
+                self.assertNotIn("Excluir mensagem?", self.screen(terminal))
+                self.assertEqual(server.mutation_calls, [])
+                terminal.click(delete, column)
+                self.wait(terminal, "Excluir mensagem?")
+            finally:
+                self.assertTrue(terminal.close())
+
     def test_delete_confirmation_escape_default_cancel_and_success(self):
         with InteractionMock(count=1) as server:
             target = self.own(server)
@@ -301,7 +336,7 @@ class MessageMutations(unittest.TestCase):
             try:
                 terminal.send("Preserved draft\x0bm")
                 self.wait(terminal, "Excluir mensagem")
-                terminal.send("\x1bOB" * 4 + "\n")
+                terminal.send("\x1bOB" * 6 + "\n")  # Excluir is the last item.
                 self.wait(terminal, "Excluir mensagem?")
                 terminal.send("\n")  # Cancel is selected initially.
                 self.assertEqual(server.mutation_calls, [])

@@ -1,17 +1,23 @@
 #include "ui/input/shortcuts.h"
 #include "ui/screens/conversation/private.h"
 
+/* Declared in menu order: a horizontal line separates each group, which are
+ * reactions, navigation, content, and actions on your own message. */
 enum {
     SHOW_REACTORS,
     ADD_REACTION,
     REPLY,
     ORIGINAL,
     DOWNLOAD_ATTACHMENT,
-    EDIT_MESSAGE,
-    DELETE_MESSAGE,
     PIN_MESSAGE,
-    VIEW_PROFILE
+    VIEW_PROFILE,
+    EDIT_MESSAGE,
+    DELETE_MESSAGE
 };
+static int action_group(int action)
+{
+    return action <= ADD_REACTION ? 0 : action <= ORIGINAL ? 1 : action <= VIEW_PROFILE ? 2 : 3;
+}
 static bool action_allowed(view *ui, int action, const json_t *message);
 static int menu_actions(view *ui, int items[9]);
 
@@ -479,7 +485,7 @@ static int menu_actions(view *ui, int items[9])
 {
     json_t *m = history_find_message(ui->model, ui->selected_message);
     int count = 0;
-    for (int action = SHOW_REACTORS; action <= VIEW_PROFILE; ++action)
+    for (int action = SHOW_REACTORS; action <= DELETE_MESSAGE; ++action)
         if (action_allowed(ui, action, m) &&
             (action != ORIGINAL || *conversation_str(m, "reply_to")))
             items[count++] = action;
@@ -497,6 +503,25 @@ static int menu_actions(view *ui, int items[9])
     memcpy(ui->menu_cached, items, (size_t)count * sizeof(*items));
     ui->menu_cached_count = count;
     return count;
+}
+/* The message menu is the only one with groups. Dividers sit between
+ * neighbouring items of different groups, so an empty group leaves no line. */
+static bool grouped_menu(const view *ui)
+{
+    return ui->context_open && !ui->reactors_open && !ui->delete_confirm &&
+           !*ui->channel_context_id && !*ui->dm_context_id && !ui->server_context;
+}
+static int menu_dividers(view *ui, const int *items, int count)
+{
+    int dividers = 0;
+    for (int i = 1; grouped_menu(ui) && i < count; ++i)
+        dividers += action_group(items[i]) != action_group(items[i - 1]);
+    return dividers;
+}
+/* Row inside the menu box (below the border) of item i. */
+static int menu_item_row(view *ui, const int *items, int i)
+{
+    return 1 + i + menu_dividers(ui, items, i + 1);
 }
 static int menu_count(view *ui)
 {
@@ -782,9 +807,19 @@ bool conversation_interactions_mouse(view *ui, const MEVENT *event)
                           x < getmaxx(ui->context_window);
             if (inside && ui->reactors_open)
                 conversation_reactors_mouse(ui, event);
-            else if (left && inside && ui->context_open && y >= 1 && y <= menu_count(ui)) {
-                ui->menu_selected = y - 1;
-                menu_activate(ui);
+            else if (left && inside && ui->context_open && y >= 1) {
+                int items[9], count = menu_count(ui), hit = -1;
+                if (grouped_menu(ui)) {
+                    menu_actions(ui, items);
+                    for (int i = 0; i < count; ++i)
+                        if (menu_item_row(ui, items, i) == y)
+                            hit = i;
+                } else if (y <= count)
+                    hit = y - 1;
+                if (hit >= 0) {
+                    ui->menu_selected = hit;
+                    menu_activate(ui);
+                }
             } else if ((left || right) && !inside)
                 conversation_interactions_close(ui);
         }
@@ -865,7 +900,10 @@ void conversation_interactions_draw(view *ui)
     int width = MIN(COLS - 2, ui->reactors_open                               ? 76
                               : *ui->channel_context_id || ui->server_context ? 34
                                                                               : 30);
+    int rows[9];
     int height = ui->reactors_open ? MIN(LINES - 2, 20) : menu_count(ui) + 2;
+    if (grouped_menu(ui))
+        height += menu_dividers(ui, rows, menu_actions(ui, rows));
     if (width < 8 || height < (ui->reactors_open ? 4 : 3))
         return;
     int y = ui->reactors_open ? (LINES - height) / 2 : CLAMP(ui->menu_y, 0, LINES - height);
@@ -962,12 +1000,12 @@ void conversation_interactions_draw(view *ui)
                                             "attachments")) > 1
                 ? "Baixar anexos"
                 : "Baixar anexo",
-            "Editar mensagem",
-            "Excluir mensagem",
             history_pin_state(ui->model, ui->selected_message) < 0 ? "Fixação indisponível (Ctrl+R)"
             : history_pin_state(ui->model, ui->selected_message)   ? "Desafixar mensagem"
                                                                    : "Fixar mensagem",
-            "Ver perfil"};
+            "Ver perfil",
+            "Editar mensagem",
+            "Excluir mensagem"};
         int items[9];
         menu_actions(ui, items);
         if (ui->delete_confirm)
@@ -979,9 +1017,15 @@ void conversation_interactions_draw(view *ui)
                        : selected              ? THEME_PANEL_ACTIVE
                                                : THEME_PANEL;
             wattrset(w, COLOR_PAIR(pair) | (destructive && selected ? A_BOLD : 0));
+            int row = ui->delete_confirm ? i + 1 : menu_item_row(ui, items, i);
+            if (!ui->delete_confirm && i && action_group(items[i]) != action_group(items[i - 1])) {
+                wattrset(w, COLOR_PAIR(THEME_BORDER));
+                mvwhline(w, row - 1, 1, ACS_HLINE, width - 2);
+                wattrset(w, COLOR_PAIR(pair));
+            }
             if (destructive)
-                mvwhline(w, i + 1, 1, ' ', width - 2);
-            text_label(w, i + 1, 1, width - 2,
+                mvwhline(w, row, 1, ' ', width - 2);
+            text_label(w, row, 1, width - 2,
                        ui->delete_confirm ? i ? "Excluir mensagem" : "Cancelar" : labels[items[i]]);
         }
     } else
