@@ -456,6 +456,8 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
                     const message_file_region *file = &blocks->files[k];
                     if (file->row != (int)row)
                         continue;
+                    mvwchgat(ui->body, y, 2 + r->indent + r->x + file->x, file->width, A_BOLD,
+                             THEME_PANEL_ACTIVE, NULL);
                     conversation_message_hit(ui, conversation_str(m, "id"), DOWNLOAD_HIT,
                                              getbegy(ui->body) + y,
                                              getbegx(ui->body) + 2 + r->indent + r->x + file->x, 1,

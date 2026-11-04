@@ -63,6 +63,9 @@ class Downloads(support.MessageInteractions):
                 row, column = self.button(terminal)
                 line = terminal.screen.display[row]
                 self.assertLess(wcswidth(line[: line.index(NAME)]), column)
+                # The button is filled with its own color, unlike the card text.
+                button_bg = terminal.screen.buffer[row][column].bg
+                self.assertNotEqual(button_bg, terminal.screen.buffer[row][column - 12].bg)
                 self.assertEqual(server.downloads, [])  # Showing a card never downloads.
             finally:
                 self.assertTrue(terminal.close())
