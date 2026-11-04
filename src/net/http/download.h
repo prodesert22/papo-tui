@@ -21,6 +21,10 @@ typedef struct media_download media_download;
 media_download *media_download_create(auth_client *auth);
 void media_download_destroy(media_download *m);
 bool media_download_request(media_download *m, auth_media_kind kind, const char *id, bool video);
+/* SVG attachment shown as an image, bounded to MEDIA_IMAGE_LIMIT. The server
+ * detects SVG text as XML, plain text or HTML, so those types are accepted
+ * only here; the decoder still requires an SVG document. */
+bool media_download_svg_request(media_download *m, const char *id);
 /* Attachment saved as is: any content type, bounded to MEDIA_FILE_LIMIT. */
 bool media_download_file_request(media_download *m, const char *id);
 /* Public avatar URL, bounded to 16 MiB; same asynchronous global rate budget. */

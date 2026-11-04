@@ -6,8 +6,10 @@
 #include <libavutil/log.h>
 static image_codec_host host;
 #include <errno.h>
+#include <glib/gstdio.h>
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+#include <librsvg/rsvg.h>
 #include <libswscale/swscale.h>
 #include <math.h>
 #include <stdlib.h>
@@ -69,6 +71,196 @@ static bool encode_alpha_pixels(const image_decode_request *j, const unsigned ch
     }
     return ok;
 }
+/* Places an unassociated sw x sh RGBA picture on the frame canvas: kept as
+ * RGBA when it has transparency, otherwise blended into the matte as RGB. */
+static bool store_frame(const image_decode_request *j, animation *frames, const unsigned char *rgba,
+                        int sw, int sh, bool alpha, size_t bytes, uint32_t delay)
+{
+    size_t channels = alpha ? 4U : 3U;
+    unsigned char *rgb = host.allocate_zero(1, bytes);
+    if (!rgb)
+        return false;
+    for (int y = 0; y < frames->height; ++y)
+        for (int x = 0; x < frames->width; ++x) {
+            size_t at = ((size_t)y * frames->width + x) * channels;
+            int px = x - (j->center ? (frames->width - sw) / 2 : 0);
+            int py = y - (j->center ? (frames->height - sh) / 2 : 0);
+            bool inside = py >= 0 && px >= 0 && py < sh && px < sw;
+            size_t pos = inside ? ((size_t)py * sw + px) * 4 : 0;
+            if (alpha) {
+                if (inside)
+                    memcpy(rgb + at, rgba + pos, 4);
+            } else {
+                uint32_t background = j->matte ? j->background : 0x000000;
+                for (int c = 0; c < 3; ++c) {
+                    unsigned opacity = inside ? rgba[pos + 3] : 0;
+                    unsigned color = inside ? rgba[pos + (size_t)c] : 0;
+                    unsigned bg = (background >> (16 - 8 * c)) & 255;
+                    rgb[at + (size_t)c] =
+                        (unsigned char)((color * opacity + bg * (255 - opacity)) / 255);
+                }
+            }
+        }
+    if (delay < 10)
+        delay = 10;
+    frames->rgba[frames->count] = alpha;
+    frames->pixels[frames->count] = rgb;
+    frames->delay[frames->count++] = delay;
+    frames->duration += delay;
+    frames->bytes += bytes;
+    return true;
+}
+static bool transparent(const unsigned char *rgba, int w, int h)
+{
+    for (size_t i = 0, n = (size_t)w * (size_t)h; i < n; ++i)
+        if (rgba[i * 4 + 3] != 255)
+            return true;
+    return false;
+}
+
+/* SVG text, possibly after a BOM, a declaration, comments or a doctype, or a
+ * gzip stream (.svgz: no raster format FFmpeg reads here is gzip). */
+#define SVG_SNIFF_BYTES 4096
+#define SVG_FILE_LIMIT (32U * 1024U * 1024U)
+/* The CSS default size of a replaced element without dimensions. */
+#define SVG_DEFAULT_WIDTH 300
+#define SVG_DEFAULT_HEIGHT 150
+static bool svg_document(const char *path)
+{
+    FILE *file = g_fopen(path, "rb");
+    if (!file)
+        return false;
+    unsigned char head[SVG_SNIFF_BYTES];
+    size_t n = fread(head, 1, sizeof(head), file);
+    fclose(file);
+    if (n >= 2 && head[0] == 0x1f && head[1] == 0x8b)
+        return true;
+    size_t at = n >= 3 && head[0] == 0xef && head[1] == 0xbb && head[2] == 0xbf ? 3 : 0;
+    while (at < n && g_ascii_isspace(head[at]))
+        ++at;
+    if (at >= n || head[at] != '<')
+        return false;
+    for (size_t i = at; i + 4 <= n; ++i)
+        if (!memcmp(head + i, "<svg", 4))
+            return true;
+    return false;
+}
+/* Intrinsic size in CSS pixels: width/height, else the viewBox, else the
+ * CSS default. Huge sizes keep their aspect ratio inside the pixel budget. */
+static void svg_size(RsvgHandle *svg, double *width, double *height)
+{
+    if (!rsvg_handle_get_intrinsic_size_in_pixels(svg, width, height) || !(*width > 0) ||
+        !(*height > 0) || !isfinite(*width) || !isfinite(*height)) {
+        gboolean has_width, has_height, has_viewbox;
+        RsvgLength w, h;
+        RsvgRectangle viewbox;
+        rsvg_handle_get_intrinsic_dimensions(svg, &has_width, &w, &has_height, &h, &has_viewbox,
+                                             &viewbox);
+        if (has_viewbox && viewbox.width > 0 && viewbox.height > 0 && isfinite(viewbox.width) &&
+            isfinite(viewbox.height)) {
+            *width = viewbox.width;
+            *height = viewbox.height;
+        } else {
+            *width = SVG_DEFAULT_WIDTH;
+            *height = SVG_DEFAULT_HEIGHT;
+        }
+    }
+    double scale = fmin(1, fmin(16384 / *width, 16384 / *height));
+    scale = fmin(scale, sqrt(IMAGE_PIXELS / (*width * *height)));
+    *width = fmax(1, round(*width * scale));
+    *height = fmax(1, round(*height * scale));
+}
+/* Renders the document at the requested size: a vector has no native pixel
+ * size to cap enlargement, so the player and history stay sharp. The data
+ * has no base location, so librsvg refuses every external reference. */
+static bool decode_svg(const image_decode_request *j, graphics_image *out, animation **animated,
+                       bool (*cancelled)(void *context), void *context)
+{
+    memset(out, 0, sizeof(*out));
+    *animated = NULL;
+    GStatBuf status;
+    if (g_stat(j->path, &status) || status.st_size <= 0 || status.st_size > SVG_FILE_LIMIT)
+        return false;
+    gchar *data = NULL;
+    gsize length = 0;
+    if (!g_file_get_contents(j->path, &data, &length, NULL))
+        return false;
+    RsvgHandle *svg = rsvg_handle_new_from_data((const guint8 *)data, length, NULL);
+    g_free(data);
+    if (!svg)
+        return false;
+    bool ok = false;
+    cairo_surface_t *surface = NULL;
+    unsigned char *rgba = NULL;
+    animation *frames = NULL;
+    double source_w, source_h;
+    svg_size(svg, &source_w, &source_h);
+    int w = j->width, h = j->height;
+    if ((cancelled && cancelled(context)) || !graphics_image_capacity(w, h))
+        goto done;
+    double ratio = j->cover ? fmax(w / source_w, h / source_h) : fmin(w / source_w, h / source_h);
+    int sw = (int)fmax(1, source_w * ratio), sh = (int)fmax(1, source_h * ratio);
+    if (!graphics_image_capacity(sw, sh))
+        goto done;
+    if (j->native) {
+        w = sw;
+        h = sh;
+    }
+    surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, sw, sh);
+    if (cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS)
+        goto done;
+    cairo_t *cr = cairo_create(surface);
+    RsvgRectangle viewport = {0, 0, sw, sh};
+    bool rendered = rsvg_handle_render_document(svg, cr, &viewport, NULL);
+    cairo_destroy(cr);
+    if (!rendered || (cancelled && cancelled(context)))
+        goto done;
+    cairo_surface_flush(surface);
+    /* Cairo stores premultiplied native-endian ARGB; the pipeline expects
+     * unassociated RGBA bytes. */
+    rgba = host.allocate_zero(1, (size_t)sw * sh * 4 + IMAGE_PIXEL_PADDING);
+    if (!rgba)
+        goto done;
+    const unsigned char *pixels = cairo_image_surface_get_data(surface);
+    int stride = cairo_image_surface_get_stride(surface);
+    for (int y = 0; y < sh; ++y)
+        for (int x = 0; x < sw; ++x) {
+            uint32_t p = *(const uint32_t *)(pixels + (size_t)y * stride + (size_t)x * 4);
+            unsigned a = p >> 24, channel[3] = {(p >> 16) & 255, (p >> 8) & 255, p & 255};
+            unsigned char *to = rgba + ((size_t)y * sw + x) * 4;
+            for (int c = 0; c < 3; ++c)
+                to[c] = a ? (unsigned char)MIN(255U, (channel[c] * 255 + a / 2) / a) : 0;
+            to[3] = (unsigned char)a;
+        }
+    frames = host.allocate_zero(1, sizeof(*frames));
+    if (!frames)
+        goto done;
+    atomic_init(&frames->references, 1);
+    frames->width = w;
+    frames->height = h;
+    frames->source_width = (int)source_w;
+    frames->source_height = (int)source_h;
+    bool alpha = j->decode_only && transparent(rgba, sw, sh);
+    size_t bytes = (size_t)w * h * (alpha ? 4U : 3U) + IMAGE_PIXEL_PADDING;
+    if (!store_frame(j, frames, rgba, sw, sh, alpha, bytes, 100))
+        goto done;
+    image_decode_request encoding = *j;
+    encoding.animation = frames;
+    ok =
+        j->decode_only || encode_pixels(&encoding, frames->pixels[0], frames->width, frames->height,
+                                        frames->source_width, frames->source_height, out);
+    if (ok && j->retain_static) {
+        *animated = frames;
+        frames = NULL;
+    }
+done:
+    host.release_frames(frames);
+    host.release(rgba);
+    if (surface)
+        cairo_surface_destroy(surface);
+    g_object_unref(svg);
+    return ok;
+}
 static bool decode_file(const image_decode_request *j, graphics_image *out, animation **animated,
                         bool (*cancelled)(void *context), void *context)
 {
@@ -76,6 +268,8 @@ static bool decode_file(const image_decode_request *j, graphics_image *out, anim
     *animated = NULL;
     if (cancelled && cancelled(context))
         return false;
+    if (!j->video_poster && svg_document(j->path))
+        return decode_svg(j, out, animated, cancelled, context);
     AVFormatContext *format = avformat_alloc_context();
     AVCodecContext *decoder = NULL;
     AVFrame *frame = NULL;
@@ -248,38 +442,9 @@ static bool decode_file(const image_decode_request *j, graphics_image *out, anim
                 break;
             }
         }
-        unsigned char *rgb = host.allocate_zero(1, bytes);
-        if (!rgb)
-            goto done;
-        for (int y = 0; y < frames->height; ++y)
-            for (int x = 0; x < frames->width; ++x) {
-                size_t at = ((size_t)y * frames->width + x) * channels;
-                int px = x - (j->center ? (frames->width - sw) / 2 : 0);
-                int py = y - (j->center ? (frames->height - sh) / 2 : 0);
-                bool inside = py >= 0 && px >= 0 && py < sh && px < sw;
-                size_t pos = inside ? ((size_t)py * sw + px) * 4 : 0;
-                if (alpha) {
-                    if (inside)
-                        memcpy(rgb + at, rgba + pos, 4);
-                } else {
-                    uint32_t background = j->matte ? j->background : 0x000000;
-                    for (int c = 0; c < 3; ++c) {
-                        unsigned opacity = inside ? rgba[pos + 3] : 0;
-                        unsigned color = inside ? rgba[pos + (size_t)c] : 0;
-                        unsigned bg = (background >> (16 - 8 * c)) & 255;
-                        rgb[at + (size_t)c] =
-                            (unsigned char)((color * opacity + bg * (255 - opacity)) / 255);
-                    }
-                }
-            }
-        frames->rgba[frames->count] = alpha;
-        frames->pixels[frames->count] = rgb;
         uint32_t delay = duration > 0 && duration <= 60000 ? (uint32_t)duration : 100;
-        if (delay < 10)
-            delay = 10;
-        frames->delay[frames->count++] = delay;
-        frames->duration += delay;
-        frames->bytes += bytes;
+        if (!store_frame(j, frames, rgba, sw, sh, alpha, bytes, delay))
+            goto done;
         if (!animated_image || static_only)
             break;
     }

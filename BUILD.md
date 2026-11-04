@@ -28,6 +28,7 @@ CMake checks these library requirements, even in Light or Ultralight mode:
 | libsixel | 1.8 |
 | Chafa | 1.16 |
 | PangoCairo | 1.50 |
+| librsvg, for SVG images | 2.52 |
 | Fontconfig | 2.13 |
 | libmpv | API 2.0 |
 | FFmpeg | avformat/avcodec 58, avutil 56, swscale 5 |
@@ -76,7 +77,7 @@ The package targets are **Ubuntu 24.04** and **Debian 13**.
 sudo apt update
 sudo apt install build-essential cmake ninja-build pkg-config autoconf automake libtool nasm \
     python3 python3-venv python3-dev curl git ca-certificates libssl-dev zlib1g-dev \
-    libncurses-dev ncurses-term libglib2.0-dev libpango1.0-dev libcairo2-dev \
+    libncurses-dev ncurses-term libglib2.0-dev libpango1.0-dev libcairo2-dev librsvg2-dev \
     libfontconfig-dev libfreetype-dev libfribidi-dev libharfbuzz-dev libpulse-dev \
     libasound2-dev libgcrypt20-dev libsecret-1-dev libva-dev libdrm-dev fonts-noto-color-emoji
 ```
@@ -88,7 +89,7 @@ The release RPM is built on **Fedora 44**.
 ```sh
 sudo dnf install gcc gcc-c++ make cmake ninja-build pkgconf-pkg-config autoconf automake \
     libtool nasm python3 python3-pip python3-devel curl git ca-certificates \
-    openssl-devel zlib-devel ncurses-devel glib2-devel pango-devel cairo-devel \
+    openssl-devel zlib-devel ncurses-devel glib2-devel pango-devel cairo-devel librsvg2-devel \
     fontconfig-devel freetype-devel fribidi-devel harfbuzz-devel pulseaudio-libs-devel \
     alsa-lib-devel libgcrypt-devel libsecret-devel libva-devel libdrm-devel google-noto-color-emoji-fonts
 ```
@@ -102,7 +103,7 @@ minimum above. Enable CodeReady Linux Builder for the development packages:
 sudo subscription-manager repos --enable "codeready-builder-for-rhel-10-$(arch)-rpms"
 sudo dnf install gcc gcc-c++ make cmake ninja-build pkgconf-pkg-config autoconf automake \
     libtool nasm python3 python3-pip python3-devel curl git ca-certificates \
-    openssl-devel zlib-ng-compat-devel ncurses-devel glib2-devel pango-devel cairo-devel \
+    openssl-devel zlib-ng-compat-devel ncurses-devel glib2-devel pango-devel cairo-devel librsvg2-devel \
     fontconfig-devel freetype-devel fribidi-devel harfbuzz-devel pulseaudio-libs-devel \
     alsa-lib-devel libgcrypt-devel libsecret-devel libva-devel libdrm-devel
 ```
@@ -117,7 +118,7 @@ build Pango/GLib. Use the [Flatpak installation](docs/installation.md#rhel) ther
 
 ```sh
 sudo pacman -Syu --needed base-devel cmake ninja pkgconf autoconf automake libtool nasm \
-    python python-pip curl git ca-certificates openssl zlib ncurses glib2 pango cairo \
+    python python-pip curl git ca-certificates openssl zlib ncurses glib2 pango cairo librsvg \
     fontconfig freetype2 fribidi harfbuzz libpulse alsa-lib libgcrypt libsecret libva libdrm noto-fonts-emoji
 ```
 
@@ -192,6 +193,7 @@ pacman -S --needed base-devel git autoconf automake libtool nasm \
     "${MINGW_PACKAGE_PREFIX}-ninja" "${MINGW_PACKAGE_PREFIX}-pkgconf" \
     "${MINGW_PACKAGE_PREFIX}-ncurses" "${MINGW_PACKAGE_PREFIX}-glib2" \
     "${MINGW_PACKAGE_PREFIX}-pango" "${MINGW_PACKAGE_PREFIX}-fontconfig" \
+    "${MINGW_PACKAGE_PREFIX}-librsvg" \
     "${MINGW_PACKAGE_PREFIX}-libass" "${MINGW_PACKAGE_PREFIX}-libplacebo" \
     "${MINGW_PACKAGE_PREFIX}-ffmpeg" "${MINGW_PACKAGE_PREFIX}-libgcrypt" \
     "${MINGW_PACKAGE_PREFIX}-vulkan-headers" "${MINGW_PACKAGE_PREFIX}-openssl"

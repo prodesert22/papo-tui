@@ -25,7 +25,7 @@ struct media_download {
     uint64_t generation;
     unsigned retry_after;
     long status;
-    bool attached, overflow, video, public_avatar, raw;
+    bool attached, overflow, video, public_avatar, raw, svg;
     const char *error;
 };
 int media_download_temp(media_download *m, char **path)
@@ -140,7 +140,7 @@ static bool begin_request(media_download *m, CURL *easy, auth_media_kind kind, b
     m->kind = kind;
     m->video = video;
     m->public_avatar = avatar;
-    m->raw = false;
+    m->raw = m->svg = false;
     m->generation = auth_context_generation(m->auth);
     m->limit = avatar                     ? MEDIA_AVATAR_LIMIT
                : kind == AUTH_MEDIA_EMBED ? MEDIA_EMBED_LIMIT
@@ -178,6 +178,16 @@ bool media_download_request(media_download *m, auth_media_kind kind, const char 
         return false;
     return begin_request(m, auth_media_easy(m->auth, kind, id), kind, video, false);
 }
+bool media_download_svg_request(media_download *m, const char *id)
+{
+    if (!m || !auth_has_session(m->auth) || !id || strlen(id) != 36U)
+        return false;
+    if (!begin_request(m, auth_media_easy(m->auth, AUTH_MEDIA_ATTACHMENT, id),
+                       AUTH_MEDIA_ATTACHMENT, false, false))
+        return false;
+    m->svg = true;
+    return true;
+}
 bool media_download_file_request(media_download *m, const char *id)
 {
     if (!m || !auth_has_session(m->auth) || !id || strlen(id) != 36U)
@@ -210,6 +220,18 @@ static bool video_type(const media_download *m)
     return g_str_has_prefix(m->mime, "video/") || g_str_has_prefix(m->mime, "audio/") ||
            !strcmp(m->mime, "application/octet-stream") || !strcmp(m->mime, "application/ogg");
 }
+/* Go's content sniffing reports SVG text as XML, plain text or HTML, and a
+ * compressed .svgz as gzip; image/svg+xml covers servers that name it. */
+static bool svg_type(const media_download *m)
+{
+    static const char *const types[] = {
+        "image/svg+xml", "text/xml",         "application/xml",    "text/plain",
+        "text/html",     "application/gzip", "application/x-gzip", "application/octet-stream"};
+    for (size_t i = 0; i < sizeof(types) / sizeof(*types); ++i)
+        if (!g_ascii_strcasecmp(m->mime, types[i]))
+            return true;
+    return false;
+}
 static void finish(media_download *m, CURLcode result)
 {
     curl_easy_getinfo(m->easy, CURLINFO_RESPONSE_CODE, &m->status);
@@ -225,6 +247,7 @@ static void finish(media_download *m, CURLcode result)
     bool written = m->file && fflush(m->file) == 0 && !ferror(m->file);
     release_transfer(m);
     bool type = m->raw                        ? true
+                : m->svg                      ? svg_type(m)
                 : m->kind == AUTH_MEDIA_EMBED ? !strcmp(m->mime, "application/json")
                 : m->video ? video_type(m)
                            : (!strcmp(m->mime, "image/png") || !strcmp(m->mime, "image/jpeg") ||

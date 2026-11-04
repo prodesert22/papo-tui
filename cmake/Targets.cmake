@@ -131,6 +131,7 @@ target_link_libraries(
             PkgConfig::AVCODEC
             PkgConfig::AVUTIL
             PkgConfig::SWSCALE
+            PkgConfig::RSVG
             m)
 add_library(papo_video_player MODULE src/ui/media/video_player.c)
 target_include_directories(papo_video_player PRIVATE src)

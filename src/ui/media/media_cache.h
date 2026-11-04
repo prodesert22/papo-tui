@@ -29,6 +29,9 @@ void media_cache_reset(media_cache *cache);
 /* Owned resource reference. Embed roles share the same resource/HTTP request. */
 media_resource *media_cache_acquire(media_cache *cache, auth_media_kind kind, const char *id,
                                     uint64_t revision, bool video);
+/* SVG attachment: same image pipeline, with the text types the server
+ * reports for SVG accepted by its download. */
+media_resource *media_cache_acquire_svg(media_cache *cache, const char *id, uint64_t revision);
 /* Other image sources enter the same hash, decode, variant and worker cache.
  * Path strings are copied; input files stay immutable until ingest completes. */
 media_resource *media_cache_acquire_url(media_cache *cache, const char *url, uint64_t revision);

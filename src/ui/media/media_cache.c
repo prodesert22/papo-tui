@@ -49,6 +49,7 @@ struct image_object {
     size_t bytes, refs;
     uint64_t used, epoch;
     bool pinned, failed, keep_cached, video;
+    bool vector; /* SVG: decodes at any size, so enlargement renders again. */
     const char *error;
     animation *frames;
     task *job;
@@ -62,7 +63,7 @@ struct media_resource {
     size_t refs, visible_refs;
     enum { SOURCE_REST, SOURCE_URL, SOURCE_FILE, SOURCE_UNICODE } source_type;
     char *source;
-    bool video, wanted, modal, keep_cached;
+    bool video, svg, wanted, modal, keep_cached;
     unsigned expired;
     enum { RESOURCE_NEW, RESOURCE_FETCH, RESOURCE_INGEST, RESOURCE_READY, RESOURCE_ERROR } state;
     const char *error;
@@ -650,6 +651,8 @@ static bool collect(media_cache *c)
                         r->objects[i] = intern(c, &t->blobs[i], r->video);
                         if (r->objects[i] && r->keep_cached)
                             r->objects[i]->keep_cached = true;
+                        if (r->objects[i] && r->svg)
+                            r->objects[i]->vector = true;
                     }
                 if (ok)
                     r->expired = 0;
@@ -847,6 +850,19 @@ media_resource *media_cache_acquire(media_cache *c, auth_media_kind kind, const 
     char key[128];
     snprintf(key, sizeof(key), "%d:%s:%llu", (int)kind, id, (unsigned long long)revision);
     return acquire(c, key, kind, id, revision, video, SOURCE_REST, NULL);
+}
+media_resource *media_cache_acquire_svg(media_cache *c, const char *id, uint64_t revision)
+{
+    if (!c || !id || strlen(id) != 36U)
+        return NULL;
+    /* A distinct key: the SVG download accepts text types a raster never does. */
+    char key[128];
+    snprintf(key, sizeof(key), "svg:%s:%llu", id, (unsigned long long)revision);
+    media_resource *r =
+        acquire(c, key, AUTH_MEDIA_ATTACHMENT, id, revision, false, SOURCE_REST, NULL);
+    if (r)
+        r->svg = true;
+    return r;
 }
 static media_resource *acquire_source(media_cache *c, int type, const char *source,
                                       uint64_t revision)
@@ -1226,10 +1242,11 @@ bool media_cache_poll(media_cache *c, uint64_t now)
             }
             if (!best)
                 break;
-            bool started =
-                best->source_type == SOURCE_URL
-                    ? media_download_avatar_request(c->downloads[i], best->source)
-                    : media_download_request(c->downloads[i], best->kind, best->id, best->video);
+            bool started = best->source_type == SOURCE_URL
+                               ? media_download_avatar_request(c->downloads[i], best->source)
+                           : best->svg ? media_download_svg_request(c->downloads[i], best->id)
+                                       : media_download_request(c->downloads[i], best->kind,
+                                                                best->id, best->video);
             if (started) {
                 if (best->video && !c->stream)
                     c->stream = media_stream_server_create();
@@ -1322,8 +1339,10 @@ const graphics_image *media_resource_image(media_resource *r, bool author,
         (o->frames->source_width > request.max_side || o->frames->source_height > request.max_side))
         return NULL;
     if (o->frames) {
-        double ratio = fmin(1, fmin((double)request.width / o->frames->source_width,
-                                    (double)request.height / o->frames->source_height));
+        /* A raster never grows past its source; a vector renders larger. */
+        double ratio =
+            fmin(o->vector ? INFINITY : 1, fmin((double)request.width / o->frames->source_width,
+                                                (double)request.height / o->frames->source_height));
         needed_width = (int)(o->frames->source_width * ratio);
         needed_height = (int)(o->frames->source_height * ratio);
         if (needed_width < 1)

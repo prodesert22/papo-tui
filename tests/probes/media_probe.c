@@ -48,8 +48,9 @@ int main(int argc, char **argv)
     const char *reference = getenv("PAPO_AVATAR_REFERENCE");
     if (!reference)
         reference = "/webhooks/00000000-0000-4000-8000-000000000901/avatar";
-    bool requested = avatar ? media_download_avatar_request(m, reference)
-                            : media_download_request(m, kind, id, video);
+    bool requested = avatar                    ? media_download_avatar_request(m, reference)
+                     : !strcmp(argv[2], "svg") ? media_download_svg_request(m, id)
+                                               : media_download_request(m, kind, id, video);
     if (!strcmp(argv[2], "invalid") || !strcmp(argv[2], "avatar-invalid")) {
         printf("rejected=%d\n", !requested);
         goto done;

@@ -17,6 +17,7 @@ typedef struct {
     /* video marks every item played by the media player; audio refines it to
      * sound-only attachments, which have no history preview or download. */
     bool video, audio, size_known, full_width;
+    bool svg; /* An SVG attachment, rasterized by the image pipeline. */
     int64_t size_bytes;
     int source_width, source_height;
     char original_file_name[MESSAGE_MEDIA_LABEL];

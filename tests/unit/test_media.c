@@ -730,6 +730,52 @@ static void attachment_video_extensions(void)
     }
     app_mode_set(APP_MODE_NORMAL);
 }
+/* The server sniffs SVG as XML, plain text or HTML; the name decides. */
+static void attachment_svg_types(void)
+{
+    const struct {
+        const char *mime, *name;
+        bool svg;
+    } fixtures[] = {{"image/svg+xml", "logo.svg", true},
+                    {"text/xml; charset=utf-8", "logo.svg", true},
+                    {"text/plain; charset=utf-8", "LOGO.SVG", true},
+                    {"text/html; charset=utf-8", "drawing.svg", true},
+                    {"application/x-gzip", "logo.svgz", true},
+                    {"application/octet-stream", "logo.svg", true},
+                    {"text/plain; charset=utf-8", "notes.txt", false},
+                    {"text/html; charset=utf-8", "page.html", false},
+                    {"text/plain; charset=utf-8", "svg", false},
+                    {"image/png", "logo.svg", false},
+                    {"video/mp4", "logo.svg", false}};
+    for (size_t f = 0; f < sizeof(fixtures) / sizeof(fixtures[0]); ++f) {
+        json_t *attachment =
+            json_pack("{s:s,s:s,s:s}", "id", "00000000-0000-4000-8000-000000000002", "mime_type",
+                      fixtures[f].mime, "original_file_name", fixtures[f].name);
+        json_t *m = json_pack("{s:s,s:[o]}", "id", "00000000-0000-4000-8000-000000000001",
+                              "attachments", attachment);
+        assert(m);
+        message_blocks blocks;
+        assert(message_blocks_build(&blocks, m, "Sender", "", 80, true));
+        bool svg = blocks.media_count && blocks.media[0].svg;
+        assert(svg == fixtures[f].svg);
+        if (svg)
+            assert(!blocks.media[0].video && !blocks.media[0].audio &&
+                   blocks.media[0].kind == AUTH_MEDIA_ATTACHMENT);
+        message_blocks_free(&blocks);
+        app_mode_set(APP_MODE_ULTRALIGHT);
+        assert(message_blocks_build(&blocks, m, "Sender", "", 80, true));
+        assert(!blocks.media_count);
+        bool labeled = false;
+        for (size_t r = 0; r < blocks.count; ++r)
+            for (int k = 0; k < blocks.rows[r].count; ++k)
+                labeled |= blocks.rows[r].segments[k].text &&
+                           !strncmp(blocks.rows[r].segments[k].text, "Imagem: ", 8);
+        assert(labeled == (fixtures[f].svg || !strncmp(fixtures[f].mime, "image/", 6)));
+        message_blocks_free(&blocks);
+        app_mode_set(APP_MODE_NORMAL);
+        json_decref(m);
+    }
+}
 static size_t content_rows(const message_blocks *b)
 {
     size_t rows = 0;
@@ -856,6 +902,7 @@ int main(void)
     modal_geometry();
     player_controls();
     audio_options();
+    attachment_svg_types();
     puts("cards, terminal negotiation and Sixel/Kitty/iTerm2 pixels verified");
     return 0;
 }

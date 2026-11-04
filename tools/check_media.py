@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import shutil
 import sys
 import tempfile
 import time
@@ -38,10 +39,16 @@ def main():
     last_status = None
     try:
         previous = sys.argv[:]
-        sys.path.insert(0, str(ROOT / "tests"))
-        sys.argv = [sys.argv[0], str(args.binary.resolve()), "ffmpeg"]
+        # The suites live in tests/terminal; their helpers in tests/support.
+        for directory in ("tests", "tests/support", "tests/terminal"):
+            sys.path.insert(0, str(ROOT / directory))
+        ffmpeg = shutil.which("ffmpeg")
+        if not ffmpeg:
+            raise RuntimeError("The ffmpeg command is required for media fixtures")
+        sys.argv = [sys.argv[0], str(args.binary.resolve()), ffmpeg]
         try:
-            from test_media_terminal import GraphicsStream, MediaTerminal
+            from terminal_media import GraphicsStream
+            from test_media_terminal import MediaTerminal
             from test_terminal import Terminal
         finally:
             sys.argv = previous
@@ -124,9 +131,16 @@ def main():
                 ("webp", "image/webp"),
                 ("gif", "image/gif"),
                 ("mp4", "video/mp4"),
+                ("svg", "image/svg+xml"),
             ]:
                 stage = "upload " + ext
-                content = MediaTerminal.video if ext == "mp4" else MediaTerminal.images[ext]
+                content = (
+                    MediaTerminal.video
+                    if ext == "mp4"
+                    else b'<?xml version="1.0"?>\n' + MediaTerminal.SVG
+                    if ext == "svg"
+                    else MediaTerminal.images[ext]
+                )
                 message = call(
                     "POST",
                     "/messages",
@@ -135,6 +149,9 @@ def main():
                     files={"attachments": ("fixture." + ext, content, mime)},
                 ).json()
                 attachment = message["attachments"][0]
+                if ext == "svg":
+                    # The backend sniffs the bytes and ignores the declared type.
+                    checks["real_svg_mime"] = attachment["mime_type"]
                 attachments.append((attachment, content, ext))
             stage = "custom embed"
             embed_input = {
@@ -175,7 +192,7 @@ def main():
                     [
                         str(args.probe.resolve()),
                         secure,
-                        "attachment-video" if ext == "mp4" else "image",
+                        {"mp4": "attachment-video", "svg": "svg"}.get(ext, "image"),
                     ],
                     env=environment,
                     timeout=30,
@@ -183,7 +200,9 @@ def main():
                 checks["c_authenticated_" + ext + "_download"] = all(
                     value in result for value in ("ready=1", "private=1", "independent=1")
                 )
-                time.sleep(0.3)
+                # Each probe signs in again; keep the backend's auth rate limit
+                # (5/s, burst 10) from rejecting the later ones.
+                time.sleep(2.5)
             details = call("GET", "/embeds/" + embed["id"]).json()
             checks["embed_without_image_is_accessible"] = (
                 details["image_data"] is None and details["author_image_data"] is None
@@ -249,12 +268,14 @@ def main():
         private_write(work / "summary.json", report)
         print(json.dumps(report, ensure_ascii=False))
         return 0 if report["passed"] else 1
-    except Exception:
+    except Exception as error:
         report = {
             "passed": False,
             "checks": checks,
             "stage": stage,
             "http_status": last_status,
+            # The type locates the failure; its message may carry credentials.
+            "exception": type(error).__name__,
             "error": "Validation failed; credentials omitted",
         }
         private_write(work / "summary.json", report)

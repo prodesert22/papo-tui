@@ -125,8 +125,9 @@ static void delete_entry(cache_entry *e)
 static bool ensure_resource(media_view *v, cache_entry *e)
 {
     if (!e->resource)
-        e->resource =
-            media_cache_acquire(v->store, e->item.kind, e->item.id, e->item.version, e->item.video);
+        e->resource = e->item.svg ? media_cache_acquire_svg(v->store, e->item.id, e->item.version)
+                                  : media_cache_acquire(v->store, e->item.kind, e->item.id,
+                                                        e->item.version, e->item.video);
     return e->resource != NULL;
 }
 static void free_job(job *j)

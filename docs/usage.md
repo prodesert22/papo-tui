@@ -867,6 +867,16 @@ Kitty-compatible terminals use compressed graphics to reduce terminal traffic.
 Image previews remain visible outside floating panels, including mention/emoji
 choosers, message context menus, notifications and reaction dialogs.
 
+Attached images can be PNG, JPEG, WebP, GIF or SVG. The server reports an SVG
+file as XML, plain text or HTML, so an attachment is shown as an SVG image only
+when its name ends in `.svg` (or `.svgz` for a compressed one); other text files
+remain attachments. SVG images appear in the history at the size the file
+declares, and the image viewer draws them again at its own size, so enlarging
+them keeps edges sharp. Pictures and styles that an SVG loads from other files
+or from the internet are not loaded; the rest of the drawing is shown. A damaged
+SVG shows **Imagem inválida, grande demais ou não suportada.** (Invalid, too
+large or unsupported image).
+
 Click a media preview to open it, or use Ctrl+K, select the message and media, then
 press Enter. In Normal mode, visible video attachments download automatically in the background
 to generate a static cover; they do not play or produce sound in the history.
@@ -895,7 +905,7 @@ for streaming — cannot be parsed before their last bytes arrive.
 
 Press Esc or click outside the media window to close it or cancel loading.
 
-The client accepts downloads up to 32 MiB per attached image, 16 MiB per avatar
+The client accepts downloads up to 32 MiB per attached image (including SVG), 16 MiB per avatar
 and 256 MiB per video. Larger files show **Mídia excede o limite de tamanho.**
 (Media exceeds the size limit).
 

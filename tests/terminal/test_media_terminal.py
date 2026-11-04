@@ -11,6 +11,7 @@ from terminal_media import FFMPEG
 
 
 import base64
+import gzip
 import json
 import re
 from pathlib import Path
@@ -260,6 +261,113 @@ class MediaTerminal(support.MediaTerminal):
                     self.assertTrue(live.issubset(t.stream.deleted_ids))
                 finally:
                     self.assertTrue(t.close())
+
+    SVG = (
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="64" height="48" viewBox="0 0 64 48">'
+        b'<rect width="64" height="48" fill="#ff0000"/></svg>'
+    )
+
+    def assert_red_center(self, terminal):
+        header, pixels = terminal.stream.kitty_frames[-1]
+        width, height = int(header[b"s"]), int(header[b"v"])
+        channels = len(pixels) // (width * height)
+        center = (height // 2 * width + width // 2) * channels
+        self.assertGreater(pixels[center], 230)
+        self.assertLess(pixels[center + 1], 25)
+        self.assertLess(pixels[center + 2], 25)
+
+    def test_svg_attachments_render_from_the_types_the_server_sniffs(self):
+        # Go's http.DetectContentType has no SVG signature: the backend stores
+        # XML, plain text or HTML depending on how the document starts.
+        declared = b'<?xml version="1.0" encoding="UTF-8"?>\n' + self.SVG
+        for name, mime, content in (
+            ("logo.svg", "text/xml; charset=utf-8", declared),
+            ("logo.svg", "text/plain; charset=utf-8", self.SVG),
+            ("desenho.svg", "text/html; charset=utf-8", b"<!-- Inkscape -->" + self.SVG),
+            ("logo.svg", "image/svg+xml", declared),
+            ("logo.svgz", "application/x-gzip", gzip.compress(declared)),
+        ):
+            with (
+                self.subTest(mime=mime, name=name),
+                self.serve(content, mime, name=name) as server,
+            ):
+                t = self.open(server, protocol="kitty")
+                try:
+                    self.wait_frames(t)
+                    self.assert_red_center(t)
+                    self.assertEqual(self.raster_size(t), (64, 48))
+                    self.assertNotIn("Anexo", "\n".join(t.screen.display))
+                finally:
+                    self.assertTrue(t.close())
+
+    def test_svg_enlarges_sharply_in_the_viewer_and_falls_back_to_chafa(self):
+        with self.serve(self.SVG, "text/plain; charset=utf-8", name="logo.svg") as server:
+            t = self.open(server, protocol="kitty", size=(40, 120))
+            try:
+                self.wait_frames(t)
+                frames = len(t.stream.frames)
+                t.send("\x0b\n")
+                self.wait(t, "Imagem")
+                self.wait_frames(t, frames + 1)
+                # A vector is drawn again at the viewer size, not stretched.
+                width, height = self.wait_raster(t, lambda w, h: w > 128)
+                self.assertAlmostEqual(width / height, 64 / 48, delta=0.05)
+                self.assert_red_center(t)
+                self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), 1)
+            finally:
+                self.assertTrue(t.close())
+            t = self.open(server, sixel=False)
+            try:
+                self.wait(t, "Conversar em #geral")
+                deadline = time.monotonic() + 5
+                while (
+                    sum("/attachments/" in r[1] for r in server.requests) < 2
+                    and time.monotonic() < deadline
+                ):
+                    t.read(0.05)
+                t.read(0.5)
+                self.assertNotIn("Imagem inválida", "\n".join(t.screen.display))
+                self.assertEqual(t.stream.frames, [])
+            finally:
+                self.assertTrue(t.close())
+
+    def test_svg_never_fetches_external_references(self):
+        with self.serve(b"", "text/xml; charset=utf-8", name="logo.svg") as server:
+            inner = server.api_handler
+            document = (
+                b'<svg xmlns="http://www.w3.org/2000/svg" '
+                b'xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="48">'
+                b'<rect width="64" height="48" fill="#ff0000"/>'
+                b'<image width="8" height="8" href="' + server.url.encode() + b'/leak.png"/>'
+                b'<image width="8" height="8" xlink:href="file:///etc/hostname"/>'
+                b'<use href="' + server.url.encode() + b'/sprite.svg#a"/>'
+                b"</svg>"
+            )
+
+            def route(method, path, body):
+                if "/attachments/" in path:
+                    return 200, document, None, None, "text/xml; charset=utf-8"
+                return inner(method, path, body)
+
+            server.api_handler = route
+            t = self.open(server, protocol="kitty")
+            try:
+                self.wait_frames(t)
+                self.assert_red_center(t)
+                t.read(0.5)
+                paths = [r[1] for r in server.requests]
+                self.assertFalse([p for p in paths if "leak" in p or "sprite" in p], paths)
+            finally:
+                self.assertTrue(t.close())
+
+    def test_invalid_svg_shows_an_error_instead_of_a_picture(self):
+        with self.serve(b"<svg><rect", "text/plain; charset=utf-8", name="quebrado.svg") as server:
+            t = self.open(server, protocol="kitty")
+            try:
+                self.wait(t, "Imagem inválida, grande demais")
+                self.assertEqual(t.stream.kitty_frames, [])
+            finally:
+                self.assertTrue(t.close())
 
     def test_f7_selects_attachment_with_arrows_and_right_click_occludes_media(self):
         with self.serve(self.images["png"], "image/png") as server:

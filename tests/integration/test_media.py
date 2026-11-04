@@ -89,6 +89,26 @@ class MediaTests(unittest.TestCase):
                     if not extra:
                         self.assertIn(f"bytes={limit} ", output)
 
+    def test_svg_attachment_accepts_the_text_types_the_server_sniffs(self):
+        # Go's http.DetectContentType reports SVG as XML, plain text or HTML.
+        for mime, ready in (
+            ("text/xml; charset=utf-8", True),
+            ("text/plain; charset=utf-8", True),
+            ("text/html; charset=utf-8", True),
+            ("image/svg+xml", True),
+            ("application/x-gzip", True),
+            ("image/png", False),
+            ("application/json", False),
+        ):
+            with self.subTest(mime=mime), self.server(mime=mime, body=b"<svg/>") as server:
+                output = self.probe(server, "svg")
+                self.assertIn("ready=1" if ready else "failed=1", output)
+        # Only the SVG request widens the types: an ordinary image still fails.
+        with self.server(mime="text/xml; charset=utf-8", body=b"<svg/>") as server:
+            self.assertIn("failed=1", self.probe(server, "image"))
+        with self.server(mime="text/plain", body=b"x" * (32 * 1024 * 1024 + 1)) as server:
+            self.assertIn("failed=1", self.probe(server, "svg"))
+
     def test_cancellation_logout_and_global_budget(self):
         for mode in ("cancel", "logout", "budget"):
             with self.subTest(mode=mode), self.server(delay=0.2) as server:

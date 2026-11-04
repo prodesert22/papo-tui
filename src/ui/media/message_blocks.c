@@ -75,6 +75,28 @@ static bool attachment_is_audio(const char *mime, const char *name)
     return (!strcmp(mime, "application/ogg") || !strcmp(mime, "application/octet-stream")) &&
            audio_extension(name);
 }
+/* The server sniffs SVG text as XML, plain text or HTML (Go's
+ * http.DetectContentType has no SVG signature) and .svgz as gzip, so the
+ * name decides among those types. Other text files stay attachments. */
+static bool attachment_is_svg(const char *mime, const char *name)
+{
+    size_t length = strcspn(mime, "; ");
+    if (length == 13 && !g_ascii_strncasecmp(mime, "image/svg+xml", 13))
+        return true;
+    static const char *const types[] = {"text/xml",
+                                        "application/xml",
+                                        "text/plain",
+                                        "text/html",
+                                        "application/gzip",
+                                        "application/x-gzip",
+                                        "application/octet-stream"};
+    bool generic = false;
+    for (size_t i = 0; i < sizeof(types) / sizeof(*types); ++i)
+        generic |= length == strlen(types[i]) && !g_ascii_strncasecmp(mime, types[i], length);
+    const char *dot = strrchr(name, '.');
+    return generic && dot &&
+           (!g_ascii_strcasecmp(dot, ".svg") || !g_ascii_strcasecmp(dot, ".svgz"));
+}
 /* A message without a readable time keeps the author grouping. */
 static bool close_in_time(const json_t *previous, const json_t *message)
 {
@@ -965,11 +987,12 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
             *str(item, "original_file_name") ? str(item, "original_file_name") : "arquivo sem nome";
         const char *mime = str(item, "mime_type");
         if (app_mode_get() == APP_MODE_ULTRALIGHT) {
-            const char *kind = !strcmp(mime, "image/gif")         ? "GIF"
-                               : g_str_has_prefix(mime, "image/") ? "Imagem"
-                               : attachment_is_video(mime, name)  ? "Vídeo"
-                               : attachment_is_audio(mime, name)  ? "Áudio"
-                                                                  : "Anexo";
+            const char *kind = !strcmp(mime, "image/gif") ? "GIF"
+                               : g_str_has_prefix(mime, "image/") || attachment_is_svg(mime, name)
+                                   ? "Imagem"
+                               : attachment_is_video(mime, name) ? "Vídeo"
+                               : attachment_is_audio(mime, name) ? "Áudio"
+                                                                 : "Anexo";
             json_t *size = json_object_get(item, "size_bytes");
             size_t length = strlen(name);
             if (length > SIZE_MAX - 128)
@@ -989,7 +1012,8 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
             continue;
         }
         bool video = attachment_is_video(mime, name);
-        bool image = g_str_has_prefix(mime, "image/");
+        bool svg = !video && attachment_is_svg(mime, name);
+        bool image = g_str_has_prefix(mime, "image/") || svg;
         if (!video && !image && attachment_is_audio(mime, name)) {
             if (!audio_media(b, m, item, key, name, width, graphics))
                 goto error;
@@ -1002,9 +1026,12 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
                            str(item, "moderation_status"), index, width))
                 goto error;
         }
+        size_t added = b->media_count;
         if ((image || video) && !media(b, m, item, key, "attachment", name, AUTH_MEDIA_ATTACHMENT,
                                        video, width, graphics, false, 0))
             goto error;
+        if (svg && b->media_count > added)
+            b->media[added].svg = true;
     }
     json_array_foreach(json_object_get(m, "embeds"), index, item)
     {

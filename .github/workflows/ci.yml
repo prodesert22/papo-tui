@@ -191,6 +191,7 @@ jobs:
             ${{ matrix.package }}-ninja ${{ matrix.package }}-pkgconf
             ${{ matrix.package }}-ncurses ${{ matrix.package }}-glib2
             ${{ matrix.package }}-pango ${{ matrix.package }}-fontconfig
+            ${{ matrix.package }}-librsvg
             ${{ matrix.package }}-libass ${{ matrix.package }}-libplacebo
             ${{ matrix.package }}-ffmpeg ${{ matrix.package }}-libgcrypt
             ${{ matrix.package }}-vulkan-headers ${{ matrix.package }}-openssl
