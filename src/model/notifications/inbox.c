@@ -436,7 +436,8 @@ static void local_alert(inbox *b, const json_t *event)
     const char *channel = s(event, "channel_id"), *id = s(event, "id"),
                *author = s(event, "author_id");
     const char *mode = inbox_local_notifications(b, channel);
-    if (!mode || strcmp(mode, "all") || !*author || !strcmp(author, auth_user_id(b->auth)) ||
+    if (!mode || strcmp(mode, "all") || (*author && !strcmp(author, auth_user_id(b->auth))) ||
+        (!*author && !uuid_field(event, "webhook_id")) ||
         json_object_get(b->viewed, id) || !alert_claim(b, id))
         return;
     char content[513];

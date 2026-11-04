@@ -292,8 +292,13 @@ bool instances_poll(instance_connections *connections, auth_client *active)
                 const char *author = json_string_value(json_object_get(event, "user_id"));
                 char title[2200], safe_title[TEXT_UTF8_BYTES], safe_body[TEXT_UTF8_BYTES];
                 text_buffer buffer, projected;
+                /* A webhook has no author account: its name travels in the
+                 * message's external_author, kept in the inbox preview. */
+                const json_t *preview = inbox_message_preview(box, message);
                 snprintf(title, sizeof(title), "%s · %s", item->name,
-                         history_author(item->model, author ? author : ""));
+                         preview && history_message_webhook(preview)
+                             ? history_message_author(item->model, preview)
+                             : history_author(item->model, author ? author : ""));
                 if (!text_decode(&buffer, title) || !text_encode(&buffer, safe_title))
                     continue;
                 const char *body =

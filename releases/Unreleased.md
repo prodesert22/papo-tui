@@ -42,3 +42,4 @@
 - Fixed desktop notifications being silently lost when the notification service was unreachable or slow, which happened most often after the terminal had been unfocused for a long time. The notification is now retried for up to 15 seconds while the connection to the service is re-established, instead of being discarded.
 - Fixed desktop notifications after the first one not appearing: each new message now raises its own notification instead of updating the previous one, which many notification services do silently when it was already shown or dismissed.
 - Channels set to **all** notifications only on this device (not synced with the server) now raise desktop notifications for ordinary messages. Before, only messages the server already flagged produced them.
+- Fixed desktop notifications for webhook messages showing **Autor indisponível** (author unavailable) as the sender; they now show the webhook's name, as the history does.
