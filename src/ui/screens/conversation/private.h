@@ -135,6 +135,7 @@ typedef struct {
     char centered_message[37];
     char notification_channel[37], notification_message[37];
     char notification_time[65], notification_hint[65];
+    char player_message[37]; /* Ctrl+X: reopen the background audio at this message. */
     char reactor_emoji[37], reactor_unicode[65];
     uint64_t action_generation;
     size_t selected_media;

@@ -358,6 +358,34 @@ static void player_controls(void)
     assert(!media_controls_geometry(2, 3, 8, &g));
     assert(!media_controls_geometry(-1, 3, 40, &g));
 }
+static void audio_options(void)
+{
+    int widths[] = {13, 20, 28, 29, 35, 38, 80};
+    for (size_t i = 0; i < sizeof(widths) / sizeof(*widths); ++i) {
+        media_audio_layout g;
+        assert(media_audio_geometry(4, 3, widths[i], &g));
+        int end = 3 + widths[i];
+        assert(g.slower_x == 3 && g.speed_x == g.slower_x + 4);
+        assert(g.faster_x == g.speed_x + MEDIA_AUDIO_SPEED_WIDTH + 1 && g.faster_x + 3 <= end);
+        assert(!g.loop_width || (g.loop_x > g.faster_x + 3 && g.loop_x + g.loop_width <= end));
+        assert(!g.stop_width || (g.loop_width && g.stop_x > g.loop_x + g.loop_width &&
+                                 g.stop_x + g.stop_width <= end));
+        assert((g.loop_width != 0) == (widths[i] >= 29));
+        assert((g.stop_width != 0) == (widths[i] >= 38));
+        assert(media_audio_hit(&g, 3, g.slower_x) == MEDIA_AUDIO_NONE);
+        assert(media_audio_hit(&g, 4, g.slower_x) == MEDIA_AUDIO_SLOWER);
+        assert(media_audio_hit(&g, 4, g.slower_x + 2) == MEDIA_AUDIO_SLOWER);
+        assert(media_audio_hit(&g, 4, g.speed_x) == MEDIA_AUDIO_NONE);
+        assert(media_audio_hit(&g, 4, g.faster_x + 2) == MEDIA_AUDIO_FASTER);
+        if (g.loop_width)
+            assert(media_audio_hit(&g, 4, g.loop_x + g.loop_width - 1) == MEDIA_AUDIO_LOOP);
+        if (g.stop_width)
+            assert(media_audio_hit(&g, 4, g.stop_x) == MEDIA_AUDIO_STOP);
+    }
+    media_audio_layout g;
+    assert(!media_audio_geometry(4, 3, 12, &g));
+    assert(!media_audio_geometry(-1, 3, 40, &g));
+}
 
 static void attachment_layout(void)
 {
@@ -575,18 +603,27 @@ static void attachment_video_extensions(void)
 {
     const struct {
         const char *mime, *name, *label;
-        bool media, video;
-    } fixtures[] = {{"application/octet-stream", "movie.mp4", "Vídeo: ", true, true},
-                    {"application/octet-stream", "movie.MOV", "Vídeo: ", true, true},
-                    {"application/octet-stream", "clip.webm", "Vídeo: ", true, true},
-                    {"application/octet-stream", "notes.txt", "Anexo: ", false, false},
-                    {"application/octet-stream", "movie", "Anexo: ", false, false},
-                    {"application/octet-stream", "movie.", "Anexo: ", false, false},
-                    {"application/octet-stream", "photo.png", "Anexo: ", false, false},
-                    {"application/ogg", "clip.ogv", "Vídeo: ", true, true},
-                    {"video/avi", "clip.avi", "Vídeo: ", true, true},
-                    {"image/png", "clip.mp4", "Imagem: ", true, false},
-                    {"audio/mpeg", "song.mp3", "Anexo: ", false, false}};
+        bool media, video, audio;
+    } fixtures[] = {{"application/octet-stream", "movie.mp4", "Vídeo: ", true, true, false},
+                    {"application/octet-stream", "movie.MOV", "Vídeo: ", true, true, false},
+                    {"application/octet-stream", "clip.webm", "Vídeo: ", true, true, false},
+                    {"application/octet-stream", "notes.txt", "Anexo: ", false, false, false},
+                    {"application/octet-stream", "movie", "Anexo: ", false, false, false},
+                    {"application/octet-stream", "movie.", "Anexo: ", false, false, false},
+                    {"application/octet-stream", "photo.png", "Anexo: ", false, false, false},
+                    {"application/ogg", "clip.ogv", "Vídeo: ", true, true, false},
+                    {"video/avi", "clip.avi", "Vídeo: ", true, true, false},
+                    {"image/png", "clip.mp4", "Imagem: ", true, false, false},
+                    {"audio/mpeg", "song.mp3", "Áudio: ", true, true, true},
+                    {"audio/wave", "unnamed", "Áudio: ", true, true, true},
+                    {"application/octet-stream", "voz.M4A", "Áudio: ", true, true, true},
+                    {"application/octet-stream", "faixa.flac", "Áudio: ", true, true, true},
+                    {"application/octet-stream", "nota.opus", "Áudio: ", true, true, true},
+                    {"application/ogg", "voz.ogg", "Áudio: ", true, true, true},
+                    {"application/ogg", "voz", "Anexo: ", false, false, false},
+                    {"text/plain", "song.mp3", "Anexo: ", false, false, false},
+                    {"video/mp4", "song.m4a", "Vídeo: ", true, true, false},
+                    {"image/png", "cover.mp3", "Imagem: ", true, false, false}};
     for (size_t f = 0; f < sizeof(fixtures) / sizeof(fixtures[0]); ++f) {
         json_t *attachment =
             json_pack("{s:s,s:s,s:s}", "id", "00000000-0000-4000-8000-000000000002", "mime_type",
@@ -602,8 +639,26 @@ static void attachment_video_extensions(void)
                 assert(message_blocks_build(&blocks, m, "Sender", "", 80, graphics != 0));
                 assert(blocks.media_count ==
                        (size_t)(fixtures[f].media && mode != APP_MODE_ULTRALIGHT));
-                if (blocks.media_count)
+                if (blocks.media_count) {
                     assert(blocks.media[0].video == fixtures[f].video);
+                    assert(blocks.media[0].audio == fixtures[f].audio);
+                }
+                if (fixtures[f].audio && mode != APP_MODE_ULTRALIGHT) {
+                    /* One clickable label row, no preview rows to download. */
+                    const char *prefix = "[▶] ";
+                    bool labeled = false;
+                    int regions = 0;
+                    for (size_t r = 0; r < blocks.count; ++r) {
+                        for (int k = 0; k < blocks.rows[r].media_count; ++k)
+                            regions += blocks.rows[r].media[k].height == 0;
+                        for (int k = 0; k < blocks.rows[r].count; ++k)
+                            labeled |=
+                                blocks.rows[r].segments[k].text &&
+                                !strncmp(blocks.rows[r].segments[k].text, prefix, strlen(prefix));
+                    }
+                    assert(labeled && regions >= 1);
+                    assert(blocks.media[0].kind == AUTH_MEDIA_ATTACHMENT);
+                }
                 if (mode == APP_MODE_ULTRALIGHT) {
                     bool labeled = false;
                     for (size_t r = 0; r < blocks.count; ++r)
@@ -744,6 +799,7 @@ int main(void)
     embed_gallery();
     modal_geometry();
     player_controls();
+    audio_options();
     puts("cards, terminal negotiation and Sixel/Kitty/iTerm2 pixels verified");
     return 0;
 }

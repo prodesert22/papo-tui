@@ -393,6 +393,7 @@ that do not report Ctrl+/ can reach global help through contextual help's
 | Ctrl+R | Refresh or retry a request/connection |
 | Ctrl+Y | Retry the last failed send |
 | Ctrl+T | Open the account screen |
+| Ctrl+X | Go back to the message of the audio playing in the background and reopen its player |
 | Ctrl+S | Open application settings |
 | Ctrl+L in a conversation | Sign out of the current account |
 | Ctrl+U / 👤 beside 📌/🖈 | Open or close the server member drawer |
@@ -790,9 +791,9 @@ settings and currently change nothing.
 
 | Mode | Behavior |
 | --- | --- |
-| Normal | Uses Kitty, Sixel or iTerm2 graphics when available, with Chafa character rendering as a fallback. Animated GIFs and video playback are enabled. |
-| Light | Draws images, animated GIFs, video covers and video playback as colored Chafa characters. Uses the terminal's native Unicode emojis. |
-| Ultralight | Text only, with no media downloads or previews. Attachments appear one per line with their type, name and size. Releases the media helper and removes the space reserved for images and avatars. |
+| Normal | Uses Kitty, Sixel or iTerm2 graphics when available, with Chafa character rendering as a fallback. Animated GIFs, video and audio playback are enabled. |
+| Light | Draws images, animated GIFs, video covers and video playback as colored Chafa characters. Plays audio. Uses the terminal's native Unicode emojis. |
+| Ultralight | Text only, with no media downloads, previews or playback. Attachments appear one per line with their type (**Áudio** for sound files), name and size. Releases the media helper and removes the space reserved for images and avatars. |
 
 In Light, the media helper exits after three seconds without work; an open
 video, even paused, keeps it running. Cached images remain visible; the helper
@@ -874,6 +875,47 @@ cropping. Their size adjusts when you resize the terminal.
 Click **Info**, or press `i` or Ctrl+B, to show or hide the media properties.
 Use PageUp/PageDown or the mouse wheel over the properties panel to scroll it.
 
+### Play audio
+
+Audio attachments appear in the history as a player bar: `[▶]`, the file name,
+an empty track and the file size, for example
+`[▶] meeting.mp3  ────────────  3,2 MB`. Nothing is downloaded until you open
+it: click the bar, or use Ctrl+K, select the message and press Enter. While that
+audio plays in the background, its bar shows `[⏸]`, the played part of the track
+and the time, such as `1:23 / 3:45`; click `[⏸]`/`[▶]` on the bar to pause or
+resume without opening the player. Files
+the server reports as a generic type are still recognized by their extension,
+such as `.mp3`, `.m4a`, `.ogg`, `.opus`, `.flac` and `.wav`.
+
+The player opens in the media window, titled **Áudio · Esc: segundo plano**
+(Audio · Esc: background). It shows the cover embedded in the file when there is
+one; otherwise it shows the file name, its type and size, and the playback time.
+The control bar and the keys are the same as the video player's, plus:
+
+| Audio control | Action |
+| --- | --- |
+| `[` / `]` or **[−]** / **[+]** | Slow down / speed up, from 0.5× to 2× |
+| `l` or **[Repetir: Não]** / **[Repetir: Sim]** | Repeat the audio when it ends (Repeat: off / on) |
+| Space at the end | Start the audio again from the beginning; the status line shows **Fim** (End) |
+| `x` or **[Parar]** | Stop the audio and close the player (Stop) |
+| Esc or a click outside | Close the player and keep listening in the background |
+
+A new audio starts at normal speed and with repeat off. The volume is shared with
+the video player.
+
+While audio plays in the background, a mini-player on the line above the footer
+shows the file name, `[⏸]` or `[▶]`, the time and `[✕]`. Click `[⏸]`/`[▶]` to
+pause or resume, `[✕]` to stop, or the name to reopen the player. Press **Ctrl+X**
+from anywhere in the conversation to go back to the audio's channel or direct
+message, jump to its message and reopen the player with its controls; playback
+continues where it was. Without background audio, Ctrl+X shows **Nenhum áudio em
+segundo plano.** (No background audio).
+
+Background audio keeps playing while you move between channels and direct
+messages of the same server. It stops when you switch to another server tab,
+open the account screen or profiles, sign out or change the application mode.
+Opening another audio or a video replaces it, since there is a single player.
+
 ### Browse the images of a message
 
 While the image viewer is open and the message carries more than one image, press
@@ -922,6 +964,13 @@ above.
 - **Video plays without sound:** press `m` to unmute, raise the volume in the
   player and check the system's audio output. If no audio device is available,
   playback can continue without sound.
+- **Audio plays without sound:** the same checks apply; the status line shows
+  **Sem dispositivo de áudio** (No audio device) when the system offers no
+  output. If the player shows **Áudio inválido ou codec indisponível.** (Invalid
+  audio or unavailable codec), the file is damaged or its format is not supported.
+- **Ctrl+X does not reopen the audio:** the message may have been deleted or be
+  out of reach; the footer shows **Mensagem do áudio não está disponível.**
+  (The audio's message is not available). The mini-player keeps working.
 - **Missing media helper or module:** reinstall the complete package. For the
   ZIP, keep the DLLs and the `papo-backends` folder alongside the program.
 - **Session is not remembered:** unlock the system credential store. Without an

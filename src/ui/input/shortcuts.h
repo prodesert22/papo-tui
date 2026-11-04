@@ -16,6 +16,7 @@ typedef enum {
     SHORTCUT_SETTINGS = 19,
     SHORTCUT_ACCOUNT = 20,
     SHORTCUT_MEMBERS = 21,
+    SHORTCUT_PLAYER = 24,
     SHORTCUT_RETRY_SEND = 25,
     SHORTCUT_HELP_ALL = 31
 } ui_shortcut;

@@ -53,7 +53,7 @@ typedef struct {
     char *path;
     uint64_t token;
     int width, height;
-    bool video;
+    bool video, audio;
     double volume; /* Level applied when the player starts; negative keeps it. */
     graphics_terminal terminal;
     uint32_t image_id;
@@ -79,11 +79,28 @@ struct media_view {
     bool modal_shared, modal_animated;
     uint64_t result_token;
     const char *result_error;
-    int pause_commands, mute_commands, seek_commands, volume_commands;
-    bool seek_absolute, volume_absolute;
-    double seek_position, volume_level;
-    bool playing, paused, muted, audio_missing, status_changed;
-    double position, duration, volume;
+    int pause_commands, mute_commands, seek_commands, volume_commands, loop_commands;
+    bool seek_absolute, volume_absolute, speed_set, restart_command;
+    double seek_position, volume_level, speed_level;
+    double speed_target; /* Last requested audio speed; survives quick key repeats. */
+    bool playing, paused, muted, audio_missing, looping, ended, status_changed;
+    double position, duration, volume, speed;
+    /* An audio player left running after its modal closed. Main thread only;
+     * the resource reference keeps the download and the file alive. */
+    struct {
+        bool active;
+        message_media item;
+        media_resource *resource;
+        char *source; /* Player source, reused so reopening does not restart. */
+        uint64_t token;
+        char channel[37], created_at[64];
+    } audio;
+    int mini_y, mini_x, mini_width, mini_play_x, mini_play_w, mini_stop_x, mini_stop_w;
+    struct {
+        message_media item;
+        int y, x, width, pair;
+    } audio_rows[VISIBLE_COUNT]; /* Inline bars of the last history paint. */
+    int audio_row_count;
     enum { MODAL_NONE, MODAL_LIST, MODAL_LOADING, MODAL_PLAYING, MODAL_ERROR } modal;
     WINDOW *window;
     media_modal_layout layout;
@@ -152,6 +169,7 @@ static void *worker(void *context)
     const video_player_api *api = NULL;
     bool force_frame = false;
     bool apply_volume = false;
+    bool announce = false; /* Audio without a picture reports its start once. */
     for (;;) {
         gint64 frame_started = g_get_monotonic_time();
         g_mutex_lock(&v->lock);
@@ -167,12 +185,17 @@ static void *worker(void *context)
                                    .mute = v->mute_commands,
                                    .seek = v->seek_commands,
                                    .volume = v->volume_commands,
+                                   .loop = v->loop_commands,
                                    .seek_absolute = v->seek_absolute,
                                    .volume_absolute = v->volume_absolute,
+                                   .speed_set = v->speed_set,
+                                   .restart = v->restart_command,
                                    .position = v->seek_position,
-                                   .volume_level = v->volume_level};
+                                   .volume_level = v->volume_level,
+                                   .speed_level = v->speed_level};
         v->pause_commands = v->mute_commands = v->seek_commands = v->volume_commands = 0;
-        v->seek_absolute = v->volume_absolute = false;
+        v->loop_commands = 0;
+        v->seek_absolute = v->volume_absolute = v->speed_set = v->restart_command = false;
         v->player_wakeup = false;
         g_mutex_unlock(&v->lock);
         if (stop) {
@@ -196,6 +219,7 @@ static void *worker(void *context)
                 free_job(&current);
                 current = next;
                 force_frame = true;
+                announce = current.audio;
             } else {
                 current = next;
                 force_frame = true;
@@ -214,6 +238,7 @@ static void *worker(void *context)
                 }
                 api->set_wakeup(player, player_wakeup, v);
                 apply_volume = current.volume >= 0;
+                announce = current.audio;
             }
         }
         if (player) {
@@ -235,20 +260,30 @@ static void *worker(void *context)
                                            &image) ||
                 info.invalid) {
                 uint64_t token = current.token;
+                bool audio = current.audio;
                 graphics_image_free(&image);
                 api->close(player);
                 player = NULL;
                 free_job(&current);
                 atomic_store(&v->player_idle, true);
                 graphics_image empty = {0};
-                publish(v, token, &empty, NULL, "Vídeo inválido ou codec indisponível.");
+                publish(v, token, &empty, NULL,
+                        audio ? "Áudio inválido ou codec indisponível."
+                              : "Vídeo inválido ou codec indisponível.");
                 continue;
             }
             g_mutex_lock(&v->lock);
             v->status_changed |= v->paused != info.paused || v->muted != info.muted ||
                                  v->audio_missing != info.audio_missing ||
-                                 fabs(v->position - info.position) >= 1 || v->volume != info.volume;
+                                 /* Each new whole second repaints the clock, also for audio
+                                  * without frames to trigger a redraw. */
+                                 floor(v->position) != floor(info.position) ||
+                                 v->volume != info.volume || v->looping != info.looping ||
+                                 v->ended != info.ended || v->speed != info.speed;
             v->audio_missing = info.audio_missing;
+            v->looping = info.looping;
+            v->ended = info.ended;
+            v->speed = info.speed;
             v->playing = true;
             v->paused = info.paused;
             v->muted = info.muted;
@@ -258,13 +293,19 @@ static void *worker(void *context)
             g_mutex_unlock(&v->lock);
             if (image.data) {
                 force_frame = false;
+                announce = false;
+                publish(v, current.token, &image, NULL, NULL);
+            } else if (announce && (info.position > 0 || info.duration > 0)) {
+                /* Without a cover there is no frame to publish; an empty
+                 * result tells the modal that playback started. */
+                announce = false;
                 publish(v, current.token, &image, NULL, NULL);
             }
         }
         g_mutex_lock(&v->lock);
         if (!v->pending && !v->stopping && !v->player_wakeup && !v->pause_commands &&
             !v->mute_commands && !v->seek_commands && !v->volume_commands && !v->seek_absolute &&
-            !v->volume_absolute) {
+            !v->volume_absolute && !v->loop_commands && !v->speed_set && !v->restart_command) {
             if (!player)
                 g_cond_wait(&v->wake, &v->lock);
             else {
@@ -272,7 +313,9 @@ static void *worker(void *context)
                  * 60 Hz while playing, counting work time in the interval;
                  * there is only one pending publication, so slow terminals
                  * always receive the latest frame instead of a growing queue. */
-                gint64 interval = v->paused && !force_frame ? 50000 : G_USEC_PER_SEC / 60;
+                gint64 interval = v->paused && !force_frame ? 50000
+                                  : current.audio           ? G_USEC_PER_SEC / 10
+                                                            : G_USEC_PER_SEC / 60;
                 g_cond_wait_until(&v->wake, &v->lock, frame_started + interval);
             }
         }
@@ -334,6 +377,33 @@ media_view *media_view_create(auth_client *auth)
     atomic_init(&v->player_idle, true);
     return v;
 }
+/* Retires the worker's player and drops controls not yet delivered. */
+static void stop_player(media_view *v)
+{
+    atomic_store(&v->active, 0);
+    g_mutex_lock(&v->lock);
+    v->playing = v->ended = v->looping = false;
+    v->pause_commands = v->seek_commands = v->volume_commands = v->mute_commands = 0;
+    v->loop_commands = 0;
+    v->seek_absolute = v->volume_absolute = v->speed_set = v->restart_command = false;
+    g_cond_signal(&v->wake);
+    g_mutex_unlock(&v->lock);
+}
+static void clear_audio(media_view *v)
+{
+    media_resource_release(v->audio.resource);
+    free(v->audio.source);
+    memset(&v->audio, 0, sizeof(v->audio));
+}
+/* Ends the background audio session, if any. */
+static void stop_audio(media_view *v)
+{
+    if (!v || !v->audio.active)
+        return;
+    clear_audio(v);
+    stop_player(v);
+}
+/* A background audio session keeps the player when another modal closes. */
 static void close_modal(media_view *v)
 {
     if (!v)
@@ -341,13 +411,8 @@ static void close_modal(media_view *v)
     free(v->gallery);
     v->gallery = NULL;
     v->gallery_count = v->gallery_index = v->image_count = 0;
-    atomic_store(&v->active, 0);
-    g_mutex_lock(&v->lock);
-    v->playing = false;
-    v->pause_commands = v->seek_commands = v->volume_commands = v->mute_commands = 0;
-    v->seek_absolute = v->volume_absolute = false;
-    g_cond_signal(&v->wake);
-    g_mutex_unlock(&v->lock);
+    if (!v->audio.active)
+        stop_player(v);
     if (v->window) {
         delwin(v->window);
         v->window = NULL;
@@ -356,6 +421,9 @@ static void close_modal(media_view *v)
     clear_modal_image(v);
     v->modal = MODAL_NONE;
     v->modal_entry = -1;
+    /* The list and notice modals open without an item; player keys must not
+     * reach a background audio through the item shown last. */
+    memset(&v->selected_item, 0, sizeof(v->selected_item));
     v->modal_token = 0;
     free(v->modal_source);
     v->modal_source = NULL;
@@ -364,11 +432,38 @@ static void close_modal(media_view *v)
     v->info_scroll = v->info_rows = 0;
     v->modal_width = v->modal_height = 0;
 }
+/* Esc or a click outside: an audio player that already has its source keeps
+ * playing in the background; every other modal closes as before. */
+static void dismiss_modal(media_view *v)
+{
+    media_resource *resource = v->modal_entry >= 0 && v->modal_entry < CACHE_COUNT
+                                   ? v->cache[v->modal_entry].resource
+                                   : NULL;
+    if (v->selected_item.audio && v->modal_token && v->modal_source && resource &&
+        v->modal != MODAL_ERROR) {
+        stop_audio(v);
+        v->audio.active = true;
+        v->audio.item = v->selected_item;
+        v->audio.resource = resource;
+        media_resource_ref(resource);
+        v->audio.source = v->modal_source;
+        v->modal_source = NULL;
+        v->audio.token = v->modal_token;
+        json_t *message =
+            v->model ? history_find_message(v->model, v->selected_item.message) : NULL;
+        const char *channel = json_string_value(json_object_get(message, "channel_id"));
+        const char *created = json_string_value(json_object_get(message, "created_at"));
+        snprintf(v->audio.channel, sizeof(v->audio.channel), "%s", channel ? channel : "");
+        snprintf(v->audio.created_at, sizeof(v->audio.created_at), "%s", created ? created : "");
+    }
+    close_modal(v);
+}
 static void clear_positions(media_view *v)
 {
     for (int i = 0; i < v->visible_count; ++i)
         media_resource_release(v->visible[i].resource);
     v->visible_count = 0;
+    v->audio_row_count = 0;
 }
 void media_view_reset(media_view *v)
 {
@@ -377,6 +472,7 @@ void media_view_reset(media_view *v)
     ++v->dimensions_revision;
     if (v->visible_count || v->modal != MODAL_NONE)
         graphics_images_clear();
+    stop_audio(v);
     close_modal(v);
     v->model = NULL;
     clear_positions(v);
@@ -398,6 +494,9 @@ void media_view_suspend(media_view *v)
         delete_entry(&v->cache[i]);
     v->visible_count = 0;
     media_cache_begin(v->store);
+    /* Background audio survives conversation switches within this server. */
+    if (v->audio.active)
+        media_resource_use_image(v->audio.resource, false, true);
     uint64_t now = 0;
     net_now_ms(&now);
     media_cache_poll(v->store, now);
@@ -757,6 +856,8 @@ bool media_view_poll(media_view *v, history *h)
     if (v->modal == MODAL_LIST && v->selected >= count)
         v->selected = count ? count - 1 : 0;
     media_cache_begin(v->store);
+    if (v->audio.active)
+        media_resource_use_image(v->audio.resource, false, true);
     bool modal = v->modal != MODAL_NONE && v->modal != MODAL_LIST && v->modal_entry >= 0;
     if (modal) {
         cache_entry *e = &v->cache[v->modal_entry];
@@ -767,7 +868,7 @@ bool media_view_poll(media_view *v, history *h)
     if (terminal.supported)
         for (int i = 0; i < v->visible_count; ++i) {
             cache_entry *e = &v->cache[v->visible[i].entry];
-            if (!e->item.video || e->item.kind == AUTH_MEDIA_ATTACHMENT) {
+            if (!e->item.audio && (!e->item.video || e->item.kind == AUTH_MEDIA_ATTACHMENT)) {
                 ensure_resource(v, e);
                 media_resource_use_image(e->resource, !strcmp(e->item.role, "author"), false);
                 placement *p = &v->visible[i];
@@ -780,6 +881,7 @@ bool media_view_poll(media_view *v, history *h)
             }
         }
     changed |= media_cache_poll(v->store, now);
+    bool background_failed = false;
     g_mutex_lock(&v->lock);
     if (v->result_ready) {
         if (v->modal_token && v->result_token == v->modal_token) {
@@ -803,7 +905,8 @@ bool media_view_poll(media_view *v, history *h)
                 v->modal = MODAL_PLAYING;
             }
             changed = true;
-        }
+        } else if (v->audio.active && v->result_token == v->audio.token && v->result_error)
+            background_failed = true;
         graphics_image_free(&v->result);
         v->result_ready = false;
     }
@@ -814,6 +917,11 @@ bool media_view_poll(media_view *v, history *h)
         v->video_reserved = 0;
     }
     g_mutex_unlock(&v->lock);
+    if (background_failed) {
+        /* The player failed or the helper restarted: the mini-player leaves. */
+        stop_audio(v);
+        changed = true;
+    }
     if (modal && v->modal != MODAL_ERROR && modal_layout_update(v)) {
         cache_entry *e = &v->cache[v->modal_entry];
         bool author = !strcmp(e->item.role, "author");
@@ -850,6 +958,7 @@ bool media_view_poll(media_view *v, history *h)
                                .width = v->modal_width,
                                .height = v->modal_height,
                                .video = true,
+                               .audio = e->item.audio,
                                .volume = player_volume_get(),
                                .image_id = v->modal_image.id};
                 if (!submit_job(v, &request)) {
@@ -979,15 +1088,37 @@ bool media_view_open(media_view *v, const message_media *source)
     if (!v || !source)
         return false;
     message_media item = *source;
+    /* Reopening the background audio hands its source back to the modal, so
+     * the next job reuses the running player instead of restarting it. */
+    bool resume = v->audio.active && source->audio && same(source, &v->audio.item);
     close_modal(v);
     open_message_media(v, &item);
     if (item.kind == AUTH_MEDIA_THUMBNAIL)
         item.kind = AUTH_MEDIA_ATTACHMENT;
+    if (!resume && item.video) {
+        stop_audio(v); /* The media helper runs a single player. */
+        g_mutex_lock(&v->lock);
+        v->speed_target = 1; /* A new player starts at normal speed. */
+        g_mutex_unlock(&v->lock);
+    }
     v->selected_item = item;
     v->modal_entry = cache_find(v, &item);
     v->modal = MODAL_LOADING;
+    if (resume) {
+        if (v->modal_entry >= 0) {
+            /* Take the entry's own reference before the session drops its own. */
+            ensure_resource(v, &v->cache[v->modal_entry]);
+            v->modal_source = v->audio.source;
+            v->audio.source = NULL;
+        }
+        v->audio.active = false;
+        clear_audio(v);
+        if (v->modal_entry < 0)
+            stop_player(v);
+    }
     if (v->modal_entry >= 0 && v->selected_item.video && app_mode_get() == APP_MODE_ULTRALIGHT) {
-        v->modal_error = "Vídeos desativados neste modo.";
+        v->modal_error = v->selected_item.audio ? "Áudios desativados neste modo."
+                                                : "Vídeos desativados neste modo.";
         v->modal = MODAL_ERROR;
     } else if (v->modal_entry < 0 || !graphics_terminal_get().supported) {
         v->modal_error = "Este terminal não oferece um protocolo gráfico compatível.";
@@ -1039,7 +1170,34 @@ media_context media_view_context(const media_view *v)
         return MEDIA_CONTEXT_ERROR;
     if (v->modal == MODAL_LOADING)
         return MEDIA_CONTEXT_LOADING;
-    return v->selected_item.video ? MEDIA_CONTEXT_VIDEO : MEDIA_CONTEXT_IMAGE;
+    return v->selected_item.audio   ? MEDIA_CONTEXT_AUDIO
+           : v->selected_item.video ? MEDIA_CONTEXT_VIDEO
+                                    : MEDIA_CONTEXT_IMAGE;
+}
+static const double audio_speeds[] = {0.5, 0.75, 1, 1.25, 1.5, 1.75, 2};
+enum { AUDIO_SPEED_COUNT = sizeof(audio_speeds) / sizeof(*audio_speeds) };
+/* Called with the lock held: queue the next speed step from the reported one. */
+static void step_speed(media_view *v, int direction)
+{
+    double current = v->speed_target > 0 ? v->speed_target : 1;
+    int index = 2;
+    for (int i = 0; i < AUDIO_SPEED_COUNT; ++i)
+        if (fabs(audio_speeds[i] - current) < 0.01)
+            index = i;
+    index += direction;
+    if (index < 0 || index >= AUDIO_SPEED_COUNT)
+        return;
+    v->speed_set = true;
+    v->speed_level = v->speed_target = audio_speeds[index];
+}
+/* Called with the lock held: Space at the end of an audio starts it over. */
+static void toggle_pause(media_view *v)
+{
+    if (v->selected_item.audio && v->ended && !v->looping) {
+        v->restart_command = true;
+        v->pause_commands = 0;
+    } else
+        ++v->pause_commands;
 }
 bool media_view_key(media_view *v, int type, uint32_t key)
 {
@@ -1060,7 +1218,7 @@ bool media_view_key(media_view *v, int type, uint32_t key)
         return true;
     }
     if (type == OK && key == 27) {
-        close_modal(v);
+        dismiss_modal(v);
         return true;
     }
     if (v->modal == MODAL_LIST) {
@@ -1112,11 +1270,22 @@ bool media_view_key(media_view *v, int type, uint32_t key)
         v->modal_source = NULL;
         return true;
     }
+    /* Player controls never reach a background audio behind an image. */
+    if (!v->selected_item.video)
+        return true;
+    if (v->selected_item.audio && type == OK && key == 'x') {
+        close_modal(v);
+        return true;
+    }
     g_mutex_lock(&v->lock);
     if (type == OK && key == ' ')
-        ++v->pause_commands;
+        toggle_pause(v);
     if (type == OK && key == 'm')
         ++v->mute_commands;
+    if (v->selected_item.audio && type == OK && (key == '[' || key == ']'))
+        step_speed(v, key == ']' ? 1 : -1);
+    if (v->selected_item.audio && type == OK && key == 'l')
+        ++v->loop_commands;
     if (type == KEY_CODE_YES && key == KEY_LEFT && v->seek_commands > -3600)
         v->seek_commands -= 5;
     if (type == KEY_CODE_YES && key == KEY_RIGHT && v->seek_commands < 3600)
@@ -1163,7 +1332,7 @@ bool media_view_click(media_view *v, int y, int x)
         return false;
     if (media_view_modal(v)) {
         if (!modal_layout_update(v) || !media_modal_contains(&v->layout, y, x)) {
-            close_modal(v);
+            dismiss_modal(v);
             return true;
         }
         if (v->modal == MODAL_LIST) {
@@ -1178,6 +1347,24 @@ bool media_view_click(media_view *v, int y, int x)
             v->info_open = !v->info_open;
             v->info_scroll = 0;
             v->info_focused = true;
+        } else if (v->selected_item.audio && v->modal == MODAL_PLAYING &&
+                   y == v->layout.y + v->layout.height - 4) {
+            media_audio_layout options;
+            if (media_audio_geometry(v->layout.height - 4, 3, v->layout.area_width, &options)) {
+                media_audio_control action =
+                    media_audio_hit(&options, y - v->layout.y, x - v->layout.x);
+                if (action == MEDIA_AUDIO_STOP) {
+                    close_modal(v);
+                    return true;
+                }
+                g_mutex_lock(&v->lock);
+                if (action == MEDIA_AUDIO_SLOWER || action == MEDIA_AUDIO_FASTER)
+                    step_speed(v, action == MEDIA_AUDIO_FASTER ? 1 : -1);
+                else if (action == MEDIA_AUDIO_LOOP)
+                    ++v->loop_commands;
+                g_cond_signal(&v->wake);
+                g_mutex_unlock(&v->lock);
+            }
         } else if (v->selected_item.video && v->modal == MODAL_PLAYING) {
             media_controls_layout controls;
             if (media_controls_geometry(v->layout.height - 3, 3, v->layout.area_width, &controls)) {
@@ -1186,7 +1373,7 @@ bool media_view_click(media_view *v, int y, int x)
                     media_controls_hit(&controls, y - v->layout.y, x - v->layout.x, &fraction);
                 g_mutex_lock(&v->lock);
                 if (action == MEDIA_CONTROL_PLAY)
-                    ++v->pause_commands;
+                    toggle_pause(v);
                 else if (action == MEDIA_CONTROL_SEEK && isfinite(v->duration) && v->duration > 0) {
                     v->seek_absolute = true;
                     v->seek_position = fraction * v->duration;
@@ -1208,6 +1395,19 @@ bool media_view_click(media_view *v, int y, int x)
         }
         return true;
     }
+    /* The inline bar's button pauses or resumes the background audio. */
+    for (int i = 0; i < v->audio_row_count; ++i)
+        if (v->audio.active && y == v->audio_rows[i].y && x >= v->audio_rows[i].x &&
+            x < v->audio_rows[i].x + 3 && same(&v->audio_rows[i].item, &v->audio.item)) {
+            g_mutex_lock(&v->lock);
+            if (v->ended && !v->looping)
+                v->restart_command = true;
+            else
+                ++v->pause_commands;
+            g_cond_signal(&v->wake);
+            g_mutex_unlock(&v->lock);
+            return true;
+        }
     for (int i = 0; i < v->visible_count; ++i) {
         placement *p = &v->visible[i];
         int height = p->height - p->top - p->bottom;
@@ -1219,6 +1419,23 @@ bool media_view_click(media_view *v, int y, int x)
         }
     }
     return false;
+}
+/* m:ss, or h:mm:ss for long media; unknown values read as --:--. */
+static void format_clock(double seconds, char *out, size_t size)
+{
+    if (!isfinite(seconds) || seconds < 0) {
+        snprintf(out, size, "--:--");
+        return;
+    }
+    long total = seconds > 359999 ? 359999 : (long)seconds;
+    if (total >= 3600)
+        snprintf(out, size, "%ld:%02ld:%02ld", total / 3600, total / 60 % 60, total % 60);
+    else
+        snprintf(out, size, "%ld:%02ld", total / 60, total % 60);
+}
+static void format_speed(double speed, char *out, size_t size)
+{
+    snprintf(out, size, "%g×", isfinite(speed) && speed > 0 ? speed : 1.0);
 }
 static void draw_properties(media_view *v, WINDOW *w)
 {
@@ -1241,13 +1458,22 @@ static void draw_properties(media_view *v, WINDOW *w)
         v->modal_image.source_height ? v->modal_image.source_height : item->source_height;
     if (source_w > 0 && source_h > 0)
         snprintf(dimensions, sizeof(dimensions), "%d × %d px", source_w, source_h);
+    if (item->audio) {
+        g_mutex_lock(&v->lock);
+        double duration = v->duration;
+        g_mutex_unlock(&v->lock);
+        if (isfinite(duration) && duration > 0)
+            format_clock(duration, dimensions, sizeof(dimensions));
+        else
+            snprintf(dimensions, sizeof(dimensions), "Não informada");
+    }
     struct {
         const char *name, *value;
     } properties[] = {{"Nome", item->original_file_name},
                       {"MIME", item->mime},
                       {"Tamanho", bytes},
                       {"Moderação", item->moderation},
-                      {"Dimensões originais", dimensions},
+                      {item->audio ? "Duração" : "Dimensões originais", dimensions},
                       {"ID", item->id},
                       {"Mensagem", item->message},
                       {"Miniatura", item->thumbnail_id},
@@ -1348,9 +1574,12 @@ static void draw_video_controls(media_view *v, WINDOW *w)
     info = (video_info){.paused = v->paused,
                         .muted = v->muted,
                         .audio_missing = v->audio_missing,
+                        .looping = v->looping,
+                        .ended = v->ended,
                         .position = v->position,
                         .duration = v->duration,
-                        .volume = v->volume};
+                        .volume = v->volume,
+                        .speed = v->speed};
     g_mutex_unlock(&v->lock);
     media_controls_layout controls;
     if (media_controls_geometry(v->layout.height - 3, 3, v->layout.area_width, &controls)) {
@@ -1386,13 +1615,89 @@ static void draw_video_controls(media_view *v, WINDOW *w)
             text_label(w, controls.row, controls.percent_x, 4, percent);
         }
     }
-    char status[256];
-    snprintf(status, sizeof(status),
-             "%s · %.0f / %.0f s%s%s · Espaço pausa · ←→ 5s · ,/. 1s · ↑↓ volume · m",
-             info.paused ? "Pausado" : "Reproduzindo", info.position, info.duration,
-             info.muted ? " · Mudo" : "", info.audio_missing ? " · Sem dispositivo de áudio" : "");
+    char status[320];
+    if (v->selected_item.audio) {
+        char position[32], duration[32], speed[16];
+        format_clock(info.position, position, sizeof(position));
+        format_clock(info.duration > 0 ? info.duration : NAN, duration, sizeof(duration));
+        format_speed(info.speed, speed, sizeof(speed));
+        snprintf(status, sizeof(status),
+                 "%s · %s / %s · %s%s%s%s · Espaço pausa · ←→ 5s · [ ] velocidade · l repetir · "
+                 "↑↓ volume · m · x parar",
+                 info.ended && !info.looping ? "Fim"
+                 : info.paused               ? "Pausado"
+                                             : "Reproduzindo",
+                 position, duration, speed, info.looping ? " · Repetir" : "",
+                 info.muted ? " · Mudo" : "",
+                 info.audio_missing ? " · Sem dispositivo de áudio" : "");
+    } else
+        snprintf(status, sizeof(status),
+                 "%s · %.0f / %.0f s%s%s · Espaço pausa · ←→ 5s · ,/. 1s · ↑↓ volume · m",
+                 info.paused ? "Pausado" : "Reproduzindo", info.position, info.duration,
+                 info.muted ? " · Mudo" : "",
+                 info.audio_missing ? " · Sem dispositivo de áudio" : "");
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     text_label(w, v->layout.height - 2, 3, v->layout.area_width, status);
+}
+static void draw_centered(WINDOW *w, int row, int x, int width, const char *text)
+{
+    int used = text_label(NULL, 0, 0, width, text);
+    text_label(w, row, x + (width - used) / 2, width, text);
+}
+/* Sound-only player: a card stands in for the missing picture, and the
+ * option row sits between the picture area and the transport controls. */
+static void draw_audio(media_view *v, WINDOW *w)
+{
+    g_mutex_lock(&v->lock);
+    double position = v->position, duration = v->duration, speed = v->speed;
+    bool looping = v->looping;
+    g_mutex_unlock(&v->lock);
+    int left = v->layout.area_x - v->layout.x, top = v->layout.area_y - v->layout.y;
+    int width = v->layout.area_width, rows = v->layout.area_height;
+    if (!v->modal_image.data && rows >= 1) {
+        const message_media *item = &v->selected_item;
+        char details[128], clock[96], now[32], total[32];
+        if (item->size_known)
+            snprintf(details, sizeof(details), "%s · %" PRId64 " bytes",
+                     *item->mime ? item->mime : "áudio", item->size_bytes);
+        else
+            snprintf(details, sizeof(details), "%s", *item->mime ? item->mime : "áudio");
+        format_clock(position, now, sizeof(now));
+        format_clock(duration > 0 ? duration : NAN, total, sizeof(total));
+        snprintf(clock, sizeof(clock), "%s / %s", now, total);
+        const char *name = *item->original_file_name ? item->original_file_name : item->label;
+        int first = top + (rows > 5 ? (rows - 5) / 2 : 0);
+        wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
+        draw_centered(w, first, left, width, "♪");
+        if (rows >= 3) {
+            wattrset(w, COLOR_PAIR(THEME_PANEL) | A_BOLD);
+            draw_centered(w, first + 2, left, width, name);
+        }
+        if (rows >= 4) {
+            wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
+            draw_centered(w, first + 3, left, width, details);
+        }
+        if (rows >= 5) {
+            wattrset(w, COLOR_PAIR(THEME_PANEL));
+            draw_centered(w, first + 4, left, width, clock);
+        }
+    }
+    media_audio_layout options;
+    if (!media_audio_geometry(v->layout.height - 4, 3, width, &options))
+        return;
+    char label[16];
+    format_speed(speed, label, sizeof(label));
+    button_draw(w, options.row, options.slower_x, 3, "[−]", BUTTON_NORMAL, BUTTON_PANEL);
+    wattrset(w, COLOR_PAIR(THEME_PANEL));
+    draw_centered(w, options.row, options.speed_x, MEDIA_AUDIO_SPEED_WIDTH, label);
+    button_draw(w, options.row, options.faster_x, 3, "[+]", BUTTON_NORMAL, BUTTON_PANEL);
+    if (options.loop_width)
+        button_draw(w, options.row, options.loop_x, options.loop_width,
+                    looping ? "[Repetir: Sim]" : "[Repetir: Não]",
+                    looping ? BUTTON_SELECTED : BUTTON_NORMAL, BUTTON_PANEL);
+    if (options.stop_width)
+        button_draw(w, options.row, options.stop_x, options.stop_width, "[Parar]", BUTTON_NORMAL,
+                    BUTTON_PANEL);
 }
 
 void media_view_draw(media_view *v)
@@ -1432,7 +1737,9 @@ void media_view_draw(media_view *v)
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     box(w, 0, 0);
     wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
-    text_label(w, 0, 2, width - 4, " Mídia · Esc: voltar ");
+    text_label(w, 0, 2, width - 4,
+               v->modal != MODAL_LIST && v->selected_item.audio ? " Áudio · Esc: segundo plano "
+                                                                : " Mídia · Esc: voltar ");
     wattrset(w, COLOR_PAIR(THEME_PANEL));
     if (v->modal == MODAL_LIST) {
         text_label(w, 1, 2, width - 4, "Escolha uma mídia · ↑↓ selecionar · Enter abrir");
@@ -1466,6 +1773,9 @@ void media_view_draw(media_view *v)
             text_label(w, 3, 3, image_width,
                        v->modal_error ? v->modal_error : "Mídia indisponível.");
             text_label(w, height - 3, 3, image_width, "Enter: tentar novamente");
+        } else if (v->selected_item.audio) {
+            draw_audio(v, w);
+            draw_video_controls(v, w);
         } else if (v->selected_item.video)
             draw_video_controls(v, w);
         else
@@ -1480,8 +1790,9 @@ void media_view_draw(media_view *v)
             text_label(w, height - 2, 3, image_width, hint);
         } else if (!v->selected_item.video || v->modal != MODAL_PLAYING)
             text_label(w, height - 2, 3, image_width,
-                       v->selected_item.video ? "Espaço pausa · ←→ 5s · ,/. 1s · ↑↓ volume · m"
-                                              : "i: informações · Esc: voltar");
+                       v->selected_item.audio   ? "Espaço pausa · x parar · Esc: segundo plano"
+                       : v->selected_item.video ? "Espaço pausa · ←→ 5s · ,/. 1s · ↑↓ volume · m"
+                                                : "i: informações · Esc: voltar");
         draw_properties(v, w);
     }
     touchwin(w);
@@ -1492,7 +1803,9 @@ void media_view_prepare(media_view *v)
     if (!v || !graphics_terminal_get().supported)
         return;
     if (media_view_modal(v)) {
-        if (v->window && v->modal == MODAL_PLAYING && modal_layout_update(v)) {
+        /* An audio without a cover has no raster to place. */
+        if (v->window && v->modal == MODAL_PLAYING &&
+            (v->modal_image.data || !v->selected_item.audio) && modal_layout_update(v)) {
             /* Recalculate after a decode result changes the raster dimensions. */
             if (!v->selected_item.video && media_cache_overlay_count(v->store) &&
                 v->modal_entry >= 0 && v->modal_entry < CACHE_COUNT) {
@@ -1519,5 +1832,218 @@ void media_view_prepare(media_view *v)
             e->resource, !strcmp(e->item.role, "author"), p->request, image, e->placement_id,
             e->fragments, p->y, p->x, t.protocol == GRAPHICS_KITTY ? p->top * t.cell_height : 0,
             t.protocol == GRAPHICS_KITTY ? p->bottom * t.cell_height : 0, false);
+    }
+}
+
+bool media_view_audio(const media_view *v, char channel[37], char message[37], char created_at[64])
+{
+    if (!v || !v->audio.active)
+        return false;
+    if (channel)
+        snprintf(channel, 37, "%s", v->audio.channel);
+    if (message)
+        snprintf(message, 37, "%s", v->audio.item.message);
+    if (created_at)
+        snprintf(created_at, 64, "%s", v->audio.created_at);
+    return true;
+}
+void media_view_audio_stop(media_view *v)
+{
+    stop_audio(v);
+    if (v)
+        v->mini_width = 0;
+}
+bool media_view_audio_resume(media_view *v)
+{
+    if (!v || !v->audio.active)
+        return false;
+    message_media item = v->audio.item;
+    return media_view_open(v, &item);
+}
+void media_view_draw_audio(media_view *v, WINDOW *w, int row)
+{
+    if (!v)
+        return;
+    v->mini_width = 0;
+    if (!v->audio.active || !w)
+        return;
+    g_mutex_lock(&v->lock);
+    bool paused = v->paused || (v->ended && !v->looping);
+    double position = v->position, duration = v->duration;
+    g_mutex_unlock(&v->lock);
+    char now[32], total[32], clock[72];
+    format_clock(position, now, sizeof(now));
+    format_clock(duration > 0 ? duration : NAN, total, sizeof(total));
+    snprintf(clock, sizeof(clock), " %s/%s", now, total);
+    const char *play = paused ? "[▶]" : "[⏸]", *stop = "[✕]", *hint = " · Ctrl+X ";
+    const message_media *item = &v->audio.item;
+    const char *name = *item->original_file_name ? item->original_file_name : item->label;
+    int columns = getmaxx(w);
+    int play_w = text_label(NULL, 0, 0, 8, play), stop_w = text_label(NULL, 0, 0, 8, stop);
+    int clock_w = text_label(NULL, 0, 0, 40, clock), hint_w = text_label(NULL, 0, 0, 20, hint);
+    int budget = columns / 2 > 64 ? 64 : columns / 2;
+    if (budget < 20)
+        budget = columns - 2;
+    /* " ♪ name [⏸] 1:23/3:45 · Ctrl+X [✕] ": drop the hint, then the name. */
+    int fixed = 3 + 1 + play_w + clock_w + hint_w + stop_w + 1;
+    if (fixed > budget) {
+        hint = " ";
+        hint_w = 1;
+        fixed = 3 + 1 + play_w + clock_w + hint_w + stop_w + 1;
+    }
+    if (fixed > budget)
+        return;
+    int name_w = text_label(NULL, 0, 0, budget - fixed, name);
+    int width = fixed + name_w;
+    int x = columns - width - 1;
+    if (x < 0)
+        return;
+    int cursor = x;
+    wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
+    cursor += text_label(w, row, cursor, 3, " ♪ ");
+    wattrset(w, COLOR_PAIR(THEME_PANEL));
+    cursor += text_label(w, row, cursor, name_w, name);
+    cursor += text_label(w, row, cursor, 1, " ");
+    int play_x = cursor;
+    cursor += button_draw(w, row, cursor, play_w, play, BUTTON_NORMAL, BUTTON_PANEL);
+    wattrset(w, COLOR_PAIR(THEME_PANEL));
+    cursor += text_label(w, row, cursor, clock_w, clock);
+    wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
+    cursor += text_label(w, row, cursor, hint_w, hint);
+    int stop_x = cursor;
+    cursor += button_draw(w, row, cursor, stop_w, stop, BUTTON_NORMAL, BUTTON_PANEL);
+    wattrset(w, COLOR_PAIR(THEME_PANEL));
+    text_label(w, row, cursor, 1, " ");
+    v->mini_y = getbegy(w) + row;
+    v->mini_x = getbegx(w) + x;
+    v->mini_width = width;
+    v->mini_play_x = getbegx(w) + play_x;
+    v->mini_play_w = play_w;
+    v->mini_stop_x = getbegx(w) + stop_x;
+    v->mini_stop_w = stop_w;
+}
+media_mini_action media_view_audio_click(media_view *v, int y, int x)
+{
+    if (!v || !v->audio.active || !v->mini_width || y != v->mini_y || x < v->mini_x ||
+        x >= v->mini_x + v->mini_width)
+        return MEDIA_MINI_NONE;
+    if (x >= v->mini_stop_x && x < v->mini_stop_x + v->mini_stop_w) {
+        media_view_audio_stop(v);
+        return MEDIA_MINI_HANDLED;
+    }
+    if (x >= v->mini_play_x && x < v->mini_play_x + v->mini_play_w) {
+        g_mutex_lock(&v->lock);
+        if (v->ended && !v->looping)
+            v->restart_command = true;
+        else
+            ++v->pause_commands;
+        g_cond_signal(&v->wake);
+        g_mutex_unlock(&v->lock);
+        return MEDIA_MINI_HANDLED;
+    }
+    return MEDIA_MINI_OPEN;
+}
+
+void media_view_audio_row(media_view *v, const message_media *item, int y, int x, int width,
+                          int pair)
+{
+    if (!v || !item || !item->audio || v->audio_row_count == VISIBLE_COUNT)
+        return;
+    int i = v->audio_row_count++;
+    v->audio_rows[i].item = *item;
+    v->audio_rows[i].y = y;
+    v->audio_rows[i].x = x;
+    v->audio_rows[i].width = width;
+    v->audio_rows[i].pair = pair;
+}
+/* 3,2 MB: one decimal below 100 units, with the decimal comma of the UI. */
+static void format_size(int64_t bytes, char *out, size_t size)
+{
+    if (bytes < 1024) {
+        snprintf(out, size, "%" PRId64 " B", bytes);
+        return;
+    }
+    const char *unit = "KB";
+    double value = bytes / 1024.0;
+    if (value >= 1024) {
+        value /= 1024;
+        unit = "MB";
+    }
+    if (value >= 1024) {
+        value /= 1024;
+        unit = "GB";
+    }
+    snprintf(out, size, value >= 100 ? "%.0f %s" : "%.1f %s", value, unit);
+    char *point = strchr(out, '.');
+    if (point)
+        *point = ',';
+}
+void media_view_draw_rows(media_view *v)
+{
+    if (!v || media_view_modal(v) || !v->audio_row_count)
+        return;
+    g_mutex_lock(&v->lock);
+    bool paused = v->paused || (v->ended && !v->looping);
+    double position = v->position, duration = v->duration;
+    g_mutex_unlock(&v->lock);
+    for (int i = 0; i < v->audio_row_count; ++i) {
+        const message_media *item = &v->audio_rows[i].item;
+        int y = v->audio_rows[i].y, x = v->audio_rows[i].x;
+        int width = MIN(v->audio_rows[i].width, 72);
+        if (y < 0 || y >= LINES || x < 0 || x >= COLS)
+            continue;
+        width = MIN(width, COLS - x);
+        if (width < 8)
+            continue;
+        int base = v->audio_rows[i].pair;
+        int muted = base == THEME_HISTORY_AREA ? THEME_HISTORY_MUTED
+                    : base == THEME_EMBED_AREA ? THEME_EMBED_MUTED
+                                               : THEME_PANEL_MUTED;
+        int accent = base == THEME_HISTORY_AREA ? THEME_HISTORY_ACCENT
+                     : base == THEME_EMBED_AREA ? THEME_EMBED_ACCENT
+                                                : THEME_PANEL_ACCENT;
+        bool current = v->audio.active && same(item, &v->audio.item);
+        char right[80];
+        if (current) {
+            char now[32], total[32];
+            format_clock(position, now, sizeof(now));
+            format_clock(duration > 0 ? duration : NAN, total, sizeof(total));
+            snprintf(right, sizeof(right), "%s / %s", now, total);
+        } else if (item->size_known)
+            format_size(item->size_bytes, right, sizeof(right));
+        else
+            snprintf(right, sizeof(right), "Áudio");
+        WINDOW *w = newwin(1, width, y, x);
+        if (!w)
+            continue;
+        wbkgd(w, COLOR_PAIR(base));
+        werase(w);
+        wattrset(w, COLOR_PAIR(accent) | A_BOLD);
+        int cursor = text_label(w, 0, 0, 3, current && !paused ? "[⏸]" : "[▶]") + 1;
+        int right_w = text_label(NULL, 0, 0, width, right);
+        const char *name = *item->original_file_name ? item->original_file_name : item->label;
+        /* Keep at least an 8-cell track; narrow rows drop it before the name. */
+        int name_room = width - cursor - 2 - 8 - 2 - right_w;
+        bool track = name_room >= 6;
+        if (!track)
+            name_room = width - cursor - 2 - right_w;
+        wattrset(w, COLOR_PAIR(base) | A_BOLD);
+        cursor += text_label(w, 0, cursor, MAX(0, name_room), name) + 2;
+        int track_w = width - cursor - 2 - right_w;
+        if (track && track_w > 0) {
+            bool known = current && isfinite(duration) && duration > 0;
+            double fraction = known ? control_fraction(position / duration) : 0;
+            int marker = (int)(fraction * (track_w - 1));
+            for (int k = 0; k < track_w; ++k) {
+                bool played = known && k < marker, head = known && k == marker;
+                wattrset(w, COLOR_PAIR(played || head ? accent : muted));
+                mvwaddnwstr(w, 0, cursor + k, head ? L"●" : played ? L"━" : L"─", 1);
+            }
+        }
+        wattrset(w, COLOR_PAIR(current ? base : muted));
+        if (right_w <= width)
+            text_label(w, 0, width - right_w, right_w, right);
+        wnoutrefresh(w);
+        delwin(w);
     }
 }

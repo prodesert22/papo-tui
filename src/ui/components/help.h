@@ -40,6 +40,8 @@ enum {
 #define HELP_DM_LIST (UINT64_C(1) << 31)
 /* Rows that only apply when the build carries the WebRTC voice support. */
 #define HELP_VOICE (UINT64_C(1) << 32)
+/* Rows only for the audio player, on top of the shared player rows. */
+#define HELP_AUDIO (UINT64_C(1) << 33)
 
 /* Owns its window and reusable Unicode layout. Borrows no screen/model data.
  * A zero-initialized instance is ready to use; destroy before curses shutdown. */

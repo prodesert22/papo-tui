@@ -324,6 +324,7 @@ void conversation_draw_footer(view *ui)
     werase(ui->footer);
     wattrset(ui->footer, COLOR_PAIR(THEME_BORDER));
     mvwhline(ui->footer, 0, 0, ACS_HLINE, getmaxx(ui->footer));
+    media_view_draw_audio(ui->media, ui->footer, 0);
     char hint[200] = UI_HELP_HINT;
     if (TABS_ROWS < 2) {
         char focus[160];
@@ -837,6 +838,9 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
     conversation_draw_confirmation(ui);
     if (paint_media)
         media_view_draw(ui->media);
+    /* The confirmation dialog is already painted and must stay on top. */
+    if (paint_media && !ui->duplicate_modal)
+        media_view_draw_rows(ui->media);
     conversation_members_draw(ui);
     if (mention_popup_open(ui->mentions) && ui->body && conversation_input(ui)) {
         text_layout *measured = &ui->measured;

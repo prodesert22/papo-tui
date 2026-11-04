@@ -14,7 +14,9 @@
 typedef struct {
     char id[37], message[37], label[MESSAGE_MEDIA_LABEL], mime[32], role[12];
     auth_media_kind kind;
-    bool video, size_known, full_width;
+    /* video marks every item played by the media player; audio refines it to
+     * sound-only attachments, which have no history preview or download. */
+    bool video, audio, size_known, full_width;
     int64_t size_bytes;
     int source_width, source_height;
     char original_file_name[MESSAGE_MEDIA_LABEL];

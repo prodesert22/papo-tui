@@ -186,15 +186,16 @@ bool media_download_avatar_request(media_download *m, const char *reference)
 }
 /* The embed relay keeps the documented allowlist. An attachment carries the
  * type the server detected from the file's magic bytes, which recognizes only
- * a few containers; the remaining videos are served as a generic binary
- * type and the decoder decides whether the bytes are playable. */
+ * a few containers; the remaining videos and sounds are served as a generic
+ * binary type and the decoder decides whether the bytes are playable. Audio
+ * attachments share this player download. */
 static bool video_type(const media_download *m)
 {
     if (m->kind == AUTH_MEDIA_VIDEO)
         return !strcmp(m->mime, "video/mp4") || !strcmp(m->mime, "video/webm") ||
                !strcmp(m->mime, "video/ogg");
-    return g_str_has_prefix(m->mime, "video/") || !strcmp(m->mime, "application/octet-stream") ||
-           !strcmp(m->mime, "application/ogg");
+    return g_str_has_prefix(m->mime, "video/") || g_str_has_prefix(m->mime, "audio/") ||
+           !strcmp(m->mime, "application/octet-stream") || !strcmp(m->mime, "application/ogg");
 }
 static void finish(media_download *m, CURLcode result)
 {

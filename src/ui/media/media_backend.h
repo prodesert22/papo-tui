@@ -2,7 +2,7 @@
 #define PAPO_MEDIA_BACKEND_H
 #include "ui/media/image_decode.h"
 
-#define PAPO_MEDIA_BACKEND_ABI 11U
+#define PAPO_MEDIA_BACKEND_ABI 12U
 /* Bound larger modal surfaces while keeping their buffers within the cache budget. */
 #define VIDEO_FRAME_PIXELS (7U * 1024U * 1024U)
 #define VIDEO_KITTY_FRAME_PIXELS (960U * 540U)
@@ -34,13 +34,14 @@ typedef struct {
 typedef const image_codec_api *(*image_codec_entry)(const image_codec_host *);
 
 typedef struct {
-    int pause, mute, seek, volume;
-    bool seek_absolute, volume_absolute;
-    double position, volume_level;
+    int pause, mute, seek, volume, loop; /* pause, mute and loop: odd counts toggle. */
+    bool seek_absolute, volume_absolute, speed_set;
+    bool restart; /* Seek to the start and resume, after the end was reached. */
+    double position, volume_level, speed_level;
 } video_controls;
 typedef struct {
-    bool paused, muted, audio_missing, invalid;
-    double position, duration, volume;
+    bool paused, muted, audio_missing, invalid, looping, ended;
+    double position, duration, volume, speed;
     int width, height; /* Display dimensions reported by the player, or zero until known. */
 } video_info;
 typedef struct {

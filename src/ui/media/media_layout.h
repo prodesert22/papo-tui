@@ -30,4 +30,24 @@ typedef enum {
 bool media_controls_geometry(int row, int x, int width, media_controls_layout *out);
 media_control media_controls_hit(const media_controls_layout *layout, int y, int x,
                                  double *fraction);
+
+/* Audio option row, in local window coordinates: "[−] 1.25× [+]", then the
+ * loop toggle and the stop button when the width allows. Absent buttons
+ * have zero width. */
+#define MEDIA_AUDIO_SPEED_WIDTH 5
+#define MEDIA_AUDIO_LOOP_WIDTH 14
+#define MEDIA_AUDIO_STOP_WIDTH 7
+typedef struct {
+    int row, slower_x, speed_x, faster_x;
+    int loop_x, loop_width, stop_x, stop_width;
+} media_audio_layout;
+typedef enum {
+    MEDIA_AUDIO_NONE,
+    MEDIA_AUDIO_SLOWER,
+    MEDIA_AUDIO_FASTER,
+    MEDIA_AUDIO_LOOP,
+    MEDIA_AUDIO_STOP
+} media_audio_control;
+bool media_audio_geometry(int row, int x, int width, media_audio_layout *out);
+media_audio_control media_audio_hit(const media_audio_layout *layout, int y, int x);
 #endif

@@ -10,7 +10,14 @@ import tempfile
 from types import SimpleNamespace
 
 
-FILES = {"tall_image": "tall.png", "animated_gif": "animated.gif", "video": "video.mp4"}
+FILES = {
+    "tall_image": "tall.png",
+    "animated_gif": "animated.gif",
+    "video": "video.mp4",
+    "audio": "audio.wav",
+    "short_audio": "short.wav",
+    "cover_audio": "cover.flac",
+}
 
 
 def identity(ffmpeg):
@@ -198,6 +205,70 @@ def generate(cls, FFMPEG):
         capture_output=True,
     )
     cls.video = path.read_bytes()
+    # Sound-only fixtures use native FFmpeg encoders: PCM WAV, and FLAC with a
+    # PNG cover that the player shows as a still picture.
+    for field, name, seconds in (("audio", "audio.wav", 30), ("short_audio", "short.wav", 1)):
+        path = Path(cls.assets.name) / name
+        subprocess.run(
+            [
+                FFMPEG,
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:sample_rate=8000",
+                "-t",
+                str(seconds),
+                "-ac",
+                "1",
+                "-c:a",
+                "pcm_s16le",
+                "-y",
+                str(path),
+            ],
+            check=True,
+            capture_output=True,
+        )
+        setattr(cls, field, path.read_bytes())
+    # The cover is a separate PNG input: drawing it from an endless lavfi
+    # source with -frames:v ends the whole output before any audio.
+    cover = Path(cls.assets.name) / "cover-picture.png"
+    subprocess.run(
+        [FFMPEG, "-v", "error", "-f", "lavfi", "-i", "color=c=red:s=32x32", "-frames:v", "1"]
+        + ["-y", str(cover)],
+        check=True,
+        capture_output=True,
+    )
+    path = Path(cls.assets.name) / "cover.flac"
+    subprocess.run(
+        [
+            FFMPEG,
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=8000:duration=10",
+            "-i",
+            str(cover),
+            "-map",
+            "0:a",
+            "-map",
+            "1:v",
+            "-c:a",
+            "flac",
+            "-c:v",
+            "png",
+            "-disposition:v",
+            "attached_pic",
+            "-y",
+            str(path),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    cls.cover_audio = path.read_bytes()
 
 
 if __name__ == "__main__":

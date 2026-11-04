@@ -374,6 +374,10 @@ void conversation_interactions_sync(view *ui)
     }
     char target[37];
     if (history_take_jump(ui->model, target)) {
+        if (*ui->player_message && !strcmp(target, ui->player_message)) {
+            ui->player_message[0] = 0;
+            media_view_audio_resume(ui->media);
+        }
         r8_modal_location_complete(ui->r8, target);
         snprintf(ui->selected_message, sizeof(ui->selected_message), "%s", target);
         ui->navigating = true;

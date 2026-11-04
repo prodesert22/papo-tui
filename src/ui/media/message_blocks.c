@@ -52,6 +52,29 @@ static bool attachment_is_video(const char *mime, const char *name)
         return false;
     return video_extension(name);
 }
+/* Sound files the server reports as a generic or Ogg container keep their
+ * player when the name carries a known audio extension. */
+static bool audio_extension(const char *name)
+{
+    static const char *const extensions[] = {".mp3",  ".m4a", ".aac",  ".flac", ".wav",
+                                             ".ogg",  ".oga", ".opus", ".wma",  ".aif",
+                                             ".aiff", ".amr", ".mka",  ".weba"};
+    const char *dot = strrchr(name, '.');
+    if (!dot || !dot[1])
+        return false;
+    for (size_t i = 0; i < sizeof(extensions) / sizeof(*extensions); ++i)
+        if (!g_ascii_strcasecmp(dot, extensions[i]))
+            return true;
+    return false;
+}
+/* Evaluated after attachment_is_video, so an Ogg video keeps its player. */
+static bool attachment_is_audio(const char *mime, const char *name)
+{
+    if (g_str_has_prefix(mime, "audio/"))
+        return true;
+    return (!strcmp(mime, "application/ogg") || !strcmp(mime, "application/octet-stream")) &&
+           audio_extension(name);
+}
 /* A message without a readable time keeps the author grouping. */
 static bool close_in_time(const json_t *previous, const json_t *message)
 {
@@ -609,6 +632,23 @@ static bool media(message_blocks *b, json_t *message, json_t *entry, const char 
     }
     return region(b, n, start, b->count, image_start, card ? 2 : 0, media_width, height);
 }
+/* An audio attachment is one clickable label row that opens the player. It
+ * has no preview, so nothing is downloaded until the player opens. */
+static bool audio_media(message_blocks *b, json_t *message, json_t *entry, const char *key,
+                        const char *label, int width, bool graphics)
+{
+    int n = add_media(b, message, entry, "attachment", label, AUTH_MEDIA_ATTACHMENT, true);
+    if (n < 0)
+        return strlen(str(entry, "id")) != 36;
+    b->media[n].audio = true;
+    b->media[n].full_width = true;
+    size_t start = b->count;
+    /* Plain text under the inline player bar the media view paints. */
+    (void)graphics;
+    if (!labeled(b, key, "[▶] ", label, width, false, false, 0))
+        return false;
+    return region(b, n, start, b->count, b->count, 0, width, 0);
+}
 /* Keep each tile's rows, strings and hit regions owned by the message. Position
  * them without merging rows or imposing a fixed number of images per line. */
 static bool wrap_images(message_blocks *b, int width)
@@ -867,6 +907,7 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
             const char *kind = !strcmp(mime, "image/gif")         ? "GIF"
                                : g_str_has_prefix(mime, "image/") ? "Imagem"
                                : attachment_is_video(mime, name)  ? "Vídeo"
+                               : attachment_is_audio(mime, name)  ? "Áudio"
                                                                   : "Anexo";
             json_t *size = json_object_get(item, "size_bytes");
             size_t length = strlen(name);
@@ -888,6 +929,11 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
         }
         bool video = attachment_is_video(mime, name);
         bool image = g_str_has_prefix(mime, "image/");
+        if (!video && !image && attachment_is_audio(mime, name)) {
+            if (!audio_media(b, m, item, key, name, width, graphics))
+                goto error;
+            continue;
+        }
         if (!graphics || (!image && !video)) {
             if (!labeled(b, key, "Anexo: ", name, width, true, false, 0))
                 goto error;

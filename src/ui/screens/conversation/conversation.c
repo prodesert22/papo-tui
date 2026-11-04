@@ -38,8 +38,11 @@ help_context conversation_help_context(view *ui, const char **area)
             *area = "Lista de mídias";
             return HELP_MEDIA_LIST;
         }
-        *area = context == MEDIA_CONTEXT_VIDEO ? "Player de vídeo" : "Visualizador de mídia";
-        return HELP_MEDIA | (context == MEDIA_CONTEXT_VIDEO   ? HELP_PLAYER
+        *area = context == MEDIA_CONTEXT_VIDEO   ? "Player de vídeo"
+                : context == MEDIA_CONTEXT_AUDIO ? "Player de áudio"
+                                                 : "Visualizador de mídia";
+        return HELP_MEDIA | (context == MEDIA_CONTEXT_AUDIO   ? HELP_PLAYER | HELP_AUDIO
+                             : context == MEDIA_CONTEXT_VIDEO ? HELP_PLAYER
                              : context == MEDIA_CONTEXT_IMAGE ? HELP_IMAGE
                              : context == MEDIA_CONTEXT_ERROR ? HELP_MEDIA_ERROR
                                                               : 0);
@@ -119,6 +122,42 @@ static void open_settings(view *ui, const profile_config *config)
 /* Rebuilds the optimistic entries of the open conversation when the outbox
  * changes. Each shows the submitted text with a status tag until the server
  * confirms it and the definitive message replaces it. */
+/* Ctrl+X: go back to the background audio's conversation and message, then
+ * reopen its player once the message is in the loaded history. */
+static void open_player(view *ui)
+{
+    char channel[37], message[37], created[64];
+    if (!media_view_audio(ui->media, channel, message, created)) {
+        ui->feedback = "Nenhum áudio em segundo plano.";
+        return;
+    }
+    json_t *shown = history_channel(ui->model, history_selected(ui->model));
+    if (!*channel || !shown || strcmp(conversation_str(shown, "id"), channel)) {
+        bool found = false;
+        for (size_t i = 0; *channel && i < history_channel_count(ui->model); ++i) {
+            json_t *c = history_channel(ui->model, i);
+            if (strcmp(channel, conversation_str(c, "id")))
+                continue;
+            conversation_switch_list(ui, json_is_true(json_object_get(c, "_dm")));
+            for (size_t j = 0; j < conversation_list_count(ui); ++j)
+                if (conversation_list_index(ui, j) == i)
+                    ui->highlighted = j;
+            conversation_open_channel(ui, true);
+            found = true;
+            break;
+        }
+        if (!found) {
+            ui->feedback = "Mensagem do áudio não está disponível.";
+            return;
+        }
+    }
+    if (!history_jump_at(ui->model, message, *created ? created : NULL)) {
+        ui->feedback = "Mensagem do áudio não está disponível.";
+        return;
+    }
+    snprintf(ui->player_message, sizeof(ui->player_message), "%s", message);
+}
+
 static bool refresh_pending(view *ui, auth_client *auth)
 {
     outbox_operation operations[OUTBOX_OPERATION_LIMIT];
@@ -619,6 +658,11 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             ui->notification_channel[0] = ui->notification_message[0] = 0;
         }
         conversation_interactions_sync(ui);
+        if (*ui->player_message && *history_jump_error(ui->model)) {
+            ui->player_message[0] = 0;
+            ui->feedback = "Mensagem do áudio não está disponível.";
+            redraw = true;
+        }
         if (r8_modal_poll(ui->r8)) {
             redraw = true;
             scope = DRAW_ALL;
@@ -920,6 +964,11 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         }
         if (media_view_modal(ui->media) && media_view_key(ui->media, type, key))
             continue;
+        if (shortcut_is(type, key, SHORTCUT_PLAYER)) {
+            open_player(ui);
+            scope = DRAW_ALL;
+            continue;
+        }
         if (conversation_interactions_key(ui, type, key)) {
             scope = DRAW_ALL;
             continue;
@@ -1039,6 +1088,15 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                     voice_ptt(true);
                     scope = DRAW_ALL;
                     continue;
+                }
+                if (ui->footer && (e.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED))) {
+                    media_mini_action action = media_view_audio_click(ui->media, e.y, e.x);
+                    if (action == MEDIA_MINI_OPEN)
+                        open_player(ui);
+                    if (action != MEDIA_MINI_NONE) {
+                        scope = DRAW_ALL;
+                        continue;
+                    }
                 }
                 if (ui->footer && (e.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED)) &&
                     e.y == getbegy(ui->footer) + 1 && e.x >= getbegx(ui->footer) + 1 &&
@@ -1523,6 +1581,8 @@ finished:
     voice_ptt(false);
     text_push_to_talk_configure(NULL);
     text_input_event_reporting(false);
+    /* Background audio belongs to this server's tab and ends when it is left. */
+    media_view_audio_stop(ui->media);
     media_view_suspend(ui->media);
     conversation_destroy_layout(ui);
     conversation_selection_destroy(ui);

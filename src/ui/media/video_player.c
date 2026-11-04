@@ -26,7 +26,10 @@ enum {
     PROP_VOLUME,
     PROP_WIDTH,
     PROP_HEIGHT,
-    PROP_AUDIO
+    PROP_AUDIO,
+    PROP_SPEED,
+    PROP_LOOP,
+    PROP_ENDED
 };
 static void close_player(void *context)
 {
@@ -105,13 +108,16 @@ static void *open_player(const char *path)
     if (mpv_initialize(p->handle) < 0)
         goto error;
     p->info.volume = p->volume_target = 50;
+    p->info.speed = 1;
     const struct {
         const char *name;
         mpv_format format;
     } properties[] = {{"pause", MPV_FORMAT_FLAG},      {"mute", MPV_FORMAT_FLAG},
                       {"time-pos", MPV_FORMAT_DOUBLE}, {"duration", MPV_FORMAT_DOUBLE},
                       {"volume", MPV_FORMAT_DOUBLE},   {"dwidth", MPV_FORMAT_INT64},
-                      {"dheight", MPV_FORMAT_INT64},   {"current-ao", MPV_FORMAT_STRING}};
+                      {"dheight", MPV_FORMAT_INT64},   {"current-ao", MPV_FORMAT_STRING},
+                      {"speed", MPV_FORMAT_DOUBLE},    {"loop-file", MPV_FORMAT_STRING},
+                      {"eof-reached", MPV_FORMAT_FLAG}};
     for (size_t i = 0; i < sizeof(properties) / sizeof(properties[0]); ++i)
         if (mpv_observe_property(p->handle, i + 1, properties[i].name, properties[i].format) < 0)
             goto error;
@@ -144,6 +150,8 @@ static void read_events(video_player *p)
                     p->info.paused = enabled;
                 else if (event->reply_userdata == PROP_MUTE)
                     p->info.muted = enabled;
+                else if (event->reply_userdata == PROP_ENDED)
+                    p->info.ended = enabled;
             } else if (property->format == MPV_FORMAT_DOUBLE) {
                 double value = *(double *)property->data;
                 switch (event->reply_userdata) {
@@ -155,6 +163,9 @@ static void read_events(video_player *p)
                     break;
                 case PROP_VOLUME:
                     p->info.volume = value;
+                    break;
+                case PROP_SPEED:
+                    p->info.speed = value;
                     break;
                 }
             } else if (property->format == MPV_FORMAT_INT64) {
@@ -168,6 +179,10 @@ static void read_events(video_player *p)
                        event->reply_userdata == PROP_AUDIO) {
                 const char *ao = *(char **)property->data;
                 p->info.audio_missing = ao && !strcmp(ao, "null");
+            } else if (property->format == MPV_FORMAT_STRING &&
+                       event->reply_userdata == PROP_LOOP) {
+                const char *loop = *(char **)property->data;
+                p->info.looping = loop && strcmp(loop, "no");
             }
         }
     }
@@ -178,9 +193,28 @@ static void update_player(void *context, const video_controls *controls, video_i
     /* Synchronous client calls on the render thread can wait for that very
      * thread to render. Only consume events and enqueue asynchronous calls. */
     read_events(p);
-    if (controls->pause % 2) {
+    if (controls->restart) {
+        /* keep-open pauses on the last frame; resuming there would end again. */
+        const char *seek[] = {"seek", "0", "absolute+exact", NULL};
+        mpv_command_async(p->handle, 0, seek);
+        int playing = 0;
+        mpv_set_property_async(p->handle, 0, "pause", MPV_FORMAT_FLAG, &playing);
+    } else if (controls->pause % 2) {
         const char *args[] = {"cycle", "pause", NULL};
         mpv_command_async(p->handle, 0, args);
+    }
+    if (controls->loop % 2) {
+        const char *args[] = {"cycle-values", "loop-file", "inf", "no", NULL};
+        mpv_command_async(p->handle, 0, args);
+    }
+    if (controls->speed_set) {
+        double speed = controls->speed_level;
+        if (!(speed >= 0.25))
+            speed = 0.25;
+        if (speed > 4)
+            speed = 4;
+        if (mpv_set_property_async(p->handle, 0, "speed", MPV_FORMAT_DOUBLE, &speed) >= 0)
+            p->info.speed = speed;
     }
     if (controls->mute % 2) {
         const char *args[] = {"cycle", "mute", NULL};

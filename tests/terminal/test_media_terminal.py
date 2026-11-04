@@ -1010,6 +1010,209 @@ class MediaTerminal(support.MediaTerminal):
             finally:
                 self.assertTrue(t.close())
 
+    def audio_clock(self, terminal):
+        # The modal shows "0:05 / 0:30"; the footer mini-player "0:05/0:30".
+        match = re.search(r"(\d+):(\d\d) ?/ ?0:30", "\n".join(terminal.screen.display))
+        return int(match[1]) * 60 + int(match[2]) if match else None
+
+    def footer(self, terminal):
+        return terminal.screen.display[-3]
+
+    def test_audio_plays_in_background_and_ctrl_x_reopens_it(self):
+        with self.serve(self.audio, "audio/wave", name="nota.wav") as server:
+            t = self.open(server, protocol="kitty")
+            try:
+                self.wait(t, "[▶] nota.wav")
+                t.read(0.5)
+                display = "\n".join(t.screen.display)
+                # The inline bar shows the size until the audio plays.
+                self.assertRegex(display, r"\[▶\] nota\.wav  ─+  469 KB")
+                self.assertNotIn("Anexo:", display)
+                self.assertNotIn("Tipo:", display)
+                # Without a preview, nothing is downloaded before the player opens.
+                self.assertFalse(any("/attachments/" in r[1] for r in server.requests))
+                t.send("\x0b")
+                self.wait(t, "Mídia 1/1")
+                t.send("\n")
+                self.wait(t, "Áudio · Esc: segundo plano")
+                self.wait(t, "Reproduzindo")
+                self.wait(t, "[Repetir: Não]")
+                self.assertIn("♪", "\n".join(t.screen.display))
+                t.send("]")
+                self.wait(t, "1.25×")
+                t.send("[[")
+                self.wait(t, "0.75×")
+                t.send("]")
+                self.wait(t, "1×")
+                t.send("l")
+                self.wait(t, "[Repetir: Sim]")
+                t.send("l")
+                self.wait(t, "[Repetir: Não]")
+                t.send("\x1b")
+                wait_for_screen(
+                    t,
+                    lambda: "Esc: segundo plano" not in "\n".join(t.screen.display),
+                    "The audio modal did not close",
+                )
+                wait_for_screen(t, lambda: "Ctrl+X" in self.footer(t), "Mini-player missing")
+                self.assertIn("♪ nota.wav", self.footer(t))
+                # The history bar of the playing audio follows its progress.
+                wait_for_screen(
+                    t,
+                    lambda: re.search(
+                        r"\[⏸\] nota\.wav  ━*●─*  \d:\d\d / 0:30", "\n".join(t.screen.display)
+                    ),
+                    "The inline bar does not show the background progress",
+                )
+                # Its button pauses and resumes without opening the player.
+                row = next(i for i, line in enumerate(t.screen.display) if "[⏸] nota.wav" in line)
+                t.click(row, t.screen.display[row].index("[⏸]") + 1)
+                self.wait(t, "[▶] nota.wav")
+                self.assertIn("[▶]", self.footer(t))
+                self.assertNotIn("Esc: segundo plano", "\n".join(t.screen.display))
+                t.click(row, t.screen.display[row].index("[▶]") + 1)
+                self.wait(t, "[⏸] nota.wav")
+                before = self.audio_clock(t)
+                self.assertIsNotNone(before, self.footer(t))
+                wait_for_screen(
+                    t,
+                    lambda: (self.audio_clock(t) or 0) > before,
+                    "Background audio did not keep playing",
+                )
+                # A conversation switch on the same server keeps it playing.
+                t.click(6, 4)
+                self.wait(t, "Conteúdo do outro canal")
+                self.assertIn("Ctrl+X", self.footer(t))
+                position = self.audio_clock(t)
+                t.send("\x18")
+                self.wait(t, "Áudio · Esc: segundo plano")
+                self.wait(t, "Reproduzindo")
+                self.assertNotIn("Conteúdo do outro canal", "\n".join(t.screen.display))
+                # The running player is reused: the position does not restart.
+                self.assertGreaterEqual(self.audio_clock(t), position)
+                self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), 1)
+                t.send("x")
+                wait_for_screen(
+                    t,
+                    lambda: "Esc: segundo plano" not in "\n".join(t.screen.display),
+                    "Stop did not close the audio modal",
+                )
+                # Ctrl+X brought the history back to the audio's message.
+                self.wait(t, "Mensagem 0001")
+                t.read(0.3)
+                self.assertNotIn("Ctrl+X", self.footer(t))
+                t.send("\x18")
+                self.wait(t, "Nenhum áudio em segundo plano.")
+            finally:
+                self.assertTrue(t.close())
+
+    def test_leaving_the_server_tab_stops_background_audio(self):
+        with self.serve(self.audio, "audio/wave", name="nota.wav") as server:
+            t = self.open(server, protocol="kitty")
+            try:
+                self.wait(t, "[▶] nota.wav")
+                t.send("\x0b\n")
+                self.wait(t, "Reproduzindo")
+                t.send("\x1b")
+                wait_for_screen(t, lambda: "Ctrl+X" in self.footer(t), "Mini-player missing")
+                # Panels stay above the inline bar while it repaints each second.
+                t.send("\x07")
+                self.wait(t, "Ajuda do contexto")
+                covered = "\n".join(t.screen.display)
+                t.read(2.2)
+                self.assertIn("Ajuda do contexto", "\n".join(t.screen.display))
+                help_rows = [i for i, line in enumerate(covered.split("\n")) if "Ajuda" in line]
+                for i in help_rows:
+                    self.assertNotIn("nota.wav", t.screen.display[i])
+                t.send("\x1b")
+                wait_for_screen(
+                    t,
+                    lambda: "Ajuda do contexto" not in "\n".join(t.screen.display),
+                    "Help did not close",
+                )
+                self.wait(t, "[⏸] nota.wav")
+                t.send("\x14")
+                self.wait(t, "[Renovar]")
+                t.send("\x14")
+                self.wait(t, "[▶] nota.wav")
+                t.read(0.3)
+                self.assertNotIn("Ctrl+X", self.footer(t))
+            finally:
+                self.assertTrue(t.close())
+
+    def test_audio_reported_as_a_generic_type_restarts_after_the_end(self):
+        with self.serve(self.short_audio, "application/octet-stream", name="voz.wav") as server:
+            t = self.open(server, protocol="kitty")
+            try:
+                self.wait(t, "[▶] voz.wav")
+                t.send("\x0b\n")
+                self.wait(t, "Áudio · Esc: segundo plano")
+                self.wait(t, "Fim · ")
+                t.send(" ")
+                self.wait(t, "Reproduzindo")
+                self.wait(t, "Fim · ")
+                self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), 1)
+            finally:
+                self.assertTrue(t.close())
+
+    def test_audio_player_works_with_chafa_characters(self):
+        # Without a graphics protocol the card, options and mini-player are text.
+        with self.serve(self.cover_audio, "audio/flac", name="faixa.flac") as server:
+            t = self.open(server, sixel=False)
+            try:
+                self.wait(t, "[▶] faixa.flac")
+                t.send("\x0b\n")
+                self.wait(t, "Reproduzindo")
+                self.wait(t, "[Repetir: Não]")
+                t.send("\x1b")
+                wait_for_screen(t, lambda: "Ctrl+X" in self.footer(t), "Mini-player missing")
+                self.assertEqual(t.stream.frames, [])
+                t.send("\x18")
+                self.wait(t, "Reproduzindo")
+                t.send("x")
+                wait_for_screen(
+                    t,
+                    lambda: "Ctrl+X" not in self.footer(t),
+                    "Stop did not remove the mini-player",
+                )
+            finally:
+                self.assertTrue(t.close())
+
+    def test_audio_cover_is_shown_and_released_in_background(self):
+        for protocol in protocols("kitty", "sixel"):
+            with (
+                self.subTest(protocol=protocol),
+                self.serve(self.cover_audio, "audio/flac", name="faixa.flac") as server,
+            ):
+                t = self.open(server, protocol=protocol)
+                try:
+                    self.wait(t, "[▶] faixa.flac")
+                    frames = len(t.stream.frames)
+                    t.send("\x0b\n")
+                    self.wait(t, "Reproduzindo")
+                    self.wait_frames(t, frames + 1)
+                    # The cover is a still picture: the audio keeps playing under it.
+                    self.wait(t, " / 0:10")
+                    self.assertNotIn("Fim · ", "\n".join(t.screen.display))
+                    if protocol == "kitty":
+                        header, pixels = t.stream.kitty_frames[-1]
+                        center = (
+                            int(header[b"v"]) // 2 * int(header[b"s"]) + int(header[b"s"]) // 2
+                        ) * 4
+                        self.assertGreater(pixels[center], 200)
+                        self.assertLess(pixels[center + 2], 40)
+                        player = int(header[b"i"])
+                    t.send("\x1b")
+                    wait_for_screen(t, lambda: "Ctrl+X" in self.footer(t), "Mini-player missing")
+                    if protocol == "kitty":
+                        wait_for_screen(
+                            t,
+                            lambda: player not in t.stream.live_ids,
+                            "The cover stayed on screen after the modal closed",
+                        )
+                finally:
+                    self.assertTrue(t.close())
+
     def test_video_plays_while_the_attachment_still_downloads(self):
         # The loopback bridge must expose the growing attachment before the
         # transfer ends, with the authenticated request staying in the client.

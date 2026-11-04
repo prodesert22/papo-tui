@@ -531,6 +531,11 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
                                      getbegx(ui->body) + 2 + r->x + r->indent + region->x,
                                      region->width, region->height, top, bottom,
                                      theme_background_rgb(behind));
+                    if (blocks->media[region->index].audio)
+                        media_view_audio_row(
+                            ui->media, &blocks->media[region->index], graphics_y,
+                            getbegx(ui->body) + 2 + r->x + r->indent + region->x,
+                            MIN(region->width, width - r->x - r->indent - region->x), behind);
                 }
             }
         }

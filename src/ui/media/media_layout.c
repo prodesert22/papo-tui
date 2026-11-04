@@ -107,3 +107,41 @@ media_control media_controls_hit(const media_controls_layout *layout, int y, int
     }
     return MEDIA_CONTROL_NONE;
 }
+
+bool media_audio_geometry(int row, int x, int width, media_audio_layout *out)
+{
+    memset(out, 0, sizeof(*out));
+    int speed = 3 + 1 + MEDIA_AUDIO_SPEED_WIDTH + 1 + 3;
+    if (row < 0 || x < 0 || width < speed)
+        return false;
+    out->row = row;
+    out->slower_x = x;
+    out->speed_x = x + 4;
+    out->faster_x = out->speed_x + MEDIA_AUDIO_SPEED_WIDTH + 1;
+    int next = x + speed + 2;
+    if (next + MEDIA_AUDIO_LOOP_WIDTH <= x + width) {
+        out->loop_x = next;
+        out->loop_width = MEDIA_AUDIO_LOOP_WIDTH;
+        next += MEDIA_AUDIO_LOOP_WIDTH + 2;
+    }
+    if (out->loop_width && next + MEDIA_AUDIO_STOP_WIDTH <= x + width) {
+        out->stop_x = next;
+        out->stop_width = MEDIA_AUDIO_STOP_WIDTH;
+    }
+    return true;
+}
+
+media_audio_control media_audio_hit(const media_audio_layout *layout, int y, int x)
+{
+    if (!layout || y != layout->row)
+        return MEDIA_AUDIO_NONE;
+    if (x >= layout->slower_x && x < layout->slower_x + 3)
+        return MEDIA_AUDIO_SLOWER;
+    if (x >= layout->faster_x && x < layout->faster_x + 3)
+        return MEDIA_AUDIO_FASTER;
+    if (layout->loop_width && x >= layout->loop_x && x < layout->loop_x + layout->loop_width)
+        return MEDIA_AUDIO_LOOP;
+    if (layout->stop_width && x >= layout->stop_x && x < layout->stop_x + layout->stop_width)
+        return MEDIA_AUDIO_STOP;
+    return MEDIA_AUDIO_NONE;
+}
