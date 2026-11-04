@@ -15,6 +15,17 @@ static const char xml[] =
     "<method name='CloseNotification'><arg type='u' direction='in'/></method>"
     "</interface></node>";
 static unsigned sequence;
+static GDBusConnection *signal_bus;
+/* PAPO_NOTIFY_TEST_CLICK delays the "user click" on the notification just shown. */
+static gboolean click(gpointer data)
+{
+    GError *error = NULL;
+    g_dbus_connection_emit_signal(signal_bus, NULL, "/org/freedesktop/Notifications",
+                                  "org.freedesktop.Notifications", "ActionInvoked",
+                                  g_variant_new("(us)", GPOINTER_TO_UINT(data), "default"), &error);
+    g_clear_error(&error);
+    return G_SOURCE_REMOVE;
+}
 static gboolean delayed(gpointer data)
 {
     GDBusMethodInvocation *call = data;
@@ -53,6 +64,9 @@ static void called(GDBusConnection *bus, const gchar *sender, const gchar *path,
             g_timeout_add((guint)atoi(delay), delayed, g_object_ref(call));
         else
             g_dbus_method_invocation_return_value(call, g_variant_new("(u)", ++sequence));
+        const char *clicked = getenv("PAPO_NOTIFY_TEST_CLICK");
+        if (clicked && !delay)
+            g_timeout_add((guint)atoi(clicked), click, GUINT_TO_POINTER(sequence));
     } else
         g_dbus_method_invocation_return_value(call, g_variant_new("()"));
 }
@@ -64,6 +78,7 @@ int main(void)
         g_clear_error(&error);
         return 1;
     }
+    signal_bus = bus;
     GDBusNodeInfo *node = g_dbus_node_info_new_for_xml(xml, &error);
     const GDBusInterfaceVTable table = {.method_call = called};
     guint registered = g_dbus_connection_register_object(

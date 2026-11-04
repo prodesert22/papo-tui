@@ -1114,6 +1114,16 @@ bool r8_modal_cursor(r8_modal *m)
     setsyx(getbegy(m->window) + 2, getbegx(m->window) + column);
     return true;
 }
+void r8_modal_open_target(r8_modal *m, const char *channel, const char *message, const char *time)
+{
+    if (!m || !history_uuid(channel))
+        return;
+    snprintf(m->destination, sizeof(m->destination), "%s", channel);
+    snprintf(m->destination_message, sizeof(m->destination_message), "%s",
+             history_uuid(message) ? message : "");
+    snprintf(m->destination_time, sizeof(m->destination_time), "%s", time ? time : "");
+    m->destination_hint[0] = 0;
+}
 void r8_modal_destination_clear(r8_modal *m)
 {
     m->destination[0] = 0;

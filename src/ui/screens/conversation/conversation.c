@@ -606,6 +606,10 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             redraw = true;
             scope = DRAW_ALL;
         }
+        char click_channel[37], click_message[37], click_time[65];
+        if (!*r8_modal_destination(ui->r8) &&
+            instances_take_open(connections, auth, click_channel, click_message, click_time))
+            r8_modal_open_target(ui->r8, click_channel, click_message, click_time);
         const char *opened = inbox_opened(box);
         if (*r8_modal_destination(ui->r8)) {
             snprintf(ui->notification_channel, sizeof(ui->notification_channel), "%s",

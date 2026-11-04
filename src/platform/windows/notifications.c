@@ -88,8 +88,10 @@ static void copy_utf8(char *out, size_t capacity, const char *source)
     memcpy(out, source, size);
     out[size] = 0;
 }
-void desktop_queue(desktop_notifier *n, const char *key, const char *title, const char *body)
+void desktop_queue(desktop_notifier *n, const char *key, const char *title, const char *body,
+                   const char *target)
 {
+    (void)target; /* No click action on the Windows notifier. */
     if (!n || n->dying || !key || strlen(key) >= sizeof(n->alerts[0].key))
         return;
     if (!n->ready) {
@@ -172,4 +174,12 @@ void desktop_destroy(desktop_notifier *n)
     }
     n->dying = true;
     release(n);
+}
+
+bool desktop_take_activation(desktop_notifier *n, char key[80], char target[DESKTOP_TARGET_BYTES])
+{
+    (void)n;
+    (void)key;
+    (void)target;
+    return false;
 }

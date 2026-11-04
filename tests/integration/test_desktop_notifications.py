@@ -23,7 +23,14 @@ class DesktopTests(unittest.TestCase):
         self.addCleanup(self.stop)
         self.assertEqual(self.daemon.stdout.readline().strip(), "ready")
 
+    def stop_daemon(self):
+        self.daemon.terminate()
+        self.daemon.wait(timeout=5)
+        self.daemon.stdout.close()
+
     def stop(self):
+        if self.daemon.poll() is not None:
+            return
         self.daemon.terminate()
         self.daemon.wait(timeout=5)
         self.daemon.stdout.close()
@@ -67,10 +74,34 @@ class DesktopTests(unittest.TestCase):
             self.assertIn("2 novos avisos", value["body"])
             self.assertNotIn("\x1b", value["body"])
             self.assertNotIn("\x07", value["body"])
-            self.assertEqual(value["actions"], 0)
+            # One default action ("default" and its label) opens the conversation
+            # when the notification is clicked; nothing else is offered.
+            self.assertEqual(value["actions"], 2)
             self.assertEqual(server.marked, [])
             t.read(0.4)
             self.assertFalse(select.select([self.daemon.stdout], [], [], 0)[0])
+
+    def test_clicking_the_notification_opens_its_conversation_and_message(self):
+        from history_mock import OTHER
+
+        self.stop_daemon()
+        environment = dict(os.environ, PAPO_NOTIFY_TEST_CLICK="600")
+        self.daemon = subprocess.Popen([FAKE], stdout=subprocess.PIPE, text=True, env=environment)
+        self.assertEqual(self.daemon.stdout.readline().strip(), "ready")
+        with R8Mock(count=3) as server:
+            t = self.login(server)
+            t.send("\x1bOB\n")
+            t.wait_text("Mensagem 0003")
+            t.send("\x1b[O")
+            message = dict(server.message(1), id=uuid(777), channel_id=OTHER, content="Chegou agora")
+            server.emit(dict(message, type="message"))
+            event = self.event()
+            event["message_id"] = message["id"]
+            server.emit(event)
+            self.receive(t)
+            # The daemon then reports a click on that notification.
+            t.wait_text("Conteúdo do outro canal")
+            self.assertEqual(server.marked, [])
 
     def test_visible_conversation_suppresses_and_focus_loss_emits(self):
         with R8Mock(count=0) as server:

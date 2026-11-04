@@ -29,6 +29,9 @@ const char *r8_modal_destination_message(const r8_modal *m);
 const char *r8_modal_destination_time(const r8_modal *m);
 /* Upper bound for the destination message when its own time is unknown. */
 const char *r8_modal_destination_hint(const r8_modal *m);
+/* Sets the destination as if a notification had been opened, without showing
+ * the notifications panel. */
+void r8_modal_open_target(r8_modal *m, const char *channel, const char *message, const char *time);
 void r8_modal_destination_clear(r8_modal *m);
 const char *r8_presence_label(const char *state);
 #endif

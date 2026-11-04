@@ -10,22 +10,31 @@
 #include <gio/gio.h>
 #define NOTIFY_RETRY_MS 15000
 struct slot {
-    char key[2120], title[1025], body[2049];
+    char key[2120], title[1025], body[2049], target[DESKTOP_TARGET_BYTES];
     unsigned count, id;
     uint64_t due, first, serial;
     bool busy;
+};
+struct shown {
+    unsigned id;
+    char key[80], target[DESKTOP_TARGET_BYTES];
 };
 struct desktop_notifier {
     GMainContext *context;
     GDBusConnection *bus;
     GCancellable *cancel;
     struct slot slots[64];
-    unsigned refs, subscription;
+    unsigned refs, subscription, action_subscription;
+    struct shown shown[32];
+    size_t shown_next;
+    char clicked_key[80], clicked_target[DESKTOP_TARGET_BYTES];
+    bool clicked;
     uint64_t epoch;
     bool dying, ready, markup, probing, attempted, connecting;
     char notice[128];
 };
 struct delivery {
+    char key[80], target[DESKTOP_TARGET_BYTES];
     desktop_notifier *n;
     size_t slot;
     uint64_t serial, epoch;
@@ -129,6 +138,31 @@ static void owner_changed(GDBusConnection *bus, const gchar *sender, const gchar
     if (*owner)
         probe(n);
 }
+static void action_invoked(GDBusConnection *bus, const gchar *sender, const gchar *path,
+                           const gchar *iface, const gchar *signal, GVariant *parameters,
+                           gpointer context)
+{
+    (void)bus;
+    (void)sender;
+    (void)path;
+    (void)iface;
+    (void)signal;
+    desktop_notifier *n = context;
+    guint id;
+    const char *action;
+    if (!g_variant_is_of_type(parameters, G_VARIANT_TYPE("(us)")))
+        return;
+    g_variant_get(parameters, "(u&s)", &id, &action);
+    if (n->dying || !id || strcmp(action, "default"))
+        return;
+    for (size_t i = 0; i < 32; ++i)
+        if (n->shown[i].id == id) {
+            snprintf(n->clicked_key, sizeof(n->clicked_key), "%s", n->shown[i].key);
+            snprintf(n->clicked_target, sizeof(n->clicked_target), "%s", n->shown[i].target);
+            n->clicked = true;
+            return;
+        }
+}
 static void bus_ready(GObject *source, GAsyncResult *result, gpointer context);
 static void connect_bus(desktop_notifier *n)
 {
@@ -159,6 +193,11 @@ static void bus_ready(GObject *source, GAsyncResult *result, gpointer context)
             bus, "org.freedesktop.DBus", "org.freedesktop.DBus", "NameOwnerChanged",
             "/org/freedesktop/DBus", "org.freedesktop.Notifications", G_DBUS_SIGNAL_FLAGS_NONE,
             owner_changed, n, signal_released);
+        ++n->refs;
+        n->action_subscription = g_dbus_connection_signal_subscribe(
+            bus, NULL, "org.freedesktop.Notifications", "ActionInvoked",
+            "/org/freedesktop/Notifications", NULL, G_DBUS_SIGNAL_FLAGS_NONE, action_invoked, n,
+            signal_released);
         g_main_context_pop_thread_default(n->context);
         probe(n);
     } else {
@@ -194,7 +233,8 @@ static void utf8_copy(char *out, size_t capacity, const char *source)
     memcpy(out, source, length);
     out[length] = 0;
 }
-void desktop_queue(desktop_notifier *n, const char *key, const char *title, const char *body)
+void desktop_queue(desktop_notifier *n, const char *key, const char *title, const char *body,
+                   const char *target)
 {
     if (!n || n->dying || !key || strlen(key) >= sizeof(n->slots[0].key))
         return;
@@ -224,6 +264,7 @@ void desktop_queue(desktop_notifier *n, const char *key, const char *title, cons
     snprintf(s->key, sizeof(s->key), "%s", key);
     utf8_copy(s->title, sizeof(s->title), title);
     utf8_copy(s->body, sizeof(s->body), body);
+    snprintf(s->target, sizeof(s->target), "%s", target ? target : "");
     if (s->count < 1000000)
         ++s->count;
     if (!n->ready) {
@@ -241,8 +282,13 @@ static void sent(GObject *source, GAsyncResult *result, gpointer context)
     if (reply) {
         guint id;
         g_variant_get(reply, "(u)", &id);
-        if (!n->dying && s->serial == d->serial && n->epoch == d->epoch)
+        if (!n->dying && s->serial == d->serial && n->epoch == d->epoch) {
             s->id = id;
+            struct shown *entry = &n->shown[n->shown_next++ % 32];
+            entry->id = id;
+            snprintf(entry->key, sizeof(entry->key), "%s", d->key);
+            snprintf(entry->target, sizeof(entry->target), "%s", d->target);
+        }
         else if (!n->dying && n->epoch == d->epoch)
             close_notification(n, id);
         g_variant_unref(reply);
@@ -307,10 +353,13 @@ bool desktop_poll(desktop_notifier *n)
         char body[2200];
         snprintf(body, sizeof(body), count > 1 ? "%s\n%u novos avisos" : "%s", s->body, count);
         char *escaped = n->markup ? g_markup_escape_text(body, -1) : NULL;
+        const char *actions[] = {"default", "Abrir", NULL};
         GVariantBuilder hints;
         g_variant_builder_init(&hints, G_VARIANT_TYPE_VARDICT);
         g_variant_builder_add(&hints, "{sv}", "urgency", g_variant_new_byte(1));
-        *d = (struct delivery){n, i, s->serial, n->epoch};
+        *d = (struct delivery){.n = n, .slot = i, .serial = s->serial, .epoch = n->epoch};
+        snprintf(d->key, sizeof(d->key), "%.79s", s->key);
+        snprintf(d->target, sizeof(d->target), "%s", s->target);
         ++n->refs;
         s->busy = true;
         g_main_context_push_thread_default(n->context);
@@ -320,7 +369,7 @@ bool desktop_poll(desktop_notifier *n)
             /* Never replace the previous id: a daemon that updates a dismissed
              * or already shown notification in place raises no new popup. */
             g_variant_new("(susss@as@a{sv}i)", "Papo TUI", 0u, "mail-unread", s->title,
-                          escaped ? escaped : body, g_variant_new_strv(NULL, 0),
+                          escaped ? escaped : body, g_variant_new_strv(actions, -1),
                           g_variant_builder_end(&hints), -1),
             G_VARIANT_TYPE("(u)"), G_DBUS_CALL_FLAGS_NO_AUTO_START, 2000, n->cancel, sent, d);
         g_main_context_pop_thread_default(n->context);
@@ -332,6 +381,15 @@ const char *desktop_notice(const desktop_notifier *n)
 {
     return n ? n->notice : "";
 }
+bool desktop_take_activation(desktop_notifier *n, char key[80], char target[DESKTOP_TARGET_BYTES])
+{
+    if (!n || !n->clicked)
+        return false;
+    n->clicked = false;
+    snprintf(key, 80, "%s", n->clicked_key);
+    snprintf(target, DESKTOP_TARGET_BYTES, "%s", n->clicked_target);
+    return true;
+}
 void desktop_destroy(desktop_notifier *n)
 {
     if (!n)
@@ -341,6 +399,8 @@ void desktop_destroy(desktop_notifier *n)
     g_cancellable_cancel(n->cancel);
     if (n->subscription)
         g_dbus_connection_signal_unsubscribe(n->bus, n->subscription);
+    if (n->action_subscription)
+        g_dbus_connection_signal_unsubscribe(n->bus, n->action_subscription);
     /* Cancellation callbacks release retained owners; no blocking bus calls. */
     uint64_t start = 0, now = 0;
     net_now_ms(&start);
@@ -366,7 +426,8 @@ void desktop_destroy(desktop_notifier *n)
 {
     free(n);
 }
-void desktop_queue(desktop_notifier *n, const char *key, const char *title, const char *body)
+void desktop_queue(desktop_notifier *n, const char *key, const char *title, const char *body,
+                   const char *target)
 {
     if (n)
         n->attempted = true;
@@ -382,6 +443,13 @@ void desktop_cancel(desktop_notifier *n, const char *key)
 bool desktop_poll(desktop_notifier *n)
 {
     (void)n;
+    return false;
+}
+bool desktop_take_activation(desktop_notifier *n, char key[80], char target[DESKTOP_TARGET_BYTES])
+{
+    (void)n;
+    (void)key;
+    (void)target;
     return false;
 }
 const char *desktop_notice(const desktop_notifier *n)

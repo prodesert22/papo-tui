@@ -311,11 +311,49 @@ bool instances_poll(instance_connections *connections, auth_client *active)
                 text_project(&buffer, &projected);
                 if (!text_encode(&projected, safe_body))
                     continue;
-                desktop_queue(connections->desktop, key, safe_title, safe_body);
+                const json_t *created = inbox_message_preview(box, message);
+                const char *at = json_string_value(json_object_get(created, "created_at"));
+                char target[DESKTOP_TARGET_BYTES];
+                snprintf(target, sizeof(target), "%s|%s|%s", channel, message, at ? at : "");
+                desktop_queue(connections->desktop, key, safe_title, safe_body, target);
             }
             json_array_clear(item->alerts);
         }
     }
     changed |= desktop_poll(connections->desktop);
+    char clicked[80], target[DESKTOP_TARGET_BYTES];
+    while (desktop_take_activation(connections->desktop, clicked, target)) {
+        for (size_t i = 0; i < connections->count; ++i) {
+            instance_connection *item = &connections->items[i];
+            char key[80];
+            desktop_key(item, key);
+            char *first = strchr(target, '|'), *second = first ? strchr(first + 1, '|') : NULL;
+            if (strcmp(key, clicked) || !second)
+                continue;
+            *first = *second = 0;
+            if (strlen(target) < sizeof(item->open_channel) &&
+                strlen(first + 1) < sizeof(item->open_message) &&
+                strlen(second + 1) < sizeof(item->open_time)) {
+                snprintf(item->open_channel, sizeof(item->open_channel), "%.36s", target);
+                snprintf(item->open_message, sizeof(item->open_message), "%.36s", first + 1);
+                snprintf(item->open_time, sizeof(item->open_time), "%.64s", second + 1);
+                changed = true;
+            }
+            break;
+        }
+    }
     return changed;
+}
+bool instances_take_open(instance_connections *connections, const auth_client *auth,
+                         char channel[37], char message[37], char time[65])
+{
+    size_t index = connections ? instances_index(connections, auth) : SIZE_MAX;
+    if (index == SIZE_MAX || !*connections->items[index].open_channel)
+        return false;
+    instance_connection *item = &connections->items[index];
+    snprintf(channel, 37, "%s", item->open_channel);
+    snprintf(message, 37, "%s", item->open_message);
+    snprintf(time, 65, "%s", item->open_time);
+    item->open_channel[0] = item->open_message[0] = item->open_time[0] = 0;
+    return true;
 }

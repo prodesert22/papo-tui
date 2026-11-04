@@ -19,6 +19,8 @@ typedef struct {
     json_t *alerts;
     uint64_t alert_due, serial, desktop_generation;
     char name[129], url[2049];
+    /* Set when the user clicks one of this server's desktop notifications. */
+    char open_channel[37], open_message[37], open_time[65];
 } instance_connection;
 typedef struct {
     instance_connection items[INSTANCE_LIMIT];
@@ -56,6 +58,10 @@ void instances_media_event(instance_connections *connections, auth_client *auth,
                            const json_t *event);
 history *instances_history(const instance_connections *connections, const auth_client *auth);
 void instances_visible(instance_connections *connections, auth_client *auth, const char *channel);
+/* Takes the destination of a clicked desktop notification of this server, once.
+ * The time is empty when the message's own creation time is unknown. */
+bool instances_take_open(instance_connections *connections, const auth_client *auth,
+                         char channel[37], char message[37], char time[65]);
 /* Polls inactive sessions/WS and metadata; never requests inactive history. */
 bool instances_poll(instance_connections *connections, auth_client *active);
 #endif
