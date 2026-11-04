@@ -1631,20 +1631,22 @@ static void draw_video_controls(media_view *v, WINDOW *w)
         format_clock(info.duration > 0 ? info.duration : NAN, duration, sizeof(duration));
         format_speed(info.speed, speed, sizeof(speed));
         snprintf(status, sizeof(status),
-                 "%s · %s / %s · %s%s%s%s · Espaço pausa · ←→ 5s · [ ] velocidade · l repetir · "
-                 "↑↓ volume · m · x parar",
+                 "%s · %s / %s · %s%s%s%s · Espaço pausa · ←→ 5s%s · [ ] velocidade · "
+                 "l repetir · ↑↓ volume · m · x parar",
                  info.ended && !info.looping ? "Fim"
                  : info.paused               ? "Pausado"
                                              : "Reproduzindo",
                  position, duration, speed, info.looping ? " · Repetir" : "",
                  info.muted ? " · Mudo" : "",
-                 info.audio_missing ? " · Sem dispositivo de áudio" : "");
+                 info.audio_missing ? " · Sem dispositivo de áudio" : "",
+                 v->member_count > 1 ? " · PgUp/PgDn mídia" : "");
     } else
         snprintf(status, sizeof(status),
-                 "%s · %.0f / %.0f s%s%s · Espaço pausa · ←→ 5s · ,/. 1s · ↑↓ volume · m",
+                 "%s · %.0f / %.0f s%s%s · Espaço pausa · ←→ 5s%s · ,/. 1s · ↑↓ volume · m",
                  info.paused ? "Pausado" : "Reproduzindo", info.position, info.duration,
                  info.muted ? " · Mudo" : "",
-                 info.audio_missing ? " · Sem dispositivo de áudio" : "");
+                 info.audio_missing ? " · Sem dispositivo de áudio" : "",
+                 v->member_count > 1 ? " · PgUp/PgDn mídia" : "");
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     text_label(w, v->layout.height - 2, 3, v->layout.area_width, status);
 }
@@ -1767,7 +1769,7 @@ void media_view_draw(media_view *v)
                 size_t number = 0;
                 for (size_t i = 0; i <= v->gallery_index; ++i)
                     number += gallery_member(v, i);
-                snprintf(title, sizeof(title), "%zu/%zu · PgUp/PgDn · %s", number, v->member_count,
+                snprintf(title, sizeof(title), "%zu/%zu · %s", number, v->member_count,
                          v->selected_item.label);
             } else
                 snprintf(title, sizeof(title), "%s", v->selected_item.label);
@@ -1804,14 +1806,21 @@ void media_view_draw(media_view *v)
             for (size_t i = 0; i <= v->gallery_index; ++i)
                 number += gallery_member(v, i);
             char hint[128];
-            snprintf(hint, sizeof(hint), "%zu/%zu · ←→ %s · i: informações · Esc: voltar", number,
-                     v->member_count, v->member_count == v->image_count ? "imagens" : "mídias");
+            snprintf(hint, sizeof(hint), "%zu/%zu · ←→ PgUp/PgDn %s · i: informações · Esc: voltar",
+                     number, v->member_count,
+                     v->member_count == v->image_count ? "imagens" : "mídias");
             text_label(w, height - 2, 3, image_width, hint);
         } else if (!v->selected_item.video || v->modal != MODAL_PLAYING)
             text_label(w, height - 2, 3, image_width,
-                       v->selected_item.audio   ? "Espaço pausa · x parar · Esc: segundo plano"
-                       : v->selected_item.video ? "Espaço pausa · ←→ 5s · ,/. 1s · ↑↓ volume · m"
-                                                : "i: informações · Esc: voltar");
+                       v->selected_item.audio
+                           ? (v->member_count > 1
+                                  ? "Espaço pausa · x parar · PgUp/PgDn mídia · Esc: segundo plano"
+                                  : "Espaço pausa · x parar · Esc: segundo plano")
+                       : v->selected_item.video
+                           ? (v->member_count > 1
+                                  ? "Espaço pausa · ←→ 5s · PgUp/PgDn mídia · ↑↓ volume · m"
+                                  : "Espaço pausa · ←→ 5s · ,/. 1s · ↑↓ volume · m")
+                           : "i: informações · Esc: voltar");
         draw_properties(v, w);
     }
     touchwin(w);

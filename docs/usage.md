@@ -971,9 +971,9 @@ audio, you can move through all of them without closing it. On an image, press
 ← or → for the previous or the next one. On a video or an audio, ← and → seek,
 so use **PageUp** and **PageDown** instead; they work on any media, except
 while the properties panel is open, where they scroll it. The sequence wraps
-around. An image shows the current position, for example **2/3 · ←→ imagens**
-(**←→ mídias** when the message also has a video or audio), and a video or audio
-shows it in its title, for example **2/3 · PgUp/PgDn · clip.mp4**. Only the media
+around. An image shows the current position, for example **2/3 · ←→ PgUp/PgDn imagens**
+(**←→ PgUp/PgDn mídias** when the message also has a video or audio), and a video or audio
+shows it in its title, for example **2/3 · clip.mp4**, with the keys listed in the caption below it. Only the media
 of the opened message are shown; media from other messages never join the
 sequence, nor do author avatars. Moving to another media stops the one that was
 playing. The properties panel stays open while you browse, and downloads are
