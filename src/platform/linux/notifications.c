@@ -8,10 +8,11 @@
 #include <string.h>
 #ifdef HAVE_GIO
 #include <gio/gio.h>
+#define NOTIFY_RETRY_MS 15000
 struct slot {
     char key[2120], title[1025], body[2049];
     unsigned count, id;
-    uint64_t due, serial;
+    uint64_t due, first, serial;
     bool busy;
 };
 struct desktop_notifier {
@@ -21,7 +22,7 @@ struct desktop_notifier {
     struct slot slots[64];
     unsigned refs, subscription;
     uint64_t epoch;
-    bool dying, ready, markup, probing, attempted;
+    bool dying, ready, markup, probing, attempted, connecting;
     char notice[128];
 };
 struct delivery {
@@ -128,6 +129,17 @@ static void owner_changed(GDBusConnection *bus, const gchar *sender, const gchar
     if (*owner)
         probe(n);
 }
+static void bus_ready(GObject *source, GAsyncResult *result, gpointer context);
+static void connect_bus(desktop_notifier *n)
+{
+    if (n->bus || n->connecting || n->dying)
+        return;
+    n->connecting = true;
+    ++n->refs;
+    g_main_context_push_thread_default(n->context);
+    g_bus_get(G_BUS_TYPE_SESSION, n->cancel, bus_ready, n);
+    g_main_context_pop_thread_default(n->context);
+}
 static void signal_released(gpointer context)
 {
     release(context);
@@ -138,6 +150,7 @@ static void bus_ready(GObject *source, GAsyncResult *result, gpointer context)
     desktop_notifier *n = context;
     GError *error = NULL;
     GDBusConnection *bus = g_bus_get_finish(result, &error);
+    n->connecting = false;
     if (!n->dying && bus) {
         n->bus = bus;
         ++n->refs;
@@ -165,10 +178,7 @@ desktop_notifier *desktop_create(void)
     n->refs = 1;
     n->context = g_main_context_new();
     n->cancel = g_cancellable_new();
-    ++n->refs;
-    g_main_context_push_thread_default(n->context);
-    g_bus_get(G_BUS_TYPE_SESSION, n->cancel, bus_ready, n);
-    g_main_context_pop_thread_default(n->context);
+    connect_bus(n);
     return n;
 }
 static void utf8_copy(char *out, size_t capacity, const char *source)
@@ -207,15 +217,19 @@ void desktop_queue(desktop_notifier *n, const char *key, const char *title, cons
     if (at == 64)
         return;
     struct slot *s = &n->slots[at];
-    if (!s->count)
+    if (!s->count) {
         s->due = now; /* Instances group and recheck eligibility for 2s. */
+        s->first = now;
+    }
     snprintf(s->key, sizeof(s->key), "%s", key);
     utf8_copy(s->title, sizeof(s->title), title);
     utf8_copy(s->body, sizeof(s->body), body);
     if (s->count < 1000000)
         ++s->count;
-    if (!n->ready)
+    if (!n->ready) {
+        connect_bus(n);
         probe(n);
+    }
 }
 static void sent(GObject *source, GAsyncResult *result, gpointer context)
 {
@@ -232,8 +246,15 @@ static void sent(GObject *source, GAsyncResult *result, gpointer context)
         else if (!n->dying && n->epoch == d->epoch)
             close_notification(n, id);
         g_variant_unref(reply);
-    } else if (!n->dying && n->epoch == d->epoch)
+    } else if (!n->dying && n->epoch == d->epoch) {
         unavailable(n);
+        /* A transient failure (daemon asleep or restarting) retries once the
+         * capability probe succeeds, within the bounded window in poll. */
+        if (s->serial == d->serial && !s->count && *s->key) {
+            s->count = 1;
+            s->due = 0;
+        }
+    }
     s->busy = false;
     g_clear_error(&error);
     free(d);
@@ -267,10 +288,19 @@ bool desktop_poll(desktop_notifier *n)
         struct slot *s = &n->slots[i];
         if (!s->count || s->busy || now < s->due)
             continue;
+        if (!n->ready) {
+            /* Keep it only briefly: probe or reconnect now, and deliver when
+             * the daemon answers. A longer outage is not replayed. */
+            if (now - s->first > NOTIFY_RETRY_MS)
+                s->count = 0;
+            else {
+                connect_bus(n);
+                probe(n);
+            }
+            continue;
+        }
         unsigned count = s->count;
         s->count = 0;
-        if (!n->ready)
-            continue; /* No replay of notifications after outage. */
         struct delivery *d = malloc(sizeof(*d));
         if (!d)
             continue;
