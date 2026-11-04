@@ -11,6 +11,7 @@
 #include "ui/components/terminal_title.h"
 #include "ui/components/theme.h"
 #include "ui/input/mouse.h"
+#include "platform/terminal_notify.h"
 #include "ui/media/graphics.h"
 #include "ui/media/media_service.h"
 #include "ui/screens/profiles.h"
@@ -1645,6 +1646,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         if (redraw) {
             draw(&ui, client);
             graphics_terminal_probe();
+            terminal_notify_probe();
             redraw = false;
         }
         if (ui.open_chat && !ui.help.open && auth_has_session(client) && !ui.paste &&

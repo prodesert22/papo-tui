@@ -48,6 +48,11 @@ static void publish(const char *title)
         snprintf(current, sizeof(current), "%s", title);
 }
 
+const char *terminal_title_current(void)
+{
+    return active ? current : "";
+}
+
 void terminal_title_reset(void)
 {
     publish("Papo TUI");

@@ -34,6 +34,7 @@ CMake checks these library requirements, even in Light or Ultralight mode:
 | FFmpeg | avformat/avcodec 58, avutil 56, swscale 5 |
 | GStreamer, for voice calls | 1.28: core, webrtc, sdp, audio and rtp development packages |
 | libsecret, optional on Linux | 0.20 |
+| libxcb, optional on Linux, to raise the terminal on X11 after a notification click; installed with the Cairo development packages | 1.6 |
 | Noto Color Emoji | System font or verified font resource |
 
 The private ncurses 6.6 build is required for consistent mouse event ordering;

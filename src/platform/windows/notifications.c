@@ -183,3 +183,8 @@ bool desktop_take_activation(desktop_notifier *n, char key[80], char target[DESK
     (void)target;
     return false;
 }
+void desktop_raise_terminal(desktop_notifier *n, const char *title)
+{
+    (void)n;
+    (void)title;
+}

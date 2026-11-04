@@ -503,6 +503,24 @@ means the notification omitted attribution. Opening the conversation loads the
 message and its author. The client does not fetch inactive conversation histories
 just to fill author names.
 
+Clicking a system notification, or its **Abrir** (Open) action, opens its
+channel or direct message and jumps to the message. A notification from another
+server opens when you switch to that server's tab. The click also brings the
+terminal running Papo TUI to the front:
+
+- In Kitty, and in other terminals that implement Kitty's notification
+  protocol, the terminal shows the notification itself and switches to its
+  window and tab.
+- Otherwise the notification comes from the desktop, and Papo TUI first selects
+  its tab or pane where the terminal allows it (tmux, Konsole and WezTerm), then
+  asks the window manager to activate the terminal window. This works on KDE
+  Plasma, sway, Hyprland and X11 desktops. GNOME on Wayland does not let
+  applications activate another window, so switch to the terminal yourself there.
+- In other terminals with tabs, the window comes to the front but keeps the tab
+  you were using.
+- The Flatpak package cannot find the terminal window from its sandbox: there,
+  only terminals that show the notification themselves come to the front.
+
 System notification previews show user mentions as **@username**, rather than
 the stored `@mention(<@uuid>)` token. They use the username, even when the person
 has a nickname. A user whose username is unavailable appears as

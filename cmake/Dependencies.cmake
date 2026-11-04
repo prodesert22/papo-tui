@@ -39,6 +39,10 @@ endif()
 if(PAPO_DESKTOP_SESSIONS AND NOT WIN32)
     pkg_check_modules(SECRET QUIET IMPORTED_TARGET libsecret-1>=0.20)
 endif()
+if(PAPO_DESKTOP_NOTIFICATIONS AND NOT WIN32)
+    # Optional: activates the terminal window on X11 after a notification click.
+    pkg_check_modules(XCB QUIET IMPORTED_TARGET xcb>=1.6)
+endif()
 
 include(CheckCSourceRuns)
 set(CMAKE_REQUIRED_LIBRARIES PkgConfig::CURL)

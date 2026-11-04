@@ -3,6 +3,8 @@
 #endif
 #include "app/desktop.h"
 #include "net/clock.h"
+#include "platform/linux/terminal_focus.h"
+#include "platform/terminal_notify.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,22 +15,23 @@ struct slot {
     char key[2120], title[1025], body[2049], target[DESKTOP_TARGET_BYTES];
     unsigned count, id;
     uint64_t due, first, serial;
-    bool busy;
+    bool busy, terminal; /* terminal: id belongs to the terminal, not D-Bus. */
 };
 struct shown {
     unsigned id;
     char key[80], target[DESKTOP_TARGET_BYTES];
+    bool terminal;
 };
 struct desktop_notifier {
     GMainContext *context;
     GDBusConnection *bus;
     GCancellable *cancel;
     struct slot slots[64];
-    unsigned refs, subscription, action_subscription;
+    unsigned refs, subscription, action_subscription, terminal_next;
     struct shown shown[32];
     size_t shown_next;
     char clicked_key[80], clicked_target[DESKTOP_TARGET_BYTES];
-    bool clicked;
+    bool clicked, clicked_terminal, raise;
     uint64_t epoch;
     bool dying, ready, markup, probing, attempted, connecting;
     char notice[128];
@@ -132,6 +135,8 @@ static void owner_changed(GDBusConnection *bus, const gchar *sender, const gchar
     ++n->epoch;
     n->ready = n->probing = false;
     for (size_t i = 0; i < 64; ++i) {
+        if (n->slots[i].terminal)
+            continue; /* Shown by the terminal, unaffected by the daemon. */
         n->slots[i].id = n->slots[i].count = 0;
         ++n->slots[i].serial;
     }
@@ -156,10 +161,11 @@ static void action_invoked(GDBusConnection *bus, const gchar *sender, const gcha
     if (n->dying || !id || strcmp(action, "default"))
         return;
     for (size_t i = 0; i < 32; ++i)
-        if (n->shown[i].id == id) {
+        if (!n->shown[i].terminal && n->shown[i].id == id) {
             snprintf(n->clicked_key, sizeof(n->clicked_key), "%s", n->shown[i].key);
             snprintf(n->clicked_target, sizeof(n->clicked_target), "%s", n->shown[i].target);
             n->clicked = true;
+            n->clicked_terminal = false;
             return;
         }
 }
@@ -267,7 +273,7 @@ void desktop_queue(desktop_notifier *n, const char *key, const char *title, cons
     snprintf(s->target, sizeof(s->target), "%s", target ? target : "");
     if (s->count < 1000000)
         ++s->count;
-    if (!n->ready) {
+    if (!n->ready && !terminal_notify_ready()) {
         connect_bus(n);
         probe(n);
     }
@@ -284,8 +290,10 @@ static void sent(GObject *source, GAsyncResult *result, gpointer context)
         g_variant_get(reply, "(u)", &id);
         if (!n->dying && s->serial == d->serial && n->epoch == d->epoch) {
             s->id = id;
+            s->terminal = false;
             struct shown *entry = &n->shown[n->shown_next++ % 32];
             entry->id = id;
+            entry->terminal = false;
             snprintf(entry->key, sizeof(entry->key), "%s", d->key);
             snprintf(entry->target, sizeof(entry->target), "%s", d->target);
         }
@@ -313,8 +321,12 @@ void desktop_cancel(desktop_notifier *n, const char *key)
     for (size_t i = 0; i < 64; ++i)
         if (!key || !strcmp(n->slots[i].key, key)) {
             struct slot *s = &n->slots[i];
-            close_notification(n, s->id);
+            if (s->terminal)
+                terminal_notify_close(s->id);
+            else
+                close_notification(n, s->id);
             s->id = s->count = 0;
+            s->terminal = false;
             s->key[0] = 0;
             ++s->serial;
         }
@@ -334,6 +346,25 @@ bool desktop_poll(desktop_notifier *n)
         struct slot *s = &n->slots[i];
         if (!s->count || s->busy || now < s->due)
             continue;
+        if (terminal_notify_ready()) {
+            /* The terminal shows it, so a click focuses its window and tab. */
+            if (!++n->terminal_next)
+                n->terminal_next = 1;
+            unsigned count = s->count, id = n->terminal_next;
+            s->count = 0;
+            char body[2200];
+            snprintf(body, sizeof(body), count > 1 ? "%s · %u novos avisos" : "%s", s->body, count);
+            if (!terminal_notify_send(id, s->title, body))
+                continue;
+            s->id = id;
+            s->terminal = true;
+            struct shown *entry = &n->shown[n->shown_next++ % 32];
+            *entry = (struct shown){.id = id, .terminal = true};
+            snprintf(entry->key, sizeof(entry->key), "%.79s", s->key);
+            snprintf(entry->target, sizeof(entry->target), "%s", s->target);
+            n->notice[0] = 0;
+            continue;
+        }
         if (!n->ready) {
             /* Keep it only briefly: probe or reconnect now, and deliver when
              * the daemon answers. A longer outage is not replayed. */
@@ -383,12 +414,32 @@ const char *desktop_notice(const desktop_notifier *n)
 }
 bool desktop_take_activation(desktop_notifier *n, char key[80], char target[DESKTOP_TARGET_BYTES])
 {
-    if (!n || !n->clicked)
+    if (!n)
+        return false;
+    unsigned id;
+    while (!n->clicked && terminal_notify_take_activation(&id))
+        for (size_t i = 0; i < 32; ++i)
+            if (n->shown[i].terminal && n->shown[i].id == id) {
+                snprintf(n->clicked_key, sizeof(n->clicked_key), "%s", n->shown[i].key);
+                snprintf(n->clicked_target, sizeof(n->clicked_target), "%s", n->shown[i].target);
+                n->clicked = true;
+                n->clicked_terminal = true;
+                break;
+            }
+    if (!n->clicked)
         return false;
     n->clicked = false;
+    n->raise = !n->clicked_terminal;
     snprintf(key, 80, "%s", n->clicked_key);
     snprintf(target, DESKTOP_TARGET_BYTES, "%s", n->clicked_target);
     return true;
+}
+void desktop_raise_terminal(desktop_notifier *n, const char *title)
+{
+    if (!n || !n->raise || n->dying)
+        return;
+    n->raise = false;
+    terminal_focus_request(n->bus, title);
 }
 void desktop_destroy(desktop_notifier *n)
 {
@@ -451,6 +502,11 @@ bool desktop_take_activation(desktop_notifier *n, char key[80], char target[DESK
     (void)key;
     (void)target;
     return false;
+}
+void desktop_raise_terminal(desktop_notifier *n, const char *title)
+{
+    (void)n;
+    (void)title;
 }
 const char *desktop_notice(const desktop_notifier *n)
 {

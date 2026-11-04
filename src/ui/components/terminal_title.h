@@ -8,6 +8,8 @@
 void terminal_title_begin(void);
 void terminal_title_set(const char *conversation, const char *server, size_t mentions);
 void terminal_title_reset(void);
+/* The title last written, or "" when none is shown. */
+const char *terminal_title_current(void);
 void terminal_title_end(void);
 
 #endif

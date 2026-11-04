@@ -13,6 +13,10 @@ void desktop_queue(desktop_notifier *n, const char *key, const char *title, cons
                    const char *target);
 /* Pops one clicked notification: its key (80 bytes) and target. */
 bool desktop_take_activation(desktop_notifier *n, char key[80], char target[DESKTOP_TARGET_BYTES]);
+/* After desktop_take_activation, brings this terminal's window and tab to the
+ * front when the click came from the desktop service; a terminal that showed
+ * the notification itself already did. title is the current terminal title. */
+void desktop_raise_terminal(desktop_notifier *n, const char *title);
 void desktop_cancel(desktop_notifier *n, const char *key);
 bool desktop_poll(desktop_notifier *n);
 const char *desktop_notice(const desktop_notifier *n);

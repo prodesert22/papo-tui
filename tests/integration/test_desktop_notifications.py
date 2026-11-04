@@ -4,10 +4,13 @@ from test_context import main as test_main
 
 from test_context import argument
 
+import base64
 import json
 import os
+import re
 import select
 import subprocess
+import tempfile
 import time
 import unittest
 
@@ -15,6 +18,7 @@ FAKE = argument(1)
 from r8_mock import R8Mock, AUTHOR, uuid  # noqa: E402 - path and test arguments are prepared above
 from channel_preferences import ChannelPreferencesMock  # noqa: E402 - shared fixture
 from terminal_support import Terminal, wait_for_screen  # noqa: E402 - path and test arguments are prepared above
+from window_managers import Hyprland, Sway  # noqa: E402 - shared fixture
 
 
 class DesktopTests(unittest.TestCase):
@@ -35,11 +39,31 @@ class DesktopTests(unittest.TestCase):
         self.daemon.wait(timeout=5)
         self.daemon.stdout.close()
 
-    def login(self, server):
+    def start_daemon(self, **environment):
+        self.stop_daemon()
+        self.daemon = subprocess.Popen(
+            [FAKE], stdout=subprocess.PIPE, text=True, env=dict(os.environ, **environment)
+        )
+        self.assertEqual(self.daemon.stdout.readline().strip(), "ready")
+
+    def login(self, server, terminal_actions=None, **environment):
         t = Terminal(
-            environment={"DBUS_SESSION_BUS_ADDRESS": os.environ["DBUS_SESSION_BUS_ADDRESS"]}
+            environment={
+                "DBUS_SESSION_BUS_ADDRESS": os.environ["DBUS_SESSION_BUS_ADDRESS"],
+                **environment,
+            }
         )
         self.addCleanup(lambda: t.close() if t.process.poll() is None else None)
+        if terminal_actions is not None:
+            # Answer the OSC 99 query like Kitty does, with these click actions.
+            probe = rb"\x1b\]99;i=(papo-[0-9a-f]{8}-)probe:p=\?;\x1b\\"
+            wait_for_screen(t, lambda: re.search(probe, t.output), "OSC 99 query")
+            self.prefix = re.search(probe, t.output)[1].decode()
+            t.send(
+                f"\x1b]99;i={self.prefix}probe:p=?;a={terminal_actions}:o=always,unfocused,"
+                "invisible:u=0,1,2:p=title,body,?,close,icon,alive,buttons:c=1:w=1:"
+                "s=system,silent,error,info,question,warn,warning\x1b\\"
+            )
         t.send(server.url + "\tjosé\tSynthetic!123\n")
         t.wait_text("Tempo real conectado")
         t.wait_text("Categoria")
@@ -102,6 +126,196 @@ class DesktopTests(unittest.TestCase):
             # The daemon then reports a click on that notification.
             t.wait_text("Conteúdo do outro canal")
             self.assertEqual(server.marked, [])
+
+    def terminal_notification(self, t):
+        pattern = (
+            rb"\x1b\]99;i="
+            + re.escape(self.prefix.encode())
+            + rb"([0-9]+):([^;]*);([^\x1b]*)\x1b\\"
+        )
+        wait_for_screen(
+            t, lambda: len(re.findall(pattern, t.output)) >= 2, "OSC 99 notification", seconds=8
+        )
+        (first, title_meta, title), (second, body_meta, body) = re.findall(pattern, t.output)[:2]
+        self.assertEqual(first, second)
+        self.assertIn(b"a=focus,report", title_meta)
+        self.assertIn(b"d=0", title_meta)
+        self.assertIn(b"p=title", title_meta)
+        self.assertIn(b"e=1", title_meta)
+        self.assertIn(b"p=body", body_meta)
+        return first.decode(), base64.b64decode(title).decode(), base64.b64decode(body).decode()
+
+    def test_terminal_notification_focuses_its_tab_and_opens_the_message(self):
+        from history_mock import OTHER
+
+        self.start_daemon(PAPO_NOTIFY_TEST_DESKTOP="1")
+        with R8Mock(count=3) as server:
+            t = self.login(server, terminal_actions="focus,report", XDG_CURRENT_DESKTOP="KDE")
+            t.send("\x1bOB\n")
+            t.wait_text("Mensagem 0003")
+            t.send("\x1b[O")
+            message = dict(
+                server.message(1), id=uuid(777), channel_id=OTHER, content="Chegou agora"
+            )
+            server.emit(dict(message, type="message"))
+            event = self.event()
+            event["message_id"] = message["id"]
+            server.emit(event)
+            identifier, title, body = self.terminal_notification(t)
+            self.assertIn("·", title)
+            self.assertIn("Olá", body)
+            for control in ("\x1b", "\x07", "\n"):
+                self.assertNotIn(control, title + body)
+            # The terminal shows it instead of a second, separate D-Bus popup,
+            # and nothing opens before the click.
+            t.read(1)
+            self.assertFalse(select.select([self.daemon.stdout], [], [], 0)[0])
+            self.assertNotIn(b"Conte\xc3\xbado do outro canal", t.output)
+            # The terminal focuses the tab, then reports the click.
+            t.send(f"\x1b]99;i={self.prefix}{identifier};\x1b\\")
+            t.wait_text("Conteúdo do outro canal")
+            # The terminal already raised itself: no window manager request.
+            t.read(1)
+            self.assertFalse(select.select([self.daemon.stdout], [], [], 0)[0])
+            screen = "\n".join(t.screen.display)
+            self.assertNotIn("99;", screen)
+            self.assertNotIn("probe", screen)
+            self.assertEqual(server.marked, [])
+
+    def test_terminal_without_click_reports_keeps_the_desktop_notification(self):
+        with R8Mock(count=0) as server:
+            t = self.login(server, terminal_actions="focus")
+            t.send("\x1b[O")
+            server.emit(self.event())
+            self.receive(t)
+            self.assertNotRegex(bytes(t.output), rb"\x1b\]99;i=papo-[0-9a-f]{8}-[0-9]")
+
+    def notify_other_channel(self, server, t):
+        from history_mock import OTHER
+
+        t.send("\x1bOB\n")
+        t.wait_text("Mensagem 0003")
+        t.send("\x1b[O")
+        message = dict(server.message(1), id=uuid(777), channel_id=OTHER, content="Chegou agora")
+        server.emit(dict(message, type="message"))
+        event = self.event()
+        event["message_id"] = message["id"]
+        server.emit(event)
+        self.receive(t)
+
+    def records(self, t, keys, seconds=6):
+        """Daemon records holding each key, in arrival order."""
+        found = []
+        end = time.monotonic() + seconds
+        while time.monotonic() < end and len(found) < len(keys):
+            t.read(0.03)
+            while select.select([self.daemon.stdout], [], [], 0)[0]:
+                record = json.loads(self.daemon.stdout.readline())
+                found += [(key, record) for key in keys if key in record]
+        self.assertEqual([key for key, _ in found], keys)
+        return dict(found)
+
+    def wait_commands(self, t, manager, description):
+        wait_for_screen(t, lambda: manager.commands, description)
+        t.read(0.3)
+        return manager.commands
+
+    def fake_tmux(self, directory, client_pid):
+        log = os.path.join(directory, "tmux.log")
+        tmux = os.path.join(directory, "tmux")
+        with open(tmux, "w") as script:
+            script.write(
+                "#!/bin/sh\n"
+                f"printf '%s\\n' \"$*\" >> '{log}'\n"
+                'case "$1" in list-clients)\n'
+                "  echo '5 1'\n"
+                f"  echo '9 {client_pid}'\n"
+                "esac\n"
+            )
+        os.chmod(tmux, 0o755)
+        return log
+
+    def test_click_selects_the_konsole_tab_and_activates_the_window_through_kwin(self):
+        self.start_daemon(PAPO_NOTIFY_TEST_CLICK="300", PAPO_NOTIFY_TEST_DESKTOP="1")
+        with R8Mock(count=3) as server:
+            t = self.login(
+                server,
+                XDG_CURRENT_DESKTOP="KDE",
+                KONSOLE_DBUS_SERVICE="org.kde.konsole-test",
+                KONSOLE_DBUS_WINDOW="/Windows/1",
+                KONSOLE_DBUS_SESSION="/Sessions/7",
+            )
+            self.notify_other_channel(server, t)
+            found = self.records(t, ["konsole_session", "kwin_script", "kwin_run", "kwin_unload"])
+            t.wait_text("Conteúdo do outro canal")
+            # The tab is selected first, so the window title already follows it.
+            self.assertEqual(found["konsole_session"]["konsole_session"], 7)
+            self.assertEqual(found["konsole_session"]["window"], "/Windows/1")
+            script = found["kwin_script"]["kwin_script"]
+            arguments = re.search(r"\}\)\((\[[0-9,]*\]), (.*)\);\s*$", script)
+            pids, title = json.loads(arguments[1]), json.loads(arguments[2])
+            # Nearest process first: Papo TUI, then this test that started it.
+            self.assertEqual(pids[:2], [t.process.pid, os.getpid()])
+            self.assertTrue(title)
+            self.assertIn(f"\x1b]2;{title}\x1b\\".encode(), t.output)
+            self.assertIn("workspace.activeWindow = best", script)
+            self.assertEqual(found["kwin_run"]["kwin_run"], "/Scripting/Script0")
+            self.assertEqual(found["kwin_unload"]["kwin_unload"], found["kwin_script"]["plugin"])
+            self.assertEqual(server.marked, [])
+
+    def test_click_selects_the_tmux_pane_and_focuses_the_client_window_in_sway(self):
+        directory = tempfile.TemporaryDirectory(prefix="papo-focus-")
+        self.addCleanup(directory.cleanup)
+        # The newest tmux client is this test process; its window is con 42.
+        log = self.fake_tmux(directory.name, os.getpid())
+        windows = [
+            {"id": 41, "pid": 1, "name": "other", "nodes": []},
+            {"id": 42, "pid": os.getpid(), "name": "terminal", "nodes": []},
+        ]
+        self.start_daemon(PAPO_NOTIFY_TEST_CLICK="300")
+        with Sway(os.path.join(directory.name, "sway.sock"), windows) as sway:
+            with R8Mock(count=3) as server:
+                t = self.login(
+                    server,
+                    TMUX="/tmp/papo-fake-tmux,1,0",
+                    TMUX_PANE="%3",
+                    PATH=directory.name + os.pathsep + os.environ["PATH"],
+                    SWAYSOCK=sway.path,
+                )
+                self.notify_other_channel(server, t)
+                commands = self.wait_commands(t, sway, "sway focus")
+                t.wait_text("Conteúdo do outro canal")
+        self.assertEqual(commands, ["[con_id=42] focus"])
+        with open(log) as calls:
+            self.assertEqual(
+                calls.read().splitlines(),
+                [
+                    "select-window -t %3 ; select-pane -t %3 ; switch-client -t %3",
+                    "list-clients -t %3 -F #{client_activity} #{client_pid}",
+                ],
+            )
+
+    def test_click_focuses_the_nearest_ancestor_window_in_hyprland(self):
+        directory = tempfile.TemporaryDirectory(prefix="papo-focus-")
+        self.addCleanup(directory.cleanup)
+        os.makedirs(os.path.join(directory.name, "hypr", "test_1"))
+        clients = [
+            {"address": "0xdead", "pid": 1, "title": "other"},
+            {"address": "0xbeef", "pid": os.getpid(), "title": "terminal"},
+        ]
+        socket_path = os.path.join(directory.name, "hypr", "test_1", ".socket.sock")
+        self.start_daemon(PAPO_NOTIFY_TEST_CLICK="300")
+        with Hyprland(socket_path, clients) as hyprland:
+            with R8Mock(count=3) as server:
+                t = self.login(
+                    server,
+                    HYPRLAND_INSTANCE_SIGNATURE="test_1",
+                    XDG_RUNTIME_DIR=directory.name,
+                )
+                self.notify_other_channel(server, t)
+                commands = self.wait_commands(t, hyprland, "Hyprland focus")
+                t.wait_text("Conteúdo do outro canal")
+        self.assertEqual(commands, ["dispatch focuswindow address:0xbeef"])
 
     def test_visible_conversation_suppresses_and_focus_loss_emits(self):
         with R8Mock(count=0) as server:

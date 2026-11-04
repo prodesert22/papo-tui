@@ -1,4 +1,5 @@
 #include "config/view_state.h"
+#include "platform/terminal_notify.h"
 #include "ui/screens/conversation/private.h"
 
 help_context conversation_help_context(view *ui, const char **area)
@@ -108,6 +109,7 @@ static void apply_mode(view *ui)
     ui->layout_sequence = 0;
     if (app_mode_get() != APP_MODE_ULTRALIGHT)
         graphics_terminal_probe();
+    terminal_notify_probe();
 }
 static void open_settings(view *ui, const profile_config *config)
 {

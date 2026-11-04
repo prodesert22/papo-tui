@@ -7,6 +7,7 @@
 #include "config/profiles.h"
 #include "model/conversation/history.h"
 #include "net/clock.h"
+#include "ui/components/terminal_title.h"
 #include "ui/input/editor.h"
 #include "ui/input/text.h"
 #include <stdio.h>
@@ -323,6 +324,7 @@ bool instances_poll(instance_connections *connections, auth_client *active)
     changed |= desktop_poll(connections->desktop);
     char clicked[80], target[DESKTOP_TARGET_BYTES];
     while (desktop_take_activation(connections->desktop, clicked, target)) {
+        desktop_raise_terminal(connections->desktop, terminal_title_current());
         for (size_t i = 0; i < connections->count; ++i) {
             instance_connection *item = &connections->items[i];
             char key[80];

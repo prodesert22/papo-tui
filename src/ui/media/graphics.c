@@ -5,6 +5,7 @@
 #include "config/app_mode.h"
 #include "net/clock.h"
 #include "platform/runtime.h"
+#include "platform/terminal_notify.h"
 #include "ui/components/theme.h"
 #include "ui/input/text.h"
 #include "ui/media/media_service.h"
@@ -235,17 +236,26 @@ void graphics_terminal_probe(void)
 
 int graphics_terminal_input(uint32_t *key)
 {
-    static char pending[256];
+    static char pending[512];
     static size_t used;
     static uint64_t started;
+    /* Rest of an overlong OSC reply, dropped up to its terminator. */
+    static bool skipping;
     for (;;) {
         uint64_t now = 0;
         net_now_ms(&now);
-        if (used && now - started > 250)
-            used = 0;
+        if ((used || skipping) && now - started > 250)
+            used = 0, skipping = false;
         int type = text_input_read(key);
         if (type == ERR)
             return ERR;
+        if (skipping) {
+            static uint32_t previous;
+            if (type == OK && (*key == 7 || (previous == 27 && *key == '\\')))
+                skipping = false;
+            previous = type == OK ? *key : 0;
+            continue;
+        }
         if (!used) {
             if (type != OK || *key != 27)
                 return type;
@@ -254,7 +264,7 @@ int graphics_terminal_input(uint32_t *key)
             /* A standalone Escape keeps its ordinary behavior. */
             uint32_t next;
             int next_type = text_read_raw(&next);
-            if (next_type != OK || (next != '[' && next != '_')) {
+            if (next_type != OK || (next != '[' && next != '_' && next != ']')) {
                 used = 0;
                 if (next_type == OK)
                     unget_wch(next);
@@ -263,10 +273,33 @@ int graphics_terminal_input(uint32_t *key)
                 *key = 27;
                 return OK;
             }
+            if (next == ']') {
+                /* Terminal replies arrive in one burst; Alt+] has nothing
+                 * after it and keeps its ordinary meaning. */
+                uint32_t third;
+                int third_type = text_read_raw(&third);
+                if (third_type != OK || third != '9') {
+                    used = 0;
+                    if (third_type == OK)
+                        unget_wch(third);
+                    else if (third_type == KEY_CODE_YES)
+                        ungetch((int)third);
+                    unget_wch(next);
+                    *key = 27;
+                    return OK;
+                }
+                pending[used++] = (char)next;
+                pending[used++] = (char)third;
+                continue;
+            }
             pending[used++] = (char)next;
             continue;
         }
+        bool apc = pending[1] == '_', osc = pending[1] == ']';
         if (type != OK || *key > 127 || used == sizeof(pending) - 1) {
+            /* Only notification replies are OSC; never let their tail become
+             * typed text. */
+            skipping = osc && used > 5 && type == OK;
             used = 0;
             if (type == KEY_CODE_YES)
                 return type;
@@ -274,17 +307,26 @@ int graphics_terminal_input(uint32_t *key)
         }
         pending[used++] = (char)*key;
         pending[used] = 0;
-        bool apc = pending[1] == '_';
-        if (used == 3 && (apc ? pending[2] != 'G'
-                              : pending[2] != '?' && !(pending[2] >= '0' && pending[2] <= '9'))) {
+        /* OSC replies are only taken for notifications ("ESC ] 99 ;"), so
+         * Alt+] and other Alt keys keep working. */
+        if (osc ? used <= 5 && pending[used - 1] != "\033]99;"[used - 1]
+                : used == 3 &&
+                      (apc ? pending[2] != 'G'
+                           : pending[2] != '?' && !(pending[2] >= '0' && pending[2] <= '9'))) {
             while (used > 1)
                 unget_wch((unsigned char)pending[--used]);
             used = 0;
             *key = 27;
             return OK;
         }
-        bool complete = apc ? used > 3 && pending[used - 2] == 27 && *key == '\\'
-                            : *key >= 0x40 && *key <= 0x7e;
+        bool complete =
+            apc || osc ? (used > 3 && pending[used - 2] == 27 && *key == '\\') || (osc && *key == 7)
+                       : *key >= 0x40 && *key <= 0x7e;
+        if (complete && osc) {
+            terminal_notify_reply(pending);
+            used = 0;
+            continue;
+        }
         if (complete) {
             /* Consume graphics acknowledgements even on rejection; they are
              * terminal responses and must never become editor text. */
@@ -306,8 +348,9 @@ int graphics_terminal_input(uint32_t *key)
             used = 0;
             *key = 27;
             return OK;
-        } else if (!apc && !((*key >= '0' && *key <= '9') || *key == '?' || *key == ';' ||
-                             *key == '$' || *key == ':'))
+        } else if (!apc && !osc &&
+                   !((*key >= '0' && *key <= '9') || *key == '?' || *key == ';' || *key == '$' ||
+                     *key == ':'))
             used = 0;
     }
 }
