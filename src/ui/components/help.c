@@ -17,8 +17,8 @@ typedef struct {
 static const help_row rows[] = {
     {HELP_COMMON, "Ctrl+G / F1", "Abrir ou fechar a ajuda do contexto atual"},
     {HELP_COMMON, "Ctrl+/", "Abrir ou fechar a ajuda global"},
-    {HELP_COMMON, "Ctrl+F na ajuda global", "Focar a busca por teclas, função ou área"},
-    {HELP_COMMON, "Tab / Shift+Tab na ajuda global", "Percorrer busca, tabela e botões"},
+    {HELP_COMMON, "Ctrl+F na ajuda", "Focar a busca por teclas, função ou área"},
+    {HELP_COMMON, "Tab / Shift+Tab na ajuda", "Percorrer busca, tabela e botões"},
     {HELP_COMMON, "Ctrl+Q", "Sair do aplicativo"},
     {HELP_CONVERSATION | HELP_LOGIN | HELP_ACCOUNT | HELP_PROFILES, "Tab / Shift+Tab",
      "Percorrer as áreas e os botões"},
@@ -281,13 +281,19 @@ static void filter_rows(help_modal *h)
         g_free(fold);
     }
     g_free(needle);
-    h->scroll[1] = 0;
+    h->scroll[0] = h->scroll[1] = 0;
+}
+/* Contextual help keeps its area name on row 2, so search and the table
+ * start one row lower there. */
+static int search_row(const help_modal *h)
+{
+    return h->global ? 2 : 3;
 }
 
 static void switch_help(help_modal *h, bool global)
 {
     h->global = global;
-    h->focus = global ? FOCUS_SEARCH : FOCUS_CLOSE;
+    h->focus = FOCUS_SEARCH;
 }
 
 bool help_open(help_modal *h, help_context context, const char *area, bool global)
@@ -329,7 +335,7 @@ static void close_help(help_modal *h)
 }
 void help_paste(help_modal *h, text_paste *paste)
 {
-    if (h->open && h->global && h->focus == FOCUS_SEARCH) {
+    if (h->open && h->focus == FOCUS_SEARCH) {
         for (size_t i = 0; i < paste->text.length; ++i)
             if (paste->text.data[i] == '\n' || paste->text.data[i] == '\r')
                 paste->text.data[i] = ' ';
@@ -355,13 +361,10 @@ bool help_key(help_modal *h, int type, uint32_t key)
         return true;
     }
     if ((type == OK && key == '\t') || (type == KEY_CODE_YES && key == KEY_BTAB)) {
-        if (h->global)
-            h->focus = (h->focus + (type == KEY_CODE_YES ? 3 : 1)) % 4;
-        else
-            h->focus = h->focus == FOCUS_SWITCH ? FOCUS_CLOSE : FOCUS_SWITCH;
+        h->focus = (h->focus + (type == KEY_CODE_YES ? 3 : 1)) % 4;
         return true;
     }
-    if (h->global && shortcut_is(type, key, SHORTCUT_SEARCH)) {
+    if (shortcut_is(type, key, SHORTCUT_SEARCH)) {
         h->focus = FOCUS_SEARCH;
         return true;
     }
@@ -377,7 +380,7 @@ bool help_key(help_modal *h, int type, uint32_t key)
     }
     bool scroll_key = type == KEY_CODE_YES &&
                       (key == KEY_UP || key == KEY_DOWN || key == KEY_PPAGE || key == KEY_NPAGE);
-    if (h->global && h->focus == FOCUS_SEARCH && !scroll_key) {
+    if (h->focus == FOCUS_SEARCH && !scroll_key) {
         text_buffer before = h->search;
         int width = h->window ? getmaxx(h->window) - 12 : 24;
         if (text_edit(&h->search, type, key, width, false)) {
@@ -407,8 +410,8 @@ bool help_key(help_modal *h, int type, uint32_t key)
                         close_help(h);
                 } else if (event.bstate & (BUTTON4_PRESSED | BUTTON5_PRESSED))
                     *scroll += event.bstate & BUTTON4_PRESSED ? -3 : 3;
-                else if ((event.bstate & (BUTTON1_CLICKED | BUTTON1_PRESSED)) && h->global &&
-                         y == 2 && x >= 10 && x < getmaxx(h->window) - 2) {
+                else if ((event.bstate & (BUTTON1_CLICKED | BUTTON1_PRESSED)) &&
+                         y == search_row(h) && x >= 10 && x < getmaxx(h->window) - 2) {
                     h->focus = FOCUS_SEARCH;
                     text_click(&h->search, TEXT_LIMIT * 2 + 1, 0, h->search_first + x - 10);
                 } else if ((event.bstate & (BUTTON1_CLICKED | BUTTON1_PRESSED)) &&
@@ -417,8 +420,8 @@ bool help_key(help_modal *h, int type, uint32_t key)
                         close_help(h);
                     else if (x >= h->switch_x)
                         switch_help(h, !h->global);
-                } else if ((event.bstate & (BUTTON1_CLICKED | BUTTON1_PRESSED)) && h->global &&
-                           y >= 4 && y < getmaxy(h->window) - 4)
+                } else if ((event.bstate & (BUTTON1_CLICKED | BUTTON1_PRESSED)) &&
+                           y >= search_row(h) + 2 && y < getmaxy(h->window) - 4)
                     h->focus = FOCUS_TABLE;
             }
         }
@@ -465,28 +468,31 @@ WINDOW *help_draw(help_modal *h)
     wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
     text_label(w, 1, 2, width - 4, h->global ? "Ajuda global" : "Ajuda do contexto");
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
-    if (h->global) {
-        text_label(w, 2, 2, 8, "Buscar:");
-        int pair = h->focus == FOCUS_SEARCH ? THEME_FOCUSED : THEME_INPUT;
-        wattrset(w, COLOR_PAIR(pair));
-        mvwhline(w, 2, 10, ' ', width - 12);
-        text_draw_field(w, &h->search, &h->search_first, 2, 10, width - 12, false);
-        int cursor = getcurx(w);
-        if (!h->search.length) {
-            wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
-            text_label(w, 2, 10, width - 12, "teclas, função ou área");
-        }
-        if (h->focus == FOCUS_SEARCH)
-            mvwchgat(w, 2, cursor, 1, A_REVERSE, pair, NULL);
-    } else
+    if (!h->global)
         text_label(w, 2, 2, width - 4, h->area);
+    int search = search_row(h);
+    text_label(w, search, 2, 8, "Buscar:");
+    int pair = h->focus == FOCUS_SEARCH ? THEME_FOCUSED : THEME_INPUT;
+    wattrset(w, COLOR_PAIR(pair));
+    mvwhline(w, search, 10, ' ', width - 12);
+    text_draw_field(w, &h->search, &h->search_first, search, 10, width - 12, false);
+    int cursor = getcurx(w);
+    if (!h->search.length) {
+        wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
+        text_label(w, search, 10, width - 12,
+                   h->global ? "teclas, função ou área" : "teclas ou função");
+    }
+    if (h->focus == FOCUS_SEARCH)
+        mvwchgat(w, search, cursor, 1, A_REVERSE, pair, NULL);
+    /* Table rows: top rule, header, header rule, then entries until height-4. */
+    int table = search + 1, first_row = table + 3;
     int column = width >= 56 ? 26 : 24;
     if (column > width - 9)
         column = width - 9;
     wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
-    text_label(w, 4, 2, column - 3, column >= 23 ? "Combinação de teclas" : "Teclas");
-    text_label(w, 4, column + 1, width - column - 3, "Função");
-    h->rows = height - 10;
+    text_label(w, table + 1, 2, column - 3, column >= 23 ? "Combinação de teclas" : "Teclas");
+    text_label(w, table + 1, column + 1, width - column - 3, "Função");
+    h->rows = height - 4 - first_row;
     if (h->rows < 1)
         h->rows = 1;
     int heights[sizeof(rows) / sizeof(*rows)] = {0};
@@ -494,7 +500,7 @@ WINDOW *help_draw(help_modal *h)
     for (size_t i = 0; i < sizeof(rows) / sizeof(*rows); ++i) {
         if ((rows[i].contexts & HELP_VOICE) && !voice_available())
             continue;
-        if (h->global ? !h->matches[i] : !(rows[i].contexts & h->context))
+        if (!h->matches[i] || (!h->global && !(rows[i].contexts & h->context)))
             continue;
         text_buffer text;
         if (!row_text(h, i, &text))
@@ -514,9 +520,9 @@ WINDOW *help_draw(help_modal *h)
         h->scroll[h->global] = last;
     int scroll = h->scroll[h->global];
     wattrset(w, COLOR_PAIR(THEME_BORDER));
-    mvwvline(w, 4, 1, ACS_VLINE, height - 8);
-    mvwvline(w, 4, column - 1, ACS_VLINE, height - 8);
-    mvwvline(w, 4, width - 2, ACS_VLINE, height - 8);
+    mvwvline(w, table + 1, 1, ACS_VLINE, height - table - 5);
+    mvwvline(w, table + 1, column - 1, ACS_VLINE, height - table - 5);
+    mvwvline(w, table + 1, width - 2, ACS_VLINE, height - table - 5);
     total = 0;
     for (size_t i = 0; i < sizeof(rows) / sizeof(*rows); ++i) {
         if (!heights[i])
@@ -528,15 +534,15 @@ WINDOW *help_draw(help_modal *h)
                 continue;
             text_measure(&text, width - column - 3, h->layout);
             int first = scroll > total ? scroll - total : 0;
-            int y = 6 + total + first - scroll;
+            int y = first_row + total + first - scroll;
             wattrset(w, COLOR_PAIR(THEME_PANEL));
-            text_draw(w, &text, h->layout, first, h->rows - (y - 6), y, column + 1);
+            text_draw(w, &text, h->layout, first, h->rows - (y - first_row), y, column + 1);
             text_decode(&text, rows[i].keys);
             text_measure(&text, column - 3, h->layout);
-            text_draw(w, &text, h->layout, first, h->rows - (y - 6), y, 2);
+            text_draw(w, &text, h->layout, first, h->rows - (y - first_row), y, 2);
         }
-        int separator = 6 + total + count - scroll;
-        if (separator >= 6 && separator < 6 + h->rows)
+        int separator = first_row + total + count - scroll;
+        if (separator >= first_row && separator < first_row + h->rows)
             table_rule(w, separator, column, ACS_LTEE, ACS_PLUS, ACS_RTEE);
         total += heights[i];
     }
@@ -545,15 +551,13 @@ WINDOW *help_draw(help_modal *h)
         text_decode(&empty, "Nenhum atalho encontrado.");
         text_measure(&empty, width - column - 3, h->layout);
         wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
-        text_draw(w, &empty, h->layout, 0, h->rows, 6, column + 1);
+        text_draw(w, &empty, h->layout, 0, h->rows, first_row, column + 1);
     }
-    table_rule(w, 3, column, ACS_ULCORNER, ACS_TTEE, ACS_URCORNER);
-    table_rule(w, 5, column, ACS_LTEE, ACS_PLUS, ACS_RTEE);
+    table_rule(w, table, column, ACS_ULCORNER, ACS_TTEE, ACS_URCORNER);
+    table_rule(w, table + 2, column, ACS_LTEE, ACS_PLUS, ACS_RTEE);
     table_rule(w, height - 4, column, ACS_LLCORNER, ACS_BTEE, ACS_LRCORNER);
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
-    text_label(w, height - 3, 2, width - 4,
-               h->global ? "Ctrl+F: buscar · ↑↓: rolar · Esc: fechar"
-                         : "↑↓ / PgUp/PgDn: rolar · Esc: fechar");
+    text_label(w, height - 3, 2, width - 4, "Ctrl+F: buscar · ↑↓: rolar · Esc: fechar");
     h->switch_x = 2;
     h->close_x = width - 11;
     button_draw(w, height - 2, h->switch_x, width - 15,

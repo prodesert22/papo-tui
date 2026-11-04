@@ -109,7 +109,8 @@ class NavigationHelp(HistoryTerminal):
             t = self.open(server)
             self.help(t, "Editor de mensagens")
             self.assert_table_grid(t)
-            t.send("\t\n")
+            # Search has focus first; the table, then the switch button follow.
+            t.send("\t\t\n")
             self.wait(t, "Ajuda global")
             self.assert_table_grid(t)
             self.assertIn("Ctrl+S", self.screen(t))
@@ -162,7 +163,11 @@ class NavigationHelp(HistoryTerminal):
             self.wait(t, "Identificar novamente")
             t.send("\x07")
             self.wait(t, "Editor de mensagens")
-            self.assertNotIn("Buscar:", self.screen(t))
+            # The query carries over and filters the contextual rows too.
+            self.wait(t, "Buscar: CtRl+Y")
+            self.wait(t, "Tentar novamente o último envio")
+            self.assertNotIn("Ctrl+K", self.screen(t))
+            self.assertNotIn("Identificar novamente", self.screen(t))
             t.send("\x1f")
             self.wait(t, "Identificar novamente")
             t.send("\x1b")
@@ -174,6 +179,46 @@ class NavigationHelp(HistoryTerminal):
             self.wait(t, "Draft behind search")
             self.assertEqual(server.sent_messages, [])
             self.assertEqual(server.setting_calls, [])
+
+    def test_contextual_search_filters_only_the_focused_area(self):
+        with ChannelPreferencesMock() as server:
+            t = self.open(server)
+            t.send("Draft behind contextual search")
+            self.help(t, "Editor de mensagens")
+            self.wait(t, "Buscar:")
+            self.wait(t, "teclas ou função")
+            self.assertIn("Ctrl+O", self.screen(t))
+            t.send("ANEXAR")
+            wait_for_screen(
+                t,
+                lambda: "Ctrl+K" not in self.screen(t),
+                "Contextual search did not filter the table",
+            )
+            self.assertIn("Ctrl+O", self.screen(t))
+            self.assert_table_grid(t)
+            # Rows of other areas stay out of the contextual table.
+            t.send("\x15notificação")
+            self.wait(t, "Nenhum atalho encontrado.")
+            self.assert_table_grid(t, entries=False)
+            t.send("\x15\x1b[200~ANEXAR\x1b[201~")
+            self.wait(t, "Ctrl+O")
+            t.resize(14, 44)
+            self.wait(t, "Buscar: ANEXAR")
+            t.resize(40, 140)
+            t.send("\t\t\t\n")
+            wait_for_screen(
+                t,
+                lambda: "Ajuda do contexto" not in self.screen(t),
+                "Fechar did not close contextual help",
+            )
+            self.wait(t, "Draft behind contextual search")
+            self.assertNotIn("ANEXAR", self.screen(t))
+            self.help(t, "Editor de mensagens")
+            self.assertNotIn("ANEXAR", self.screen(t))
+            self.assertIn("Ctrl+K", self.screen(t))
+            t.send("\x1b")
+            self.wait(t, "Draft behind contextual search")
+            self.assertEqual(server.sent_messages, [])
 
     def test_help_blocks_background_commands_and_bracketed_paste(self):
         with ChannelPreferencesMock() as server:

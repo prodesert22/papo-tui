@@ -353,14 +353,16 @@ keyboard and mouse controls with their area of use. The contextual dialog's
 **Todos os atalhos** (All shortcuts) button opens the global dialog;
 **Ajuda do contexto** returns to the focused-area reference.
 
-The global dialog opens with **Buscar** (Search) focused. Type to filter key
-combinations, functions and area names; matching ignores letter case. Ctrl+F
-or clicking the field returns to search. Ctrl+U or Ctrl+C clears it, restoring
+Both dialogs open with **Buscar** (Search) focused, below the dialog title; the
+contextual dialog keeps the focused area's name above the field. Type to filter
+key combinations, functions and area names; matching ignores letter case. In
+the contextual dialog the search only looks within the focused area's controls.
+Ctrl+F or clicking the field returns to search. Ctrl+U or Ctrl+C clears it, restoring
 all entries. Terminal text paste is supported in this field. No matches shows
 **Nenhum atalho encontrado.** (No shortcut found). The query stays in place when
 switching between the two help dialogs and resets when help is reopened.
-Tab/Shift+Tab cycle through search, the table and the buttons. Enter in search
-focuses the table; ↑/↓ and PageUp/PageDown scroll results. Home/End move the
+In both dialogs Tab/Shift+Tab cycle through search, the table and the buttons.
+Enter in search focuses the table; ↑/↓ and PageUp/PageDown scroll results. Home/End move the
 cursor in search or jump through results when the table has focus.
 
 Use ↑/↓, PageUp/PageDown, Home/End or the wheel to scroll either table. Tab and
