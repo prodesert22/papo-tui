@@ -15,14 +15,14 @@ NAME = "mouse-scroll-fix-1.0.0.jar"
 
 
 class Downloads(support.MessageInteractions):
-    def serve(self, *, attachments=None):
+    def serve(self, *, attachments=None, mime="application/java-archive"):
         server = HistoryMock(count=1)
         parent = server.route
         files = attachments or [(NAME, CONTENT)]
         server.messages[0]["attachments"] = [
             {
                 "id": uuid(900 + i),
-                "mime_type": "application/java-archive",
+                "mime_type": mime,
                 "original_file_name": name,
                 "size_bytes": len(data),
                 "moderation_status": "clean",
@@ -35,7 +35,7 @@ class Downloads(support.MessageInteractions):
             if "/attachments/" in path:
                 server.downloads.append(path)
                 index = int(path.rsplit("/", 1)[1][-12:], 16) - 900
-                return 200, files[index][1], None, None, "application/java-archive"
+                return 200, files[index][1], None, None, mime
             return parent(method, path, body)
 
         server.api_handler = route
@@ -100,6 +100,28 @@ class Downloads(support.MessageInteractions):
                 self.assertEqual(target.read_bytes(), CONTENT)
             finally:
                 self.assertTrue(terminal.close())
+
+    def test_context_menu_downloads_images_videos_and_audio_too(self):
+        for mime, name in (
+            ("image/png", "picture.png"),
+            ("video/mp4", "clip.mp4"),
+            ("audio/mpeg", "song.mp3"),
+        ):
+            with (
+                self.subTest(mime=mime),
+                tempfile.TemporaryDirectory() as folder,
+                self.serve(attachments=[(name, CONTENT)], mime=mime) as server,
+            ):
+                target = Path(folder, "saved-" + name)
+                terminal = self.open(server)
+                try:
+                    self.right_click(terminal, "Mensagem 0001")
+                    self.click(terminal, "Baixar anexo")
+                    self.save_dialog(terminal, target)
+                    self.wait(terminal, "Arquivo salvo em")
+                    self.assertEqual(target.read_bytes(), CONTENT)
+                finally:
+                    self.assertTrue(terminal.close())
 
     def test_cancelling_the_dialog_downloads_nothing(self):
         with tempfile.TemporaryDirectory() as folder, self.serve() as server:
