@@ -1630,25 +1630,57 @@ static void draw_video_controls(media_view *v, WINDOW *w)
         format_clock(info.position, position, sizeof(position));
         format_clock(info.duration > 0 ? info.duration : NAN, duration, sizeof(duration));
         format_speed(info.speed, speed, sizeof(speed));
-        snprintf(status, sizeof(status),
-                 "%s · %s / %s · %s%s%s%s · Espaço pausa · ←→ 5s%s · [ ] velocidade · "
-                 "l repetir · ↑↓ volume · m · x parar",
+        snprintf(status, sizeof(status), "%s · %s / %s · %s%s%s%s",
                  info.ended && !info.looping ? "Fim"
                  : info.paused               ? "Pausado"
                                              : "Reproduzindo",
                  position, duration, speed, info.looping ? " · Repetir" : "",
                  info.muted ? " · Mudo" : "",
-                 info.audio_missing ? " · Sem dispositivo de áudio" : "",
-                 v->member_count > 1 ? " · PgUp/PgDn mídia" : "");
+                 info.audio_missing ? " · Sem dispositivo de áudio" : "");
     } else
-        snprintf(status, sizeof(status),
-                 "%s · %.0f / %.0f s%s%s · Espaço pausa · ←→ 5s%s · ,/. 1s · ↑↓ volume · m",
+        snprintf(status, sizeof(status), "%s · %.0f / %.0f s%s%s",
                  info.paused ? "Pausado" : "Reproduzindo", info.position, info.duration,
                  info.muted ? " · Mudo" : "",
-                 info.audio_missing ? " · Sem dispositivo de áudio" : "",
-                 v->member_count > 1 ? " · PgUp/PgDn mídia" : "");
+                 info.audio_missing ? " · Sem dispositivo de áudio" : "");
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     text_label(w, v->layout.height - 2, 3, v->layout.area_width, status);
+}
+/* Keys of the open viewer, shown on the bottom border so the row above it
+ * can show only the state. Moving between media comes first because it is
+ * the one a message with several media needs. Each list runs from the full
+ * legend to the shortest, and the longest one that fits is used whole. */
+static const char *modal_keys(const media_view *v, int width)
+{
+    static const char *const audio[] = {"Espaço pausar · ←→ 5s · x parar · Esc segundo plano",
+                                        "Espaço pausar · x parar · Esc segundo plano",
+                                        "Espaço pausar · x parar", "Espaço pausar"};
+    static const char *const audio_many[] = {
+        "PgUp/PgDn outra mídia · Espaço pausar · x parar · Esc segundo plano",
+        "PgUp/PgDn outra mídia · Espaço pausar · x parar", "PgUp/PgDn outra mídia · Espaço pausar",
+        "PgUp/PgDn outra mídia"};
+    static const char *const video[] = {"Espaço pausar · ←→ 5s · ,/. 1s · ↑↓ volume · m mudo",
+                                        "Espaço pausar · ←→ 5s · ↑↓ volume",
+                                        "Espaço pausar · ←→ 5s", "Espaço pausar"};
+    static const char *const video_many[] = {
+        "PgUp/PgDn outra mídia · Espaço pausar · ←→ 5s · ↑↓ volume",
+        "PgUp/PgDn outra mídia · Espaço pausar · ←→ 5s", "PgUp/PgDn outra mídia · Espaço pausar",
+        "PgUp/PgDn outra mídia"};
+    static const char *const image[] = {"i informações · Esc voltar", "Esc voltar"};
+    static const char *const image_many[] = {
+        "←→ ou PgUp/PgDn outra mídia · i informações · Esc voltar",
+        "←→ ou PgUp/PgDn outra mídia · Esc voltar", "←→ outra mídia", "←→ mídia"};
+    bool many = v->member_count > 1;
+    const char *const *list = v->selected_item.audio   ? (many ? audio_many : audio)
+                              : v->selected_item.video ? (many ? video_many : video)
+                                                       : (many ? image_many : image);
+    size_t count = v->selected_item.audio ? (many ? G_N_ELEMENTS(audio_many) : G_N_ELEMENTS(audio))
+                   : v->selected_item.video
+                       ? (many ? G_N_ELEMENTS(video_many) : G_N_ELEMENTS(video))
+                       : (many ? G_N_ELEMENTS(image_many) : G_N_ELEMENTS(image));
+    for (size_t k = 0; k < count; ++k)
+        if (text_label(NULL, 0, 0, 1000, list[k]) + 2 <= width)
+            return list[k];
+    return "";
 }
 static void draw_centered(WINDOW *w, int row, int x, int width, const char *text)
 {
@@ -1765,7 +1797,7 @@ void media_view_draw(media_view *v)
         int label_end = v->info_open ? v->layout.info_x - 1 : v->layout.x + width - 2;
         if (label_end > label_x) {
             char title[MESSAGE_MEDIA_LABEL + 32];
-            if (v->selected_item.video && v->member_count > 1) {
+            if (v->member_count > 1) {
                 size_t number = 0;
                 for (size_t i = 0; i <= v->gallery_index; ++i)
                     number += gallery_member(v, i);
@@ -1801,26 +1833,12 @@ void media_view_draw(media_view *v)
             draw_video_controls(v, w);
         else
             text_label(w, height - 3, 3, image_width, v->modal_animated ? "GIF animado" : "Imagem");
-        if (!v->selected_item.video && v->member_count > 1) {
-            size_t number = 0;
-            for (size_t i = 0; i <= v->gallery_index; ++i)
-                number += gallery_member(v, i);
-            char hint[128];
-            snprintf(hint, sizeof(hint), "%zu/%zu · ←→ PgUp/PgDn %s · i: informações · Esc: voltar",
-                     number, v->member_count,
-                     v->member_count == v->image_count ? "imagens" : "mídias");
-            text_label(w, height - 2, 3, image_width, hint);
-        } else if (!v->selected_item.video || v->modal != MODAL_PLAYING)
-            text_label(w, height - 2, 3, image_width,
-                       v->selected_item.audio
-                           ? (v->member_count > 1
-                                  ? "Espaço pausa · x parar · PgUp/PgDn mídia · Esc: segundo plano"
-                                  : "Espaço pausa · x parar · Esc: segundo plano")
-                       : v->selected_item.video
-                           ? (v->member_count > 1
-                                  ? "Espaço pausa · ←→ 5s · PgUp/PgDn mídia · ↑↓ volume · m"
-                                  : "Espaço pausa · ←→ 5s · ,/. 1s · ↑↓ volume · m")
-                           : "i: informações · Esc: voltar");
+        if (v->modal != MODAL_ERROR) {
+            char keys[160];
+            snprintf(keys, sizeof(keys), " %s ", modal_keys(v, image_width));
+            wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
+            text_label(w, height - 1, 2, image_width, keys);
+        }
         draw_properties(v, w);
     }
     touchwin(w);

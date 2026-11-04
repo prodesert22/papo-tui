@@ -187,16 +187,18 @@ class MediaNavigation(unittest.TestCase):
             t = self.helper.open(server, protocol="kitty", size=(38, 100))
             try:
                 t.send("\x0b\n")
-                self.helper.wait(t, "1/3 · ←→ PgUp/PgDn mídias")
+                self.helper.wait(t, "←→ ou PgUp/PgDn outra mídia")
                 t.send("\x1bOC")  # Right arrow steps from an image to the video.
                 self.helper.wait(t, "2/3 · clip.mp4")
+                self.helper.wait(t, "PgUp/PgDn outra mídia · Espaço pausar · ←→ 5s")
                 t.send("\x1bOC")  # Inside a video the arrows seek instead.
                 t.read(0.3)
                 self.assertIn("2/3 · clip.mp4", "\n".join(t.screen.display))
                 t.send("\x1b[6~")  # PageDown: next media, the audio.
                 self.helper.wait(t, "3/3 · nota.wav")
+                self.helper.wait(t, "PgUp/PgDn outra mídia · Espaço pausar · x parar")
                 t.send("\x1b[6~")  # Wraps to the image.
-                self.helper.wait(t, "1/3 · ←→ PgUp/PgDn mídias")
+                self.helper.wait(t, "←→ ou PgUp/PgDn outra mídia")
                 t.send("\x1b[5~")  # PageUp wraps back to the audio.
                 self.helper.wait(t, "3/3 · nota.wav")
                 t.send("\x1b")

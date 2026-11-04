@@ -971,13 +971,19 @@ audio, you can move through all of them without closing it. On an image, press
 ← or → for the previous or the next one. On a video or an audio, ← and → seek,
 so use **PageUp** and **PageDown** instead; they work on any media, except
 while the properties panel is open, where they scroll it. The sequence wraps
-around. An image shows the current position, for example **2/3 · ←→ PgUp/PgDn imagens**
-(**←→ PgUp/PgDn mídias** when the message also has a video or audio), and a video or audio
-shows it in its title, for example **2/3 · clip.mp4**, with the keys listed in the caption below it. Only the media
-of the opened message are shown; media from other messages never join the
-sequence, nor do author avatars. Moving to another media stops the one that was
-playing. The properties panel stays open while you browse, and downloads are
-reused, so switching back to a media already seen does not download it again.
+around. The title shows the position, for example **2/3 · clip.mp4**.
+
+The viewer keeps two kinds of text apart. The line above the bottom edge shows
+the state, such as **Reproduzindo · 0:07 / 0:30** (Playing). The keys are listed
+on the bottom edge itself, starting with **PgUp/PgDn outra mídia** (another
+media) when the message has more than one, for example **PgUp/PgDn outra mídia
+· Espaço pausar · ←→ 5s · ↑↓ volume** (Space pauses, ←→ seek 5 seconds, ↑↓ change
+the volume). On a narrow window the list shrinks to the keys that fit, always
+keeping whole entries. Only the media of the opened message are shown; media
+from other messages never join the sequence, nor do author avatars. Moving to
+another media stops the one that was playing. The properties panel stays open
+while you browse, and downloads are reused, so switching back to a media already
+seen does not download it again.
 
 When a message carries an embed with a video, pressing Enter on the embed cover
 opens the video player directly. The **Abrir player** entry keeps working as
