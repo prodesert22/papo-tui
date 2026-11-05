@@ -1,3 +1,4 @@
+#include "config/app_mode.h"
 #include "ui/components/button.h"
 #include "ui/components/server_settings/private.h"
 #include "ui/components/theme.h"
@@ -184,12 +185,13 @@ void server_settings_close(server_settings *s)
         s->window = NULL;
     }
 }
-void server_settings_open(server_settings *s, history *model, const char *server)
+void server_settings_open(server_settings *s, history *model, icon_view *icons, const char *server)
 {
     server_settings_close(s);
     memset(s, 0, sizeof(*s));
     s->open = true;
     s->model = model;
+    s->icons = icons;
     s->confirm = -1;
     snprintf(s->server, sizeof(s->server), "%s", server ? server : "");
     tab_strip_reset(&s->strip);
@@ -324,9 +326,35 @@ static int note_rows(WINDOW *w, const char *text, int y, int x, int width, int m
         text_draw(w, &buffer, &layout, 0, rows, y, x);
     return rows;
 }
+/* Emoji previews are 64 pixels tall; Ultralight and text terminals show none. */
+#define EMOJI_PREVIEW_PIXELS 64
+bool admin_previews(void)
+{
+    graphics_terminal terminal = graphics_terminal_get();
+    return app_mode_get() != APP_MODE_ULTRALIGHT && terminal.supported && terminal.cell_height > 0;
+}
 static int field_height(const admin_field *f, int width)
 {
+    if (f->kind == FIELD_EMOJI) {
+        int cell = graphics_terminal_get().cell_height;
+        return cell > 0 ? (EMOJI_PREVIEW_PIXELS + cell - 1) / cell : 1;
+    }
     return f->kind == FIELD_NOTE ? note_rows(NULL, f->value, 0, 0, width, 8, false) : 1;
+}
+/* The picture comes from the server's emoji catalog, which the picker shares. */
+static void draw_emoji(server_settings *s, WINDOW *w, const admin_field *f, int y)
+{
+    chat_assets *assets = history_assets(s->model);
+    uint32_t icon = 0;
+    for (size_t i = 0; i < chat_assets_emoji_count(assets) && !icon; ++i)
+        if (!strcmp(chat_assets_emoji(assets, i)->id, f->key))
+            icon = ICON_CUSTOM | (uint32_t)(i + 1);
+    icons_scope(s->icons, "server-settings", 0);
+    if (!icon || !icons_paint_size(s->icons, w, icon, y, s->form_x, THEME_PANEL, icon,
+                                   EMOJI_PREVIEW_PIXELS)) {
+        wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
+        text_label(w, y, s->form_x, s->form_w, "Carregando imagem…");
+    }
 }
 static void draw_list(server_settings *s, WINDOW *w, GArray *rows)
 {
@@ -479,6 +507,9 @@ static void draw_field(server_settings *s, WINDOW *w, const admin_field *f, int 
                     BUTTON_PANEL);
         break;
     }
+    case FIELD_EMOJI:
+        draw_emoji(s, w, f, y);
+        break;
     case FIELD_BUTTON: {
         bool confirming = s->confirm == f->id && !strcmp(s->confirm_key, f->key);
         snprintf(line, sizeof(line), confirming ? "Confirmar: %s" : "%s", f->label);
@@ -576,6 +607,8 @@ void server_settings_draw(server_settings *s)
     if (!s->window)
         return;
     WINDOW *w = s->window;
+    /* Pictures behind the panel are cut here; the preview drawn inside stays. */
+    icons_overlay(s->icons, getbegy(w), getbegx(w), height, width);
     wbkgd(w, COLOR_PAIR(THEME_PANEL));
     werase(w);
     wattrset(w, COLOR_PAIR(THEME_BORDER));

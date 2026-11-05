@@ -3,6 +3,7 @@
 #include "model/conversation/server_admin.h"
 #include "ui/components/tabs.h"
 #include "ui/input/text.h"
+#include "ui/media/icons.h"
 #include <ncurses.h>
 /* Configurações do servidor: one tab per category, shown only when the
  * signed-in account may act there. The modal borrows the active server's
@@ -13,6 +14,7 @@ typedef enum { SERVER_PICK_NONE, SERVER_PICK_ICON, SERVER_PICK_EMOJI } server_se
 typedef struct {
     bool open;
     history *model;
+    icon_view *icons; /* Borrowed from the screen; paints emoji previews. */
     char server[129];
     admin_tab tabs[ADMIN_TABS], tab;
     int tab_count;
@@ -47,7 +49,7 @@ typedef struct {
     bool cursor;
 } server_settings;
 /* Opens on the first tab the account may use. */
-void server_settings_open(server_settings *s, history *model, const char *server);
+void server_settings_open(server_settings *s, history *model, icon_view *icons, const char *server);
 void server_settings_close(server_settings *s);
 void server_settings_draw(server_settings *s);
 void server_settings_key(server_settings *s, int type, uint32_t key);

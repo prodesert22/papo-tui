@@ -721,7 +721,9 @@ for a second press: the first one changes the label to **Confirmar: …**
   (Link role) add a role to the channel, starting with reading and sending
   allowed; **Remover vínculo** (Remove link) takes the role off the channel
   without deleting it.
-- **Emojis**: choose **+ Adicionar emoji** (Add emoji), type a name and press
+- **Emojis**: choose an emoji to see its picture, format, date and author on the
+  right; Ultralight shows the details without the picture. Choose
+  **+ Adicionar emoji** (Add emoji), type a name and press
   **Escolher imagem e enviar…** (Choose image and send) to pick a GIF, JPEG,
   PNG or WEBP file. You can delete emojis you added; deleting other people's
   emojis needs **Gerenciar servidor**. **Carregar mais…** (Load more) at the

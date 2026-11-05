@@ -332,7 +332,7 @@ static bool offer(icon_view *v, media_resource *resource, image_decode_request r
         .navigation = !strncmp(v->scope, "notification:", 13),
         .editor = !strncmp(v->scope, "editor:", 7) || !strcmp(v->scope, "emoji-button"),
         .overlay = !strcmp(v->scope, "emoji-picker") || !strcmp(v->scope, "emoji-popup") ||
-                   !strcmp(v->scope, "reaction-users")};
+                   !strcmp(v->scope, "reaction-users") || !strcmp(v->scope, "server-settings")};
     p->overlay |= !strncmp(v->scope, "member:", 7);
     p->layer = p->overlay ? media_cache_overlay_count(v->store) : 0;
     memcpy(p->fragments, slot->fragments, sizeof(p->fragments));

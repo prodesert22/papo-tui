@@ -257,6 +257,10 @@ class ServerSettings(unittest.TestCase):
             # Someone else's emoji without manage_server cannot be deleted.
             self.click(t, ":festa:")
             self.wait(t, "Só quem adicionou o emoji")
+            # Ultralight shows no picture: the details follow the name directly.
+            self.assertNotIn("Carregando imagem", self.screen(t))
+            row = next(i for i, line in enumerate(t.screen.display) if "Formato:" in line)
+            self.assertIn(":festa:", t.screen.display[row - 1])
             self.assertNotIn("Excluir emoji", self.screen(t))
             self.click(t, "+ Adicionar emoji")
             self.click(t, "Escolher imagem e enviar")

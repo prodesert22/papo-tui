@@ -19,6 +19,9 @@ static const json_t *selected_emoji(server_settings *s)
 static void enter(server_settings *s)
 {
     server_admin_load(s->model, ADMIN_LIST_EMOJIS, false);
+    /* Previews use the emoji picker's catalog, which holds the pictures. */
+    if (admin_previews())
+        chat_assets_emojis_request(history_assets(s->model), false);
 }
 static void rows(server_settings *s, GArray *out)
 {
@@ -75,7 +78,12 @@ static void fields(server_settings *s, GArray *out)
     char title[160];
     snprintf(title, sizeof(title), ":%s:", admin_str(emoji, "name"));
     admin_field_add(out, FIELD_HEADING, 0, title);
-    admin_field *f = admin_field_add(out, FIELD_INFO, 0, "Formato");
+    admin_field *f;
+    if (admin_previews()) {
+        f = admin_field_add(out, FIELD_EMOJI, 0, title);
+        snprintf(f->key, sizeof(f->key), "%s", s->selected);
+    }
+    f = admin_field_add(out, FIELD_INFO, 0, "Formato");
     snprintf(f->value, sizeof(f->value), "%s", admin_str(emoji, "format"));
     f = admin_field_add(out, FIELD_INFO, 0, "Adicionado em");
     if (!message_time_format(admin_str(emoji, "created_at"), time(NULL), f->value,

@@ -17,7 +17,8 @@ typedef enum {
     FIELD_SECRET,
     FIELD_CHECK,
     FIELD_CHOICE, /* ←/→ cycles the value. */
-    FIELD_BUTTON
+    FIELD_BUTTON,
+    FIELD_EMOJI /* Picture of the custom emoji whose ID is the key. */
 } field_kind;
 typedef struct {
     field_kind kind;
@@ -59,6 +60,8 @@ extern const admin_tab_ops tab_overview, tab_roles, tab_channels, tab_emojis, ta
 
 admin_field *admin_field_add(GArray *fields, field_kind kind, int id, const char *label);
 void admin_note(GArray *fields, const char *text);
+/* Whether emoji pictures can be shown: not in Ultralight or text terminals. */
+bool admin_previews(void);
 void admin_row_add(GArray *rows, const char *id, const char *label, const char *detail,
                    unsigned rgb, bool action);
 void admin_error(server_settings *s, const char *message);

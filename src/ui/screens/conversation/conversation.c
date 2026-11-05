@@ -135,7 +135,7 @@ void conversation_open_server_settings(view *ui)
     ui->reaction_picker = false;
     r8_modal_close(ui->r8);
     settings_close(&ui->settings);
-    server_settings_open(&ui->server_settings, ui->model,
+    server_settings_open(&ui->server_settings, ui->model, ui->icons,
                          ui->connections->items[ui->active_tab].name);
 }
 

@@ -424,10 +424,11 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
     bool simple = app_mode_get() != APP_MODE_NORMAL ||
                   graphics_terminal_get().protocol == GRAPHICS_TEXT ||
                   graphics_terminal_get().protocol == GRAPHICS_CHAFA;
-    bool paint_media =
-        paint_history || paint_navigation || scope == DRAW_MEDIA || scope == DRAW_EDITOR ||
-        emoji_picker_open(ui->emojis) || emoji_picker_suggesting(ui->emojis) || ui->reactors_open ||
-        mention_popup_open(ui->mentions) || r8_modal_is_open(ui->r8) || ui->help.open;
+    bool paint_media = paint_history || paint_navigation || scope == DRAW_MEDIA ||
+                       scope == DRAW_EDITOR || emoji_picker_open(ui->emojis) ||
+                       emoji_picker_suggesting(ui->emojis) || ui->reactors_open ||
+                       mention_popup_open(ui->mentions) || r8_modal_is_open(ui->r8) ||
+                       ui->help.open || ui->server_settings.open;
     graphics_update_begin();
     /* Opening or closing the floating settings panel recomposes the screen.
      * Force one fresh pixel presentation so terminals that anchor images to
@@ -918,18 +919,24 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
     WINDOW *panel = settings_shown && ui->settings.window ? ui->settings.window
                     : server_shown                        ? ui->server_settings.window
                                                           : NULL;
-    if (panel)
+    /* The server panel cuts the pictures behind it itself, before painting
+     * its emoji preview. */
+    if (panel && !server_shown)
         icons_overlay(ui->icons, getbegy(panel), getbegx(panel), getmaxy(panel), getmaxx(panel));
     if (paint_media) {
         if (!ui->duplicate_modal)
             media_view_prepare(ui->media);
+        /* History media under the server panel goes before its own preview
+         * is added; cached icons behind it are already cut by its overlay. */
+        if (server_shown && panel)
+            graphics_frame_occlude(getbegy(panel), getbegx(panel), getmaxy(panel), getmaxx(panel));
         icons_prepare(ui->icons);
         /* The player owns a direct raster rather than a cached preview. Keep
          * it below help as well; cached fragments already exclude this area. */
         if (help_window)
             graphics_frame_occlude(getbegy(help_window), getbegx(help_window), getmaxy(help_window),
                                    getmaxx(help_window));
-        if (panel)
+        if (panel && !server_shown)
             graphics_frame_occlude(getbegy(panel), getbegx(panel), getmaxy(panel), getmaxx(panel));
         graphics_frame_prepare();
     }

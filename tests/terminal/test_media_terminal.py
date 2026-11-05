@@ -23,6 +23,7 @@ from wcwidth import wcswidth
 
 from history_mock import HistoryMock, STAMP, uuid  # noqa: E402 - path and test arguments are prepared above
 from mock_server import ChunkedBody
+from server_admin_mock import OTHER_OWNER, ServerAdminMock
 from terminal_support import wait_for_screen  # noqa: E402 - path and test arguments are prepared above
 
 
@@ -870,6 +871,53 @@ class MediaTerminal(support.MediaTerminal):
                 self.panel_keeps_history_media(
                     protocol, open_panel, "Auditoria", size=(60, 230), resized=(56, 210)
                 )
+
+    def test_server_settings_preview_the_selected_emoji_inside_the_panel(self):
+        for protocol in protocols("kitty", "sixel", "iterm2"):
+            with self.subTest(protocol=protocol), ServerAdminMock() as server:
+                # Without other permissions, the panel opens on Emojis.
+                server.set_owner(OTHER_OWNER)
+                server.emojis[0]["image_blob"] = base64.b64encode(self.images["png"]).decode()
+                self.include_icons = True
+                t = self.open(server, protocol=protocol, size=(48, 160))
+                try:
+                    row = t.screen.display[0]
+                    column = wcswidth(row[: row.index("Comunidade")]) + 1
+                    t.send(f"\x1b[<2;{column + 1};1M\x1b[<2;{column + 1};1m")
+                    self.wait(t, "Configurações do servidor")
+                    t.send("\n")
+                    self.wait(t, "< Emojis >")
+                    self.wait(t, ":festa:")
+                    display = t.screen.display
+                    title = next(i for i, line in enumerate(display) if "Configurações do" in line)
+                    y = next(i for i, line in enumerate(display) if ":festa:" in line)
+                    x = wcswidth(display[y][: display[y].index(":festa:")])
+                    frames = len(t.stream.frames)
+                    t.click(y, x + 1)
+                    self.wait(t, "Formato:")
+
+                    def previews():
+                        found = []
+                        for i in range(frames, len(t.stream.frames)):
+                            size = self.raster_size(t, i)
+                            top, left = t.stream.frame_positions[i]
+                            if size == (64, 64) and top > title and left > x + 8:
+                                found.append((top, left))
+                        return found
+
+                    self.settled(t, lambda: bool(previews()), seconds=10)
+                    heading = next(
+                        i
+                        for i, line in enumerate(t.screen.display)
+                        if ":festa:" in line[x + 8 :] and "Formato" not in line
+                    )
+                    # Below the emoji's heading, in the form beside the list.
+                    self.assertTrue(
+                        any(top == heading + 1 for top, _ in previews()), (heading, previews())
+                    )
+                    self.assertNotIn("Carregando imagem", "\n".join(t.screen.display))
+                finally:
+                    self.assertTrue(t.close())
 
     def panel_keeps_history_media(
         self, protocol, open_panel, ready, size=(48, 160), resized=(44, 144)
