@@ -1,6 +1,7 @@
 #include "ui/components/settings.h"
 #include "model/conversation/profile_edit.h"
 #include "ui/components/button.h"
+#include "ui/components/tabs.h"
 #include "ui/components/theme.h"
 #include "ui/input/mouse.h"
 #include "ui/input/shortcuts.h"
@@ -54,7 +55,7 @@ void settings_open(app_settings *s, const profile_config *config, voice_client *
     s->selection = config->mode;
     s->audio = s->original_audio = config->audio;
     s->voice = voice;
-    s->tab_prev = s->tab_next = -1;
+    tab_strip_reset(&s->tabs);
     voice_refresh_devices(voice);
     voice_ptt(false);
 }
@@ -178,78 +179,9 @@ static void audio_draw(app_settings *s, WINDOW *w, int height, int width)
                          : "Tecla sem eventos neste terminal: use o botão Segure para falar."
                    : "O microfone e a saída podem ser silenciados ao lado de ⚙.");
 }
-static int tab_label(int section, int active, char *label, size_t size)
-{
-    if (section == active)
-        snprintf(label, size, "< %s >", sections[section]);
-    else
-        snprintf(label, size, "%s", sections[section]);
-    return text_label(NULL, 0, 0, (int)size, label);
-}
-static void tab_window(int active, int available, int *first, int *last)
-{
-    int best_first = active, best_last = active, best_count = 0, best_balance = SETTINGS_SECTIONS;
-    char label[64];
-    for (int first = 0; first <= active; ++first) {
-        for (int last = active; last < SETTINGS_SECTIONS; ++last) {
-            int used = first > 0 ? 2 : 0;
-            for (int i = first; i <= last; ++i) {
-                used += tab_label(i, active, label, sizeof(label));
-                if (i > first)
-                    used += 2;
-            }
-            if (last < SETTINGS_SECTIONS - 1)
-                used += 2;
-            if (used > available)
-                continue;
-            int count = last - first + 1;
-            int balance = (active - first) - (last - active);
-            if (balance < 0)
-                balance = -balance;
-            if (count > best_count || (count == best_count && balance < best_balance)) {
-                best_first = first;
-                best_last = last;
-                best_count = count;
-                best_balance = balance;
-            }
-        }
-    }
-    *first = best_first;
-    *last = best_last;
-}
 static void tabs_draw(app_settings *s, WINDOW *w, int width)
 {
-    for (int i = 0; i < SETTINGS_SECTIONS; ++i)
-        s->tab_w[i] = 0;
-    s->tab_prev = s->tab_next = -1;
-    int first, last, x = 2;
-    char label[64];
-    tab_window(s->section, width - 4, &first, &last);
-    if (first > 0) {
-        wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
-        text_label(w, 3, x, 1, "‹");
-        s->tab_prev = x;
-        x += 2;
-    }
-    for (int i = first; i <= last; ++i) {
-        if (i > first)
-            x += 2;
-        int label_width = tab_label(i, s->section, label, sizeof(label));
-        s->tab_x[i] = x;
-        s->tab_w[i] = label_width;
-        wattrset(w,
-                 COLOR_PAIR(i == s->section ? (s->focus == 0 ? THEME_FOCUSED : THEME_PANEL_ACCENT)
-                                            : THEME_PANEL) |
-                     (i == s->section ? A_BOLD : 0) |
-                     (i == s->section && !has_colors() && s->focus == 0 ? A_REVERSE : 0));
-        text_label(w, 3, x, label_width, label);
-        x += label_width;
-    }
-    if (last < SETTINGS_SECTIONS - 1) {
-        wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
-        text_label(w, 3, x + 1, 1, "›");
-        s->tab_next = x + 1;
-    }
+    tab_strip_draw(&s->tabs, w, 3, width, sections, SETTINGS_SECTIONS, s->section, s->focus == 0);
 }
 /* Perfil: items 0-3 are the text fields, then status, avatar and banner. */
 #define PROFILE_ITEMS 7
@@ -756,20 +688,8 @@ void settings_key(app_settings *s, profile_config *config, int type, uint32_t ke
             return;
         if (y == 3) {
             voice_test(s->voice, false);
-            int chosen = -1;
-            for (int i = 0; i < SETTINGS_SECTIONS; ++i)
-                if (s->tab_w[i] > 0 && x >= s->tab_x[i] && x < s->tab_x[i] + s->tab_w[i])
-                    chosen = i;
-            if (chosen >= 0)
-                s->section = chosen;
-            else if (s->tab_prev >= 0 && x <= s->tab_prev + 1)
-                s->section = (s->section + SETTINGS_SECTIONS - 1) % SETTINGS_SECTIONS;
-            else if (s->tab_next >= 0 && x >= s->tab_next - 1)
-                s->section = (s->section + 1) % SETTINGS_SECTIONS;
-            else
-                s->section =
-                    (s->section + (x < getmaxx(s->window) / 2 ? SETTINGS_SECTIONS - 1 : 1)) %
-                    SETTINGS_SECTIONS;
+            s->section =
+                tab_strip_hit(&s->tabs, SETTINGS_SECTIONS, s->section, x, getmaxx(s->window));
             s->focus = 0;
         } else if (s->section == SETTINGS_PROFILE && y >= 5 && y < getmaxy(s->window) - 3) {
             profile_click(s, y, x);

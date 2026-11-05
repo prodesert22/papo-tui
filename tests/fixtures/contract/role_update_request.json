@@ -1,0 +1,13 @@
+{
+  "name": "Fixture equipe",
+  "color": "#3BA55D",
+  "permissions": {
+    "manage_server": false,
+    "manage_channels": false,
+    "manage_roles": true,
+    "ban_members": false,
+    "pin_message": true,
+    "everyone_message": false,
+    "send_attachment": true
+  }
+}

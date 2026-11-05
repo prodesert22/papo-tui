@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "read_channel": true,
+    "send_messages": true,
+    "delete_messages": false,
+    "connect_voice": false
+  }
+}

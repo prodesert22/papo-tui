@@ -561,8 +561,10 @@ class Persistence(unittest.TestCase):
             self.wait(t, "[Trabalho")
             column = t.screen.display[0].index("Trabalho")
             # A right-click opens the tab's menu under it, titled with the server.
+            # The server in use also offers its settings, above Remover servidor.
             self.right_click(t, 0, column)
-            self.until(t, lambda: "Remover servidor" in t.screen.display[2])
+            self.until(t, lambda: "Remover servidor" in t.screen.display[3])
+            self.assertIn("Configurações do servidor", t.screen.display[2])
             self.assertIn("Trabalho", t.screen.display[1])
             self.assertNotIn("Remover servidor?", "\n".join(t.screen.display))
             t.click(10, 50)  # A click elsewhere closes it and keeps the server.
@@ -570,12 +572,12 @@ class Persistence(unittest.TestCase):
             self.assertIn("Trabalho", t.screen.display[0])
             # m on the focused tab opens the same menu from the keyboard.
             self.right_click(t, 0, column)
-            self.until(t, lambda: "Remover servidor" in t.screen.display[2])
+            self.until(t, lambda: "Remover servidor" in t.screen.display[3])
             t.send("m")
             self.until(t, lambda: "Remover servidor" not in "\n".join(t.screen.display))
             t.send("m")
-            self.until(t, lambda: "Remover servidor" in t.screen.display[2])
-            t.click(2, t.screen.display[2].index("Remover servidor"))
+            self.until(t, lambda: "Remover servidor" in t.screen.display[3])
+            t.click(3, t.screen.display[3].index("Remover servidor"))
             self.wait(t, "Remover servidor?")
             t.send("\t\n")
             self.wait(t, "[Comunidade]")

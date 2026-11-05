@@ -907,8 +907,8 @@ static void draw_list(view *ui)
 void conversation_members_draw(view *ui)
 {
     bool standalone = !ui->members_open && conversation_members_modal(ui);
-    if ((!ui->members_open && !standalone) || ui->settings.open || media_view_modal(ui->media) ||
-        ui->duplicate_modal || COLS < 44 || LINES < 14)
+    if ((!ui->members_open && !standalone) || conversation_panel_open(ui) ||
+        media_view_modal(ui->media) || ui->duplicate_modal || COLS < 44 || LINES < 14)
         return;
     struct member_drawer *d = ui->members;
     if (!standalone)
@@ -994,7 +994,7 @@ bool conversation_members_cursor(view *ui)
 {
     struct member_drawer *d = ui->members;
     if (!ui->members_open || !d || !d->window || ui->focus != MEMBERS_PANEL || d->focus != 0 ||
-        d->panel != MEMBER_NO_MODAL || r8_modal_is_open(ui->r8) || ui->settings.open ||
+        d->panel != MEMBER_NO_MODAL || r8_modal_is_open(ui->r8) || conversation_panel_open(ui) ||
         media_view_modal(ui->media) || emoji_picker_open(ui->emojis) ||
         file_picker_open(ui->files) || ui->remove_confirm || ui->duplicate_modal ||
         ui->context_open || ui->reactors_open)

@@ -417,6 +417,158 @@ def build_cases():
                 "post",
                 dict(results=page, has_more=number == 1),
             )
+    # Server administration, as sent and read by Configurações do servidor.
+    role_flags = {
+        "manage_server": False,
+        "manage_channels": False,
+        "manage_roles": True,
+        "ban_members": False,
+        "pin_message": True,
+        "everyone_message": False,
+        "send_attachment": True,
+    }
+    role = {
+        "id": str(UUID(int=20)),
+        "name": "Fixture equipe",
+        "color": "#3BA55D",
+        "permissions": role_flags,
+        "created_at": DATE,
+    }
+    server = {
+        "id": str(UUID(int=5)),
+        "name": "Fixture",
+        "icon_blob": "",
+        "icon_format": "",
+        "owner_id": USER,
+        "public": True,
+        "owner_username": "fixture_alice",
+        "created_at": DATE,
+        "channel_count": 1,
+        "member_count": 2,
+        "role_count": 1,
+    }
+    add("server_patch_name", "/server", "patch", {"name": "Fixture nova"}, request=True)
+    add(
+        "server_patch_private",
+        "/server",
+        "patch",
+        {"public": False, "password": "Synthetic!123"},
+        request=True,
+    )
+    add(
+        "server_patch_icon_remove",
+        "/server",
+        "patch",
+        {"icon_blob": "", "icon_format": ""},
+        request=True,
+    )
+    add("server_patch_response", "/server", "patch", server)
+    add(
+        "roles_list",
+        "/roles",
+        "get",
+        {"roles": [role, dict(role, id=str(UUID(int=21)), color=None)]},
+    )
+    role_request = {"name": "Fixture equipe", "color": "#3BA55D", "permissions": role_flags}
+    add("role_create_request", "/roles", "post", role_request, request=True)
+    add("role_create_response", "/roles", "post", role, 201)
+    add("role_update_request", "/roles/{role_id}", "put", role_request, request=True)
+    add("role_update_response", "/roles/{role_id}", "put", role)
+    add(
+        "channel_create_request",
+        "/channels",
+        "post",
+        {"name": "fixture-avisos", "type": "voice", "topic": "Avisos"},
+        request=True,
+    )
+    add("channel_create_response", "/channels", "post", channel, 201)
+    add(
+        "channel_update_request",
+        "/channels/{channel_id}",
+        "put",
+        {"name": "fixture-geral", "topic": ""},
+        request=True,
+    )
+    add(
+        "channel_position_request",
+        "/channels/{channel_id}/change_position",
+        "put",
+        {"old_position": 2, "new_position": 1},
+        request=True,
+    )
+    channel_flags = {
+        "read_channel": True,
+        "send_messages": True,
+        "delete_messages": False,
+        "connect_voice": False,
+    }
+    add(
+        "channel_role_request",
+        "/channels/{channel_id}/permissions/{role_id}",
+        "put",
+        {"permissions": channel_flags},
+        request=True,
+    )
+    add(
+        "emoji_create_request",
+        "/emojis",
+        "post",
+        {"name": "fixture_aceno", "image_blob": "iVBORw0KGgo=", "format": "PNG"},
+        request=True,
+    )
+    add(
+        "emojis_page",
+        "/emojis",
+        "get",
+        {
+            "emojis": [
+                {
+                    "id": str(UUID(int=30)),
+                    "name": "fixture_festa",
+                    "format": "PNG",
+                    "image_blob": "iVBORw0KGgo=",
+                    "created_by": PEER,
+                    "created_at": DATE,
+                }
+            ],
+            "has_more": False,
+        },
+    )
+    add(
+        "user_role_request",
+        "/users/{user_id}/roles",
+        "post",
+        {"role_id": role["id"]},
+        request=True,
+    )
+    add(
+        "audit_logs_page",
+        "/admin/audit-logs",
+        "get",
+        {
+            "logs": [
+                {
+                    "id": str(UUID(int=40)),
+                    "actor_username": "fixture_alice",
+                    "action": "role.create",
+                    "entity_type": "role",
+                    "target_user_id": None,
+                    "metadata": {"name": "Fixture equipe"},
+                    "created_at": DATE,
+                },
+                {
+                    "id": str(UUID(int=41)),
+                    "actor_username": "fixture_alice",
+                    "action": "user.ban",
+                    "entity_type": "user",
+                    "target_user_id": PEER,
+                    "metadata": {},
+                    "created_at": DATE,
+                },
+            ],
+            "has_more": True,
+        },
+    )
     return cases
 
 

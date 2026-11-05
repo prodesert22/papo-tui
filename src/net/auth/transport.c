@@ -69,6 +69,8 @@ bool auth_internal_request(auth_client *client, auth_state state, const char *pa
         /* A page can contain 25 base64-encoded emojis of up to 2 MiB each. */
         state == AUTH_API_GET && !strncmp(path, "/emojis?", 8)           ? 72U * 1024U * 1024U
         : state == AUTH_API_GET && !strcmp(path, "/users/profile_batch") ? 16U * 1024U * 1024U
+        /* The server object carries its icon: up to 2 MB, about 2.7 MB in base64. */
+        : !strcmp(path, "/server") ? 4U * 1024U * 1024U
         : state == AUTH_API_GET && strlen(path) == 51 && !strncmp(path, "/users/", 7) &&
                 !strcmp(path + 43, "/profile")
             ? 4U * 1024U * 1024U

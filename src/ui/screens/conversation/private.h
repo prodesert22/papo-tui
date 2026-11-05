@@ -20,6 +20,7 @@
 #include "ui/components/file_picker.h"
 #include "ui/components/help.h"
 #include "ui/components/mention_popup.h"
+#include "ui/components/server_settings.h"
 #include "ui/components/settings.h"
 #include "ui/components/status_bar.h"
 #include "ui/components/terminal_title.h"
@@ -156,6 +157,8 @@ typedef struct {
     r8_modal *r8;
     app_settings settings;
     bool settings_presented;
+    server_settings server_settings;
+    bool server_settings_presented;
     help_modal help;
     bool list_dms, initial_channel_pending;
     /* Conversation to open first: the one shown last on this server. The
@@ -229,9 +232,12 @@ typedef struct {
     click_range attachment_hits[ATTACHMENT_LIMIT], attachment_remove_hits[ATTACHMENT_LIMIT];
     text_paste paste_data;
     /* Own profile changes. profile_pick: the open file picker chooses the
-     * avatar (1) or banner (2). profile_target is the model the image was
-     * picked for; profile_watch the model whose outcome the footer follows. */
-    int profile_pick;
+     * avatar (1), banner (2), server icon (3) or a new emoji (4).
+     * profile_target is the model the image was picked for; profile_watch the
+     * model whose outcome the footer follows. profile_server: the image in
+     * preparation is the server icon (1) or the emoji named pick_emoji (2). */
+    int profile_pick, profile_server;
+    char pick_emoji[129];
     profile_image profile_kind;
     GTask *profile_task;
     GCancellable *profile_cancel;
@@ -258,6 +264,12 @@ void conversation_destroy_layout(view *ui);
 bool conversation_layout(view *ui);
 bool conversation_hit(click_range range, int x);
 int conversation_tab_width(view *ui, size_t index, int available);
+/* A floating settings panel (application or server) holds the keyboard. */
+static inline bool conversation_panel_open(const view *ui)
+{
+    return ui->settings.open || ui->server_settings.open;
+}
+void conversation_open_server_settings(view *ui);
 void conversation_interactions_sync(view *ui);
 bool conversation_interactions_key(view *ui, int type, uint32_t key);
 bool conversation_interactions_mouse(view *ui, const MEVENT *event);
@@ -342,6 +354,8 @@ bool conversation_downloads_poll(view *ui);
 void conversation_downloads_close(view *ui);
 void conversation_attachments_open(view *ui, bool clipboard);
 void conversation_profile_pick(view *ui, profile_image kind);
+/* Picks the server icon or, with emoji, the image of the emoji being added. */
+void conversation_server_image_pick(view *ui, bool emoji, const char *name);
 /* Takes the picker's files when it was opened for the profile. */
 bool conversation_profile_picked(view *ui, GPtrArray *paths);
 bool conversation_profile_poll(view *ui);

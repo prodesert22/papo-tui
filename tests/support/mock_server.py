@@ -231,7 +231,8 @@ class MockServer:
                     if outer.scenario == "invalid":
                         self.respond(200, [])
                     elif outer.scenario == "oversized":
-                        self.respond(200, {"name": "a" * (1024 * 1024), "public": True})
+                        # Over the 4 MiB cap kept for a server object with its icon.
+                        self.respond(200, {"name": "a" * (4 * 1024 * 1024), "public": True})
                     elif outer.scenario == "redirect":
                         self.send_response(302)
                         self.send_header("Location", outer.redirect_url)
@@ -334,6 +335,7 @@ class MockServer:
                 self.respond(*(response if response is not None else (404, None)))
 
             do_PUT = mutation_fixture
+            do_PATCH = mutation_fixture
             do_DELETE = mutation_fixture
 
             def do_POST(self):
@@ -347,6 +349,10 @@ class MockServer:
                 outer.requests.append(("POST", self.path, cookie, body))
                 if outer.api_handler:
                     response = outer.api_handler("POST", self.path, body)
+                    if response == "drop":
+                        # Applied, but intentionally no HTTP response: uncertain.
+                        self.close_connection = True
+                        return
                     if response is not None:
                         self.respond(*response)
                         return

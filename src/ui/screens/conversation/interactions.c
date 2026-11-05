@@ -523,15 +523,21 @@ static int menu_item_row(view *ui, const int *items, int i)
 {
     return 1 + i + menu_dividers(ui, items, i + 1);
 }
+/* The active server's menu also opens its settings; Remover servidor stays last. */
+static int server_menu_count(view *ui)
+{
+    return ui->server_context_index == ui->active_tab ? 2 : 1;
+}
 static int menu_count(view *ui)
 {
     int items[9];
     return *ui->channel_context_id ? ui->channel_menu == 1   ? 7
                                      : ui->channel_menu == 2 ? 4
                                                              : 2 + channel_menu_first(ui)
-           : *ui->dm_context_id || ui->server_context ? 1
-           : ui->delete_confirm                       ? 2
-                                                      : menu_actions(ui, items);
+           : ui->server_context    ? server_menu_count(ui)
+           : *ui->dm_context_id    ? 1
+           : ui->delete_confirm    ? 2
+                                   : menu_actions(ui, items);
 }
 static void message_action(view *ui, int action)
 {
@@ -593,8 +599,12 @@ static void menu_activate(view *ui)
     }
     if (ui->server_context) {
         size_t index = ui->server_context_index;
+        bool settings = server_menu_count(ui) == 2 && ui->menu_selected == 0;
         conversation_interactions_close(ui);
-        conversation_confirm_remove(ui, index);
+        if (settings)
+            conversation_open_server_settings(ui);
+        else
+            conversation_confirm_remove(ui, index);
         return;
     }
     if (ui->delete_confirm) {
@@ -987,9 +997,14 @@ void conversation_interactions_draw(view *ui)
     } else if (ui->server_context) {
         wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
         text_label(w, 0, 2, width - 4, ui->connections->items[ui->server_context_index].name);
-        wattrset(w, COLOR_PAIR(THEME_PANEL_ACTIVE));
-        mvwhline(w, 1, 1, ' ', width - 2);
-        text_label(w, 1, 1, width - 2, "Remover servidor");
+        int count = server_menu_count(ui);
+        for (int i = 0; i < count; ++i) {
+            bool selected = i == ui->menu_selected;
+            wattrset(w, COLOR_PAIR(selected ? THEME_PANEL_ACTIVE : THEME_PANEL));
+            mvwhline(w, i + 1, 1, ' ', width - 2);
+            text_label(w, i + 1, 1, width - 2,
+                       i + 1 < count ? "Configurações do servidor" : "Remover servidor");
+        }
     } else if (ui->context_open) {
         const char *labels[] = {
             "Ver quem reagiu",

@@ -31,7 +31,8 @@ enum request_kind {
     CHANNEL_SETTINGS,
     CHANNEL_READ,
     VOICE_ICE_SERVERS,
-    PROFILE_EDIT
+    PROFILE_EDIT,
+    SERVER_ADMIN
 };
 #define TYPING_LIMIT 128U
 #define TYPING_TIMEOUT_MS 6000U
@@ -69,7 +70,8 @@ struct history {
     voice_client *voice;
     struct history_members *members;
     struct history_profile_edit *profile_edit;
-    bool members_active;
+    struct history_server_admin *server_admin;
+    bool members_active, admin_users;
     struct history_actions *actions;
     struct history_discovery *discovery;
     GHashTable *costs;
@@ -185,6 +187,10 @@ void history_internal_profile_destroy(history *h);
 bool history_internal_profile_mutating(history *h);
 bool history_internal_profile_dispatch(history *h);
 void history_internal_profile_response(history *h, json_t *body, long code, bool uncertain);
+void history_internal_server_admin_destroy(history *h);
+bool history_internal_server_admin_mutating(history *h);
+bool history_internal_server_admin_dispatch(history *h);
+void history_internal_server_admin_response(history *h, json_t *body, long code, bool uncertain);
 void history_internal_discovery_destroy(history *h);
 void history_internal_discovery_recover(history *h);
 bool history_internal_discovery_dispatch(history *h);

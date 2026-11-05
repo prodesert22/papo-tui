@@ -54,11 +54,23 @@ void conversation_profile_pick(view *ui, profile_image kind)
     ui->profile_pick = kind == PROFILE_AVATAR ? 1 : 2;
     file_picker_show_image(ui->files);
 }
+void conversation_server_image_pick(view *ui, bool emoji, const char *name)
+{
+    if (ui->profile_task || file_picker_open(ui->files) || ui->attachment_task) {
+        snprintf(ui->server_settings.error, sizeof(ui->server_settings.error), "%s",
+                 "Aguarde a imagem ou os anexos em preparação.");
+        return;
+    }
+    g_strlcpy(ui->pick_emoji, emoji && name ? name : "", sizeof(ui->pick_emoji));
+    ui->profile_pick = emoji ? 4 : 3;
+    file_picker_show_image(ui->files);
+}
 bool conversation_profile_picked(view *ui, GPtrArray *paths)
 {
     if (!ui->profile_pick)
         return false;
-    profile_image kind = ui->profile_pick == 1 ? PROFILE_AVATAR : PROFILE_BANNER;
+    int pick = ui->profile_pick;
+    profile_image kind = pick == 1 ? PROFILE_AVATAR : PROFILE_BANNER;
     ui->profile_pick = 0;
     if (!paths->len) {
         g_ptr_array_unref(paths);
@@ -66,8 +78,10 @@ bool conversation_profile_picked(view *ui, GPtrArray *paths)
     }
     image_job *job = g_new0(image_job, 1);
     job->path = g_strdup(g_ptr_array_index(paths, 0));
-    job->side = kind == PROFILE_AVATAR ? PROFILE_AVATAR_SIDE : PROFILE_BANNER_SIDE;
+    /* The server icon and emojis share the avatar's 512 px limit. */
+    job->side = pick == 2 ? PROFILE_BANNER_SIDE : PROFILE_AVATAR_SIDE;
     g_ptr_array_unref(paths);
+    ui->profile_server = pick == 3 ? 1 : pick == 4 ? 2 : 0;
     ui->profile_kind = kind;
     ui->profile_target = ui->model;
     ui->profile_generation = auth_context_generation(ui->connections->items[ui->active_tab].auth);
@@ -75,8 +89,26 @@ bool conversation_profile_picked(view *ui, GPtrArray *paths)
     ui->profile_task = file_transfer_task_new(ui->profile_cancel);
     g_task_set_task_data(ui->profile_task, job, free_job);
     g_task_run_in_thread(ui->profile_task, image_worker);
-    watch(ui, kind == PROFILE_AVATAR ? "Preparando o avatar…" : "Preparando o banner…");
+    watch(ui, ui->profile_server == 1   ? "Preparando o ícone…"
+              : ui->profile_server == 2 ? "Preparando o emoji…"
+              : kind == PROFILE_AVATAR  ? "Preparando o avatar…"
+                                        : "Preparando o banner…");
     return true;
+}
+/* The server icon or emoji is handed to the administration model; the
+ * modal shows its outcome. */
+static void server_image_ready(view *ui, char *data, const char *format, bool reduced)
+{
+    bool emoji = ui->profile_server == 2;
+    bool queued = emoji ? server_admin_emoji_create(ui->model, ui->pick_emoji, data, format)
+                        : server_admin_set_icon(ui->model, data, format);
+    if (queued && ui->server_settings.open && emoji) {
+        /* The name stays until the server confirms the emoji. */
+        ui->server_settings.awaiting = ui->server_settings.dirty = true;
+    }
+    watch(ui, !queued ? "Não foi possível enviar a imagem agora."
+              : emoji ? (reduced ? "Enviando emoji reduzido…" : "Enviando emoji…")
+                      : (reduced ? "Enviando ícone reduzido…" : "Enviando ícone…"));
 }
 bool conversation_profile_poll(view *ui)
 {
@@ -91,7 +123,11 @@ bool conversation_profile_poll(view *ui)
             watch(ui, "Imagem descartada: o servidor ou a sessão mudou.");
         else if (!ok)
             watch(ui, *job->result.error ? job->result.error : "Não foi possível usar a imagem.");
-        else {
+        else if (ui->profile_server) {
+            char *data = job->result.base64;
+            job->result.base64 = NULL;
+            server_image_ready(ui, data, job->result.format, job->result.reduced);
+        } else {
             char *data = job->result.base64;
             job->result.base64 = NULL;
             bool queued =
@@ -104,6 +140,7 @@ bool conversation_profile_poll(view *ui)
         }
         g_clear_object(&ui->profile_task);
         g_clear_object(&ui->profile_cancel);
+        ui->profile_server = 0;
         changed = true;
     }
     if (ui->profile_watch && ui->profile_watch == ui->model &&

@@ -141,6 +141,21 @@ bool auth_internal_permission_admitted(auth_client *client)
                          g_str_has_suffix(client->api_path, "/reset"));
     if (decision == PERMISSION_ALLOWED && member_admin)
         decision = permissions_role(client->permissions, PERMISSION_MANAGE_SERVER);
+    /* Server administration, as each endpoint's contract requires. Creating a
+     * channel or an emoji and deleting one's own emoji are left to the server. */
+    const char *path = client->api_path;
+    bool mutation = client->operation == AUTH_API_MUTATION && path;
+    if (decision == PERMISSION_ALLOWED && path &&
+        ((mutation && !strcmp(path, "/server")) ||
+         (client->operation == AUTH_API_GET && g_str_has_prefix(path, "/admin/audit-logs"))))
+        decision = permissions_role(client->permissions, PERMISSION_MANAGE_SERVER);
+    if (decision == PERMISSION_ALLOWED && mutation &&
+        (!strcmp(path, "/roles") || g_str_has_prefix(path, "/roles/") ||
+         (g_str_has_prefix(path, "/users/") && strstr(path, "/roles"))))
+        decision = permissions_role(client->permissions, PERMISSION_MANAGE_ROLES);
+    if (decision == PERMISSION_ALLOWED && mutation && g_str_has_prefix(path, "/channels/") &&
+        !strstr(path, "/messages") && !strstr(path, "/read") && !strstr(path, "/user/"))
+        decision = permissions_role(client->permissions, PERMISSION_MANAGE_CHANNELS);
     bool pin = client->operation == AUTH_API_MUTATION && client->api_path &&
                g_str_has_suffix(client->api_path, "/pin");
     if (decision == PERMISSION_ALLOWED && pin)

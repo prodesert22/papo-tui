@@ -42,6 +42,7 @@ enum {
 #define HELP_VOICE (UINT64_C(1) << 32)
 /* Rows only for the audio player, on top of the shared player rows. */
 #define HELP_AUDIO (UINT64_C(1) << 33)
+#define HELP_SERVER_SETTINGS (UINT64_C(1) << 34)
 
 /* Owns its window and reusable Unicode layout. Borrows no screen/model data.
  * A zero-initialized instance is ready to use; destroy before curses shutdown. */

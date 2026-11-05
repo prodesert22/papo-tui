@@ -45,6 +45,7 @@ add_library(
     src/model/conversation/discovery.c
     src/model/conversation/members.c
     src/model/conversation/profile_edit.c
+    src/model/conversation/server_admin.c
     src/model/conversation/directory.c
     src/model/conversation/events.c
     src/model/conversation/history.c
@@ -248,6 +249,14 @@ add_executable(
     src/ui/screens/conversation/layout.c
     src/ui/screens/conversation/selection.c
     src/ui/components/settings.c
+    src/ui/components/tabs.c
+    src/ui/components/server_settings/server_settings.c
+    src/ui/components/server_settings/overview.c
+    src/ui/components/server_settings/roles.c
+    src/ui/components/server_settings/channels.c
+    src/ui/components/server_settings/emojis.c
+    src/ui/components/server_settings/members.c
+    src/ui/components/server_settings/audit.c
     src/ui/screens/message_browser.c
     src/ui/screens/inbox.c
     src/ui/screens/profiles.c

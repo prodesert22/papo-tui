@@ -657,7 +657,7 @@ bool history_maintain(history *h, uint64_t now)
     if (!h || now < h->maintenance || now - h->maintenance < 1000)
         return false;
     h->maintenance = now;
-    if (h->users_active || h->members_active)
+    if (h->users_active || h->members_active || h->admin_users)
         return false; /* A popup borrows directory indices. */
     json_t *protected = json_object();
     if (!protected)

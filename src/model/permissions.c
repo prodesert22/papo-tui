@@ -340,6 +340,10 @@ const json_t *permissions_role_info(const permissions *p, const char *id)
 {
     return p && id ? json_object_get(p->roles, id) : NULL;
 }
+const json_t *permissions_roles(const permissions *p)
+{
+    return p ? p->roles : NULL;
+}
 const char *permissions_owner(const permissions *p)
 {
     return p && p->owner_known ? p->owner : "";

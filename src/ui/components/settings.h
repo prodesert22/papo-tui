@@ -3,6 +3,7 @@
 #include "config/profiles.h"
 #include "model/conversation/profile_edit.h"
 #include "net/voice/client.h"
+#include "ui/components/tabs.h"
 #include "ui/input/text.h"
 #include <ncurses.h>
 /* Settings open on the first tab, Perfil. Aparência holds the app modes. */
@@ -31,7 +32,7 @@ typedef struct {
     voice_client *voice; /* Borrowed; the instance model outlives the modal. */
     int audio_selection, audio_first;
     /* Hit boxes from the last draw. */
-    int tab_x[SETTINGS_SECTIONS], tab_w[SETTINGS_SECTIONS], tab_prev, tab_next;
+    tab_strip tabs;
     WINDOW *window;
     char error[192];
     /* Perfil: the active server's own profile, borrowed while open. */

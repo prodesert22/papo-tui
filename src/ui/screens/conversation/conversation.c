@@ -16,6 +16,10 @@ help_context conversation_help_context(view *ui, const char **area)
         *area = "Configurações";
         return HELP_SETTINGS;
     }
+    if (ui->server_settings.open) {
+        *area = "Configurações do servidor";
+        return HELP_SERVER_SETTINGS;
+    }
     if (emoji_picker_open(ui->emojis)) {
         *area = "Seletor de emojis";
         return HELP_EMOJIS;
@@ -118,8 +122,21 @@ static void open_settings(view *ui, const profile_config *config)
     conversation_interactions_close(ui);
     ui->reaction_picker = false;
     r8_modal_close(ui->r8);
+    server_settings_close(&ui->server_settings);
     settings_open(&ui->settings, config, history_voice(ui->model), ui->model,
                   ui->connections->items[ui->active_tab].name);
+}
+
+void conversation_open_server_settings(view *ui)
+{
+    mention_popup_close(ui->mentions);
+    emoji_picker_close(ui->emojis);
+    conversation_interactions_close(ui);
+    ui->reaction_picker = false;
+    r8_modal_close(ui->r8);
+    settings_close(&ui->settings);
+    server_settings_open(&ui->server_settings, ui->model,
+                         ui->connections->items[ui->active_tab].name);
 }
 
 /* Rebuilds the optimistic entries of the open conversation when the outbox
@@ -472,9 +489,9 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         text_input_event_reporting(ui->settings.open ? ui->settings.audio.push_to_talk
                                                      : connections->config &&
                                                            connections->config->audio.push_to_talk);
-        bool voice_modal = ui->help.open || ui->settings.open || r8_modal_is_open(ui->r8) ||
-                           ui->duplicate_modal || ui->context_open || ui->reactors_open ||
-                           ui->remove_confirm || file_picker_open(ui->files) ||
+        bool voice_modal = ui->help.open || conversation_panel_open(ui) ||
+                           r8_modal_is_open(ui->r8) || ui->duplicate_modal || ui->context_open ||
+                           ui->reactors_open || ui->remove_confirm || file_picker_open(ui->files) ||
                            emoji_picker_open(ui->emojis) || mention_popup_open(ui->mentions) ||
                            media_view_modal(ui->media) || conversation_members_modal(ui);
         if (voice_ptt_pressed() &&
@@ -484,7 +501,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         text_push_to_talk_configure(
             audio && audio->push_to_talk && voice_active() && !voice_modal ? &audio->ptt : NULL);
         if (ui->help.open || !ui->body || !ui->at_end || r8_modal_is_open(ui->r8) ||
-            ui->settings.open || ui->duplicate_modal || file_picker_open(ui->files) ||
+            conversation_panel_open(ui) || ui->duplicate_modal || file_picker_open(ui->files) ||
             ui->remove_confirm || mention_popup_open(ui->mentions) ||
             emoji_picker_open(ui->emojis) || media_view_modal(ui->media) || ui->context_open ||
             ui->reactors_open || conversation_members_modal(ui) ||
@@ -509,7 +526,8 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             redraw = true;
             scope = DRAW_ALL;
         }
-        if (conversation_profile_poll(ui) | settings_poll(&ui->settings)) {
+        if (conversation_profile_poll(ui) | settings_poll(&ui->settings) |
+            server_settings_poll(&ui->server_settings)) {
             redraw = true;
             scope = DRAW_ALL;
         }
@@ -580,10 +598,10 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             redraw = true;
             scope = DRAW_ALL;
         }
-        if (!(r8_modal_is_open(ui->r8) || ui->settings.open) &&
+        if (!(r8_modal_is_open(ui->r8) || conversation_panel_open(ui)) &&
             mention_popup_update(ui->mentions, conversation_input(ui),
                                  ui->focus == MESSAGE_INPUT && !ui->paste && !ui->duplicate_modal &&
-                                     !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
+                                     !(r8_modal_is_open(ui->r8) || conversation_panel_open(ui)) &&
                                      !media_view_modal(ui->media) &&
                                      !emoji_picker_open(ui->emojis) && !ui->context_open &&
                                      !file_picker_open(ui->files) && !ui->remove_confirm &&
@@ -594,7 +612,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         }
         if (emoji_picker_suggest(ui->emojis, conversation_input(ui),
                                  ui->focus == MESSAGE_INPUT && !ui->paste && !ui->duplicate_modal &&
-                                     !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
+                                     !(r8_modal_is_open(ui->r8) || conversation_panel_open(ui)) &&
                                      !media_view_modal(ui->media) &&
                                      !mention_popup_open(ui->mentions) && !ui->context_open &&
                                      !file_picker_open(ui->files) && !ui->remove_confirm &&
@@ -686,7 +704,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         instances_visible(
             connections, auth,
             ui->body && ui->at_end && !ui->help.open &&
-                    !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
+                    !(r8_modal_is_open(ui->r8) || conversation_panel_open(ui)) &&
                     !emoji_picker_open(ui->emojis) && !media_view_modal(ui->media) &&
                     !ui->context_open && !ui->reactors_open && !file_picker_open(ui->files) &&
                     !ui->remove_confirm
@@ -747,7 +765,8 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             text_paste_begin(&ui->paste_data);
             ui->dragging = false;
             if (!ui->help.open && !file_picker_open(ui->files) && !ui->remove_confirm &&
-                !ui->duplicate_modal && !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
+                !ui->duplicate_modal &&
+                !(r8_modal_is_open(ui->r8) || conversation_panel_open(ui)) &&
                 !media_view_modal(ui->media) && !emoji_picker_open(ui->emojis) &&
                 !ui->context_open && !ui->reactors_open && conversation_input(ui) &&
                 ui->focus != SERVER_TABS) {
@@ -775,8 +794,14 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 scope = DRAW_ALL;
                 continue;
             }
+            if (!ui->help.open && server_settings_paste(&ui->server_settings, &ui->paste_data)) {
+                redraw = true;
+                scope = DRAW_ALL;
+                continue;
+            }
             if (!ui->help.open && !file_picker_open(ui->files) && !ui->remove_confirm &&
-                !ui->duplicate_modal && !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
+                !ui->duplicate_modal &&
+                !(r8_modal_is_open(ui->r8) || conversation_panel_open(ui)) &&
                 !media_view_modal(ui->media) && !emoji_picker_open(ui->emojis) &&
                 !ui->context_open && !ui->reactors_open && ui->focus == MESSAGE_INPUT &&
                 conversation_input(ui)) {
@@ -842,15 +867,16 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             if (conversation_members_input(ui))
                 clipboard_copy(conversation_members_input(ui));
             else if (ui->focus == MESSAGE_INPUT && conversation_input(ui) && !ui->duplicate_modal &&
-                     !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
+                     !(r8_modal_is_open(ui->r8) || conversation_panel_open(ui)) &&
                      !media_view_modal(ui->media))
                 clipboard_copy(conversation_input(ui));
             continue;
         }
-        if (type == OK && (key == 17 || (key == 3 && !conversation_members_input(ui) &&
-                                         !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
-                                         (ui->focus != MESSAGE_INPUT || ui->duplicate_modal ||
-                                          media_view_modal(ui->media))))) {
+        if (type == OK &&
+            (key == 17 || (key == 3 && !conversation_members_input(ui) &&
+                           !(r8_modal_is_open(ui->r8) || conversation_panel_open(ui)) &&
+                           (ui->focus != MESSAGE_INPUT || ui->duplicate_modal ||
+                            media_view_modal(ui->media))))) {
             result = HISTORY_EXIT;
             break;
         }
@@ -866,6 +892,16 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 ui->settings.applied = false;
                 app_mode_set(connections->config->mode);
                 apply_mode(ui);
+            }
+            scope = DRAW_ALL;
+            continue;
+        }
+        if (ui->server_settings.open) {
+            server_settings_key(&ui->server_settings, type, key);
+            if (ui->server_settings.pick) {
+                conversation_server_image_pick(ui, ui->server_settings.pick == SERVER_PICK_EMOJI,
+                                               ui->server_settings.emoji_name);
+                ui->server_settings.pick = SERVER_PICK_NONE;
             }
             scope = DRAW_ALL;
             continue;
@@ -905,7 +941,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         if (shortcut_is(type, key, SHORTCUT_EMOJIS) &&
             (ui->focus == HISTORY_PANEL || ui->focus == MESSAGE_INPUT ||
              ui->focus == EMOJI_BUTTON) &&
-            !ui->duplicate_modal && !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
+            !ui->duplicate_modal && !(r8_modal_is_open(ui->r8) || conversation_panel_open(ui)) &&
             !media_view_modal(ui->media) && !ui->context_open && !ui->reactors_open) {
             conversation_open_emojis(ui);
             scope = DRAW_ALL;
@@ -1602,6 +1638,7 @@ finished:
     for (size_t i = 0; i < HISTORY_MESSAGE_LIMIT; ++i)
         conversation_release_layout(ui, &ui->layouts[i]);
     settings_close(&ui->settings);
+    server_settings_close(&ui->server_settings);
     voice_ptt(false);
     text_push_to_talk_configure(NULL);
     text_input_event_reporting(false);

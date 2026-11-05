@@ -97,7 +97,7 @@ bool auth_refresh(auth_client *client);
  * bounded to one owned JSON value. Message mutations use a separate response slot and never replay.
  */
 bool auth_get_json(auth_client *client, const char *path);
-/* Copies a JSON mutation into the same queue/budget. Never replays, including
+/* Copies a JSON POST, PUT, PATCH or DELETE into the same queue/budget. Never replays, including
  * after 401. Consume through auth_take_response; status 0 / uncertain require
  * reconciliation before a manual retry. DELETE accepts a NULL body. */
 bool auth_mutate_json(auth_client *client, const char *method, const char *path,

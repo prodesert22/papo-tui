@@ -812,5 +812,203 @@
     "valid": true,
     "purpose": "Exemplo sintético conforme contrato",
     "file": "search_desc_page_2.json"
+  },
+  {
+    "name": "server_patch_name",
+    "path": "/server",
+    "method": "patch",
+    "status": 200,
+    "kind": "request",
+    "media": "application/json",
+    "valid": true,
+    "purpose": "Exemplo sintético conforme contrato",
+    "file": "server_patch_name.json"
+  },
+  {
+    "name": "server_patch_private",
+    "path": "/server",
+    "method": "patch",
+    "status": 200,
+    "kind": "request",
+    "media": "application/json",
+    "valid": true,
+    "purpose": "Exemplo sintético conforme contrato",
+    "file": "server_patch_private.json"
+  },
+  {
+    "name": "server_patch_icon_remove",
+    "path": "/server",
+    "method": "patch",
+    "status": 200,
+    "kind": "request",
+    "media": "application/json",
+    "valid": true,
+    "purpose": "Exemplo sintético conforme contrato",
+    "file": "server_patch_icon_remove.json"
+  },
+  {
+    "name": "server_patch_response",
+    "path": "/server",
+    "method": "patch",
+    "status": 200,
+    "kind": "response",
+    "media": "application/json",
+    "valid": true,
+    "purpose": "Exemplo sintético conforme contrato",
+    "file": "server_patch_response.json"
+  },
+  {
+    "name": "roles_list",
+    "path": "/roles",
+    "method": "get",
+    "status": 200,
+    "kind": "response",
+    "media": "application/json",
+    "valid": true,
+    "purpose": "Exemplo sintético conforme contrato",
+    "file": "roles_list.json"
+  },
+  {
+    "name": "role_create_request",
+    "path": "/roles",
+    "method": "post",
+    "status": 200,
+    "kind": "request",
+    "media": "application/json",
+    "valid": true,
+    "purpose": "Exemplo sintético conforme contrato",
+    "file": "role_create_request.json"
+  },
+  {
+    "name": "role_create_response",
+    "path": "/roles",
+    "method": "post",
+    "status": 201,
+    "kind": "response",
+    "media": "application/json",
+    "valid": true,
+    "purpose": "Exemplo sintético conforme contrato",
+    "file": "role_create_response.json"
+  },
+  {
+    "name": "role_update_request",
+    "path": "/roles/{role_id}",
+    "method": "put",
+    "status": 200,
+    "kind": "request",
+    "media": "application/json",
+    "valid": true,
+    "purpose": "Exemplo sintético conforme contrato",
+    "file": "role_update_request.json"
+  },
+  {
+    "name": "role_update_response",
+    "path": "/roles/{role_id}",
+    "method": "put",
+    "status": 200,
+    "kind": "response",
+    "media": "application/json",
+    "valid": true,
+    "purpose": "Exemplo sintético conforme contrato",
+    "file": "role_update_response.json"
+  },
+  {
+    "name": "channel_create_request",
+    "path": "/channels",
+    "method": "post",
+    "status": 200,
+    "kind": "request",
+    "media": "application/json",
+    "valid": true,
+    "purpose": "Exemplo sintético conforme contrato",
+    "file": "channel_create_request.json"
+  },
+  {
+    "name": "channel_create_response",
+    "path": "/channels",
+    "method": "post",
+    "status": 201,
+    "kind": "response",
+    "media": "application/json",
+    "valid": true,
+    "purpose": "Exemplo sintético conforme contrato",
+    "file": "channel_create_response.json"
+  },
+  {
+    "name": "channel_update_request",
+    "path": "/channels/{channel_id}",
+    "method": "put",
+    "status": 200,
+    "kind": "request",
+    "media": "application/json",
+    "valid": true,
+    "purpose": "Exemplo sintético conforme contrato",
+    "file": "channel_update_request.json"
+  },
+  {
+    "name": "channel_position_request",
+    "path": "/channels/{channel_id}/change_position",
+    "method": "put",
+    "status": 200,
+    "kind": "request",
+    "media": "application/json",
+    "valid": true,
+    "purpose": "Exemplo sintético conforme contrato",
+    "file": "channel_position_request.json"
+  },
+  {
+    "name": "channel_role_request",
+    "path": "/channels/{channel_id}/permissions/{role_id}",
+    "method": "put",
+    "status": 200,
+    "kind": "request",
+    "media": "application/json",
+    "valid": true,
+    "purpose": "Exemplo sintético conforme contrato",
+    "file": "channel_role_request.json"
+  },
+  {
+    "name": "emoji_create_request",
+    "path": "/emojis",
+    "method": "post",
+    "status": 200,
+    "kind": "request",
+    "media": "application/json",
+    "valid": true,
+    "purpose": "Exemplo sintético conforme contrato",
+    "file": "emoji_create_request.json"
+  },
+  {
+    "name": "emojis_page",
+    "path": "/emojis",
+    "method": "get",
+    "status": 200,
+    "kind": "response",
+    "media": "application/json",
+    "valid": true,
+    "purpose": "Exemplo sintético conforme contrato",
+    "file": "emojis_page.json"
+  },
+  {
+    "name": "user_role_request",
+    "path": "/users/{user_id}/roles",
+    "method": "post",
+    "status": 200,
+    "kind": "request",
+    "media": "application/json",
+    "valid": true,
+    "purpose": "Exemplo sintético conforme contrato",
+    "file": "user_role_request.json"
+  },
+  {
+    "name": "audit_logs_page",
+    "path": "/admin/audit-logs",
+    "method": "get",
+    "status": 200,
+    "kind": "response",
+    "media": "application/json",
+    "valid": true,
+    "purpose": "Exemplo sintético conforme contrato",
+    "file": "audit_logs_page.json"
   }
 ]

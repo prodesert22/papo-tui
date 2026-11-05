@@ -432,8 +432,10 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
     /* Opening or closing the floating settings panel recomposes the screen.
      * Force one fresh pixel presentation so terminals that anchor images to
      * text cells keep the uncovered history imagery. */
-    if (ui->settings_presented != ui->settings.open) {
+    if (ui->settings_presented != ui->settings.open ||
+        ui->server_settings_presented != ui->server_settings.open) {
         ui->settings_presented = ui->settings.open;
+        ui->server_settings_presented = ui->server_settings.open;
         graphics_frame_invalidate();
     }
     curs_set(0);
@@ -868,8 +870,9 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
     }
     bool caret = false;
     if (ui->focus == MESSAGE_INPUT && conversation_input(ui) && ui->body && !ui->duplicate_modal &&
-        !(r8_modal_is_open(ui->r8) || ui->settings.open) && !media_view_modal(ui->media) &&
-        !emoji_picker_open(ui->emojis) && !file_picker_open(ui->files) && !ui->remove_confirm) {
+        !(r8_modal_is_open(ui->r8) || conversation_panel_open(ui)) &&
+        !media_view_modal(ui->media) && !emoji_picker_open(ui->emojis) &&
+        !file_picker_open(ui->files) && !ui->remove_confirm) {
         text_buffer *editor = conversation_input(ui);
         text_layout *measured = &ui->measured;
         text_measure(editor, conversation_input_width(ui), measured);
@@ -909,9 +912,14 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
     bool settings_shown = ui->settings.open && !file_picker_open(ui->files);
     if (settings_shown)
         settings_draw(&ui->settings);
-    if (settings_shown && ui->settings.window)
-        icons_overlay(ui->icons, getbegy(ui->settings.window), getbegx(ui->settings.window),
-                      getmaxy(ui->settings.window), getmaxx(ui->settings.window));
+    bool server_shown = ui->server_settings.open && !file_picker_open(ui->files);
+    if (server_shown)
+        server_settings_draw(&ui->server_settings);
+    WINDOW *panel = settings_shown && ui->settings.window ? ui->settings.window
+                    : server_shown                        ? ui->server_settings.window
+                                                          : NULL;
+    if (panel)
+        icons_overlay(ui->icons, getbegy(panel), getbegx(panel), getmaxy(panel), getmaxx(panel));
     if (paint_media) {
         if (!ui->duplicate_modal)
             media_view_prepare(ui->media);
@@ -921,14 +929,15 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         if (help_window)
             graphics_frame_occlude(getbegy(help_window), getbegx(help_window), getmaxy(help_window),
                                    getmaxx(help_window));
-        if (settings_shown && ui->settings.window)
-            graphics_frame_occlude(getbegy(ui->settings.window), getbegx(ui->settings.window),
-                                   getmaxy(ui->settings.window), getmaxx(ui->settings.window));
+        if (panel)
+            graphics_frame_occlude(getbegy(panel), getbegx(panel), getmaxy(panel), getmaxx(panel));
         graphics_frame_prepare();
     }
-    if (r8_modal_is_open(ui->r8) || ui->settings.open) {
+    if (r8_modal_is_open(ui->r8) || conversation_panel_open(ui)) {
         caret = ui->settings.open ? settings_shown && settings_cursor(&ui->settings)
-                                  : r8_modal_cursor(ui->r8);
+                : ui->server_settings.open
+                    ? server_shown && server_settings_cursor(&ui->server_settings)
+                    : r8_modal_cursor(ui->r8);
         if (!caret)
             setsyx(-1, -1);
     }

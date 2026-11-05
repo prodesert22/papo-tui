@@ -29,7 +29,9 @@ bool auth_api_uncertain(const auth_client *client)
 
 bool auth_mutate_json(auth_client *client, const char *method, const char *path, const json_t *body)
 {
-    if (!method || (strcmp(method, "POST") && strcmp(method, "PUT") && strcmp(method, "DELETE")) ||
+    if (!method ||
+        (strcmp(method, "POST") && strcmp(method, "PUT") && strcmp(method, "PATCH") &&
+         strcmp(method, "DELETE")) ||
         !auth_has_session(client) || client->state != AUTH_READY || client->queued ||
         client->attached || client->api_path || client->response_ready || !path || path[0] != '/' ||
         path[1] == '/' || strlen(path) > 4096 ||
@@ -47,9 +49,10 @@ bool auth_mutate_json(auth_client *client, const char *method, const char *path,
     }
     client->api_path = copy;
     client->api_body = payload;
-    client->api_method = !strcmp(method, "POST")  ? "POST"
-                         : !strcmp(method, "PUT") ? "PUT"
-                                                  : "DELETE";
+    client->api_method = !strcmp(method, "POST")    ? "POST"
+                         : !strcmp(method, "PUT")   ? "PUT"
+                         : !strcmp(method, "PATCH") ? "PATCH"
+                                                    : "DELETE";
     client->api_uncertain = false;
     return auth_internal_request(client, AUTH_API_MUTATION, copy, payload, payload != NULL);
 }

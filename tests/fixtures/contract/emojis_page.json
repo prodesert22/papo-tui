@@ -1,0 +1,13 @@
+{
+  "emojis": [
+    {
+      "id": "00000000-0000-0000-0000-00000000001e",
+      "name": "fixture_festa",
+      "format": "PNG",
+      "image_blob": "iVBORw0KGgo=",
+      "created_by": "00000000-0000-0000-0000-000000000002",
+      "created_at": "2026-10-12T12:00:00Z"
+    }
+  ],
+  "has_more": false
+}

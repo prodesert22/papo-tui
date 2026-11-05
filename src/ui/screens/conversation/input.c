@@ -199,7 +199,7 @@ void conversation_set_focus(view *ui, int focus)
 void conversation_open_emojis(view *ui)
 {
     if (!conversation_input(ui) || ui->duplicate_modal ||
-        (r8_modal_is_open(ui->r8) || ui->settings.open) || media_view_modal(ui->media))
+        (r8_modal_is_open(ui->r8) || conversation_panel_open(ui)) || media_view_modal(ui->media))
         return;
     mention_popup_close(ui->mentions);
     ui->dragging = false;

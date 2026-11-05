@@ -558,6 +558,7 @@ class AppModes(unittest.TestCase):
         for mode in ("normal", "light"):
             for key, title in panels(
                 ("\x13", "Configurações"),
+                ("server-settings", "Configurações do servidor ·"),
                 ("\x07", "Ajuda do contexto"),
                 ("\x1f", "Ajuda global"),
                 ("\x0f", "Anexar arquivos"),
@@ -629,6 +630,13 @@ class AppModes(unittest.TestCase):
                                 self.helper.wait(t, "landscape.png 🗙]")
                                 self.wait(t, lambda: len(red_cells()) > 200)
                             before = red_cells()
+                            if key == "server-settings":
+                                # The server tab's menu opens the server's settings.
+                                row = t.screen.display[0]
+                                column = row.index("Comunidade") + 2
+                                t.send(f"\x1b[<2;{column};1M\x1b[<2;{column};1m")
+                                self.helper.wait(t, "Configurações do servidor")
+                                key = "\n"
                             t.send("\x1b[Z\n" if key == "attachment-remove" else key)
                             if title == "Ir para mensagem":
                                 self.helper.wait(t, "1 resultado(s)")
@@ -640,6 +648,7 @@ class AppModes(unittest.TestCase):
                             title_x = t.screen.display[top].index(title)
                             if title in (
                                 "Configurações",
+                                "Configurações do servidor ·",
                                 "Notificações",
                                 "Perfil do membro",
                                 "Ajuda do contexto",
@@ -695,6 +704,7 @@ class AppModes(unittest.TestCase):
                             self.assertEqual(t.stream.frames, [])
                             if title in (
                                 "Configurações",
+                                "Configurações do servidor ·",
                                 "Menções",
                                 "Notificações",
                                 "Ajuda do contexto",
@@ -710,6 +720,9 @@ class AppModes(unittest.TestCase):
                                 if title == "Configurações":
                                     t.send("\x1bOC\x1bOC")
                                     self.helper.wait(t, "Entrada:")
+                                if title == "Configurações do servidor ·":
+                                    t.send("\x1bOC")
+                                    self.helper.wait(t, "+ Novo cargo")
                                 if title == "Notificações":
                                     t.send("\x1bOC\ngeral")
                                     active_title = "Selecionar canal"
