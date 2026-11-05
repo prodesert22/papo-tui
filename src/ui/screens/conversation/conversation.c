@@ -1563,13 +1563,8 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 scope = DRAW_CONVERSATION;
                 conversation_scroll_history(ui, key == KEY_DOWN ? 1 : ui->visible, true);
             } else if (type == KEY_CODE_YES && key == KEY_END) {
-                ui->centered_message[0] = 0;
                 scope = DRAW_CONVERSATION;
-                if (!ui->unseen || history_evicted(ui->model))
-                    history_recent(ui->model);
-                ui->at_end = true;
-                ui->unseen = 0;
-                ui->anchor[0] = 0;
+                conversation_scroll_latest(ui, !ui->unseen);
             } else if (enter && conversation_input(ui))
                 conversation_set_focus(ui, MESSAGE_INPUT);
             else if (enter && !history_retry(ui->model)) {

@@ -242,14 +242,17 @@ int main(void)
                               "user_id", author_id, "message_content", "Old notification");
     assert(event && inbox_event(history_inbox(first), event));
     json_decref(event);
-    assert(inbox_unread(history_inbox(first)) == 1);
+    /* A live event is activity, but without a server record it is not a
+     * notification-center item. */
+    assert(inbox_has_activity(history_inbox(first)));
+    assert(inbox_unread(history_inbox(first)) == 0);
     /* A read cursor clears activity and reads notifications before it. A
      * delayed copy of an old WS message must not resurrect it. */
     json_t *old = message(previous_id);
     inbox_observe_message(history_inbox(first), old);
     history_internal_notification_reads(first);
     assert(!history_instance_unread(first));
-    assert(inbox_unread(history_inbox(first)) == 0);
+    assert(!inbox_has_activity(history_inbox(first)));
     json_object_set_new(old, "type", json_string("message"));
     assert(inbox_event(history_inbox(first), old));
     assert(!history_instance_unread(first));

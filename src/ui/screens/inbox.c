@@ -312,11 +312,13 @@ static void update(r8_modal *m)
         char query[TEXT_UTF8_BYTES];
         text_encode(&m->filter, query);
         m->count = 0;
-        size_t persisted = inbox_notification_count(b), total = persisted + inbox_event_count(b);
-        for (size_t i = 0; i < total && m->count < G_N_ELEMENTS(m->rows); ++i) {
-            bool event = i >= persisted;
-            json_t *n =
-                event ? inbox_notification_event(b, i - persisted) : inbox_notification(b, i);
+        /* Only the server's records, mentions and replies, are listed; a live
+         * event shows here once its record arrives. Ephemeral events from a
+         * channel set to "all" are desktop alerts only and never listed. */
+        for (size_t i = 0; i < inbox_notification_count(b) && m->count < G_N_ELEMENTS(m->rows);
+             ++i) {
+            bool event = false;
+            json_t *n = inbox_notification(b, i);
             const char *id = channel_id(m, n, event);
             json_t *c = channel(m, id);
             bool dm = json_is_true(json_object_get(c, "_dm"));

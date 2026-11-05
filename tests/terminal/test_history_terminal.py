@@ -7,6 +7,7 @@ import resource
 import threading
 import time
 from history_mock import HistoryMock, CHANNEL, OTHER, VOICE, uuid
+from realtime_mock import RealtimeMock
 from terminal_support import Terminal, TerminalStream, wait_for_screen
 
 
@@ -850,6 +851,54 @@ class HistoryTerminal(support.HistoryTerminal):
                 self.wait(t, "[Segunda界")
                 self.assertEqual(sum(r[1].endswith("/auth/login") for r in first.requests), 1)
                 self.assertNotIn(b"\x1b]52;c;REMOTE", t.output)
+            finally:
+                self.assertTrue(t.close())
+
+    def test_incoming_messages_keep_the_reading_position_and_sending_jumps_to_the_newest(self):
+        def history_rows(t):
+            return "\n".join(line[26:] for line in t.screen.display[6:16])
+
+        with RealtimeMock(count=40) as server:
+            t = Terminal()
+            try:
+                t.resize(24, 100)
+                t.send(server.url + "\tjosé\tSynthetic!123\n")
+                self.wait(t, "Mensagem 0040")
+                t.send("\x1bOB\n")
+                self.wait(t, "Foco: Histórico")
+                for _ in range(4):
+                    t.send("\x1b[<64;60;10M")
+                wait_for_screen(t, lambda: "Mensagem 0040" not in history_rows(t), "scrolled up")
+                reading = history_rows(t)
+                # Another user's and a webhook's messages never move the view.
+                for n, extra in (
+                    (1, {"author_id": uuid(21)}),
+                    (
+                        2,
+                        {
+                            "author_id": None,
+                            "webhook_id": uuid(70),
+                            "external_author": {"name": "Bot"},
+                        },
+                    ),
+                ):
+                    message = dict(
+                        server.message(1),
+                        id=uuid(990 + n),
+                        content=f"Chegou {n}",
+                        created_at=f"2026-12-10T13:00:0{n}Z",
+                        **extra,
+                    )
+                    server.emit(dict(message, type="message"))
+                self.wait(t, "2 novas mensagens")
+                t.read(0.5)
+                self.assertEqual(history_rows(t), reading)
+                # Sending your own message shows the newest messages at once.
+                t.send("\t")
+                self.wait(t, "Foco: Mensagem")
+                t.send("Minha resposta\n")
+                wait_for_screen(t, lambda: "Chegou 2" in history_rows(t), "newest messages")
+                self.assertNotIn("novas mensagens", "\n".join(t.screen.display))
             finally:
                 self.assertTrue(t.close())
 

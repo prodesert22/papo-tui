@@ -321,6 +321,10 @@ void conversation_submit(view *ui, uint64_t retry_id, bool duplicate)
         return;
     outbox_submit_result result = retry_id ? send_editor_retry(ui->editor, retry_id, duplicate)
                                            : send_editor_submit(ui->editor, duplicate);
+    /* Your own message is shown where it lands: at the newest messages, even
+     * after scrolling up to read. Messages from others never move the view. */
+    if (result == OUTBOX_ACCEPTED)
+        conversation_scroll_latest(ui, false);
     if (result == OUTBOX_CONFIRM_DUPLICATION) {
         ui->duplicate_modal = true;
         ui->reenviar = false;

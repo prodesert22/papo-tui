@@ -533,6 +533,18 @@ class R8Terminal(support.R8Terminal):
                 external_author=dict(name="Bot de avisos"),
             )
             server.emit(dict(webhook, type="message"))
+            # A mention is kept by the server, so it reaches the center.
+            server.notifications = [
+                dict(
+                    id=uuid(9050),
+                    message_id=webhook["id"],
+                    channel_id=CHANNEL,
+                    author_id=None,
+                    message_content=content,
+                    read=False,
+                    created_at=webhook["created_at"],
+                )
+            ]
             server.emit(
                 dict(
                     type="new_notification",
@@ -567,7 +579,8 @@ class R8Terminal(support.R8Terminal):
             self.assertNotEqual(t.screen.buffer[5][23].data, "●")
             self.assertIn("[Comunidade 0]", t.screen.display[0])
             self.assertNotIn("❶", t.screen.display[0])
-            self.assertEqual(server.marked, [])  # Ephemeral events have no readable row.
+            # Opening its details marked the server's record read.
+            self.assertEqual(server.marked, [[uuid(9050)]])
 
     def test_loaded_webhook_author_survives_conversation_change_and_missing_metadata_is_explicit(
         self,
@@ -648,8 +661,13 @@ class R8Terminal(support.R8Terminal):
                     message_content="Aviso sem metadados",
                 )
             )
-            self.wait(t, "1 notificação")
+            end = time.monotonic() + 5
+            while "[Comunidade 0]" not in t.screen.display[0] and time.monotonic() < end:
+                t.read(0.03)
             self.assertIn("[Comunidade 0]", t.screen.display[0])
+            # Without a server record it is not a notification-center item.
+            t.read(0.5)
+            self.assertNotIn("notificação", t.screen.display[-2])
             self.assert_initial_history_only(server)
 
     def test_text_server_counter_is_red_and_inside_delimiters(self):
@@ -1169,16 +1187,19 @@ class R8Terminal(support.R8Terminal):
                     message_content="Aviso em promoção",
                 )
             )
+            # The event has no server record yet: the center lists nothing,
+            # and its details open from the record once it exists.
             t.send("\x04")
-            self.wait(t, "Aviso em promoção")
-            t.send("\n")
-            self.wait(t, "Detalhes da notificação")
+            self.wait(t, "Nenhuma notificação disponível.")
+            self.assertNotIn("Aviso em promoção", "\n".join(t.screen.display))
             self.assertEqual(server.marked, [])
             row = notification(1)
             row["message_content"] = "Aviso confirmado"
             server.notifications = [row]
             t.send("\x12")
             self.wait(t, "Aviso confirmado")
+            t.send("\n")
+            self.wait(t, "Detalhes da notificação")
             t.read(0.3)
             self.assertEqual(server.marked, [[uuid(4001)]])
             self.assertNotIn("Notificação indisponível", "\n".join(t.screen.display))

@@ -76,7 +76,12 @@ down to them. An edit, deletion, reaction or pin while you were away, a dropped
 realtime connection or **Ctrl+R** loads the conversation again from the server.
 
 A sent message appears at the end of the history at once, and the editor is
-cleared. Until the server confirms it, its header shows a tag at the right:
+cleared. Sending also brings the history to the newest messages, even if you
+had scrolled up to read. Messages from other people and webhooks never move
+the history: at the newest messages they appear at the bottom, and while you
+read older ones the footer counts them as **novas mensagens** (new messages)
+until you scroll down or press End. Until the server confirms your message,
+its header shows a tag at the right:
 
 - **enviando** (sending): the server has not confirmed the message yet. The tag
   disappears when it does.
@@ -226,7 +231,9 @@ channel menu; m/M closes it. Closing a menu preserves your draft.
   **Apenas menções** (Mentions only), and **Nada** (None). The checked option is
   the preference in effect. Mentions include direct mentions, replies to
   your messages and `@everyone`, following the server's rules. The default is
-  mentions only when the server has no saved preference.
+  mentions only when the server has no saved preference. **Todas as mensagens**
+  only adds system notifications for the other messages: the notification
+  center (Ctrl+D) keeps listing only mentions and replies.
 - **Sincronizar com o servidor** (Sync with the server), last in the
   **Notificações…** submenu, is checked by default: the chosen option is saved
   on the server and follows you to other devices. Uncheck it to keep this
@@ -494,7 +501,11 @@ the left edge of the history: mentions of you, replies to your messages and
 not depend on the channel's **Notificações…** setting or on system
 notifications. Your own messages are never marked.
 
-Press Ctrl+D to open notifications. Type in **Buscar** (Search) to match message text,
+Press Ctrl+D to open notifications. The notification center lists what the server
+keeps for you: mentions, replies to your messages and `@everyone`. Messages from
+a channel set to **Todas as mensagens** (All messages) raise only a system
+notification and do not appear in the center or in its count, unless they also
+mention you. Type in **Buscar** (Search) to match message text,
 displayed mentions, authors or conversation names. Click the filter on the next
 row, or use ←/→ from the results, to choose **Todos** (All), **Canais** (Channels)
 or **DMs**. Changing the category keeps you in the notification list. Press Enter

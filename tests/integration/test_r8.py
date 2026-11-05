@@ -158,7 +158,11 @@ class R8Tests(unittest.TestCase):
                 message_content="Efêmera",
             )
             c.command("event " + json.dumps(event))
-            self.assertEqual(c.command()["unread"], 1)
+            # An event without a server record (a channel set to "all") is a
+            # desktop alert only: the notification center does not count it.
+            r = c.command()
+            self.assertEqual(len(r["events"]), 1)
+            self.assertEqual(r["unread"], 0)
             r = c.command("view " + uuid(5001))
             self.assertEqual(r["unread"], 0)
             self.assertTrue(r["events"][0]["_viewed"])

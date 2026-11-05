@@ -296,6 +296,9 @@ void conversation_selection_clear(view *ui);
 void conversation_selection_destroy(view *ui);
 int conversation_position(view *ui);
 void conversation_scroll_history(view *ui, int delta, bool paginate);
+/* Jumps to the newest messages and follows them; reload refetches the latest
+ * page even when the loaded window already ends there. */
+void conversation_scroll_latest(view *ui, bool reload);
 text_buffer *conversation_input(view *ui);
 int conversation_input_width(view *ui);
 int conversation_input_left(view *ui);

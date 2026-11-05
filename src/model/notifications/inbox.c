@@ -898,12 +898,14 @@ bool inbox_has_more(const inbox *b)
 {
     return b->more;
 }
+/* The notification center holds the server's records: mentions and replies.
+ * Live events, including the ephemeral ones a channel set to "all" produces,
+ * only raise desktop alerts and mention badges, so they are not counted. */
 size_t inbox_unread(const inbox *b)
 {
     size_t n = 0, i;
     json_t *v;
     json_array_foreach(b->notifications, i, v) if (!json_is_true(json_object_get(v, "read")))++ n;
-    json_array_foreach(b->events, i, v) if (!json_is_true(json_object_get(v, "_viewed")))++ n;
     return n;
 }
 static uint64_t wall_seconds(void)

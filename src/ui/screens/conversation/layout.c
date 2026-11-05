@@ -627,6 +627,17 @@ void conversation_scroll_history(view *ui, int delta, bool paginate)
         history_newer(ui->model);
 }
 
+void conversation_scroll_latest(view *ui, bool reload)
+{
+    ui->centered_message[0] = 0;
+    /* The loaded window may end before the newest messages. */
+    if (reload || history_has_newer(ui->model) || history_evicted(ui->model))
+        history_recent(ui->model);
+    ui->at_end = true;
+    ui->unseen = 0;
+    ui->anchor[0] = 0;
+}
+
 bool conversation_editor_geometry(view *ui)
 {
     if (!ui->body)
