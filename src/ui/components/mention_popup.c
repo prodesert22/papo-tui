@@ -3,6 +3,7 @@
 #endif
 #include "ui/components/mention_popup.h"
 #include "ui/components/theme.h"
+#include "ui/input/profile_commands.h"
 #include <glib.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -14,10 +15,19 @@ typedef struct {
     size_t index, recent;
     const char *name;
 } candidate;
+/* Besides mentions, the same chooser lists the editor's profile commands
+ * while a draft starts with "/" (COMMAND_LIST), then describes the typed
+ * command and its option (COMMAND_OPTIONS). */
+enum { MENTIONS, COMMAND_LIST, COMMAND_OPTIONS };
+#define COMMAND_ROWS 8
 struct mention_popup {
     history *h;
-    WINDOW *window;
+    WINDOW *window, *hint;
     bool open, dismissed;
+    int mode;
+    const profile_command_info *listed[COMMAND_ROWS], *info;
+    size_t choices[COMMAND_ROWS], name_end, argument_start, argument_end;
+    bool hint_shown; /* Nothing typed after the command yet: "+1 opção". */
     size_t start, end, selected, first, count;
     uint64_t users_revision, messages_revision;
     json_t *recent; /* Owned author ranks in the loaded active history. */
@@ -95,6 +105,10 @@ static void hide(mention_popup *p)
         delwin(p->window);
         p->window = NULL;
     }
+    if (p->hint) {
+        delwin(p->hint);
+        p->hint = NULL;
+    }
     p->open = false;
     history_users_active(p->h, false);
 }
@@ -128,6 +142,91 @@ static bool word(utf32_t c)
 {
     return iswalnum(c) || c == '_' || c == '-' || c == '.';
 }
+static bool blank(utf32_t c)
+{
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+}
+/* Lowercase ASCII copy of b[from, to); false when it holds anything else. */
+static bool ascii_word(const text_buffer *b, size_t from, size_t to, char *out, size_t capacity)
+{
+    size_t n = 0;
+    for (size_t i = from; i < to; ++i) {
+        if (b->data[i] > 127 || n + 1 >= capacity)
+            return false;
+        out[n++] = (char)g_ascii_tolower((char)b->data[i]);
+    }
+    out[n] = 0;
+    return true;
+}
+/* -1 when the draft is not a profile command; otherwise the update result. */
+static int command_update(mention_popup *p, text_buffer *b, bool was)
+{
+    if (!b->length || b->data[0] != '/' || (b->length > 1 && b->data[1] == '/'))
+        return -1;
+    size_t end = 1;
+    while (end < b->length && !blank(b->data[end]))
+        ++end;
+    char name[32], key[TEXT_UTF8_BYTES];
+    if (!ascii_word(b, 1, end, name, sizeof(name)))
+        return -1;
+    size_t total, count = 0;
+    const profile_command_info *all = profile_commands(&total), *info = NULL;
+    int mode;
+    if (b->cursor <= end) {
+        mode = COMMAND_LIST;
+        for (size_t i = 0; i < total && count < COMMAND_ROWS; ++i)
+            if (!strncmp(all[i].name, name, strlen(name)))
+                p->listed[count++] = &all[i];
+        /* No command starts this way: it is an ordinary message. */
+        if (!count) {
+            hide(p);
+            p->mode = MENTIONS;
+            return was;
+        }
+        snprintf(key, sizeof(key), "list:%s", name);
+    } else {
+        for (size_t i = 0; i < total; ++i)
+            if (!strcmp(all[i].name, name))
+                info = &all[i];
+        if (!info)
+            return -1;
+        mode = COMMAND_OPTIONS;
+        size_t start = end;
+        while (start < b->length && blank(b->data[start]))
+            ++start;
+        size_t stop = start;
+        while (stop < b->length && !blank(b->data[stop]))
+            ++stop;
+        char argument[32] = "";
+        bool plain = ascii_word(b, start, b->cursor < start ? start : MIN(b->cursor, stop),
+                                argument, sizeof(argument));
+        for (size_t i = 0; info->choices && plain && info->choices[i] && count < COMMAND_ROWS; ++i)
+            if (!strncmp(info->choices[i], argument, strlen(argument)))
+                p->choices[count++] = i;
+        p->argument_start = start;
+        p->argument_end = stop;
+        p->hint_shown = info->option && start == b->length && b->cursor == b->length;
+        snprintf(key, sizeof(key), "options:%s:%s:%d", name, plain ? argument : "\x01",
+                 p->hint_shown);
+    }
+    bool changed = strcmp(key, p->query) || p->mode != mode;
+    if (changed) {
+        p->dismissed = false;
+        p->selected = p->first = 0;
+        p->error[0] = 0;
+    }
+    snprintf(p->query, sizeof(p->query), "%s", key);
+    p->mode = mode;
+    p->info = info;
+    p->count = count;
+    p->name_end = end;
+    if (p->dismissed) {
+        hide(p);
+        return was;
+    }
+    p->open = true;
+    return !was || changed;
+}
 bool mention_popup_update(mention_popup *p, text_buffer *b, bool enabled)
 {
     if (!p)
@@ -145,6 +244,15 @@ bool mention_popup_update(mention_popup *p, text_buffer *b, bool enabled)
     if (!b || !enabled || text_selection(b, NULL, NULL)) {
         hide(p);
         return was;
+    }
+    int command = command_update(p, b, was);
+    if (command >= 0)
+        return command;
+    if (p->mode != MENTIONS) {
+        hide(p);
+        p->mode = MENTIONS;
+        p->query[0] = 0;
+        p->count = 0;
     }
     size_t at = b->cursor;
     while (at && word(b->data[at - 1]))
@@ -239,6 +347,8 @@ static void move_selection(mention_popup *p, int delta)
     if (next >= (long)p->count)
         next = (long)p->count - 1;
     p->selected = (size_t)next;
+    if (p->mode != MENTIONS)
+        return;
     snprintf(p->selected_id, sizeof(p->selected_id), "%s",
              str(history_user(p->h, p->matches[p->selected].index), "id"));
 }
@@ -268,6 +378,65 @@ static bool choose(mention_popup *p, text_buffer *b)
     mention_popup_close(p);
     return true;
 }
+/* Replaces b[from, to) with text, leaving the cursor after it. */
+static bool replace(mention_popup *p, text_buffer *b, size_t from, size_t to, const char *text)
+{
+    text_buffer insertion;
+    if (to > b->length || from > to || !text_decode(&insertion, text) ||
+        b->length - (to - from) + insertion.length > TEXT_LIMIT) {
+        snprintf(p->error, sizeof(p->error), "O comando excede o limite de texto.");
+        return false;
+    }
+    memmove(b->data + from + insertion.length, b->data + to,
+            (b->length - to + 1) * sizeof(b->data[0]));
+    memcpy(b->data + from, insertion.data, insertion.length * sizeof(b->data[0]));
+    b->length = b->length - (to - from) + insertion.length;
+    b->cursor = from + insertion.length;
+    text_unselect(b);
+    b->goal_column = -1;
+    b->trailing = false;
+    return true;
+}
+static bool command_key(mention_popup *p, text_buffer *b, int type, uint32_t key, bool *accepted)
+{
+    bool tab = type == OK && key == '\t',
+         enter = (type == OK && (key == '\n' || key == '\r')) ||
+                 (type == KEY_CODE_YES && key == KEY_ENTER),
+         arrows = type == KEY_CODE_YES &&
+                  (key == KEY_UP || key == KEY_DOWN || key == KEY_PPAGE || key == KEY_NPAGE);
+    if (!p->count)
+        return false; /* Nothing to choose: Enter sends and Tab moves on. */
+    if (arrows) {
+        move_selection(p, key == KEY_UP ? -1 : key == KEY_DOWN ? 1 : key == KEY_PPAGE ? -8 : 8);
+        return true;
+    }
+    if (!tab && !enter)
+        return false;
+    char typed[32] = "";
+    if (p->mode == COMMAND_LIST) {
+        const profile_command_info *c = p->listed[p->selected];
+        ascii_word(b, 1, p->name_end, typed, sizeof(typed));
+        /* Enter sends only a complete command without options; otherwise it
+         * completes the name, so "/nick" never clears the nickname by itself. */
+        if (enter && !strcmp(typed, c->name) && !c->option)
+            return false;
+        char name[48];
+        bool spaced = p->name_end < b->length && blank(b->data[p->name_end]);
+        snprintf(name, sizeof(name), "/%s%s", c->name, c->option && !spaced ? " " : "");
+        *accepted = replace(p, b, 0, p->name_end, name);
+        if (*accepted && spaced && c->option)
+            b->cursor = MIN(b->length, b->cursor + 1);
+        return true;
+    }
+    const char *choice = p->info->choices[p->choices[p->selected]];
+    ascii_word(b, p->argument_start, p->argument_end, typed, sizeof(typed));
+    /* Enter sends what is complete: a whole choice, or nothing typed for an
+     * optional choice. */
+    if (enter && (!strcmp(typed, choice) || (!*typed && p->info->optional)))
+        return false;
+    *accepted = replace(p, b, p->argument_start, p->argument_end, choice);
+    return true;
+}
 bool mention_popup_key(mention_popup *p, text_buffer *b, int type, uint32_t key, bool *accepted)
 {
     *accepted = false;
@@ -277,6 +446,8 @@ bool mention_popup_key(mention_popup *p, text_buffer *b, int type, uint32_t key,
         mention_popup_close(p);
         return true;
     }
+    if (p->mode != MENTIONS)
+        return command_key(p, b, type, key, accepted);
     if (type == OK && key == 18) {
         history_users_retry(p->h);
         return true;
@@ -304,6 +475,17 @@ bool mention_popup_mouse(mention_popup *p, text_buffer *b, const MEVENT *e, bool
             mention_popup_close(p);
         return false;
     }
+    if (p->mode != MENTIONS) {
+        /* Rows start below the border, or below the description and the
+         * "Opções" heading when one command is shown. */
+        size_t top = p->mode == COMMAND_LIST ? 1 : 3;
+        if ((e->bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED)) && y >= (int)top &&
+            (size_t)y - top < p->count) {
+            p->selected = (size_t)y - top;
+            command_key(p, b, OK, '\t', accepted);
+        }
+        return true;
+    }
     if (e->bstate & (BUTTON4_PRESSED | BUTTON5_PRESSED)) {
         size_t rows = (size_t)getmaxy(p->window) - 3;
         size_t last = p->count > rows ? p->count - rows : 0;
@@ -325,10 +507,106 @@ bool mention_popup_mouse(mention_popup *p, text_buffer *b, const MEVENT *e, bool
     }
     return true;
 }
+static WINDOW *command_draw(mention_popup *p, int cy, int cx, int left, int available)
+{
+    int width = available < 72 ? available : 72;
+    if (width < 24)
+        return NULL;
+    const profile_command_info *info = p->info;
+    int rows = p->mode == COMMAND_LIST ? (int)p->count
+               : info->choices         ? (p->count ? (int)p->count : 1)
+                                       : 1;
+    int height = rows + (p->mode == COMMAND_LIST ? 3 : 5), x = left, y = cy - height;
+    if (y < 1 || height > LINES - 2)
+        return NULL;
+    if (p->window)
+        delwin(p->window);
+    p->window = newwin(height, width, y, x);
+    if (!p->window)
+        return NULL;
+    WINDOW *w = p->window;
+    leaveok(w, true);
+    wbkgd(w, COLOR_PAIR(THEME_PANEL));
+    werase(w);
+    wattrset(w, COLOR_PAIR(THEME_BORDER));
+    box(w, 0, 0);
+    wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
+    char line[256];
+    if (p->mode == COMMAND_LIST)
+        snprintf(line, sizeof(line), " Comandos ");
+    else
+        snprintf(line, sizeof(line), " /%s ", info->name);
+    text_label(w, 0, 2, width - 4, line);
+    int top = 1;
+    if (p->mode == COMMAND_OPTIONS) {
+        wattrset(w, COLOR_PAIR(THEME_PANEL));
+        text_label(w, 1, 2, width - 4, info->description);
+        wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED) | A_BOLD);
+        text_label(w, 2, 2, width - 4, "Opções");
+        top = 3;
+    }
+    int column = 16;
+    for (int row = 0; row < rows; ++row) {
+        bool selected = (size_t)row == p->selected && p->count;
+        const char *label, *detail;
+        if (p->mode == COMMAND_LIST) {
+            snprintf(line, sizeof(line), "/%s", p->listed[row]->name);
+            label = line;
+            detail = p->listed[row]->description;
+        } else if (info->choices && p->count) {
+            label = info->choices[p->choices[row]];
+            detail = info->choice_descriptions[p->choices[row]];
+        } else if (info->choices) {
+            label = "";
+            detail = "Nenhuma opção corresponde ao texto.";
+            selected = false;
+        } else {
+            label = info->option ? info->option : "";
+            detail = info->option ? info->option_description : "Sem opções; Enter executa.";
+            selected = false;
+        }
+        wattrset(w, COLOR_PAIR(selected ? THEME_FOCUSED : THEME_PANEL) |
+                        (selected && !has_colors() ? A_REVERSE : 0));
+        mvwhline(w, top + row, 1, ' ', width - 2);
+        wattrset(w, COLOR_PAIR(selected ? THEME_FOCUSED : THEME_PANEL) | A_BOLD |
+                        (selected && !has_colors() ? A_REVERSE : 0));
+        text_label(w, top + row, 2, column - 3, label);
+        wattrset(w, COLOR_PAIR(selected ? THEME_FOCUSED : THEME_PANEL_MUTED) |
+                        (selected && !has_colors() ? A_REVERSE : 0));
+        text_label(w, top + row, *label ? column : 2, width - (*label ? column : 2) - 2, detail);
+    }
+    wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
+    text_label(w, height - 2, 2, width - 4,
+               *p->error                   ? p->error
+               : p->mode == COMMAND_LIST   ? "↑↓ escolhe · Tab completa · Esc fecha"
+               : info->choices && p->count ? "↑↓ escolhe · Tab completa · Enter envia · Esc fecha"
+                                           : "Enter envia · Esc fecha");
+    wnoutrefresh(w);
+    if (p->hint) {
+        delwin(p->hint);
+        p->hint = NULL;
+    }
+    /* Like a placeholder, beside the caret, until the option is typed. */
+    static const char hint[] = "+1 opção";
+    int hint_width = text_label(NULL, 0, 0, 32, hint);
+    if (p->mode == COMMAND_OPTIONS && p->hint_shown && cx + 1 + hint_width <= left + available &&
+        (p->hint = newwin(1, hint_width, cy, cx + 1))) {
+        leaveok(p->hint, true);
+        wbkgd(p->hint, COLOR_PAIR(THEME_INPUT));
+        werase(p->hint);
+        wattrset(p->hint, COLOR_PAIR(THEME_MUTED));
+        text_label(p->hint, 0, 0, hint_width, hint);
+        wnoutrefresh(p->hint);
+    }
+    setsyx(cy, cx);
+    return w;
+}
 WINDOW *mention_popup_draw(mention_popup *p, int cy, int cx, int left, int available)
 {
     if (!p || !p->open)
         return NULL;
+    if (p->mode != MENTIONS)
+        return command_draw(p, cy, cx, left, available);
     int width = available < 48 ? available : 48;
     if (width < 12)
         return NULL;

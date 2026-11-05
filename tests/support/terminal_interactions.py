@@ -61,6 +61,7 @@ class MessageInteractions(unittest.TestCase):
         try:
             terminal.send("\x13")
             self.wait(terminal, "Configurações")
+            terminal.send("\x1bOC")  # From Perfil to the modes in Aparência.
             self.wait(terminal, "(*) Normal")
             terminal.send("\t\x1bOB\n\t\n")
             # History remains visible behind settings, so its editor label

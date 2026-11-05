@@ -44,7 +44,7 @@ class Members(unittest.TestCase):
         # Choose the textual mode so assertions do not depend on a font.
         terminal.send("\x13")
         self.wait(terminal, "Configurações")
-        terminal.send("\t" + "\x1bOB" * (2 if mode == "ultralight" else 1) + "\n\t\n")
+        terminal.send("\x1bOC\t" + "\x1bOB" * (2 if mode == "ultralight" else 1) + "\n\t\n")
         self.settled(terminal, lambda: "Configurações" not in self.screen(terminal))
         self.wait(terminal, "Conversar em #geral")
         return terminal

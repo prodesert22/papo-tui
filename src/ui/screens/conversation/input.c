@@ -317,6 +317,8 @@ void conversation_submit(view *ui, uint64_t retry_id, bool duplicate)
         conversation_cancel_edit(ui);
         return;
     }
+    if (!retry_id && conversation_profile_command(ui))
+        return;
     outbox_submit_result result = retry_id ? send_editor_retry(ui->editor, retry_id, duplicate)
                                            : send_editor_submit(ui->editor, duplicate);
     if (result == OUTBOX_CONFIRM_DUPLICATION) {

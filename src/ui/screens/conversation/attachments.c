@@ -133,7 +133,9 @@ bool conversation_attachments_poll(view *ui, auth_client *auth)
     }
     bool changed = file_picker_poll(ui->files);
     GPtrArray *paths = file_picker_take_files(ui->files);
-    if (paths) {
+    if (paths && conversation_profile_picked(ui, paths))
+        changed = true;
+    else if (paths) {
         if (paths->len)
             start_import(ui, paths, false);
         else

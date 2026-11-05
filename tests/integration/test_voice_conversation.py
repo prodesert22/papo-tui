@@ -258,7 +258,7 @@ class VoiceConversation(unittest.TestCase):
         deadline = time.monotonic() + 8
         while time.monotonic() < deadline:
             for row, line in enumerate(t.screen.display):
-                if "Geral" in line and "Áudio" in line:
+                if "Perfil" in line and "Áudio" in line:
                     return row
             t.read(0.03)
         self.fail(self.screen(t))

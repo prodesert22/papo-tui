@@ -18,7 +18,7 @@ typedef struct {
     bool directory, exists;
 } save_target;
 struct file_picker {
-    bool open, native, save, resolving, choice;
+    bool open, native, save, resolving, choice, image;
     char *name, *save_result, *confirm;
     WINDOW *window;
     GTask *task;
@@ -241,7 +241,7 @@ void file_picker_show(file_picker *p)
     file_picker_close(p);
     p->open = true;
     p->focus = 0;
-    p->save = p->choice = false;
+    p->save = p->choice = p->image = false;
     g_clear_pointer(&p->result, g_ptr_array_unref);
     if (!PAPO_NATIVE_FILE_DIALOGS) {
         browse(p, p->directory);
@@ -252,11 +252,16 @@ void file_picker_show(file_picker *p)
     p->task = file_transfer_task_new(p->cancel);
     g_task_run_in_thread(p->task, native_worker);
 }
+void file_picker_show_image(file_picker *p)
+{
+    file_picker_show(p);
+    p->image = true;
+}
 void file_picker_show_save(file_picker *p, const char *name)
 {
     file_picker_close(p);
     p->open = p->save = true;
-    p->choice = false;
+    p->choice = p->image = false;
     p->focus = 0;
     g_free(p->name);
     p->name = g_strdup(name && *name ? name : "arquivo");
@@ -281,7 +286,7 @@ void file_picker_show_choice(file_picker *p, const char *const *labels, size_t c
 {
     file_picker_close(p);
     p->open = p->choice = true;
-    p->save = false;
+    p->save = p->image = false;
     p->focus = 1;
     p->cursor = p->first = 0;
     g_clear_pointer(&p->choice_result, g_ptr_array_unref);
@@ -594,9 +599,10 @@ WINDOW *file_picker_draw(file_picker *p)
     box(w, 0, 0);
     wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
     text_label(w, 0, 2, width - 4,
-               p->choice ? " Baixar anexos "
-               : p->save ? " Salvar anexo "
-                         : " Anexar arquivos ");
+               p->choice  ? " Baixar anexos "
+               : p->save  ? " Salvar anexo "
+               : p->image ? " Escolher imagem "
+                          : " Anexar arquivos ");
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     text_label(w, 1, 2, width - 4,
                p->choice ? "Escolha os anexos que deseja baixar:"

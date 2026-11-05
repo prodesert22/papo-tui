@@ -25,6 +25,9 @@ Available channels and message actions follow your account permissions.
 Member names follow their role color, with white as the default.
 Open the member drawer with **👤** or **Ctrl+U** to search people, view profiles,
 start direct messages and access available member actions.
+Change your own nickname, status, description, avatar and banner on each server
+in **Ctrl+S → Perfil**, or with `/nick`, `/status`, `/bio`, `/avatar` and
+`/banner` in the message box.
 Use the arrows to select DMs, and **m** or a right-click to close one from its menu.
 Press **m/M** in the channel list, or right-click a channel, to mute it or
 choose its notification preference.

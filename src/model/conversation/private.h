@@ -30,7 +30,8 @@ enum request_kind {
     MEMBERS,
     CHANNEL_SETTINGS,
     CHANNEL_READ,
-    VOICE_ICE_SERVERS
+    VOICE_ICE_SERVERS,
+    PROFILE_EDIT
 };
 #define TYPING_LIMIT 128U
 #define TYPING_TIMEOUT_MS 6000U
@@ -67,6 +68,7 @@ typedef struct {
 struct history {
     voice_client *voice;
     struct history_members *members;
+    struct history_profile_edit *profile_edit;
     bool members_active;
     struct history_actions *actions;
     struct history_discovery *discovery;
@@ -179,6 +181,10 @@ bool history_internal_members_mutating(history *h);
 bool history_internal_members_dispatch(history *h);
 void history_internal_members_response(history *h, json_t *body, long code, bool uncertain);
 void history_internal_members_recover(history *h);
+void history_internal_profile_destroy(history *h);
+bool history_internal_profile_mutating(history *h);
+bool history_internal_profile_dispatch(history *h);
+void history_internal_profile_response(history *h, json_t *body, long code, bool uncertain);
 void history_internal_discovery_destroy(history *h);
 void history_internal_discovery_recover(history *h);
 bool history_internal_discovery_dispatch(history *h);

@@ -1,4 +1,5 @@
 #include "ui/components/settings.h"
+#include "model/conversation/profile_edit.h"
 #include "ui/components/button.h"
 #include "ui/components/theme.h"
 #include "ui/input/mouse.h"
@@ -16,7 +17,14 @@ static int first_mode(app_settings *s)
         s->selection = APP_MODE_LIGHT;
     return APP_MODE_LIGHT;
 }
-static const char *sections[] = {"Geral", "Aparência", "Áudio", "Acessibilidade", "Atalhos"};
+static const char *sections[SETTINGS_SECTIONS] = {"Perfil", "Aparência", "Áudio", "Acessibilidade",
+                                                  "Atalhos"};
+/* Sections that have controls between the tabs and the buttons. */
+static bool has_content(int section)
+{
+    return section == SETTINGS_APPEARANCE || section == SETTINGS_PROFILE ||
+           section == SETTINGS_AUDIO;
+}
 void settings_close(app_settings *s)
 {
     if (s->ptt_capture) {
@@ -34,10 +42,13 @@ void settings_close(app_settings *s)
         s->window = NULL;
     }
 }
-void settings_open(app_settings *s, const profile_config *config, voice_client *voice)
+void settings_open(app_settings *s, const profile_config *config, voice_client *voice,
+                   history *profile, const char *server)
 {
     settings_close(s);
     memset(s, 0, sizeof(*s));
+    s->profile = profile;
+    snprintf(s->server, sizeof(s->server), "%s", server ? server : "");
     s->open = true;
     s->draft = config->mode;
     s->selection = config->mode;
@@ -177,17 +188,17 @@ static int tab_label(int section, int active, char *label, size_t size)
 }
 static void tab_window(int active, int available, int *first, int *last)
 {
-    int best_first = active, best_last = active, best_count = 0, best_balance = 5;
+    int best_first = active, best_last = active, best_count = 0, best_balance = SETTINGS_SECTIONS;
     char label[64];
     for (int first = 0; first <= active; ++first) {
-        for (int last = active; last < 5; ++last) {
+        for (int last = active; last < SETTINGS_SECTIONS; ++last) {
             int used = first > 0 ? 2 : 0;
             for (int i = first; i <= last; ++i) {
                 used += tab_label(i, active, label, sizeof(label));
                 if (i > first)
                     used += 2;
             }
-            if (last < 4)
+            if (last < SETTINGS_SECTIONS - 1)
                 used += 2;
             if (used > available)
                 continue;
@@ -208,7 +219,7 @@ static void tab_window(int active, int available, int *first, int *last)
 }
 static void tabs_draw(app_settings *s, WINDOW *w, int width)
 {
-    for (int i = 0; i < 5; ++i)
+    for (int i = 0; i < SETTINGS_SECTIONS; ++i)
         s->tab_w[i] = 0;
     s->tab_prev = s->tab_next = -1;
     int first, last, x = 2;
@@ -234,10 +245,322 @@ static void tabs_draw(app_settings *s, WINDOW *w, int width)
         text_label(w, 3, x, label_width, label);
         x += label_width;
     }
-    if (last < 4) {
+    if (last < SETTINGS_SECTIONS - 1) {
         wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
         text_label(w, 3, x + 1, 1, "›");
         s->tab_next = x + 1;
+    }
+}
+/* Perfil: items 0-3 are the text fields, then status, avatar and banner. */
+#define PROFILE_ITEMS 7
+enum { ITEM_STATUS = PROFILE_FIELDS, ITEM_AVATAR, ITEM_BANNER };
+static const char *const field_labels[PROFILE_FIELDS] = {"Apelido", "Frase de status", "Descrição",
+                                                         "Frase de digitação"};
+static const char *const field_keys[PROFILE_FIELDS] = {"nickname", "status", "description",
+                                                       "typing"};
+/* The status phrase is read back from the profile as status_message. */
+static const char *const profile_keys[PROFILE_FIELDS] = {"nickname", "status_message",
+                                                         "description", "typing"};
+static const size_t field_max[PROFILE_FIELDS] = {PROFILE_NICKNAME_MAX, PROFILE_STATUS_MAX,
+                                                 PROFILE_DESCRIPTION_MAX, PROFILE_TYPING_MAX};
+static const char *const status_labels[3] = {"Online", "Ausente", "Ocupado"};
+static const char *const status_values[3] = {NULL, "away", "busy"};
+
+static const char *profile_text(const json_t *profile, const char *key)
+{
+    const char *value = json_string_value(json_object_get(profile, key));
+    return value ? value : "";
+}
+static int profile_status(const json_t *profile)
+{
+    const char *status = profile_text(profile, "status");
+    return !strcmp(status, "away") ? 1 : !strcmp(status, "busy") ? 2 : 0;
+}
+bool settings_poll(app_settings *s)
+{
+    if (!s->open || !s->profile)
+        return false;
+    if (s->section == SETTINGS_PROFILE && !s->requested) {
+        /* Fetched fresh each time the panel shows it: another client may
+         * have changed the profile since the last look. */
+        s->requested = true;
+        history_profile_load(s->profile, true);
+    }
+    const json_t *profile = history_profile(s->profile);
+    uint64_t loads = history_profile_loads(s->profile);
+    /* A load answered while a change is pending predates it; the model's copy
+     * is updated on confirmation, so refill once nothing is pending. */
+    bool refill = profile && loads != s->filled_loads && !s->dirty &&
+                  history_profile_state(s->profile) != PROFILE_SAVING;
+    if (refill) {
+        for (int i = 0; i < PROFILE_FIELDS; ++i) {
+            if (!text_decode(&s->fields[i], profile_text(profile, profile_keys[i])))
+                text_clear(&s->fields[i]);
+            s->field_first[i] = 0;
+        }
+        s->status_choice = s->loaded_status = profile_status(profile);
+        s->filled_loads = loads;
+    }
+    uint64_t revision = history_profile_revision(s->profile);
+    bool changed = refill || revision != s->seen_revision;
+    s->seen_revision = revision;
+    return changed;
+}
+static void profile_notice_draw(app_settings *s, WINDOW *w, int height, int width)
+{
+    profile_state state = history_profile_state(s->profile);
+    const char *notice = history_profile_notice(s->profile);
+    if (state == PROFILE_SAVING && !*notice)
+        notice = "Salvando…";
+    if (!*notice)
+        return;
+    wattrset(w, COLOR_PAIR(state == PROFILE_FAILED || state == PROFILE_UNCERTAIN ? THEME_ERROR
+                           : state == PROFILE_SAVED ? THEME_SUCCESS
+                                                    : THEME_PANEL_MUTED));
+    text_label(w, height - 3, 2, width - 4, notice);
+}
+static void profile_draw(app_settings *s, WINDOW *w, int height, int width)
+{
+    s->cursor = false;
+    for (int i = 0; i < PROFILE_ITEMS; ++i)
+        s->item_y[i] = s->item_rows[i] = -1;
+    char line[320];
+    wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
+    snprintf(line, sizeof(line), "Seu perfil em %s", *s->server ? s->server : "este servidor");
+    text_label(w, 5, 2, width - 4, line);
+    const json_t *profile = history_profile(s->profile);
+    if (!profile) {
+        text_label(w, 7, 3, width - 6,
+                   history_profile_state(s->profile) == PROFILE_FAILED
+                       ? "Não foi possível carregar o perfil. Enter tenta de novo."
+                       : "Carregando perfil…");
+        return;
+    }
+    int top = 6, bottom = height - 3, available = bottom - top;
+    int rows[PROFILE_ITEMS] = {1, 1, available >= 10 ? 3 : available >= 9 ? 2 : 1, 1, 1, 1, 1};
+    if (s->profile_item < s->profile_first)
+        s->profile_first = s->profile_item;
+    for (;;) {
+        int used = 0;
+        for (int i = s->profile_first; i <= s->profile_item; ++i)
+            used += rows[i];
+        if (used <= available || s->profile_first >= s->profile_item)
+            break;
+        ++s->profile_first;
+    }
+    int label_width = 20, fx = 2 + label_width, fw = width - fx - 10;
+    for (int i = s->profile_first, y = top; i < PROFILE_ITEMS && y + rows[i] <= bottom; ++i) {
+        s->item_y[i] = y;
+        s->item_rows[i] = rows[i];
+        bool focused = s->focus == 1 && s->profile_item == i;
+        wattrset(w,
+                 COLOR_PAIR(focused ? THEME_PANEL_ACCENT : THEME_PANEL) | (focused ? A_BOLD : 0));
+        snprintf(line, sizeof(line), "%s:",
+                 i < PROFILE_FIELDS ? field_labels[i]
+                 : i == ITEM_STATUS ? "Status"
+                 : i == ITEM_AVATAR ? "Avatar"
+                                    : "Banner");
+        text_label(w, y, 2, label_width - 1, line);
+        if (i < PROFILE_FIELDS) {
+            text_buffer *field = &s->fields[i];
+            wattrset(w, COLOR_PAIR(focused ? THEME_FOCUSED : THEME_INPUT) |
+                            (focused && !has_colors() ? A_REVERSE : 0));
+            for (int r = 0; r < rows[i]; ++r)
+                mvwhline(w, y + r, fx, ' ', fw);
+            int cy, cx;
+            if (rows[i] > 1) {
+                text_layout layout;
+                text_measure(field, fw, &layout);
+                text_keep_cursor(field, &layout, rows[i]);
+                text_draw(w, field, &layout, field->first_row, rows[i], y, fx);
+                cy = y + layout.cursor_row - field->first_row;
+                cx = fx + layout.cursor_column;
+            } else {
+                text_draw_field(w, field, &s->field_first[i], y, fx, fw, false);
+                getyx(w, cy, cx);
+            }
+            if (focused) {
+                s->cursor = true;
+                s->cursor_y = getbegy(w) + cy;
+                s->cursor_x = getbegx(w) + cx;
+            }
+            bool over = field->length > field_max[i];
+            wattrset(w, COLOR_PAIR(over ? THEME_ERROR : THEME_PANEL_MUTED));
+            snprintf(line, sizeof(line), "%zu/%zu", field->length, field_max[i]);
+            text_label(w, y, fx + fw + 1, 8, line);
+        } else if (i == ITEM_STATUS) {
+            snprintf(line, sizeof(line), "< %s >", status_labels[s->status_choice]);
+            button_draw(w, y, fx, 13, line, focused ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
+        } else if (i == ITEM_AVATAR) {
+            button_draw(w, y, fx, 12, "Alterar…", focused ? BUTTON_FOCUSED : BUTTON_NORMAL,
+                        BUTTON_PANEL);
+        } else {
+            bool has_banner = *profile_text(profile, "banner_media");
+            button_draw(w, y, fx, 12, "Alterar…",
+                        focused && !s->banner_button ? BUTTON_FOCUSED : BUTTON_NORMAL,
+                        BUTTON_PANEL);
+            if (has_banner)
+                button_draw(w, y, fx + 14, 11, "Remover",
+                            focused && s->banner_button ? BUTTON_FOCUSED : BUTTON_NORMAL,
+                            BUTTON_PANEL);
+            else {
+                s->banner_button = 0;
+                wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
+                text_label(w, y, fx + 14, width - fx - 16, "sem banner");
+            }
+        }
+        y += rows[i];
+    }
+}
+bool settings_cursor(const app_settings *s)
+{
+    if (!s->open || s->section != SETTINGS_PROFILE || !s->cursor || !s->window)
+        return false;
+    setsyx(s->cursor_y, s->cursor_x);
+    return true;
+}
+bool settings_paste(app_settings *s, text_paste *paste)
+{
+    if (!s->open || s->section != SETTINGS_PROFILE || s->focus != 1 ||
+        s->profile_item >= PROFILE_FIELDS || !history_profile(s->profile))
+        return false;
+    if (!text_paste_commit(paste, &s->fields[s->profile_item]))
+        snprintf(s->error, sizeof(s->error), "Colagem excede o limite do campo.");
+    else
+        s->error[0] = 0;
+    s->dirty = true;
+    return true;
+}
+static void profile_save(app_settings *s)
+{
+    const json_t *profile = history_profile(s->profile);
+    if (!profile) {
+        snprintf(s->error, sizeof(s->error), "O perfil ainda não foi carregado.");
+        return;
+    }
+    static char text[PROFILE_FIELDS][TEXT_UTF8_BYTES];
+    bool changed[PROFILE_FIELDS], any = false;
+    for (int i = 0; i < PROFILE_FIELDS; ++i) {
+        const char *problem = text_encode(&s->fields[i], text[i])
+                                  ? history_profile_check(field_keys[i], text[i])
+                                  : "Texto inválido.";
+        if (problem) {
+            snprintf(s->error, sizeof(s->error), "%s", problem);
+            s->profile_item = i;
+            s->focus = 1;
+            return;
+        }
+        changed[i] = strcmp(text[i], profile_text(profile, profile_keys[i])) != 0;
+        any |= changed[i];
+    }
+    bool status = s->status_choice != s->loaded_status;
+    if (!any && !status) {
+        snprintf(s->error, sizeof(s->error), "Nenhuma alteração para salvar.");
+        return;
+    }
+    s->error[0] = 0;
+    if (any &&
+        !history_profile_save(s->profile, changed[0] ? text[0] : NULL, changed[1] ? text[1] : NULL,
+                              changed[2] ? text[2] : NULL, changed[3] ? text[3] : NULL)) {
+        snprintf(s->error, sizeof(s->error), "Não foi possível preparar a alteração do perfil.");
+        return;
+    }
+    if (status && !history_profile_set_status(s->profile, status_values[s->status_choice])) {
+        snprintf(s->error, sizeof(s->error), "Não foi possível preparar a mudança de status.");
+        return;
+    }
+    s->loaded_status = s->status_choice;
+    s->dirty = false;
+}
+static void profile_activate(app_settings *s, int item)
+{
+    if (item == ITEM_STATUS)
+        s->status_choice = (s->status_choice + 1) % 3;
+    else if (item == ITEM_AVATAR)
+        s->pick = SETTINGS_PICK_AVATAR;
+    else if (item == ITEM_BANNER) {
+        if (!s->banner_button)
+            s->pick = SETTINGS_PICK_BANNER;
+        else if (!history_profile_remove_banner(s->profile))
+            snprintf(s->error, sizeof(s->error), "Não foi possível remover o banner agora.");
+    }
+}
+static void profile_key(app_settings *s, int type, uint32_t key)
+{
+    bool enter =
+        (type == OK && (key == '\r' || key == '\n')) || (type == KEY_CODE_YES && key == KEY_ENTER);
+    bool up = type == KEY_CODE_YES && key == KEY_UP, down = type == KEY_CODE_YES && key == KEY_DOWN;
+    int item = s->profile_item;
+    if (!history_profile(s->profile)) {
+        if (up)
+            s->focus = 0;
+        else if (down)
+            s->focus = 2;
+        else if (enter && history_profile_state(s->profile) == PROFILE_FAILED)
+            history_profile_load(s->profile, true);
+        return;
+    }
+    if (item < PROFILE_FIELDS) {
+        text_buffer *field = &s->fields[item];
+        if (enter) {
+            profile_save(s);
+            return;
+        }
+        if (item == PROFILE_FIELD_DESCRIPTION && (up || down)) {
+            /* Arrows move between lines first, then to the next control. */
+            text_layout layout;
+            int width = s->window ? getmaxx(s->window) - 32 : 40;
+            text_measure(field, width, &layout);
+            if ((up && layout.cursor_row > 0) || (down && layout.cursor_row + 1 < layout.rows)) {
+                text_edit(field, type, key, width, true);
+                return;
+            }
+        }
+        if (!up && !down) {
+            if (text_edit(field, type, key, TEXT_LIMIT * 2 + 1,
+                          item == PROFILE_FIELD_DESCRIPTION)) {
+                s->dirty = true;
+                s->error[0] = 0;
+            }
+            return;
+        }
+    } else if (enter || (type == OK && key == ' ')) {
+        profile_activate(s, item);
+        return;
+    } else if (type == KEY_CODE_YES && (key == KEY_LEFT || key == KEY_RIGHT)) {
+        if (item == ITEM_STATUS)
+            s->status_choice = (s->status_choice + (key == KEY_LEFT ? 2 : 1)) % 3;
+        else if (item == ITEM_BANNER && *profile_text(history_profile(s->profile), "banner_media"))
+            s->banner_button = key == KEY_RIGHT;
+        return;
+    }
+    if (up) {
+        if (!item)
+            s->focus = 0;
+        else
+            s->profile_item = item - 1;
+    } else if (down) {
+        if (item == PROFILE_ITEMS - 1)
+            s->focus = 2;
+        else
+            s->profile_item = item + 1;
+    }
+}
+static void profile_click(app_settings *s, int y, int x)
+{
+    for (int i = 0; i < PROFILE_ITEMS; ++i) {
+        if (s->item_y[i] < 0 || y < s->item_y[i] || y >= s->item_y[i] + s->item_rows[i])
+            continue;
+        s->focus = 1;
+        s->profile_item = i;
+        int fx = 22;
+        if (i == ITEM_BANNER && x >= fx + 14 && x < fx + 25)
+            s->banner_button = 1;
+        else if (i == ITEM_BANNER)
+            s->banner_button = 0;
+        if (i >= PROFILE_FIELDS && x >= fx)
+            profile_activate(s, i);
+        return;
     }
 }
 void settings_draw(app_settings *s)
@@ -263,7 +586,7 @@ void settings_draw(app_settings *s)
     text_label(w, 1, 2, width - 4, "Configurações");
     tabs_draw(s, w, width);
     char label[160];
-    if (!s->section) {
+    if (s->section == SETTINGS_APPEARANCE) {
         int first = first_mode(s);
         for (int i = first; i < 3; ++i) {
             int step = height >= 18 ? 3 : 1;
@@ -294,8 +617,10 @@ void settings_draw(app_settings *s)
                 text_draw(w, &description, &measured, 0, height - 10, 8, 3);
             }
         }
-    } else if (s->section == 2) {
+    } else if (s->section == SETTINGS_AUDIO) {
         audio_draw(s, w, height, width);
+    } else if (s->section == SETTINGS_PROFILE) {
+        profile_draw(s, w, height, width);
     } else {
         wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
         text_label(w, 6, 3, width - 6, "Em breve. Esta seção ainda não altera configurações.");
@@ -303,14 +628,21 @@ void settings_draw(app_settings *s)
     wattrset(w, COLOR_PAIR(THEME_ERROR));
     if (*s->error)
         text_label(w, height - 3, 2, width - 4, s->error);
-    button_draw(w, height - 2, 2, 18, "Salvar e aplicar",
+    else if (s->section == SETTINGS_PROFILE)
+        profile_notice_draw(s, w, height, width);
+    bool profile = s->section == SETTINGS_PROFILE;
+    button_draw(w, height - 2, 2, 18, profile ? "Salvar perfil" : "Salvar e aplicar",
                 s->focus == 2 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
-    button_draw(w, height - 2, width - 14, 12, "Cancelar",
+    button_draw(w, height - 2, width - 14, 12, profile ? "Fechar" : "Cancelar",
                 s->focus == 3 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     wnoutrefresh(w);
 }
 static void save(app_settings *s, profile_config *config)
 {
+    if (s->section == SETTINGS_PROFILE) {
+        profile_save(s);
+        return;
+    }
     if (profiles_set_settings(config, s->draft, &s->audio)) {
         s->applied = true;
         voice_configure(&s->audio);
@@ -411,7 +743,7 @@ void settings_key(app_settings *s, profile_config *config, int type, uint32_t ke
     }
     if ((type == OK && key == '\t') || (type == KEY_CODE_YES && key == KEY_BTAB)) {
         s->focus = (s->focus + (type == OK ? 1 : 3)) % 4;
-        if (s->section && s->section != 2 && s->focus == 1)
+        if (!has_content(s->section) && s->focus == 1)
             s->focus = type == OK ? 2 : 0;
         return;
     }
@@ -425,26 +757,31 @@ void settings_key(app_settings *s, profile_config *config, int type, uint32_t ke
         if (y == 3) {
             voice_test(s->voice, false);
             int chosen = -1;
-            for (int i = 0; i < 5; ++i)
+            for (int i = 0; i < SETTINGS_SECTIONS; ++i)
                 if (s->tab_w[i] > 0 && x >= s->tab_x[i] && x < s->tab_x[i] + s->tab_w[i])
                     chosen = i;
             if (chosen >= 0)
                 s->section = chosen;
             else if (s->tab_prev >= 0 && x <= s->tab_prev + 1)
-                s->section = (s->section + 4) % 5;
+                s->section = (s->section + SETTINGS_SECTIONS - 1) % SETTINGS_SECTIONS;
             else if (s->tab_next >= 0 && x >= s->tab_next - 1)
-                s->section = (s->section + 1) % 5;
+                s->section = (s->section + 1) % SETTINGS_SECTIONS;
             else
-                s->section = (s->section + (x < getmaxx(s->window) / 2 ? 4 : 1)) % 5;
+                s->section =
+                    (s->section + (x < getmaxx(s->window) / 2 ? SETTINGS_SECTIONS - 1 : 1)) %
+                    SETTINGS_SECTIONS;
             s->focus = 0;
-        } else if (s->section == 2 && voice_available() && y >= 5 && y < getmaxy(s->window) - 6) {
+        } else if (s->section == SETTINGS_PROFILE && y >= 5 && y < getmaxy(s->window) - 3) {
+            profile_click(s, y, x);
+        } else if (s->section == SETTINGS_AUDIO && voice_available() && y >= 5 &&
+                   y < getmaxy(s->window) - 6) {
             int selected = s->audio_first + y - 5;
             if (selected < 9) {
                 s->audio_selection = selected;
                 s->focus = 1;
                 audio_adjust(s, x < getmaxx(s->window) / 2 ? -1 : 1);
             }
-        } else if (!s->section && y >= 5 &&
+        } else if (s->section == SETTINGS_APPEARANCE && y >= 5 &&
                    y < 5 + (3 - first_mode(s)) * (getmaxy(s->window) >= 18 ? 3 : 1)) {
             s->selection = first_mode(s) + (y - 5) / (getmaxy(s->window) >= 18 ? 3 : 1);
             if (s->selection > 2)
@@ -462,11 +799,16 @@ void settings_key(app_settings *s, profile_config *config, int type, uint32_t ke
     if (s->focus == 0) {
         if (type == KEY_CODE_YES && (key == KEY_LEFT || key == KEY_RIGHT)) {
             voice_test(s->voice, false);
-            s->section = (s->section + (key == KEY_LEFT ? 4 : 1)) % 5;
+            s->section =
+                (s->section + (key == KEY_LEFT ? SETTINGS_SECTIONS - 1 : 1)) % SETTINGS_SECTIONS;
         } else if (enter || (type == KEY_CODE_YES && key == KEY_DOWN))
-            s->focus = s->section && s->section != 2 ? 2 : 1;
+            s->focus = has_content(s->section) ? 1 : 2;
     } else if (s->focus == 1) {
-        if (s->section == 2) {
+        if (s->section == SETTINGS_PROFILE) {
+            profile_key(s, type, key);
+            return;
+        }
+        if (s->section == SETTINGS_AUDIO) {
             if (!voice_available()) {
                 /* The build has no WebRTC support: the section only reports it. */
                 if (type == KEY_CODE_YES && key == KEY_UP)
@@ -505,7 +847,7 @@ void settings_key(app_settings *s, profile_config *config, int type, uint32_t ke
         } else if (enter || (type == OK && key == ' '))
             s->draft = (app_mode)s->selection;
     } else if (type == KEY_CODE_YES && key == KEY_UP) {
-        s->focus = s->section && s->section != 2 ? 0 : 1;
+        s->focus = has_content(s->section) ? 1 : 0;
     } else if (enter) {
         if (s->focus == 2)
             save(s, config);

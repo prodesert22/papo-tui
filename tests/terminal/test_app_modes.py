@@ -78,8 +78,9 @@ class AppModes(unittest.TestCase):
         )
         selected = ["normal", "light", "ultralight"].index(current)
         wanted = ["normal", "light", "ultralight"].index(mode)
+        # Settings open on Perfil; the modes are one tab to the right.
         t.send(
-            "\t"
+            "\x1bOC\t"
             + (
                 "\x1bOB" * (wanted - selected)
                 if wanted >= selected
@@ -426,7 +427,7 @@ class AppModes(unittest.TestCase):
             t = self.open(server)
             try:
                 t.send("draft remains")
-                t.send("\x13\t\x1bOB\x1bOB\t\x1bOC\x1bOA\x1bOA\n\t\n")
+                t.send("\x13\x1bOC\t\x1bOB\x1bOB\t\x1bOC\x1bOA\x1bOA\n\t\n")
                 self.wait(
                     t,
                     lambda: (
@@ -435,15 +436,16 @@ class AppModes(unittest.TestCase):
                 )
                 self.helper.wait(t, "draft remains")
                 # General: Up from Save returns to the highlighted mode.
-                t.send("\x13\t\t\x1bOA\x1bOA\n\t\n")
+                t.send("\x13\x1bOC\t\t\x1bOA\x1bOA\n\t\n")
                 self.wait(
                     t,
                     lambda: (
                         json.loads(self.config.read_text(encoding="utf-8"))["app_mode"] == "normal"
                     ),
                 )
-                # Placeholder: Up from Cancel returns to the section selector.
-                t.send("\x13\x1bOC\n\x1bOC\x1bOA\x1bOD")
+                # Placeholder (Acessibilidade): Up from Cancel returns to the
+                # section selector, and Left goes back to Aparência.
+                t.send("\x13" + "\x1bOC" * 3 + "\n\x1bOC\x1bOA" + "\x1bOD" * 2)
                 self.helper.wait(t, "Ultralight")
                 t.send("\x1b")
             finally:
@@ -819,14 +821,16 @@ class AppModes(unittest.TestCase):
                     finally:
                         self.assertTrue(t.close())
 
-    def mode_list(self, t):
+    def mode_list(self, t, right="\x1bOC"):
         t.send("\x13")
         self.helper.wait(t, "Configurações")
+        t.send(right)  # From Perfil to the modes in Aparência.
         self.helper.wait(t, "Ultralight")
         return "\n".join(t.screen.display)
 
     def assert_light_without_normal(self, t, up="\x1bOA", down="\x1bOB"):
-        screen = self.mode_list(t)
+        # The Linux console sends CSI arrows; application mode uses SS3.
+        screen = self.mode_list(t, "\x1b[C" if up.startswith("\x1b[") else "\x1bOC")
         self.assertNotIn("Normal", screen)
         self.assertIn("(*) Light", screen)
         self.assertIn("( ) Ultralight", screen)
@@ -985,11 +989,11 @@ class AppModes(unittest.TestCase):
                     self.skipTest("Build without the GStreamer WebRTC stack.")
                 t.send("draft audio settings\x13")
                 self.helper.wait(t, "Configurações")
-                self.helper.wait(t, "Geral")
+                self.helper.wait(t, "Perfil")
                 row = next(
                     y
                     for y, line in enumerate(t.screen.display)
-                    if "Geral" in line and "Áudio" in line
+                    if "Perfil" in line and "Áudio" in line
                 )
                 self.assertIn("Aparência", t.screen.display[row])
                 self.assertIn("Acessibilidade", t.screen.display[row])
@@ -1048,7 +1052,7 @@ class AppModes(unittest.TestCase):
                 row = next(
                     y
                     for y, line in enumerate(t.screen.display)
-                    if "Geral" in line and "Áudio" in line
+                    if "Perfil" in line and "Áudio" in line
                 )
                 t.click(row, t.screen.display[row].index("Áudio"))
                 self.helper.wait(t, "Tecla para falar:")
@@ -1142,7 +1146,7 @@ class AppModes(unittest.TestCase):
                 row = next(y for y, line in enumerate(t.screen.display) if "⚙" in line)
                 t.click(row, t.screen.display[row].index("⚙"))
                 self.helper.wait(t, "Configurações")
-                t.send("\x1bOC")
+                t.send("\x1bOC" * 3)
                 self.helper.wait(t, "Em breve")
                 t.resize(22, 44)
                 self.helper.wait(t, "Configurações")

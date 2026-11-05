@@ -327,6 +327,10 @@ class MockServer:
                 response = (
                     outer.api_handler(self.command, self.path, body) if outer.api_handler else None
                 )
+                if response == "drop":
+                    # Applied, but intentionally no HTTP response: uncertain.
+                    self.close_connection = True
+                    return
                 self.respond(*(response if response is not None else (404, None)))
 
             do_PUT = mutation_fixture

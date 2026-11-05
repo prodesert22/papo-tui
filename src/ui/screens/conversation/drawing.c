@@ -905,8 +905,11 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         icons_overlay(ui->icons, getbegy(help_window), getbegx(help_window), getmaxy(help_window),
                       getmaxx(help_window));
     }
-    settings_draw(&ui->settings);
-    if (ui->settings.open && ui->settings.window)
+    /* The file picker chosen from Perfil stays above the settings panel. */
+    bool settings_shown = ui->settings.open && !file_picker_open(ui->files);
+    if (settings_shown)
+        settings_draw(&ui->settings);
+    if (settings_shown && ui->settings.window)
         icons_overlay(ui->icons, getbegy(ui->settings.window), getbegx(ui->settings.window),
                       getmaxy(ui->settings.window), getmaxx(ui->settings.window));
     if (paint_media) {
@@ -918,13 +921,14 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         if (help_window)
             graphics_frame_occlude(getbegy(help_window), getbegx(help_window), getmaxy(help_window),
                                    getmaxx(help_window));
-        if (ui->settings.open && ui->settings.window)
+        if (settings_shown && ui->settings.window)
             graphics_frame_occlude(getbegy(ui->settings.window), getbegx(ui->settings.window),
                                    getmaxy(ui->settings.window), getmaxx(ui->settings.window));
         graphics_frame_prepare();
     }
     if (r8_modal_is_open(ui->r8) || ui->settings.open) {
-        caret = !ui->settings.open && r8_modal_cursor(ui->r8);
+        caret = ui->settings.open ? settings_shown && settings_cursor(&ui->settings)
+                                  : r8_modal_cursor(ui->r8);
         if (!caret)
             setsyx(-1, -1);
     }

@@ -9,6 +9,7 @@
 #include "model/conversation/discovery.h"
 #include "model/conversation/history.h"
 #include "model/conversation/members.h"
+#include "model/conversation/profile_edit.h"
 #include "net/clock.h"
 #include "platform/clipboard.h"
 #include "platform/file_transfer.h"
@@ -227,6 +228,16 @@ typedef struct {
     int attachment_cursor, attachment_first, attachment_count;
     click_range attachment_hits[ATTACHMENT_LIMIT], attachment_remove_hits[ATTACHMENT_LIMIT];
     text_paste paste_data;
+    /* Own profile changes. profile_pick: the open file picker chooses the
+     * avatar (1) or banner (2). profile_target is the model the image was
+     * picked for; profile_watch the model whose outcome the footer follows. */
+    int profile_pick;
+    profile_image profile_kind;
+    GTask *profile_task;
+    GCancellable *profile_cancel;
+    history *profile_target, *profile_watch;
+    uint64_t profile_generation, profile_revision;
+    char profile_notice[256], profile_seen[256];
 } view;
 help_context conversation_help_context(view *ui, const char **area);
 const char *conversation_str(const json_t *obj, const char *key);
@@ -327,6 +338,13 @@ bool conversation_download_menu(view *ui, const char *message_id);
 bool conversation_downloads_poll(view *ui);
 void conversation_downloads_close(view *ui);
 void conversation_attachments_open(view *ui, bool clipboard);
+void conversation_profile_pick(view *ui, profile_image kind);
+/* Takes the picker's files when it was opened for the profile. */
+bool conversation_profile_picked(view *ui, GPtrArray *paths);
+bool conversation_profile_poll(view *ui);
+void conversation_profile_close(view *ui);
+/* Runs a profile command typed in the editor; false sends the text. */
+bool conversation_profile_command(view *ui);
 void conversation_attachments_close(view *ui);
 bool conversation_attachments_key(view *ui, int type, uint32_t key);
 bool conversation_attachments_mouse(view *ui, const MEVENT *event);

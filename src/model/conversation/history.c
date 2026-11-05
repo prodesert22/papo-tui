@@ -357,6 +357,7 @@ void history_destroy(history *h)
     voice_destroy(h->voice);
     save_reads(h);
     history_internal_members_destroy(h);
+    history_internal_profile_destroy(h);
     if (h->pending != NONE)
         auth_cancel_read(h->auth);
     chat_assets_destroy(h->assets);
@@ -401,7 +402,7 @@ void history_active(history *h, bool active)
         stash_current(h);
         if (h->pending != NONE && h->pending != INBOX && !history_internal_actions_mutating(h) &&
             !history_internal_members_mutating(h) && h->pending != CHANNEL_SETTINGS &&
-            h->pending != CHANNEL_READ) {
+            h->pending != PROFILE_EDIT && h->pending != CHANNEL_READ) {
             if (h->pending == MEMBERS)
                 history_internal_members_recover(h);
             auth_cancel_read(h->auth);
@@ -628,7 +629,7 @@ void history_reload_channels(history *h)
 {
     if (h->pending != NONE && h->pending != INBOX && !history_internal_actions_mutating(h) &&
         !history_internal_members_mutating(h) && h->pending != CHANNEL_SETTINGS &&
-        h->pending != CHANNEL_READ) {
+        h->pending != PROFILE_EDIT && h->pending != CHANNEL_READ) {
         if (h->pending == MEMBERS)
             history_internal_members_recover(h);
         auth_cancel_read(h->auth);
@@ -666,7 +667,7 @@ static bool select_channel(history *h, size_t index, bool cached)
     }
     if (h->pending != NONE && h->pending != INBOX && !history_internal_actions_mutating(h) &&
         !history_internal_members_mutating(h) && h->pending != CHANNEL_SETTINGS &&
-        h->pending != CHANNEL_READ) {
+        h->pending != PROFILE_EDIT && h->pending != CHANNEL_READ) {
         if (h->pending == MEMBERS)
             history_internal_members_recover(h);
         auth_cancel_read(h->auth);
@@ -842,7 +843,7 @@ static bool sync_permissions(history *h)
         history_permission(h, PERMISSION_READ_CHANNEL) == PERMISSION_DENIED) {
         if (h->pending != NONE && h->pending != INBOX && !history_internal_actions_mutating(h) &&
             !history_internal_members_mutating(h) && h->pending != CHANNEL_SETTINGS &&
-            h->pending != CHANNEL_READ) {
+            h->pending != PROFILE_EDIT && h->pending != CHANNEL_READ) {
             if (h->pending == MEMBERS)
                 history_internal_members_recover(h);
             auth_cancel_read(h->auth);
@@ -892,6 +893,13 @@ static int process_response(history *h, uint64_t maintenance_now)
     if (h->pending == MEMBERS) {
         if (generation == h->context && h->request_context == h->context)
             history_internal_members_response(h, body, code, uncertain);
+        json_decref(body);
+        h->pending = NONE;
+        return 3;
+    }
+    if (h->pending == PROFILE_EDIT) {
+        if (generation == h->context && h->request_context == h->context)
+            history_internal_profile_response(h, body, code, uncertain);
         json_decref(body);
         h->pending = NONE;
         return 3;
@@ -1051,6 +1059,7 @@ bool history_poll(history *h)
     if (h->context != auth_context_generation(h->auth)) {
         history_internal_actions_destroy(h);
         history_internal_members_destroy(h);
+        history_internal_profile_destroy(h);
         save_reads(h);
         h->read_loaded = h->read_dirty = h->read_save_failed = false;
         h->read_url[0] = h->read_user[0] = 0;
@@ -1192,6 +1201,8 @@ bool history_poll(history *h)
         if (history_internal_channel_settings_dispatch(h))
             return true;
         if (history_internal_read_dispatch(h))
+            return true;
+        if (history_internal_profile_dispatch(h))
             return true;
         if (history_internal_members_dispatch(h))
             return true;

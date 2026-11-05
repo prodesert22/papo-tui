@@ -324,6 +324,68 @@ mutations are never repeated automatically. After an uncertain result, refresh
 state before deciding whether to repeat the action. Profile/banner changes made
 elsewhere may require reopening the profile or pressing Ctrl+R.
 
+### Edit your own profile
+
+Your profile belongs to each server separately: changes apply to the server tab
+that is open. Press **Ctrl+S**: settings open on **Perfil** (Profile), the
+first tab. The tab shows **Seu perfil em** (Your profile on)
+and the server name, then:
+
+- **Apelido** (Nickname), up to 32 characters. Leave it empty to show only your
+  @username.
+- **Frase de status** (Status phrase), up to 64 characters.
+- **Descrição** (Description), up to 512 characters. Shift+Enter starts a new
+  line.
+- **Frase de digitação** (Typing phrase), up to 64 characters, shown to others
+  while you type.
+- **Status**: ←/→ or Enter chooses **Online**, **Ausente** (Away) or
+  **Ocupado** (Busy).
+- **Avatar** and **Banner**: **Alterar…** (Change…) opens the file choice;
+  **Remover** (Remove) deletes the banner.
+
+Each text field shows how many characters it uses. Use ↑/↓ to move between the
+fields. Enter in a text field, or **Salvar perfil** (Save profile), saves the
+text fields and the status together; **Fechar** (Close) or Esc closes the window,
+and unsaved text is discarded. The footer of the window shows **Salvando…**
+(Saving), then **Perfil salvo** (Profile saved) or the server's reason when it
+refuses a change. An image is sent as soon as you choose it.
+
+You can also type these commands in the message box and press Enter. They
+change the profile on the current server and are never sent as messages.
+Typing `/` at the start of the message box opens **Comandos** (Commands) above
+it, listing each command and what it does; keep typing to narrow the list,
+use ↑/↓ to choose and Tab or Enter to complete the name. Once a command is
+typed, the box above shows its description and **Opções** (Options), and the
+message box shows **+1 opção** (+1 option) until you type the option. For
+`/status` and `/banner`, the accepted values are listed and narrow as you
+type; Tab completes the chosen one. Esc hides the box and keeps your text.
+Enter on a bare command name that takes an option only completes it, so
+`/nick` alone removes the nickname after a second Enter.
+
+| Command | Effect |
+| --- | --- |
+| `/nick name` | Changes your nickname; `/nick` alone removes it. |
+| `/status online`, `/status ausente`, `/status ocupado` | Changes your status (`away` and `busy` also work). |
+| `/bio text` | Changes your description; `/bio` alone clears it. |
+| `/avatar` | Opens the file choice for your avatar. |
+| `/banner` | Opens the file choice for your banner; `/banner remover` removes it. |
+
+The footer shows the result. A command with a wrong argument, such as
+`/status talvez`, shows how to use it and keeps the text in the box. Other text
+that starts with `/` is sent as an ordinary message; start it with `//` to send
+a message beginning with `/`, for example `//nick` sends `/nick`.
+
+Avatars and banners can be PNG, JPEG, GIF or WEBP files. The server accepts up
+to 2 MB, 512 pixels per side for an avatar and 2048 pixels for a banner. A
+larger still image is reduced to fit and sent as PNG; a larger animated GIF,
+WEBP or PNG is refused, so reduce the file first. Ultralight has no image
+processing, so there only files already within the limits are accepted.
+
+A change that the server refuses or does not confirm is never repeated
+automatically. When a change is not confirmed (**Alteração não confirmada**),
+the profile is loaded again so you can see what the server kept before trying
+again.
+
 ## Direct messages
 
 Choose **DMs** beside **Canais** to see your conversations. ↑/↓ moves the highlighted
@@ -866,13 +928,17 @@ notifications read. Opening the actual conversation has its normal read behavior
 ### Application modes
 
 Press **Ctrl+S**, or click the gear below your name in the box at the bottom of the
-channel list, to open **Configurações** (Settings). In **Geral** (General), use ↓ to
-reach the modes, ↑/↓ to select one and Space or Enter to mark it. Select
+channel list, to open **Configurações** (Settings), then press → to reach
+**Aparência** (Appearance). Use ↓ to reach the modes, ↑/↓ to select one and
+Space or Enter to mark it. Select
 **Salvar e aplicar** (Save and apply) to apply and remember your choice.
 **Cancelar** (Cancel), Esc or Ctrl+S closes the window without applying changes.
 From either bottom button, ↑ returns to the mode list. Use ←/→ on the section
-selector to browse the other sections; these are placeholders for future
-settings and currently change nothing.
+selector to browse the other sections. **Perfil** and **Áudio** have their own
+settings (see [Edit your own profile](#edit-your-own-profile) and
+[Voice calls and audio settings](#voice-calls-and-audio-settings));
+**Acessibilidade** and **Atalhos** are placeholders for future settings and
+currently change nothing.
 
 | Mode | Behavior |
 | --- | --- |

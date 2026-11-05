@@ -25,6 +25,7 @@ CMake checks these library requirements, even in Light or Ultralight mode:
 | Jansson | 2.14 |
 | libunibreak | 6.1 |
 | GLib, GModule and GIO | 2.66; GIO 2.88 on Windows |
+| zlib, to write reduced profile images as PNG | 1.2.11 |
 | libsixel | 1.8 |
 | Chafa | 1.16 |
 | PangoCairo | 1.50 |

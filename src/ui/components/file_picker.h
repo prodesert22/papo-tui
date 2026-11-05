@@ -6,6 +6,8 @@ typedef struct file_picker file_picker;
 file_picker *file_picker_create(void);
 void file_picker_destroy(file_picker *picker);
 void file_picker_show(file_picker *picker);
+/* The same file choice, titled for picking one profile image. */
+void file_picker_show_image(file_picker *picker);
 /* Save-as variant for downloads: native dialog first, terminal modal when none
  * is available. The chosen path is taken with file_picker_take_save. */
 void file_picker_show_save(file_picker *picker, const char *name);

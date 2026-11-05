@@ -44,6 +44,7 @@ add_library(
     src/platform/${PAPO_PLATFORM}/read_storage.c
     src/model/conversation/discovery.c
     src/model/conversation/members.c
+    src/model/conversation/profile_edit.c
     src/model/conversation/directory.c
     src/model/conversation/events.c
     src/model/conversation/history.c
@@ -112,6 +113,7 @@ add_library(
     papo_send_editor
     src/model/text/emoji_catalog.c
     src/ui/input/editor.c
+    src/ui/input/profile_commands.c
     src/ui/components/mention_popup.c
     src/ui/components/theme.c
     src/ui/components/status_bar.c
@@ -215,11 +217,12 @@ add_library(
     src/ui/media/icons.c
     src/ui/components/emoji_picker.c
     src/ui/media/image_decode.c
+    src/ui/media/profile_image.c
     src/ui/media/graphics.c
     src/ui/media/sixel.c
     src/ui/media/message_blocks.c)
 target_link_libraries(papo_media PUBLIC papo_send_editor PkgConfig::GMODULE PkgConfig::GIO
-                                        Threads::Threads m)
+                                        PkgConfig::ZLIB Threads::Threads m)
 target_compile_definitions(
     papo_media
     PRIVATE PAPO_MEDIA_WORKER_FILE="$<TARGET_FILE_NAME:papo-media-worker>"
@@ -237,6 +240,7 @@ add_executable(
     src/ui/screens/conversation/drawing.c
     src/ui/screens/conversation/input.c
     src/ui/screens/conversation/attachments.c
+    src/ui/screens/conversation/profile.c
     src/ui/screens/conversation/downloads.c
     src/ui/screens/conversation/interactions.c
     src/ui/screens/conversation/reactions.c

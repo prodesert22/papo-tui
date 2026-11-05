@@ -309,7 +309,7 @@ class MemberMedia(unittest.TestCase):
                 try:
                     terminal.send("\x13")
                     self.wait(terminal, "Configurações")
-                    terminal.send("\t" + "\x1bOB" * (1 if mode == "light" else 2) + "\n\t\n")
+                    terminal.send("\x1bOC\t" + "\x1bOB" * (1 if mode == "light" else 2) + "\n\t\n")
                     self.settled(terminal, lambda: "Configurações" not in self.screen(terminal))
                     baseline = len(server.requests)
                     terminal.send("\x15/bob\n")

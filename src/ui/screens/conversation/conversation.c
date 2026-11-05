@@ -118,7 +118,8 @@ static void open_settings(view *ui, const profile_config *config)
     conversation_interactions_close(ui);
     ui->reaction_picker = false;
     r8_modal_close(ui->r8);
-    settings_open(&ui->settings, config, history_voice(ui->model));
+    settings_open(&ui->settings, config, history_voice(ui->model), ui->model,
+                  ui->connections->items[ui->active_tab].name);
 }
 
 /* Rebuilds the optimistic entries of the open conversation when the outbox
@@ -508,6 +509,10 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             redraw = true;
             scope = DRAW_ALL;
         }
+        if (conversation_profile_poll(ui) | settings_poll(&ui->settings)) {
+            redraw = true;
+            scope = DRAW_ALL;
+        }
         if (conversation_downloads_poll(ui)) {
             redraw = true;
             scope = DRAW_ALL;
@@ -765,6 +770,11 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 scope = DRAW_ALL;
                 continue;
             }
+            if (!ui->help.open && settings_paste(&ui->settings, &ui->paste_data)) {
+                redraw = true;
+                scope = DRAW_ALL;
+                continue;
+            }
             if (!ui->help.open && !file_picker_open(ui->files) && !ui->remove_confirm &&
                 !ui->duplicate_modal && !(r8_modal_is_open(ui->r8) || ui->settings.open) &&
                 !media_view_modal(ui->media) && !emoji_picker_open(ui->emojis) &&
@@ -846,6 +856,12 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         }
         if (ui->settings.open) {
             settings_key(&ui->settings, connections->config, type, key);
+            if (ui->settings.pick) {
+                conversation_profile_pick(ui, ui->settings.pick == SETTINGS_PICK_AVATAR
+                                                  ? PROFILE_AVATAR
+                                                  : PROFILE_BANNER);
+                ui->settings.pick = SETTINGS_PICK_NONE;
+            }
             if (ui->settings.applied) {
                 ui->settings.applied = false;
                 app_mode_set(connections->config->mode);
@@ -1573,6 +1589,7 @@ finished:
     conversation_members_destroy(ui);
     conversation_downloads_close(ui);
     conversation_attachments_close(ui);
+    conversation_profile_close(ui);
     file_picker_destroy(ui->files);
     instances_visible(connections, NULL, NULL);
     text_paste_cancel(&ui->paste_data);
