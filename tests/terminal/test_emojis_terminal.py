@@ -115,6 +115,30 @@ class EmojiTerminal(support.EmojiTerminal):
             finally:
                 self.assertTrue(t.close())
 
+    def test_colon_completion_reopens_right_after_a_completed_server_emoji(self):
+        with self.server() as s:
+            t = self.open(s, protocol="kitty")
+            try:
+                popup = "Emojis · mais usados"
+                t.send(":gato_界")
+                self.wait(t, "gato 界")
+                t.send("\t")
+                self.until(t, lambda: popup not in "\n".join(t.screen.display))
+                # The completed :gato 界: ends in a colon; the next one starts there.
+                t.send(":gat")
+                self.wait(t, popup)
+                t.send("\t")
+                self.until(t, lambda: popup not in "\n".join(t.screen.display))
+                # A double colon that does not end an emoji still opens nothing.
+                t.send(" C::ga")
+                t.read(0.5)
+                self.assertNotIn(popup, "\n".join(t.screen.display))
+                t.send("\n")
+                self.until(t, lambda: s.message_count == 1)
+                self.assertEqual(s.sent_messages[0]["content"], ":gato 界::gato 界: C::ga")
+            finally:
+                self.assertTrue(t.close())
+
     def test_picker_arrows_visit_search_tabs_and_first_grid_row(self):
         with self.server() as s:
             t = self.open(s, sixel=False)

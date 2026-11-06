@@ -344,6 +344,22 @@ static bool word(uint32_t c)
 {
     return g_unichar_isalnum(c) || c == '_' || c == '-' || c == '+' || c == '.';
 }
+/* The colon at index colon ends a server emoji's :name:, as completing one
+ * inserts, so another completion may start right after it. */
+static bool ends_server_emoji(const emoji_picker *p, const text_buffer *b, size_t colon)
+{
+    for (size_t i = 0; i < chat_assets_emoji_count(p->assets); ++i) {
+        text_buffer name;
+        if (!text_decode(&name, chat_assets_emoji(p->assets, i)->name) || !name.length ||
+            name.length + 1 > colon)
+            continue;
+        size_t start = colon - name.length;
+        if (b->data[start - 1] == ':' &&
+            !memcmp(b->data + start, name.data, name.length * sizeof(*b->data)))
+            return true;
+    }
+    return false;
+}
 bool emoji_picker_suggest(emoji_picker *p, text_buffer *b, bool enabled)
 {
     if (!p || p->open)
@@ -357,8 +373,8 @@ bool emoji_picker_suggest(emoji_picker *p, text_buffer *b, bool enabled)
     while (at && word(b->data[at - 1]))
         --at;
     if (!at || b->data[at - 1] != ':' ||
-        (at > 1 && (word(b->data[at - 2]) || b->data[at - 2] == ':' || b->data[at - 2] == '/' ||
-                    b->data[at - 2] == '\\')) ||
+        (at > 1 && (word(b->data[at - 2]) || b->data[at - 2] == '/' || b->data[at - 2] == '\\' ||
+                    (b->data[at - 2] == ':' && !ends_server_emoji(p, b, at - 2)))) ||
         icons_literal(b->data, at - 1)) {
         emoji_picker_close(p);
         p->dismissed = false;
