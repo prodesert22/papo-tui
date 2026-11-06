@@ -38,6 +38,32 @@ class R8Terminal(support.R8Terminal):
                 self.assertTrue(server.notifications[0]["read"])
                 self.assertEqual(server.marked, [])
 
+    def test_notification_for_the_newest_message_reads_without_scrolling(self):
+        # The target is centered; when the newest message is on screen too,
+        # the conversation is read without scrolling down to it.
+        with R8Mock(count=1) as server:
+            target = server.other_rows()[0]
+            channel = next(c for c in server.channels if c["id"] == OTHER)
+            channel.update(last_message={"id": target["id"]}, last_read_message=None)
+            server.notifications[0].update(
+                message_id=target["id"],
+                channel_id=OTHER,
+                message_content="Notificação de destino",
+                author_id=target["author_id"],
+            )
+            terminal = self.login(server)
+            terminal.resize(32, 100)
+            self.wait(terminal, "Mensagem 0003")
+            self.assertNotIn((OTHER, target["id"]), server.channel_reads)
+            self.open_notification_target(terminal)
+            self.wait(terminal, target["content"])
+            self.wait(terminal, "Foco: Seleção")
+            end = time.monotonic() + 5
+            while (OTHER, target["id"]) not in server.channel_reads and time.monotonic() < end:
+                terminal.read(0.05)
+            self.assertIn((OTHER, target["id"]), server.channel_reads)
+            self.assertEqual(server.channel_reads.count((OTHER, target["id"])), 1)
+
     def test_old_notification_starts_at_its_own_time_instead_of_scanning(self):
         with R8Mock(count=1) as server:
             target = self.notification_target(server, 320, 40)

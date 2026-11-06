@@ -585,6 +585,11 @@ int conversation_position(view *ui)
         /* Keep the UUID centered as late media, reply excerpts, names or pages
          * change row heights. Save a normal anchor for leaving this mode. */
         conversation_walk(ui, first, false, true, &anchor);
+        /* A target near the end leaves the newest message on screen too:
+         * that is the end of the conversation, so it can be read. */
+        ui->at_end = first == last && !history_has_newer(ui->model);
+        if (ui->at_end)
+            ui->unseen = 0;
         return first;
     }
     return ui->at_end ? last : anchor > last ? last : anchor;
