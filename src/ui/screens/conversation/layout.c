@@ -575,6 +575,19 @@ static int centered_position(view *ui, int last)
 {
     return CLAMP((ui->selected_start + ui->selected_end - ui->visible) / 2, 0, last);
 }
+/* A view that shows the end of a fully loaded conversation is at its end,
+ * however it got there: centering a target, a taller terminal, closing a
+ * panel, media settling or messages removed below. New messages are then
+ * followed and the newest one can be read. */
+static int settle_end(view *ui, int first, int last)
+{
+    if (!ui->at_end && first == last && history_message_count(ui->model) &&
+        !history_has_newer(ui->model)) {
+        ui->at_end = true;
+        ui->unseen = 0;
+    }
+    return first;
+}
 int conversation_position(view *ui)
 {
     int anchor;
@@ -585,14 +598,12 @@ int conversation_position(view *ui)
         /* Keep the UUID centered as late media, reply excerpts, names or pages
          * change row heights. Save a normal anchor for leaving this mode. */
         conversation_walk(ui, first, false, true, &anchor);
-        /* A target near the end leaves the newest message on screen too:
-         * that is the end of the conversation, so it can be read. */
-        ui->at_end = first == last && !history_has_newer(ui->model);
-        if (ui->at_end)
-            ui->unseen = 0;
-        return first;
+        /* Leaving the end keeps the target centered instead of following. */
+        if (first != last)
+            ui->at_end = false;
+        return settle_end(ui, first, last);
     }
-    return ui->at_end ? last : anchor > last ? last : anchor;
+    return settle_end(ui, ui->at_end ? last : anchor > last ? last : anchor, last);
 }
 
 void conversation_scroll_history(view *ui, int delta, bool paginate)

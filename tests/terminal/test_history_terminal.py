@@ -854,6 +854,45 @@ class HistoryTerminal(support.HistoryTerminal):
             finally:
                 self.assertTrue(t.close())
 
+    def test_a_view_that_reaches_the_end_without_scrolling_follows_new_messages(self):
+        # Scrolled up a little, then the terminal grows until the end is on
+        # screen: a new message is then followed and read, not counted unseen.
+        with RealtimeMock(count=40) as server:
+            t = Terminal()
+            try:
+                t.resize(24, 100)
+                t.send(server.url + "\tjosé\tSynthetic!123\n")
+                self.wait(t, "Mensagem 0040")
+                t.send("\x1bOB\n")
+                self.wait(t, "Foco: Histórico")
+                t.send("\x1b[<64;60;10M")
+                wait_for_screen(
+                    t,
+                    lambda: "Mensagem 0040" not in "\n".join(t.screen.display),
+                    "scrolled up",
+                )
+                t.resize(44, 100)
+                self.wait(t, "Mensagem 0040")
+                message = dict(
+                    server.message(1),
+                    id=uuid(991),
+                    author_id=uuid(21),
+                    content="Chegou agora",
+                    created_at="2026-12-10T13:00:01Z",
+                )
+                server.messages.append(message)
+                server.emit(dict(message, type="message"))
+                self.wait(t, "Chegou agora")
+                deadline = time.monotonic() + 5
+                while (CHANNEL, message["id"]) not in server.channel_reads and (
+                    time.monotonic() < deadline
+                ):
+                    t.read(0.05)
+                self.assertIn((CHANNEL, message["id"]), server.channel_reads)
+                self.assertNotIn("novas mensagens", "\n".join(t.screen.display))
+            finally:
+                self.assertTrue(t.close())
+
     def test_incoming_messages_keep_the_reading_position_and_sending_jumps_to_the_newest(self):
         def history_rows(t):
             return "\n".join(line[26:] for line in t.screen.display[6:16])
