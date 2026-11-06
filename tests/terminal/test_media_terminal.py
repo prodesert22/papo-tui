@@ -919,8 +919,40 @@ class MediaTerminal(support.MediaTerminal):
                 finally:
                     self.assertTrue(t.close())
 
+    def test_media_viewer_preserve_history_avatars_and_inline_icons(self):
+        # The viewer floats over the history like the settings panels: the
+        # avatars and emoji around it stay, as do the ones it does not cover.
+        def select(t):
+            # Selecting the message repaints it, and its emoji, before the viewer opens.
+            t.send("\x1b\x0b")
+            self.wait(t, "Foco: Seleção")
+            t.read(0.5)
+
+        def open_viewer(t):
+            t.send("\n")
+            self.wait(t, "Mídia · Esc: voltar")
+
+        for protocol in protocols("kitty", "sixel", "iterm2"):
+            with self.subTest(protocol=protocol):
+                self.panel_keeps_history_media(
+                    protocol,
+                    open_viewer,
+                    "Esc: voltar",
+                    title="Mídia · Esc",
+                    border_title=True,
+                    before_open=select,
+                )
+
     def panel_keeps_history_media(
-        self, protocol, open_panel, ready, size=(48, 160), resized=(44, 144)
+        self,
+        protocol,
+        open_panel,
+        ready,
+        size=(48, 160),
+        resized=(44, 144),
+        title="Configurações",
+        border_title=False,
+        before_open=None,
     ):
         avatar = base64.b64encode(self.images["png"]).decode()
         with self.serve(self.images["png"], "image/png") as server:
@@ -999,11 +1031,11 @@ class MediaTerminal(support.MediaTerminal):
 
                 def settings_frame():
                     display = t.screen.display
-                    title_row = next(i for i, line in enumerate(display) if "Configurações" in line)
+                    title_row = next(i for i, line in enumerate(display) if title in line)
                     # The title is inside the frame; its top border is the
                     # row above.
-                    top = title_row - 1
-                    title_x = wcswidth(display[title_row].split("Configurações")[0])
+                    top = title_row if border_title else title_row - 1
+                    title_x = wcswidth(display[title_row].split(title)[0])
                     left = next(
                         x
                         for x in range(title_x, -1, -1)
@@ -1044,10 +1076,12 @@ class MediaTerminal(support.MediaTerminal):
                             (label, size, (y, x, rows, columns), (top, left, bottom, right)),
                         )
 
+                if before_open:
+                    before_open(t)
                 frames = len(t.stream.frames)
                 placements = len(t.stream.placements)
                 open_panel(t)
-                self.wait(t, "Configurações")
+                self.wait(t, title)
                 self.wait(t, ready)
                 self.settled(
                     t,
@@ -1070,7 +1104,7 @@ class MediaTerminal(support.MediaTerminal):
                 frames = len(t.stream.frames)
                 placements = len(t.stream.placements)
                 t.resize(*resized)
-                self.wait(t, "Configurações")
+                self.wait(t, title)
                 self.settled(
                     t,
                     lambda: bool(history_images(frames, placements)),
@@ -1082,9 +1116,7 @@ class MediaTerminal(support.MediaTerminal):
                 )
 
                 t.send("\x1b")
-                self.settled(
-                    t, lambda: "Configurações" not in "\n".join(t.screen.display), seconds=8
-                )
+                self.settled(t, lambda: title not in "\n".join(t.screen.display), seconds=8)
                 self.assertTrue(
                     any(size == (48, 48) for size, _ in history_images()),
                     "The history avatar did not return after settings closed",
@@ -1591,8 +1623,34 @@ class MediaTerminal(support.MediaTerminal):
                 t.resize(28, 100)
                 self.wait_frames(t, frames + 1)
                 self.wait(t, "Pausado")
-                self.assertLessEqual(len(t.stream.live_ids), 1)
-                player_id = int(t.stream.kitty_frames[-1][0][b"i"])
+                # The player is the scaled placement; history media and editor
+                # icons may also be sent, but only around the modal.
+                player_id = next(
+                    int(v[b"i"]) for v in reversed(t.stream.placements) if v.get(b"c", b"0") != b"0"
+                )
+                display = t.screen.display
+                top = next(i for i, line in enumerate(display) if "Mídia · Esc" in line)
+                left = display[top].index("l")
+                right = display[top].rindex("k") + 1
+                bottom = (
+                    next(y for y in range(top + 1, t.screen.lines) if display[y][left] == "m") + 1
+                )
+                sizes = {
+                    int(h[b"i"]): (int(h[b"s"]), int(h[b"v"])) for h, _ in t.stream.kitty_frames
+                }
+                latest = {
+                    (int(v[b"i"]), int(v[b"p"])): (v, position)
+                    for v, position in zip(t.stream.placements, t.stream.placement_positions)
+                }
+                for pair in {pair for pair in t.stream.live_placements if pair[0] != player_id}:
+                    values, (y, x) = latest[pair]
+                    width = int(values.get(b"w", sizes.get(pair[0], (0, 0))[0]))
+                    height = int(values.get(b"h", sizes.get(pair[0], (0, 0))[1]))
+                    rows, columns = (height + 15) // 16, (width + 7) // 8
+                    self.assertTrue(
+                        y + rows <= top or y >= bottom or x + columns <= left or x >= right,
+                        (pair, (y, x, rows, columns), (top, left, bottom, right)),
+                    )
                 t.send("\x1b")
                 self.wait(t, "Rascunho Kitty")
                 self.assertNotIn(player_id, t.stream.live_ids)

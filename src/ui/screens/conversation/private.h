@@ -160,7 +160,7 @@ typedef struct {
     app_settings settings;
     bool settings_presented;
     server_settings server_settings;
-    bool server_settings_presented;
+    bool server_settings_presented, viewer_presented;
     help_modal help;
     bool list_dms, initial_channel_pending;
     /* Conversation to open first: the one shown last on this server. The

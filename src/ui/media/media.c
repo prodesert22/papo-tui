@@ -62,6 +62,9 @@ struct media_view {
     auth_client *auth;
     history *model; /* Borrowed while the conversation is active. */
     media_cache *store;
+    /* Overlay count once the modal window's own area is registered: the
+     * modal picture uses it as its layer, so only later panels cut it. */
+    unsigned modal_layer;
     cache_entry cache[CACHE_COUNT];
     placement visible[VISIBLE_COUNT];
     int visible_count, viewport_rows;
@@ -125,12 +128,11 @@ static void delete_entry(cache_entry *e)
 static bool ensure_resource(media_view *v, cache_entry *e)
 {
     if (!e->resource)
-        e->resource = e->item.svg
-                          ? media_cache_acquire_svg(v->store, e->item.id, e->item.version)
+        e->resource = e->item.svg ? media_cache_acquire_svg(v->store, e->item.id, e->item.version)
                       : *e->item.url
                           ? media_cache_acquire_url(v->store, e->item.url, e->item.version)
-                          : media_cache_acquire(v->store, e->item.kind, e->item.id,
-                                                e->item.version, e->item.video);
+                          : media_cache_acquire(v->store, e->item.kind, e->item.id, e->item.version,
+                                                e->item.video);
     return e->resource != NULL;
 }
 static void free_job(job *j)
@@ -1783,6 +1785,10 @@ void media_view_draw(media_view *v)
     if (!v->window)
         return;
     WINDOW *w = v->window;
+    /* History avatars, emoji and previews stay visible around the modal;
+     * only the area it covers is cut from them. */
+    media_cache_overlay(v->store, v->layout.y, v->layout.x, height, width);
+    v->modal_layer = media_cache_overlay_count(v->store);
     wbkgd(w, COLOR_PAIR(THEME_PANEL));
     werase(w);
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
@@ -1852,29 +1858,9 @@ void media_view_draw(media_view *v)
     touchwin(w);
     wnoutrefresh(w);
 }
-void media_view_prepare(media_view *v)
+/* History previews from the last history paint, cut by overlays above them. */
+static void place_visible(media_view *v)
 {
-    if (!v || !graphics_terminal_get().supported)
-        return;
-    if (media_view_modal(v)) {
-        /* An audio without a cover has no raster to place. */
-        if (v->window && v->modal == MODAL_PLAYING &&
-            (v->modal_image.data || !v->selected_item.audio) && modal_layout_update(v)) {
-            /* Recalculate after a decode result changes the raster dimensions. */
-            if (!v->selected_item.video && media_cache_overlay_count(v->store) &&
-                v->modal_entry >= 0 && v->modal_entry < CACHE_COUNT) {
-                cache_entry *e = &v->cache[v->modal_entry];
-                image_decode_request request = {.terminal = graphics_terminal_get()};
-                media_resource_place_image(e->resource, !strcmp(e->item.role, "author"), request,
-                                           &v->modal_image, v->modal_image.id, e->fragments,
-                                           v->layout.image_y, v->layout.image_x, 0, 0, 0);
-            } else if (v->selected_item.video && v->modal_image.protocol == GRAPHICS_KITTY)
-                graphics_image_place_scaled(&v->modal_image, v->layout.image_y, v->layout.image_x);
-            else
-                graphics_image_place(&v->modal_image, v->layout.image_y, v->layout.image_x, 0, 0);
-        }
-        return;
-    }
     for (int i = 0; i < v->visible_count; ++i) {
         placement *p = &v->visible[i];
         cache_entry *e = &v->cache[p->entry];
@@ -1887,6 +1873,35 @@ void media_view_prepare(media_view *v)
             e->fragments, p->y, p->x, t.protocol == GRAPHICS_KITTY ? p->top * t.cell_height : 0,
             t.protocol == GRAPHICS_KITTY ? p->bottom * t.cell_height : 0, false);
     }
+}
+void media_view_prepare(media_view *v)
+{
+    if (!v || !graphics_terminal_get().supported)
+        return;
+    if (media_view_modal(v)) {
+        /* Previews around the modal stay; its own area is an overlay. */
+        if (v->window)
+            place_visible(v);
+        /* An audio without a cover has no raster to place. */
+        if (v->window && v->modal == MODAL_PLAYING &&
+            (v->modal_image.data || !v->selected_item.audio) && modal_layout_update(v)) {
+            /* Recalculate after a decode result changes the raster dimensions. */
+            if (!v->selected_item.video && media_cache_overlay_count(v->store) &&
+                v->modal_entry >= 0 && v->modal_entry < CACHE_COUNT) {
+                cache_entry *e = &v->cache[v->modal_entry];
+                image_decode_request request = {.terminal = graphics_terminal_get()};
+                media_resource_place_image(e->resource, !strcmp(e->item.role, "author"), request,
+                                           &v->modal_image, v->modal_image.id, e->fragments,
+                                           v->layout.image_y, v->layout.image_x, 0, 0,
+                                           v->modal_layer);
+            } else if (v->selected_item.video && v->modal_image.protocol == GRAPHICS_KITTY)
+                graphics_image_place_scaled(&v->modal_image, v->layout.image_y, v->layout.image_x);
+            else
+                graphics_image_place(&v->modal_image, v->layout.image_y, v->layout.image_x, 0, 0);
+        }
+        return;
+    }
+    place_visible(v);
 }
 
 bool media_view_audio(const media_view *v, char channel[37], char message[37], char created_at[64])

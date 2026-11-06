@@ -345,7 +345,7 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
         /* Avatars may be transparent: once one is painted, its initials
          * must not show through from the cells underneath. */
         bool avatar_painted = false;
-        if (paint && avatar_visible && !media_view_modal(ui->media)) {
+        if (paint && avatar_visible) {
             int top = first > total ? first - total : 0;
             int bottom = total + avatar_rows > first + ui->visible
                              ? total + avatar_rows - first - ui->visible
@@ -474,32 +474,29 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
                                              getbegy(ui->body) + y, getbegx(ui->body) + x, 1,
                                              reaction->width, reaction->index);
                 }
-                if (!media_view_modal(ui->media)) {
-                    for (size_t k = 0; k < r->icon_count; ++k) {
-                        const message_icon_region *icon = &r->icons[k];
-                        char scope[180];
-                        snprintf(scope, sizeof(scope), "%s:%s", conversation_str(m, "id"),
-                                 icon->key);
-                        icons_scope(ui->icons, scope, 0);
-                        int icon_pair = r->card ? THEME_EMBED_AREA : pair;
-                        for (size_t n = 0; n < blocks->reaction_count; ++n)
-                            if (blocks->reactions[n].row == (int)row && blocks->reactions[n].mine)
-                                icon_pair = THEME_PANEL_ACTIVE;
-                        int x = 2 + r->x + r->indent + icon->x;
-                        if (icon->pixels) {
-                            if (icon->row && total + r->y != first)
-                                continue;
-                            int cell_height = graphics_terminal_get().cell_height;
-                            int start = total + r->y - icon->row;
-                            int top = icon->row * cell_height;
-                            int bottom =
-                                MAX(0, icon->pixels - (first + ui->visible - start) * cell_height);
-                            icons_paint_clipped(ui->icons, ui->body, icon->id, y, x, icon_pair,
-                                                icon->offset, icon->pixels, top, bottom);
-                        } else
-                            icons_paint(ui->icons, ui->body, icon->id, y, x, icon_pair, false,
-                                        icon->offset);
-                    }
+                for (size_t k = 0; k < r->icon_count; ++k) {
+                    const message_icon_region *icon = &r->icons[k];
+                    char scope[180];
+                    snprintf(scope, sizeof(scope), "%s:%s", conversation_str(m, "id"), icon->key);
+                    icons_scope(ui->icons, scope, 0);
+                    int icon_pair = r->card ? THEME_EMBED_AREA : pair;
+                    for (size_t n = 0; n < blocks->reaction_count; ++n)
+                        if (blocks->reactions[n].row == (int)row && blocks->reactions[n].mine)
+                            icon_pair = THEME_PANEL_ACTIVE;
+                    int x = 2 + r->x + r->indent + icon->x;
+                    if (icon->pixels) {
+                        if (icon->row && total + r->y != first)
+                            continue;
+                        int cell_height = graphics_terminal_get().cell_height;
+                        int start = total + r->y - icon->row;
+                        int top = icon->row * cell_height;
+                        int bottom =
+                            MAX(0, icon->pixels - (first + ui->visible - start) * cell_height);
+                        icons_paint_clipped(ui->icons, ui->body, icon->id, y, x, icon_pair,
+                                            icon->offset, icon->pixels, top, bottom);
+                    } else
+                        icons_paint(ui->icons, ui->body, icon->id, y, x, icon_pair, false,
+                                    icon->offset);
                 }
                 if (observed && !ui->help.open && !emoji_picker_open(ui->emojis) &&
                     !(r8_modal_is_open(ui->r8) || conversation_panel_open(ui)) &&

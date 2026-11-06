@@ -430,13 +430,16 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                        mention_popup_open(ui->mentions) || r8_modal_is_open(ui->r8) ||
                        ui->help.open || ui->server_settings.open;
     graphics_update_begin();
-    /* Opening or closing the floating settings panel recomposes the screen.
+    /* Opening or closing a floating panel or the media viewer recomposes the screen.
      * Force one fresh pixel presentation so terminals that anchor images to
      * text cells keep the uncovered history imagery. */
+    bool viewer = media_view_modal(ui->media);
     if (ui->settings_presented != ui->settings.open ||
-        ui->server_settings_presented != ui->server_settings.open) {
+        ui->server_settings_presented != ui->server_settings.open ||
+        ui->viewer_presented != viewer) {
         ui->settings_presented = ui->settings.open;
         ui->server_settings_presented = ui->server_settings.open;
+        ui->viewer_presented = viewer;
         graphics_frame_invalidate();
     }
     curs_set(0);
@@ -839,12 +842,17 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         wnoutrefresh(ui->body);
     conversation_attachments_draw_row(ui);
     conversation_draw_confirmation(ui);
+    /* The media viewer floats over the member drawer; otherwise the drawer
+     * stays above the history's media rows. */
+    if (media_view_modal(ui->media))
+        conversation_members_draw(ui);
     if (paint_media)
         media_view_draw(ui->media);
     /* The confirmation dialog is already painted and must stay on top. */
     if (paint_media && !ui->duplicate_modal)
         media_view_draw_rows(ui->media);
-    conversation_members_draw(ui);
+    if (!media_view_modal(ui->media))
+        conversation_members_draw(ui);
     if (mention_popup_open(ui->mentions) && ui->body && conversation_input(ui)) {
         text_layout *measured = &ui->measured;
         text_measure(conversation_input(ui), conversation_input_width(ui), measured);
@@ -886,7 +894,7 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
     }
     if (!caret)
         setsyx(-1, -1);
-    if (paint_media && (media_view_modal(ui->media) || ui->duplicate_modal))
+    if (paint_media && ui->duplicate_modal)
         icons_begin(ui->icons);
     if (emoji_picker_open(ui->emojis)) {
         emoji_picker_draw(ui->emojis);

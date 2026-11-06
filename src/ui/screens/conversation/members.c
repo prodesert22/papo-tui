@@ -907,13 +907,16 @@ static void draw_list(view *ui)
 void conversation_members_draw(view *ui)
 {
     bool standalone = !ui->members_open && conversation_members_modal(ui);
-    if ((!ui->members_open && !standalone) || conversation_panel_open(ui) ||
-        media_view_modal(ui->media) || ui->duplicate_modal || COLS < 44 || LINES < 14)
+    /* Floating panels and the media viewer only cover part of the drawer:
+     * the list and its avatars stay drawn under them, cut where covered. */
+    bool covered = conversation_panel_open(ui) || media_view_modal(ui->media);
+    if ((!ui->members_open && !standalone) || (covered && standalone) || ui->duplicate_modal ||
+        COLS < 44 || LINES < 14)
         return;
     struct member_drawer *d = ui->members;
     if (!standalone)
         draw_list(ui);
-    if (d->panel == MEMBER_NO_MODAL)
+    if (covered || d->panel == MEMBER_NO_MODAL)
         return;
     WINDOW *w;
     int items[5];

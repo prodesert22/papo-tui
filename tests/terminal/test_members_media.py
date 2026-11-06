@@ -197,6 +197,74 @@ class MemberMedia(unittest.TestCase):
                     helper.doCleanups()
                     helper.tearDown()
 
+    def test_drawer_avatars_stay_under_settings_and_the_media_viewer(self):
+        for protocol in protocols("kitty"):
+            with self.subTest(protocol=protocol), self.fixture() as server:
+                helper = media.MediaTerminal()
+                helper.include_icons = True
+                terminal = helper.open(server, protocol=protocol, size=(44, 180))
+                try:
+                    helper.wait_frames(terminal)
+                    terminal.send("\x15")
+                    self.wait(terminal, "Membros (6)")
+                    row = next(
+                        i for i, line in enumerate(terminal.screen.display) if "Membros (6)" in line
+                    )
+                    drawer = terminal.screen.display[row].index("Membros (6)") - 2
+
+                    def drawer_avatars():
+                        current = {}
+                        stream = terminal.stream
+                        for header, (y, x) in zip(stream.placements, stream.placement_positions):
+                            current[(int(header[b"i"]), int(header[b"p"]))] = (header, y, x)
+                        return [
+                            (header, y, x)
+                            for key, (header, y, x) in current.items()
+                            if key in stream.live_placements and x >= drawer
+                        ]
+
+                    self.settled(terminal, lambda: bool(drawer_avatars()), seconds=10)
+
+                    def frame(title, border):
+                        display = terminal.screen.display
+                        title_row = next(i for i, line in enumerate(display) if title in line)
+                        top = title_row if border else title_row - 1
+                        at = display[title_row].index(title)
+                        left = display[top].rindex("l", 0, at)
+                        right = display[top].index("k", at) + 1
+                        bottom = next(
+                            y
+                            for y in range(top + 1, terminal.screen.lines)
+                            if display[y][left] == "m"
+                        )
+                        return top, left, bottom + 1, right
+
+                    for key, title, border in (
+                        ("\x13", "Configurações", False),
+                        ("\x1b\x0b\n", "Mídia · Esc", True),
+                    ):
+                        terminal.send(key)
+                        self.wait(terminal, title)
+                        terminal.read(1)
+                        top, left, bottom, right = frame(title, border)
+                        # Settings sit in the middle: the drawer stays drawn beside it.
+                        if not border:
+                            self.assertTrue(drawer_avatars(), "\n".join(terminal.screen.display))
+                            self.assertIn("Membros (6)", self.screen(terminal))
+                        for header, y, x in drawer_avatars():
+                            columns, rows = self.placement_dimensions(header)
+                            self.assertTrue(
+                                x + columns <= left or x >= right or y + rows <= top or y >= bottom,
+                                (title, (y, x, rows, columns), (top, left, bottom, right)),
+                            )
+                        terminal.send("\x1b")
+                        self.settled(terminal, lambda: title not in self.screen(terminal))
+                    self.settled(terminal, lambda: bool(drawer_avatars()), seconds=10)
+                finally:
+                    self.assertTrue(terminal.close())
+                    helper.doCleanups()
+                    helper.tearDown()
+
     def test_banner_failure_retries_only_after_explicit_profile_refresh(self):
         with self.fixture() as server:
             server.banner_status = 503
