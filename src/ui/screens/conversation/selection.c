@@ -398,3 +398,33 @@ void conversation_selection_destroy(view *ui)
     ui->select_rows = NULL;
     ui->select_row_count = 0;
 }
+
+bool conversation_message_has_text(const json_t *message)
+{
+    const char *content = conversation_str(message, "content");
+    for (const char *at = content; at && *at; at = g_utf8_next_char(at))
+        if (!g_unichar_isspace(g_utf8_get_char(at)))
+            return true;
+    return false;
+}
+
+bool conversation_copy_message(view *ui, const json_t *message)
+{
+    const char *content = conversation_str(message, "content");
+    if (!conversation_message_has_text(message) || !g_utf8_validate(content, -1, NULL))
+        return false;
+    GString *text = g_string_new(NULL);
+    mention_range range;
+    size_t from = 0;
+    while (mention_next(content, from, &range)) {
+        g_string_append_len(text, content + from, (gssize)(range.start - from));
+        const char *name = history_mention_name(ui->model, range.id);
+        g_string_append_printf(text, "@%s", name && *name ? name : "usuário indisponível");
+        from = range.end;
+    }
+    g_string_append(text, content + from);
+    bool copied = text->len <= CLIPBOARD_TEXT_LIMIT && clipboard_copy_text(text->str);
+    wipe_text(text);
+    g_string_free(text, true);
+    return copied;
+}

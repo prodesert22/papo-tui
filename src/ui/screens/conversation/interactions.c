@@ -11,15 +11,16 @@ enum {
     DOWNLOAD_ATTACHMENT,
     PIN_MESSAGE,
     VIEW_PROFILE,
+    COPY_TEXT,
     EDIT_MESSAGE,
     DELETE_MESSAGE
 };
 static int action_group(int action)
 {
-    return action <= ADD_REACTION ? 0 : action <= ORIGINAL ? 1 : action <= VIEW_PROFILE ? 2 : 3;
+    return action <= ADD_REACTION ? 0 : action <= ORIGINAL ? 1 : action <= COPY_TEXT ? 2 : 3;
 }
 static bool action_allowed(view *ui, int action, const json_t *message);
-static int menu_actions(view *ui, int items[9]);
+static int menu_actions(view *ui, int items[MESSAGE_ACTIONS]);
 
 const char *conversation_reply_target(view *ui)
 {
@@ -334,7 +335,7 @@ void conversation_interactions_sync(view *ui)
         ui->reaction_picker = false;
         ui->feedback = "Permissão para reagir indisponível.";
     }
-    int available[9];
+    int available[MESSAGE_ACTIONS];
     if (*ui->dm_context_id && (!ui->list_dms || !dm_channel(ui, ui->dm_context_id)))
         conversation_interactions_close(ui);
     if (*ui->channel_context_id && (ui->list_dms || !context_channel(ui)))
@@ -403,7 +404,7 @@ static void open_context(view *ui, const MEVENT *event)
     conversation_interactions_close(ui);
     if (selected_index(ui) == SIZE_MAX)
         return;
-    int available[9];
+    int available[MESSAGE_ACTIONS];
     if (!menu_actions(ui, available)) {
         ui->feedback = "Permissões ainda não confirmadas. Aguarde ou use Ctrl+R.";
         return;
@@ -473,6 +474,9 @@ static bool action_allowed(view *ui, int action, const json_t *message)
                history_permission(ui->model, PERMISSION_READ_CHANNEL) == PERMISSION_ALLOWED;
     if (action == PIN_MESSAGE && permissions_role(p, PERMISSION_PIN_MESSAGE) != PERMISSION_ALLOWED)
         return false;
+    /* Only messages with text; attachments alone have nothing to copy. */
+    if (action == COPY_TEXT && !conversation_message_has_text(message))
+        return false;
     /* Applications have no user profile. */
     if (action == VIEW_PROFILE)
         return !history_message_webhook(message) &&
@@ -481,7 +485,7 @@ static bool action_allowed(view *ui, int action, const json_t *message)
                                              ? PERMISSION_SEND_MESSAGES
                                              : PERMISSION_READ_CHANNEL) == PERMISSION_ALLOWED;
 }
-static int menu_actions(view *ui, int items[9])
+static int menu_actions(view *ui, int items[MESSAGE_ACTIONS])
 {
     json_t *m = history_find_message(ui->model, ui->selected_message);
     int count = 0;
@@ -530,7 +534,7 @@ static int server_menu_count(view *ui)
 }
 static int menu_count(view *ui)
 {
-    int items[9];
+    int items[MESSAGE_ACTIONS];
     return *ui->channel_context_id ? ui->channel_menu == 1   ? 7
                                      : ui->channel_menu == 2 ? 4
                                                              : 2 + channel_menu_first(ui)
@@ -583,6 +587,8 @@ static void message_action(view *ui, int action)
         conversation_download_menu(ui, ui->selected_message);
     else if (action == VIEW_PROFILE)
         conversation_members_profile(ui, author);
+    else if (action == COPY_TEXT && !conversation_copy_message(ui, m))
+        ui->feedback = "Não foi possível copiar o texto.";
 }
 static void menu_activate(view *ui)
 {
@@ -618,7 +624,7 @@ static void menu_activate(view *ui)
         }
         return;
     }
-    int items[9];
+    int items[MESSAGE_ACTIONS];
     int count = menu_actions(ui, items);
     if (ui->menu_selected >= 0 && ui->menu_selected < count)
         message_action(ui, items[ui->menu_selected]);
@@ -818,7 +824,7 @@ bool conversation_interactions_mouse(view *ui, const MEVENT *event)
             if (inside && ui->reactors_open)
                 conversation_reactors_mouse(ui, event);
             else if (left && inside && ui->context_open && y >= 1) {
-                int items[9], count = menu_count(ui), hit = -1;
+                int items[MESSAGE_ACTIONS], count = menu_count(ui), hit = -1;
                 if (grouped_menu(ui)) {
                     menu_actions(ui, items);
                     for (int i = 0; i < count; ++i)
@@ -910,7 +916,7 @@ void conversation_interactions_draw(view *ui)
     int width = MIN(COLS - 2, ui->reactors_open                               ? 76
                               : *ui->channel_context_id || ui->server_context ? 34
                                                                               : 30);
-    int rows[9];
+    int rows[MESSAGE_ACTIONS];
     int height = ui->reactors_open ? MIN(LINES - 2, 20) : menu_count(ui) + 2;
     if (grouped_menu(ui))
         height += menu_dividers(ui, rows, menu_actions(ui, rows));
@@ -1019,9 +1025,10 @@ void conversation_interactions_draw(view *ui)
             : history_pin_state(ui->model, ui->selected_message)   ? "Desafixar mensagem"
                                                                    : "Fixar mensagem",
             "Ver perfil",
+            "Copiar texto",
             "Editar mensagem",
             "Excluir mensagem"};
-        int items[9];
+        int items[MESSAGE_ACTIONS];
         menu_actions(ui, items);
         if (ui->delete_confirm)
             text_label(w, 0, 2, width - 4, "Excluir mensagem?");

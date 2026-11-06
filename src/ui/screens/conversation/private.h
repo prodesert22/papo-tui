@@ -49,6 +49,8 @@
  * below them. The focus label lives in the footer. */
 #define TABS_ROWS (COLS >= 80 ? 1 : 2)
 #define CONTENT_Y (TABS_ROWS + 2)
+/* Options of the message context menu. */
+#define MESSAGE_ACTIONS 10
 
 enum {
     SERVER_TABS,
@@ -207,7 +209,7 @@ typedef struct {
     int waiting_page;
     bool paging_notice;
     uint64_t menu_permissions;
-    int menu_cached[9], menu_cached_count;
+    int menu_cached[MESSAGE_ACTIONS], menu_cached_count;
     size_t section, offset;
     bool at_end, paste, show_channels, layout_failed, duplicate_modal, reenviar;
     bool dragging, editor_scrolling;
@@ -270,6 +272,10 @@ static inline bool conversation_panel_open(const view *ui)
     return ui->settings.open || ui->server_settings.open;
 }
 void conversation_open_server_settings(view *ui);
+/* The message's content has text, not only attachments or blanks. */
+bool conversation_message_has_text(const json_t *message);
+/* Copies the content as the history shows it: mentions become @name. */
+bool conversation_copy_message(view *ui, const json_t *message);
 void conversation_interactions_sync(view *ui);
 bool conversation_interactions_key(view *ui, int type, uint32_t key);
 bool conversation_interactions_mouse(view *ui, const MEVENT *event);

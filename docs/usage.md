@@ -782,7 +782,7 @@ message. Enter only opens media during message navigation. Press **m** again or
 Esc to close the menu. Use the mouse or ↑/↓ and Enter inside the menu to choose:
 
 A horizontal line separates four groups of options: reactions, navigation,
-content (download, pin and profile) and, last, actions on your own message. A
+content (download, pin, profile and copy text) and, last, actions on your own message. A
 group with no available option leaves no line.
 
 - **Ver quem reagiu** (See who reacted): show participants grouped by emoji.
@@ -808,6 +808,10 @@ group with no available option leaves no line.
   the same one shown from the member drawer, without opening the drawer. Esc or a
   click outside closes it; with the drawer open, Esc returns to the drawer.
   Messages sent by applications have no profile and do not show this option.
+- **Copiar texto** (Copy text): copies the message's text to the clipboard,
+  with its own line breaks and mentions written as **@name**, as the history
+  shows them. It appears only on messages that have text; drag over the
+  history instead to copy only part of a message, or several messages.
 - **Editar mensagem** (Edit message): available on your own messages. The editor
   shows **Editando mensagem** (Editing message). The message scrolls into view
   and stays highlighted with an **✎ Editando** border until editing ends.

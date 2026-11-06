@@ -2,6 +2,8 @@
 
 from test_context import main as test_main
 
+import base64
+import re
 import unittest
 from history_mock import CHANNEL, uuid
 from interaction_mock import InteractionMock
@@ -93,7 +95,7 @@ class MessageMutations(unittest.TestCase):
                 terminal.send("\x0bm")
                 self.wait(terminal, "Editar mensagem")
                 self.wait(terminal, "Excluir mensagem")
-                terminal.send("\x1bOB" * 5 + "\n")  # Editar follows the content group.
+                terminal.send("\x1bOB" * 6 + "\n")  # Editar follows the content group.
                 self.wait(terminal, "Editando mensagem")
                 self.assertIn("Mensagem 0001", self.editor_text(terminal))
                 terminal.send("\x03Discarded edit\x1b")
@@ -293,6 +295,49 @@ class MessageMutations(unittest.TestCase):
             finally:
                 self.assertTrue(terminal.close())
 
+    def test_copy_text_copies_the_content_with_mentions_as_shown(self):
+        with InteractionMock(count=1) as server:
+            server.messages[0]["content"] = f"Oi @mention(<@{uuid(21)}>), veja\nisto aqui"
+            terminal = self.open(server)
+            try:
+                self.wait(terminal, "isto aqui")
+                shown = next(line for line in terminal.screen.display if "Oi @" in line)
+                name = shown[shown.index("Oi @") + 4 : shown.index(", veja")]
+                copies = len(re.findall(rb"\x1b]52;c;([^\x07]*)\x07", terminal.output))
+                self.right_click(terminal, "isto aqui")
+                self.wait(terminal, "Copiar texto")
+                self.click(terminal, "Copiar texto")
+                self.settled(
+                    terminal,
+                    lambda: len(re.findall(rb"\x1b]52;c;([^\x07]*)\x07", terminal.output)) > copies,
+                )
+                payload = re.findall(rb"\x1b]52;c;([^\x07]*)\x07", terminal.output)[-1]
+                # The whole content, its own line break, and the name the history shows.
+                self.assertEqual(base64.b64decode(payload).decode(), f"Oi @{name}, veja\nisto aqui")
+                self.assertNotIn("Copiar texto", self.screen(terminal))
+            finally:
+                self.assertTrue(terminal.close())
+
+    def test_copy_text_is_not_offered_without_text(self):
+        with InteractionMock(count=1) as server:
+            server.messages[0]["content"] = "   "
+            server.messages[0]["attachments"] = [
+                {
+                    "id": uuid(901),
+                    "mime_type": "text/plain",
+                    "original_file_name": "nota.txt",
+                    "size_bytes": 4,
+                    "moderation_status": "clean",
+                }
+            ]
+            terminal = self.open(server)
+            try:
+                self.right_click(terminal, "nota.txt")
+                self.wait(terminal, "Ver perfil")
+                self.assertNotIn("Copiar texto", self.screen(terminal))
+            finally:
+                self.assertTrue(terminal.close())
+
     def test_menu_groups_are_separated_by_lines_that_clicks_skip(self):
         with InteractionMock(count=1) as server:
             self.own(server)
@@ -311,11 +356,13 @@ class MessageMutations(unittest.TestCase):
 
                 reactors, reaction = row_of("Ver quem reagiu"), row_of("Adicionar reação")
                 reply, profile = row_of("Responder"), row_of("Ver perfil")
+                copy = row_of("Copiar texto")
                 edit, delete = row_of("Editar mensagem"), row_of("Excluir mensagem")
                 self.assertEqual(reaction, reactors + 1)  # Same group: no line.
                 self.assertTrue(is_line(reaction + 1) and reply == reaction + 2)
                 self.assertTrue(is_line(reply + 1))  # Navigation | content.
-                self.assertTrue(is_line(profile + 1) and edit == profile + 2)  # Content | own.
+                self.assertEqual(copy, profile + 1)  # Copying is content too.
+                self.assertTrue(is_line(copy + 1) and edit == copy + 2)  # Content | own.
                 self.assertEqual(delete, edit + 1)
                 column = rows[delete].index("Excluir mensagem") + 1
                 terminal.click(reaction + 1, column)  # A divider is not an option.
@@ -336,7 +383,7 @@ class MessageMutations(unittest.TestCase):
             try:
                 terminal.send("Preserved draft\x0bm")
                 self.wait(terminal, "Excluir mensagem")
-                terminal.send("\x1bOB" * 6 + "\n")  # Excluir is the last item.
+                terminal.send("\x1bOB" * 7 + "\n")  # Excluir is the last item.
                 self.wait(terminal, "Excluir mensagem?")
                 terminal.send("\n")  # Cancel is selected initially.
                 self.assertEqual(server.mutation_calls, [])
