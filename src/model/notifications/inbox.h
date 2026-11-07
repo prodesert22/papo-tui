@@ -40,6 +40,9 @@ void inbox_read_through(inbox *box, const char *channel, const json_t *cursor);
 void inbox_read_until(inbox *box, const char *channel, const char *id, const char *time);
 /* Unread notification records in channel at or before (time, id). */
 bool inbox_unread_before(const inbox *box, const char *channel, const char *id, const char *time);
+/* A conversation read confirmed by the server marks that channel's records at
+ * or before (time, id) read there; mirror it so they are not marked again. */
+void inbox_server_read(inbox *box, const char *channel, const char *id, const char *time);
 bool inbox_preferences_poll(inbox *box);
 bool inbox_conversation_muted(const inbox *box, const char *channel);
 bool inbox_mute_conversation(inbox *box, const char *channel, int seconds);

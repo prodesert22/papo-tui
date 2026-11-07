@@ -27,7 +27,9 @@ class TermuxKeyboard(unittest.TestCase):
         while sequence not in terminal.output and time.monotonic() < deadline:
             terminal.read(0.03)
         self.assertIn(sequence, terminal.output)
-        return time.monotonic()
+        # When the sequence arrived, not when this loop noticed it: sending the
+        # click already reads output for a while before the wait starts.
+        return terminal.arrival(terminal.output.index(sequence))
 
     def label(self, terminal, text):
         for row, line in enumerate(terminal.screen.display):

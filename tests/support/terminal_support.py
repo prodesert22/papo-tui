@@ -242,6 +242,9 @@ class PosixTerminal:
             start_new_session=True,
         )
         self.output = bytearray()
+        # (monotonic time, output length) after each PTY read, for timing
+        # assertions that must not depend on when a wait loop polls.
+        self.arrivals = []
         self._closed = False
         terminals.append(self)
         self.screen = ObservedScreen(80, 24)
@@ -254,8 +257,17 @@ class PosixTerminal:
             ready, _, _ = select.select([self.master], [], [], 0.02)
             if ready:
                 data = os.read(self.master, 65536)
+                arrived = time.monotonic()
                 self.output.extend(data)
+                self.arrivals.append((arrived, len(self.output)))
                 self.stream.feed(data)
+
+    def arrival(self, index):
+        """Monotonic time when output byte index was read from the PTY."""
+        for arrived, end in self.arrivals:
+            if index < end:
+                return arrived
+        raise IndexError(index)
 
     def send(self, value):
         os.write(self.master, value.encode())

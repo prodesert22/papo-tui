@@ -281,8 +281,10 @@ void history_internal_read_response(history *h, long code)
         if (json_is_true(json_object_get(c, "_dm")))
             inbox_read_conversation(h->inbox, h->read_channel);
         if (*h->read_time &&
-            inbox_unread_before(h->inbox, h->read_channel, h->read_message, h->read_time))
+            inbox_unread_before(h->inbox, h->read_channel, h->read_message, h->read_time)) {
+            inbox_server_read(h->inbox, h->read_channel, h->read_message, h->read_time);
             inbox_refresh(h->inbox);
+        }
     }
     h->read_channel[0] = h->read_message[0] = h->read_time[0] = 0;
 }

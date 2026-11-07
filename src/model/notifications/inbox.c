@@ -1016,21 +1016,43 @@ void inbox_read_until(inbox *b, const char *channel, const char *id, const char 
     read_covered(b);
     ++b->revision;
 }
+static bool unread_at_or_before(const inbox *b, const json_t *n, const char *channel,
+                                const char *id, const char *time)
+{
+    if (json_is_true(json_object_get(n, "read")) || strcmp(s(n, "channel_id"), channel))
+        return false;
+    json_t *preview = json_object_get(b->previews, s(n, "message_id"));
+    const char *at = *s(preview, "created_at") ? s(preview, "created_at") : s(n, "created_at");
+    int order = compare_time(at, time);
+    return order < 0 || (!order && strcmp(s(n, "message_id"), id) <= 0);
+}
 bool inbox_unread_before(const inbox *b, const char *channel, const char *id, const char *time)
 {
     size_t i;
     json_t *n;
+    json_array_foreach(b->notifications, i, n) if (unread_at_or_before(b, n, channel, id, time))
+        return true;
+    return false;
+}
+void inbox_server_read(inbox *b, const char *channel, const char *id, const char *time)
+{
+    if (!b || !channel || !id || !time)
+        return;
+    size_t i;
+    json_t *n;
     json_array_foreach(b->notifications, i, n)
     {
-        if (json_is_true(json_object_get(n, "read")) || strcmp(s(n, "channel_id"), channel))
+        if (!unread_at_or_before(b, n, channel, id, time))
             continue;
-        json_t *preview = json_object_get(b->previews, s(n, "message_id"));
-        const char *at = *s(preview, "created_at") ? s(preview, "created_at") : s(n, "created_at");
-        int order = compare_time(at, time);
-        if (order < 0 || (!order && strcmp(s(n, "message_id"), id) <= 0))
-            return true;
+        json_object_set_new(n, "read", json_true());
+        /* The server already marked it; an explicit mark would only repeat it. */
+        for (size_t j = 0; j < json_array_size(b->reads);)
+            if (!strcmp(json_string_value(json_array_get(b->reads, j)), s(n, "id")))
+                json_array_remove(b->reads, j);
+            else
+                ++j;
+        ++b->revision;
     }
-    return false;
 }
 void inbox_read_through(inbox *b, const char *channel, const json_t *cursor)
 {

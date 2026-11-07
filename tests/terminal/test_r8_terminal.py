@@ -1327,7 +1327,23 @@ class R8Terminal(support.R8Terminal):
             )
             self.assertLessEqual(sum(e.get("type") == "typing" for e in server.ws_messages), 1)
             server.emit(dict(type="presence_update", user_id=AUTHOR, status="offline"))
-            self.wait(t, "offline")
+
+            def header_status():
+                display = t.screen.display
+                row = next(i for i, line in enumerate(display) if "DM com Bia" in line)
+                return display[row + 1][26:]
+
+            # The DM list already says offline; wait for the header, which
+            # shows the live presence that also ends the typing indicator.
+            end = time.monotonic() + 7
+            while "offline" not in header_status() and time.monotonic() < end:
+                t.read(0.03)
+            self.assertIn("offline", header_status())
+            # The same frame clears the indicator; allow for the rest of it to
+            # arrive, far below the 6 s expiry that would also clear it.
+            end = time.monotonic() + 1
+            while "está digitando" in "\n".join(t.screen.display) and time.monotonic() < end:
+                t.read(0.03)
             self.assertNotIn("está digitando", "\n".join(t.screen.display))
 
 

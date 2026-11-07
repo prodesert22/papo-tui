@@ -905,9 +905,20 @@ class HistoryTerminal(support.HistoryTerminal):
                 self.wait(t, "Mensagem 0040")
                 t.send("\x1bOB\n")
                 self.wait(t, "Foco: Histórico")
+                # Wait for each wheel step, so the reading position below is taken
+                # after the scroll ends rather than while later steps still move it.
                 for _ in range(4):
+                    before = history_rows(t)
                     t.send("\x1b[<64;60;10M")
-                wait_for_screen(t, lambda: "Mensagem 0040" not in history_rows(t), "scrolled up")
+                    wait_for_screen(t, lambda: history_rows(t) != before, "wheel step scrolled")
+                self.assertNotIn("Mensagem 0040", history_rows(t))
+                # Authors show as unavailable until their profiles load. Every
+                # three consecutive messages include a named author.
+                wait_for_screen(
+                    t,
+                    lambda: "Apelido" in history_rows(t) or "Autor 4" in history_rows(t),
+                    "visible authors resolved",
+                )
                 reading = history_rows(t)
                 # Another user's and a webhook's messages never move the view.
                 for n, extra in (

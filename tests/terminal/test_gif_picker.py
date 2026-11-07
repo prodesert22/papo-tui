@@ -99,8 +99,12 @@ class GifPicker(unittest.TestCase):
                     self.helper.wait(t, "Wikimedia Commons")
                     if protocol in ("kitty", "sixel", "iterm2"):
                         # The thumbnails come from the search results, not from the instance.
+                        # They are requested after the results are drawn, and the
+                        # history's embed already produced frames, so wait for them.
+                        self.helper.settled(
+                            t, lambda: any("/g/thumb-" in r[1] for r in server.requests)
+                        )
                         self.helper.wait_frames(t, 1)
-                        self.assertTrue(any("/g/thumb-" in r[1] for r in server.requests))
                     self.assertEqual(server.searches, ["filemime:image/gif"])
                     # Typing narrows the search once the pause after the last key ends.
                     t.send(UP + "dog")
