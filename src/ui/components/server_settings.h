@@ -50,6 +50,9 @@ typedef struct {
 } server_settings;
 /* Opens on the first tab the account may use. */
 void server_settings_open(server_settings *s, history *model, icon_view *icons, const char *server);
+/* Moves the open modal to tab with the item whose ID is selected chosen and
+ * its form focused; false when the account may not use that tab. */
+bool server_settings_show(server_settings *s, admin_tab tab, const char *selected);
 void server_settings_close(server_settings *s);
 void server_settings_draw(server_settings *s);
 void server_settings_key(server_settings *s, int type, uint32_t key);

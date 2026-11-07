@@ -169,6 +169,20 @@ static int channel_menu_first(view *ui)
     json_t *channel = context_channel(ui);
     return channel && !strcmp(conversation_str(channel, "type"), "voice") ? 1 : 0;
 }
+/* Configurar canal, last, needs the permission the Canais tab needs. */
+static bool channel_menu_configure(view *ui)
+{
+    return server_admin_tab(ui->model, ADMIN_TAB_CHANNELS) == ADMIN_SHOWN;
+}
+static void configure_context_channel(view *ui)
+{
+    char id[37];
+    snprintf(id, sizeof(id), "%s", ui->channel_context_id);
+    conversation_interactions_close(ui);
+    conversation_open_server_settings(ui);
+    if (!server_settings_show(&ui->server_settings, ADMIN_TAB_CHANNELS, id))
+        ui->feedback = "Permissão para gerenciar canais indisponível.";
+}
 static void open_context_chat(view *ui)
 {
     char id[37];
@@ -213,6 +227,10 @@ static void channel_menu_activate(view *ui)
             return;
         }
         ui->menu_selected -= first;
+        if (ui->menu_selected == 2) {
+            configure_context_channel(ui);
+            return;
+        }
         if (!ui->menu_selected && inbox_conversation_muted(box, ui->channel_context_id)) {
             if (!inbox_mute_conversation(box, ui->channel_context_id, 0))
                 ui->feedback = "Não foi possível salvar o silenciamento; arquivo preservado.";
@@ -535,9 +553,10 @@ static int server_menu_count(view *ui)
 static int menu_count(view *ui)
 {
     int items[MESSAGE_ACTIONS];
-    return *ui->channel_context_id ? ui->channel_menu == 1   ? 7
-                                     : ui->channel_menu == 2 ? 4
-                                                             : 2 + channel_menu_first(ui)
+    return *ui->channel_context_id ? ui->channel_menu == 1 ? 7
+                                     : ui->channel_menu == 2
+                                         ? 4
+                                         : 2 + channel_menu_first(ui) + channel_menu_configure(ui)
            : ui->server_context    ? server_menu_count(ui)
            : *ui->dm_context_id    ? 1
            : ui->delete_confirm    ? 2
@@ -989,8 +1008,9 @@ void conversation_interactions_draw(view *ui)
                 int option = i - channel_menu_first(ui);
                 snprintf(
                     label, sizeof(label), "%s",
-                    option < 0 ? "Abrir chat"
-                    : option   ? "Notificações…"
+                    option < 0    ? "Abrir chat"
+                    : option == 2 ? "Configurar canal…"
+                    : option      ? "Notificações…"
                     : inbox_conversation_muted(history_inbox(ui->model), ui->channel_context_id)
                         ? "Reativar canal"
                         : "Silenciar canal…");

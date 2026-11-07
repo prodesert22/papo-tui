@@ -248,6 +248,11 @@ channel menu; m/M closes it. Closing a menu preserves your draft.
   checked option updates as soon as the answer arrives. The client also checks
   every five minutes while connected. A device-only option changed in another
   Papo TUI window on the same computer appears within a second.
+- **Configurar canal…** (Configure channel), last in the menu, opens
+  [Server settings](#server-settings) on **Canais** with this channel already
+  chosen and its form focused, to rename it, change its topic, move it, delete
+  it or change each role's access. It appears only when your account can
+  manage channels.
 
 Muting pauses this client's system notifications and channel/server activity
 indicators for that channel. It does not mark messages or notifications read,

@@ -26,8 +26,8 @@ class ServerSettings(unittest.TestCase):
     def wait(self, terminal, text, seconds=8):
         self.settled(terminal, lambda: text in self.screen(terminal), seconds=seconds)
 
-    def open(self, server):
-        """Signs in, switches to Ultralight and opens the server's settings."""
+    def login(self, server):
+        """Signs in and switches to Ultralight."""
         t = Terminal()
         self.addCleanup(t.close)
         t.resize(30, 100)
@@ -38,6 +38,11 @@ class ServerSettings(unittest.TestCase):
         t.send(RIGHT + "\t" + DOWN * 2 + "\n\t\n")
         self.settled(t, lambda: "Seu perfil em" not in self.screen(t))
         self.wait(t, "Conversar em #geral")
+        return t
+
+    def open(self, server):
+        """Signs in and opens the server's settings from the server tab menu."""
+        t = self.login(server)
         deadline = time.monotonic() + 8
         while "Foco: Abas" not in self.screen(t) and time.monotonic() < deadline:
             t.send(UP)
@@ -199,6 +204,49 @@ class ServerSettings(unittest.TestCase):
             self.wait(t, "Alteração não confirmada; confira antes de repetir")
             time.sleep(1)
             self.calls(server, "POST", "/roles", 2)
+
+    def right_click(self, terminal, text):
+        self.wait(terminal, text)
+        row = next(i for i, line in enumerate(terminal.screen.display) if text in line)
+        column = terminal.screen.display[row].index(text) + 1
+        terminal.send(f"\x1b[<2;{column + 1};{row + 1}M\x1b[<2;{column + 1};{row + 1}m")
+
+    def test_channel_menu_opens_the_channel_in_server_settings(self):
+        with ServerAdminMock() as server:
+            t = self.login(server)
+            self.right_click(t, "# outro")
+            self.wait(t, "Configurar canal…")
+            self.click(t, "Configurar canal…")
+            self.wait(t, TITLE)
+            self.wait(t, "< Canais >")
+            self.wait(t, "Editar canal")
+            self.wait(t, "Nome:             outro")
+            # The form has the focus: typing edits the channel's name.
+            t.send("\x03avisos\n")
+            self.wait(t, "Canal salvo")
+            ((_, path, body),) = self.calls(server, "PUT", "/channels/", 1)
+            self.assertEqual((path, body["name"]), (f"/channels/{OTHER}", "avisos"))
+            # Voice channels list Abrir chat first; the option stays last.
+            t.send("\x1b")
+            self.settled(t, lambda: TITLE not in self.screen(t))
+            self.right_click(t, "♪ voz")
+            self.wait(t, "Configurar canal…")
+            menu = [
+                line for line in t.screen.display if "Abrir chat" in line or "Configurar" in line
+            ]
+            self.assertEqual(len(menu), 2)
+            self.assertLess(
+                self.screen(t).index("Abrir chat"), self.screen(t).index("Configurar canal…")
+            )
+
+    def test_channel_menu_offers_configuration_only_with_manage_channels(self):
+        with ServerAdminMock() as server:
+            server.set_owner(OTHER_OWNER)
+            t = self.login(server)
+            self.right_click(t, "# outro")
+            self.wait(t, "Notificações…")
+            t.read(0.3)
+            self.assertNotIn("Configurar canal", self.screen(t))
 
     def test_channels_are_created_reordered_and_restricted_by_role(self):
         with ServerAdminMock() as server:

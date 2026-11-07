@@ -199,6 +199,22 @@ void server_settings_open(server_settings *s, history *model, icon_view *icons, 
     s->seen_permissions = server_admin_permissions_revision(model);
     enter_tab(s, s->tab_count ? s->tabs[0] : ADMIN_TAB_EMOJIS);
 }
+bool server_settings_show(server_settings *s, admin_tab tab, const char *selected)
+{
+    if (!s->open)
+        return false;
+    bool shown = false;
+    for (int i = 0; i < s->tab_count; ++i)
+        shown |= s->tabs[i] == tab;
+    if (!shown)
+        return false;
+    if (s->tab != tab)
+        enter_tab(s, tab);
+    admin_select(s, selected);
+    /* Straight to the item's form, as if it had been chosen in the list. */
+    s->focus = 2;
+    return true;
+}
 
 static GArray *build_rows(server_settings *s)
 {
