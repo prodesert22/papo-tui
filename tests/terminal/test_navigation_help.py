@@ -251,7 +251,7 @@ class NavigationHelp(HistoryTerminal):
             self.assertNotIn("Ajuda global", self.screen(t))
             t.send("\x1b")
             self.wait(t, "Conversar em #geral")
-            t.send("\x1b[<2;5;8M\x1b[<2;5;8m")
+            t.send("\x1b[<2;5;7M\x1b[<2;5;7m")
             self.wait(t, "Silenciar canal…")
             self.help(t, "Menu de contexto")
             t.send("\x1b")

@@ -45,10 +45,11 @@
 #define PASTE_START (KEY_MAX + 1)
 #define PASTE_END (KEY_MAX + 2)
 /* Server tabs take the top rows, like on the sign-in screen: one row on wide
- * screens, plus the [Canais]/[Conversa] switch on narrow ones. The frame starts
- * below them. The focus label lives in the footer. */
+ * screens, plus the [Canais]/[Conversa] switch on narrow ones. The frame's top
+ * edge sits right below them and the content right below that edge. The focus
+ * label lives in the footer. */
 #define TABS_ROWS (COLS >= 80 ? 1 : 2)
-#define CONTENT_Y (TABS_ROWS + 2)
+#define CONTENT_Y (TABS_ROWS + 1)
 /* Options of the message context menu. */
 #define MESSAGE_ACTIONS 10
 

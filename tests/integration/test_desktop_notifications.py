@@ -429,7 +429,7 @@ class DesktopTests(unittest.TestCase):
             t.wait_text("Conversar em #geral")
 
             def menu():
-                t.send("\x1b[<2;5;6M\x1b[<2;5;6m")
+                t.send("\x1b[<2;5;5M\x1b[<2;5;5m")
                 t.wait_text("Notificações…")
 
             def emit(n, content):
@@ -480,7 +480,7 @@ class DesktopTests(unittest.TestCase):
             t.wait_text("Conversar em #geral")
 
             def notifications():
-                t.send("\x1b[<2;5;6M\x1b[<2;5;6m")
+                t.send("\x1b[<2;5;5M\x1b[<2;5;5m")
                 t.wait_text("Notificações…")
                 t.send("\x1bOB\n")
                 t.wait_text("Sincronizar com o servidor")

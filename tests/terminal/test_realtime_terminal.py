@@ -53,7 +53,7 @@ class RealtimeTerminal(unittest.TestCase):
             terminal = self.open(server)
             try:
                 terminal.send("Rascunho ao navegar\x1b")
-                terminal.click(3, 4)
+                terminal.click(2, 4)
                 terminal.send("\x1bOB\x1bOB")  # buttons -> list -> other channel; keep geral open
                 self.assertIn("Foco: Canais", terminal.screen.display[-2])
                 self.assertIn("# geral · Histórico", self.screen(terminal))
@@ -192,10 +192,10 @@ class RealtimeTerminal(unittest.TestCase):
                 self.assertTrue(terminal.close())
 
     def switch_away_and_back(self, terminal):
-        terminal.click(6, 4)
+        terminal.click(5, 4)
         self.wait(terminal, "Conteúdo do outro canal")
         mark = len(terminal.output)
-        terminal.click(5, 4)
+        terminal.click(4, 4)
         self.wait(terminal, "# geral · Histórico")
         return mark
 
@@ -211,7 +211,7 @@ class RealtimeTerminal(unittest.TestCase):
                 self.assertNotIn(b"Carregando hist", terminal.output[mark:])
                 self.assertEqual(reads(server, CHANNEL), before)
                 # Returning to # outro also uses its cached window.
-                terminal.click(6, 4)
+                terminal.click(5, 4)
                 self.wait(terminal, "Conteúdo do outro canal")
                 terminal.read(0.3)
                 self.assertEqual(reads(server, OTHER), 1)
@@ -237,7 +237,7 @@ class RealtimeTerminal(unittest.TestCase):
             terminal = self.open(server)
             try:
                 self.wait(terminal, "Mensagem 0003")
-                terminal.click(6, 4)
+                terminal.click(5, 4)
                 self.wait(terminal, "Conteúdo do outro canal")
                 before = reads(server, CHANNEL)
                 message = dict(server.message(4), content="Chegou enquanto fora")
@@ -245,7 +245,7 @@ class RealtimeTerminal(unittest.TestCase):
                     server.messages.append(message)
                 server.emit(dict(message, type="message"))
                 terminal.read(0.4)
-                terminal.click(5, 4)
+                terminal.click(4, 4)
                 self.wait(terminal, "Chegou enquanto fora")
                 self.assertIn("Mensagem 0003", self.screen(terminal))
                 # Only the latest page, which also marks the conversation read.
@@ -260,7 +260,7 @@ class RealtimeTerminal(unittest.TestCase):
             try:
                 terminal.send("\x1bOH")
                 self.wait(terminal, "Mensagem 0001")
-                terminal.click(6, 4)
+                terminal.click(5, 4)
                 self.wait(terminal, "Conteúdo do outro canal")
                 before = reads(server, CHANNEL)
                 message = dict(server.message(51), content="Nova lá embaixo")
@@ -268,7 +268,7 @@ class RealtimeTerminal(unittest.TestCase):
                     server.messages.append(message)
                 server.emit(dict(message, type="message"))
                 terminal.read(0.4)
-                terminal.click(5, 4)
+                terminal.click(4, 4)
                 self.wait(terminal, "Mensagem 0001")
                 terminal.read(0.4)
                 # Nothing is read in advance while the reader is above it.
@@ -284,7 +284,7 @@ class RealtimeTerminal(unittest.TestCase):
             terminal = self.open(server)
             try:
                 self.wait(terminal, "Mensagem 0002")
-                terminal.click(6, 4)
+                terminal.click(5, 4)
                 self.wait(terminal, "Conteúdo do outro canal")
                 before = reads(server, CHANNEL)
                 with server.lock:
@@ -300,7 +300,7 @@ class RealtimeTerminal(unittest.TestCase):
                     }
                 )
                 terminal.read(0.4)
-                terminal.click(5, 4)
+                terminal.click(4, 4)
                 self.wait(terminal, "Editada enquanto fora")
                 self.assertGreater(reads(server, CHANNEL), before)
             finally:
@@ -320,12 +320,12 @@ class RealtimeTerminal(unittest.TestCase):
                     terminal.read(0.05)
                 self.assertNotIn("Desconectado", self.screen(terminal))
                 before = reads(server, OTHER)
-                terminal.click(6, 4)
+                terminal.click(5, 4)
                 self.wait(terminal, "Conteúdo do outro canal")
                 terminal.read(0.3)
                 # Events may have been lost while disconnected.
                 self.assertEqual(reads(server, OTHER), before + 1)
-                terminal.click(5, 4)
+                terminal.click(4, 4)
                 self.wait(terminal, "Mensagem 0003")
                 before = reads(server, CHANNEL)
                 terminal.send("\x12")  # Ctrl+R always reads again.
@@ -351,7 +351,7 @@ class RealtimeTerminal(unittest.TestCase):
                     terminal.click(row, terminal.screen.display[row].index(f"extra{n}"))
                     self.wait(terminal, f"# extra{n} · Histórico")
                     self.wait(terminal, "Nenhuma mensagem neste canal.")
-                terminal.click(5, 4)
+                terminal.click(4, 4)
                 self.wait(terminal, "Mensagem 0003")
                 terminal.read(0.3)
                 # # geral was the least recently used of nine: it is read again.

@@ -182,13 +182,13 @@ class AppModes(unittest.TestCase):
                                         t.screen.buffer[y][x].fg,
                                         t.screen.buffer[y][x].bg,
                                     )
-                                    for y in range(8, 16)
+                                    for y in range(7, 15)
                                     for x in range(32, 75)
                                 )
                             )
                             seen_colors.update(
                                 color
-                                for y in range(8, 16)
+                                for y in range(7, 15)
                                 for x in range(32, 75)
                                 for color in (t.screen.buffer[y][x].fg, t.screen.buffer[y][x].bg)
                             )
@@ -858,7 +858,7 @@ class AppModes(unittest.TestCase):
     def red_cells(self, t):
         return any(
             "ff0000" in (t.screen.buffer[y][x].fg, t.screen.buffer[y][x].bg)
-            for y in range(8, 16)
+            for y in range(7, 15)
             for x in range(32, 75)
         )
 
@@ -919,7 +919,7 @@ class AppModes(unittest.TestCase):
                 def red_cells():
                     return any(
                         "ff0000" in (t.screen.buffer[y][x].fg, t.screen.buffer[y][x].bg)
-                        for y in range(8, 16)
+                        for y in range(7, 15)
                         for x in range(32, 75)
                     )
 

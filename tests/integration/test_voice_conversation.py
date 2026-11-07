@@ -414,7 +414,7 @@ class VoiceConversation(unittest.TestCase):
             t.send("\x1bOB\n")
             self.wait(t, "Mensagem 0001")
             t.send("Rascunho do geral")
-            t.click(7, 4)
+            t.click(6, 4)
             self.wait(t, "Foco: Canais")
             self.wait(t, "Ctrl+G: ajuda")
             before = self.reads(server)
@@ -424,7 +424,7 @@ class VoiceConversation(unittest.TestCase):
                 self.assertIn("# geral · Histórico", self.screen(t))
                 self.assertIn("Rascunho do geral", self.screen(t))
                 self.assertEqual(self.reads(server), before)
-            t.click(7, 4)
+            t.click(6, 4)
             self.assertEqual(self.reads(server), before)
             self.assertIn("# geral · Histórico", self.screen(t))
             t.send("\x1b[13;2u")
@@ -446,7 +446,7 @@ class VoiceConversation(unittest.TestCase):
             # Category clicks cannot change the channel or trigger a new read.
             self.wait(t, "Nenhuma mensagem neste canal")
             before = self.reads(server)
-            t.click(4, 4)
+            t.click(3, 4)
             self.assertEqual(self.reads(server), before)
             for locks in (0, 64, 128, 192):
                 for packet in (
@@ -457,7 +457,7 @@ class VoiceConversation(unittest.TestCase):
                     f"\x1b[57414;{2 + locks}u",
                 ):
                     with self.subTest(packet=packet):
-                        t.click(5, 4)
+                        t.click(4, 4)
                         self.wait(t, "# geral · Histórico")
                         t.send("\x1bOD\x1bOF" + packet)
                         self.wait(t, "♪ voz · Histórico")

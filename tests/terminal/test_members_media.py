@@ -93,7 +93,7 @@ class MemberMedia(unittest.TestCase):
             (header, y, x)
             for key, (header, y, x) in current.items()
             if key in stream.live_placements
-            and y >= 7
+            and y >= 6
             and 27 <= x < left
             and self.placement_dimensions(header)[0] > 6
         ]
@@ -138,7 +138,7 @@ class MemberMedia(unittest.TestCase):
                         for header, y, x in self.current_history_placements(terminal, 58):
                             columns, rows = self.placement_dimensions(header)
                             self.assertTrue(
-                                x + columns <= 58 or y + rows <= 7 or y >= 35,
+                                x + columns <= 58 or y + rows <= 6 or y >= 35,
                                 "History pixels must not overlap the profile",
                             )
                     else:
@@ -175,7 +175,7 @@ class MemberMedia(unittest.TestCase):
                         self.settled(
                             terminal,
                             lambda: any(
-                                y >= 7 and x >= 27 and (y >= menu_row + 2 or x >= menu_left + 30)
+                                y >= 6 and x >= 27 and (y >= menu_row + 2 or x >= menu_left + 30)
                                 for y, x in terminal.stream.frame_positions[frames:]
                             ),
                         )

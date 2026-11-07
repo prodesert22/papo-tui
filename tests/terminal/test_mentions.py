@@ -230,7 +230,7 @@ class Mentions(unittest.TestCase):
                     return route(method, path, body)
 
                 s.api_handler = other_channel
-                t.click(6, 4)
+                t.click(5, 4)
                 self.wait(t, "Bob no outro canal")
                 t.send("@")
                 self.wait(t, "@alice")
@@ -369,7 +369,7 @@ class Mentions(unittest.TestCase):
                 self.wait(t, "@josé")
                 # Own mentions mark the left edge of the conversation.
                 self.assertTrue(
-                    any(t.screen.buffer[y][26].data in ("│", "x") for y in range(7, 15))
+                    any(t.screen.buffer[y][26].data in ("│", "x") for y in range(6, 14))
                 )
                 s.emit(
                     dict(

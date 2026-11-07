@@ -29,7 +29,7 @@ class ChannelPreferences(HistoryTerminal):
                 (
                     (y, line)
                     for y, line in enumerate(t.screen.display)
-                    if y >= 5 and f"# {name}" in line[:25]
+                    if y >= 4 and f"# {name}" in line[:25]
                 ),
                 None,
             )
@@ -40,7 +40,7 @@ class ChannelPreferences(HistoryTerminal):
         if keyboard:
             t.click(row, column)
             # An empty sidebar row focuses the list without toggling the editor.
-            t.click(12, column)
+            t.click(11, column)
             self.wait(t, "Foco: Canais")
             t.send("M")
         else:
@@ -389,7 +389,7 @@ class ChannelPreferences(HistoryTerminal):
                 self.menu(t)
                 self.settings(t, 0)
                 wait_for_screen(t, server.setting_started.is_set, "Setting was not transmitted")
-                t.click(6, 4)
+                t.click(5, 4)
                 server.setting_hold.set()
                 self.wait(t, "Notificações do canal atualizadas")
                 self.wait(t, "Conteúdo do outro canal")
@@ -428,7 +428,7 @@ class ChannelPreferences(HistoryTerminal):
                 )
                 self.assertEqual(server.marked, [])
                 self.assertFalse(server.notifications[0]["read"])
-                t.click(6, 4)
+                t.click(5, 4)
                 fresh = server.message(4)
                 server.messages.append(fresh)
                 server.emit(dict(fresh, type="message"))
@@ -437,7 +437,7 @@ class ChannelPreferences(HistoryTerminal):
                     lambda: "[Comunidade 0]" in t.screen.display[0],
                     "Fresh message did not light server badge",
                 )
-                t.click(5, 4)
+                t.click(4, 4)
                 self.wait(t, "Mensagem 0004")
                 wait_for_screen(
                     t,
@@ -589,7 +589,7 @@ class ChannelMenuMedia(MediaTerminal):
                             checkpoint = (before, len(t.stream.placements))
                         elif protocol in ("chafa", "light"):
                             fallback = self.wait_fallback(t)
-                        t.send("\x1b[<2;5;7M\x1b[<2;5;7m")
+                        t.send("\x1b[<2;5;6M\x1b[<2;5;6m")
                         self.wait(t, "Silenciar canal…")
                         if protocol in ("chafa", "light"):
                             self.assert_fallback(t, fallback)

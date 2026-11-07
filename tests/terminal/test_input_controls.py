@@ -360,14 +360,14 @@ class InputControls(unittest.TestCase):
                 wait_for_screen(
                     t,
                     lambda: (
-                        # A page is the whole history viewport: nine rows here,
+                        # A page is the whole history viewport: ten rows here,
                         # which moves 0028 below the visible area.
                         (
                             row_of("Mensagem 0028"),
                             row_of("Mensagem 0027"),
                             row_of("Mensagem 0026"),
                         )
-                        == (None, latest, latest - 3)
+                        == (None, latest + 1, latest - 2)
                     ),
                     f"{page_up!r} did not scroll a full page from the editor",
                 )

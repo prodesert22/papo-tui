@@ -177,7 +177,7 @@ class MediaTerminal(support.MediaTerminal):
                                 for p in t.stream.placements
                             )
                         )
-                    t.click(6, 4)
+                    t.click(5, 4)
                     self.wait(t, "Conteúdo do outro canal")
                     t.read(0.15)
                     frames = len(t.stream.frames)
@@ -256,7 +256,7 @@ class MediaTerminal(support.MediaTerminal):
                     self.assertNotIn("OK", "\n".join(t.screen.display))
                     live = t.stream.live_ids.copy()
                     self.assertTrue(live)
-                    t.click(6, 4)
+                    t.click(5, 4)
                     self.wait(t, "Conteúdo do outro canal")
                     self.assertFalse(t.stream.live_ids)
                     self.assertTrue(live.issubset(t.stream.deleted_ids))
@@ -677,9 +677,22 @@ class MediaTerminal(support.MediaTerminal):
                             t.send("\x03" + str(Path(self.assets.name) / "landscape.png") + "\n")
                             self.wait(t, "landscape.png 🗙]")
                             self.wait_raster(t, lambda w, h: w > 600 and h > 300)
+                        send = "\x1b[Z\n" if key == "attachment-remove" else key
+                        if title == "Perfil do membro":
+                            # The message menu may crop the attachment too. Let
+                            # its frames arrive first, so only the profile's
+                            # crops are checked against the profile below.
+                            t.send(send[:-1])
+                            self.wait(t, "Ver perfil")
+                            frames = -1
+                            deadline = time.monotonic() + 5
+                            while frames != len(t.stream.frames) and time.monotonic() < deadline:
+                                frames = len(t.stream.frames)
+                                t.read(0.3)
+                            send = send[-1]
                         first_frame = len(t.stream.frames)
                         first_placement = len(t.stream.placements)
-                        t.send("\x1b[Z\n" if key == "attachment-remove" else key)
+                        t.send(send)
                         if title in ("Detalhes da mensagem", "Ir para mensagem"):
                             self.wait(t, "1 resultado(s)")
                             t.send("\n")
@@ -1283,7 +1296,7 @@ class MediaTerminal(support.MediaTerminal):
                     "Background audio did not keep playing",
                 )
                 # A conversation switch on the same server keeps it playing.
-                t.click(6, 4)
+                t.click(5, 4)
                 self.wait(t, "Conteúdo do outro canal")
                 self.assertIn("Ctrl+X", self.footer(t))
                 position = self.audio_clock(t)
@@ -1784,7 +1797,7 @@ class MediaTerminal(support.MediaTerminal):
                     self.assertEqual(len({header[b"i"] for header, _ in t.stream.kitty_frames}), 1)
                     t.send("Shared pixels")
                     self.assertEqual(len(t.stream.live_placements), 4)
-                    t.click(6, 4)
+                    t.click(5, 4)
                     self.wait(t, "Conteúdo do outro canal")
                     t.read(0.1)
                     self.assertFalse(t.stream.live_ids)
@@ -1884,7 +1897,9 @@ class MediaTerminal(support.MediaTerminal):
                 self.wait_frames(t)
                 t.read(0.2)
                 t.send("\x1b[5~")
-                for _ in range(3):
+                # PageUp moves a whole history viewport; four rows back leave
+                # the top of the image cropped at the bottom edge.
+                for _ in range(4):
                     t.send("\x1bOB")
                     t.read(0.08)
                 self.wait_frames(t, 2)
@@ -2110,7 +2125,7 @@ class MediaTerminal(support.MediaTerminal):
             try:
                 self.wait_frames(t)
                 t.send("Rascunho com imagem\x1b")
-                t.click(5, 4)
+                t.click(4, 4)
                 t.read(0.2)
                 conversation = [row[26:] for row in t.screen.display[5:-3]]
                 frames = len(t.stream.frames)
@@ -2244,7 +2259,7 @@ class MediaTerminal(support.MediaTerminal):
             t = self.open(server, environment={"TMPDIR": directory})
             try:
                 self.wait(t, "Carregando imagem")
-                t.click(6, 4)
+                t.click(5, 4)
                 self.wait(t, "Conteúdo do outro canal")
                 t.read(2.2)
                 self.assertEqual(t.stream.frames, [])

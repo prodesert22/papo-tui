@@ -329,7 +329,7 @@ class EmojiTerminal(support.EmojiTerminal):
                         variants.setdefault(header[b"i"], set()).add(pixels)
                 animated_ids = {id for id, pixels in variants.items() if len(pixels) > 1}
                 self.assertTrue(animated_ids)
-                t.click(6, 4)
+                t.click(5, 4)
                 self.wait(t, "Conteúdo do outro canal")
                 before = len(t.stream.kitty_frames)
                 t.read(0.6)
@@ -489,7 +489,7 @@ class EmojiTerminal(support.EmojiTerminal):
                             lambda: any(
                                 p.get(b"y") == b"16"
                                 and p.get(b"h") == b"32"
-                                and pos[0] == 6
+                                and pos[0] == 5
                                 and pos[1] >= 34
                                 for p, pos in zip(
                                     t.stream.placements[start:],
@@ -501,7 +501,7 @@ class EmojiTerminal(support.EmojiTerminal):
                         self.until(
                             t,
                             lambda: any(
-                                y == 6
+                                y == 5
                                 for y, _ in self.image_positions(t, protocol, (48, 32), start)
                             ),
                         )
@@ -907,10 +907,10 @@ class EmojiTerminal(support.EmojiTerminal):
                     return sum("/channels/" + uuid(11) + "/messages" in r[1] for r in s.requests)
 
                 self.assertEqual(other_reads(), 0)
-                t.click(6, 4)
+                t.click(5, 4)
                 self.wait(t, "Conteúdo do outro canal")
                 self.until(t, lambda: len(self.avatar_positions(t)) == 1)
-                t.click(5, 4)
+                t.click(4, 4)
                 self.wait(t, "Mensagem 0001")
                 self.until(t, lambda: len(self.avatar_positions(t)) == 6)
                 t.read(0.2)
@@ -1127,7 +1127,7 @@ class EmojiTerminal(support.EmojiTerminal):
                     ),
                 )
                 self.assertNotIn("Apelido", "\n".join(t.screen.display))
-                self.assertIn("Linha 00", t.screen.display[6])
+                self.assertIn("Linha 00", t.screen.display[5])
             finally:
                 self.assertTrue(t.close())
 
@@ -1238,9 +1238,9 @@ class EmojiTerminal(support.EmojiTerminal):
                 self.until(t, lambda: reads == 6)
                 self.until(t, lambda: len(self.avatar_positions(t)) == 6)
                 self.assertLessEqual(peak, 4)
-                t.click(6, 4)
-                self.wait(t, "Conteúdo do outro canal")
                 t.click(5, 4)
+                self.wait(t, "Conteúdo do outro canal")
+                t.click(4, 4)
                 self.wait(t, "App 5 [APP]")
                 t.read(0.3)
                 self.assertEqual(reads, 6)
@@ -1285,11 +1285,11 @@ class EmojiTerminal(support.EmojiTerminal):
                 t.resize(40, 100)
                 self.wait(t, "App 0 [APP]")
                 self.until(t, lambda: reads == 4)
-                t.click(6, 4)
+                t.click(5, 4)
                 self.wait(t, "Conteúdo do outro canal")
                 release.set()
                 self.until(t, lambda: active == 0)
-                t.click(5, 4)
+                t.click(4, 4)
                 self.wait(t, "App 0 [APP]")
                 self.until(t, lambda: reads == 8)
                 self.until(t, lambda: len(self.avatar_positions(t)) == 4)
@@ -1382,7 +1382,7 @@ class EmojiTerminal(support.EmojiTerminal):
                 t.send("x")
                 t.read(0.15)
                 self.assertEqual(sum(r[1].endswith(reference) for r in s.requests), 1)
-                t.click(6, 4)
+                t.click(5, 4)
                 self.wait(t, "Conteúdo do outro canal")
                 before = len(t.stream.kitty_frames)
                 t.read(0.3)
@@ -1584,7 +1584,7 @@ class EmojiTerminal(support.EmojiTerminal):
                 )
                 t.send("\x1b[5~")
                 self.until(t, lambda: s.older_calls == 1)
-                self.until(t, lambda: "Agrupada 031" in t.screen.display[6])
+                self.until(t, lambda: "Agrupada 031" in t.screen.display[5])
                 self.assertNotIn("Apelido", "\n".join(t.screen.display[7:14]))
                 t.send("\x1bOH")
                 self.wait(t, "Agrupada 001")
