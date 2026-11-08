@@ -193,6 +193,31 @@ void conversation_draw_tabs(view *ui)
     text_label(ui->tabs, 1, ui->conversation_hit.x, 10, "[Conversa]");
 }
 
+static void draw_centered(WINDOW *window, int y, const char *text)
+{
+    int width = getmaxx(window) - 4;
+    int used = text_label(window, y, 2, width, text);
+    mvwhline(window, y, 2, ' ', width);
+    text_label(window, y, 2 + MAX(0, (width - used) / 2), width, text);
+}
+/* Replaces the history while the server cannot be reached; the session and
+ * the loaded conversation are kept for when it answers again. */
+static void draw_offline(view *ui, auth_client *auth)
+{
+    size_t index = instances_index(ui->connections, auth);
+    const char *name = index == SIZE_MAX ? "" : ui->connections->items[index].name;
+    char line[256];
+    snprintf(line, sizeof(line), "%s não está respondendo.", *name ? name : "O servidor");
+    int y = ui->history_top + MAX(0, ui->visible / 2 - 2);
+    attr_t muted = COLOR_PAIR(ui->focus == HISTORY_PANEL ? THEME_HISTORY_MUTED : THEME_PANEL_MUTED);
+    wattrset(ui->body, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
+    draw_centered(ui->body, y, "Servidor offline");
+    wattrset(ui->body, muted);
+    if (ui->visible > 2)
+        draw_centered(ui->body, y + 2, line);
+    if (ui->visible > 3)
+        draw_centered(ui->body, y + 3, "Reconectando automaticamente…");
+}
 bool conversation_collect_notices(view *ui, auth_client *auth)
 {
     voice_client *call = voice_active();
@@ -201,6 +226,8 @@ bool conversation_collect_notices(view *ui, auth_client *auth)
         connection = auth_ws_epoch(auth) && auth_ws_state(auth) != WS_OPEN
                          ? "Desconectado · Revalidando sessão…"
                          : "Revalidando sessão…";
+    else if (auth_server_unreachable(auth))
+        connection = "Servidor offline · Reconectando…";
     else if (auth_ws_reconnecting(auth))
         connection =
             auth_ws_epoch(auth) ? "Desconectado · Reconectando…" : "Conectando tempo real…";
@@ -231,8 +258,9 @@ bool conversation_collect_notices(view *ui, auth_client *auth)
         status_bar_set_compact(&ui->status, STATUS_CONNECTION, connection, compact_connection);
     ui->status.connection_critical = auth_ws_epoch(auth) && auth_ws_state(auth) != WS_OPEN;
     if (ui->status.connection_critical)
-        changed |=
-            status_bar_set_compact(&ui->status, STATUS_CONNECTION, connection, "Desconectado");
+        changed |= status_bar_set_compact(
+            &ui->status, STATUS_CONNECTION, connection,
+            auth_server_unreachable(auth) ? "Servidor offline" : "Desconectado");
     inbox *box = history_inbox(ui->model);
     char notifications[192] = "";
     if (inbox_unread(box))
@@ -240,7 +268,9 @@ bool conversation_collect_notices(view *ui, auth_client *auth)
                  inbox_unread(box) == 1 ? "notificação" : "notificações",
                  inbox_has_more(box) ? "+" : "");
     changed |= status_bar_set(&ui->status, STATUS_NOTIFICATIONS,
-                              *inbox_notice(box) ? inbox_notice(box) : notifications);
+                              *inbox_notice(box) && !auth_server_unreachable(auth)
+                                  ? inbox_notice(box)
+                                  : notifications);
     changed |= status_bar_set_compact(&ui->status, STATUS_DESKTOP,
                                       ui->connections->config &&
                                               ui->connections->config->desktop_notifications
@@ -278,6 +308,12 @@ bool conversation_collect_notices(view *ui, auth_client *auth)
         if (next < 0)
             break;
         const char *message = history_notice(ui->model, (history_notice_kind)next, NULL);
+        /* Requests fail while the server is offline; its screen says so
+         * instead of each permission or loading failure. */
+        if (auth_server_unreachable(auth) && next != HISTORY_NOTICE_EVENT) {
+            ui->notice_revisions[next] = earliest;
+            continue;
+        }
         if (next == HISTORY_NOTICE_EVENT) {
             bool replaced = status_bar_set_compact(&ui->status, STATUS_EVENT, message,
                                                    history_event_compact(ui->model));
@@ -287,6 +323,10 @@ bool conversation_collect_notices(view *ui, auth_client *auth)
                 &ui->status, next == HISTORY_NOTICE_MUTATION ? STATUS_MUTATION : STATUS_HISTORY,
                 message);
         ui->notice_revisions[next] = earliest;
+    }
+    if (auth_server_unreachable(auth)) {
+        changed |= status_bar_set(&ui->status, STATUS_HISTORY, "");
+        changed |= status_bar_set(&ui->status, STATUS_MUTATION, "");
     }
     int paging = history_paging_direction(ui->model);
     if (paging && paging == ui->waiting_page && !ui->at_end && ui->body) {
@@ -710,7 +750,9 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
             wattrset(ui->body, COLOR_PAIR(ui->focus == HISTORY_PANEL ? THEME_HISTORY_MUTED
                                                                      : THEME_PANEL_MUTED));
             conversation_selection_rows(ui);
-            if (!auth_has_session(auth))
+            if (auth_server_unreachable(auth))
+                draw_offline(ui, auth);
+            else if (!auth_has_session(auth))
                 text_label(ui->body, ui->history_top, 2, getmaxx(ui->body) - 4,
                            "Revalidando sessão…");
             else if (conversation_entry_count(ui)) {

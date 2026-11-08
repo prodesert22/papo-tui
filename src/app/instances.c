@@ -7,6 +7,7 @@
 #include "config/profiles.h"
 #include "model/conversation/history.h"
 #include "net/clock.h"
+#include "net/retry.h"
 #include "ui/components/terminal_title.h"
 #include "ui/input/editor.h"
 #include "ui/input/text.h"
@@ -154,6 +155,9 @@ static bool attach(instance_connections *connections, auth_client *auth)
     }
     instance_connection *item = &connections->items[index];
     item->auth = auth;
+    item->retry_at = 0;
+    item->retry_failures = 0;
+    item->retrying = false;
     snprintf(item->url, sizeof(item->url), "%s", auth_instance_url(auth));
     const char *url = auth_instance_url(auth), *host = strstr(url, "://");
     if (*auth_server_name(auth))
@@ -189,7 +193,9 @@ void instances_order(instance_connections *connections,
 bool instances_offline(const instance_connections *connections, size_t index)
 {
     const auth_client *auth = connections->items[index].auth;
-    return !auth_has_session(auth) && !auth_busy(auth);
+    if (auth_server_unreachable(auth))
+        return true;
+    return !auth_has_session(auth) && (!auth_busy(auth) || connections->items[index].retrying);
 }
 void instances_detach(instance_connections *connections, auth_client *auth)
 {
@@ -215,9 +221,68 @@ void instances_media_event(instance_connections *connections, auth_client *auth,
     if (i != SIZE_MAX && connections->items[i].media_update)
         connections->items[i].media_update(connections->items[i].media, event);
 }
+/* Reads the saved session of an offline tab again when its wait ends. The
+ * first wait is 4s and doubles up to 30s; any session resets it. */
+static void retry_offline(instance_connections *connections, instance_connection *item,
+                          uint64_t now)
+{
+    auth_client *auth = item->auth;
+    if (auth_has_session(auth)) {
+        item->retry_failures = 0;
+        item->retry_at = 0;
+        item->retrying = false;
+        return;
+    }
+    if (auth_busy(auth)) {
+        item->retry_at = 0;
+        return;
+    }
+    if (auth_session_rejected(auth) || !session_store_saved(connections->sessions, auth))
+        return;
+    if (!item->retry_at) {
+        item->retry_at = now + net_retry_ms(item->retry_failures + 2, (unsigned)rand());
+        return;
+    }
+    if (now < item->retry_at)
+        return;
+    item->retry_at = 0;
+    if (item->retry_failures < 3)
+        ++item->retry_failures;
+    if (session_store_retry(connections->sessions, auth))
+        item->retrying = true;
+}
+bool instances_resume(instance_connections *connections)
+{
+    bool changed = false;
+    const char *url;
+    char *snapshot;
+    while (connections && (snapshot = session_store_take_resume(connections->sessions, &url))) {
+        for (size_t i = 0; i < connections->count; ++i) {
+            auth_client *auth = connections->items[i].auth;
+            if (auth_has_session(auth) || auth_busy(auth) || strcmp(auth_instance_url(auth), url))
+                continue;
+            auth_session_restore(auth, snapshot, url, connections->allow_local_http);
+            session_store_watch(connections->sessions, auth);
+            changed = true;
+            break;
+        }
+        auth_session_free(&snapshot);
+    }
+    return changed;
+}
 bool instances_poll(instance_connections *connections, auth_client *active)
 {
     bool changed = false;
+    uint64_t tick = 0;
+    for (size_t i = 0; i < connections->count; ++i) {
+        if (tick || net_now_ms(&tick))
+            retry_offline(connections, &connections->items[i], tick);
+        bool offline = instances_offline(connections, i);
+        if (offline != connections->items[i].offline_shown) {
+            connections->items[i].offline_shown = offline;
+            changed = true;
+        }
+    }
     size_t first = connections->count ? connections->poll_cursor++ % connections->count : 0;
     for (size_t step = 0; step < connections->count; ++step) {
         size_t i = (first + step) % connections->count;
@@ -345,6 +410,14 @@ bool instances_poll(instance_connections *connections, auth_client *active)
         }
     }
     return changed;
+}
+size_t instances_open_elsewhere(const instance_connections *connections, const auth_client *active)
+{
+    for (size_t i = 0; connections && i < connections->count; ++i)
+        if (connections->items[i].auth != active && *connections->items[i].open_channel &&
+            auth_has_session(connections->items[i].auth))
+            return i;
+    return SIZE_MAX;
 }
 bool instances_take_open(instance_connections *connections, const auth_client *auth,
                          char channel[37], char message[37], char time[65])

@@ -301,14 +301,16 @@ class RealtimeTests(unittest.TestCase):
             result = client.wait(lambda r: not r.get("recovering") and not r.get("loading"))
             self.assertEqual(len(result["messages"]), 3)
 
-    def test_inactive_context_suspends_retries(self):
+    def test_inactive_context_keeps_reconnecting(self):
+        # Mentions and desktop alerts of servers in background tabs arrive only
+        # through realtime, so an inactive context reconnects on its own.
         with RealtimeMock() as server:
             client = self.observer(server)
             client.ready()
             client.command("active 0")
             server.disconnect()
-            time.sleep(1.5)
-            self.assertEqual(sum(r[1].endswith("/ws") for r in server.requests), 1)
+            client.wait(lambda r: r.get("epoch", 0) >= 2)
+            self.assertEqual(sum(r[1].endswith("/ws") for r in server.requests), 2)
             client.command("active 1")
             client.wait(lambda r: r.get("epoch", 0) >= 2)
 

@@ -47,9 +47,16 @@ class DesktopTests(unittest.TestCase):
         self.assertEqual(self.daemon.stdout.readline().strip(), "ready")
 
     def login(self, server, terminal_actions=None, **environment):
+        # Focus helpers such as the KWin script write files to the runtime
+        # directory; keep them out of the user's session, which may also be
+        # read-only in a jail. Tests that need a specific one pass their own.
+        runtime = tempfile.TemporaryDirectory(prefix="papo-test-runtime-")
+        self.addCleanup(runtime.cleanup)
+        os.chmod(runtime.name, 0o700)
         t = Terminal(
             environment={
                 "DBUS_SESSION_BUS_ADDRESS": os.environ["DBUS_SESSION_BUS_ADDRESS"],
+                "XDG_RUNTIME_DIR": runtime.name,
                 **environment,
             }
         )
@@ -126,6 +133,32 @@ class DesktopTests(unittest.TestCase):
             # The daemon then reports a click on that notification.
             t.wait_text("Conteúdo do outro canal")
             self.assertEqual(server.marked, [])
+
+    def test_clicking_a_notification_of_another_server_opens_its_tab(self):
+        from history_mock import OTHER
+
+        self.start_daemon(PAPO_NOTIFY_TEST_CLICK="600")
+        with R8Mock(count=3) as first, R8Mock(count=0) as second:
+            second.name = "Trabalho"
+            t = self.login(first)
+            t.click(0, t.screen.display[0].index("[+ Adicionar]") + 2)
+            t.wait_text("URL do servidor")
+            t.send(second.url + "\tjosé\tSynthetic!123\n")
+            wait_for_screen(t, lambda: "[Trabalho" in t.screen.display[0], "second server")
+            t.wait_text("Tempo real conectado")
+            t.send("\x1b[O")
+            message = dict(first.message(1), id=uuid(777), channel_id=OTHER, content="Chegou agora")
+            first.emit(dict(message, type="message"))
+            event = self.event()
+            event["message_id"] = message["id"]
+            first.emit(event)
+            self.receive(t)
+            # The click switches to the notification's server and opens it.
+            wait_for_screen(
+                t, lambda: "[Comunidade" in t.screen.display[0], "the clicked server's tab"
+            )
+            t.wait_text("Conteúdo do outro canal")
+            self.assertEqual(first.marked, [])
 
     def terminal_notification(self, t):
         pattern = (

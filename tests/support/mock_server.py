@@ -651,6 +651,8 @@ class MockServer:
                     connection.connected = False
                     outer.ws_connected.clear()
 
+        self.handler_class = Handler
+        self.tls_context = tls_context
         self.server = FixtureHTTPServer(("127.0.0.1", 0), Handler)
         self.secure = tls_context is not None
         if tls_context:
@@ -667,6 +669,28 @@ class MockServer:
     def __enter__(self):
         self.thread.start()
         return self
+
+    def power_off(self):
+        """Stop listening and drop every connection, like a stopped backend:
+        new connections are refused until power_on."""
+        if hasattr(self, "disconnect"):
+            self.disconnect()
+        self.server.shutdown()
+        self.server.finish_handlers()
+        self.server.server_close()
+        self.thread.join(timeout=5)
+
+    def power_on(self):
+        """Listen again on the same port, keeping the fixture's state."""
+        failures = self.server.failures
+        self.server = FixtureHTTPServer(("127.0.0.1", self.server.server_port), self.handler_class)
+        self.server.failures = failures
+        if self.tls_context:
+            self.server.socket = self.tls_context.wrap_socket(self.server.socket, server_side=True)
+        self.thread = threading.Thread(
+            target=lambda: self.server.serve_forever(poll_interval=0.01), daemon=True
+        )
+        self.thread.start()
 
     def __exit__(self, *_args):
         try:

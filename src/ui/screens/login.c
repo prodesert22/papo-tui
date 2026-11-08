@@ -1451,6 +1451,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         return 1;
     }
     ui.allow_local_http = allow_local_http;
+    connections->allow_local_http = allow_local_http;
     profile_config *config = profiles_create();
     if (!config) {
         auth_destroy(client);

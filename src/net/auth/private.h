@@ -49,6 +49,8 @@ struct auth_client {
     auth_state operation;
     bool ws_requested;
     bool ws_managed, ws_active, ws_validate, ws_validated, validation_wait;
+    /* The last validation could not reach the server; the session is kept. */
+    bool unreachable;
     uint64_t ws_retry_at, ws_stable_at, ws_epoch, expires_at;
     unsigned ws_failures;
     bool restoring, session_rejected, gate_passed;

@@ -230,7 +230,7 @@ static void complete_whoami(auth_client *client, json_t *body)
             if (!client->refresh_at)
                 client->refresh_at = now + 30000;
             client->authenticated = true;
-            client->validation_wait = false;
+            client->validation_wait = client->unreachable = false;
             if (client->ws_validate) {
                 client->ws_validated = true;
                 client->ws_validate = false;
@@ -290,6 +290,7 @@ void auth_internal_complete(auth_client *client, CURLcode result, long status)
         ws_abort(client->websocket);
         auth_internal_reconnect_later(client, now);
         client->validation_wait = true;
+        client->unreachable = true;
         client->state = AUTH_READY;
         snprintf(client->message, sizeof(client->message), "Rede indisponível. Reconectando…");
         return;

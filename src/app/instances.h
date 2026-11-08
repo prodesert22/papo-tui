@@ -18,6 +18,12 @@ typedef struct {
     history *model;
     json_t *alerts;
     uint64_t alert_due, serial, desktop_generation;
+    /* Next automatic read of the saved session while listed offline; 0 when
+     * none is scheduled. Failures grow the wait until the server answers. */
+    uint64_t retry_at;
+    unsigned retry_failures;
+    bool retrying; /* An automatic read is validating; the tab still shows offline. */
+    bool offline_shown; /* Last offline state reported, to redraw when it changes. */
     char name[129], url[2049];
     /* Set when the user clicks one of this server's desktop notifications. */
     char open_channel[37], open_message[37], open_time[65];
@@ -30,6 +36,7 @@ typedef struct {
     profile_config *config; /* Borrowed; outlives connections. */
     auth_client *visible_auth;
     char visible_channel[37];
+    bool allow_local_http; /* Policy for restoring saved sessions of offline tabs. */
     uint64_t next_serial;
     size_t poll_cursor;
 } instance_connections;
@@ -47,7 +54,8 @@ bool instances_attach_offline(instance_connections *connections, auth_client *au
  * holds a tab index. */
 void instances_order(instance_connections *connections,
                      unsigned (*rank)(const auth_client *auth, void *context), void *context);
-/* The tab has no session and is not connecting. */
+/* The tab has no session and is not connecting, or only an automatic retry
+ * of its saved session is, or its kept session cannot reach the server. */
 bool instances_offline(const instance_connections *connections, size_t index);
 /* Transfers ownership back to caller, removing this tab without destroying it. */
 void instances_detach(instance_connections *connections, auth_client *auth);
@@ -58,10 +66,18 @@ void instances_media_event(instance_connections *connections, auth_client *auth,
                            const json_t *event);
 history *instances_history(const instance_connections *connections, const auth_client *auth);
 void instances_visible(instance_connections *connections, auth_client *auth, const char *channel);
+/* Another tab with a session whose desktop notification was clicked, or
+ * SIZE_MAX. Its destination stays pending until that tab takes it. */
+size_t instances_open_elsewhere(const instance_connections *connections, const auth_client *active);
 /* Takes the destination of a clicked desktop notification of this server, once.
  * The time is empty when the message's own creation time is unknown. */
 bool instances_take_open(instance_connections *connections, const auth_client *auth,
                          char channel[37], char message[37], char time[65]);
-/* Polls inactive sessions/WS and metadata; never requests inactive history. */
+/* Polls inactive sessions/WS and metadata; never requests inactive history.
+ * A saved server listed offline reads its saved session again on its own,
+ * waiting longer after each failure; a rejected session is never retried. */
 bool instances_poll(instance_connections *connections, auth_client *active);
+/* Restores saved sessions read for offline tabs, for screens other than the
+ * sign-in screen, which restores them itself. */
+bool instances_resume(instance_connections *connections);
 #endif

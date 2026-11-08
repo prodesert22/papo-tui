@@ -32,8 +32,16 @@ adding a server. Click a tab to open that server, or press ↑ from the first fi
 (or Shift+Tab), choose a tab with ←/→ and press Enter.
 
 A server that cannot be reached keeps its tab, marked **(offline)**, and its
-saved session. Open the tab again to retry: the saved session is used, so you do
-not need your password once the server is back.
+saved session. The application keeps trying it in the background, a few
+seconds apart at first and then every 30 seconds, and the tab becomes available
+again by itself once the server answers; you do not need your password. Opening
+the tab tries it again right away.
+
+If the server you are using stops answering, its tab is marked **(offline)** and
+the history shows **Servidor offline** (Server offline) with **Reconectando
+automaticamente…** (Reconnecting automatically) instead of loading or
+permission errors. Your session is kept, and the conversation comes back when
+the server answers again.
 
 To remove a server from the list, right-click its tab, or select the tab and
 press **m** or Ctrl+Space, to open the tab's menu below it. Choose **Remover
@@ -585,7 +593,7 @@ just to fill author names.
 
 Clicking a system notification, or its **Abrir** (Open) action, opens its
 channel or direct message and jumps to the message. A notification from another
-server opens when you switch to that server's tab. The click also brings the
+server first switches to that server's tab. The click also brings the
 terminal running Papo TUI to the front:
 
 - In Kitty, and in other terminals that implement Kitty's notification
@@ -1244,6 +1252,8 @@ above.
   folder; see the [installation guide](installation.md).
 - **Cannot connect:** check the final URL, instance availability and credentials.
   Private servers also require the server password.
+- **A tab shows (offline):** the server is not answering. Wait for it to come
+  back; the application reconnects by itself, or open the tab to try at once.
 - **Server reports an IP block:** contact the instance administrator. A block
   during private server authorization happens before your account is checked;
   an already open session in another client does not confirm that a new login

@@ -510,7 +510,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
               (text_terminal_focus_unknown() && visible_now < ui->view_requested_until)))
             history_read_visible(ui->model, NULL);
         auth_state before = auth_get_state(auth);
-        if (session_store_poll(connections->sessions, auth)) {
+        if (session_store_poll(connections->sessions, auth) | instances_resume(connections)) {
             redraw = true;
             scope = DRAW_ALL;
         }
@@ -636,6 +636,16 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         if (!*r8_modal_destination(ui->r8) &&
             instances_take_open(connections, auth, click_channel, click_message, click_time))
             r8_modal_open_target(ui->r8, click_channel, click_message, click_time);
+        /* A clicked notification of another server opens that server's tab,
+         * which then opens the conversation and the message. */
+        size_t clicked_tab = instances_open_elsewhere(connections, auth);
+        if (clicked_tab != SIZE_MAX) {
+            int action = conversation_activate_tab(ui, clicked_tab, selected);
+            if (action >= 0) {
+                result = action;
+                goto finished;
+            }
+        }
         const char *opened = inbox_opened(box);
         if (*r8_modal_destination(ui->r8)) {
             snprintf(ui->notification_channel, sizeof(ui->notification_channel), "%s",

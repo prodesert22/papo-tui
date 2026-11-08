@@ -28,7 +28,7 @@ void auth_poll(auth_client *client)
         auth_internal_reconnect_later(client, tick);
         client->validation_wait = true;
     }
-    if (client->ws_managed && client->ws_active && client->ws_requested && *client->user_id &&
+    if (client->ws_managed && client->ws_requested && *client->user_id &&
         !client->logout_requested && !client->queued && !client->attached &&
         client->state == AUTH_READY && tick >= client->ws_retry_at) {
         ws_state state = ws_get_state(client->websocket);
@@ -174,11 +174,8 @@ void auth_realtime_active(auth_client *client, bool active)
         auth_permissions_refresh(client);
     client->ws_managed = true;
     client->ws_active = active;
-    ws_state state = ws_get_state(client->websocket);
-    if (!active && (state == WS_QUEUED || state == WS_CONNECTING)) {
-        ws_abort(client->websocket);
-        client->ws_validate = true;
-    }
+    /* Inactive servers keep (re)connecting realtime too: their mentions and
+     * desktop alerts arrive only through it. */
 }
 
 bool auth_ws_reconnecting(const auth_client *client)

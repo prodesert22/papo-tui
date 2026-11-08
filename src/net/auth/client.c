@@ -63,6 +63,7 @@ void auth_internal_clear_identity(auth_client *client)
     client->expires_at = client->ws_retry_at = client->ws_stable_at = 0;
     client->ws_failures = 0;
     client->ws_validate = client->ws_validated = client->validation_wait = false;
+    client->unreachable = false;
     client->ws_epoch = 0;
     client->ws_requested = false;
     client->user[0] = client->user_id[0] = '\0';
@@ -397,8 +398,7 @@ const char *auth_message(const auth_client *client)
     case AUTH_READY:
         if (client->ws_managed && client->ws_requested &&
             (client->ws_validate || client->ws_validated || client->validation_wait))
-            return client->ws_active ? "Login realizado. Reconectando tempo real…"
-                                     : "Tempo real aguardando esta aba ficar ativa.";
+            return "Login realizado. Reconectando tempo real…";
         switch (ws_get_state(client->websocket)) {
         case WS_QUEUED:
         case WS_CONNECTING:
@@ -445,6 +445,11 @@ auth_input_error auth_error_input(const auth_client *client)
 bool auth_has_session(const auth_client *client)
 {
     return client->authenticated && !client->recovering && !client->logout_requested;
+}
+
+bool auth_server_unreachable(const auth_client *client)
+{
+    return client && client->unreachable && auth_has_session(client);
 }
 
 const char *auth_user_id(const auth_client *client)

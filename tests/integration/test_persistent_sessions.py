@@ -18,6 +18,8 @@ KEYRING = argument(1)
 from terminal_support import Terminal  # consumes the TUI binary  # noqa: E402 - path and test arguments are prepared above
 from history_mock import HistoryMock  # noqa: E402 - path and test arguments are prepared above
 from realtime_mock import RealtimeMock  # noqa: E402 - path and test arguments are prepared above
+from r8_mock import R8Mock, AUTHOR, uuid  # noqa: E402 - path and test arguments are prepared above
+from history_mock import CHANNEL  # noqa: E402 - path and test arguments are prepared above
 
 
 class Persistence(unittest.TestCase):
@@ -327,7 +329,7 @@ class Persistence(unittest.TestCase):
             self.wait(t, "[Trabalho")
             self.wait(t, "Tempo real conectado")
             # The other server validated in the background, where its realtime
-            # connection waits; opening its tab must connect it.
+            # connection also opens; opening its tab keeps it connected.
             t.click(0, t.screen.display[0].index("Comunidade") + 1)
             self.wait(t, "[Comunidade")
             self.wait(t, "Tempo real conectado")
@@ -430,6 +432,138 @@ class Persistence(unittest.TestCase):
             self.assertIn("(offline)", row, "\n".join(t.screen.display))
             self.assertLess(row.index("(offline)"), row.index("[Trabalho"))
             self.assertTrue(self.state(first.url)["restore_allowed"])
+            t.close()
+
+    def test_offline_background_tab_reconnects_when_its_server_returns(self):
+        self.keyring()
+        with HistoryMock() as first, HistoryMock() as second:
+            second.name = "Trabalho"
+            t = self.login(first)
+            self.add_server(t, second)
+            t.close()
+            first.api_handler = lambda method, path, body: (503, None)
+            t = self.terminal()
+            self.wait(t, "[Trabalho]")
+            self.wait(t, "geral")
+            self.wait(t, "(offline)")
+            # While it stays down, it is retried in the background without
+            # leaving the open conversation or asking for a password.
+            attempts = len(first.requests)
+            self.until(t, lambda: len(first.requests) > attempts)
+            self.assertIn("(offline)", t.screen.display[0])
+            first.api_handler = first.route
+            # After one failed retry the next comes 8 s (±20%) later.
+            deadline = time.monotonic() + 15
+            while "(offline)" in t.screen.display[0] and time.monotonic() < deadline:
+                t.read(0.05)
+            self.assertNotIn("(offline)", t.screen.display[0])
+            self.assertIn("Comunidade", t.screen.display[0])
+            self.assertIn("[Trabalho]", t.screen.display[0])
+            self.assertIn("Conversar em #geral", "\n".join(t.screen.display))
+            self.assertEqual(self.login_count(first), 1)
+            t.close()
+
+    def test_unreachable_saved_server_opens_by_itself_when_it_returns(self):
+        self.keyring()
+        with HistoryMock() as server:
+            t = self.login(server)
+            t.close()
+            server.api_handler = lambda method, path, body: (503, None)
+            t = self.terminal()
+            self.wait(t, "Serviço indisponível")
+            self.assertIn("URL do servidor", "\n".join(t.screen.display))
+            server.api_handler = server.route
+            # The saved session is read again on its own; no click or password.
+            self.wait(t, "Conversar em #geral")
+            self.assertNotIn("URL do servidor", "\n".join(t.screen.display))
+            self.assertEqual(self.login_count(server), 1)
+            t.close()
+
+    def test_mentions_arrive_after_an_unreachable_saved_server_returns(self):
+        self.keyring()
+        with R8Mock(count=0) as server:
+            t = self.login(server)
+            t.close()
+            # The backend is stopped: every connection is refused.
+            server.power_off()
+            t = self.terminal()
+            self.wait(t, "Conexão recusada")
+            server.power_on()
+            self.wait(t, "Conversar em #geral")
+            self.wait(t, "Tempo real conectado")
+            content = "Olá @mention(<@" + uuid(1) + ">)"
+            mention = dict(server.message(50), author_id=AUTHOR, content=content)
+            server.emit(dict(mention, type="message"))
+            server.notifications = [
+                dict(
+                    id=uuid(9060),
+                    message_id=mention["id"],
+                    channel_id=CHANNEL,
+                    author_id=AUTHOR,
+                    message_content=content,
+                    read=False,
+                    created_at=mention["created_at"],
+                )
+            ]
+            server.emit(
+                dict(
+                    type="new_notification",
+                    id=uuid(9060),
+                    user_id=AUTHOR,
+                    message_id=mention["id"],
+                    message_content=content,
+                )
+            )
+            self.wait(t, "[Comunidade 1]")
+            self.wait(t, "1 notificação")
+            t.close()
+
+    def test_mentions_arrive_after_an_offline_background_server_returns(self):
+        self.keyring()
+        with R8Mock(count=0) as first, HistoryMock() as second:
+            second.name = "Trabalho"
+            t = self.login(first)
+            self.add_server(t, second)
+            t.close()
+            # The backend is stopped: every connection is refused.
+            first.power_off()
+            t = self.terminal()
+            self.wait(t, "[Trabalho]")
+            self.wait(t, "(offline)")
+            first.power_on()
+            deadline = time.monotonic() + 15
+            while "(offline)" in t.screen.display[0] and time.monotonic() < deadline:
+                t.read(0.05)
+            self.assertNotIn("(offline)", t.screen.display[0])
+            # Its realtime connection opens in the background.
+            deadline = time.monotonic() + 10
+            while not first.peers and time.monotonic() < deadline:
+                t.read(0.05)
+            self.assertTrue(first.peers, "background realtime did not reconnect")
+            content = "Olá @mention(<@" + uuid(1) + ">)"
+            mention = dict(first.message(50), author_id=AUTHOR, content=content)
+            first.emit(dict(mention, type="message"))
+            first.notifications = [
+                dict(
+                    id=uuid(9060),
+                    message_id=mention["id"],
+                    channel_id=CHANNEL,
+                    author_id=AUTHOR,
+                    message_content=content,
+                    read=False,
+                    created_at=mention["created_at"],
+                )
+            ]
+            first.emit(
+                dict(
+                    type="new_notification",
+                    id=uuid(9060),
+                    user_id=AUTHOR,
+                    message_id=mention["id"],
+                    message_content=content,
+                )
+            )
+            self.wait(t, "Comunidade 1")
             t.close()
 
     def test_saved_server_tabs_show_with_the_login_before_validation(self):

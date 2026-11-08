@@ -546,6 +546,48 @@ class R8Terminal(support.R8Terminal):
             t.click(3, 14)
             self.assertEqual(t.screen.cursor.x, 14)
 
+    def test_mentions_reach_the_center_after_the_server_comes_back(self):
+        with R8Mock(count=0) as server:
+            t = self.login(server, environment={"KITTY_WINDOW_ID": "badge-fixture"})
+            self.wait(t, "Tempo real conectado")
+            server.offline = True
+            server.disconnect()
+            self.wait(t, "Servidor offline")
+            # Leave it offline long enough for the client's own refreshes to fail.
+            t.read(3)
+            server.offline = False
+            content = "Olá @mention(<@" + uuid(1) + ">)"
+            mention = dict(server.message(50), author_id=AUTHOR, content=content)
+            server.emit(dict(mention, type="message"))
+            server.notifications = [
+                dict(
+                    id=uuid(9060),
+                    message_id=mention["id"],
+                    channel_id=CHANNEL,
+                    author_id=AUTHOR,
+                    message_content=content,
+                    read=False,
+                    created_at=mention["created_at"],
+                )
+            ]
+            server.emit(
+                dict(
+                    type="new_notification",
+                    id=uuid(9060),
+                    user_id=AUTHOR,
+                    message_id=mention["id"],
+                    message_content=content,
+                )
+            )
+            # Sent before the client noticed the server was back: realtime
+            # missed it, so it must come from the notifications reloaded on
+            # reconnection.
+            end = time.monotonic() + 40
+            while "1 notificação" not in t.screen.display[-2] and time.monotonic() < end:
+                t.read(0.05)
+            self.assertIn("1 notificação", t.screen.display[-2], "\n".join(t.screen.display))
+            self.assertIn("[Comunidade 1]", t.screen.display[0])
+
     def test_webhook_notification_uses_cached_author_and_red_mention_badges(self):
         with R8Mock(count=0) as server:
             t = self.login(server, environment={"KITTY_WINDOW_ID": "badge-fixture"})

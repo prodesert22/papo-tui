@@ -48,6 +48,37 @@ class RealtimeTerminal(unittest.TestCase):
     open = product.SendProduct.open
     editor_text = product.SendProduct.editor_text
 
+    def test_server_going_offline_shows_its_screen_and_tab_until_it_returns(self):
+        with RealtimeMock() as server:
+            terminal = self.open(server)
+            try:
+                self.wait(terminal, "Tempo real conectado")
+                server.offline = True
+                server.disconnect()
+                # The session is kept; the tab and the history say the server is
+                # offline instead of listing each failed request.
+                self.wait(terminal, "Servidor offline")
+                self.wait(terminal, "(offline)")
+                self.assertIn("(offline)", terminal.screen.display[0])
+                self.assertIn("Reconectando automaticamente", self.screen(terminal))
+                self.assertNotIn("Mensagem 0003", self.screen(terminal))
+                for error in ("Permissões indisponíveis", "Falha ao carregar", "Revalidando"):
+                    self.assertNotIn(error, self.screen(terminal))
+                logins = sum(path.endswith("/auth/login") for _, path, *_ in server.requests)
+                server.offline = False
+                deadline = time.monotonic() + 40
+                while "Servidor offline" in self.screen(terminal) and time.monotonic() < deadline:
+                    terminal.read(0.05)
+                self.wait(terminal, "Mensagem 0003")
+                self.wait(terminal, "Tempo real conectado")
+                self.assertNotIn("(offline)", terminal.screen.display[0])
+                self.assertNotIn("Servidor offline", self.screen(terminal))
+                self.assertEqual(
+                    sum(path.endswith("/auth/login") for _, path, *_ in server.requests), logins
+                )
+            finally:
+                self.assertTrue(terminal.close())
+
     def test_channel_navigation_keeps_receiving_current_channel_without_reloading(self):
         with RealtimeMock() as server:
             terminal = self.open(server)

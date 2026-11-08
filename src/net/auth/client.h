@@ -87,6 +87,9 @@ auth_input_error auth_error_input(const auth_client *client);
 /* A verified identity remains visible during proactive renewal, but is hidden
  * immediately during logout or 401 recovery. Cookies are never exposed. */
 bool auth_has_session(const auth_client *client);
+/* The session is kept, but its last validation could not reach the server;
+ * it is validated again automatically until the server answers. */
+bool auth_server_unreachable(const auth_client *client);
 const char *auth_user_id(const auth_client *client);
 const char *auth_instance_url(const auth_client *client);
 uint64_t auth_context_generation(const auth_client *client);
