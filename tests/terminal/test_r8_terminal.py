@@ -789,6 +789,40 @@ class R8Terminal(support.R8Terminal):
             self.wait(terminal, "[Comunidade 100]")
             self.assertNotIn("+", terminal.screen.display[1].split("]", 1)[0])
 
+    def test_focused_selected_tab_uses_white_text(self):
+        def first_cell(t, row, label):
+            return t.screen.buffer[row][t.screen.display[row].index(label) + 1]
+
+        with R8Mock(count=1) as server:
+            t = self.login(server)
+            self.wait(t, "Mensagem 0001")
+            # Colors are compared, not named, because the theme may redefine
+            # them: [+ Adicionar] is plain white text.
+            white = first_cell(t, 0, "[+ Adicionar]").fg
+            t.click(0, t.screen.display[0].index("[Comunidade") + 1)
+            self.wait(t, "Foco: Abas")
+            cell = first_cell(t, 0, "[Comunidade")
+            self.assertEqual(cell.fg, white, cell)
+            self.assertNotEqual(cell.bg, "default", cell)
+            focus = cell.bg
+            # The selected channel with the focus uses the same colors.
+            t.send("\x1bOB")
+            self.wait(t, "Foco: Canais")
+            channel = next(i for i, line in enumerate(t.screen.display) if "# geral" in line[:25])
+            cell = first_cell(t, channel, "# geral")
+            self.assertEqual((cell.fg, cell.bg), (white, focus), cell)
+            # Selected without focus, the tab keeps the orange accent.
+            row = next(i for i, line in enumerate(t.screen.display) if "Mensagem 0001" in line)
+            t.click(row, 40)
+            self.wait(t, "Foco: Histórico")
+            self.assertNotEqual(first_cell(t, 0, "[Comunidade").fg, white)
+        with R8Mock(count=1) as server:
+            # The Linux console cannot show focus backgrounds; the focused tab
+            # keeps the accent there so it stays visible.
+            t = self.login(server, terminal_type="linux")
+            self.wait(t, "Mensagem 0001")
+            self.assertEqual(first_cell(t, 0, "[Comunidade").fg, "brown")
+
     def test_basic_color_console_marks_the_focused_box_border(self):
         # The Linux console has 8 colors: focus backgrounds are as black as
         # the rest, so the focused box border must change color instead.

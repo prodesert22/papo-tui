@@ -145,7 +145,7 @@ void conversation_draw_tabs(view *ui)
             break;
         }
         bool selected = i == ui->active_tab, active = focused && i == ui->tab_cursor;
-        wattrset(ui->tabs, COLOR_PAIR(active     ? THEME_FOCUSED
+        wattrset(ui->tabs, COLOR_PAIR(active     ? THEME_PROFILE_BUTTON_FOCUS
                                       : selected ? THEME_PANEL_ACTIVE
                                                  : THEME_PANEL_MUTED) |
                                (selected || active ? A_BOLD : A_NORMAL));
@@ -603,7 +603,7 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                 bool notified = unread || mentions;
                 int badge_width = notified ? notification_badge(ui, NULL, 0, 0, mentions, 0) : 0;
                 int pair = selected && focused
-                               ? (ui->list_dms ? THEME_PROFILE_FOCUS : THEME_FOCUSED)
+                               ? (ui->list_dms ? THEME_PROFILE_FOCUS : THEME_PROFILE_BUTTON_FOCUS)
                            : selected ? THEME_PANEL_ACTIVE
                            : focused  ? THEME_FOCUS_AREA
                                       : THEME_PANEL;
@@ -621,8 +621,7 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                 text_label(ui->list, row + 1, 1, ui->side - 2 - badge_width, label);
                 if (notified)
                     notification_badge(ui, ui->list, row + 1, ui->side - 1 - badge_width, mentions,
-                                       selected && focused && ui->list_dms
-                                           ? THEME_NOTIFICATION_BUTTON_FOCUS
+                                       selected && focused ? THEME_NOTIFICATION_BUTTON_FOCUS
                                        : focused  ? THEME_NOTIFICATION_FOCUS
                                        : selected ? THEME_NOTIFICATION_SELECTED
                                                   : THEME_NOTIFICATION);

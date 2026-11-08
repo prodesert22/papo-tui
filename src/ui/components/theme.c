@@ -43,6 +43,10 @@ static const unsigned char rgb[THEME_COLOR_COUNT][3] = {
 /* Pseudo color: the separator rule, or the accent where focus backgrounds
  * cannot be shown (8 or 16 colors). */
 #define FOCUS_RULE THEME_COLOR_COUNT
+/* Pseudo color: white text on the focused item, or the accent where focus
+ * backgrounds cannot be shown (8 or 16 colors). Selected items without focus
+ * keep the accent. */
+#define SELECTED_TEXT (THEME_COLOR_COUNT + 1)
 static const struct {
     int pair, foreground, background;
 } pair_colors[] = {
@@ -50,7 +54,7 @@ static const struct {
     {THEME_MUTED, SECONDARY, BACKGROUND},
     {THEME_ACCENT, ORANGE, BACKGROUND},
     {THEME_INPUT, TEXT, SURFACE},
-    {THEME_FOCUSED, ORANGE, RAISED},
+    {THEME_FOCUSED, SELECTED_TEXT, RAISED},
     {THEME_ERROR, RED, BACKGROUND},
     {THEME_SUCCESS, GREEN, BACKGROUND},
     {THEME_PANEL, TEXT, SURFACE},
@@ -72,7 +76,7 @@ static const struct {
     {THEME_PROFILE_SELECTED, PROFILE_WHITE, WARM},
     {THEME_PROFILE_FOCUS, PROFILE_WHITE, PROFILE_HIGHLIGHT},
     {THEME_PROFILE_BUTTON_SELECTED, ORANGE, WARM},
-    {THEME_PROFILE_BUTTON_FOCUS, ORANGE, PROFILE_HIGHLIGHT},
+    {THEME_PROFILE_BUTTON_FOCUS, SELECTED_TEXT, PROFILE_HIGHLIGHT},
     {THEME_EMBED_AREA, TEXT, SURFACE},
     {THEME_EMBED_MUTED, SECONDARY, SURFACE},
     {THEME_EMBED_ACCENT, RULE, SURFACE},
@@ -209,11 +213,12 @@ void theme_init(ui_theme *theme)
     /* With 8 or 16 colors (such as the Linux console) the focus backgrounds
      * are black like the rest, so focused borders take the accent instead. */
     int focus_rule = COLORS < 256 ? colors[ORANGE] : colors[RULE];
+    int selected_text = COLORS < 256 ? colors[ORANGE] : colors[PROFILE_WHITE];
     for (size_t i = 0; i < sizeof(pair_colors) / sizeof(pair_colors[0]); ++i)
         init_extended_pair(pair_colors[i].pair,
-                           pair_colors[i].foreground == FOCUS_RULE
-                               ? focus_rule
-                               : colors[pair_colors[i].foreground],
+                           pair_colors[i].foreground == FOCUS_RULE      ? focus_rule
+                           : pair_colors[i].foreground == SELECTED_TEXT ? selected_text
+                                                                        : colors[pair_colors[i].foreground],
                            colors[pair_colors[i].background]);
     for (int i = 0; i < THEME_COLOR_COUNT; ++i) {
         color_numbers[i] = colors[i];

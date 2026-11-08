@@ -199,19 +199,25 @@ class ProfileTerminalTests(unittest.TestCase):
     def test_mouse_actions_and_selected_text_colors(self):
         self.seed(["http://127.0.0.1:9/a", "http://127.0.0.1:9/b"])
         terminal = self.terminal()
+        # The selected profile has the focus: white text on its highlight.
         selected = self.glyph(terminal, "Perfil 00")
-        self.assertNotEqual(selected.fg, self.glyph(terminal, "Perfil 01").fg)
+        self.assertEqual(selected.fg, self.glyph(terminal, "Perfil 01").fg)
         self.assertNotEqual(selected.bg, self.glyph(terminal, "Perfil 01").bg)
         self.click(terminal, "Perfil 01")
         terminal.send(RIGHT)
-        self.assertEqual(
-            self.glyph(terminal, "Perfil 01").fg, self.glyph(terminal, "[Selecionar]").fg
+        # The focus moved to [Selecionar]: the profile stays selected in orange,
+        # and the focused button is white on its highlight.
+        self.assertNotEqual(
+            self.glyph(terminal, "Perfil 01").fg, self.glyph(terminal, "[Editar]").fg
         )
         self.assertNotEqual(
             self.glyph(terminal, "Perfil 01").bg, self.glyph(terminal, "[Selecionar]").bg
         )
-        self.assertNotEqual(
+        self.assertEqual(
             self.glyph(terminal, "[Selecionar]").fg, self.glyph(terminal, "[Editar]").fg
+        )
+        self.assertNotEqual(
+            self.glyph(terminal, "[Selecionar]").bg, self.glyph(terminal, "[Editar]").bg
         )
         self.click(terminal, "[Editar]")
         self.wait(terminal, "Editar perfil")

@@ -70,7 +70,7 @@ void tab_strip_draw(tab_strip *strip, WINDOW *w, int row, int width, const char 
         int label_width = label_of(labels, i, active, label, sizeof(label));
         strip->x[i] = x;
         strip->w[i] = label_width;
-        wattrset(w, COLOR_PAIR(i == active ? (focused ? THEME_FOCUSED : THEME_PANEL_ACCENT)
+        wattrset(w, COLOR_PAIR(i == active ? (focused ? THEME_PROFILE_BUTTON_FOCUS : THEME_PANEL_ACCENT)
                                            : THEME_PANEL) |
                         (i == active ? A_BOLD : 0) |
                         (i == active && !has_colors() && focused ? A_REVERSE : 0));

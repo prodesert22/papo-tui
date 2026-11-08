@@ -474,7 +474,7 @@ static void draw_tabs(login_ui *ui, auth_client *client)
             break;
         }
         bool selected = i == current, active = focused && i == cursor;
-        wattrset(w, COLOR_PAIR(active     ? THEME_FOCUSED
+        wattrset(w, COLOR_PAIR(active     ? THEME_PROFILE_BUTTON_FOCUS
                                : selected ? THEME_PANEL_ACTIVE
                                           : THEME_PANEL_MUTED) |
                         (selected || active ? A_BOLD : A_NORMAL));

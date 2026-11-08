@@ -697,14 +697,16 @@ void emoji_picker_draw(emoji_picker *p)
     text_layout search;
     text_measure(&p->search, width - 12, &search);
     text_draw(w, &p->search, &search, search.cursor_row, 1, 1, 9);
-    wattrset(w, COLOR_PAIR(!p->server ? THEME_PANEL_ACCENT : THEME_PANEL_MUTED) |
+    /* Like a tab: the chosen source is white while the row has focus. */
+    int chosen = p->focus == 1 ? THEME_PROFILE_BUTTON_FOCUS : THEME_PANEL_ACCENT;
+    wattrset(w, COLOR_PAIR(!p->server && !p->gif ? chosen : THEME_PANEL_MUTED) |
                     (p->focus == 1 ? A_BOLD : 0));
     text_label(w, 2, 2, 10, "[Unicode]");
-    wattrset(w, COLOR_PAIR(p->server ? THEME_PANEL_ACCENT : THEME_PANEL_MUTED) |
+    wattrset(w, COLOR_PAIR(p->server ? chosen : THEME_PANEL_MUTED) |
                     (p->focus == 1 ? A_BOLD : 0));
     text_label(w, 2, 13, 11, "[Servidor]");
     if (p->gif_auth && !p->reaction) {
-        wattrset(w, COLOR_PAIR(p->gif ? THEME_PANEL_ACCENT : THEME_PANEL_MUTED) |
+        wattrset(w, COLOR_PAIR(p->gif ? chosen : THEME_PANEL_MUTED) |
                         (p->focus == 1 ? A_BOLD : 0));
         text_label(w, 2, 25, 5, "[GIF]");
     }
