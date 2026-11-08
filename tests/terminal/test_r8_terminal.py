@@ -856,6 +856,31 @@ class R8Terminal(support.R8Terminal):
             self.assertTrue(gap)
             self.assertEqual(set(gap), {label.bg}, (label, gap))
 
+    def test_account_box_keeps_its_background_when_the_channel_list_has_focus(self):
+        with R8Mock(count=1) as server:
+            t = self.login(server)
+            self.wait(t, "Mensagem 0001")
+            t.click(0, t.screen.display[0].index("[Comunidade") + 2)
+            self.wait(t, "Foco: Abas")
+            t.send("\x1bOB")
+            self.wait(t, "Foco: Canais")
+            t.read(0.3)
+            name = next(i for i, line in enumerate(t.screen.display) if "josé" in line[:26])
+            # An empty row of the focused list shows its focus background.
+            empty = next(
+                i
+                for i in range(4, name - 2)
+                if not t.screen.display[i][2:24].strip()
+            )
+            focus = t.screen.buffer[empty][5].bg
+            self.assertNotIn(focus, ("default", "000000"))
+            # Inside the account box, between its side borders, nothing takes it.
+            for row in (name, name + 1):
+                line = t.screen.display[row]
+                left, right = line.index("x", 1) + 1, line.rindex("x", 0, 26)
+                backgrounds = {t.screen.buffer[row][x].bg for x in range(left, right)}
+                self.assertNotIn(focus, backgrounds, (row, backgrounds))
+
     def test_basic_color_console_marks_the_focused_box_border(self):
         # The Linux console has 8 colors: focus backgrounds are as black as
         # the rest, so the focused box border must change color instead.

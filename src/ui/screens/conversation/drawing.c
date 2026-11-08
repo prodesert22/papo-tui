@@ -641,6 +641,11 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         mvwaddch(ui->list, y + 3, 0, ACS_LLCORNER);
         mvwhline(ui->list, y + 3, 1, ACS_HLINE, w - 2);
         mvwaddch(ui->list, y + 3, w - 1, ACS_LRCORNER);
+        /* The account box is not part of the channel list: it keeps the panel
+         * background when the list has the focus, behind its name and buttons. */
+        wattrset(ui->list, COLOR_PAIR(THEME_PANEL));
+        for (int row = y + 1; row <= y + 2; ++row)
+            mvwhline(ui->list, row, 1, ' ', w - 2);
         /* The signed-in name keeps a row of its own; the controls that used
          * to share it sit on the row below. */
         wattrset(ui->list, COLOR_PAIR(theme_member_pair(
