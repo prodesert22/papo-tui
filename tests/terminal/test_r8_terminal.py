@@ -823,6 +823,39 @@ class R8Terminal(support.R8Terminal):
             self.wait(t, "Mensagem 0001")
             self.assertEqual(first_cell(t, 0, "[Comunidade").fg, "brown")
 
+    def test_selected_channel_highlight_spans_the_gap_before_its_badge(self):
+        with R8Mock(count=1) as server:
+            t = self.login(server)
+            self.wait(t, "Mensagem 0001")
+            message = dict(server.message(2), id=uuid(778), channel_id=OTHER, content="Nova")
+            server.emit(dict(message, type="message"))
+
+            def outro():
+                # An unread channel reads "# * outro".
+                return next(
+                    (i for i, line in enumerate(t.screen.display) if "outro" in line[:25]), 0
+                )
+
+            def until(condition):
+                end = time.monotonic() + 5
+                while not condition() and time.monotonic() < end:
+                    t.read(0.03)
+                self.assertTrue(condition(), "\n".join(t.screen.display))
+
+            until(lambda: "●" in t.screen.display[outro()][:26])
+            t.click(0, t.screen.display[0].index("[Comunidade") + 2)
+            self.wait(t, "Foco: Abas")
+            t.send("\x1bOB\x1bOB")  # tabs -> list (# geral) -> # outro
+            row = outro()
+            line = t.screen.display[row]
+            start, badge = line.index("#", 0, 26), line.index("●", 0, 26)
+            name_end = line.index("outro", 0, 26) + len("outro")
+            until(lambda: t.screen.buffer[row][start].bg not in ("default", "000000"))
+            label = t.screen.buffer[row][start]
+            gap = [t.screen.buffer[row][x].bg for x in range(name_end, badge)]
+            self.assertTrue(gap)
+            self.assertEqual(set(gap), {label.bg}, (label, gap))
+
     def test_basic_color_console_marks_the_focused_box_border(self):
         # The Linux console has 8 colors: focus backgrounds are as black as
         # the rest, so the focused box border must change color instead.

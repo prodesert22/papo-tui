@@ -616,7 +616,8 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                 if (ui->list_dms && selected)
                     attributes |= A_BOLD | (has_colors() ? 0 : A_REVERSE);
                 wattrset(ui->list, attributes);
-                if (ui->list_dms && selected)
+                /* The highlight spans the row, including the gap before a badge. */
+                if (selected)
                     mvwhline(ui->list, row + 1, 1, ' ', ui->side - 2);
                 text_label(ui->list, row + 1, 1, ui->side - 2 - badge_width, label);
                 if (notified)
