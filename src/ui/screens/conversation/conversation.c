@@ -1093,35 +1093,13 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 history_reload_channels(ui->model);
             continue;
         }
+        if (type == KEY_CODE_YES && key >= TEXT_ALT_LEFT && key <= TEXT_ALT_DOWN) {
+            conversation_focus_toward(ui, key == TEXT_ALT_LEFT ? -1 : key == TEXT_ALT_RIGHT ? 1 : 0,
+                                      key == TEXT_ALT_UP ? -1 : key == TEXT_ALT_DOWN ? 1 : 0);
+            continue;
+        }
         if ((type == OK && key == '\t') || (type == KEY_CODE_YES && key == KEY_BTAB)) {
-            /* The order follows the screen. The voice buttons come last, so the
-             * existing areas keep their relative order. */
-            int order[20] = {SERVER_TABS, LIST_BUTTONS, CHANNEL_LIST, SETTINGS_BUTTON,
-                             HISTORY_PANEL};
-            int count = 5, at = 0;
-            if (conversation_input(ui)) {
-                const GPtrArray *files = conversation_attachments(ui);
-                if (files && files->len)
-                    order[count++] = ATTACHMENT_ROW;
-                order[count++] = MESSAGE_INPUT;
-                if (!*ui->edit_message)
-                    order[count++] = ATTACH_BUTTON;
-                order[count++] = EMOJI_BUTTON;
-            }
-            order[count++] = SEARCH_BUTTON;
-            order[count++] = PINS_BUTTON;
-            order[count++] = MEMBERS_BUTTON;
-            if (ui->members_open)
-                order[count++] = MEMBERS_PANEL;
-            if (voice_available()) {
-                order[count++] = VOICE_OUTPUT_BUTTON;
-                order[count++] = VOICE_MICROPHONE_BUTTON;
-                if (voice_active()) {
-                    order[count++] = VOICE_LEAVE_BUTTON;
-                    if (connections->config && connections->config->audio.push_to_talk)
-                        order[count++] = VOICE_PTT_BUTTON;
-                }
-            }
+            int order[24], count = conversation_focus_order(ui, order), at = 0;
             while (at < count && order[at] != ui->focus)
                 ++at;
             conversation_set_focus(ui, order[(at + (type == OK ? 1 : count - 1)) % count]);

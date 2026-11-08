@@ -330,6 +330,13 @@ void conversation_draw_footer(view *ui);
 void conversation_draw_confirmation(view *ui);
 void conversation_draw(view *ui, auth_client *auth, draw_scope scope);
 void conversation_set_focus(view *ui, int focus);
+/* The components Tab visits, in screen order; returns how many. */
+int conversation_focus_order(view *ui, int order[24]);
+/* Alt+arrow: focus the component on screen in direction (dx, dy). Returns
+ * false when nothing lies that way. */
+bool conversation_focus_toward(view *ui, int dx, int dy);
+/* The open member drawer's window, or NULL. Borrowed. */
+WINDOW *conversation_members_window(view *ui);
 void conversation_open_emojis(view *ui);
 void conversation_open_channel(view *ui, bool voice_history);
 int conversation_activate_tab(view *ui, size_t index, size_t *selected);

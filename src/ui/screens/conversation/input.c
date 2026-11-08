@@ -411,3 +411,179 @@ bool conversation_handle_confirmation(view *ui, int type, uint32_t key, bool ent
     }
     return false;
 }
+
+int conversation_focus_order(view *ui, int order[24])
+{
+    /* The order follows the screen. The voice buttons come last, so the
+     * existing areas keep their relative order. */
+    int count = 0;
+    order[count++] = SERVER_TABS;
+    order[count++] = LIST_BUTTONS;
+    order[count++] = CHANNEL_LIST;
+    order[count++] = SETTINGS_BUTTON;
+    order[count++] = HISTORY_PANEL;
+    if (conversation_input(ui)) {
+        const GPtrArray *files = conversation_attachments(ui);
+        if (files && files->len)
+            order[count++] = ATTACHMENT_ROW;
+        order[count++] = MESSAGE_INPUT;
+        if (!*ui->edit_message)
+            order[count++] = ATTACH_BUTTON;
+        order[count++] = EMOJI_BUTTON;
+    }
+    order[count++] = SEARCH_BUTTON;
+    order[count++] = PINS_BUTTON;
+    order[count++] = MEMBERS_BUTTON;
+    if (ui->members_open)
+        order[count++] = MEMBERS_PANEL;
+    if (voice_available()) {
+        order[count++] = VOICE_OUTPUT_BUTTON;
+        order[count++] = VOICE_MICROPHONE_BUTTON;
+        if (voice_active()) {
+            order[count++] = VOICE_LEAVE_BUTTON;
+            if (ui->connections->config && ui->connections->config->audio.push_to_talk)
+                order[count++] = VOICE_PTT_BUTTON;
+        }
+    }
+    return count;
+}
+
+typedef struct {
+    int y, x, height, width;
+} focus_rect;
+
+static bool window_row(WINDOW *w, int row, click_range hit, focus_rect *r)
+{
+    if (!w || !hit.width)
+        return false;
+    *r = (focus_rect){getbegy(w) + row, getbegx(w) + hit.x, 1, hit.width};
+    return true;
+}
+
+/* Where a component is drawn, in screen cells. On narrow screens only the
+ * channel side or the conversation side exists; the hidden side is placed
+ * just beyond the matching edge so that ← and → still reach it. */
+static bool component_rect(view *ui, int focus, focus_rect *r)
+{
+    WINDOW *list = ui->list, *body = ui->body;
+    int rows = LINES - CONTENT_Y - 3;
+    switch (focus) {
+    case SERVER_TABS: {
+        click_range hit = ui->active_tab < INSTANCE_LIMIT ? ui->tab_hits[ui->active_tab]
+                                                          : (click_range){0, 0};
+        if (!ui->tabs)
+            return false;
+        if (!hit.width)
+            hit = (click_range){0, getmaxx(ui->tabs)};
+        return window_row(ui->tabs, 0, hit, r);
+    }
+    case LIST_BUTTONS:
+        return list && window_row(list, 0, (click_range){0, getmaxx(list)}, r);
+    case CHANNEL_LIST:
+        if (!list) {
+            *r = (focus_rect){CONTENT_Y, -COLS, rows, COLS};
+            return true;
+        }
+        *r = (focus_rect){getbegy(list) + 1, getbegx(list), MAX(1, getmaxy(list) - 5),
+                          getmaxx(list)};
+        return true;
+    case SETTINGS_BUTTON:
+        return list && window_row(list, getmaxy(list) - 2,
+                                  (click_range){getmaxx(list) - 6, 5}, r);
+    case VOICE_OUTPUT_BUTTON:
+        return list && window_row(list, getmaxy(list) - 2, ui->voice_output_hit, r);
+    case VOICE_MICROPHONE_BUTTON:
+        return list && window_row(list, getmaxy(list) - 2, ui->voice_microphone_hit, r);
+    case VOICE_LEAVE_BUTTON:
+        return list && window_row(list, getmaxy(list) - 5, ui->voice_leave_hit, r);
+    case VOICE_PTT_BUTTON:
+        return list && window_row(list, getmaxy(list) - 6, ui->voice_ptt_hit, r);
+    case HISTORY_PANEL:
+        if (!body) {
+            *r = (focus_rect){CONTENT_Y, COLS, rows, COLS};
+            return true;
+        }
+        *r = (focus_rect){getbegy(body) + ui->history_top, getbegx(body), MAX(1, ui->visible),
+                          getmaxx(body)};
+        return true;
+    case SEARCH_BUTTON:
+        return window_row(body, 0, ui->search_hit, r);
+    case PINS_BUTTON:
+        return window_row(body, 0, ui->pins_hit, r);
+    case MEMBERS_BUTTON:
+        return window_row(body, 0, ui->members_hit, r);
+    case ATTACHMENT_ROW:
+        if (!body || !ui->attachment_rows)
+            return false;
+        *r = (focus_rect){getbegy(body) + ui->attachment_top, getbegx(body),
+                          ui->attachment_rows, getmaxx(body)};
+        return true;
+    case MESSAGE_INPUT:
+        if (!body)
+            return false;
+        *r = (focus_rect){getbegy(body) + conversation_input_top(ui), getbegx(body),
+                          MAX(1, conversation_input_height(ui)), MAX(1, getmaxx(body) - 16)};
+        return true;
+    case ATTACH_BUTTON:
+        return window_row(body, conversation_input_top(ui), ui->attach_button_hit, r);
+    case EMOJI_BUTTON:
+        return window_row(body, conversation_input_top(ui), ui->emoji_button_hit, r);
+    case MEMBERS_PANEL: {
+        WINDOW *drawer = conversation_members_window(ui);
+        if (!drawer)
+            return false;
+        *r = (focus_rect){getbegy(drawer), getbegx(drawer), getmaxy(drawer), getmaxx(drawer)};
+        return true;
+    }
+    default:
+        return false;
+    }
+}
+
+/* Gap between [a0, a1) and [b0, b1); 0 when they overlap. */
+static int gap(int a0, int a1, int b0, int b1)
+{
+    return b0 >= a1 ? b0 - a1 + 1 : a0 >= b1 ? a0 - b1 + 1 : 0;
+}
+
+bool conversation_focus_toward(view *ui, int dx, int dy)
+{
+    int order[24], count = conversation_focus_order(ui, order);
+    focus_rect from;
+    if (!component_rect(ui, ui->focus, &from))
+        return false;
+    int best = -1;
+    long best_score = 0;
+    for (int i = 0; i < count; ++i) {
+        focus_rect to;
+        if (order[i] == ui->focus || !component_rect(ui, order[i], &to))
+            continue;
+        /* Only components entirely past the current one in that direction. */
+        int along, across;
+        if (dx > 0 && to.x >= from.x + from.width)
+            along = to.x - (from.x + from.width);
+        else if (dx < 0 && to.x + to.width <= from.x)
+            along = from.x - (to.x + to.width);
+        else if (dy > 0 && to.y >= from.y + from.height)
+            along = to.y - (from.y + from.height);
+        else if (dy < 0 && to.y + to.height <= from.y)
+            along = from.y - (to.y + to.height);
+        else
+            continue;
+        across = dx ? gap(from.y, from.y + from.height, to.y, to.y + to.height)
+                    : gap(from.x, from.x + from.width, to.x, to.x + to.width);
+        /* Prefer what lines up with the current component; among those, the
+         * nearest, then the one whose start is closest. Cells are about twice
+         * as tall as wide, so rows weigh double. */
+        long start = dx ? labs((long)to.y - from.y) : labs((long)to.x - from.x);
+        long score = (long)across * 100000 + (long)along * (dy ? 2 : 1) * 100 + start;
+        if (best < 0 || score < best_score) {
+            best = order[i];
+            best_score = score;
+        }
+    }
+    if (best < 0)
+        return false;
+    conversation_set_focus(ui, best);
+    return true;
+}

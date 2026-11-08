@@ -224,6 +224,10 @@ void conversation_members_destroy(view *ui)
     free(d);
     ui->members = NULL;
 }
+WINDOW *conversation_members_window(view *ui)
+{
+    return ui->members && ui->members_open ? ui->members->window : NULL;
+}
 bool conversation_members_modal(view *ui)
 {
     return ui->members && ui->members->panel != MEMBER_NO_MODAL &&

@@ -124,6 +124,20 @@ void text_input_init(void)
                     define_key(sequence, key);
                 }
             }
+    /* Alt+arrows: xterm-style modifier 3, also with Kitty's keypad codes. The
+     * Esc-prefixed form of rxvt is not registered: it is the same input as Esc
+     * pressed just before an arrow, which must keep closing or going back. */
+    const int alt_keys[] = {TEXT_ALT_LEFT, TEXT_ALT_RIGHT, TEXT_ALT_UP, TEXT_ALT_DOWN};
+    for (int direction = 0; direction < 4; ++direction) {
+        char sequence[24];
+        for (int locks = 0; locks <= 192; locks += 64) {
+            snprintf(sequence, sizeof(sequence), "\033[1;%d%c", 3 + locks, suffix[direction]);
+            define_key(sequence, alt_keys[direction]);
+            snprintf(sequence, sizeof(sequence), "\033[%d;%du", keypad_directions[direction],
+                     3 + locks);
+            define_key(sequence, alt_keys[direction]);
+        }
+    }
     /* Disambiguation also gives non-text keypad keys their own CSI-u codes. */
     const int keypad_codes[] = {57414, 57421, 57422, 57425, 57426};
     const int keypad_keys[] = {KEY_ENTER, KEY_PPAGE, KEY_NPAGE, KEY_IC, KEY_DC};

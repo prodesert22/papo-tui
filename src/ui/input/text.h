@@ -87,6 +87,11 @@ enum {
     TEXT_SHIFT_PAGE_UP,
     TEXT_SHIFT_PAGE_DOWN,
     TEXT_KEYBOARD_SUPPORTED,
+    /* Alt+arrow: move the focus to the component in that direction. */
+    TEXT_ALT_LEFT,
+    TEXT_ALT_RIGHT,
+    TEXT_ALT_UP,
+    TEXT_ALT_DOWN,
     TEXT_CONTROL_BASE,
     /* Synthetic events from the configured push-to-talk binding. Toggle is
      * used by terminals that report a control byte but no key release. */

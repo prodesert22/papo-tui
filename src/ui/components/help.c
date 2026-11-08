@@ -22,6 +22,7 @@ static const help_row rows[] = {
     {HELP_COMMON, "Ctrl+Q", "Sair do aplicativo"},
     {HELP_CONVERSATION | HELP_LOGIN | HELP_ACCOUNT | HELP_PROFILES, "Tab / Shift+Tab",
      "Percorrer as áreas e os botões"},
+    {HELP_CONVERSATION, "Alt+← / → / ↑ / ↓", "Ir à área ou ao botão naquela direção"},
     {HELP_CONVERSATION, "Ctrl+S", "Abrir configurações do aplicativo"},
     {HELP_CONVERSATION, "Ctrl+F", "Buscar mensagens no servidor"},
     {HELP_CONVERSATION, "Ctrl+B", "Abrir mensagens fixadas"},

@@ -881,6 +881,69 @@ class R8Terminal(support.R8Terminal):
                 backgrounds = {t.screen.buffer[row][x].bg for x in range(left, right)}
                 self.assertNotIn(focus, backgrounds, (row, backgrounds))
 
+    def test_alt_arrows_move_the_focus_to_the_component_in_that_direction(self):
+        alt = {"←": "\x1b[1;3D", "→": "\x1b[1;3C", "↑": "\x1b[1;3A", "↓": "\x1b[1;3B"}
+
+        def focus(t):
+            for line in (t.screen.display[-2], t.screen.display[1]):
+                if "Foco:" in line:
+                    return line[line.index("Foco:") + 5 :].split("·")[0].split("  ")[0].strip()
+            return ""
+
+        def press(t, sequence, expected):
+            t.send(sequence)
+            end = time.monotonic() + 4
+            while focus(t) != expected and time.monotonic() < end:
+                t.read(0.03)
+            self.assertEqual(focus(t), expected, "\n".join(t.screen.display))
+
+        with R8Mock(count=1) as server:
+            t = self.login(server)
+            self.wait(t, "Mensagem 0001")
+            t.click(0, t.screen.display[0].index("[Comunidade") + 2)
+            self.wait(t, "Foco: Abas")
+            for key, expected in (
+                ("↓", "Canais/DMs"),
+                ("↓", "Canais"),
+                ("→", "Histórico"),
+                ("↓", "Mensagem"),
+                ("→", "Anexar"),
+                ("→", "Emojis"),
+                ("↑", "Histórico"),
+                ("↑", "Buscar"),
+                ("→", "Fixadas"),
+                ("←", "Buscar"),
+                ("↑", "Abas"),
+                ("↓", "Canais/DMs"),
+            ):
+                press(t, alt[key], expected)
+            # Nothing lies above the tabs: the focus stays.
+            press(t, alt["↑"], "Abas")
+            # Kitty may report the arrows with keypad CSI-u codes.
+            press(t, alt["↓"], "Canais/DMs")
+            press(t, "\x1b[1;3B", "Canais")
+            press(t, "\x1b[57418;3u", "Histórico")
+            press(t, "\x1b[57417;3u", "Canais")
+            # Esc pressed just before an arrow is still Esc and an arrow: from
+            # the tabs, Esc goes to the history, while Alt+↓ would reach
+            # Canais/DMs.
+            press(t, alt["↑"], "Canais/DMs")
+            press(t, alt["↑"], "Abas")
+            press(t, "\x1b\x1bOB", "Histórico")
+        with R8Mock(count=1) as server:
+            # On narrow screens ← and → switch between the channels and the
+            # conversation, which are shown one at a time.
+            t = self.login(server)
+            t.resize(24, 60)
+            self.wait(t, "[Conversa]")
+            t.click(0, 2)
+            self.wait(t, "Foco: Abas")
+            press(t, alt["↓"], "Canais/DMs")
+            press(t, alt["↓"], "Canais")
+            press(t, alt["→"], "Histórico")
+            self.assertIn("Mensagem 0001", "\n".join(t.screen.display))
+            press(t, alt["←"], "Canais")
+
     def test_basic_color_console_marks_the_focused_box_border(self):
         # The Linux console has 8 colors: focus backgrounds are as black as
         # the rest, so the focused box border must change color instead.
