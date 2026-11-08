@@ -764,7 +764,7 @@ class HistoryTerminal(support.HistoryTerminal):
                 t.send(
                     "\x1bOD\x1bOH\x1bOA\x1bOA\x1bOC"
                 )  # history -> first channel -> buttons -> tabs -> add
-                self.assertIn("Foco: Abas", "\n".join(t.screen.display))
+                self.assertIn("Foco: Servidores", "\n".join(t.screen.display))
                 self.assertIn(">+ Adicionar<", t.screen.display[0])
                 t.send("\x1bOD")
                 self.assertIn("[+ Adicionar]", t.screen.display[0])

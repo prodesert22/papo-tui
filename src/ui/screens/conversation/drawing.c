@@ -84,9 +84,9 @@ int conversation_tab_width(view *ui, size_t index, int available)
 }
 
 /* "Foco: area": in the footer on wide screens, above the panels on narrow ones. */
-static void conversation_focus_label(view *ui, char *label, size_t size)
+static const char *focus_name(view *ui, int focus)
 {
-    const char *areas[] = {"Abas",
+    const char *areas[] = {"Servidores",
                            "Canais",
                            "Histórico",
                            "Mensagem",
@@ -103,10 +103,40 @@ static void conversation_focus_label(view *ui, char *label, size_t size)
                            "Microfone",
                            "Sair da chamada",
                            "Pressionar para falar"};
-    snprintf(label, size, "Foco: %s",
-             ui->navigating              ? "Seleção"
-             : ui->focus == CHANNEL_LIST ? ui->list_dms ? "DMs" : "Canais"
-                                         : areas[ui->focus]);
+    if (focus < 0 || focus >= (int)(sizeof(areas) / sizeof(areas[0])))
+        return "";
+    return focus == CHANNEL_LIST ? ui->list_dms ? "DMs" : "Canais" : areas[focus];
+}
+static void conversation_focus_label(view *ui, char *label, size_t size)
+{
+    snprintf(label, size, "Foco: %s", ui->navigating ? "Seleção" : focus_name(ui, ui->focus));
+}
+/* Footer hint items are a key and its action, apart like "↑/↓ move  ●  Tab". */
+#define HINT_SEPARATOR "  ●  "
+/* Where each Alt+arrow leads from the focused component, one item per arrow,
+ * such as "Alt + 🡱 Servidores  ●  Alt + 🡳 Áudio". Very heavy wide-headed arrows stay
+ * legible at text size, where plain arrows are small. Empty when nothing is
+ * reachable. */
+static void alt_hint(view *ui, char *hint, size_t size)
+{
+    static const struct {
+        int dx, dy;
+        const char *arrow;
+    } arrows[] = {{0, -1, "🡱"}, {0, 1, "🡳"}, {-1, 0, "🡰"}, {1, 0, "🡲"}};
+    size_t used = 0;
+    hint[0] = 0;
+    if (ui->navigating)
+        return;
+    for (size_t i = 0; i < sizeof(arrows) / sizeof(arrows[0]); ++i) {
+        int target = conversation_focus_target(ui, arrows[i].dx, arrows[i].dy);
+        if (target < 0 || used >= size)
+            continue;
+        int n = snprintf(hint + used, size - used, "%sAlt + %s %s", used ? HINT_SEPARATOR : "",
+                         arrows[i].arrow, focus_name(ui, target));
+        used = n < 0 || (size_t)n >= size - used ? size : used + (size_t)n;
+    }
+    if (used >= size)
+        hint[0] = 0;
 }
 
 void conversation_draw_tabs(view *ui)
@@ -365,14 +395,19 @@ void conversation_draw_footer(view *ui)
     wattrset(ui->footer, COLOR_PAIR(THEME_BORDER));
     mvwhline(ui->footer, 0, 0, ACS_HLINE, getmaxx(ui->footer));
     media_view_draw_audio(ui->media, ui->footer, 0);
-    char hint[200] = UI_HELP_HINT;
-    if (TABS_ROWS < 2) {
-        char focus[160];
+    /* On wide screens the focus label leads the hint; narrow screens show it
+     * beside the [Canais]/[Conversa] switch instead. */
+    char focus[160] = "", arrows[256], with_arrows[480], hint[200];
+    if (TABS_ROWS < 2)
         conversation_focus_label(ui, focus, sizeof(focus));
-        snprintf(hint, sizeof(hint), "%s · %s", focus, UI_HELP_HINT);
-    }
-    /* Notices outrank the focus label when the line is too short for both. */
-    status_bar_draw(&ui->status, ui->footer, 1, hint, UI_HELP_HINT, UI_HELP_HINT);
+    alt_hint(ui, arrows, sizeof(arrows));
+    snprintf(with_arrows, sizeof(with_arrows), "%s%s%s%s%s", focus, *focus ? HINT_SEPARATOR : "",
+             arrows, HINT_SEPARATOR, UI_HELP_HINT);
+    snprintf(hint, sizeof(hint), "%s%s%s", focus, *focus ? HINT_SEPARATOR : "", UI_HELP_HINT);
+    /* Notices keep their full text before the arrows appear; the focus label
+     * then yields to notices as before when the line is too short. */
+    status_bar_draw_optional(&ui->status, ui->footer, 1, *arrows ? with_arrows : "", hint,
+                             UI_HELP_HINT, UI_HELP_HINT);
 }
 
 void conversation_draw_confirmation(view *ui)

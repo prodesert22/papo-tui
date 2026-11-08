@@ -112,7 +112,7 @@ class FooterTerminal(unittest.TestCase):
                 self.wait_footer(terminal, "O servidor informou um erro")
                 self.wait_footer(terminal, "Mensagem confirmada pelo servidor")
                 terminal.send("\x1b\x1bOD\x1bOH\x1bOA\x1bOA")
-                self.wait(terminal, "Foco: Abas")
+                self.wait(terminal, "Foco: Servidores")
                 self.wait_footer(terminal, "Ctrl+G: ajuda")
                 self.assertNotIn("F7", self.footer(terminal))
             finally:

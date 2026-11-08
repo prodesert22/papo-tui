@@ -43,6 +43,11 @@ bool status_bar_set_compact(status_bar *bar, status_context context, const char 
 bool status_bar_touch(status_bar *bar, status_context context);
 void status_bar_draw(status_bar *bar, WINDOW *window, int row, const char *full_hints,
                      const char *short_hints, const char *minimal_hints);
+/* Draws optional_hints only when they fit beside every notice in its full
+ * text; otherwise the regular hints, as status_bar_draw. */
+void status_bar_draw_optional(status_bar *bar, WINDOW *window, int row,
+                              const char *optional_hints, const char *full_hints,
+                              const char *short_hints, const char *minimal_hints);
 bool status_bar_hit(const status_bar *bar, status_context context, int x);
 
 #endif

@@ -497,7 +497,7 @@ class MediaTerminal(support.MediaTerminal):
                             )
                         before = len(badges())
                         t.click(0, t.screen.display[0].index("Comunidade") + 1)
-                        self.wait(t, "Foco: Abas")
+                        self.wait(t, "Foco: Servidores")
                         deadline = time.monotonic() + 8
                         while len(badges()) <= before and time.monotonic() < deadline:
                             t.read(0.03)

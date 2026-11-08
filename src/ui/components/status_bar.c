@@ -71,6 +71,30 @@ static void label(WINDOW *window, int row, int x, int width, const char *text)
         text_label(window, row, x + used, 1, "…");
     }
 }
+/* Room the notices take with their full texts, measured as the layout draws
+ * them before it falls back to compact forms. */
+static int full_notices_width(const status_bar *bar)
+{
+    int width = 0, count = 0;
+    for (int i = 0; i < STATUS_CONTEXT_COUNT; ++i) {
+        const status_notice *notice = &bar->notices[i];
+        if (*notice->text)
+            width += cells(notice->text) + (count++ ? 3 : 0);
+    }
+    return width;
+}
+void status_bar_draw_optional(status_bar *bar, WINDOW *window, int row, const char *optional,
+                              const char *full, const char *shorter, const char *minimal)
+{
+    if (bar && window && optional && *optional) {
+        int notices = full_notices_width(bar);
+        if (cells(optional) + (notices ? 3 + notices : 0) <= getmaxx(window) - 2) {
+            status_bar_draw(bar, window, row, optional, optional, optional);
+            return;
+        }
+    }
+    status_bar_draw(bar, window, row, full, shorter, minimal);
+}
 void status_bar_draw(status_bar *bar, WINDOW *window, int row, const char *full,
                      const char *shorter, const char *minimal)
 {
@@ -111,10 +135,13 @@ void status_bar_draw(status_bar *bar, WINDOW *window, int row, const char *full,
                 break;
             }
     }
+    /* Shorter hints replace a longer one that would not fit, with or without
+     * notices beside it. */
     const char *hints = full;
-    if (count && cells(hints) + 3 + need > available)
+    int reserved = count ? 3 + need : 0;
+    if (cells(hints) + reserved > available)
         hints = shorter;
-    if (count && cells(hints) + 3 + need > available)
+    if (cells(hints) + reserved > available)
         hints = minimal;
     int hint_width = cells(hints);
     if (hint_width > available)

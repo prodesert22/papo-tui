@@ -468,7 +468,7 @@ that do not report Ctrl+/ can reach global help through contextual help's
 | Ctrl+G / F1 | Open contextual help for the focused area or panel |
 | Ctrl+/ | Open global help with every keyboard and mouse control |
 | Tab / Shift+Tab | Move focus |
-| Alt+← / → / ↑ / ↓ in a conversation | Move focus to the area or button in that direction, such as from the channel list to the history, from the history to the message box or from the channels up to the server tabs |
+| Alt+← / → / ↑ / ↓ in a conversation | Move focus to the area or button in that direction, such as from the channel list to the history, from the history to the message box or from the channels up to the server tabs. The footer shows where each arrow leads, for example **Foco: Histórico  ●  Alt + 🡱 Buscar  ●  Alt + 🡳 Mensagem  ●  Alt + 🡰 Canais  ●  Ctrl+G: ajuda**, when there is room beside the connection and notification notices |
 | Esc | Close a modal, go back or cancel a connection |
 | Ctrl+Q | Quit |
 | Ctrl+C | Clear the field; quit when outside a field |

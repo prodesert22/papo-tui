@@ -335,6 +335,8 @@ int conversation_focus_order(view *ui, int order[24]);
 /* Alt+arrow: focus the component on screen in direction (dx, dy). Returns
  * false when nothing lies that way. */
 bool conversation_focus_toward(view *ui, int dx, int dy);
+/* The component Alt+arrow (dx, dy) would focus, or -1. Changes nothing. */
+int conversation_focus_target(view *ui, int dx, int dy);
 /* The open member drawer's window, or NULL. Borrowed. */
 WINDOW *conversation_members_window(view *ui);
 void conversation_open_emojis(view *ui);

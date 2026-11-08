@@ -214,7 +214,7 @@ class SendProduct(support.SendProduct):
                 terminal.send("\x1bOD")
                 self.assertIn("Foco: Canais", self.screen(terminal))
                 terminal.send("\x1bOH\x1bOA\x1bOA")
-                self.wait(terminal, "Foco: Abas")
+                self.wait(terminal, "Foco: Servidores")
                 terminal.send("\x1bOB\x1bOC")
                 self.wait(terminal, "# geral · Histórico")
                 terminal.send("\n\n")

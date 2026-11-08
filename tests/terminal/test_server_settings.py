@@ -44,10 +44,10 @@ class ServerSettings(unittest.TestCase):
         """Signs in and opens the server's settings from the server tab menu."""
         t = self.login(server)
         deadline = time.monotonic() + 8
-        while "Foco: Abas" not in self.screen(t) and time.monotonic() < deadline:
+        while "Foco: Servidores" not in self.screen(t) and time.monotonic() < deadline:
             t.send(UP)
             t.read(0.1)
-        self.wait(t, "Foco: Abas")
+        self.wait(t, "Foco: Servidores")
         t.send("m")
         self.wait(t, "Configurações do servidor")
         t.send("\n")

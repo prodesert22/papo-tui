@@ -800,7 +800,7 @@ class R8Terminal(support.R8Terminal):
             # them: [+ Adicionar] is plain white text.
             white = first_cell(t, 0, "[+ Adicionar]").fg
             t.click(0, t.screen.display[0].index("[Comunidade") + 1)
-            self.wait(t, "Foco: Abas")
+            self.wait(t, "Foco: Servidores")
             cell = first_cell(t, 0, "[Comunidade")
             self.assertEqual(cell.fg, white, cell)
             self.assertNotEqual(cell.bg, "default", cell)
@@ -844,7 +844,7 @@ class R8Terminal(support.R8Terminal):
 
             until(lambda: "●" in t.screen.display[outro()][:26])
             t.click(0, t.screen.display[0].index("[Comunidade") + 2)
-            self.wait(t, "Foco: Abas")
+            self.wait(t, "Foco: Servidores")
             t.send("\x1bOB\x1bOB")  # tabs -> list (# geral) -> # outro
             row = outro()
             line = t.screen.display[row]
@@ -861,7 +861,7 @@ class R8Terminal(support.R8Terminal):
             t = self.login(server)
             self.wait(t, "Mensagem 0001")
             t.click(0, t.screen.display[0].index("[Comunidade") + 2)
-            self.wait(t, "Foco: Abas")
+            self.wait(t, "Foco: Servidores")
             t.send("\x1bOB")
             self.wait(t, "Foco: Canais")
             t.read(0.3)
@@ -887,7 +887,7 @@ class R8Terminal(support.R8Terminal):
         def focus(t):
             for line in (t.screen.display[-2], t.screen.display[1]):
                 if "Foco:" in line:
-                    return line[line.index("Foco:") + 5 :].split("·")[0].split("  ")[0].strip()
+                    return line[line.index("Foco:") + 5 :].split("  ●  ")[0].split("  ")[0].strip()
             return ""
 
         def press(t, sequence, expected):
@@ -901,7 +901,7 @@ class R8Terminal(support.R8Terminal):
             t = self.login(server)
             self.wait(t, "Mensagem 0001")
             t.click(0, t.screen.display[0].index("[Comunidade") + 2)
-            self.wait(t, "Foco: Abas")
+            self.wait(t, "Foco: Servidores")
             for key, expected in (
                 ("↓", "Canais/DMs"),
                 ("↓", "Canais"),
@@ -913,12 +913,12 @@ class R8Terminal(support.R8Terminal):
                 ("↑", "Buscar"),
                 ("→", "Fixadas"),
                 ("←", "Buscar"),
-                ("↑", "Abas"),
+                ("↑", "Servidores"),
                 ("↓", "Canais/DMs"),
             ):
                 press(t, alt[key], expected)
             # Nothing lies above the tabs: the focus stays.
-            press(t, alt["↑"], "Abas")
+            press(t, alt["↑"], "Servidores")
             # Kitty may report the arrows with keypad CSI-u codes.
             press(t, alt["↓"], "Canais/DMs")
             press(t, "\x1b[1;3B", "Canais")
@@ -928,7 +928,7 @@ class R8Terminal(support.R8Terminal):
             # the tabs, Esc goes to the history, while Alt+↓ would reach
             # Canais/DMs.
             press(t, alt["↑"], "Canais/DMs")
-            press(t, alt["↑"], "Abas")
+            press(t, alt["↑"], "Servidores")
             press(t, "\x1b\x1bOB", "Histórico")
         with R8Mock(count=1) as server:
             # On narrow screens ← and → switch between the channels and the
@@ -937,12 +937,45 @@ class R8Terminal(support.R8Terminal):
             t.resize(24, 60)
             self.wait(t, "[Conversa]")
             t.click(0, 2)
-            self.wait(t, "Foco: Abas")
+            self.wait(t, "Foco: Servidores")
             press(t, alt["↓"], "Canais/DMs")
             press(t, alt["↓"], "Canais")
             press(t, alt["→"], "Histórico")
             self.assertIn("Mensagem 0001", "\n".join(t.screen.display))
             press(t, alt["←"], "Canais")
+
+    def test_footer_hint_shows_where_each_alt_arrow_leads(self):
+        alt = {"🡱": "\x1b[1;3A", "🡳": "\x1b[1;3B", "🡰": "\x1b[1;3D", "🡲": "\x1b[1;3C"}
+        with R8Mock(count=1) as server:
+            t = self.login(server)
+            # Wide enough for every arrow beside the full connection notices.
+            t.resize(30, 150)
+            self.wait(t, "Mensagem 0001")
+            row = next(i for i, line in enumerate(t.screen.display) if "Mensagem 0001" in line)
+            t.click(row, 60)
+            self.wait(t, "Foco: Histórico")
+            self.wait(t, "Alt + ")
+            footer = t.screen.display[-2]
+            items = footer.strip("x ").split("  ●  ")
+            self.assertEqual(items[0], "Foco: Histórico")
+            self.assertTrue(items[-1].startswith("Ctrl+G: ajuda"), items)
+            targets = {
+                item.split(" ")[2]: item.split(" ", 3)[3]
+                for item in items[1:-1]
+                if item.startswith("Alt + ")
+            }
+            self.assertEqual(len(targets), len(items) - 2, items)
+            self.assertEqual(targets, {"🡱": "Buscar", "🡳": "Mensagem", "🡰": "Canais"})
+            # Each destination shown is where that Alt+arrow goes.
+            for key, name in targets.items():
+                t.send(alt[key])
+                self.wait(t, "Foco: " + name + "  ●")
+                t.click(row, 60)
+                self.wait(t, "Foco: Histórico")
+            # Notices keep their full text: on a narrower line the arrows yield.
+            t.resize(30, 100)
+            self.wait(t, "Foco: Histórico  ●  Ctrl+G: ajuda")
+            self.assertNotIn("Alt + ", t.screen.display[-2])
 
     def test_basic_color_console_marks_the_focused_box_border(self):
         # The Linux console has 8 colors: focus backgrounds are as black as
@@ -1018,7 +1051,7 @@ class R8Terminal(support.R8Terminal):
             t.click(2, 4)
             self.assertEqual(t.screen.buffer[5][4].bg, focused)
             t.send("\x1bOA")
-            self.wait(t, "Foco: Abas")
+            self.wait(t, "Foco: Servidores")
             self.assertEqual(t.screen.buffer[5][4].bg, resting)
 
     def test_backend_cursor_clears_badge_and_new_activity_relights_it(self):
@@ -1325,7 +1358,7 @@ class R8Terminal(support.R8Terminal):
             t.send("\x1bOA")
             self.wait(t, "Foco: Canais/DMs")
             t.send("\x1bOA")
-            self.wait(t, "Foco: Abas")
+            self.wait(t, "Foco: Servidores")
             t.send("\t\x1bOC\n")
             self.wait(t, "Bia ·")
             self.assert_initial_history_only(server)
@@ -1495,7 +1528,7 @@ class R8Terminal(support.R8Terminal):
             t.send("\x1b\x1b")
             self.assertIn("Primeiro 2", t.screen.display[0])
             t.click(0, 4)
-            self.wait(t, "Foco: Abas")
+            self.wait(t, "Foco: Servidores")
             t.send("\x04")
             self.wait(t, "Novidade no servidor inativo")
             self.assertNotIn("Aviso segundo servidor", "\n".join(t.screen.display))

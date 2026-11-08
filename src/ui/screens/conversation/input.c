@@ -468,15 +468,9 @@ static bool component_rect(view *ui, int focus, focus_rect *r)
     WINDOW *list = ui->list, *body = ui->body;
     int rows = LINES - CONTENT_Y - 3;
     switch (focus) {
-    case SERVER_TABS: {
-        click_range hit = ui->active_tab < INSTANCE_LIMIT ? ui->tab_hits[ui->active_tab]
-                                                          : (click_range){0, 0};
-        if (!ui->tabs)
-            return false;
-        if (!hit.width)
-            hit = (click_range){0, getmaxx(ui->tabs)};
-        return window_row(ui->tabs, 0, hit, r);
-    }
+    case SERVER_TABS:
+        /* The tab bar spans the screen: every area below reaches it. */
+        return ui->tabs && window_row(ui->tabs, 0, (click_range){0, getmaxx(ui->tabs)}, r);
     case LIST_BUTTONS:
         return list && window_row(list, 0, (click_range){0, getmaxx(list)}, r);
     case CHANNEL_LIST:
@@ -521,8 +515,11 @@ static bool component_rect(view *ui, int focus, focus_rect *r)
     case MESSAGE_INPUT:
         if (!body)
             return false;
-        *r = (focus_rect){getbegy(body) + conversation_input_top(ui), getbegx(body),
-                          MAX(1, conversation_input_height(ui)), MAX(1, getmaxx(body) - 16)};
+        /* The composer, padding included, as its buttons fill it. */
+        *r = (focus_rect){getbegy(body) + conversation_input_top(ui) - ui->editor_padding,
+                          getbegx(body),
+                          MAX(1, conversation_input_height(ui)) + 2 * ui->editor_padding,
+                          MAX(1, getmaxx(body) - 16)};
         return true;
     case ATTACH_BUTTON:
         return window_row(body, conversation_input_top(ui), ui->attach_button_hit, r);
@@ -546,12 +543,12 @@ static int gap(int a0, int a1, int b0, int b1)
     return b0 >= a1 ? b0 - a1 + 1 : a0 >= b1 ? a0 - b1 + 1 : 0;
 }
 
-bool conversation_focus_toward(view *ui, int dx, int dy)
+int conversation_focus_target(view *ui, int dx, int dy)
 {
     int order[24], count = conversation_focus_order(ui, order);
     focus_rect from;
     if (!component_rect(ui, ui->focus, &from))
-        return false;
+        return -1;
     int best = -1;
     long best_score = 0;
     for (int i = 0; i < count; ++i) {
@@ -572,18 +569,26 @@ bool conversation_focus_toward(view *ui, int dx, int dy)
             continue;
         across = dx ? gap(from.y, from.y + from.height, to.y, to.y + to.height)
                     : gap(from.x, from.x + from.width, to.x, to.x + to.width);
-        /* Prefer what lines up with the current component; among those, the
-         * nearest, then the one whose start is closest. Cells are about twice
-         * as tall as wide, so rows weigh double. */
+        /* Only what lines up with the current component, so an arrow never
+         * jumps across the screen; then the nearest, then the one whose start
+         * is closest. */
+        if (across)
+            continue;
         long start = dx ? labs((long)to.y - from.y) : labs((long)to.x - from.x);
-        long score = (long)across * 100000 + (long)along * (dy ? 2 : 1) * 100 + start;
+        long score = (long)along * 1000 + start;
         if (best < 0 || score < best_score) {
             best = order[i];
             best_score = score;
         }
     }
-    if (best < 0)
+    return best;
+}
+
+bool conversation_focus_toward(view *ui, int dx, int dy)
+{
+    int target = conversation_focus_target(ui, dx, dy);
+    if (target < 0)
         return false;
-    conversation_set_focus(ui, best);
+    conversation_set_focus(ui, target);
     return true;
 }
