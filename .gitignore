@@ -52,3 +52,7 @@ __pycache__/
 
 .roadmap/
 .ai-jail
+
+# Local agent tooling
+/.agents/
+/.claude/
