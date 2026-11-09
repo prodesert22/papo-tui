@@ -56,3 +56,4 @@ __pycache__/
 # Local agent tooling
 /.agents/
 /.claude/
+/.worktrees/
