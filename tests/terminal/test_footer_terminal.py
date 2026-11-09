@@ -40,15 +40,39 @@ class FooterTerminal(unittest.TestCase):
         )
         return self.footer(terminal)
 
-    def open(self, server):
-        terminal = Terminal()
+    def open(self, server, environment=None):
+        terminal = Terminal(environment=environment)
         terminal.send(server.url + "\tjosé\tSynthetic!123\n")
         self.wait(terminal, "geral")
         return terminal
 
-    def test_hints_follow_focus_and_notices_share_only_the_last_line(self):
+    def test_confirmation_notice_leaves_the_footer_after_two_seconds(self):
         with RealtimeMock(count=0) as server:
             terminal = self.open(server)
+            try:
+                self.resize(terminal, 24, 220)
+                terminal.send("\x1bOB\n")
+                self.wait(terminal, "Nenhuma mensagem neste canal")
+                terminal.send("Mensagem que expira\n")
+                self.wait_footer(terminal, "Mensagem confirmada pelo servidor")
+                shown = time.monotonic()
+                self.wait_footer(terminal, "Tempo real conectado")
+                wait_for_screen(
+                    terminal,
+                    lambda: "Mensagem confirmada" not in terminal.screen.display[-2],
+                    "The confirmation notice stayed in the footer",
+                )
+                self.assertGreaterEqual(time.monotonic() - shown, 1.5)
+                line = self.footer(terminal)
+                self.assertIn("Tempo real conectado", line)
+                self.assertIn("Mensagem que expira", "\n".join(terminal.screen.display))
+            finally:
+                self.assertTrue(terminal.close())
+
+    def test_hints_follow_focus_and_notices_share_only_the_last_line(self):
+        with RealtimeMock(count=0) as server:
+            # Long enough to keep the confirmation notice through the steps below.
+            terminal = self.open(server, {"PAPO_CONFIRMED_NOTICE_MS": "60000"})
             try:
                 self.resize(terminal, 24, 220)
                 self.wait_footer(terminal, "Ctrl+G: ajuda")

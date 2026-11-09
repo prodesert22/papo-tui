@@ -24,7 +24,22 @@ struct send_editor {
     const char *notice;
     bool feedback;
     const char *compact_notice;
+    /* The confirmation notice is shown for confirmed_notice_us from the first
+     * poll that sees that operation confirmed, then the hint returns. */
+    uint64_t confirmed_id;
+    gint64 confirmed_since, confirmed_notice_us;
 };
+
+/* Two seconds; PAPO_CONFIRMED_NOTICE_MS lets tests that inspect the notice
+ * over a long sequence of steps keep it visible. */
+static gint64 confirmed_notice_duration(void)
+{
+    const char *text = g_getenv("PAPO_CONFIRMED_NOTICE_MS");
+    char *end = NULL;
+    gint64 ms = text ? g_ascii_strtoll(text, &end, 10) : 0;
+    return text && end != text && !*end && ms > 0 && ms <= 3600000 ? ms * 1000
+                                                                    : 2 * G_USEC_PER_SEC;
+}
 
 static cursor_state *find_cursor(send_editor *editor, const char *channel)
 {
@@ -72,6 +87,7 @@ send_editor *send_editor_create(auth_client *session)
     if (!editor)
         return NULL;
     editor->session = session;
+    editor->confirmed_notice_us = confirmed_notice_duration();
     editor->box = outbox_create(session);
     if (!editor->box) {
         free(editor);
@@ -310,6 +326,18 @@ void send_editor_poll(send_editor *editor)
     }
     outbox_operation latest;
     if (outbox_latest(editor->box, editor->channel, &latest)) {
+        if (latest.state == OUTBOX_CONFIRMED) {
+            gint64 now = g_get_monotonic_time();
+            if (latest.id != editor->confirmed_id) {
+                editor->confirmed_id = latest.id;
+                editor->confirmed_since = now;
+            }
+            if (now - editor->confirmed_since >= editor->confirmed_notice_us) {
+                editor->notice = "Escreva uma mensagem; Enter envia.";
+                editor->feedback = false;
+                return;
+            }
+        }
         editor->notice = outbox_operation_notice(&latest);
         editor->feedback = true;
         editor->compact_notice = compact_operation(&latest);

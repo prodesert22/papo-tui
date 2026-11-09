@@ -405,7 +405,8 @@ class InputControls(unittest.TestCase):
 
     def test_drag_batch_copy_and_expiring_independent_notice(self):
         with RealtimeMock(count=0) as server:
-            t = self.open(server)
+            # The confirmation notice must outlive the clipboard notice here.
+            t = self.open(server, environment={"PAPO_CONFIRMED_NOTICE_MS": "60000"})
             t.send("Mensagem enviada\n")
             self.wait(t, "Mensagem confirmada")
             t.send("alpha beta")
