@@ -56,6 +56,8 @@ static const help_row rows[] = {
     {HELP_CHANNELS | HELP_VOICE, "Enter em voz", "Conectar à chamada do canal de voz"},
     {HELP_CHANNELS | HELP_SETTINGS_BUTTON | HELP_VOICE, "🔊 / 🎤 / ♪ / ●",
      "Alternar áudio e microfone nos botões ao lado de Configurações"},
+    {HELP_CHANNELS | HELP_SETTINGS_BUTTON | HELP_VOICE, "← / →",
+     "Alternar o foco entre áudio, microfone e Configurações"},
     {HELP_CHANNELS | HELP_VOICE, "[Sair da chamada]",
      "Encerrar a chamada; navegar preserva a conexão"},
     {HELP_CONVERSATION | HELP_VOICE, "Tecla configurada / segurar botão",

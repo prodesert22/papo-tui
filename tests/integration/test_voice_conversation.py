@@ -210,6 +210,26 @@ class VoiceConversation(unittest.TestCase):
                 any(e.get("type", "").startswith("voice_") for e in server.ws_messages)
             )
 
+    def test_left_and_right_move_between_audio_microphone_and_settings(self):
+        with RealtimeMock() as server:
+            t = self.login(server)
+            self.require_voice(t)
+            # Tab reaches the gear after the tabs, the switch and the channel list.
+            t.send("\t\t\t")
+            # The row reads audio, microphone, gear: ← walks left, → back.
+            t.send("\x1bOD\n")
+            self.wait(t, "[●×]")
+            t.send("\x1bOD\n")
+            self.wait(t, "[♪×]")
+            # The first button is the edge: ← stays on it.
+            t.send("\x1bOD\n")
+            self.wait(t, "[♪]")
+            t.send("\x1bOC\n")
+            self.wait(t, "[●]")
+            # The gear is the other edge: → stays on it and Enter opens settings.
+            t.send("\x1bOC\x1bOC\n")
+            self.wait(t, "Salvar perfil")
+
     def test_configured_key_and_mouse_push_to_talk_control_transmission(self):
         with RealtimeMock() as server:
             t = self.login(server)

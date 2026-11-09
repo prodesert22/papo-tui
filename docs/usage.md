@@ -196,6 +196,8 @@ The **🔊** and **🎤** buttons beside the gear toggle playback and microphone
 independently. Disabled controls show a cross or a muted speaker. Light,
 Ultralight and text terminals use **♪** for playback and **●** for microphone.
 You can reach the buttons with Tab and activate them with Enter or Space.
+While one of them is focused, ← and → move between playback, microphone and
+the gear, in the order they appear on screen.
 The microphone starts enabled; push-to-talk starts disabled.
 
 Open **Ctrl+S → Áudio** (Audio) to choose input/output devices, change microphone

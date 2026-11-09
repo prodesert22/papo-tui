@@ -1424,6 +1424,19 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                     voice_leave(voice_active());
                 else
                     ui->feedback = "Segure com o mouse ou use a tecla configurada em Áudio.";
+            } else if (type == KEY_CODE_YES && (key == KEY_LEFT || key == KEY_RIGHT) &&
+                       voice_available() &&
+                       (ui->focus == SETTINGS_BUTTON || ui->focus == VOICE_OUTPUT_BUTTON ||
+                        ui->focus == VOICE_MICROPHONE_BUTTON)) {
+                /* The row reads audio, microphone, settings from left to right. */
+                static const int row[] = {VOICE_OUTPUT_BUTTON, VOICE_MICROPHONE_BUTTON,
+                                          SETTINGS_BUTTON};
+                int at = ui->focus == VOICE_OUTPUT_BUTTON       ? 0
+                         : ui->focus == VOICE_MICROPHONE_BUTTON ? 1
+                                                                : 2;
+                at += key == KEY_RIGHT ? 1 : -1;
+                if (at >= 0 && at < 3)
+                    conversation_set_focus(ui, row[at]);
             } else if (type == KEY_CODE_YES && key == KEY_UP)
                 conversation_set_focus(ui, CHANNEL_LIST);
             else if (type == KEY_CODE_YES && key == KEY_DOWN)
