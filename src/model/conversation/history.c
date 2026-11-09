@@ -1186,6 +1186,8 @@ bool history_poll(history *h)
     if (now < h->retry_at)
         return changed;
     if (h->pending == NONE && auth_has_session(h->auth) && !auth_busy(h->auth)) {
+        if (history_internal_password_dispatch(h))
+            return true;
         if (voice_wants_ice(h->voice) && auth_get_json(h->auth, "/voice/ice-servers")) {
             h->pending = VOICE_ICE_SERVERS;
             h->request_context = h->context;

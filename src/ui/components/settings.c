@@ -18,13 +18,24 @@ static int first_mode(app_settings *s)
         s->selection = APP_MODE_LIGHT;
     return APP_MODE_LIGHT;
 }
-static const char *sections[SETTINGS_SECTIONS] = {"Perfil", "Aparência", "Áudio", "Acessibilidade",
-                                                  "Atalhos"};
+static const char *sections[SETTINGS_SECTIONS] = {"Perfil",         "Aparência", "Áudio",
+                                                  "Acessibilidade", "Atalhos",   "Conta"};
 /* Sections that have controls between the tabs and the buttons. */
 static bool has_content(int section)
 {
     return section == SETTINGS_APPEARANCE || section == SETTINGS_PROFILE ||
-           section == SETTINGS_AUDIO;
+           section == SETTINGS_AUDIO || section == SETTINGS_ACCOUNT;
+}
+/* Password text never outlives the window. */
+static void account_erase(app_settings *s)
+{
+    for (int i = 0; i < 2; ++i) {
+        volatile unsigned char *p = (volatile unsigned char *)&s->account[i];
+        for (size_t n = 0; n < sizeof(s->account[i]); ++n)
+            p[n] = 0;
+        text_clear(&s->account[i]);
+        s->account_first[i] = 0;
+    }
 }
 void settings_close(app_settings *s)
 {
@@ -36,7 +47,12 @@ void settings_close(app_settings *s)
         voice_test(s->voice, false);
         if (!s->applied)
             voice_configure(&s->original_audio);
+        /* A change that has not left yet is dropped with the window. */
+        if (s->profile)
+            history_password_cancel(s->profile);
     }
+    account_erase(s);
+    s->account_confirm = false;
     s->open = false;
     if (s->window) {
         delwin(s->window);
@@ -44,11 +60,12 @@ void settings_close(app_settings *s)
     }
 }
 void settings_open(app_settings *s, const profile_config *config, voice_client *voice,
-                   history *profile, const char *server)
+                   history *profile, auth_client *auth, const char *server)
 {
     settings_close(s);
     memset(s, 0, sizeof(*s));
     s->profile = profile;
+    s->auth = auth;
     snprintf(s->server, sizeof(s->server), "%s", server ? server : "");
     s->open = true;
     s->draft = config->mode;
@@ -236,6 +253,12 @@ bool settings_poll(app_settings *s)
     uint64_t revision = history_profile_revision(s->profile);
     bool changed = refill || revision != s->seen_revision;
     s->seen_revision = revision;
+    unsigned seen = s->auth ? (unsigned)auth_password_state(s->auth) * 4u +
+                                  (history_password_waiting(s->profile) ? 2u : 0u) +
+                                  (history_password_not_started(s->profile) ? 1u : 0u)
+                            : 0u;
+    changed |= seen != s->account_seen;
+    s->account_seen = seen;
     return changed;
 }
 static void profile_notice_draw(app_settings *s, WINDOW *w, int height, int width)
@@ -346,13 +369,29 @@ static void profile_draw(app_settings *s, WINDOW *w, int height, int width)
 }
 bool settings_cursor(const app_settings *s)
 {
-    if (!s->open || s->section != SETTINGS_PROFILE || !s->cursor || !s->window)
+    if (!s->open || (s->section != SETTINGS_PROFILE && s->section != SETTINGS_ACCOUNT) ||
+        !s->cursor || !s->window)
         return false;
     setsyx(s->cursor_y, s->cursor_x);
     return true;
 }
+static bool account_locked(app_settings *s)
+{
+    return (s->profile && history_password_waiting(s->profile)) ||
+           (s->auth && auth_password_state(s->auth) == AUTH_PASSWORD_PENDING);
+}
 bool settings_paste(app_settings *s, text_paste *paste)
 {
+    if (s->open && s->section == SETTINGS_ACCOUNT && s->focus == 1) {
+        if (account_locked(s))
+            text_paste_cancel(paste);
+        else if (!text_paste_commit(paste, &s->account[s->account_item]))
+            snprintf(s->error, sizeof(s->error), "Colagem excede o limite do campo.");
+        else
+            s->error[0] = 0;
+        s->account_confirm = false;
+        return true;
+    }
     if (!s->open || s->section != SETTINGS_PROFILE || s->focus != 1 ||
         s->profile_item >= PROFILE_FIELDS || !history_profile(s->profile))
         return false;
@@ -495,6 +534,152 @@ static void profile_click(app_settings *s, int y, int x)
         return;
     }
 }
+/* Conta: new password and confirmation, then the change after a confirmation. */
+#define ACCOUNT_PASSWORD_MAX 1024
+static const char *const account_labels[2] = {"Nova senha:", "Confirmar senha:"};
+static void account_draw(app_settings *s, WINDOW *w, int height, int width)
+{
+    s->cursor = false;
+    s->account_y[0] = s->account_y[1] = -1;
+    char line[1280];
+    const char *user = s->auth ? auth_username(s->auth) : "";
+    snprintf(line, sizeof(line), "Sua conta em %s%s%s", *s->server ? s->server : "este servidor",
+             *user ? " · @" : "", user);
+    wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
+    text_label(w, 5, 2, width - 4, line);
+    bool roomy = height >= 16, locked = account_locked(s);
+    int label_width = 20, fx = 2 + label_width, fw = width - fx - 4;
+    for (int i = 0; i < 2; ++i) {
+        int y = roomy ? 7 + i * 2 : 6 + i;
+        s->account_y[i] = y;
+        bool focused = s->focus == 1 && s->account_item == i;
+        wattrset(w,
+                 COLOR_PAIR(focused ? THEME_PANEL_ACCENT : THEME_PANEL) | (focused ? A_BOLD : 0));
+        text_label(w, y, 2, label_width - 1, account_labels[i]);
+        wattrset(w, COLOR_PAIR(focused ? THEME_FOCUSED : THEME_INPUT) |
+                        (focused && !has_colors() ? A_REVERSE : 0));
+        mvwhline(w, y, fx, ' ', fw);
+        text_draw_field(w, &s->account[i], &s->account_first[i], y, fx, fw, true);
+        int cy, cx;
+        getyx(w, cy, cx);
+        if (focused && !locked) {
+            s->cursor = true;
+            s->cursor_y = getbegy(w) + cy;
+            s->cursor_x = getbegx(w) + cx;
+        }
+    }
+    int info = (roomy ? 9 : 7) + 2;
+    wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
+    if (info < height - 3)
+        text_label(w, info, 2, width - 4, "Use 8+ caracteres, uma letra maiúscula e um símbolo.");
+    text_buffer warning;
+    text_layout measured;
+    if (info + 1 < height - 3 &&
+        text_decode(&warning, "Trocar a senha encerra todas as sessões desta conta, inclusive "
+                              "esta: depois, entre de novo com a nova senha.")) {
+        text_measure(&warning, width - 4, &measured);
+        text_draw(w, &warning, &measured, 0, height - 3 - (info + 1), info + 1, 2);
+    }
+}
+static void account_notice_draw(app_settings *s, WINDOW *w, int height, int width)
+{
+    const char *notice = NULL;
+    int color = THEME_PANEL_MUTED;
+    auth_password_outcome outcome = s->auth ? auth_password_state(s->auth) : AUTH_PASSWORD_NONE;
+    if (s->profile && history_password_waiting(s->profile))
+        notice = "Aguardando para enviar a troca de senha…";
+    else if (s->account_sent && s->profile && history_password_not_started(s->profile)) {
+        notice = "Não foi possível iniciar a troca de senha. Tente de novo.";
+        color = THEME_ERROR;
+    } else if (s->account_sent && outcome != AUTH_PASSWORD_NONE) {
+        notice = auth_password_notice(s->auth);
+        color = outcome == AUTH_PASSWORD_PENDING ? THEME_PANEL_MUTED : THEME_ERROR;
+    } else if (s->account_confirm) {
+        notice = "Todas as sessões da conta serão encerradas. Escolha Confirmar para trocar.";
+        color = THEME_PANEL_ACCENT;
+    }
+    if (!notice || !*notice)
+        return;
+    wattrset(w, COLOR_PAIR(color));
+    text_label(w, height - 3, 2, width - 4, notice);
+}
+static void account_submit(app_settings *s)
+{
+    if (account_locked(s))
+        return;
+    if (!s->profile || !s->auth || !auth_has_session(s->auth)) {
+        snprintf(s->error, sizeof(s->error), "A sessão não está disponível.");
+        return;
+    }
+    static char text[2][TEXT_UTF8_BYTES];
+    char reason[192];
+    bool encoded = text_encode(&s->account[0], text[0]) && text_encode(&s->account[1], text[1]);
+    int item = -1;
+    if (!encoded) {
+        snprintf(s->error, sizeof(s->error), "Senha inválida.");
+        item = 0;
+    } else if (s->account[0].length > ACCOUNT_PASSWORD_MAX) {
+        snprintf(s->error, sizeof(s->error), "A senha excedeu o limite do cliente.");
+        item = 0;
+    } else if (!auth_validate_password(text[0], reason, sizeof(reason))) {
+        snprintf(s->error, sizeof(s->error), "%s", reason);
+        item = 0;
+    } else if (!s->account[1].length || strcmp(text[0], text[1])) {
+        snprintf(s->error, sizeof(s->error), "%s",
+                 s->account[1].length ? "As senhas não coincidem." : "Confirme a nova senha.");
+        item = 1;
+    } else if (!s->account_confirm) {
+        /* Ending every session is asked for twice. */
+        s->account_confirm = true;
+        s->account_sent = false;
+        s->error[0] = 0;
+        s->focus = 2;
+    } else if (!history_password_change(s->profile, text[0]))
+        snprintf(s->error, sizeof(s->error), "Uma troca de senha já está em andamento.");
+    else {
+        s->account_sent = true;
+        s->account_confirm = false;
+        s->error[0] = 0;
+        account_erase(s);
+        s->account_item = 0;
+    }
+    if (item >= 0) {
+        s->account_confirm = false;
+        s->account_item = item;
+        s->focus = 1;
+    }
+    memset(text, 0, sizeof(text));
+}
+static void account_key(app_settings *s, int type, uint32_t key)
+{
+    bool enter =
+        (type == OK && (key == '\r' || key == '\n')) || (type == KEY_CODE_YES && key == KEY_ENTER);
+    if (enter) {
+        account_submit(s);
+        return;
+    }
+    if (type == KEY_CODE_YES && key == KEY_UP) {
+        if (!s->account_item)
+            s->focus = 0;
+        else
+            --s->account_item;
+        return;
+    }
+    if (type == KEY_CODE_YES && key == KEY_DOWN) {
+        if (s->account_item == 1)
+            s->focus = 2;
+        else
+            ++s->account_item;
+        return;
+    }
+    if (account_locked(s))
+        return;
+    text_buffer *field = &s->account[s->account_item];
+    if (text_edit(field, type, key, TEXT_LIMIT * 2 + 1, false)) {
+        s->error[0] = 0;
+        s->account_confirm = s->account_sent = false;
+    }
+}
 void settings_draw(app_settings *s)
 {
     if (!s->open)
@@ -510,6 +695,7 @@ void settings_draw(app_settings *s)
     if (!s->window)
         return;
     WINDOW *w = s->window;
+    s->cursor = false;
     wbkgd(w, COLOR_PAIR(THEME_PANEL));
     werase(w);
     wattrset(w, COLOR_PAIR(THEME_BORDER));
@@ -553,6 +739,8 @@ void settings_draw(app_settings *s)
         audio_draw(s, w, height, width);
     } else if (s->section == SETTINGS_PROFILE) {
         profile_draw(s, w, height, width);
+    } else if (s->section == SETTINGS_ACCOUNT) {
+        account_draw(s, w, height, width);
     } else {
         wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
         text_label(w, 6, 3, width - 6, "Em breve. Esta seção ainda não altera configurações.");
@@ -562,10 +750,15 @@ void settings_draw(app_settings *s)
         text_label(w, height - 3, 2, width - 4, s->error);
     else if (s->section == SETTINGS_PROFILE)
         profile_notice_draw(s, w, height, width);
-    bool profile = s->section == SETTINGS_PROFILE;
-    button_draw(w, height - 2, 2, 18, profile ? "Salvar perfil" : "Salvar e aplicar",
+    else if (s->section == SETTINGS_ACCOUNT)
+        account_notice_draw(s, w, height, width);
+    bool profile = s->section == SETTINGS_PROFILE, account = s->section == SETTINGS_ACCOUNT;
+    button_draw(w, height - 2, 2, 18,
+                profile   ? "Salvar perfil"
+                : account ? s->account_confirm ? "Confirmar" : "Alterar senha"
+                          : "Salvar e aplicar",
                 s->focus == 2 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
-    button_draw(w, height - 2, width - 14, 12, profile ? "Fechar" : "Cancelar",
+    button_draw(w, height - 2, width - 14, 12, profile || account ? "Fechar" : "Cancelar",
                 s->focus == 3 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     wnoutrefresh(w);
 }
@@ -573,6 +766,10 @@ static void save(app_settings *s, profile_config *config)
 {
     if (s->section == SETTINGS_PROFILE) {
         profile_save(s);
+        return;
+    }
+    if (s->section == SETTINGS_ACCOUNT) {
+        account_submit(s);
         return;
     }
     if (profiles_set_settings(config, s->draft, &s->audio)) {
@@ -693,6 +890,10 @@ void settings_key(app_settings *s, profile_config *config, int type, uint32_t ke
             s->focus = 0;
         } else if (s->section == SETTINGS_PROFILE && y >= 5 && y < getmaxy(s->window) - 3) {
             profile_click(s, y, x);
+        } else if (s->section == SETTINGS_ACCOUNT &&
+                   (y == s->account_y[0] || y == s->account_y[1])) {
+            s->focus = 1;
+            s->account_item = y == s->account_y[1];
         } else if (s->section == SETTINGS_AUDIO && voice_available() && y >= 5 &&
                    y < getmaxy(s->window) - 6) {
             int selected = s->audio_first + y - 5;
@@ -726,6 +927,10 @@ void settings_key(app_settings *s, profile_config *config, int type, uint32_t ke
     } else if (s->focus == 1) {
         if (s->section == SETTINGS_PROFILE) {
             profile_key(s, type, key);
+            return;
+        }
+        if (s->section == SETTINGS_ACCOUNT) {
+            account_key(s, type, key);
             return;
         }
         if (s->section == SETTINGS_AUDIO) {

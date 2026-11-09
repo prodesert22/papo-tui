@@ -32,6 +32,41 @@ static bool registration_error(auth_input_error *field, char *message, size_t ca
     return false;
 }
 
+static bool password_error(char *message, size_t capacity, const char *reason)
+{
+    if (message && capacity)
+        snprintf(message, capacity, "%s", reason);
+    return false;
+}
+
+bool auth_validate_password(const char *password, char *message, size_t capacity)
+{
+    if (message && capacity)
+        *message = '\0';
+    if (!password || !*password)
+        return password_error(message, capacity, "Preencha a senha.");
+    size_t characters = 0;
+    bool upper = false, special = false;
+    while (*password) {
+        uint32_t character;
+        size_t bytes = papo_utf8_next(password, &character);
+        if (!bytes || bytes == (size_t)-1 || bytes == (size_t)-2 || !g_unichar_isprint(character))
+            return password_error(message, capacity,
+                                  "Informe uma senha válida, sem controles de terminal.");
+        upper |= g_unichar_isupper(character) != 0;
+        special |= g_unichar_isalnum(character) == 0;
+        ++characters;
+        password += bytes;
+    }
+    if (characters < 8)
+        return password_error(message, capacity, "A senha precisa ter pelo menos 8 caracteres.");
+    if (!upper)
+        return password_error(message, capacity, "A senha precisa de uma letra maiúscula.");
+    if (!special)
+        return password_error(message, capacity, "A senha precisa de um caractere especial.");
+    return true;
+}
+
 bool auth_validate_registration(const char *username, const char *password, auth_input_error *field,
                                 char *message, size_t capacity)
 {
@@ -59,29 +94,123 @@ bool auth_validate_registration(const char *username, const char *password, auth
     if (characters < 3)
         return registration_error(field, message, capacity, AUTH_INPUT_USERNAME,
                                   "O usuário precisa ter pelo menos 3 caracteres.");
-    characters = 0;
-    bool upper = false, special = false;
-    while (*password) {
-        uint32_t character;
-        size_t bytes = papo_utf8_next(password, &character);
-        if (!bytes || bytes == (size_t)-1 || bytes == (size_t)-2 || !g_unichar_isprint(character))
-            return registration_error(field, message, capacity, AUTH_INPUT_PASSWORD,
-                                      "Informe uma senha válida, sem controles de terminal.");
-        upper |= g_unichar_isupper(character) != 0;
-        special |= g_unichar_isalnum(character) == 0;
-        ++characters;
-        password += bytes;
+    if (!auth_validate_password(password, message, capacity)) {
+        if (field)
+            *field = AUTH_INPUT_PASSWORD;
+        return false;
     }
-    if (characters < 8)
-        return registration_error(field, message, capacity, AUTH_INPUT_PASSWORD,
-                                  "A senha precisa ter pelo menos 8 caracteres.");
-    if (!upper)
-        return registration_error(field, message, capacity, AUTH_INPUT_PASSWORD,
-                                  "A senha precisa de uma letra maiúscula.");
-    if (!special)
-        return registration_error(field, message, capacity, AUTH_INPUT_PASSWORD,
-                                  "A senha precisa de um caractere especial.");
     return true;
+}
+
+/* Base64url, as the server encodes the 32 random bytes of the token. */
+static bool token_valid(const char *token, size_t length)
+{
+    if (!length || length > 256)
+        return false;
+    for (size_t i = 0; i < length; ++i)
+        if (!g_ascii_isalnum(token[i]) && token[i] != '-' && token[i] != '_')
+            return false;
+    return true;
+}
+
+bool auth_reset_token(const char *input, char *token, size_t token_size, char *host,
+                      size_t host_size)
+{
+    if (token && token_size)
+        *token = '\0';
+    if (host && host_size)
+        *host = '\0';
+    if (!input || !token || token_size < 2 || !host || !host_size)
+        return false;
+    while (*input == ' ' || *input == '\t')
+        ++input;
+    size_t length = strlen(input);
+    while (length && (input[length - 1] == ' ' || input[length - 1] == '\t'))
+        --length;
+    if (!length || length > 2048)
+        return false;
+    static const char marker[] = "/passwordchange/";
+    char *copy = g_strndup(input, length);
+    const char *value = copy;
+    size_t value_length = length;
+    CURLU *parsed = NULL;
+    char *path = NULL, *name = NULL, *part = NULL;
+    bool ok = false;
+    if (strstr(copy, "://") || strstr(copy, marker)) {
+        /* A link copied without its scheme still names its host. */
+        char *link = strstr(copy, "://") ? g_strdup(copy) : g_strconcat("https://", copy, NULL);
+        parsed = curl_url();
+        char *scheme = NULL;
+        bool parsed_ok = parsed && curl_url_set(parsed, CURLUPART_URL, link, 0) == CURLUE_OK &&
+                         curl_url_get(parsed, CURLUPART_SCHEME, &scheme, 0) == CURLUE_OK &&
+                         (!strcmp(scheme, "https") || !strcmp(scheme, "http")) &&
+                         curl_url_get(parsed, CURLUPART_HOST, &name, 0) == CURLUE_OK &&
+                         curl_url_get(parsed, CURLUPART_PATH, &path, 0) == CURLUE_OK;
+        const CURLUPart forbidden[] = {CURLUPART_USER, CURLUPART_PASSWORD, CURLUPART_QUERY,
+                                       CURLUPART_FRAGMENT};
+        for (size_t i = 0; parsed_ok && i < sizeof(forbidden) / sizeof(forbidden[0]); ++i) {
+            if (curl_url_get(parsed, forbidden[i], &part, CURLU_GET_EMPTY) == CURLUE_OK)
+                parsed_ok = false;
+            curl_free(part);
+            part = NULL;
+        }
+        curl_free(scheme);
+        g_free(link);
+        const char *found = parsed_ok ? strstr(path, marker) : NULL;
+        if (!found || strlen(name) >= host_size)
+            goto done;
+        value = found + strlen(marker);
+        value_length = strlen(value);
+        while (value_length && value[value_length - 1] == '/')
+            --value_length;
+        snprintf(host, host_size, "%s", name);
+    }
+    if (!token_valid(value, value_length) || value_length >= token_size)
+        goto done;
+    memcpy(token, value, value_length);
+    token[value_length] = '\0';
+    ok = true;
+done:
+    if (!ok)
+        *host = '\0';
+    curl_free(path);
+    curl_free(name);
+    if (parsed)
+        curl_url_cleanup(parsed);
+    volatile char *secret = copy;
+    for (size_t i = 0; i < length; ++i)
+        secret[i] = 0;
+    g_free(copy);
+    return ok;
+}
+
+void auth_internal_problem_detail(auth_client *client, char *out, size_t capacity)
+{
+    if (!out || !capacity)
+        return;
+    *out = '\0';
+    json_error_t error;
+    json_t *body = json_loadb(client->response ? client->response : "", client->response_length,
+                              JSON_REJECT_DUPLICATES, &error);
+    const char *detail = auth_internal_json_text(body, "detail", 1024);
+    if (!detail)
+        detail = auth_internal_json_text(body, "title", 1024);
+    size_t length = 0;
+    /* Remote text never brings terminal controls into a notice. */
+    for (const char *at = detail; at && *at && g_utf8_validate(at, -1, NULL);
+         at = g_utf8_next_char(at)) {
+        gunichar c = g_utf8_get_char(at);
+        char bytes[6];
+        int size = g_unichar_iscntrl(c) || g_unichar_type(c) == G_UNICODE_FORMAT
+                       ? (bytes[0] = ' ', 1)
+                       : g_unichar_to_utf8(c, bytes);
+        if (length + (size_t)size >= capacity)
+            break;
+        memcpy(out + length, bytes, (size_t)size);
+        length += (size_t)size;
+    }
+    out[length] = '\0';
+    json_decref(body);
 }
 
 bool auth_internal_registration_valid(auth_client *client, const char *username,

@@ -42,4 +42,14 @@ const char *history_profile_notice(history *h);
 uint64_t history_profile_revision(history *h);
 /* Counts completed loads, so a form refills only from a new server copy. */
 uint64_t history_profile_loads(history *h);
+/* Queues the own password change for the next free REST turn; the password is
+ * copied and erased once handed to auth_change_password. The outcome is read
+ * from auth_password_state/auth_password_notice. False when one is waiting. */
+bool history_password_change(history *h, const char *password);
+/* A change waits for its turn and has not been sent. */
+bool history_password_waiting(history *h);
+/* Drops a change that has not been sent yet. */
+void history_password_cancel(history *h);
+/* The last queued change could not start; nothing was sent. */
+bool history_password_not_started(history *h);
 #endif

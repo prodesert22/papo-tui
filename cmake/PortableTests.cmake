@@ -98,6 +98,8 @@ papo_add_test(NAME members-terminal COMMAND ${Python3_EXECUTABLE}
               ${PROJECT_SOURCE_DIR}/tests/terminal/test_members.py $<TARGET_FILE:papo-tui>)
 papo_add_test(NAME profile-edit-terminal COMMAND ${Python3_EXECUTABLE}
               ${PROJECT_SOURCE_DIR}/tests/terminal/test_profile_edit.py $<TARGET_FILE:papo-tui>)
+papo_add_test(NAME password-terminal COMMAND ${Python3_EXECUTABLE}
+              ${PROJECT_SOURCE_DIR}/tests/terminal/test_password_terminal.py $<TARGET_FILE:papo-tui>)
 papo_add_test(NAME server-settings-terminal COMMAND ${Python3_EXECUTABLE}
               ${PROJECT_SOURCE_DIR}/tests/terminal/test_server_settings.py $<TARGET_FILE:papo-tui>)
 

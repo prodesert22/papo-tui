@@ -28,7 +28,14 @@ typedef enum {
     AUTH_API_MUTATION,
     AUTH_PERMISSION_SERVER,
     AUTH_PERMISSION_ROLES,
-    AUTH_PERMISSION_CHANNELS
+    AUTH_PERMISSION_CHANNELS,
+    /* Own password change: the reset flag, then the new password. */
+    AUTH_PASSWORD_PREPARE,
+    AUTH_PASSWORD_CHANGE,
+    /* Password reset from an administrative link, without a session. */
+    AUTH_PASSWORD_RESET,
+    /* A new password took effect; every session of the account has ended. */
+    AUTH_PASSWORD_UPDATED
 } auth_state;
 
 typedef enum {
@@ -36,8 +43,17 @@ typedef enum {
     AUTH_INPUT_URL,
     AUTH_INPUT_USERNAME,
     AUTH_INPUT_PASSWORD,
-    AUTH_INPUT_SERVER_PASSWORD
+    AUTH_INPUT_SERVER_PASSWORD,
+    AUTH_INPUT_RESET_LINK
 } auth_input_error;
+
+/* Outcome of the last own password change while the session remains. */
+typedef enum {
+    AUTH_PASSWORD_NONE,
+    AUTH_PASSWORD_PENDING,
+    AUTH_PASSWORD_REFUSED,
+    AUTH_PASSWORD_UNCONFIRMED
+} auth_password_outcome;
 
 typedef struct auth_client auth_client;
 typedef enum {
@@ -78,6 +94,25 @@ bool auth_start_with_policy(auth_client *client, const char *url, const char *us
                             const char *password, const char *server_password,
                             bool allow_local_http);
 /* Pure local validation: no transfer, cookie or session changes. */
+bool auth_validate_password(const char *password, char *message, size_t capacity);
+/* Extracts the token from a password-reset link (.../passwordchange/<token>) or
+ * a bare token. host receives the link's host, or "" for a bare token. Pure. */
+bool auth_reset_token(const char *input, char *token, size_t token_size, char *host,
+                      size_t host_size);
+/* POST /auth/password_reset without a session. Copies inputs, shares the
+ * global budget and is never replayed: the token is single-use. Success leaves
+ * AUTH_PASSWORD_UPDATED; it does not sign in. */
+bool auth_password_reset(auth_client *client, const char *url, const char *token,
+                         const char *password, bool allow_local_http);
+/* Own password change: POST /users/{me}/reset, then PUT /users/{me}/password,
+ * through the REST queue and global budget, never replayed. The server ends
+ * every session of the account, this one included, so success leaves
+ * AUTH_PASSWORD_UPDATED without a session. A failure keeps the session and
+ * reports through auth_password_outcome/auth_password_notice. */
+bool auth_change_password(auth_client *client, const char *password);
+auth_password_outcome auth_password_state(const auth_client *client);
+/* Sanitized Portuguese notice for the outcome; "" when there is none. */
+const char *auth_password_notice(const auth_client *client);
 bool auth_validate_registration(const char *username, const char *password, auth_input_error *field,
                                 char *message, size_t capacity);
 bool auth_register_with_policy(auth_client *client, const char *url, const char *username,

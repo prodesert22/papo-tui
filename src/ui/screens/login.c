@@ -43,8 +43,10 @@
 #define THEME_PROFILE_FOCUS (FIELD_COUNT + 2)
 #define CHAT_FOCUS (FIELD_COUNT + 3)
 #define TABS_FOCUS (FIELD_COUNT + 4)
-#define FOCUS_COUNT (FIELD_COUNT + 5)
+#define RESET_FOCUS (FIELD_COUNT + 5)
+#define FOCUS_COUNT (FIELD_COUNT + 6)
 #define PROFILE_BUTTON "[Selecionar perfil]"
+#define RESET_BUTTON "[Redefinir senha]"
 #define CARD_HEIGHT 22
 #define MIN_COLS 44
 #define KEY_PASTE_START (KEY_MAX + 1)
@@ -93,6 +95,10 @@ typedef struct {
     bool retrying; /* The saved session of this form is being read again. */
     bool server_password_error;
     bool registering, mode_changed, session_present, layout_failed;
+    /* Password reset from a link: field 1 holds the link, and the username
+     * typed for login waits in reset_user until the mode is left. */
+    bool resetting, reset_confirmed;
+    char reset_user[8193], reset_host[256];
     char validation_message[192];
     int validation_field;
     char profile_id[PROFILE_ID_BYTES], profile_name[PROFILE_NAME_BYTES];
@@ -101,6 +107,8 @@ typedef struct {
 /* Keep transport field IDs stable; confirmation belongs only to the UI. */
 static int field_row(const login_ui *ui, int field)
 {
+    if (ui->resetting)
+        return field == CONFIRM_FIELD ? 9 : field * 3;
     if (!ui->registering)
         return field * 3;
     if (field == CONFIRM_FIELD)
@@ -111,6 +119,21 @@ static int field_row(const login_ui *ui, int field)
 static int visible_field_count(const login_ui *ui)
 {
     return ui->registering ? FIELD_COUNT : LOGIN_FIELD_COUNT;
+}
+
+/* Field order on screen; the reset form has no server password. */
+static int field_at(const login_ui *ui, int position)
+{
+    static const int registering[FIELD_COUNT] = {0, 1, 2, CONFIRM_FIELD, 3};
+    static const int resetting[LOGIN_FIELD_COUNT] = {0, 1, 2, CONFIRM_FIELD};
+    return ui->registering ? registering[position] : ui->resetting ? resetting[position] : position;
+}
+
+/* Characters per field; a reset link is longer than a username. */
+static size_t field_limit(const login_ui *ui, int field)
+{
+    static const size_t limits[FIELD_COUNT] = {2048, 256, 1024, 1024, 1024};
+    return field == 1 && ui->resetting ? 2048 : limits[field];
 }
 
 static volatile sig_atomic_t interrupted;
@@ -276,11 +299,9 @@ static bool layout(login_ui *ui)
     ui->input = derwin(ui->card, 10, ui->width - 8, 5, 4);
     if (!ui->input)
         return false;
-    const int limits[FIELD_COUNT] = {2048, 256, 1024, 1024, 1024};
     memset(ui->form_fields, 0, sizeof(ui->form_fields));
-    const int order[FIELD_COUNT] = {0, 1, 2, CONFIRM_FIELD, 3};
     for (int position = 0; position < visible_field_count(ui); ++position) {
-        int i = ui->registering ? order[position] : position;
+        int i = field_at(ui, position);
         ui->fields[i] = new_field(1, ui->width - 8, field_row(ui, i), 0, 0, 0);
         ui->form_fields[position] = ui->fields[i];
         if (!ui->fields[i])
@@ -291,7 +312,7 @@ static bool layout(login_ui *ui)
             field_opts_off(ui->fields[i], O_PUBLIC);
         if (i == 0 && ui->profile_active)
             field_opts_off(ui->fields[i], O_EDIT);
-        set_max_field(ui->fields[i], limits[i]);
+        set_max_field(ui->fields[i], (int)field_limit(ui, i));
         set_field_buffer(ui->fields[i], 0, ui->saved[i]);
         set_field_fore(ui->fields[i], COLOR_PAIR(THEME_NORMAL));
         set_field_back(ui->fields[i], COLOR_PAIR(THEME_INPUT));
@@ -625,13 +646,14 @@ static const char *primary_button(const login_ui *ui, auth_client *client)
     return auth_has_session(client) ? "[ Sair da conta ]"
            : auth_busy(client)      ? "[ Conectando… ]"
            : ui->registering        ? "[Criar conta]"
+           : ui->resetting          ? "[Redefinir]"
                                     : "[ Entrar ]";
 }
 
 static const char *extra_button(const login_ui *ui, auth_client *client)
 {
     if (!auth_has_session(client))
-        return ui->registering ? "[Login]" : "[Cadastro]";
+        return ui->registering || ui->resetting ? "[Login]" : "[Cadastro]";
     ws_state state = auth_ws_state(client);
     return state == WS_ERROR || state == WS_CLOSED ? "[Reconectar]" : "[Renovar]";
 }
@@ -654,6 +676,11 @@ static void draw(login_ui *ui, auth_client *client)
     const bool ready = auth_has_session(client);
     const char *labels[FIELD_COUNT] = {"URL do servidor", "Usuário (username)", "Senha (password)",
                                        "Senha do servidor", "Confirmar senha"};
+    if (ui->resetting) {
+        labels[1] = "Link de redefinição";
+        labels[2] = "Nova senha";
+        labels[CONFIRM_FIELD] = "Confirmar nova senha";
+    }
     wattrset(ui->card, COLOR_PAIR(THEME_BORDER));
     box(ui->card, 0, 0);
     wattrset(ui->header, COLOR_PAIR(THEME_NORMAL));
@@ -667,6 +694,7 @@ static void draw(login_ui *ui, auth_client *client)
     mvwhline(ui->header, 1, 2, ' ', ui->width - 8);
     text(ui->header, 1, 2, ui->width - 8,
          ui->registering      ? "Crie sua conta nesta instância"
+         : ui->resetting      ? "Redefina sua senha com o link recebido"
          : ui->profile_active ? ui->profile_name
                               : "Entre na sua comunidade");
     wattrset(ui->header, COLOR_PAIR(THEME_BORDER));
@@ -692,10 +720,12 @@ static void draw(login_ui *ui, auth_client *client)
     mvwhline(ui->body, 11, 1, ' ', ui->width - 6);
     /* The private-server error frame follows its input in either mode. */
     int server_row = field_row(ui, 3);
-    wattrset(ui->body, COLOR_PAIR(THEME_NORMAL));
-    mvwaddch(ui->body, server_row + 1, 1, ' ');
-    mvwaddch(ui->body, server_row + 1, ui->width - 6, ' ');
-    if (ui->server_password_error) {
+    if (ui->fields[3]) {
+        wattrset(ui->body, COLOR_PAIR(THEME_NORMAL));
+        mvwaddch(ui->body, server_row + 1, 1, ' ');
+        mvwaddch(ui->body, server_row + 1, ui->width - 6, ' ');
+    }
+    if (ui->server_password_error && ui->fields[3]) {
         wattrset(ui->body, COLOR_PAIR(THEME_ERROR));
         mvwhline(ui->body, server_row, 2, ACS_HLINE, ui->width - 8);
         mvwhline(ui->body, server_row + 2, 2, ACS_HLINE, ui->width - 8);
@@ -708,11 +738,13 @@ static void draw(login_ui *ui, auth_client *client)
         text(ui->body, server_row, 3, ui->width - 10, "Senha do servidor *");
     } else {
         /* Clear the previous error frame before restoring the normal label. */
-        wattrset(ui->body,
-                 COLOR_PAIR(ui->focus == 3 && !busy && !ready ? THEME_ACCENT : THEME_MUTED));
-        mvwhline(ui->body, server_row, 1, ' ', ui->width - 6);
-        mvwhline(ui->body, server_row + 2, 1, ' ', ui->width - 6);
-        text(ui->body, server_row, 2, ui->width - 8, labels[3]);
+        if (ui->fields[3]) {
+            wattrset(ui->body,
+                     COLOR_PAIR(ui->focus == 3 && !busy && !ready ? THEME_ACCENT : THEME_MUTED));
+            mvwhline(ui->body, server_row, 1, ' ', ui->width - 6);
+            mvwhline(ui->body, server_row + 2, 1, ' ', ui->width - 6);
+            text(ui->body, server_row, 2, ui->width - 8, labels[3]);
+        }
         wattrset(ui->body, COLOR_PAIR(THEME_MUTED));
         if (ready) {
             char summary[300];
@@ -722,8 +754,9 @@ static void draw(login_ui *ui, auth_client *client)
             text(ui->body, 11, 2, ui->width - 8, summary);
         } else
             text(ui->body, 11, 2, ui->width - 8,
-                 ui->registering ? "Senha: 8+ caracteres, maiúscula e símbolo."
-                                 : "Preencha a senha do servidor se a instância for privada.");
+                 ui->registering || ui->resetting
+                     ? "Senha: 8+ caracteres, maiúscula e símbolo."
+                     : "Preencha a senha do servidor se a instância for privada.");
     }
 
     wattrset(ui->footer, COLOR_PAIR(THEME_BORDER));
@@ -741,8 +774,10 @@ static void draw(login_ui *ui, auth_client *client)
     int status_color = *ui->validation_message || auth_get_state(client) == AUTH_ERROR ||
                                auth_ws_state(client) == WS_ERROR
                            ? THEME_ERROR
-                       : ready || auth_get_state(client) == AUTH_REGISTERED ? THEME_SUCCESS
-                                                                            : THEME_MUTED;
+                       : ready || auth_get_state(client) == AUTH_REGISTERED ||
+                               auth_get_state(client) == AUTH_PASSWORD_UPDATED
+                           ? THEME_SUCCESS
+                           : THEME_MUTED;
     wattrset(ui->footer, COLOR_PAIR(THEME_NORMAL));
     mvwhline(ui->footer, 2, 2, ' ', ui->width - 8);
     mvwhline(ui->footer, 3, 2, ' ', ui->width - 8);
@@ -750,6 +785,7 @@ static void draw(login_ui *ui, auth_client *client)
     const char *message = *ui->validation_message ? ui->validation_message
                           : ui->mode_changed && auth_get_state(client) == AUTH_IDLE
                               ? ui->registering ? "Preencha os dados para criar sua conta."
+                                : ui->resetting ? "Cole o link recebido e escolha a nova senha."
                                                 : "Preencha os dados para entrar."
                               : auth_message(client);
     char status_message[384];
@@ -788,10 +824,19 @@ static void draw(login_ui *ui, auth_client *client)
     } else if (ready && !*remaining)
         text(ui->footer, 3, 2, ui->width - 8, session_store_notice(connections->sessions));
     wattrset(ui->footer, COLOR_PAIR(THEME_MUTED));
-    if (ready)
+    mvwhline(ui->footer, 4, 0, ' ', ui->width - 4);
+    int hint_x = 0;
+    if (ready) {
         button_draw(ui->footer, 4, 0, 13, "[Canais]",
                     ui->focus == CHAT_FOCUS ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_CANVAS);
-    text(ui->footer, 4, ready ? 15 : 0, ui->width - (ready ? 19 : 4), UI_HELP_HINT);
+        hint_x = 15;
+    } else if (!busy && !ui->resetting) {
+        button_draw(ui->footer, 4, 0, (int)strlen(RESET_BUTTON), RESET_BUTTON,
+                    ui->focus == RESET_FOCUS ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_CANVAS);
+        hint_x = (int)strlen(RESET_BUTTON) + 2;
+    }
+    wattrset(ui->footer, COLOR_PAIR(THEME_MUTED));
+    text(ui->footer, 4, hint_x, ui->width - 4 - hint_x, UI_HELP_HINT);
     for (int i = 0; i < FIELD_COUNT; ++i)
         if (ui->fields[i]) {
             wattrset(ui->input,
@@ -858,6 +903,8 @@ static bool focus_available(const login_ui *ui, auth_client *client, int selecte
         return !auth_busy(client) || auth_has_session(client);
     if (selected == CHAT_FOCUS)
         return auth_has_session(client);
+    if (selected == RESET_FOCUS)
+        return !auth_busy(client) && !auth_has_session(client) && !ui->resetting;
     if (selected == TABS_FOCUS)
         return ui->tabs != NULL;
     return selected == THEME_PROFILE_FOCUS;
@@ -867,8 +914,8 @@ static bool focus_available(const login_ui *ui, auth_client *client, int selecte
 static void focus(login_ui *ui, auth_client *client, int direction)
 {
     const int order[FOCUS_COUNT] = {
-        TABS_FOCUS, 0,           1,           2,          CONFIRM_FIELD,
-        3,          FIELD_COUNT, EXTRA_FOCUS, CHAT_FOCUS, THEME_PROFILE_FOCUS};
+        TABS_FOCUS,  0,           1,           2,          CONFIRM_FIELD,      3,
+        FIELD_COUNT, EXTRA_FOCUS, RESET_FOCUS, CHAT_FOCUS, THEME_PROFILE_FOCUS};
     int position = 0;
     while (position < FOCUS_COUNT && order[position] != ui->focus)
         ++position;
@@ -911,12 +958,19 @@ static void focus_vertical(login_ui *ui, auth_client *client, int direction)
     } else if (selected == THEME_PROFILE_FOCUS) {
         if (direction < 0 && focus_available(ui, client, FIELD_COUNT))
             selected = FIELD_COUNT;
+    } else if (selected == RESET_FOCUS) {
+        selected = direction > 0 ? THEME_PROFILE_FOCUS : FIELD_COUNT;
     } else if (direction > 0)
-        selected = THEME_PROFILE_FOCUS;
-    else if (focus_available(ui, client, 3))
-        selected = 3;
-    else if (focus_available(ui, client, TABS_FOCUS))
-        selected = TABS_FOCUS;
+        selected = focus_available(ui, client, RESET_FOCUS) ? RESET_FOCUS : THEME_PROFILE_FOCUS;
+    else {
+        /* Up from the buttons reaches the last field of the form. */
+        selected = focus_available(ui, client, TABS_FOCUS) ? TABS_FOCUS : ui->focus;
+        for (int position = FIELD_COUNT; position >= 0; --position)
+            if (focus_available(ui, client, order[position]) && order[position] < FIELD_COUNT) {
+                selected = order[position];
+                break;
+            }
+    }
     if (focus_available(ui, client, selected))
         select_focus(ui, selected);
 }
@@ -937,7 +991,7 @@ static void apply_input_error(login_ui *ui, auth_client *client)
     auth_input_error error = auth_error_input(client);
     if (auth_get_state(client) != AUTH_ERROR || error == AUTH_INPUT_NONE)
         return;
-    int field = (int)error - 1;
+    int field = error == AUTH_INPUT_RESET_LINK ? 1 : (int)error - 1;
     if (field < 0 || field >= FIELD_COUNT)
         return;
     if (error == AUTH_INPUT_SERVER_PASSWORD) {
@@ -951,6 +1005,68 @@ static void apply_input_error(login_ui *ui, auth_client *client)
     ui->focus = field;
     if (ui->form)
         select_focus(ui, field);
+}
+
+static void validation_error(login_ui *ui, int field, const char *message)
+{
+    snprintf(ui->validation_message, sizeof(ui->validation_message), "%s", message);
+    ui->mode_changed = true;
+    ui->validation_field = field;
+    select_focus(ui, field);
+}
+
+/* The host part of url, or "" when it has none. Owned by the caller. */
+static char *url_host(const char *url)
+{
+    char reason[192], *host = NULL;
+    char *base = auth_normalize_url(url, reason, sizeof(reason));
+    CURLU *parsed = base ? curl_url() : NULL;
+    if (!parsed || curl_url_set(parsed, CURLUPART_URL, base, 0) != CURLUE_OK ||
+        curl_url_get(parsed, CURLUPART_HOST, &host, 0) != CURLUE_OK)
+        host = NULL;
+    char *copy = strdup(host ? host : "");
+    curl_free(host);
+    curl_url_cleanup(parsed);
+    curl_free(base);
+    return copy;
+}
+
+/* Local checks before the single-use link is sent. A link from another host
+ * than the server URL goes only after a second, deliberate confirmation. */
+static bool reset_ready(login_ui *ui)
+{
+    char token[257], host[256], reason[192];
+    bool parsed = auth_reset_token(ui->saved[1], token, sizeof(token), host, sizeof(host));
+    erase_text(token, sizeof(token));
+    if (!parsed) {
+        validation_error(ui, 1, "Cole o link de redefinição completo, como foi recebido.");
+        return false;
+    }
+    if (!auth_validate_password(ui->saved[2], reason, sizeof(reason))) {
+        validation_error(ui, 2, reason);
+        return false;
+    }
+    if (!*ui->saved[CONFIRM_FIELD] || strcmp(ui->saved[2], ui->saved[CONFIRM_FIELD]) != 0) {
+        validation_error(ui, CONFIRM_FIELD,
+                         !*ui->saved[CONFIRM_FIELD] ? "Confirme a nova senha."
+                                                    : "As senhas não coincidem.");
+        return false;
+    }
+    char *server = *host ? url_host(ui->saved[0]) : NULL;
+    bool other = server && *server && g_ascii_strcasecmp(server, host) != 0;
+    if (other && !(ui->reset_confirmed && !strcmp(ui->reset_host, host))) {
+        snprintf(ui->validation_message, sizeof(ui->validation_message),
+                 "O link é de %.48s, não de %.48s. Confira a URL ou confirme em Redefinir.", host,
+                 server);
+        snprintf(ui->reset_host, sizeof(ui->reset_host), "%s", host);
+        ui->reset_confirmed = true;
+        ui->mode_changed = true;
+        ui->validation_field = 0;
+        free(server);
+        return false;
+    }
+    free(server);
+    return true;
 }
 
 static void submit(login_ui *ui, auth_client *client)
@@ -983,6 +1099,11 @@ static void submit(login_ui *ui, auth_client *client)
             }
             auth_register_with_policy(client, ui->saved[0], ui->saved[1], ui->saved[2],
                                       ui->saved[3], ui->allow_local_http);
+        } else if (ui->resetting) {
+            if (!reset_ready(ui))
+                return;
+            auth_password_reset(client, ui->saved[0], ui->saved[1], ui->saved[2],
+                                ui->allow_local_http);
         } else
             auth_start_with_policy(client, ui->saved[0], ui->saved[1], ui->saved[2], ui->saved[3],
                                    ui->allow_local_http);
@@ -991,6 +1112,7 @@ static void submit(login_ui *ui, auth_client *client)
 }
 
 static void extra_action(login_ui *ui, auth_client *client);
+static void reset_action(login_ui *ui, auth_client *client);
 
 /* Return true when the profile selector was requested. */
 static bool click_event(login_ui *ui, auth_client *client, MEVENT event)
@@ -1071,6 +1193,12 @@ static bool click_event(login_ui *ui, auth_client *client, MEVENT event)
         ui->open_chat = true;
         return true;
     }
+    if (!ready && !auth_busy(client) && !ui->resetting && y == 20 && x >= 2 &&
+        x < 2 + (int)strlen(RESET_BUTTON)) {
+        select_focus(ui, RESET_FOCUS);
+        reset_action(ui, client);
+        return false;
+    }
     if (auth_busy(client) && !ready)
         return false;
     int button_width = (int)strlen(primary_button(ui, client));
@@ -1120,13 +1248,14 @@ static bool click(login_ui *ui, auth_client *client)
 
 static void edit_field(login_ui *ui, int type, uint32_t key)
 {
-    static const size_t limits[FIELD_COUNT] = {2048, 256, 1024, 1024, 1024};
     text_buffer *buffer = &ui->values[ui->focus], prior = *buffer;
     if (text_edit(buffer, type, key, TEXT_LIMIT * 2 + 1, false)) {
-        if (buffer->length > limits[ui->focus])
+        if (buffer->length > field_limit(ui, ui->focus))
             *buffer = prior;
         else {
             ui->validation_message[0] = 0;
+            if (ui->focus <= 1)
+                ui->reset_confirmed = false;
             if (ui->focus == 3)
                 ui->server_password_error = false;
         }
@@ -1147,6 +1276,51 @@ static void clear_passwords(login_ui *ui)
     }
 }
 
+/* Field 1 holds the username or, while resetting, the secret link. Entering
+ * the reset form keeps the username aside; leaving it erases the link. */
+static void swap_reset_field(login_ui *ui, bool resetting)
+{
+    if (resetting == ui->resetting)
+        return;
+    if (resetting) {
+        snprintf(ui->reset_user, sizeof(ui->reset_user), "%s", ui->saved[1]);
+        erase_text((char *)&ui->values[1], sizeof(ui->values[1]));
+        text_clear(&ui->values[1]);
+    } else {
+        erase_text((char *)&ui->values[1], sizeof(ui->values[1]));
+        if (!text_decode(&ui->values[1], ui->reset_user))
+            text_clear(&ui->values[1]);
+        erase_text(ui->reset_user, sizeof(ui->reset_user));
+    }
+    erase_text(ui->saved[1], sizeof(ui->saved[1]));
+    ui->scroll[1] = 0;
+    ui->resetting = resetting;
+    ui->reset_confirmed = false;
+    ui->reset_host[0] = '\0';
+}
+
+static void set_mode(login_ui *ui, auth_client *client, bool registering, bool resetting)
+{
+    snapshot(ui);
+    clear_passwords(ui);
+    auth_cancel(client);
+    swap_reset_field(ui, resetting);
+    ui->validation_message[0] = '\0';
+    ui->registering = registering;
+    ui->mode_changed = true;
+    ui->server_password_error = false;
+    ui->focus = *ui->saved[0] ? 1 : 0;
+    ui->layout_failed = !layout(ui);
+    if (ui->form)
+        select_focus(ui, ui->focus);
+}
+
+static void reset_action(login_ui *ui, auth_client *client)
+{
+    if (!auth_has_session(client) && !auth_busy(client) && !ui->resetting)
+        set_mode(ui, client, false, true);
+}
+
 static void extra_action(login_ui *ui, auth_client *client)
 {
     if (auth_has_session(client)) {
@@ -1160,17 +1334,7 @@ static void extra_action(login_ui *ui, auth_client *client)
     }
     if (auth_busy(client))
         return;
-    snapshot(ui);
-    clear_passwords(ui);
-    auth_cancel(client);
-    ui->validation_message[0] = '\0';
-    ui->registering = !ui->registering;
-    ui->mode_changed = true;
-    ui->server_password_error = false;
-    ui->focus = *ui->saved[0] ? 1 : 0;
-    ui->layout_failed = !layout(ui);
-    if (ui->form)
-        select_focus(ui, ui->focus);
+    set_mode(ui, client, !ui->registering && !ui->resetting, false);
 }
 
 static int manage_profiles(login_ui *ui, auth_client **client, profile_config **config,
@@ -1229,6 +1393,9 @@ static bool instance_form(login_ui *ui, auth_client *client, const char *url)
     text_paste_cancel(&ui->paste_data);
     ui->paste = ui->dragging = false;
     ui->profile_active = ui->registering = ui->mode_changed = ui->server_password_error = false;
+    ui->resetting = ui->reset_confirmed = false;
+    erase_text(ui->reset_user, sizeof(ui->reset_user));
+    ui->reset_host[0] = '\0';
     ui->profile_id[0] = ui->profile_name[0] = ui->validation_message[0] = '\0';
     ui->session_present = auth_has_session(client);
     ui->focus = url && *url ? 1 : 0;
@@ -1606,6 +1773,21 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
             ui.focus = FIELD_COUNT;
             auth_connect_ws(client);
         }
+        if (before != AUTH_PASSWORD_UPDATED && auth_get_state(client) == AUTH_PASSWORD_UPDATED &&
+            ui.resetting) {
+            /* Back to login with the username kept aside; the link is erased. */
+            clear_passwords(&ui);
+            swap_reset_field(&ui, false);
+            ui.registering = ui.mode_changed = ui.server_password_error = false;
+            ui.validation_message[0] = '\0';
+            ui.focus = ui.values[1].length ? 2 : 1;
+            if (!layout(&ui)) {
+                result = 1;
+                break;
+            }
+            if (ui.form)
+                select_focus(&ui, ui.focus);
+        }
         if (before != AUTH_REGISTERED && auth_get_state(client) == AUTH_REGISTERED) {
             clear_passwords(&ui);
             ui.registering = ui.mode_changed = ui.server_password_error = false;
@@ -1621,7 +1803,9 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         if (auth_has_session(client))
             ui.session_present = true;
         if (ui.session_present && !auth_has_session(client) && !auth_busy(client)) {
-            if (auth_get_state(client) == AUTH_IDLE)
+            /* Signing out and a password change both end the session here. */
+            if (auth_get_state(client) == AUTH_IDLE ||
+                auth_get_state(client) == AUTH_PASSWORD_UPDATED)
                 instances_detach(connections, client);
             ui.session_present = false;
             redraw = true;
@@ -1683,7 +1867,6 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
             continue;
         }
         if (type == KEY_CODE_YES && key == KEY_PASTE_END) {
-            static const size_t limits[FIELD_COUNT] = {2048, 256, 1024, 1024, 1024};
             ui.paste = false;
             if (ui.help.open) {
                 help_paste(&ui.help, &ui.paste_data);
@@ -1694,8 +1877,11 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
                 text_buffer *buffer = &ui.values[ui.focus];
                 size_t lo = buffer->cursor, hi = lo;
                 text_selection(buffer, &lo, &hi);
-                if (buffer->length - (hi - lo) + ui.paste_data.text.length > limits[ui.focus])
+                if (buffer->length - (hi - lo) + ui.paste_data.text.length >
+                    field_limit(&ui, ui.focus))
                     ui.paste_data.truncated = true;
+                if (ui.focus <= 1)
+                    ui.reset_confirmed = false;
                 if (!text_paste_commit(&ui.paste_data, buffer))
                     snprintf(ui.validation_message, sizeof(ui.validation_message),
                              "Colagem excede o limite do campo; texto preservado.");
@@ -1841,6 +2027,8 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         if (enter) {
             if (ui.focus == EXTRA_FOCUS)
                 extra_action(&ui, client);
+            else if (ui.focus == RESET_FOCUS)
+                reset_action(&ui, client);
             else
                 submit(&ui, client);
             continue;
@@ -1854,6 +2042,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
     destroy_layout(&ui);
     erase_text((char *)ui.saved, sizeof(ui.saved));
     erase_text((char *)ui.values, sizeof(ui.values));
+    erase_text(ui.reset_user, sizeof(ui.reset_user));
     text_paste_cancel(&ui.paste_data);
     clipboard_shutdown();
     text_input_terminal_active(false);

@@ -6,13 +6,15 @@
 #include "ui/components/tabs.h"
 #include "ui/input/text.h"
 #include <ncurses.h>
-/* Settings open on the first tab, Perfil. Aparência holds the app modes. */
+/* Settings open on the first tab, Perfil. Aparência holds the app modes;
+ * Conta changes the account's password on the active server. */
 enum {
     SETTINGS_PROFILE,
     SETTINGS_APPEARANCE,
     SETTINGS_AUDIO,
     SETTINGS_ACCESSIBILITY,
     SETTINGS_SHORTCUTS,
+    SETTINGS_ACCOUNT,
     SETTINGS_SECTIONS
 };
 /* Perfil fields, in display order. */
@@ -47,16 +49,22 @@ typedef struct {
     settings_pick pick;          /* Taken by the view, which opens the file picker. */
     int cursor_y, cursor_x;
     bool cursor;
+    /* Conta: the new password and its confirmation, masked and erased on close. */
+    auth_client *auth; /* Borrowed, like profile. */
+    text_buffer account[2];
+    int account_first[2], account_item, account_y[2];
+    bool account_confirm, account_sent;
+    unsigned account_seen; /* Outcome shown in the last draw. */
 } app_settings;
 void settings_open(app_settings *settings, const profile_config *config, voice_client *voice,
-                   history *profile, const char *server);
+                   history *profile, auth_client *auth, const char *server);
 void settings_close(app_settings *settings);
 void settings_draw(app_settings *settings);
 void settings_key(app_settings *settings, profile_config *config, int type, uint32_t key);
 /* Refreshes the Perfil fields from the server copy; true when a redraw is due. */
 bool settings_poll(app_settings *settings);
-/* Places the terminal cursor in the focused Perfil field. */
+/* Places the terminal cursor in the focused Perfil or Conta field. */
 bool settings_cursor(const app_settings *settings);
-/* Inserts pasted text into the focused Perfil field; false when none is focused. */
+/* Inserts pasted text into the focused Perfil or Conta field; false when none is focused. */
 bool settings_paste(app_settings *settings, text_paste *paste);
 #endif

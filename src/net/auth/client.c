@@ -19,6 +19,7 @@ void auth_internal_forget_inputs(auth_client *client)
     auth_internal_erase_free(&client->username);
     auth_internal_erase_free(&client->password);
     auth_internal_erase_free(&client->server_password);
+    auth_internal_erase_free(&client->new_password);
 }
 
 void auth_internal_clear_cookies(auth_client *client)
@@ -67,6 +68,8 @@ void auth_internal_clear_identity(auth_client *client)
     client->ws_epoch = 0;
     client->ws_requested = false;
     client->user[0] = client->user_id[0] = '\0';
+    client->password_outcome = AUTH_PASSWORD_NONE;
+    client->password_notice[0] = '\0';
     auth_internal_erase_free(&client->refresh_cookie);
     ++client->generation;
 }
@@ -313,6 +316,7 @@ void auth_cancel(auth_client *client)
         return;
     }
     bool unknown_registration = client->operation == AUTH_REGISTER && client->attached;
+    bool unknown_reset = client->operation == AUTH_PASSWORD_RESET && client->attached;
     client->server_password_error = false;
     ws_abort(client->websocket);
     auth_internal_detach(client);
@@ -327,7 +331,9 @@ void auth_cancel(auth_client *client)
     client->input_error = AUTH_INPUT_NONE;
     snprintf(client->message, sizeof(client->message), "%s",
              unknown_registration ? "Envio cancelado. Tente entrar antes de repetir o cadastro."
-                                  : "Conexão cancelada.");
+             : unknown_reset
+                 ? "Envio cancelado. Tente entrar com a nova senha antes de usar o link de novo."
+                 : "Conexão cancelada.");
 }
 
 void auth_destroy(auth_client *client)
@@ -362,7 +368,7 @@ bool auth_busy(const auth_client *client)
            client->state == AUTH_LOGOUT || client->state == AUTH_HEALTH ||
            client->state == AUTH_DISCOVERY_SERVER || client->state == AUTH_REGISTER ||
            client->state == AUTH_REFRESH || client->state == AUTH_API_GET ||
-           client->state == AUTH_MESSAGE_SEND;
+           client->state == AUTH_MESSAGE_SEND || client->state == AUTH_PASSWORD_RESET;
 }
 
 bool auth_renewing(const auth_client *client)
@@ -385,6 +391,11 @@ const char *auth_message(const auth_client *client)
         return "Entrando na sua conta…";
     case AUTH_REGISTER:
         return "Criando sua conta…";
+    case AUTH_PASSWORD_RESET:
+        return "Redefinindo a senha…";
+    case AUTH_PASSWORD_PREPARE:
+    case AUTH_PASSWORD_CHANGE:
+        return "Alterando a senha…";
     case AUTH_REFRESH:
         return "Renovando sua sessão…";
     case AUTH_MESSAGE_SEND:

@@ -64,6 +64,31 @@ and your password. Enter a server password only for private instances.
 Select **Entrar** (Sign in). To create an account, select **Cadastro** (Register)
 and then sign in.
 
+### Reset your password with a link
+
+If you cannot sign in, ask the server administration for a password-reset link.
+It looks like `https://…/passwordchange/…`, works once and expires after a
+while. On the sign-in screen, enter the server URL and select **[Redefinir
+senha]** (Reset password) below the buttons, or reach it with Tab or ↓. The form
+changes to **Link de redefinição** (Reset link), **Nova senha** (New password)
+and **Confirmar nova senha** (Confirm new password). Paste the whole link, or
+only its last part, type the new password twice and select **[Redefinir]**
+(Reset). The password needs 8 or more characters, an uppercase letter and a
+symbol; the server may require more and says so when it refuses one.
+
+If the link names another address than the server URL in the form, the footer
+shows both and nothing is sent. Check the URL, or select **[Redefinir]** again to
+send the link to the server in the form anyway: the link only works on the
+server that created it.
+
+**Senha redefinida** (Password reset) means the new password is in effect: the
+form returns to signing in, with the username you had typed. Sessions of that
+account on other devices are ended. **Link inválido, expirado ou já usado**
+(Invalid, expired or used link) means the link no longer works; ask for a new
+one. If the reset is not confirmed (**Redefinição não confirmada**), try signing
+in with the new password before asking for another link. **[Login]** returns to
+the sign-in form without sending anything; the link is not kept.
+
 **Selecionar perfil** (Select profile) lets you save server names and URLs.
 To open the profile manager directly, run `papo-tui --profiles`.
 Passwords are not stored in the configuration.
@@ -334,7 +359,9 @@ Enter, or click an option:
   administrative requirement and asks for confirmation. The result shows a
   single-use link and its expiration. Choose **Copiar** (Copy) or press Enter
   to copy it. A new link invalidates previous links for that account. Closing
-  the modal discards the displayed link.
+  the modal discards the displayed link. The member uses it with **[Redefinir
+  senha]** on the sign-in screen; see
+  [Reset your password with a link](#reset-your-password-with-a-link).
 
 Your own entry offers only the profile. Administrative actions follow confirmed
 permissions and the server's response. Menus reuse your account's existing
@@ -407,6 +434,29 @@ A change that the server refuses or does not confirm is never repeated
 automatically. When a change is not confirmed (**Alteração não confirmada**),
 the profile is loaded again so you can see what the server kept before trying
 again.
+
+### Change your password
+
+Your password belongs to your account on each server. To change it on the
+server tab that is open, press **Ctrl+S** and choose **Conta** (Account), the
+last tab; ← from **Perfil** reaches it. The tab shows **Sua conta em** (Your
+account on) with the server name and your @username, then **Nova senha** (New
+password) and **Confirmar senha** (Confirm password). Both fields hide what you
+type. The password needs 8 or more characters, an uppercase letter and a symbol.
+
+Press Enter or select **Alterar senha** (Change password). The first press only
+checks the fields and asks for confirmation: the button becomes **Confirmar**
+(Confirm), because the server ends every session of the account, on every
+device, including this one. Select **Confirmar** to send the change. Editing a
+field or closing the window cancels the confirmation.
+
+When the server accepts it, the application returns to the sign-in screen with
+**Senha alterada** (Password changed). Sign in again with the new password; the
+saved session of that server is deleted. If the server refuses the password, the
+reason appears at the bottom of the tab and you stay signed in. A change that is
+not confirmed (**Troca de senha não confirmada**) may still have taken effect: if
+the session ends shortly after, sign in with the new password. A change is never
+repeated automatically.
 
 ## Direct messages
 
@@ -1268,6 +1318,9 @@ above.
   HTTP only on `localhost`, `127.0.0.1` and `[::1]`.
 - **Request limit:** wait for the indicated period and try again.
   Sends are not retried automatically.
+- **Forgot your password:** ask the server administration for a reset link and
+  use **[Redefinir senha]** on the sign-in screen. A link works only once and
+  only on the server that created it.
 - **A Server settings tab is missing:** your account lacks the permission that
   tab needs; ask the server owner. If the panel shows **Atualizando
   permissões…**, wait a moment or press Ctrl+R in the conversation to refresh

@@ -74,6 +74,10 @@ struct auth_client {
     char *username;
     char *password;
     char *server_password;
+    /* Own password change: the new password until the change completes. */
+    char *new_password;
+    auth_password_outcome password_outcome;
+    char password_notice[256];
     char *payload;
     char *response;
     size_t response_length, response_limit;
@@ -98,6 +102,15 @@ void auth_internal_fail(auth_client *client, const char *message);
 bool auth_internal_input_fail(auth_client *client, auth_input_error field, const char *message);
 const char *auth_internal_json_text(json_t *object, const char *key, size_t capacity);
 bool auth_internal_problem_is(auth_client *client, const char *kind);
+/* Copies the problem "detail" (or "title") of the last response without
+ * controls, cut at a UTF-8 boundary; "" when absent. */
+void auth_internal_problem_detail(auth_client *client, char *out, size_t capacity);
+/* Reason for a REST transfer that failed before any HTTP status. */
+const char *auth_internal_connection_message(auth_client *client, CURLcode result);
+void auth_internal_password_complete(auth_client *client, auth_state previous, CURLcode result,
+                                     long status, bool transmitted);
+void auth_internal_reset_complete(auth_client *client, CURLcode result, long status,
+                                  bool transmitted);
 bool auth_internal_registration_valid(auth_client *client, const char *username,
                                       const char *password);
 size_t auth_internal_receive(char *data, size_t size, size_t count, void *context);

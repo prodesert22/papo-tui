@@ -26,6 +26,8 @@ struct history_profile_edit {
     profile_state state;
     char notice[256];
     uint64_t revision, loads;
+    char *password; /* Owned secret until dispatched; erased on release. */
+    bool password_not_started;
 };
 
 static void op_clear(struct profile_op *op)
@@ -67,6 +69,16 @@ static void set_notice(struct history_profile_edit *p, const char *prefix, const
     g_string_free(text, TRUE);
     changed(p);
 }
+static void erase_password(struct history_profile_edit *p)
+{
+    if (!p->password)
+        return;
+    volatile char *secret = p->password;
+    for (size_t i = 0, n = strlen(p->password); i < n; ++i)
+        secret[i] = 0;
+    g_free(p->password);
+    p->password = NULL;
+}
 void history_internal_profile_destroy(history *h)
 {
     struct history_profile_edit *p = h->profile_edit;
@@ -75,9 +87,48 @@ void history_internal_profile_destroy(history *h)
     for (size_t i = 0; i < p->count; ++i)
         op_clear(&p->queue[i]);
     op_clear(&p->sent);
+    erase_password(p);
     json_decref(p->profile);
     free(p);
     h->profile_edit = NULL;
+}
+bool history_password_change(history *h, const char *password)
+{
+    struct history_profile_edit *p = edit(h);
+    if (!p || !password || p->password || !auth_has_session(h->auth) ||
+        auth_password_state(h->auth) == AUTH_PASSWORD_PENDING)
+        return false;
+    p->password = g_strdup(password);
+    p->password_not_started = false;
+    changed(p);
+    return p->password != NULL;
+}
+bool history_password_waiting(history *h)
+{
+    return h->profile_edit && h->profile_edit->password;
+}
+void history_password_cancel(history *h)
+{
+    if (h->profile_edit && h->profile_edit->password) {
+        erase_password(h->profile_edit);
+        changed(h->profile_edit);
+    }
+}
+bool history_password_not_started(history *h)
+{
+    return h->profile_edit && h->profile_edit->password_not_started;
+}
+/* Runs before the other requests: the change replaces this session anyway. */
+bool history_internal_password_dispatch(history *h)
+{
+    struct history_profile_edit *p = h->profile_edit;
+    if (!p || !p->password || h->pending != NONE || auth_busy(h->auth))
+        return false;
+    bool started = auth_change_password(h->auth, p->password);
+    erase_password(p);
+    p->password_not_started = !started && auth_password_state(h->auth) != AUTH_PASSWORD_REFUSED;
+    changed(p);
+    return started;
 }
 bool history_internal_profile_mutating(history *h)
 {

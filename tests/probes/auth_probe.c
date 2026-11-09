@@ -31,10 +31,30 @@ int main(int argc, char **argv)
         curl_global_cleanup();
         return result;
     }
+    if (argc > 2 && strcmp(argv[2], "token") == 0) {
+        char token[257], host[256];
+        bool ok = auth_reset_token(argv[1], token, sizeof(token), host, sizeof(host));
+        printf(ok ? "token=%s host=%s\n" : "invalid\n", token, host);
+        curl_global_cleanup();
+        return 0;
+    }
     auth_client *client = auth_create();
     if (!client)
         return 1;
     const char *mode = argc > 2 ? argv[2] : "";
+    const char *new_password = getenv("PAPO_PROBE_NEW_PASSWORD");
+    new_password = new_password ? new_password : "Renewed!456";
+    if (strcmp(mode, "reset") == 0) {
+        const char *link = getenv("PAPO_PROBE_RESET_LINK");
+        bool started = auth_password_reset(client, argv[1], link ? link : "", new_password, true);
+        finish(client);
+        printf("started=%d updated=%d session=%d input=%d\n%s\n", started,
+               auth_get_state(client) == AUTH_PASSWORD_UPDATED, auth_has_session(client),
+               (int)auth_error_input(client), auth_message(client));
+        auth_destroy(client);
+        curl_global_cleanup();
+        return 0;
+    }
     const char *username = getenv("PAPO_PROBE_USERNAME");
     const char *password = getenv("PAPO_PROBE_PASSWORD");
     const char *server_password = getenv("PAPO_PROBE_SERVER_PASSWORD");
@@ -62,6 +82,14 @@ int main(int argc, char **argv)
     } else {
         finish(client);
         printf("ready=%d\n%s\n", auth_get_state(client) == AUTH_READY, auth_message(client));
+        if (strcmp(mode, "change") == 0 && auth_get_state(client) == AUTH_READY) {
+            bool started = auth_change_password(client, new_password);
+            finish(client);
+            printf("started=%d updated=%d session=%d rejected=%d outcome=%d\n%s\n%s\n", started,
+                   auth_get_state(client) == AUTH_PASSWORD_UPDATED, auth_has_session(client),
+                   auth_session_rejected(client), (int)auth_password_state(client),
+                   auth_message(client), auth_password_notice(client));
+        }
         if (strcmp(mode, "rate") == 0) {
             for (unsigned i = 0; i < 12; ++i) {
                 if (auth_get_state(client) != AUTH_READY)

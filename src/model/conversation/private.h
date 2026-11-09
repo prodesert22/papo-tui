@@ -186,6 +186,7 @@ void history_internal_members_recover(history *h);
 void history_internal_profile_destroy(history *h);
 bool history_internal_profile_mutating(history *h);
 bool history_internal_profile_dispatch(history *h);
+bool history_internal_password_dispatch(history *h);
 void history_internal_profile_response(history *h, json_t *body, long code, bool uncertain);
 void history_internal_server_admin_destroy(history *h);
 bool history_internal_server_admin_mutating(history *h);

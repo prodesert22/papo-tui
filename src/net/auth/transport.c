@@ -79,7 +79,9 @@ bool auth_internal_request(auth_client *client, auth_state state, const char *pa
     client->retry_after = PAPO_RATE_DEFAULT_COOLDOWN_SECONDS;
     /* A fresh HTTP/1.1 connection avoids libcurl's stale-connection/stream
      * retries for this non-idempotent mutation. Other REST calls keep defaults. */
-    bool mutation = state == AUTH_MESSAGE_SEND || state == AUTH_API_MUTATION;
+    bool mutation = state == AUTH_MESSAGE_SEND || state == AUTH_API_MUTATION ||
+                    state == AUTH_PASSWORD_PREPARE || state == AUTH_PASSWORD_CHANGE ||
+                    state == AUTH_PASSWORD_RESET;
     if (curl_easy_setopt(client->easy, CURLOPT_FRESH_CONNECT, mutation ? 1L : 0L) != CURLE_OK ||
         curl_easy_setopt(client->easy, CURLOPT_FORBID_REUSE, mutation ? 1L : 0L) != CURLE_OK ||
         curl_easy_setopt(client->easy, CURLOPT_HTTP_VERSION,
@@ -123,6 +125,9 @@ bool auth_internal_request(auth_client *client, auth_state state, const char *pa
     if (state == AUTH_API_MUTATION &&
         curl_easy_setopt(client->easy, CURLOPT_CUSTOMREQUEST, client->api_method) != CURLE_OK)
         goto error;
+    if (state == AUTH_PASSWORD_CHANGE &&
+        curl_easy_setopt(client->easy, CURLOPT_CUSTOMREQUEST, "PUT") != CURLE_OK)
+        goto error;
     client->permission_serial = permissions_event_serial(client->permissions);
     client->queued = true;
     client->state = state;
@@ -139,6 +144,16 @@ error:
         client->state = AUTH_READY;
         snprintf(client->message, sizeof(client->message), "Não foi possível preparar a operação.");
         return true; /* Accepted with an unsent local rejection. */
+    }
+    if (state == AUTH_PASSWORD_PREPARE || state == AUTH_PASSWORD_CHANGE) {
+        /* Nothing was sent: the session stays, and the change is not repeated. */
+        auth_internal_detach(client);
+        auth_internal_erase_free(&client->new_password);
+        client->state = AUTH_READY;
+        client->password_outcome = AUTH_PASSWORD_REFUSED;
+        snprintf(client->password_notice, sizeof(client->password_notice), "%s",
+                 "Não foi possível preparar a troca de senha.");
+        return false;
     }
     if (state == AUTH_MESSAGE_SEND) {
         auth_internal_detach(client);

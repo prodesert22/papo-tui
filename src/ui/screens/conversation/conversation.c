@@ -124,6 +124,7 @@ static void open_settings(view *ui, const profile_config *config)
     r8_modal_close(ui->r8);
     server_settings_close(&ui->server_settings);
     settings_open(&ui->settings, config, history_voice(ui->model), ui->model,
+                  ui->connections->items[ui->active_tab].auth,
                   ui->connections->items[ui->active_tab].name);
 }
 

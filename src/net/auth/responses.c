@@ -250,10 +250,35 @@ static void complete_whoami(auth_client *client, json_t *body)
     }
 }
 
+const char *auth_internal_connection_message(auth_client *client, CURLcode result)
+{
+    if (client->overflow)
+        return "O servidor enviou uma resposta grande demais.";
+    if (result == CURLE_COULDNT_RESOLVE_HOST)
+        return "Nome do servidor não encontrado (DNS). Confira o host.";
+    if (result == CURLE_COULDNT_RESOLVE_PROXY)
+        return "Não foi possível resolver o proxy (DNS). Confira sua configuração.";
+    if (result == CURLE_COULDNT_CONNECT) {
+        long system_error = 0;
+        curl_easy_getinfo(client->easy, CURLINFO_OS_ERRNO, &system_error);
+        return system_error == ECONNREFUSED
+                   ? "Conexão recusada. Confira o host e a porta."
+                   : "Serviço indisponível ou rede inacessível. Confira host e porta.";
+    }
+    if (result == CURLE_OPERATION_TIMEDOUT)
+        return "O servidor demorou para responder. Tente novamente.";
+    if (result == CURLE_PEER_FAILED_VERIFICATION || result == CURLE_SSL_CONNECT_ERROR ||
+        result == CURLE_SSL_CACERT_BADFILE || result == CURLE_SSL_CERTPROBLEM)
+        return "Falha ao verificar a conexão segura com o servidor.";
+    return "Não foi possível conectar. Confira a URL e tente novamente.";
+}
+
 void auth_internal_complete(auth_client *client, CURLcode result, long status)
 {
     auth_state previous = client->operation;
-    bool transmitted = (previous == AUTH_MESSAGE_SEND || previous == AUTH_API_MUTATION) &&
+    bool transmitted = (previous == AUTH_MESSAGE_SEND || previous == AUTH_API_MUTATION ||
+                        previous == AUTH_PASSWORD_PREPARE || previous == AUTH_PASSWORD_CHANGE ||
+                        previous == AUTH_PASSWORD_RESET) &&
                        auth_internal_send_transmitted(client);
     auth_internal_detach(client);
     if (previous == AUTH_PERMISSION_SERVER || previous == AUTH_PERMISSION_ROLES ||
@@ -267,6 +292,14 @@ void auth_internal_complete(auth_client *client, CURLcode result, long status)
     }
     if (previous == AUTH_API_GET || previous == AUTH_API_MUTATION) {
         complete_api(client, result, status, transmitted);
+        return;
+    }
+    if (previous == AUTH_PASSWORD_PREPARE || previous == AUTH_PASSWORD_CHANGE) {
+        auth_internal_password_complete(client, previous, result, status, transmitted);
+        return;
+    }
+    if (previous == AUTH_PASSWORD_RESET) {
+        auth_internal_reset_complete(client, result, status, transmitted);
         return;
     }
     /* A failed read proves unavailability, not revocation. Preserve an already
@@ -296,24 +329,7 @@ void auth_internal_complete(auth_client *client, CURLcode result, long status)
         return;
     }
     if (result != CURLE_OK) {
-        const char *message = "Não foi possível conectar. Confira a URL e tente novamente.";
-        if (client->overflow)
-            message = "O servidor enviou uma resposta grande demais.";
-        else if (result == CURLE_COULDNT_RESOLVE_HOST)
-            message = "Nome do servidor não encontrado (DNS). Confira o host.";
-        else if (result == CURLE_COULDNT_RESOLVE_PROXY)
-            message = "Não foi possível resolver o proxy (DNS). Confira sua configuração.";
-        else if (result == CURLE_COULDNT_CONNECT) {
-            long system_error = 0;
-            curl_easy_getinfo(client->easy, CURLINFO_OS_ERRNO, &system_error);
-            message = system_error == ECONNREFUSED
-                          ? "Conexão recusada. Confira o host e a porta."
-                          : "Serviço indisponível ou rede inacessível. Confira host e porta.";
-        } else if (result == CURLE_OPERATION_TIMEDOUT)
-            message = "O servidor demorou para responder. Tente novamente.";
-        else if (result == CURLE_PEER_FAILED_VERIFICATION || result == CURLE_SSL_CONNECT_ERROR ||
-                 result == CURLE_SSL_CACERT_BADFILE || result == CURLE_SSL_CERTPROBLEM)
-            message = "Falha ao verificar a conexão segura com o servidor.";
+        const char *message = auth_internal_connection_message(client, result);
         if (previous == AUTH_REGISTER)
             message = "Cadastro não confirmado. Tente entrar antes de enviar novamente.";
         if (status == 401 || status == 403)

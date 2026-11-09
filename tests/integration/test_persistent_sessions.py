@@ -272,6 +272,38 @@ class Persistence(unittest.TestCase):
             self.assertEqual(self.login_count(server), 1)
             t.close()
 
+    def test_password_change_forgets_saved_session(self):
+        self.keyring()
+        with HistoryMock() as server:
+            route = server.api_handler
+
+            def handle(method, path, body):
+                if method == "POST" and path.endswith(f"/users/{uuid(1)}/reset"):
+                    return 200, {"response": "User password is set to reset"}
+                if method == "PUT" and path.endswith(f"/users/{uuid(1)}/password"):
+                    # Every session of the account is revoked, the saved one included.
+                    server.session_cookie = "revoked-by-password-change"
+                    return 200, {"response": "User password updated successfully"}
+                return route(method, path, body)
+
+            server.api_handler = handle
+            t = self.login(server)
+            t.send("\x13")
+            self.wait(t, "Seu perfil em")
+            t.send("\x1bOD")
+            self.wait(t, "Sua conta em")
+            t.send("\x1bOBRenewed!456\x1bOBRenewed!456\n")
+            self.wait(t, "Confirmar")
+            t.send("\n")
+            self.wait(t, "Senha alterada")
+            self.until(t, lambda: not self.state().get("restore_allowed"))
+            t.close()
+            t = self.terminal()
+            self.wait(t, server.url)
+            self.assertIn("URL do servidor", "\n".join(t.screen.display))
+            self.assertEqual(self.login_count(server), 1)
+            t.close()
+
     def test_foreign_snapshot_and_identity_are_rejected(self):
         self.keyring()
         with HistoryMock() as server:

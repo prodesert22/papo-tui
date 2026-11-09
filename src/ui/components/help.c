@@ -165,7 +165,7 @@ static const help_row rows[] = {
     {HELP_FILES, "Esc", "Cancelar a seleção de arquivos"},
     {HELP_SETTINGS, "Tab / ↑↓", "Percorrer as configurações e os modos Normal, Light e Ultralight"},
     {HELP_SETTINGS, "←→ / clique nas abas",
-     "Trocar entre Perfil, Aparência, Áudio, Acessibilidade e Atalhos"},
+     "Trocar entre Perfil, Aparência, Áudio, Acessibilidade, Atalhos e Conta"},
     {HELP_SETTINGS, "Enter / clique", "Aplicar ou cancelar as configurações"},
     {HELP_SETTINGS, "Áudio: ↑↓ / ←→ / Enter",
      "Escolher dispositivos, ajustar volumes, testar o microfone e configurar pressionar para "
@@ -175,6 +175,9 @@ static const help_row rows[] = {
     {HELP_SETTINGS, "Perfil: ↑↓ / Enter",
      "Editar apelido, frases, descrição, status, avatar e banner deste servidor; Enter salva"},
     {HELP_SETTINGS, "Perfil: Shift+Enter", "Quebrar linha na descrição"},
+    {HELP_SETTINGS, "Conta: Alterar senha",
+     "Trocar a senha deste servidor após confirmar; encerra todas as sessões da conta, inclusive "
+     "esta"},
     {HELP_SETTINGS, "Esc / Ctrl+S", "Fechar as configurações"},
     {HELP_SERVER_SETTINGS, "←→ nas abas / clique",
      "Trocar entre Visão geral, Cargos, Canais, Emojis, Membros e Auditoria; só aparecem as "
@@ -210,6 +213,8 @@ static const help_row rows[] = {
     {HELP_LOGIN, "Tab / ↑↓ / Enter",
      "Percorrer os campos e botões; Entrar autentica, Cadastro cria uma conta"},
     {HELP_LOGIN, "Ctrl+N", "Alternar Login/Cadastro quando desconectado"},
+    {HELP_LOGIN, "[Redefinir senha]",
+     "Criar uma nova senha com o link de redefinição recebido da administração"},
     {HELP_LOGIN | HELP_ACCOUNT, "Abas no topo / ← → / Enter",
      "Abrir outro servidor conectado; ↑ ou Shift+Tab a partir do primeiro campo chega às abas"},
     {HELP_LOGIN | HELP_ACCOUNT, "Clique direito / m nas abas",

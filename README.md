@@ -28,6 +28,8 @@ start direct messages and access available member actions.
 Change your own nickname, status, description, avatar and banner on each server
 in **Ctrl+S → Perfil**, or with `/nick`, `/status`, `/bio`, `/avatar` and
 `/banner` in the message box.
+Change your password in **Ctrl+S → Conta**, or set a new one from a reset link
+with **[Redefinir senha]** on the sign-in screen.
 Open **Configurações do servidor** from the server tab's menu to manage the
 server, roles, channels, emojis, members and the audit log; only the tabs your
 permissions allow appear.
