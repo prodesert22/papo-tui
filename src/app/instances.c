@@ -111,6 +111,97 @@ static void voice_sounds(instance_connections *connections)
         account_sound && voice_output_enabled())
         sound_play(sound);
 }
+/* Sanitized plain text of one alert part: controls never reach the desktop. */
+static bool alert_plain(const char *utf8, char output[TEXT_UTF8_BYTES])
+{
+    text_buffer buffer;
+    return text_decode(&buffer, utf8) && text_encode(&buffer, output);
+}
+/* Appends without splitting a UTF-8 sequence; a part that does not fit is cut. */
+static void alert_append(char output[TEXT_UTF8_BYTES], const char *part)
+{
+    size_t used = strlen(output), room = TEXT_UTF8_BYTES - 1 - used, length = strlen(part);
+    if (length > room) {
+        length = room;
+        while (length && ((unsigned char)part[length] & 0xc0) == 0x80)
+            --length;
+    }
+    memcpy(output + used, part, length);
+    output[used + length] = 0;
+}
+/* What a message carries besides text, from the bounded preview kept for it. */
+static bool alert_attachment(const json_t *preview, char output[TEXT_UTF8_BYTES])
+{
+    json_int_t count = json_integer_value(json_object_get(preview, "attachment_count"));
+    if (count < 1)
+        return false;
+    const char *mime = json_string_value(json_object_get(preview, "attachment_mime"));
+    const char *name = json_string_value(json_object_get(preview, "attachment_name"));
+    mime = mime ? mime : "";
+    char label[TEXT_UTF8_BYTES];
+    if (count > 1)
+        snprintf(label, sizeof(label), "%lld anexos", (long long)count);
+    else if (!strncmp(mime, "image/", 6))
+        snprintf(label, sizeof(label), "Imagem");
+    else if (!strncmp(mime, "video/", 6))
+        snprintf(label, sizeof(label), "Vídeo");
+    else if (!strncmp(mime, "audio/", 6))
+        snprintf(label, sizeof(label), "Áudio");
+    else if (name && *name) {
+        char safe[TEXT_UTF8_BYTES];
+        if (!alert_plain(name, safe))
+            return false;
+        snprintf(label, sizeof(label), "Arquivo: %.512s", safe);
+    } else
+        snprintf(label, sizeof(label), "Anexo");
+    *output = 0;
+    alert_append(output, "[");
+    alert_append(output, label);
+    alert_append(output, "]");
+    return true;
+}
+/* "Respondeu a você: texto [Imagem]". Words, attachment and reply are each
+ * optional; a message with none of them still says it is a new message. */
+static bool alert_message_body(const instance_connection *item, inbox *box, const json_t *preview,
+                               const char *content, char output[TEXT_UTF8_BYTES])
+{
+    char text[TEXT_UTF8_BYTES], attachment[TEXT_UTF8_BYTES], reply[TEXT_UTF8_BYTES];
+    text_buffer buffer, projected;
+    if (!text_decode(&buffer, content ? content : ""))
+        return false;
+    text_mentions(&buffer, desktop_mention_username, (void *)item);
+    text_project(&buffer, &projected);
+    if (!text_encode(&projected, text))
+        return false;
+    if (!alert_attachment(preview, attachment))
+        *attachment = 0;
+    *reply = 0;
+    const char *target = json_string_value(json_object_get(preview, "reply_to"));
+    if (target) {
+        const char *author =
+            json_string_value(json_object_get(inbox_message_preview(box, target), "author_id"));
+        const char *name = author && *author ? history_mention_name((void *)item->model, author)
+                                             : NULL;
+        char safe[TEXT_UTF8_BYTES];
+        if (author && !strcmp(author, auth_user_id(item->auth)))
+            snprintf(reply, sizeof(reply), "Respondeu a você");
+        else if (name && alert_plain(name, safe))
+            snprintf(reply, sizeof(reply), "Respondeu a %.512s", safe);
+        else
+            snprintf(reply, sizeof(reply), "Respondeu");
+    }
+    *output = 0;
+    alert_append(output, reply);
+    if (*reply && (*text || *attachment))
+        alert_append(output, ": ");
+    alert_append(output, text);
+    if (*text && *attachment)
+        alert_append(output, " ");
+    alert_append(output, attachment);
+    if (!*output)
+        alert_append(output, "Nova mensagem");
+    return true;
+}
 static void release_model(instance_connections *c, size_t i)
 {
     if (c->visible_auth == c->items[i].auth)
@@ -447,7 +538,7 @@ bool instances_poll(instance_connections *connections, auth_client *active)
                     continue;
                 const char *author = json_string_value(json_object_get(event, "user_id"));
                 char title[2200], safe_title[TEXT_UTF8_BYTES], safe_body[TEXT_UTF8_BYTES];
-                text_buffer buffer, projected;
+                text_buffer buffer;
                 /* A webhook has no author account: its name travels in the
                  * message's external_author, kept in the inbox preview. */
                 const json_t *preview = inbox_message_preview(box, message);
@@ -457,15 +548,13 @@ bool instances_poll(instance_connections *connections, auth_client *active)
                              : history_author(item->model, author ? author : ""));
                 if (!text_decode(&buffer, title) || !text_encode(&buffer, safe_title))
                     continue;
-                const char *body =
-                    device->notification_preview && account->preview
-                        ? json_string_value(json_object_get(event, "message_content"))
-                        : "Nova notificação";
-                if (!text_decode(&buffer, body ? body : ""))
-                    continue;
-                text_mentions(&buffer, desktop_mention_username, item);
-                text_project(&buffer, &projected);
-                if (!text_encode(&projected, safe_body))
+                if (device->notification_preview && account->preview) {
+                    if (!alert_message_body(item, box, preview,
+                                            json_string_value(
+                                                json_object_get(event, "message_content")),
+                                            safe_body))
+                        continue;
+                } else if (!alert_plain("Nova notificação", safe_body))
                     continue;
                 const json_t *created = inbox_message_preview(box, message);
                 const char *at = json_string_value(json_object_get(created, "created_at"));

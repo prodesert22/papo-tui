@@ -385,7 +385,9 @@ static bool presence_set(json_t *map, const json_t *event)
 void inbox_observe_message(inbox *b, const json_t *message)
 {
     bounded_key(b->messages, s(message, "id"), json_object_get(message, "channel_id"));
-    /* Keep only bounded display metadata, never attachments or full content. */
+    /* Keep only bounded display metadata, never full content: whether the
+     * message answers another one and what its first attachment is, so an alert
+     * for a message without text can still say something. */
     json_t *preview = json_pack("{s:s,s:s,s:s,s:s}", "id", s(message, "id"), "channel_id",
                                 s(message, "channel_id"), "author_id", s(message, "author_id"),
                                 "created_at", s(message, "created_at"));
@@ -401,6 +403,17 @@ void inbox_observe_message(inbox *b, const json_t *message)
             if (author)
                 json_object_set_new(preview, "external_author", author);
         }
+    }
+    if (preview && uuid_field(message, "reply_to"))
+        json_object_set(preview, "reply_to", json_object_get(message, "reply_to"));
+    json_t *attachments = json_object_get(message, "attachments");
+    if (preview && json_is_array(attachments) && json_array_size(attachments)) {
+        const json_t *first = json_array_get(attachments, 0);
+        json_object_set_new(preview, "attachment_count", json_integer(json_array_size(attachments)));
+        if (text_field(first, "mime_type", 127, false))
+            json_object_set(preview, "attachment_mime", json_object_get(first, "mime_type"));
+        if (text_field(first, "original_file_name", 255, false))
+            json_object_set(preview, "attachment_name", json_object_get(first, "original_file_name"));
     }
     /* REST can include attribution omitted by a later WS payload for the same
      * message. Keep that name until richer metadata replaces it. */

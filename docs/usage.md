@@ -771,6 +771,19 @@ the stored `@mention(<@uuid>)` token. They use the username, even when the perso
 has a nickname. A user whose username is unavailable appears as
 **@usuário indisponível** (user unavailable); `@everyone` stays unchanged.
 
+A system notification always says what the message carries. A message with
+attachments and no text shows **[Imagem]** (image), **[Vídeo]** (video),
+**[Áudio]** (audio), **[Arquivo: name]** (file) or **[2 anexos]** (two
+attachments) in place of the text, and after the text when there is both. A
+reply starts with **Respondeu a você** (replied to you) when it answers one of
+your messages, **Respondeu a** and the author's name when that message is known,
+or just **Respondeu** (replied), followed by the text and attachment. Only the
+text of the first 512 characters comes with the server's notification, and the
+client does not fetch a message just to describe it: if it never received the
+message itself, the notification shows only the server's text, or **Nova mensagem**
+(new message) when there is none. With previews turned off, every notification
+shows **Nova notificação** (new notification).
+
 Type `:` to open emoji suggestions, then keep typing to filter Unicode and
 server emojis by name or keyword. Use ↑/↓ to choose, Tab or Enter to insert,
 and Esc to dismiss. Confirming a suggestion inserts it without sending the

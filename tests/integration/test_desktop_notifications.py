@@ -408,6 +408,111 @@ class DesktopTests(unittest.TestCase):
             self.assertEqual(server.marked, [])
             self.assertEqual(sum("/messages" in path for _, path, *_ in server.requests), before)
 
+    def attachment(self, mime, name):
+        return dict(
+            id=uuid(700),
+            mime_type=mime,
+            original_file_name=name,
+            size_bytes=10,
+            thumbnail_id=None,
+            created_at="2026-01-01T00:00:00Z",
+            moderation_status="clean",
+        )
+
+    def alert_body(self, server, t, content="", attachments=(), reply_to=None, n=1):
+        """Delivers a message in another channel, then its notification, and returns the body."""
+        from history_mock import OTHER
+
+        message = dict(
+            server.message(n),
+            id=uuid(800 + n),
+            channel_id=OTHER,
+            author_id=AUTHOR,
+            content=content,
+            reply_to=reply_to,
+            attachments=list(attachments),
+        )
+        server.emit(dict(message, type="message"))
+        event = self.event(n, content=content)
+        event["message_id"] = message["id"]
+        server.emit(event)
+        return self.receive(t)["body"]
+
+    def test_a_message_with_only_attachments_says_what_it_carries(self):
+        with R8Mock(count=0) as server:
+            t = self.login(server)
+            t.send("\x1b[O")
+            body = self.alert_body(server, t, attachments=[self.attachment("image/png", "a.png")])
+            self.assertEqual(body, "[Imagem]")
+            body = self.alert_body(
+                server, t, attachments=[self.attachment("video/mp4", "v.mp4")], n=2
+            )
+            self.assertEqual(body, "[Vídeo]")
+            body = self.alert_body(
+                server, t, attachments=[self.attachment("audio/ogg", "a.ogg")], n=3
+            )
+            self.assertEqual(body, "[Áudio]")
+            body = self.alert_body(
+                server,
+                t,
+                attachments=[self.attachment("application/pdf", "relat\x1b]52;c;x\x07ório.pdf")],
+                n=4,
+            )
+            self.assertNotIn("\x1b", body)
+            self.assertNotIn("\x07", body)
+            self.assertTrue(body.startswith("[Arquivo: relat"), body)
+            body = self.alert_body(
+                server,
+                t,
+                attachments=[self.attachment("image/png", "a.png")] * 2,
+                n=5,
+            )
+            self.assertEqual(body, "[2 anexos]")
+            self.assertEqual(server.marked, [])
+
+    def test_text_with_attachments_keeps_both(self):
+        with R8Mock(count=0) as server:
+            t = self.login(server)
+            t.send("\x1b[O")
+            body = self.alert_body(
+                server, t, "Veja isto", [self.attachment("image/jpeg", "b.jpg")]
+            )
+            self.assertEqual(body, "Veja isto [Imagem]")
+
+    def test_replies_are_marked_and_name_who_they_answer_when_known(self):
+        with R8Mock(count=0) as server:
+            from history_mock import OTHER
+
+            t = self.login(server)
+            t.send("\x1b[O")
+            mine = dict(
+                server.message(1), id=uuid(790), channel_id=OTHER, author_id=uuid(1), content="Oi"
+            )
+            server.emit(dict(mine, type="message"))
+            body = self.alert_body(server, t, "Concordo", reply_to=uuid(790))
+            self.assertEqual(body, "Respondeu a você: Concordo")
+            # The answered message was never seen by this client.
+            body = self.alert_body(server, t, "Talvez", reply_to=uuid(791), n=2)
+            self.assertEqual(body, "Respondeu: Talvez")
+            # A reply with nothing but an attachment still reads as a reply.
+            body = self.alert_body(
+                server,
+                t,
+                attachments=[self.attachment("image/png", "a.png")],
+                reply_to=uuid(790),
+                n=3,
+            )
+            self.assertEqual(body, "Respondeu a você: [Imagem]")
+            body = self.alert_body(server, t, reply_to=uuid(791), n=4)
+            self.assertEqual(body, "Respondeu")
+
+    def test_a_message_without_text_or_known_attachments_is_still_announced(self):
+        with R8Mock(count=0) as server:
+            t = self.login(server)
+            t.send("\x1b[O")
+            server.emit(self.event(content=""))
+            self.assertEqual(self.receive(t)["body"], "Nova mensagem")
+
     def test_disabled_and_hidden_preview_preferences(self):
         with R8Mock(count=0) as server:
             t = self.login(server)
