@@ -53,26 +53,26 @@ static const unsigned char dark_rgb[THEME_COLOR_COUNT][3] = {
  * terminal: the accent and status colors are darker so text keeps its
  * contrast, and "white" labels become near-black. */
 static const unsigned char light_rgb[THEME_COLOR_COUNT][3] = {
-    {0xc8, 0xcc, 0xd2}, /* #c8ccd2 canvas */
-    {0xc8, 0xcc, 0xd2}, /* #c8ccd2 panels */
-    {0xb4, 0xb9, 0xc1}, /* #b4b9c1 subtle panel focus */
+    {0xe0, 0xe3, 0xe7}, /* #e0e3e7 canvas */
+    {0xe0, 0xe3, 0xe7}, /* #e0e3e7 panels */
+    {0xcd, 0xd1, 0xd8}, /* #cdd1d8 subtle panel focus */
     {0x16, 0x19, 0x1d}, /* #16191d text */
-    {0x3f, 0x46, 0x4f}, /* #3f464f secondary text */
-    {0x86, 0x42, 0x00}, /* #864200 accent */
-    {0x9e, 0x12, 0x1c}, /* #9e121c errors */
-    {0x0f, 0x5c, 0x26}, /* #0f5c26 success */
-    {0x9c, 0xa3, 0xad}, /* #9ca3ad separators */
-    {0xd6, 0xbf, 0xa0}, /* #d6bfa0 selected conversation */
-    {0xbe, 0xc2, 0xc9}, /* #bec2c9 subtle history focus */
+    {0x48, 0x50, 0x5a}, /* #48505a secondary text */
+    {0x93, 0x4a, 0x00}, /* #934a00 accent */
+    {0xad, 0x16, 0x1f}, /* #ad161f errors */
+    {0x13, 0x69, 0x2c}, /* #13692c success */
+    {0xb2, 0xb8, 0xc1}, /* #b2b8c1 separators */
+    {0xe8, 0xd3, 0xb5}, /* #e8d3b5 selected conversation */
+    {0xd6, 0xd9, 0xdf}, /* #d6d9df subtle history focus */
     {0x00, 0x00, 0x00}, /* #000000 profile labels and controls */
-    {0xd9, 0xaa, 0x6c}, /* #d9aa6c orange profile focus */
-    {0xb5, 0x1a, 0x1a}, /* #b51a1a unread notification dot */
+    {0xeb, 0xc2, 0x8a}, /* #ebc28a orange profile focus */
+    {0xc0, 0x1c, 0x1c}, /* #c01c1c unread notification dot */
 };
 /* xterm-256 approximations, used when the palette cannot be redefined. */
 static const int dark_indexed[THEME_COLOR_COUNT] = {16,  16,  234, 254, 247, 215, 210,
                                                     150, 238, 235, 233, 231, 94,  196};
-static const int light_indexed[THEME_COLOR_COUNT] = {251, 251, 249, 234, 238, 94, 124,
-                                                     22,  246, 180, 250, 16,  179, 124};
+static const int light_indexed[THEME_COLOR_COUNT] = {254, 254, 252, 234, 239, 94, 124,
+                                                     22,  249, 223, 253, 16,  179, 160};
 static const int dark_basic[THEME_COLOR_COUNT] = {
     COLOR_BLACK, COLOR_BLACK, COLOR_BLACK, COLOR_WHITE, COLOR_WHITE,  COLOR_YELLOW, COLOR_RED,
     COLOR_GREEN, COLOR_WHITE, COLOR_BLACK, COLOR_BLACK, COLOR_WHITE,  COLOR_YELLOW, COLOR_RED};
