@@ -7,7 +7,8 @@ import tempfile
 import time
 import unittest
 from wcwidth import wcswidth
-from history_mock import HistoryMock, uuid
+from history_mock import CHANNEL, HistoryMock, uuid
+from realtime_mock import RealtimeMock
 import terminal_interactions as support
 
 CONTENT = bytes(range(256)) * 10  # 2.50 KB of non-text bytes
@@ -15,8 +16,8 @@ NAME = "mouse-scroll-fix-1.0.0.jar"
 
 
 class Downloads(support.MessageInteractions):
-    def serve(self, *, attachments=None, mime="application/java-archive"):
-        server = HistoryMock(count=1)
+    def serve(self, *, attachments=None, mime="application/java-archive", mock=HistoryMock):
+        server = mock(count=1)
         parent = server.route
         files = attachments or [(NAME, CONTENT)]
         server.messages[0]["attachments"] = [
@@ -67,6 +68,31 @@ class Downloads(support.MessageInteractions):
                 button_bg = terminal.screen.buffer[row][column].bg
                 self.assertNotEqual(button_bg, terminal.screen.buffer[row][column - 12].bg)
                 self.assertEqual(server.downloads, [])  # Showing a card never downloads.
+            finally:
+                self.assertTrue(terminal.close())
+
+    def test_moderation_state_from_the_server_appears_on_the_card_at_once(self):
+        with self.serve(mock=RealtimeMock) as server:
+            terminal = self.open(server)
+            try:
+                self.wait(terminal, NAME)
+                self.wait(terminal, "Tempo real conectado")
+                self.assertNotIn("Moderação", self.screen(terminal))
+                requests = sum("/messages" in r[1] for r in server.requests)
+                server.emit(
+                    {
+                        "type": "attachment_moderation_update",
+                        "channel_id": CHANNEL,
+                        "message_id": server.messages[0]["id"],
+                        "attachment_id": uuid(900),
+                        "status": "sensitive",
+                    }
+                )
+                self.wait(terminal, "Moderação: sensitive")
+                # Nothing is reloaded and the card keeps working.
+                self.assertEqual(sum("/messages" in r[1] for r in server.requests), requests)
+                self.assertEqual(server.downloads, [])
+                self.button(terminal)
             finally:
                 self.assertTrue(terminal.close())
 

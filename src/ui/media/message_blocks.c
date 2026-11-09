@@ -154,7 +154,13 @@ uint64_t message_display_revision(void)
 }
 uint64_t message_media_version(const json_t *entry)
 {
-    char *json = json_dumps(entry, JSON_COMPACT | JSON_SORT_KEYS);
+    /* The moderation state is shown beside the file but never changes its
+     * pixels: a live update of it must not drop an open viewer or reload. */
+    json_t *stable = json_is_object(entry) ? json_copy((json_t *)entry) : NULL;
+    if (stable)
+        json_object_del(stable, "moderation_status");
+    char *json = json_dumps(stable ? stable : entry, JSON_COMPACT | JSON_SORT_KEYS);
+    json_decref(stable);
     if (!json)
         return 0;
     uint64_t hash = UINT64_C(14695981039346656037);

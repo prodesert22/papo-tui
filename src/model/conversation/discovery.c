@@ -237,9 +237,11 @@ bool history_internal_discovery_event(history *h, const json_t *event)
          * never assign an unknown UUID to a guessed conversation. */
         history_internal_pins_invalidate(h);
     } else if (h->discovery &&
-               history_internal_contains(h->discovery->pins, !strcmp(type, "message_embeds_update")
-                                                                 ? s(event, "message_id")
-                                                                 : s(event, "id")))
+               history_internal_contains(h->discovery->pins,
+                                         !strcmp(type, "message_embeds_update") ||
+                                                 !strcmp(type, "attachment_moderation_update")
+                                             ? s(event, "message_id")
+                                             : s(event, "id")))
         history_internal_pins_invalidate(h);
     return true;
 }

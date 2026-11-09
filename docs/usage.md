@@ -1062,6 +1062,13 @@ video) appears as a card with a file icon, its name, its size such as
 cannot be drawn on your terminal (Light mode, or a terminal without graphics)
 use the same card. Ultralight mode lists attachments as text, without a button.
 
+The server checks uploaded images for sensitive content some time after the
+message is sent. When it flags one, its card adds **Moderação: sensitive**
+(Moderation: sensitive) and the **Moderação** line in the media viewer's
+**Propriedades** (Properties) panel changes to it, even while the viewer is
+open, without reloading the conversation. A file the server blocks is removed
+with its whole message.
+
 To save a file, click **[ ↓ ]** on its card, or open the message's context
 menu (right-click, or `m` during message navigation) and choose **Baixar
 anexo** (Download attachment). When the message has two attachments the

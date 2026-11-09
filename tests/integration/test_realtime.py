@@ -136,6 +136,76 @@ class RealtimeTests(unittest.TestCase):
             self.assertEqual(result["messages"][-1]["embeds"], [])
             self.assertEqual(sum("/messages" in r[1] for r in server.requests), 1)
 
+    def attachments(self, status):
+        return [
+            {
+                "id": uuid(910 + i),
+                "mime_type": "image/png",
+                "original_file_name": f"imagem{i}.png",
+                "size_bytes": 10,
+                "thumbnail_id": None,
+                "created_at": STAMP,
+                "moderation_status": status,
+            }
+            for i in range(2)
+        ]
+
+    def moderation(self, attachment, status="sensitive", **fields):
+        return dict(
+            {
+                "type": "attachment_moderation_update",
+                "channel_id": CHANNEL,
+                "message_id": uuid(103),
+                "attachment_id": attachment,
+                "status": status,
+            },
+            **fields,
+        )
+
+    def test_attachment_moderation_update_changes_only_its_attachment(self):
+        with RealtimeMock() as server:
+            server.messages[-1]["attachments"] = self.attachments("pending")
+            client = self.observer(server)
+            initial = client.ready()
+            states = lambda r: [a["moderation_status"] for a in r["messages"][-1]["attachments"]]
+            self.assertEqual(states(initial), ["pending", "pending"])
+            result = client.command("event " + json.dumps(self.moderation(uuid(910))))
+            self.assertEqual(states(result), ["sensitive", "pending"])
+            # Another attachment of the same message keeps the earlier state.
+            result = client.command("event " + json.dumps(self.moderation(uuid(911), "clean")))
+            self.assertEqual(states(result), ["sensitive", "clean"])
+            # A confirmation snapshot with older states does not undo the events.
+            result = client.command("confirm " + json.dumps(server.messages[-1]))
+            self.assertEqual(states(result), ["sensitive", "clean"])
+            invalid = (
+                self.moderation(uuid(911), "blocked"),
+                self.moderation(uuid(911), "explícito"),
+                self.moderation("not-a-uuid"),
+                self.moderation(uuid(911), message_id="not-a-uuid"),
+                self.moderation(uuid(911), channel_id="not-a-uuid"),
+                dict(self.moderation(uuid(911)), status=None),
+            )
+            for event in invalid:
+                result = client.command("event " + json.dumps(event))
+                self.assertEqual(states(result), ["sensitive", "clean"], event)
+            # An attachment the message does not have is ignored.
+            result = client.command("event " + json.dumps(self.moderation(uuid(999))))
+            self.assertEqual(states(result), ["sensitive", "clean"])
+            self.assertEqual(sum("/messages" in r[1] for r in server.requests), 1)
+
+    def test_attachment_moderation_update_before_the_message_snapshot(self):
+        with RealtimeMock() as server:
+            server.delay = 0.6
+            server.messages[-1]["attachments"] = self.attachments("pending")
+            client = self.observer(server)
+            self.assertTrue(server.snapshot_started.wait(3))
+            server.emit(self.moderation(uuid(911)))
+            result = client.ready()
+            self.assertEqual(
+                [a["moderation_status"] for a in result["messages"][-1]["attachments"]],
+                ["pending", "sensitive"],
+            )
+
     def test_embed_update_before_message_snapshot_and_after_deletion(self):
         with RealtimeMock() as server:
             server.delay = 0.6

@@ -562,6 +562,26 @@ void media_view_update(media_view *v, const json_t *event)
         return;
     const char *type = json_string_value(json_object_get(event, "type"));
     const char *message = json_string_value(json_object_get(event, "message_id"));
+    if (type && !strcmp(type, "attachment_moderation_update")) {
+        /* The viewer lists the moderation state it opened with; follow the
+         * server's change without reloading the file. */
+        const char *attachment = json_string_value(json_object_get(event, "attachment_id"));
+        const char *state = json_string_value(json_object_get(event, "status"));
+        if (!history_uuid(message) || !history_uuid(attachment) || !state)
+            return;
+        for (int i = 0; i < CACHE_COUNT; ++i) {
+            message_media *item = &v->cache[i].item;
+            if (item->kind == AUTH_MEDIA_ATTACHMENT && !strcmp(item->message, message) &&
+                !strcmp(item->id, attachment))
+                snprintf(item->moderation, sizeof(item->moderation), "%s", state);
+        }
+        message_media *open = &v->selected_item;
+        if (open->kind == AUTH_MEDIA_ATTACHMENT && !strcmp(open->message, message) &&
+            !strcmp(open->id, attachment))
+            snprintf(open->moderation, sizeof(open->moderation), "%s", state);
+        ++v->dimensions_revision;
+        return;
+    }
     json_t *embeds = json_object_get(event, "embeds");
     if (!type || strcmp(type, "message_embeds_update") || !history_uuid(message) ||
         (!json_is_null(embeds) && !json_is_array(embeds)) || json_array_size(embeds) > 10)

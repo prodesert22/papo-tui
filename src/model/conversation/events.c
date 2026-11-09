@@ -15,6 +15,21 @@ bool history_internal_apply_patch(history *h, json_t *message, json_t *patch)
     json_t *embeds = json_object_get(patch, "embeds");
     if (embeds && json_object_set(message, "embeds", embeds))
         return false;
+    /* Moderation states by attachment ID; an attachment the message does not
+     * have (yet) is skipped and applies if it shows up with a later snapshot. */
+    json_t *moderation = json_object_get(patch, "moderation");
+    json_t *attachments = json_object_get(message, "attachments");
+    const char *attachment;
+    json_t *state;
+    json_object_foreach(moderation, attachment, state)
+    {
+        for (size_t i = 0; i < json_array_size(attachments); ++i) {
+            json_t *item = json_array_get(attachments, i);
+            if (!g_strcmp0(history_internal_str(item, "id"), attachment) &&
+                json_object_set(item, "moderation_status", state))
+                return false;
+        }
+    }
     return history_internal_measure_message(h, message, true) != NULL;
 }
 
@@ -246,21 +261,34 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
     bool message = !strcmp(type, "message"), edit = !strcmp(type, "message_edit"),
          del = !strcmp(type, "message_delete");
     bool embeds = !strcmp(type, "message_embeds_update");
+    bool moderation = !strcmp(type, "attachment_moderation_update");
     bool create = !strcmp(type, "channel_create"), update = !strcmp(type, "channel_update"),
          remove = !strcmp(type, "channel_delete");
-    if (!(message || edit || del || embeds || create || update || remove)) {
+    if (!(message || edit || del || embeds || moderation || create || update || remove)) {
         history_internal_event_status(h, "Evento de tempo real não suportado ignorado.",
                                       "Evento ignorado");
         return true;
     }
+    /* These two name their message in message_id, the others in id. */
+    const char *id_field = embeds || moderation ? "message_id" : "id";
     const char *channel = history_internal_str((json_t *)event, "channel_id"),
-               *id = history_internal_str((json_t *)event, embeds ? "message_id" : "id");
+               *id = history_internal_str((json_t *)event, id_field);
     if (!history_internal_string_field((json_t *)event, "channel_id", 36, false) ||
         !history_uuid(channel) ||
-        ((message || edit || del || embeds) &&
-         (!history_internal_string_field((json_t *)event, embeds ? "message_id" : "id", 36,
-                                         false) ||
+        ((message || edit || del || embeds || moderation) &&
+         (!history_internal_string_field((json_t *)event, id_field, 36, false) ||
           !history_uuid(id))))
+        goto invalid;
+    /* blocked never arrives here: the server deletes the message instead. */
+    static const char *const moderation_states[] = {"pending", "processing", "clean", "sensitive",
+                                                    "failed"};
+    const char *attachment = history_internal_str((json_t *)event, "attachment_id");
+    const char *state = history_internal_str((json_t *)event, "status");
+    bool known_state = false;
+    for (size_t i = 0; moderation && state && i < G_N_ELEMENTS(moderation_states); ++i)
+        known_state |= !strcmp(state, moderation_states[i]);
+    if (moderation && (!history_internal_string_field((json_t *)event, "attachment_id", 36, false) ||
+                       !history_uuid(attachment) || !known_state))
         goto invalid;
     if (embeds) {
         json_t *list = json_object_get(event, "embeds");
@@ -272,7 +300,7 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
         json_t *item;
         json_array_foreach(list, i, item) if (!json_is_object(item)) goto invalid;
     }
-    if (embeds && !h->replaying && h->media_update)
+    if ((embeds || moderation) && !h->replaying && h->media_update)
         h->media_update(h->media_context, event);
     if (message && !history_internal_message_valid((json_t *)event, channel))
         goto invalid;
@@ -301,7 +329,7 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
     if (create &&
         (!ctype || (strcmp(ctype, "text") && strcmp(ctype, "voice") && strcmp(ctype, "category"))))
         goto invalid;
-    if (edit || del || embeds)
+    if (edit || del || embeds || moderation)
         history_internal_discovery_event(h, event);
     bool active = !strcmp(channel, history_internal_str(history_channel(h, h->selected), "id")
                                        ? history_internal_str(history_channel(h, h->selected), "id")
@@ -311,7 +339,7 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
     if (!active && !h->replaying) {
         if (message)
             history_internal_stash_touch(h, channel);
-        else if (edit || del || embeds || remove)
+        else if (edit || del || embeds || moderation || remove)
             history_internal_stash_forget(h, channel);
     }
     bool relevant = create || update || remove || active;
@@ -395,7 +423,7 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
         if (author_typing && *author_typing)
             history_internal_typing_remove(h, author_typing);
     }
-    if (edit || del || embeds) {
+    if (edit || del || embeds || moderation) {
         json_t *previous = json_object_get(h->patches, id);
         json_t *existing = json_array_get(h->messages, history_internal_find(h->messages, id));
         if (edit && history_internal_str(existing, "edited_at") &&
@@ -418,6 +446,8 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
         json_t *patch;
         if (del)
             patch = json_null();
+        else if (moderation)
+            patch = json_pack("{s:{s:s}}", "moderation", attachment, state);
         else if (embeds)
             patch = json_is_null(json_object_get(event, "embeds"))
                         ? json_pack("{s:[]}", "embeds")
@@ -431,6 +461,13 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
         json_decref(patch);
         if (copy && !del && json_is_object(previous)) {
             json_t *combined = json_deep_copy(previous);
+            /* States of other attachments of this message stay. */
+            json_t *states = json_object_get(copy, "moderation"),
+                   *kept = json_object_get(combined, "moderation");
+            if (combined && states && json_is_object(kept)) {
+                json_object_update(kept, states);
+                json_object_del(copy, "moderation");
+            }
             if (combined && json_object_update(combined, copy)) {
                 json_decref(combined);
                 combined = NULL;

@@ -1702,6 +1702,54 @@ class MediaTerminal(support.MediaTerminal):
                 finally:
                     self.assertTrue(t.close())
 
+    def test_moderation_update_changes_the_open_viewer_properties(self):
+        from realtime_mock import RealtimeMock
+        from history_mock import CHANNEL
+
+        with RealtimeMock(count=1) as server:
+            server.messages[0]["attachments"] = [
+                {
+                    "id": uuid(901),
+                    "mime_type": "image/png",
+                    "original_file_name": "Fixture",
+                    "size_bytes": len(self.images["png"]),
+                    "moderation_status": "clean",
+                }
+            ]
+            original = server.route
+
+            def route(method, path, body):
+                if "/attachments/" in path:
+                    return 200, self.images["png"], None, None, "image/png"
+                return original(method, path, body)
+
+            server.api_handler = route
+            t = self.open(server, protocol="kitty")
+            try:
+                self.wait_frames(t)
+                t.send("\x0b\n")
+                self.wait(t, "[Info]")
+                t.send("i")
+                self.wait(t, "Propriedades")
+                self.wait(t, "clean")
+                self.wait(t, "Tempo real conectado")
+                requests = sum("/messages" in r[1] for r in server.requests)
+                server.emit(
+                    {
+                        "type": "attachment_moderation_update",
+                        "channel_id": CHANNEL,
+                        "message_id": server.messages[0]["id"],
+                        "attachment_id": uuid(901),
+                        "status": "sensitive",
+                    }
+                )
+                self.wait(t, "sensitive")
+                self.assertNotIn("clean", "\n".join(t.screen.display))
+                self.assertEqual(sum("/messages" in r[1] for r in server.requests), requests)
+                self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), 1)
+            finally:
+                self.assertTrue(t.close())
+
     def test_identical_embed_update_invalidates_pixels_in_history_and_account(self):
         from realtime_mock import RealtimeMock
         from history_mock import CHANNEL
