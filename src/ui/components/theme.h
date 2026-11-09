@@ -61,6 +61,21 @@ typedef struct {
  * mutable palettes, restore saved ncurses values before endwin. */
 void theme_init(ui_theme *theme);
 void theme_restore(ui_theme *theme);
+typedef enum { THEME_PALETTE_DARK, THEME_PALETTE_LIGHT } theme_palette;
+/* Redefines every pair for palette, keeping the pair numbers; cached
+ * renderings that blended the old background must be redrawn. True when the
+ * palette changed. Before theme_init it only selects the palette. */
+bool theme_set_palette(theme_palette palette);
+theme_palette theme_get_palette(void);
+/* Asks the terminal for its background color (OSC 11), once. */
+void theme_probe_background(void);
+/* Consumes an "ESC ] 11 ; rgb:…" reply; false when reply is not one. */
+bool theme_background_reply(const char *reply);
+/* 1 when the terminal background is light, 0 when dark, -1 when unknown:
+ * from the OSC 11 reply, else from COLORFGBG. */
+int theme_terminal_light(void);
+/* Components 0..255: whether that color reads as a light background. */
+bool theme_luminance_light(unsigned red, unsigned green, unsigned blue);
 /* Tagged RGB foreground, preserving the existing background and palette. */
 int theme_rgb_pair(unsigned rgb, int fallback);
 int theme_member_pair(unsigned rgb, int background);

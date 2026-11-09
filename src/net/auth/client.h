@@ -126,6 +126,12 @@ bool auth_has_session(const auth_client *client);
  * it is validated again automatically until the server answers. */
 bool auth_server_unreachable(const auth_client *client);
 const char *auth_user_id(const auth_client *client);
+/* The "settings.config" object of the last verified whoami, borrowed until the
+ * next poll; NULL without a session or before a whoami carried one. Unchecked
+ * remote JSON: read it through model/user_config. */
+const json_t *auth_user_settings(const auth_client *client);
+/* Changes whenever that copy changes, including when the identity is cleared. */
+uint64_t auth_user_settings_revision(const auth_client *client);
 const char *auth_instance_url(const auth_client *client);
 uint64_t auth_context_generation(const auth_client *client);
 /* One renewal at a time, sharing the existing REST queue and request budget. */

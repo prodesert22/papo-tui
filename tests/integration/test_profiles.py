@@ -75,7 +75,7 @@ class ProfilesTests(unittest.TestCase):
                 self.assertEqual(self.probe("list")["app_mode"], "normal")
                 self.assertTrue(self.probe("mode", "light")["ok"])
                 saved = json.loads(self.path.read_text(encoding="utf-8"))
-                self.assertEqual((saved["version"], saved["app_mode"]), (7, "light"))
+                self.assertEqual((saved["version"], saved["app_mode"]), (8, "light"))
                 self.assertEqual(saved["request_burst"], 7 if version >= 2 else 25)
                 self.assertEqual(saved["player_volume"], 50)
                 self.assertEqual(self.probe("list")["app_mode"], "light")
@@ -89,7 +89,7 @@ class ProfilesTests(unittest.TestCase):
         self.assertTrue(self.probe("volume", "80")["ok"])
         self.assertEqual(self.probe("list")["player_volume"], 80)
         saved = json.loads(self.path.read_text())
-        self.assertEqual((saved["version"], saved["player_volume"]), (7, 80))
+        self.assertEqual((saved["version"], saved["player_volume"]), (8, 80))
         self.assertTrue(self.probe("volume", "0")["ok"])
         self.assertTrue(self.probe("volume", "100")["ok"])
         self.assertEqual(self.probe("list")["player_volume"], 100)
@@ -161,6 +161,7 @@ class ProfilesTests(unittest.TestCase):
                 "request_burst",
                 "desktop_notifications",
                 "notification_preview",
+                "notification_sounds",
                 "app_mode",
                 "members_by_status",
                 "player_volume",
@@ -221,7 +222,7 @@ class ProfilesTests(unittest.TestCase):
         self.assertEqual(self.probe("list")["requests_per_second"], 10)
         self.assertEqual(self.path.read_bytes(), before)
         self.assertTrue(self.probe("rate", "2.5", "3")["ok"])
-        self.assertEqual(json.loads(self.path.read_text(encoding="utf-8"))["version"], 7)
+        self.assertEqual(json.loads(self.path.read_text(encoding="utf-8"))["version"], 8)
         restored = self.probe("list")
         self.assertEqual(
             (restored["requests_per_second"], restored["request_burst"], restored["selected"]),
@@ -257,13 +258,37 @@ class ProfilesTests(unittest.TestCase):
         self.assertFalse(loaded["desktop_notifications"])
         self.assertFalse(loaded["notification_preview"])
         valid = json.loads(self.path.read_text(encoding="utf-8"))
-        self.assertEqual(valid["version"], 7)
+        self.assertEqual(valid["version"], 8)
         valid["notification_preview"] = "false"
         self.seed(valid)
         before = self.path.read_bytes()
         self.assertFalse(self.probe("list")["writable"])
         self.assertFalse(self.probe("notifications", "true", "true")["ok"])
         self.assertEqual(before, self.path.read_bytes())
+
+    def test_device_sound_switch_defaults_on_migrates_and_rejects_invalid_values(self):
+        # Version 7 files have no sound switch: sounds stay on until turned off.
+        self.seed(self.configuration())
+        self.assertTrue(self.probe("list")["notification_sounds"])
+        self.assertTrue(self.probe("sounds", "false")["ok"])
+        saved = json.loads(self.path.read_text(encoding="utf-8"))
+        self.assertEqual((saved["version"], saved["notification_sounds"]), (8, False))
+        self.assertFalse(self.probe("list")["notification_sounds"])
+        legacy = dict(saved, version=7)
+        del legacy["notification_sounds"]
+        self.seed(legacy)
+        self.assertTrue(self.probe("list")["notification_sounds"])
+        # A version 8 file must carry the switch, as a boolean.
+        for broken in (
+            {k: v for k, v in saved.items() if k != "notification_sounds"},
+            dict(saved, notification_sounds="false"),
+        ):
+            with self.subTest(broken=broken.get("notification_sounds")):
+                self.seed(broken)
+                before = self.path.read_bytes()
+                self.assertFalse(self.probe("list")["writable"])
+                self.assertFalse(self.probe("sounds", "true")["ok"])
+                self.assertEqual(before, self.path.read_bytes())
 
     def test_invalid_configuration_is_preserved_and_partial_data_discarded(self):
         bad_profile = {"id": "0" * 32, "name": "Valid", "url": "https://example.com"}

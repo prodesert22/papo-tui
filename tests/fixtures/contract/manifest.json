@@ -616,6 +616,72 @@
     "file": "channel_settings_request.json"
   },
   {
+    "name": "whoami_full_settings",
+    "path": "/auth/whoami",
+    "method": "get",
+    "status": 200,
+    "kind": "response",
+    "media": "application/json",
+    "valid": true,
+    "purpose": "Exemplo sintético conforme contrato",
+    "file": "whoami_full_settings.json"
+  },
+  {
+    "name": "user_settings_request",
+    "path": "/users/settings",
+    "method": "put",
+    "status": 200,
+    "kind": "request",
+    "media": "application/json",
+    "valid": true,
+    "purpose": "Exemplo sintético conforme contrato",
+    "file": "user_settings_request.json"
+  },
+  {
+    "name": "user_settings_without_config",
+    "path": "/users/settings",
+    "method": "put",
+    "status": 200,
+    "kind": "request",
+    "media": "application/json",
+    "valid": false,
+    "purpose": "Corpo sem o campo obrigatório config",
+    "file": "user_settings_without_config.json"
+  },
+  {
+    "name": "user_settings_bad_theme",
+    "path": "/users/settings",
+    "method": "put",
+    "status": 200,
+    "kind": "request",
+    "media": "application/json",
+    "valid": false,
+    "purpose": "theme fora do enum é recusado",
+    "file": "user_settings_bad_theme.json"
+  },
+  {
+    "name": "user_settings",
+    "path": "/users/settings",
+    "method": "put",
+    "status": 200,
+    "kind": "response",
+    "media": "application/json",
+    "valid": true,
+    "purpose": "Exemplo sintético conforme contrato",
+    "file": "user_settings.json"
+  },
+  {
+    "name": "user_settings_invalid",
+    "path": "/users/settings",
+    "method": "put",
+    "status": 400,
+    "kind": "response",
+    "media": "application/problem+json",
+    "valid": true,
+    "purpose": "Exemplo sintético conforme contrato",
+    "file": "user_settings_invalid.json"
+  },
+  {
     "name": "problem_400",
     "path": "/auth/login",
     "method": "post",

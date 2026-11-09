@@ -46,7 +46,23 @@ OPERATIONS = {
     "/users/{user_id}/notifications": ["get"],
     "/users/{user_id}/read_notification": ["put"],
     "/channels/{channel_id}/user/{user_id}/settings": ["post"],
+    "/users/settings": ["put"],
     "/ws": ["get"],
+}
+
+# Behavior the specification leaves open, confirmed in the backend source, and
+# how the client handles it without promising more.
+GAPS = {
+    ("/auth/whoami", "get"): [
+        "`settings.config` pode vir parcial (fixture `whoami`): campos ausentes usam os padrões do contrato.",
+        "Não há evento de tempo real para configurações alteradas em outro aparelho; o cliente relê `settings` a cada validação periódica do whoami (15–30 s).",
+    ],
+    ("/users/settings", "put"): [
+        "O backend substitui a configuração inteira: um booleano omitido é gravado como `false` e `theme`, `fontSize` ou `messageDensity` vazios geram 400. O cliente sempre envia a configuração completa, preservando chaves desconhecidas da última cópia do servidor.",
+        "`version` é a versão do esquema (1), não um controle de concorrência: a última gravação vence. O cliente não repete o PUT automaticamente após falha ou resultado incerto.",
+        "O backend não interpreta nenhum campo. No cliente: `theme` e `display` valem para a aba ativa; `notifications.*` filtra avisos, prévia e sons do próprio servidor, combinados com as chaves locais do aparelho; `mentions` controla avisos de menções; `sound` também cobre os sons de chamada de voz.",
+        "`display.fontSize` não se aplica no terminal: é preservado ao salvar, sem controle na interface.",
+    ],
 }
 
 
@@ -90,6 +106,11 @@ def render():
                     "",
                 ]
             )
+            gaps = GAPS.get((path, method), [])
+            if gaps:
+                lines.extend(["Lacunas registradas:", ""])
+                lines.extend("- " + markdown(gap) for gap in gaps)
+                lines.append("")
             parameters = [
                 contract.resolve(p)
                 for p in path_item.get("parameters", []) + operation.get("parameters", [])

@@ -812,7 +812,7 @@ class MediaTerminal(support.MediaTerminal):
                         ):
                             active_title = title
                             if title == "Configurações":
-                                t.send("\x1bOC\x1bOC")
+                                t.send("\x1bOC" * 3)
                                 self.wait(t, "Entrada:")
                             if title == "Notificações":
                                 # Search, keyboard filter/date controls and clearing

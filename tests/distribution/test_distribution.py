@@ -58,7 +58,7 @@ class DistributionTests(unittest.TestCase):
                 "  target_link_libraries(${target} PRIVATE papo_bundle_fixture)\n"
                 "  install(TARGETS ${target} RUNTIME DESTINATION bin)\n"
                 "endforeach()\n"
-                "foreach(target papo_image_codec papo_video_player)\n"
+                "foreach(target papo_image_codec papo_video_player papo_sound_player)\n"
                 "  add_library(${target} MODULE module.c)\n"
                 "  target_link_libraries(${target} PRIVATE papo_bundle_fixture)\n"
                 "endforeach()\n"
@@ -401,7 +401,12 @@ class DistributionTests(unittest.TestCase):
             header = bytearray(64)
             header[:6] = b"\x7fELF\x02\x01"
             struct.pack_into("<H", header, 18, 62)
-            for path in (stage / "bin/papo-tui", modules / "image.so", modules / "video.so"):
+            for path in (
+                stage / "bin/papo-tui",
+                modules / "image.so",
+                modules / "video.so",
+                modules / "sound.so",
+            ):
                 path.write_bytes(header)
             with (
                 patch.object(package.subprocess, "check_output", return_value="papo-tui test\n"),

@@ -123,7 +123,7 @@ static bool decode(profile_config *config, json_t *root)
     if (version == 1) {
         if (json_object_size(root) != 3)
             return false;
-    } else if (version >= 2 && version <= 7) {
+    } else if (version >= 2 && version <= 8) {
         json_t *rate = json_object_get(root, "requests_per_second");
         json_t *burst = json_object_get(root, "request_burst");
         if (json_object_size(root) != (version == 2   ? 5U
@@ -131,7 +131,8 @@ static bool decode(profile_config *config, json_t *root)
                                        : version == 4 ? 8U
                                        : version == 5 ? 9U
                                        : version == 6 ? 10U
-                                                      : 11U) ||
+                                       : version == 7 ? 11U
+                                                      : 12U) ||
             !json_is_number(rate) || !json_is_integer(burst) || json_integer_value(burst) <= 0 ||
             json_integer_value(burst) > UINT_MAX ||
             !net_rate_parameters_valid(json_number_value(rate),
@@ -167,6 +168,12 @@ static bool decode(profile_config *config, json_t *root)
     }
     if (version >= 7 && !audio_config_decode(&config->audio, json_object_get(root, "audio")))
         return false;
+    if (version >= 8) {
+        json_t *sounds = json_object_get(root, "notification_sounds");
+        if (!json_is_boolean(sounds))
+            return false;
+        config->notification_sounds = json_is_true(sounds);
+    }
     json_t *array = json_object_get(root, "profiles");
     json_t *selected = json_object_get(root, "selected_profile");
     if (!json_is_array(array) || json_array_size(array) > PROFILE_LIMIT)
@@ -201,7 +208,8 @@ bool profiles_reload(profile_config *config)
     config->directory = -1;
     config->requests_per_second = PAPO_REQUESTS_PER_SECOND;
     config->request_burst = PAPO_REQUEST_BURST;
-    config->desktop_notifications = config->notification_preview = true;
+    config->desktop_notifications = config->notification_preview = config->notification_sounds =
+        true;
     audio_config_default(&config->audio);
     config->player_volume = PLAYER_VOLUME_DEFAULT;
     player_volume_set(PLAYER_VOLUME_DEFAULT);
@@ -231,7 +239,8 @@ bool profiles_reload(profile_config *config)
         config->selected[0] = '\0';
         config->requests_per_second = PAPO_REQUESTS_PER_SECOND;
         config->request_burst = PAPO_REQUEST_BURST;
-        config->desktop_notifications = config->notification_preview = true;
+        config->desktop_notifications = config->notification_preview = config->notification_sounds =
+            true;
         audio_config_default(&config->audio);
         config->player_volume = PLAYER_VOLUME_DEFAULT;
         player_volume_set(PLAYER_VOLUME_DEFAULT);
@@ -283,12 +292,13 @@ static bool save_locked(profile_config *config)
     }
     json_t *selection = *config->selected ? json_string(config->selected) : json_null();
     json_t *root =
-        selection ? json_pack("{s:i,s:O,s:O,s:f,s:I,s:b,s:b,s:s,s:b,s:i}", "version", 7, "profiles",
-                              array, "selected_profile", selection, "requests_per_second",
-                              config->requests_per_second, "request_burst",
+        selection ? json_pack("{s:i,s:O,s:O,s:f,s:I,s:b,s:b,s:b,s:s,s:b,s:i}", "version", 8,
+                              "profiles", array, "selected_profile", selection,
+                              "requests_per_second", config->requests_per_second, "request_burst",
                               (json_int_t)config->request_burst, "desktop_notifications",
                               config->desktop_notifications, "notification_preview",
-                              config->notification_preview, "app_mode", app_mode_name(config->mode),
+                              config->notification_preview, "notification_sounds",
+                              config->notification_sounds, "app_mode", app_mode_name(config->mode),
                               "members_by_status", config->members_by_status, "player_volume",
                               (json_int_t)config->player_volume)
                   : NULL;
@@ -448,6 +458,14 @@ bool profiles_set_notifications(profile_config *config, bool desktop, bool previ
         return false;
     copy->desktop_notifications = desktop;
     copy->notification_preview = preview;
+    return commit(config, copy);
+}
+bool profiles_set_sounds(profile_config *config, bool sounds)
+{
+    profile_config *copy = candidate(config);
+    if (!copy)
+        return false;
+    copy->notification_sounds = sounds;
     return commit(config, copy);
 }
 

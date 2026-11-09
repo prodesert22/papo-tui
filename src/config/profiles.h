@@ -27,7 +27,8 @@ typedef struct profile_config {
     char selected[PROFILE_ID_BYTES];
     double requests_per_second;
     unsigned request_burst;
-    bool desktop_notifications, notification_preview;
+    /* Switches of this device; the account's own settings must allow it too. */
+    bool desktop_notifications, notification_preview, notification_sounds;
     app_mode mode;
     bool members_by_status;
     int player_volume;
@@ -56,5 +57,6 @@ bool profiles_remove(profile_config *config, const char *id);
 bool profiles_select(profile_config *config, const char *id, bool allow_local_http);
 bool profiles_set_rate(profile_config *config, double requests_per_second, unsigned burst);
 bool profiles_set_notifications(profile_config *config, bool desktop, bool preview);
+bool profiles_set_sounds(profile_config *config, bool sounds);
 
 #endif

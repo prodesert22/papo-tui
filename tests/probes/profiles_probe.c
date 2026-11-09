@@ -151,6 +151,8 @@ int main(int argc, char **argv)
     else if (strcmp(mode, "notifications") == 0 && argc == 4)
         ok = profiles_set_notifications(config, strcmp(argv[2], "true") == 0,
                                         strcmp(argv[3], "true") == 0);
+    else if (strcmp(mode, "sounds") == 0 && argc == 3)
+        ok = profiles_set_sounds(config, strcmp(argv[2], "true") == 0);
     else if (strcmp(mode, "rate") == 0 && argc == 4) {
         json_error_t error;
         json_t *rate = json_loads(argv[2], JSON_DECODE_ANY, &error);
@@ -211,6 +213,9 @@ int main(int argc, char **argv)
         json_object_set_new(result, "members_by_status", json_boolean(config->members_by_status));
     if (result)
         json_object_set_new(result, "player_volume", json_integer(config->player_volume));
+    if (result)
+        json_object_set_new(result, "notification_sounds",
+                            json_boolean(config->notification_sounds));
     json_decref(items);
     profiles_destroy(config);
     int status = emit(result);

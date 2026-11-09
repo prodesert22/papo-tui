@@ -162,11 +162,12 @@ cached_layout *conversation_find_layout(view *ui, size_t index, int width)
     bool continuation =
         !pending && index && message_same_author(conversation_entry(ui, index - 1), m);
     uint64_t assets = chat_assets_emoji_revision(history_assets(ui->model));
+    uint64_t display = message_display_revision();
     if (c->continuation != continuation || c->assets != assets ||
         c->calendar_day != ui->calendar_day || c->cell_width != terminal.cell_width ||
         c->cell_height != terminal.cell_height || c->revision != revision || c->names != names ||
         c->dimensions != dimensions || c->width != width || c->graphics != graphics ||
-        c->reply_revision != reply_revision) {
+        c->reply_revision != reply_revision || c->display != display) {
         conversation_release_layout(ui, c);
         c->height = 0;
         c->continuation = continuation;
@@ -180,6 +181,7 @@ cached_layout *conversation_find_layout(view *ui, size_t index, int width)
         c->width = width;
         c->graphics = graphics;
         c->reply_revision = reply_revision;
+        c->display = display;
     }
     c->used = ++ui->layout_sequence;
     return c;
@@ -267,8 +269,12 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
     if (paint)
         ui->hit_count = 0;
     graphics_terminal terminal = graphics_terminal_get();
+    message_display display = message_display_get();
+    bool avatars = display.avatars;
+    /* Comfortable density keeps the blank row between messages of one author. */
+    bool spaced = display.density == MESSAGE_DENSITY_COMFORTABLE;
     int avatar_rows =
-        terminal.supported && terminal.cell_height > 0
+        avatars && terminal.supported && terminal.cell_height > 0
             ? (MESSAGE_AVATAR_PIXELS + terminal.cell_height - 1) / terminal.cell_height
             : 1;
     int group_start = 0;
@@ -298,13 +304,14 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
                         message_same_author(m, conversation_entry(ui, i + 1));
         bool compact_end = ui->visible == 1 && i + 1 == entries;
         int measured_rows = cached->height;
-        if (!bordered && (followed || compact_end) && measured_rows && cached->tail_gap)
+        if (!bordered && ((followed && !spaced) || compact_end) && measured_rows &&
+            cached->tail_gap)
             --measured_rows;
         if (measured_rows && !followed && !compact_end &&
             total + measured_rows < group_start + avatar_rows)
             measured_rows = group_start + avatar_rows - total;
         bool avatar_visible =
-            !continuation && total < first + ui->visible && total + avatar_rows > first;
+            avatars && !continuation && total < first + ui->visible && total + avatar_rows > first;
         if (cached->height && !anchored &&
             (!paint || (!avatar_visible &&
                         (total + measured_rows <= first || total >= first + ui->visible))) &&
@@ -335,8 +342,9 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
         size_t rows = blocks->count;
         int height = blocks->height;
         /* Continuations share the avatar gutter; pad only the end of a group. */
-        if (!bordered && (followed || compact_end) && rows && !blocks->rows[rows - 1].count &&
-            !blocks->rows[rows - 1].media_count && !blocks->rows[rows - 1].card) {
+        if (!bordered && ((followed && !spaced) || compact_end) && rows &&
+            !blocks->rows[rows - 1].count && !blocks->rows[rows - 1].media_count &&
+            !blocks->rows[rows - 1].card) {
             --rows;
             --height;
         }

@@ -91,7 +91,7 @@ typedef struct {
     bool graphics, tail_gap, continuation;
     int cell_width, cell_height, calendar_day;
     uint64_t assets;
-    uint64_t reply_revision;
+    uint64_t reply_revision, display;
     size_t bytes;
     message_blocks blocks;
 } cached_layout;

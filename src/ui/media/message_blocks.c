@@ -132,6 +132,27 @@ bool message_same_author(const json_t *previous, const json_t *message)
         return false;
     return history_uuid(id) && !strcmp(str(previous, "author_id"), id);
 }
+static message_display display = {MESSAGE_DENSITY_NORMAL, true, true};
+static uint64_t display_revision;
+message_display message_display_get(void)
+{
+    return display;
+}
+bool message_display_set(message_display next)
+{
+    if (next.density > MESSAGE_DENSITY_COMFORTABLE)
+        next.density = MESSAGE_DENSITY_NORMAL;
+    if (next.density == display.density && next.timestamps == display.timestamps &&
+        next.avatars == display.avatars)
+        return false;
+    display = next;
+    ++display_revision;
+    return true;
+}
+uint64_t message_display_revision(void)
+{
+    return display_revision;
+}
 uint64_t message_media_version(const json_t *entry)
 {
     char *json = json_dumps(entry, JSON_COMPACT | JSON_SORT_KEYS);
@@ -980,21 +1001,26 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
     int author_x = graphics && terminal.cell_width > 0
                        ? (MESSAGE_AVATAR_PIXELS + terminal.cell_width - 1) / terminal.cell_width
                        : 6;
-    if (app_mode_get() == APP_MODE_ULTRALIGHT)
+    /* Without avatars the gutter goes too, initials included. */
+    if (app_mode_get() == APP_MODE_ULTRALIGHT || !display.avatars)
         author_x = 0;
     if (author_x > width - 8)
         author_x = width - 8;
     char label[1600];
     if (!continuation) {
-        char timestamp[192];
-        message_time_format(str(m, "created_at"), time(NULL), timestamp, sizeof(timestamp));
-        if (!blank(b, false, false, false, 0))
+        char timestamp[192] = "";
+        if (display.timestamps)
+            message_time_format(str(m, "created_at"), time(NULL), timestamp, sizeof(timestamp));
+        /* Compact density drops the blank row above each author's header. */
+        if (display.density != MESSAGE_DENSITY_COMPACT && !blank(b, false, false, false, 0))
             goto error;
         bool app = history_message_webhook(m);
         /* Optimistic entries carry a local status, shown at the right edge. */
         const char *status = str(m, "_papo_status");
         int status_width = *status ? text_label(NULL, 0, 0, 40, status) : 0;
-        int metadata = text_label(NULL, 0, 0, 200, timestamp) + (*str(m, "edited_at") ? 12 : 3) +
+        bool edited = *str(m, "edited_at");
+        int metadata = (*timestamp ? text_label(NULL, 0, 0, 200, timestamp) + (edited ? 12 : 3)
+                                   : (edited ? 10 : 0)) +
                        (app ? 6 : 0) + (status_width ? status_width + 2 : 0);
         int author_width = width - author_x - metadata;
         if (author_width < 4)
@@ -1017,8 +1043,8 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
         char author_text[TEXT_UTF8_BYTES];
         if (!text_encode(&name, author_text))
             goto error;
-        snprintf(label, sizeof(label), "%.*s%s · %s%s", 1024, author_text, app ? " [APP]" : "",
-                 timestamp, *str(m, "edited_at") ? " · editado" : "");
+        snprintf(label, sizeof(label), "%.*s%s%s%s%s", 1024, author_text, app ? " [APP]" : "",
+                 *timestamp ? " · " : "", timestamp, *str(m, "edited_at") ? " · editado" : "");
         size_t header_end;
         if (!column(b, 0, "header", label, author_x, width - author_x, true, false, 0, &header_end))
             goto error;

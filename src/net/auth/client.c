@@ -70,6 +70,9 @@ void auth_internal_clear_identity(auth_client *client)
     client->user[0] = client->user_id[0] = '\0';
     client->password_outcome = AUTH_PASSWORD_NONE;
     client->password_notice[0] = '\0';
+    json_decref(client->user_settings);
+    client->user_settings = NULL;
+    ++client->user_settings_revision;
     auth_internal_erase_free(&client->refresh_cookie);
     ++client->generation;
 }
@@ -351,6 +354,7 @@ void auth_destroy(auth_client *client)
     curl_share_cleanup(client->cookies);
     curl_free(client->base);
     permissions_destroy(client->permissions);
+    json_decref(client->user_settings);
     free(client->response);
     free(client);
 }
@@ -466,6 +470,16 @@ bool auth_server_unreachable(const auth_client *client)
 const char *auth_user_id(const auth_client *client)
 {
     return auth_has_session(client) ? client->user_id : "";
+}
+
+const json_t *auth_user_settings(const auth_client *client)
+{
+    return client && auth_has_session(client) ? client->user_settings : NULL;
+}
+
+uint64_t auth_user_settings_revision(const auth_client *client)
+{
+    return client ? client->user_settings_revision : 0;
 }
 
 const char *auth_instance_url(const auth_client *client)

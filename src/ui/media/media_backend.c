@@ -1,38 +1,13 @@
 #include "ui/media/media_backend.h"
-#include "platform/runtime.h"
+#include "ui/media/backend_module.h"
 #include <glib.h>
 #include <gmodule.h>
 #include <stdlib.h>
 #include <string.h>
-
-static GModule *open_backend(const char *name)
-{
-    if (!g_module_supported())
-        return NULL;
-    /* Never search the working directory, PATH or a remotely supplied path. */
-    char *executable = papo_executable_path();
-    char *directory = executable ? g_path_get_dirname(executable) : NULL;
-    char *base = directory ? g_path_get_basename(directory) : NULL;
-    char *local = directory ? (!g_strcmp0(base, "papo-backends")
-                                   ? g_build_filename(directory, name, NULL)
-                                   : g_build_filename(directory, "papo-backends", name, NULL))
-                            : NULL;
-    g_free(base);
-    GModule *module = local ? g_module_open(local, G_MODULE_BIND_LOCAL) : NULL;
-    if (!local) {
-        char *installed = g_build_filename(PAPO_BACKEND_INSTALL_DIR, name, NULL);
-        module = g_module_open(installed, G_MODULE_BIND_LOCAL);
-        g_free(installed);
-    }
-    g_free(local);
-    g_free(directory);
-    free(executable);
-    return module;
-}
 static gpointer load_image(gpointer unused)
 {
     (void)unused;
-    GModule *module = open_backend(PAPO_IMAGE_MODULE);
+    GModule *module = backend_module_open(PAPO_IMAGE_MODULE);
     gpointer symbol = NULL;
     image_codec_entry entry = NULL;
     G_STATIC_ASSERT(sizeof(entry) == sizeof(symbol));
@@ -67,7 +42,7 @@ failed:
 static gpointer load_video(gpointer unused)
 {
     (void)unused;
-    GModule *module = open_backend(PAPO_VIDEO_MODULE);
+    GModule *module = backend_module_open(PAPO_VIDEO_MODULE);
     gpointer symbol = NULL;
     video_player_entry entry = NULL;
     G_STATIC_ASSERT(sizeof(entry) == sizeof(symbol));

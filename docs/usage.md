@@ -303,6 +303,86 @@ mute file is damaged, inaccessible, or the client detects a conflicting change
 from another process, it preserves the file and reports that the mute could not
 be saved; fix the file or restart the application after resolving the conflict.
 
+## Appearance, notifications and sounds
+
+Your account on each server keeps its own appearance and notification
+settings. They are saved on that server, so another device signed in to the same
+account uses them too, and each server tab can have different ones. The
+appearance follows the server tab you are looking at; the notifications of each
+server follow that server's account.
+
+### Theme and history display
+
+Press **Ctrl+S** and go to **Aparência** (Appearance). Below the
+[application modes](#application-modes), which belong to this device, are the
+account's settings:
+
+- **Tema** (Theme): **Escuro** (Dark), **Claro** (Light) or **Sistema**
+  (System). System uses the light theme when the terminal reports a light
+  background, and the dark theme otherwise or when the terminal does not say.
+- **Densidade** (Density): **Compacta** (Compact) removes the blank line above
+  each author's messages, **Normal** keeps it, and **Confortável**
+  (Comfortable) also leaves a blank line between messages from the same author.
+- **Mostrar horários** (Show times): the time beside each author's name.
+- **Mostrar avatares** (Show avatars): the picture, or the initials in text
+  mode, to the left of each author's messages. Without avatars, messages start
+  at the left edge.
+
+Use ↑/↓ to select an item and ←/→, Space or Enter to change it, or click it:
+the left half of a choice goes back and the right half goes forward. Select
+**Salvar e aplicar** (Save and apply). The mode applies at once; the account
+part is sent to the server, and the window stays open until the server answers
+with **Configurações da conta salvas.** (Account settings saved). The new
+theme and display then apply. The font size is the terminal's: change it in
+the terminal's own settings.
+
+### Account notifications
+
+The **Notificações** (Notifications) tab in **Ctrl+S** holds the account's
+switches on the active server:
+
+- **Notificações ativadas** (Notifications enabled): system notifications and
+  sounds for this server's alerts. The notification center and the unread
+  indicators keep working when it is off.
+- **Prévia da mensagem** (Message preview): shows the message text in system
+  notifications; without it they say **Nova notificação** (New notification).
+- **Sons** (Sounds): notification and voice call sounds.
+- **Avisar quando mencionarem você** (Notify me when mentioned): alerts for
+  mentions, replies to your messages and `@everyone`. When it is off, they
+  still reach the notification center, without a system notification or sound.
+
+Select an item with ↑/↓ and press Space or Enter, or click it, then select
+**Salvar** (Save). A refused or unconfirmed save shows a message, keeps your
+choices in the window and is never repeated automatically; select **Salvar**
+again to try once more. A change made on another device appears here within
+half a minute.
+
+### This device
+
+Press **Ctrl+D**, then **Preferências** (Preferences), for the switches of this
+device, which apply to every server:
+
+- **Avisos no desktop** (Desktop notifications)
+- **Mostrar prévia** (Show preview)
+- **Sons neste aparelho** (Sounds on this device)
+
+A system notification, its preview or a sound happens only when both the
+account and this device allow it.
+
+### Sounds
+
+Papo TUI plays short sounds of its own:
+
+- a new notification, and a different one when the alert is about you;
+- joining and leaving a voice call;
+- someone else joining or leaving your call's channel.
+
+Alerts that arrive together sound once, with the sound about you first. No
+sound plays for the conversation you are reading in a focused terminal, for a
+muted conversation, or while the call output is silenced next to ⚙. On Linux
+desktops, system notifications ask the desktop not to play its own sound, so
+you do not hear two.
+
 ## Server members and profiles
 
 The conversation header has **🔍** (Search), **📌** (Pinned messages) and **👤**
@@ -1116,9 +1196,13 @@ channel list, to open **Configurações** (Settings), then press → to reach
 Space or Enter to mark it. Select
 **Salvar e aplicar** (Save and apply) to apply and remember your choice.
 **Cancelar** (Cancel), Esc or Ctrl+S closes the window without applying changes.
-From either bottom button, ↑ returns to the mode list. Use ←/→ on the section
-selector to browse the other sections. **Perfil** and **Áudio** have their own
-settings (see [Edit your own profile](#edit-your-own-profile) and
+From either bottom button, ↑ returns to the list. The theme and display items
+below the modes are your account's; see
+[Theme and history display](#theme-and-history-display). Use ←/→ on the section
+selector to browse the other sections. **Perfil**, **Notificações** and
+**Áudio** have their own settings (see
+[Edit your own profile](#edit-your-own-profile),
+[Account notifications](#account-notifications) and
 [Voice calls and audio settings](#voice-calls-and-audio-settings));
 **Acessibilidade** and **Atalhos** are placeholders for future settings and
 currently change nothing.
@@ -1349,6 +1433,18 @@ above.
   (The audio's message is not available). The mini-player keeps working.
 - **Missing media helper or module:** reinstall the complete package. For the
   ZIP, keep the DLLs and the `papo-backends` folder alongside the program.
+- **No notification or call sounds:** check **Sons** in Ctrl+S → Notificações
+  for the server's account, **Sons neste aparelho** in Ctrl+D → Preferências,
+  that the call output is not silenced next to ⚙, and the system's audio
+  output. Sounds need the `papo-backends` folder of the package.
+- **The System theme stays dark on a light terminal:** the terminal did not
+  report its background color. Choose **Claro** (Light) in Ctrl+S → Aparência.
+- **Text is too small or too large:** the font size comes from the terminal;
+  change it there. The server's font size setting does not apply in a terminal.
+- **An account setting was not saved:** the message under the options says
+  whether the server refused it or the result is unknown. Nothing is repeated
+  automatically; reopen the window to see the server's current values before
+  trying again.
 - **Session is not remembered:** unlock the system credential store. Without an
   available store, you must sign in at the next start; cookies are not saved as
   plain text. A second window of the application does not restore or save

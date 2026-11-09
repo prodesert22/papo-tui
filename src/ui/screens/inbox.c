@@ -414,9 +414,10 @@ static void activate(r8_modal *m)
         bool desktop = m->config->desktop_notifications, preview = m->config->notification_preview;
         if (m->focus == 0)
             desktop = !desktop;
-        else
+        else if (m->focus == 1)
             preview = !preview;
-        if (!profiles_set_notifications(m->config, desktop, preview))
+        if (m->focus == 2 ? !profiles_set_sounds(m->config, !m->config->notification_sounds)
+                          : !profiles_set_notifications(m->config, desktop, preview))
             snprintf(m->notice, sizeof(m->notice), "%s", m->config->message);
         else
             m->notice[0] = 0;
@@ -673,8 +674,8 @@ bool r8_modal_key(r8_modal *m, int type, uint32_t key)
                 cycle_filter(m, false);
             else
                 activate(m);
-        } else if (m->prefs && (y == 3 || y == 5)) {
-            m->focus = y == 3 ? 0 : 1;
+        } else if (m->prefs && (y == 3 || y == 5 || y == 7)) {
+            m->focus = (y - 3) / 2;
             activate(m);
         } else if (m->detail && y == getmaxy(m->window) - 4)
             activate(m);
@@ -701,7 +702,7 @@ bool r8_modal_key(r8_modal *m, int type, uint32_t key)
                     break;
                 }
         } else {
-            int n = m->prefs ? 2 : 1;
+            int n = m->prefs ? 3 : 1;
             m->focus = (m->focus + (type == OK ? 1 : n - 1)) % n;
         }
         return true;
@@ -720,8 +721,10 @@ bool r8_modal_key(r8_modal *m, int type, uint32_t key)
         return true;
     }
     if (m->prefs) {
-        if (type == KEY_CODE_YES && (key == KEY_UP || key == KEY_DOWN))
-            m->focus = key == KEY_UP ? 0 : 1;
+        if (type == KEY_CODE_YES && key == KEY_UP && m->focus > 0)
+            --m->focus;
+        else if (type == KEY_CODE_YES && key == KEY_DOWN && m->focus < 2)
+            ++m->focus;
         return true;
     }
     if (m->kind == R8_NOTIFICATIONS && type == KEY_CODE_YES &&
@@ -913,6 +916,15 @@ WINDOW *r8_modal_draw(r8_modal *m)
                     m->config && m->config->notification_preview ? "[x] Mostrar prévia"
                                                                  : "[ ] Mostrar prévia",
                     m->focus == 1 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
+        button_draw(w, 7, 2, width - 4,
+                    m->config && m->config->notification_sounds ? "[x] Sons neste aparelho"
+                                                                : "[ ] Sons neste aparelho",
+                    m->focus == 2 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
+        if (height >= 14) {
+            wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
+            text_label(w, 9, 2, width - 4, "Valem só neste aparelho; Ctrl+S → Notificações");
+            text_label(w, 10, 2, width - 4, "guarda as opções da sua conta em cada servidor.");
+        }
     } else if (m->detail) {
         bool event;
         json_t *n = detail(m, &event);

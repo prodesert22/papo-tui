@@ -5,6 +5,11 @@ chat in channels or direct messages, with message editing, deletion, replies,
 reactions, pinned messages, server message search, notifications, mentions, emojis, GIF search
 and media in supported terminals.
 
+Your account's theme (dark, light or following the terminal), history display
+and notification settings are saved on each server in **Ctrl+S → Aparência** and
+**Ctrl+S → Notificações**, and the client plays short sounds of its own for
+notifications, mentions and voice calls.
+
 Join a voice channel with Enter or a click. The buttons **🔊 🎤** beside the
 gear toggle call audio and microphone independently; text terminals use **♪ ●**.
 Configure devices, volumes, microphone testing and push-to-talk in

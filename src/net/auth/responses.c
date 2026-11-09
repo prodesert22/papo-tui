@@ -216,6 +216,18 @@ static void complete_whoami(auth_client *client, json_t *body)
             auth_permissions_refresh(client);
         snprintf(client->user, sizeof(client->user), "%s", username);
         snprintf(client->user_id, sizeof(client->user_id), "%s", id);
+        /* Settings changed on another device arrive only here: there is no
+         * realtime event for them. A whoami without them keeps the last copy. */
+        json_t *config = json_object_get(json_object_get(body, "settings"), "config");
+        if (json_is_object(config) &&
+            (!client->user_settings || !json_equal(config, client->user_settings))) {
+            json_t *copy = json_deep_copy(config);
+            if (copy) {
+                json_decref(client->user_settings);
+                client->user_settings = copy;
+                ++client->user_settings_revision;
+            }
+        }
         uint64_t now;
         if (!net_now_ms(&now))
             auth_internal_fail(client, "Não foi possível acompanhar a sessão.");

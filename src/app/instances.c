@@ -6,11 +6,14 @@
 #include "app/session_store.h"
 #include "config/profiles.h"
 #include "model/conversation/history.h"
+#include "model/conversation/user_settings.h"
+#include "model/text/mentions.h"
 #include "net/clock.h"
 #include "net/retry.h"
 #include "ui/components/terminal_title.h"
 #include "ui/input/editor.h"
 #include "ui/input/text.h"
+#include "ui/media/sound.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -34,6 +37,79 @@ static const char *desktop_mention_username(void *context, const char *id)
     if (*username)
         return username;
     return !strcmp(id, auth_user_id(item->auth)) ? auth_username(item->auth) : NULL;
+}
+/* The alert is about the signed-in user: a mention, a reply or @everyone. */
+static bool alert_mentions(const instance_connection *item, inbox *box, const json_t *event,
+                           const char *message)
+{
+    const char *self = auth_user_id(item->auth);
+    const json_t *preview = inbox_message_preview(box, message);
+    if (preview)
+        return mention_notifies(preview, self,
+                                json_string_value(json_object_get(preview, "_reply_author")));
+    json_t *alert =
+        json_pack("{s:s?,s:s?}", "author_id", json_string_value(json_object_get(event, "user_id")),
+                  "content", json_string_value(json_object_get(event, "message_content")));
+    bool mention = alert && mention_notifies(alert, self, NULL);
+    json_decref(alert);
+    return mention;
+}
+static bool has_member(const json_t *members, const char *id)
+{
+    size_t i;
+    json_t *member;
+    json_array_foreach(members, i,
+                       member) if (!g_strcmp0(json_string_value(member), id)) return true;
+    return false;
+}
+/* Sounds of the one active call: joining and leaving it, and other people
+ * joining and leaving its channel. They follow the call's account "sound"
+ * setting and this device's switch, not the notification switch. */
+static void voice_sounds(instance_connections *connections)
+{
+    static json_t *members; /* Owned copy of the call's members last seen. */
+    static bool connected;
+    voice_client *voice = voice_active();
+    const instance_connection *item = NULL;
+    for (size_t i = 0; voice && i < connections->count; ++i)
+        if (history_voice(connections->items[i].model) == voice)
+            item = &connections->items[i];
+    bool now = item && voice_get_state(voice) == VOICE_CONNECTED;
+    const json_t *current = now ? voice_members(voice, voice_channel(voice)) : NULL;
+    sound_id sound = SOUND_COUNT;
+    if (now && !connected)
+        sound = SOUND_CALL_JOIN;
+    else if (!now && connected)
+        sound = SOUND_CALL_LEAVE;
+    else if (now) {
+        const char *self = auth_user_id(item->auth);
+        size_t i;
+        json_t *member;
+        json_array_foreach(current, i, member)
+        {
+            const char *id = json_string_value(member);
+            if (id && strcmp(id, self) && !has_member(members, id))
+                sound = SOUND_PEER_JOIN;
+        }
+        if (sound == SOUND_COUNT)
+            json_array_foreach(members, i, member)
+            {
+                const char *id = json_string_value(member);
+                if (id && strcmp(id, self) && !has_member(current, id))
+                    sound = SOUND_PEER_LEAVE;
+            }
+    }
+    /* Leaving is heard with the account the call belonged to; it is gone by now
+     * only when the tab closed, and then the device switch alone decides. */
+    static bool account_sound = true;
+    if (item)
+        account_sound = history_user_config(item->model)->sound;
+    connected = now;
+    json_decref(members);
+    members = current ? json_deep_copy(current) : NULL;
+    if (sound != SOUND_COUNT && connections->config && connections->config->notification_sounds &&
+        account_sound && voice_output_enabled())
+        sound_play(sound);
 }
 static void release_model(instance_connections *c, size_t i)
 {
@@ -329,9 +405,14 @@ bool instances_poll(instance_connections *connections, auth_client *active)
         json_t *event;
         uint64_t now = 0;
         net_now_ms(&now);
+        /* An alert needs both this device and the account to allow it. */
+        const user_config *account = history_user_config(item->model);
+        const profile_config *device = connections->config;
+        bool desktop = device && device->desktop_notifications && account->notifications,
+             sounds =
+                 device && device->notification_sounds && account->notifications && account->sound;
         while ((event = inbox_take_alert(box))) {
-            if (connections->config && connections->config->desktop_notifications &&
-                auth_has_session(auth)) {
+            if ((desktop || sounds) && auth_has_session(auth)) {
                 if (!json_array_size(item->alerts))
                     item->alert_due = now + 2000;
                 if (json_array_size(item->alerts) < 256)
@@ -339,11 +420,13 @@ bool instances_poll(instance_connections *connections, auth_client *active)
             }
             json_decref(event);
         }
-        if (connections->config && !connections->config->desktop_notifications) {
-            json_array_clear(item->alerts);
+        if (!desktop) {
+            if (!sounds)
+                json_array_clear(item->alerts);
             desktop_cancel(connections->desktop, key);
         }
         if (json_array_size(item->alerts) && now >= item->alert_due) {
+            int sound = -1;
             for (size_t j = 0; j < json_array_size(item->alerts); ++j) {
                 event = json_array_get(item->alerts, j);
                 const char *message = json_string_value(json_object_get(event, "message_id"));
@@ -354,6 +437,13 @@ bool instances_poll(instance_connections *connections, auth_client *active)
                     continue;
                 if (connections->visible_auth == auth && *channel &&
                     !strcmp(channel, connections->visible_channel) && text_terminal_focused())
+                    continue;
+                bool mention = alert_mentions(item, box, event, message);
+                if (mention && !account->mentions)
+                    continue;
+                if (sounds && sound != SOUND_MENTION)
+                    sound = mention ? SOUND_MENTION : SOUND_MESSAGE;
+                if (!desktop)
                     continue;
                 const char *author = json_string_value(json_object_get(event, "user_id"));
                 char title[2200], safe_title[TEXT_UTF8_BYTES], safe_body[TEXT_UTF8_BYTES];
@@ -368,7 +458,7 @@ bool instances_poll(instance_connections *connections, auth_client *active)
                 if (!text_decode(&buffer, title) || !text_encode(&buffer, safe_title))
                     continue;
                 const char *body =
-                    connections->config->notification_preview
+                    device->notification_preview && account->preview
                         ? json_string_value(json_object_get(event, "message_content"))
                         : "Nova notificação";
                 if (!text_decode(&buffer, body ? body : ""))
@@ -384,8 +474,11 @@ bool instances_poll(instance_connections *connections, auth_client *active)
                 desktop_queue(connections->desktop, key, safe_title, safe_body, target);
             }
             json_array_clear(item->alerts);
+            if (sound >= 0)
+                sound_play((sound_id)sound);
         }
     }
+    voice_sounds(connections);
     changed |= desktop_poll(connections->desktop);
     char clicked[80], target[DESKTOP_TARGET_BYTES];
     while (desktop_take_activation(connections->desktop, clicked, target)) {

@@ -14,6 +14,7 @@
 #include "platform/terminal_notify.h"
 #include "ui/media/graphics.h"
 #include "ui/media/media_service.h"
+#include "ui/media/sound.h"
 #include "ui/screens/profiles.h"
 #include <stdint.h>
 
@@ -1832,6 +1833,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
             draw(&ui, client);
             graphics_terminal_probe();
             terminal_notify_probe();
+            theme_probe_background();
             redraw = false;
         }
         if (ui.open_chat && !ui.help.open && auth_has_session(client) && !ui.paste &&
@@ -2061,6 +2063,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         auth_destroy(client);
     }
     media_service_stop();
+    sound_shutdown();
     instances_destroy(connections);
     connections = NULL;
     profiles_destroy(config);

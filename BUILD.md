@@ -380,6 +380,16 @@ microphone packet gate and, every 2 seconds, the RTP statistics:
 ICE credentials, DTLS fingerprints, candidate addresses and connection
 addresses are removed. Keep these files under `build/`.
 
+### Notification sounds
+
+The notification and call sounds are synthesized by `tools/sound_assets.py` and
+embedded through the generated `src/ui/media/sound_data.inc`; edit the recipes
+in the script and run `python -m tools.sound_assets` to regenerate it. The
+`sound-assets` test fails while the generated file is out of date. They play
+through the `papo_sound_player` module in `papo-backends`, which keeps libmpv
+out of the main binary. Set `PAPO_SOUND_LOG` to a file path to record one
+`sound=<name>` line per sound; the sounds then play to libmpv's null output.
+
 ### Update test dependencies
 
 `requirements-dev.txt` is the input; the native CI locks include transitive

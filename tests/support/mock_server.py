@@ -92,6 +92,8 @@ class MockServer:
         self.owner_id = "00000000-0000-4000-8000-000000000001"
         self.user_roles = []
         self.roles = []
+        # Optional whoami "settings" ({"version", "config"}); omitted when None.
+        self.user_settings = None
         self.session_cookie = "user-fixture"
         self.refresh_count = 0
         self.api_count = 0
@@ -261,18 +263,18 @@ class MockServer:
                     ):
                         self.respond(401, {"title": "Unauthorized"})
                     else:
-                        self.respond(
-                            200,
-                            {
-                                "id": "wrong-id"
-                                if outer.scenario == "refresh-identity" and outer.refresh_count
-                                else "00000000-0000-4000-8000-000000000001",
-                                "username": outer.username,
-                                "roles": outer.user_roles,
-                                "connection_violation": outer.scenario == "refresh-violation"
-                                and outer.refresh_count > 0,
-                            },
-                        )
+                        identity = {
+                            "id": "wrong-id"
+                            if outer.scenario == "refresh-identity" and outer.refresh_count
+                            else "00000000-0000-4000-8000-000000000001",
+                            "username": outer.username,
+                            "roles": outer.user_roles,
+                            "connection_violation": outer.scenario == "refresh-violation"
+                            and outer.refresh_count > 0,
+                        }
+                        if outer.user_settings is not None:
+                            identity["settings"] = outer.user_settings
+                        self.respond(200, identity)
                 elif self.path.endswith("/roles"):
                     self.respond(200, {"roles": outer.roles})
                 elif self.path.endswith("/channels"):

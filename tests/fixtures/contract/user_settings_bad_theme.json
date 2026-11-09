@@ -1,0 +1,17 @@
+{
+  "config": {
+    "theme": "blue",
+    "notifications": {
+      "enabled": true,
+      "messagePreview": false,
+      "sound": false,
+      "mentions": true
+    },
+    "display": {
+      "fontSize": "medium",
+      "messageDensity": "compact",
+      "showTimestamps": false,
+      "showAvatars": true
+    }
+  }
+}

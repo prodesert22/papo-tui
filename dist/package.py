@@ -100,8 +100,8 @@ def smoke(stage, version, architecture):
             stdout=subprocess.DEVNULL,
         )
     modules = list((binary.parent / "papo-backends").glob("*"))
-    if len([p for p in modules if p.suffix in (".dll", ".so")]) != 2:
-        raise RuntimeError("Installation is missing image/video modules")
+    if len([p for p in modules if p.suffix in (".dll", ".so")]) != 3:
+        raise RuntimeError("Installation is missing image/video/sound modules")
     for module in modules:
         if module.suffix in (".dll", ".so") and binary_arch(module) != architecture:
             raise RuntimeError("Backend architecture mismatch")

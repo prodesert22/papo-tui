@@ -1,4 +1,5 @@
 #include "config/view_state.h"
+#include "model/conversation/user_settings.h"
 #include "platform/terminal_notify.h"
 #include "ui/screens/conversation/private.h"
 
@@ -114,6 +115,29 @@ static void apply_mode(view *ui)
     if (app_mode_get() != APP_MODE_ULTRALIGHT)
         graphics_terminal_probe();
     terminal_notify_probe();
+    theme_probe_background();
+}
+/* Theme and history display follow the account of the active tab; true when
+ * either changed and everything must be drawn again. */
+static bool apply_account_view(view *ui)
+{
+    const user_config *account = history_user_config(ui->model);
+    message_display display = {account->density == USER_DENSITY_COMPACT ? MESSAGE_DENSITY_COMPACT
+                               : account->density == USER_DENSITY_COMFORTABLE
+                                   ? MESSAGE_DENSITY_COMFORTABLE
+                                   : MESSAGE_DENSITY_NORMAL,
+                               account->timestamps, account->avatars};
+    bool changed = message_display_set(display);
+    /* "System" follows the terminal background once it answers; dark until then. */
+    bool light = account->theme == USER_THEME_LIGHT ||
+                 (account->theme == USER_THEME_SYSTEM && theme_terminal_light() == 1);
+    if (theme_set_palette(light ? THEME_PALETTE_LIGHT : THEME_PALETTE_DARK)) {
+        /* Media blends transparent pixels into the old background. */
+        apply_mode(ui);
+        clearok(curscr, TRUE);
+        changed = true;
+    }
+    return changed;
 }
 static void open_settings(view *ui, const profile_config *config)
 {
@@ -528,7 +552,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             scope = DRAW_ALL;
         }
         if (conversation_profile_poll(ui) | settings_poll(&ui->settings) |
-            server_settings_poll(&ui->server_settings)) {
+            server_settings_poll(&ui->server_settings) | apply_account_view(ui)) {
             redraw = true;
             scope = DRAW_ALL;
         }

@@ -445,7 +445,7 @@ class AppModes(unittest.TestCase):
                 )
                 # Placeholder (Acessibilidade): Up from Cancel returns to the
                 # section selector, and Left goes back to Aparência.
-                t.send("\x13" + "\x1bOC" * 3 + "\n\x1bOC\x1bOA" + "\x1bOD" * 2)
+                t.send("\x13" + "\x1bOC" * 4 + "\n\x1bOC\x1bOA" + "\x1bOD" * 3)
                 self.helper.wait(t, "Ultralight")
                 t.send("\x1b")
             finally:
@@ -718,7 +718,7 @@ class AppModes(unittest.TestCase):
                             ):
                                 active_title = title
                                 if title == "Configurações":
-                                    t.send("\x1bOC\x1bOC")
+                                    t.send("\x1bOC" * 3)
                                     self.helper.wait(t, "Entrada:")
                                 if title == "Configurações do servidor ·":
                                     t.send("\x1bOC")
@@ -844,7 +844,8 @@ class AppModes(unittest.TestCase):
     def assert_light_without_normal(self, t, up="\x1bOA", down="\x1bOB"):
         # The Linux console sends CSI arrows; application mode uses SS3.
         screen = self.mode_list(t, "\x1b[C" if up.startswith("\x1b[") else "\x1bOC")
-        self.assertNotIn("Normal", screen)
+        # The Normal mode is not offered; "Densidade: < Normal >" is another item.
+        self.assertNotIn(") Normal", screen)
         self.assertIn("(*) Light", screen)
         self.assertIn("( ) Ultralight", screen)
         # Up from the first listed mode reaches the section tabs, so the hidden
@@ -1046,7 +1047,7 @@ class AppModes(unittest.TestCase):
                 self.assertEqual(saved["audio"]["microphone_volume"], 95)
                 self.assertEqual(saved["audio"]["output_volume"], 95)
                 t.resize(24, 80)
-                t.send("\x13\x1bOC\x1bOC\t\x1bOB\x1bOB\x1bOD\x1b")
+                t.send("\x13\x1bOC\x1bOC\x1bOC\t\x1bOB\x1bOB\x1bOD\x1b")
                 self.helper.wait(t, "draft audio settings")
                 self.assertEqual(json.loads(self.config.read_text())["audio"], saved["audio"])
                 self.assert_no_media_libs(t)
@@ -1159,7 +1160,7 @@ class AppModes(unittest.TestCase):
                 row = next(y for y, line in enumerate(t.screen.display) if "⚙" in line)
                 t.click(row, t.screen.display[row].index("⚙"))
                 self.helper.wait(t, "Configurações")
-                t.send("\x1bOC" * 3)
+                t.send("\x1bOC" * 4)
                 self.helper.wait(t, "Em breve")
                 t.resize(22, 44)
                 self.helper.wait(t, "Configurações")
@@ -1167,7 +1168,7 @@ class AppModes(unittest.TestCase):
                 self.assertEqual(json.loads(self.config.read_text(encoding="utf-8"))["version"], 1)
                 t.resize(24, 80)
                 self.choose(t, "ultralight")
-                self.assertEqual(json.loads(self.config.read_text(encoding="utf-8"))["version"], 7)
+                self.assertEqual(json.loads(self.config.read_text(encoding="utf-8"))["version"], 8)
             finally:
                 self.assertTrue(t.close())
 

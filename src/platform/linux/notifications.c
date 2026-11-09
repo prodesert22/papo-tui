@@ -388,6 +388,9 @@ bool desktop_poll(desktop_notifier *n)
         GVariantBuilder hints;
         g_variant_builder_init(&hints, G_VARIANT_TYPE_VARDICT);
         g_variant_builder_add(&hints, "{sv}", "urgency", g_variant_new_byte(1));
+        /* The client plays its own sound when the account and this device
+         * allow it; the daemon's would double it or ignore those settings. */
+        g_variant_builder_add(&hints, "{sv}", "suppress-sound", g_variant_new_boolean(TRUE));
         *d = (struct delivery){.n = n, .slot = i, .serial = s->serial, .epoch = n->epoch};
         snprintf(d->key, sizeof(d->key), "%.79s", s->key);
         snprintf(d->target, sizeof(d->target), "%s", s->target);

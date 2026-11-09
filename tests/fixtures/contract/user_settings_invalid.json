@@ -1,0 +1,6 @@
+{
+  "type": "https://papo.invalid/errors/invalid-param",
+  "title": "Parâmetro inválido",
+  "status": 400,
+  "detail": "campo ausente ou inválido"
+}

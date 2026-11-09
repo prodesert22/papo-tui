@@ -278,7 +278,7 @@ int graphics_terminal_input(uint32_t *key)
                  * after it and keeps its ordinary meaning. */
                 uint32_t third;
                 int third_type = text_read_raw(&third);
-                if (third_type != OK || third != '9') {
+                if (third_type != OK || (third != '9' && third != '1')) {
                     used = 0;
                     if (third_type == OK)
                         unget_wch(third);
@@ -307,9 +307,11 @@ int graphics_terminal_input(uint32_t *key)
         }
         pending[used++] = (char)*key;
         pending[used] = 0;
-        /* OSC replies are only taken for notifications ("ESC ] 99 ;"), so
-         * Alt+] and other Alt keys keep working. */
-        if (osc ? used <= 5 && pending[used - 1] != "\033]99;"[used - 1]
+        /* OSC replies are only taken for notifications ("ESC ] 99 ;") and the
+         * background color ("ESC ] 11 ;"), so Alt+] and other Alt keys keep
+         * working. */
+        if (osc ? used <= 5 && pending[used - 1] != "\033]99;"[used - 1] &&
+                      pending[used - 1] != "\033]11;"[used - 1]
                 : used == 3 &&
                       (apc ? pending[2] != 'G'
                            : pending[2] != '?' && !(pending[2] >= '0' && pending[2] <= '9'))) {
@@ -323,7 +325,8 @@ int graphics_terminal_input(uint32_t *key)
             apc || osc ? (used > 3 && pending[used - 2] == 27 && *key == '\\') || (osc && *key == 7)
                        : *key >= 0x40 && *key <= 0x7e;
         if (complete && osc) {
-            terminal_notify_reply(pending);
+            if (!theme_background_reply(pending))
+                terminal_notify_reply(pending);
             used = 0;
             continue;
         }

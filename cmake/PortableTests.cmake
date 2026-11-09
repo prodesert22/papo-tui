@@ -21,6 +21,21 @@ target_link_libraries(channel-notifications-test PRIVATE papo_auth)
 papo_add_test(NAME channel-notifications-unit COMMAND channel-notifications-test)
 papo_add_test(NAME terminal-windows-lifecycle COMMAND ${Python3_EXECUTABLE}
               ${PROJECT_SOURCE_DIR}/tests/unit/test_terminal_windows.py)
+add_executable(user-config-test tests/unit/test_user_config.c)
+target_link_libraries(user-config-test PRIVATE papo_auth)
+target_compile_options(user-config-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+papo_add_test(NAME user-config-unit COMMAND user-config-test)
+add_executable(sound-test tests/unit/test_sound.c)
+target_link_libraries(sound-test PRIVATE papo_send_editor)
+target_compile_options(sound-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_dependencies(sound-test papo_sound_player)
+papo_add_test(NAME sound-playback COMMAND sound-test)
+add_executable(theme-background-test tests/unit/test_theme_background.c)
+target_link_libraries(theme-background-test PRIVATE papo_send_editor)
+target_compile_options(theme-background-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+papo_add_test(NAME theme-background-unit COMMAND theme-background-test)
+papo_add_test(NAME sound-assets COMMAND ${Python3_EXECUTABLE}
+              ${PROJECT_SOURCE_DIR}/tools/sound_assets.py --check)
 add_executable(gif-search-test tests/unit/test_gif_search.c)
 target_link_libraries(gif-search-test PRIVATE papo_auth)
 papo_add_test(NAME gif-search-unit COMMAND gif-search-test)
@@ -100,6 +115,9 @@ papo_add_test(NAME profile-edit-terminal COMMAND ${Python3_EXECUTABLE}
               ${PROJECT_SOURCE_DIR}/tests/terminal/test_profile_edit.py $<TARGET_FILE:papo-tui>)
 papo_add_test(NAME password-terminal COMMAND ${Python3_EXECUTABLE}
               ${PROJECT_SOURCE_DIR}/tests/terminal/test_password_terminal.py $<TARGET_FILE:papo-tui>)
+papo_add_test(NAME user-settings-terminal COMMAND ${Python3_EXECUTABLE}
+              ${PROJECT_SOURCE_DIR}/tests/terminal/test_user_settings_terminal.py
+              $<TARGET_FILE:papo-tui>)
 papo_add_test(NAME server-settings-terminal COMMAND ${Python3_EXECUTABLE}
               ${PROJECT_SOURCE_DIR}/tests/terminal/test_server_settings.py $<TARGET_FILE:papo-tui>)
 

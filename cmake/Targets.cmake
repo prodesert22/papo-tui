@@ -23,6 +23,7 @@ add_library(
     src/net/auth/validation.c
     src/net/auth/password.c
     src/model/permissions.c
+    src/model/user_config.c
     src/net/auth/permissions.c
     src/model/text/mentions.c
     src/model/assets/catalog.c
@@ -46,6 +47,7 @@ add_library(
     src/model/conversation/discovery.c
     src/model/conversation/members.c
     src/model/conversation/profile_edit.c
+    src/model/conversation/user_settings.c
     src/model/conversation/server_admin.c
     src/model/conversation/directory.c
     src/model/conversation/events.c
@@ -125,11 +127,18 @@ add_library(
     src/platform/file_transfer.c
     src/platform/${PAPO_PLATFORM}/file_transfer.c
     src/platform/${PAPO_PLATFORM}/clipboard.c
+    src/ui/media/backend_module.c
+    src/ui/media/sound.c
     src/app/instances.c)
 target_link_libraries(
     papo_send_editor PUBLIC papo_outbox papo_sessions papo_desktop PkgConfig::NCURSES
-                            PkgConfig::UNIBREAK PkgConfig::GLIB)
+                            PkgConfig::UNIBREAK PkgConfig::GLIB PkgConfig::GMODULE)
 target_compile_options(papo_send_editor PRIVATE -Wall -Wextra -Wpedantic -Werror)
+# Sounds load their module lazily; the module is built alongside the client.
+target_compile_definitions(
+    papo_send_editor
+    PRIVATE PAPO_SOUND_MODULE="$<TARGET_FILE_NAME:papo_sound_player>"
+            PAPO_BACKEND_INSTALL_DIR="${CMAKE_INSTALL_FULL_BINDIR}/papo-backends")
 if(WIN32)
     target_link_libraries(papo_send_editor PRIVATE ole32 shell32 uuid windowscodecs)
 endif()
@@ -150,7 +159,12 @@ add_library(papo_video_player MODULE src/ui/media/video_player.c)
 target_include_directories(papo_video_player PRIVATE src)
 target_link_libraries(papo_video_player PRIVATE PkgConfig::NCURSES PkgConfig::GMODULE
                                                 PkgConfig::MPV PkgConfig::SWSCALE PkgConfig::AVUTIL)
-foreach(target papo_image_codec papo_video_player)
+# Plays the client's own notification and call sounds without linking libmpv
+# into the main binary.
+add_library(papo_sound_player MODULE src/ui/media/sound_player.c)
+target_include_directories(papo_sound_player PRIVATE src)
+target_link_libraries(papo_sound_player PRIVATE PkgConfig::GMODULE PkgConfig::MPV)
+foreach(target papo_image_codec papo_video_player papo_sound_player)
     set_target_properties(
         ${target}
         PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/papo-backends"
@@ -169,6 +183,7 @@ add_executable(
     src/ui/media/media_service_worker.c
     src/ui/media/media_wire.c
     src/ui/media/media_backend.c
+    src/ui/media/backend_module.c
     src/ui/media/graphics_encode.c
     src/ui/media/graphics_buffer.c
     src/ui/media/sixel_encode.c
@@ -268,6 +283,7 @@ target_compile_definitions(papo-tui
                            PRIVATE PAPO_NATIVE_FILE_DIALOGS=$<BOOL:${PAPO_NATIVE_FILE_DIALOGS}>)
 target_link_libraries(papo-tui PRIVATE papo_media PkgConfig::FORM PkgConfig::NCURSES
                                        PkgConfig::UNIBREAK)
+add_dependencies(papo-tui papo_sound_player)
 
 foreach(target papo_auth papo-tui)
     target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Werror)

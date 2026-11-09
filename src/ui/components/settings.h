@@ -2,15 +2,19 @@
 #define PAPO_SETTINGS_H
 #include "config/profiles.h"
 #include "model/conversation/profile_edit.h"
+#include "model/conversation/user_settings.h"
 #include "net/voice/client.h"
 #include "ui/components/tabs.h"
 #include "ui/input/text.h"
 #include <ncurses.h>
-/* Settings open on the first tab, Perfil. Aparência holds the app modes;
- * Conta changes the account's password on the active server. */
+/* Settings open on the first tab, Perfil. Aparência holds the app modes (this
+ * device) and the theme and display of the account on the active server;
+ * Notificações holds that account's notification settings; Conta changes the
+ * account's password on the active server. */
 enum {
     SETTINGS_PROFILE,
     SETTINGS_APPEARANCE,
+    SETTINGS_NOTIFICATIONS,
     SETTINGS_AUDIO,
     SETTINGS_ACCESSIBILITY,
     SETTINGS_SHORTCUTS,
@@ -55,6 +59,12 @@ typedef struct {
     int account_first[2], account_item, account_y[2];
     bool account_confirm, account_sent;
     unsigned account_seen; /* Outcome shown in the last draw. */
+    /* Account settings: the draft, the server copy it was filled from, and
+     * whether a save of it is on its way. */
+    user_config user, user_base;
+    uint64_t user_revision;
+    bool user_sent;
+    int appearance_first, notify_selection;
 } app_settings;
 void settings_open(app_settings *settings, const profile_config *config, voice_client *voice,
                    history *profile, auth_client *auth, const char *server);

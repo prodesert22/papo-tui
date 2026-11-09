@@ -358,6 +358,7 @@ void history_destroy(history *h)
     save_reads(h);
     history_internal_members_destroy(h);
     history_internal_profile_destroy(h);
+    history_internal_user_settings_destroy(h);
     history_internal_server_admin_destroy(h);
     if (h->pending != NONE)
         auth_cancel_read(h->auth);
@@ -907,6 +908,13 @@ static int process_response(history *h, uint64_t maintenance_now)
         h->pending = NONE;
         return 3;
     }
+    if (h->pending == USER_SETTINGS) {
+        if (generation == h->context && h->request_context == h->context)
+            history_internal_user_settings_response(h, body, code, uncertain);
+        json_decref(body);
+        h->pending = NONE;
+        return 3;
+    }
     if (h->pending == SERVER_ADMIN) {
         if (generation == h->context && h->request_context == h->context)
             history_internal_server_admin_response(h, body, code, uncertain);
@@ -1070,6 +1078,7 @@ bool history_poll(history *h)
         history_internal_actions_destroy(h);
         history_internal_members_destroy(h);
         history_internal_profile_destroy(h);
+        history_internal_user_settings_destroy(h);
         history_internal_server_admin_destroy(h);
         save_reads(h);
         h->read_loaded = h->read_dirty = h->read_save_failed = false;
@@ -1216,6 +1225,8 @@ bool history_poll(history *h)
         if (history_internal_read_dispatch(h))
             return true;
         if (history_internal_profile_dispatch(h))
+            return true;
+        if (history_internal_user_settings_dispatch(h))
             return true;
         if (history_internal_server_admin_dispatch(h))
             return true;

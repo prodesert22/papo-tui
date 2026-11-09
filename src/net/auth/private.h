@@ -78,6 +78,10 @@ struct auth_client {
     char *new_password;
     auth_password_outcome password_outcome;
     char password_notice[256];
+    /* Copy of whoami "settings.config" for this identity; NULL until a
+     * whoami carries one. The revision changes only when the copy does. */
+    json_t *user_settings;
+    uint64_t user_settings_revision;
     char *payload;
     char *response;
     size_t response_length, response_limit;

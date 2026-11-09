@@ -335,6 +335,71 @@ def build_cases():
         {"notification_settings": "off"},
         request=True,
     )
+    user_config = {
+        "theme": "light",
+        "notifications": {
+            "enabled": True,
+            "messagePreview": False,
+            "sound": False,
+            "mentions": True,
+        },
+        "display": {
+            "fontSize": "medium",
+            "messageDensity": "compact",
+            "showTimestamps": False,
+            "showAvatars": True,
+        },
+    }
+    add(
+        "whoami_full_settings",
+        "/auth/whoami",
+        "get",
+        {**user, "settings": {"version": 1, "config": user_config}},
+    )
+    add(
+        "user_settings_request",
+        "/users/settings",
+        "put",
+        {"config": user_config},
+        request=True,
+    )
+    add(
+        "user_settings_without_config",
+        "/users/settings",
+        "put",
+        {"theme": "dark"},
+        request=True,
+        valid=False,
+        purpose="Corpo sem o campo obrigatório config",
+    )
+    add(
+        "user_settings_bad_theme",
+        "/users/settings",
+        "put",
+        {"config": {**user_config, "theme": "blue"}},
+        request=True,
+        valid=False,
+        purpose="theme fora do enum é recusado",
+    )
+    add(
+        "user_settings",
+        "/users/settings",
+        "put",
+        {"user_id": USER, "version": 1, "config": user_config, "updated_at": DATE},
+    )
+    add(
+        "user_settings_invalid",
+        "/users/settings",
+        "put",
+        {
+            "type": "https://papo.invalid/errors/invalid-param",
+            "title": "Parâmetro inválido",
+            "status": 400,
+            "detail": "campo ausente ou inválido",
+        },
+        400,
+        media="application/problem+json",
+    )
     for status, path, method in [
         (400, "/auth/login", "post"),
         (401, "/auth/whoami", "get"),

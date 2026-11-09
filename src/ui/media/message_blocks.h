@@ -103,6 +103,22 @@ uint64_t message_media_version(const json_t *entry);
  * author identity, sent at most one hour apart. Webhook display overrides
  * remain distinct. */
 bool message_same_author(const json_t *previous, const json_t *message);
+/* How the history shows messages: the display settings of the account on the
+ * active server tab. Process-wide, like the app mode. */
+typedef enum {
+    MESSAGE_DENSITY_COMPACT,
+    MESSAGE_DENSITY_NORMAL,
+    MESSAGE_DENSITY_COMFORTABLE
+} message_density;
+typedef struct {
+    message_density density;
+    bool timestamps, avatars;
+} message_display;
+message_display message_display_get(void);
+/* True when the display changed; cached layouts must then be rebuilt. */
+bool message_display_set(message_display display);
+/* Changes with every message_display_set that changed something. */
+uint64_t message_display_revision(void);
 bool message_blocks_build(message_blocks *out, json_t *message, const char *author,
                           const char *reply, int width, bool graphics);
 bool message_blocks_build_sized(message_blocks *out, json_t *message, const char *author,

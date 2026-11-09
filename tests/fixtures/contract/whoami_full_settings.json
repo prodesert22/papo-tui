@@ -1,0 +1,25 @@
+{
+  "id": "00000000-0000-0000-0000-000000000001",
+  "username": "fixture_alice",
+  "nickname": null,
+  "roles": [],
+  "created_at": "2026-10-12T12:00:00Z",
+  "settings": {
+    "version": 1,
+    "config": {
+      "theme": "light",
+      "notifications": {
+        "enabled": true,
+        "messagePreview": false,
+        "sound": false,
+        "mentions": true
+      },
+      "display": {
+        "fontSize": "medium",
+        "messageDensity": "compact",
+        "showTimestamps": false,
+        "showAvatars": true
+      }
+    }
+  }
+}

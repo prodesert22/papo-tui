@@ -18,13 +18,14 @@ static int first_mode(app_settings *s)
         s->selection = APP_MODE_LIGHT;
     return APP_MODE_LIGHT;
 }
-static const char *sections[SETTINGS_SECTIONS] = {"Perfil",         "Aparência", "Áudio",
-                                                  "Acessibilidade", "Atalhos",   "Conta"};
+static const char *sections[SETTINGS_SECTIONS] = {
+    "Perfil", "Aparência", "Notificações", "Áudio", "Acessibilidade", "Atalhos", "Conta"};
 /* Sections that have controls between the tabs and the buttons. */
 static bool has_content(int section)
 {
     return section == SETTINGS_APPEARANCE || section == SETTINGS_PROFILE ||
-           section == SETTINGS_AUDIO || section == SETTINGS_ACCOUNT;
+           section == SETTINGS_NOTIFICATIONS || section == SETTINGS_AUDIO ||
+           section == SETTINGS_ACCOUNT;
 }
 /* Password text never outlives the window. */
 static void account_erase(app_settings *s)
@@ -72,6 +73,8 @@ void settings_open(app_settings *s, const profile_config *config, voice_client *
     s->selection = config->mode;
     s->audio = s->original_audio = config->audio;
     s->voice = voice;
+    s->user = s->user_base = *history_user_config(profile);
+    s->user_revision = history_user_settings_revision(profile);
     tab_strip_reset(&s->tabs);
     voice_refresh_devices(voice);
     voice_ptt(false);
@@ -259,7 +262,250 @@ bool settings_poll(app_settings *s)
                             : 0u;
     changed |= seen != s->account_seen;
     s->account_seen = seen;
+    uint64_t user_revision = history_user_settings_revision(s->profile);
+    if (user_revision != s->user_revision) {
+        s->user_revision = user_revision;
+        changed = true;
+        user_settings_state state = history_user_settings_state(s->profile);
+        bool edited = !user_config_equal(&s->user, &s->user_base);
+        /* An untouched draft follows the server, including changes made on
+         * another device; a confirmed save adopts what the server kept. A
+         * refused or unconfirmed one keeps the draft for another try. */
+        if (!history_user_settings_busy(s->profile) &&
+            (!edited || (s->user_sent && state == USER_SETTINGS_SAVED)))
+            s->user = s->user_base = *history_user_config(s->profile);
+        if (state != USER_SETTINGS_SAVING)
+            s->user_sent = false;
+    }
     return changed;
+}
+/* Aparência: the modes of this device, then the account's theme and display. */
+enum { ITEM_THEME = 3, ITEM_DENSITY, ITEM_TIMESTAMPS, ITEM_AVATARS, APPEARANCE_ITEMS };
+static const char *const theme_labels[] = {"Escuro", "Claro", "Sistema"};
+static const char *const density_labels[] = {"Compacta", "Normal", "Confortável"};
+/* Account items need the active server's model. */
+static int appearance_last(const app_settings *s)
+{
+    return s->profile ? APPEARANCE_ITEMS - 1 : 2;
+}
+static void appearance_label(app_settings *s, int item, char *label, size_t size)
+{
+    switch (item) {
+    case ITEM_THEME:
+        snprintf(label, size, "Tema: < %s >", theme_labels[s->user.theme]);
+        break;
+    case ITEM_DENSITY:
+        snprintf(label, size, "Densidade: < %s >", density_labels[s->user.density]);
+        break;
+    case ITEM_TIMESTAMPS:
+        snprintf(label, size, "[%c] Mostrar horários", s->user.timestamps ? 'x' : ' ');
+        break;
+    case ITEM_AVATARS:
+        snprintf(label, size, "[%c] Mostrar avatares", s->user.avatars ? 'x' : ' ');
+        break;
+    default:
+        snprintf(label, size, "(%c) %s", s->draft == (app_mode)item ? '*' : ' ',
+                 item == 0   ? "Normal"
+                 : item == 1 ? "Light"
+                             : "Ultralight");
+    }
+}
+static const char *appearance_description(app_settings *s)
+{
+    if (s->selection < ITEM_THEME)
+        return app_mode_description((app_mode)(s->focus == 1 ? s->selection : (int)s->draft));
+    if (s->selection == ITEM_THEME)
+        return "Sistema segue a cor de fundo do terminal. Salvo na sua conta deste servidor.";
+    if (s->selection == ITEM_DENSITY)
+        return "Espaço entre as mensagens do histórico. Salvo na sua conta deste servidor.";
+    return "Vale para esta aba de servidor. Salvo na sua conta deste servidor.";
+}
+/* Rows available for the list, which scrolls on short terminals. */
+static int appearance_rows(int height)
+{
+    int rows = height - 8 - (height >= 16 ? 3 : 0);
+    return rows < 1 ? 1 : rows;
+}
+static void appearance_draw(app_settings *s, WINDOW *w, int height, int width)
+{
+    int first = first_mode(s), last = appearance_last(s), rows = appearance_rows(height);
+    if (s->selection > last)
+        s->selection = last;
+    if (s->appearance_first < first)
+        s->appearance_first = first;
+    if (s->selection < s->appearance_first)
+        s->appearance_first = s->selection;
+    if (s->selection >= s->appearance_first + rows)
+        s->appearance_first = s->selection - rows + 1;
+    char label[160];
+    int row = 0;
+    for (int item = s->appearance_first; item <= last && row < rows; ++item, ++row) {
+        bool focused = s->focus == 1 && s->selection == item;
+        wattrset(w, COLOR_PAIR(focused ? THEME_FOCUSED : THEME_PANEL) |
+                        (focused && !has_colors() ? A_REVERSE : 0));
+        appearance_label(s, item, label, sizeof(label));
+        text_label(w, 5 + row, 2, width - 4, label);
+    }
+    if (height < 16)
+        return;
+    text_buffer description;
+    text_layout measured;
+    wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
+    if (text_decode(&description, appearance_description(s))) {
+        text_measure(&description, width - 6, &measured);
+        text_draw(w, &description, &measured, 0, 3, 6 + row, 3);
+    }
+}
+static void cycle(int *value, int count, int direction)
+{
+    *value = (*value + (direction < 0 ? count - 1 : 1)) % count;
+}
+/* Changes the item under selection; modes are only chosen, never cycled. */
+static void appearance_adjust(app_settings *s, int direction, bool choose)
+{
+    int value;
+    switch (s->selection) {
+    case ITEM_THEME:
+        value = (int)s->user.theme;
+        cycle(&value, 3, direction);
+        s->user.theme = (user_theme)value;
+        break;
+    case ITEM_DENSITY:
+        value = (int)s->user.density;
+        cycle(&value, 3, direction);
+        s->user.density = (user_density)value;
+        break;
+    case ITEM_TIMESTAMPS:
+        s->user.timestamps = !s->user.timestamps;
+        break;
+    case ITEM_AVATARS:
+        s->user.avatars = !s->user.avatars;
+        break;
+    default:
+        if (choose)
+            s->draft = (app_mode)s->selection;
+        return;
+    }
+    s->error[0] = 0;
+}
+static void appearance_key(app_settings *s, int type, uint32_t key)
+{
+    bool enter =
+        (type == OK && (key == '\r' || key == '\n')) || (type == KEY_CODE_YES && key == KEY_ENTER);
+    if (type == KEY_CODE_YES && key == KEY_UP) {
+        if (s->selection <= first_mode(s))
+            s->focus = 0;
+        else
+            --s->selection;
+    } else if (type == KEY_CODE_YES && key == KEY_DOWN) {
+        if (s->selection >= appearance_last(s))
+            s->focus = 2;
+        else
+            ++s->selection;
+    } else if (type == KEY_CODE_YES && (key == KEY_LEFT || key == KEY_RIGHT)) {
+        if (s->selection >= ITEM_THEME)
+            appearance_adjust(s, key == KEY_LEFT ? -1 : 1, false);
+    } else if (enter || (type == OK && key == ' '))
+        appearance_adjust(s, 1, true);
+}
+static void appearance_click(app_settings *s, int y, int x)
+{
+    int item = s->appearance_first + y - 5;
+    if (y < 5 || y >= 5 + appearance_rows(getmaxy(s->window)) || item > appearance_last(s))
+        return;
+    s->selection = item;
+    s->focus = 1;
+    appearance_adjust(s, x < getmaxx(s->window) / 2 ? -1 : 1, true);
+}
+/* Notificações: the account's switches; this device keeps its own in Ctrl+D. */
+#define NOTIFY_ITEMS 4
+static bool *notify_value(app_settings *s, int item)
+{
+    return item == 0   ? &s->user.notifications
+           : item == 1 ? &s->user.preview
+           : item == 2 ? &s->user.sound
+                       : &s->user.mentions;
+}
+static void notifications_draw(app_settings *s, WINDOW *w, int height, int width)
+{
+    static const char *const labels[NOTIFY_ITEMS] = {"Notificações ativadas", "Prévia da mensagem",
+                                                     "Sons", "Avisar quando mencionarem você"};
+    wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
+    char label[256];
+    snprintf(label, sizeof(label), "Sua conta em %s", *s->server ? s->server : "este servidor");
+    text_label(w, 5, 2, width - 4, label);
+    if (!s->profile) {
+        text_label(w, 7, 2, width - 4, "Indisponível sem um servidor conectado.");
+        return;
+    }
+    for (int i = 0; i < NOTIFY_ITEMS && 7 + i < height - 4; ++i) {
+        bool focused = s->focus == 1 && s->notify_selection == i;
+        wattrset(w, COLOR_PAIR(focused ? THEME_FOCUSED : THEME_PANEL) |
+                        (focused && !has_colors() ? A_REVERSE : 0));
+        snprintf(label, sizeof(label), "[%c] %s", *notify_value(s, i) ? 'x' : ' ', labels[i]);
+        text_label(w, 7 + i, 2, width - 4, label);
+    }
+    if (height < 18)
+        return;
+    text_buffer description;
+    text_layout measured;
+    wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
+    if (text_decode(&description,
+                    "Cada aparelho também tem chaves próprias em Ctrl+D → Preferências; um aviso "
+                    "ou som só acontece quando a conta e o aparelho permitem.")) {
+        text_measure(&description, width - 6, &measured);
+        text_draw(w, &description, &measured, 0, 3, 12, 3);
+    }
+}
+static void notifications_key(app_settings *s, int type, uint32_t key)
+{
+    bool enter =
+        (type == OK && (key == '\r' || key == '\n')) || (type == KEY_CODE_YES && key == KEY_ENTER);
+    if (type == KEY_CODE_YES && key == KEY_UP) {
+        if (!s->notify_selection)
+            s->focus = 0;
+        else
+            --s->notify_selection;
+    } else if (type == KEY_CODE_YES && key == KEY_DOWN) {
+        if (!s->profile || s->notify_selection == NOTIFY_ITEMS - 1)
+            s->focus = 2;
+        else
+            ++s->notify_selection;
+    } else if (s->profile && (enter || (type == OK && key == ' ') ||
+                              (type == KEY_CODE_YES && (key == KEY_LEFT || key == KEY_RIGHT)))) {
+        bool *value = notify_value(s, s->notify_selection);
+        *value = !*value;
+        s->error[0] = 0;
+    }
+}
+static void user_notice_draw(app_settings *s, WINDOW *w, int height, int width)
+{
+    user_settings_state state = history_user_settings_state(s->profile);
+    const char *notice = history_user_settings_notice(s->profile);
+    if (!*notice)
+        return;
+    wattrset(w, COLOR_PAIR(state == USER_SETTINGS_FAILED || state == USER_SETTINGS_UNCERTAIN
+                               ? THEME_ERROR
+                           : state == USER_SETTINGS_SAVED ? THEME_SUCCESS
+                                                          : THEME_PANEL_MUTED));
+    text_label(w, height - 3, 2, width - 4, notice);
+}
+/* Queues the account draft; false when there is nothing to send. */
+static bool user_save(app_settings *s)
+{
+    if (!s->profile || user_config_equal(&s->user, history_user_config(s->profile)))
+        return false;
+    if (history_user_settings_busy(s->profile)) {
+        snprintf(s->error, sizeof(s->error), "Aguarde a alteração anterior terminar.");
+        return true;
+    }
+    if (!history_user_settings_save(s->profile, &s->user)) {
+        snprintf(s->error, sizeof(s->error), "Sem conexão com o servidor; tente novamente.");
+        return true;
+    }
+    s->error[0] = 0;
+    s->user_sent = true;
+    return true;
 }
 static void profile_notice_draw(app_settings *s, WINDOW *w, int height, int width)
 {
@@ -703,38 +949,10 @@ void settings_draw(app_settings *s)
     wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
     text_label(w, 1, 2, width - 4, "Configurações");
     tabs_draw(s, w, width);
-    char label[160];
     if (s->section == SETTINGS_APPEARANCE) {
-        int first = first_mode(s);
-        for (int i = first; i < 3; ++i) {
-            int step = height >= 18 ? 3 : 1;
-            int row = 5 + (i - first) * step;
-            wattrset(w,
-                     COLOR_PAIR(s->focus == 1 && s->selection == i ? THEME_FOCUSED : THEME_PANEL) |
-                         (!has_colors() && s->focus == 1 && s->selection == i ? A_REVERSE : 0));
-            snprintf(label, sizeof(label), "(%c) %s", s->draft == (app_mode)i ? '*' : ' ',
-                     i == 0   ? "Normal"
-                     : i == 1 ? "Light"
-                              : "Ultralight");
-            text_label(w, row, 2, width - 4, label);
-            wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
-            if (height >= 18) {
-                text_buffer description;
-                text_layout measured;
-                if (text_decode(&description, app_mode_description((app_mode)i))) {
-                    text_measure(&description, width - 6, &measured);
-                    text_draw(w, &description, &measured, 0, 2, row + 1, 3);
-                }
-            }
-        }
-        if (height < 18) {
-            text_buffer description;
-            text_layout measured;
-            if (text_decode(&description, app_mode_description((app_mode)s->selection))) {
-                text_measure(&description, width - 6, &measured);
-                text_draw(w, &description, &measured, 0, height - 10, 8, 3);
-            }
-        }
+        appearance_draw(s, w, height, width);
+    } else if (s->section == SETTINGS_NOTIFICATIONS) {
+        notifications_draw(s, w, height, width);
     } else if (s->section == SETTINGS_AUDIO) {
         audio_draw(s, w, height, width);
     } else if (s->section == SETTINGS_PROFILE) {
@@ -752,13 +970,19 @@ void settings_draw(app_settings *s)
         profile_notice_draw(s, w, height, width);
     else if (s->section == SETTINGS_ACCOUNT)
         account_notice_draw(s, w, height, width);
-    bool profile = s->section == SETTINGS_PROFILE, account = s->section == SETTINGS_ACCOUNT;
+    else if (s->profile &&
+             (s->section == SETTINGS_APPEARANCE || s->section == SETTINGS_NOTIFICATIONS))
+        user_notice_draw(s, w, height, width);
+    bool profile = s->section == SETTINGS_PROFILE, account = s->section == SETTINGS_ACCOUNT,
+         notifications = s->section == SETTINGS_NOTIFICATIONS;
     button_draw(w, height - 2, 2, 18,
-                profile   ? "Salvar perfil"
-                : account ? s->account_confirm ? "Confirmar" : "Alterar senha"
-                          : "Salvar e aplicar",
+                profile         ? "Salvar perfil"
+                : account       ? s->account_confirm ? "Confirmar" : "Alterar senha"
+                : notifications ? "Salvar"
+                                : "Salvar e aplicar",
                 s->focus == 2 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
-    button_draw(w, height - 2, width - 14, 12, profile || account ? "Fechar" : "Cancelar",
+    button_draw(w, height - 2, width - 14, 12,
+                profile || account || notifications ? "Fechar" : "Cancelar",
                 s->focus == 3 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     wnoutrefresh(w);
 }
@@ -772,10 +996,18 @@ static void save(app_settings *s, profile_config *config)
         account_submit(s);
         return;
     }
+    if (s->section == SETTINGS_NOTIFICATIONS) {
+        if (!user_save(s))
+            snprintf(s->error, sizeof(s->error), "Nenhuma alteração para salvar.");
+        return;
+    }
     if (profiles_set_settings(config, s->draft, &s->audio)) {
         s->applied = true;
+        s->original_audio = s->audio;
         voice_configure(&s->audio);
-        settings_close(s);
+        /* The account part answers later: stay open to show its outcome. */
+        if (!(s->section == SETTINGS_APPEARANCE && user_save(s)))
+            settings_close(s);
     } else
         snprintf(s->error, sizeof(s->error), "%s", config->message);
 }
@@ -903,12 +1135,15 @@ void settings_key(app_settings *s, profile_config *config, int type, uint32_t ke
                 audio_adjust(s, x < getmaxx(s->window) / 2 ? -1 : 1);
             }
         } else if (s->section == SETTINGS_APPEARANCE && y >= 5 &&
-                   y < 5 + (3 - first_mode(s)) * (getmaxy(s->window) >= 18 ? 3 : 1)) {
-            s->selection = first_mode(s) + (y - 5) / (getmaxy(s->window) >= 18 ? 3 : 1);
-            if (s->selection > 2)
-                s->selection = 2;
-            s->draft = (app_mode)s->selection;
+                   y < 5 + appearance_rows(getmaxy(s->window))) {
+            appearance_click(s, y, x);
+        } else if (s->section == SETTINGS_NOTIFICATIONS && s->profile && y >= 7 &&
+                   y < 7 + NOTIFY_ITEMS && y < getmaxy(s->window) - 4) {
+            s->notify_selection = y - 7;
             s->focus = 1;
+            bool *value = notify_value(s, s->notify_selection);
+            *value = !*value;
+            s->error[0] = 0;
         } else if (y == getmaxy(s->window) - 2) {
             if (x >= 2 && x < 20)
                 save(s, config);
@@ -959,18 +1194,10 @@ void settings_key(app_settings *s, profile_config *config, int type, uint32_t ke
             }
             return;
         }
-        if (type == KEY_CODE_YES && (key == KEY_UP || key == KEY_DOWN)) {
-            if (key == KEY_UP && s->selection <= first_mode(s))
-                s->focus = 0;
-            else {
-                s->selection += (key == KEY_UP ? -1 : 1);
-                if (s->selection > 2) {
-                    s->selection = 2;
-                    s->focus = 2;
-                }
-            }
-        } else if (enter || (type == OK && key == ' '))
-            s->draft = (app_mode)s->selection;
+        if (s->section == SETTINGS_NOTIFICATIONS)
+            notifications_key(s, type, key);
+        else
+            appearance_key(s, type, key);
     } else if (type == KEY_CODE_YES && key == KEY_UP) {
         s->focus = has_content(s->section) ? 1 : 0;
     } else if (enter) {

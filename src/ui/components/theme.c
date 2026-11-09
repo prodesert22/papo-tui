@@ -1,8 +1,18 @@
 #include "ui/components/theme.h"
 
+#include <glib.h>
 #include <ncurses.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#include <io.h>
+#define isatty _isatty
+#define STDIN_FILENO 0
+#define STDOUT_FILENO 1
+#else
+#include <unistd.h>
+#endif
 
 #define FIRST_CUSTOM_COLOR 240
 
@@ -23,7 +33,7 @@ enum {
     NOTIFICATION_RED
 };
 
-static const unsigned char rgb[THEME_COLOR_COUNT][3] = {
+static const unsigned char dark_rgb[THEME_COLOR_COUNT][3] = {
     {0x00, 0x00, 0x00}, /* #000000 canvas */
     {0x00, 0x00, 0x00}, /* #000000 panels; keep focus colors distinct */
     {0x1d, 0x20, 0x26}, /* #1d2026 subtle panel focus */
@@ -39,6 +49,41 @@ static const unsigned char rgb[THEME_COLOR_COUNT][3] = {
     {0x50, 0x38, 0x1f}, /* #50381f dark orange profile focus */
     {0xff, 0x00, 0x00}, /* #ff0000 unread notification dot */
 };
+/* Same roles on a white canvas: the accent and status colors are darker so
+ * text keeps its contrast, and "white" labels become near-black. */
+static const unsigned char light_rgb[THEME_COLOR_COUNT][3] = {
+    {0xff, 0xff, 0xff}, /* #ffffff canvas */
+    {0xff, 0xff, 0xff}, /* #ffffff panels */
+    {0xe6, 0xe8, 0xec}, /* #e6e8ec subtle panel focus */
+    {0x1f, 0x23, 0x28}, /* #1f2328 text */
+    {0x59, 0x63, 0x6e}, /* #59636e secondary text */
+    {0xa8, 0x55, 0x00}, /* #a85500 accent */
+    {0xc4, 0x1d, 0x2a}, /* #c41d2a errors */
+    {0x1a, 0x7f, 0x37}, /* #1a7f37 success */
+    {0xd0, 0xd7, 0xde}, /* #d0d7de separators */
+    {0xfb, 0xe7, 0xcf}, /* #fbe7cf selected conversation */
+    {0xf3, 0xf4, 0xf6}, /* #f3f4f6 subtle history focus */
+    {0x00, 0x00, 0x00}, /* #000000 profile labels and controls */
+    {0xff, 0xd6, 0xa5}, /* #ffd6a5 light orange profile focus */
+    {0xd7, 0x26, 0x26}, /* #d72626 unread notification dot */
+};
+/* xterm-256 approximations, used when the palette cannot be redefined. */
+static const int dark_indexed[THEME_COLOR_COUNT] = {16,  16,  234, 254, 247, 215, 210,
+                                                    150, 238, 235, 233, 231, 94,  196};
+static const int light_indexed[THEME_COLOR_COUNT] = {231, 231, 254, 235, 241, 130, 160,
+                                                     28,  251, 223, 255, 16,  222, 160};
+static const int dark_basic[THEME_COLOR_COUNT] = {
+    COLOR_BLACK, COLOR_BLACK, COLOR_BLACK, COLOR_WHITE, COLOR_WHITE,  COLOR_YELLOW, COLOR_RED,
+    COLOR_GREEN, COLOR_WHITE, COLOR_BLACK, COLOR_BLACK, COLOR_WHITE,  COLOR_YELLOW, COLOR_RED};
+/* Yellow is unreadable on white: the accent is blue with 8 or 16 colors. */
+static const int light_basic[THEME_COLOR_COUNT] = {
+    COLOR_WHITE, COLOR_WHITE, COLOR_WHITE, COLOR_BLACK, COLOR_BLACK,  COLOR_BLUE, COLOR_RED,
+    COLOR_GREEN, COLOR_BLACK, COLOR_WHITE, COLOR_WHITE, COLOR_BLACK,  COLOR_CYAN, COLOR_RED};
+static theme_palette palette = THEME_PALETTE_DARK;
+static const unsigned char (*rgb)[3] = dark_rgb;
+/* The theme given to theme_init, so a palette change can redefine colors and
+ * still restore the terminal's own values at exit. */
+static ui_theme *active;
 
 /* Pseudo color: the separator rule, or the accent where focus backgrounds
  * cannot be shown (8 or 16 colors). */
@@ -129,6 +174,9 @@ int theme_rgb_pair(unsigned rgb, int fallback)
 {
     if (!(rgb & 0x1000000) || !has_colors() || COLORS < 8 || COLOR_PAIRS < 64)
         return fallback;
+    /* Plain white is the default name color: the palette's bright label. */
+    if (rgb == 0x1ffffff)
+        rgb = 0x1000000 | packed(PROFILE_WHITE);
     int r = (int)(rgb >> 16) & 255, g = (int)(rgb >> 8) & 255, b = (int)rgb & 255;
     int fg;
     if (COLORS >= 0x1000000)
@@ -171,28 +219,24 @@ int theme_member_pair(unsigned rgb, int background)
     return theme_rgb_pair(rgb, white);
 }
 
-void theme_init(ui_theme *theme)
+static void apply(ui_theme *theme)
 {
-    memset(theme, 0, sizeof(*theme));
     rgb_pair_count = 0;
     shown_ready = false;
-    if (!has_colors() || start_color() == ERR)
+    if (!has_colors())
         return;
     const char *term = getenv("TERM"), *kitty_window = getenv("KITTY_WINDOW_ID");
     bool kitty = (term && !strcmp(term, "xterm-kitty")) || (kitty_window && *kitty_window);
+    bool light = palette == THEME_PALETTE_LIGHT;
     /* Fixed xterm palette approximations. Never redefine the first 16 colors. */
-    int colors[THEME_COLOR_COUNT] = {16,  16,  234, 254, 247, 215, 210,
-                                     150, 238, 235, 233, 231, 94,  196};
+    int colors[THEME_COLOR_COUNT];
+    memcpy(colors, light ? light_indexed : dark_indexed, sizeof(colors));
     if (COLORS >= 0x1000000) {
         /* Direct-color terminfo: color numbers are packed RGB values. */
         for (int i = 0; i < THEME_COLOR_COUNT; ++i)
             colors[i] = (int)rgb[i][0] * 0x10000 + (int)rgb[i][1] * 0x100 + rgb[i][2];
     } else if (COLORS < 256) {
-        const int basic[THEME_COLOR_COUNT] = {COLOR_BLACK,  COLOR_BLACK,  COLOR_BLACK, COLOR_WHITE,
-                                              COLOR_WHITE,  COLOR_YELLOW, COLOR_RED,   COLOR_GREEN,
-                                              COLOR_WHITE,  COLOR_BLACK,  COLOR_BLACK, COLOR_WHITE,
-                                              COLOR_YELLOW, COLOR_RED};
-        memcpy(colors, basic, sizeof(colors));
+        memcpy(colors, light ? light_basic : dark_basic, sizeof(colors));
     } else if (can_change_color() && !kitty && !getenv("KONSOLE_VERSION")) {
         /* Konsole may advertise ccc while ignoring terminfo's rgb: syntax.
          * Kitty resets overridden indices on configuration reload, turning
@@ -200,7 +244,9 @@ void theme_init(ui_theme *theme)
          * intact; the direct-color branch above still provides exact RGB. */
         for (int i = 0; i < THEME_COLOR_COUNT; ++i) {
             short index = FIRST_CUSTOM_COLOR + i;
-            if (color_content(index, &theme->colors[i].red, &theme->colors[i].green,
+            /* The terminal's own value is saved once, before the first change. */
+            if (!theme->colors[i].changed &&
+                color_content(index, &theme->colors[i].red, &theme->colors[i].green,
                               &theme->colors[i].blue) != OK)
                 continue;
             if (init_color(index, component(rgb[i][0]), component(rgb[i][1]),
@@ -245,6 +291,110 @@ void theme_init(ui_theme *theme)
     for (size_t i = 0; i < sizeof(member_backgrounds) / sizeof(member_backgrounds[0]); ++i)
         theme_member_pair(0x1ffffff, member_backgrounds[i]);
     wbkgd(stdscr, COLOR_PAIR(THEME_NORMAL));
+}
+
+void theme_init(ui_theme *theme)
+{
+    memset(theme, 0, sizeof(*theme));
+    active = theme;
+    rgb_pair_count = 0;
+    shown_ready = false;
+    if (!has_colors() || start_color() == ERR)
+        return;
+    apply(theme);
+}
+
+bool theme_set_palette(theme_palette next)
+{
+    if (next != THEME_PALETTE_DARK && next != THEME_PALETTE_LIGHT)
+        return false;
+    if (next == palette)
+        return false;
+    palette = next;
+    rgb = palette == THEME_PALETTE_LIGHT ? light_rgb : dark_rgb;
+    if (active)
+        apply(active);
+    return true;
+}
+
+theme_palette theme_get_palette(void)
+{
+    return palette;
+}
+
+/* -1 until known; then 1 for a light terminal background, 0 for a dark one. */
+static int reported = -1;
+static bool queried;
+
+void theme_probe_background(void)
+{
+    if (queried)
+        return;
+    queried = true;
+    const char *term = getenv("TERM");
+    /* The Linux console prints unknown OSC strings instead of ignoring them. */
+    if (!isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO) || !term || !*term ||
+        !strcmp(term, "dumb") || !strcmp(term, "linux"))
+        return;
+    fputs("\033]11;?\033\\", stdout);
+    fflush(stdout);
+}
+
+/* One rgb: component of 1 to 4 hex digits, scaled to 0..255. */
+static bool component_value(const char **at, unsigned *value)
+{
+    unsigned digits = 0, number = 0;
+    while (g_ascii_isxdigit(**at) && digits < 4) {
+        number = number * 16 + (unsigned)g_ascii_xdigit_value(**at);
+        ++*at;
+        ++digits;
+    }
+    if (!digits || g_ascii_isxdigit(**at))
+        return false;
+    unsigned max = (1u << (4 * digits)) - 1;
+    *value = number * 255 / max;
+    return true;
+}
+
+bool theme_background_reply(const char *reply)
+{
+    if (!reply || strncmp(reply, "\033]11;", 5))
+        return false;
+    const char *at = reply + 5;
+    unsigned red, green, blue;
+    if (!strncmp(at, "rgba:", 5))
+        at += 5;
+    else if (!strncmp(at, "rgb:", 4))
+        at += 4;
+    else
+        return true;
+    if (!component_value(&at, &red) || *at++ != '/' || !component_value(&at, &green) ||
+        *at++ != '/' || !component_value(&at, &blue))
+        return true;
+    reported = theme_luminance_light(red, green, blue);
+    return true;
+}
+
+bool theme_luminance_light(unsigned red, unsigned green, unsigned blue)
+{
+    /* Rec. 709 luma in thousandths; above the middle reads as light. */
+    return 2126u * red + 7152u * green + 722u * blue > 10000u * 128u;
+}
+
+int theme_terminal_light(void)
+{
+    if (reported >= 0)
+        return reported;
+    /* rxvt-style "foreground;background" (or "fg;other;bg") ANSI indices. */
+    const char *value = getenv("COLORFGBG");
+    const char *last = value ? strrchr(value, ';') : NULL;
+    if (!last || !last[1])
+        return -1;
+    char *end;
+    long background = strtol(last + 1, &end, 10);
+    if (*end || background < 0 || background > 15)
+        return -1;
+    return background == 7 || background == 15;
 }
 
 int theme_volume_pair(int percent)
