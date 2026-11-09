@@ -153,6 +153,8 @@ void text_vertical(text_buffer *buffer, int width, int direction);
 void text_line_edge(text_buffer *buffer, int width, bool end);
 void text_clear(text_buffer *buffer);
 void text_measure(const text_buffer *buffer, int width, text_layout *layout);
+/* Like text_measure, but wraps at word boundaries instead of mid-word. */
+void text_measure_words(const text_buffer *buffer, int width, text_layout *layout);
 void text_draw(WINDOW *window, const text_buffer *buffer, const text_layout *layout, int first,
                int height, int y, int x);
 void text_click(text_buffer *buffer, int width, int row, int column);

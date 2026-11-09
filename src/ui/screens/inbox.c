@@ -920,10 +920,26 @@ WINDOW *r8_modal_draw(r8_modal *m)
                     m->config && m->config->notification_sounds ? "[x] Sons neste aparelho"
                                                                 : "[ ] Sons neste aparelho",
                     m->focus == 2 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
-        if (height >= 14) {
+        /* What the focused switch does, then where the other settings live.
+         * Rows stop above the notice and hints at the bottom. */
+        static const char *const help[3] = {
+            "Avisos no desktop: mostra um aviso do sistema quando chega uma notificação.",
+            "Mostrar prévia: inclui o texto da mensagem no aviso do sistema.",
+            "Sons neste aparelho: toca os sons de notificação e de chamada de voz.",
+        };
+        int rows = height - 12;
+        text_buffer text;
+        text_layout layout;
+        char about[640];
+        snprintf(about, sizeof(about),
+                 "%s Estas opções valem só neste computador, para todos os servidores. Como cada "
+                 "conta é avisada: Ctrl+S → Notificações. Quais mensagens avisam: menu do canal "
+                 "→ Notificações…",
+                 help[m->focus >= 0 && m->focus < 3 ? m->focus : 0]);
+        if (rows > 0 && text_decode(&text, about)) {
             wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
-            text_label(w, 9, 2, width - 4, "Valem só neste aparelho; Ctrl+S → Notificações");
-            text_label(w, 10, 2, width - 4, "guarda as opções da sua conta em cada servidor.");
+            text_measure_words(&text, width - 4, &layout);
+            text_draw(w, &text, &layout, 0, rows, 9, 2);
         }
     } else if (m->detail) {
         bool event;

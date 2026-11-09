@@ -11,7 +11,6 @@
 #include "ui/media/message_time.h"
 #include <glib.h>
 #include <limits.h>
-#include <linebreak.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -192,54 +191,6 @@ static bool blank(message_blocks *b, bool card, bool top, bool bottom, unsigned 
     r->color = color;
     return true;
 }
-/* libunibreak chooses word/Unicode line boundaries; the existing text
- * decoder supplies sanitized graphemes and their actual terminal widths. */
-static void card_measure(const text_buffer *buffer, int width, text_layout *layout)
-{
-    char breaks[TEXT_LIMIT];
-    text_buffer visible;
-    text_project(buffer, &visible);
-    init_linebreak();
-    set_linebreaks_utf32(visible.data, visible.length, NULL, breaks);
-    text_measure(buffer, TEXT_LIMIT * 2 + 1, layout);
-    size_t count = layout->count - 1;
-    int row = 0, column = 0;
-    for (size_t start = 0; start < count;) {
-        size_t end = start, boundary = start;
-        column = 0;
-        while (end < count && !layout->cells[end].newline &&
-               column + layout->cells[end].width <= width) {
-            const text_cell *cell = &layout->cells[end++];
-            column += cell->width;
-            if (breaks[cell->display_end - 1] == LINEBREAK_ALLOWBREAK)
-                boundary = end;
-        }
-        if (end < count && !layout->cells[end].newline && boundary > start)
-            end = boundary;
-        if (end == start && !layout->cells[end].newline)
-            ++end;
-        column = 0;
-        for (size_t k = start; k < end; ++k) {
-            layout->cells[k].row = row;
-            layout->cells[k].column = column;
-            column += layout->cells[k].width;
-        }
-        if (end < count && layout->cells[end].newline) {
-            layout->cells[end].row = row;
-            layout->cells[end].column = column;
-            ++end;
-            ++row;
-            column = 0;
-        } else if (end < count) {
-            ++row;
-            column = 0;
-        }
-        start = end;
-    }
-    layout->cells[count].row = row;
-    layout->cells[count].column = column;
-    layout->rows = row + 1;
-}
 /* Trailing spaces at a line end are invisible; when they overflow the column
  * they wrap alone into an extra empty row, so drop them before measuring.
  * Explicit newlines stay, keeping blank lines written by the author. */
@@ -312,7 +263,7 @@ static bool column(message_blocks *b, size_t start, const char *key, const char 
         text_buffer visible;
         text_project(&buffer, &visible);
         if (card)
-            card_measure(&buffer, width, &layout);
+            text_measure_words(&buffer, width, &layout);
         else
             /* Messages have no end-of-line cursor: the full column width is
              * drawable, so ask text_measure for one extra cell to avoid

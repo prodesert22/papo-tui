@@ -63,6 +63,9 @@ class UserSettingsTerminal(support.R8Terminal):
             self.wait(t, "[ ] Mostrar avatares")
             self.click(t, "Tema:")
             self.wait(t, "Tema: < Claro >")
+            # The selected item says what it does.
+            self.wait(t, "Cores da tela.")
+            self.dump(t, "appearance")
             self.click(t, "Densidade:")
             self.wait(t, "Densidade: < Compacta >")
             # Keys work on the focused item too.
@@ -112,6 +115,13 @@ class UserSettingsTerminal(support.R8Terminal):
             t.read(0.05)
         return False
 
+    def dump(self, t, name):
+        """Keeps the screen text as evidence when PAPO_SCREEN_DUMPS names a folder."""
+        folder = os.environ.get("PAPO_SCREEN_DUMPS")
+        if folder:
+            with open(os.path.join(folder, name + ".txt"), "w", encoding="utf-8") as f:
+                f.write("\n".join(t.screen.display) + "\n")
+
     def click(self, t, label):
         for y, line in enumerate(t.screen.display):
             if label in line:
@@ -138,8 +148,13 @@ class UserSettingsTerminal(support.R8Terminal):
                 t = self.login(server)
                 self.open_tab(t, 2)
                 self.wait(t, "[x] Sons")
+                # Each switch explains itself while selected.
+                self.wait(t, "Mostra avisos do sistema e toca sons")
                 t.send(DOWN * 2 + " ")
                 self.wait(t, "[ ] Sons")
+                self.wait(t, "Toca um som quando chega uma notificação")
+                if status == 400:
+                    self.dump(t, "notifications")
                 t.send("\t\n")
                 self.wait(t, notice)
                 self.assertEqual(self.calls(server, 1), [expected(notifications={"sound": False})])
@@ -197,6 +212,8 @@ class UserSettingsTerminal(support.R8Terminal):
             self.wait(t, "[x] Sons neste aparelho")
             t.send(DOWN * 2 + " ")
             self.wait(t, "[ ] Sons neste aparelho")
+            self.wait(t, "Sons neste aparelho: toca os sons")
+            self.dump(t, "device")
             t.send("\x1b\x1b")
             self.notify(server, 3, mention)
             time.sleep(3)

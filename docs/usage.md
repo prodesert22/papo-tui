@@ -252,6 +252,10 @@ and opening a voice channel reports that voice is unavailable.
 
 ## Channel notifications and muting
 
+A channel's **Notificações…** option chooses which of its messages notify you.
+How you are notified (sound, preview, mentions) is set for the whole account in
+Ctrl+S; see [Which messages notify you, and how](#which-messages-notify-you-and-how).
+
 Focus the channel list and press **Ctrl+Space**, **m** or **M**, or **right-click a channel**, to
 open its context menu. This also works on a channel you are not reading; opening
 the menu does not load that channel's messages. Categories have no context menu.
@@ -329,17 +333,38 @@ account's settings:
   at the left edge.
 
 Use ↑/↓ to select an item and ←/→, Space or Enter to change it, or click it:
-the left half of a choice goes back and the right half goes forward. Select
+the left half of a choice goes back and the right half goes forward. The
+selected item explains what it does below the list. Select
 **Salvar e aplicar** (Save and apply). The mode applies at once; the account
 part is sent to the server, and the window stays open until the server answers
 with **Configurações da conta salvas.** (Account settings saved). The new
 theme and display then apply. The font size is the terminal's: change it in
 the terminal's own settings.
 
+### Which messages notify you, and how
+
+Three places decide about notifications, each answering a different question:
+
+| Where | What it decides | Applies to |
+| --- | --- | --- |
+| A channel's menu → **Notificações…** | **Which** messages notify you: all, only mentions, or none | That channel; on every device, or only this one when **Sincronizar com o servidor** is off ([details](#channel-notifications-and-muting)) |
+| **Ctrl+S → Notificações** | **How** you are notified: system notification, message preview, sound, mentions | Every channel of that server, on every device with that account |
+| **Ctrl+D → Preferências** | Whether **this computer** shows notifications, previews and plays sounds at all | Every server, only on this computer |
+
+For example, with `#geral` set to **Todas as mensagens** every message there
+notifies you. Turning off **Sons** in Ctrl+S → Notificações keeps the system
+notification but without a sound, on all your devices. Turning off **Avisos no
+desktop** in Ctrl+D → Preferências stops the system notifications on this
+computer only; another computer signed in to the same account still shows them.
+
+A system notification, its preview or a sound happens only when all three allow
+it.
+
 ### Account notifications
 
-The **Notificações** (Notifications) tab in **Ctrl+S** holds the account's
-switches on the active server:
+The **Notificações** (Notifications) tab in **Ctrl+S** decides how the account
+on the active server is notified. Each switch explains itself below the list
+while it is selected:
 
 - **Notificações ativadas** (Notifications enabled): system notifications and
   sounds for this server's alerts. The notification center and the unread
@@ -360,14 +385,13 @@ half a minute.
 ### This device
 
 Press **Ctrl+D**, then **Preferências** (Preferences), for the switches of this
-device, which apply to every server:
+computer. They apply to every server and are never sent to one, so you can, for
+example, silence a work computer without changing your account:
 
-- **Avisos no desktop** (Desktop notifications)
-- **Mostrar prévia** (Show preview)
-- **Sons neste aparelho** (Sounds on this device)
-
-A system notification, its preview or a sound happens only when both the
-account and this device allow it.
+- **Avisos no desktop** (Desktop notifications): show system notifications.
+- **Mostrar prévia** (Show preview): include the message text in them.
+- **Sons neste aparelho** (Sounds on this device): play notification and call
+  sounds.
 
 ### Sounds
 

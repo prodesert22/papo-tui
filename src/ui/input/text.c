@@ -12,6 +12,7 @@
 
 #include <glib.h>
 #include <limits.h>
+#include <linebreak.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1599,6 +1600,54 @@ void text_measure(const text_buffer *buffer, int width, text_layout *layout)
         c->start = starts[a];
         c->end = b > a ? ends[b - 1] : starts[a];
     }
+}
+/* libunibreak chooses word/Unicode line boundaries; the existing text
+ * decoder supplies sanitized graphemes and their actual terminal widths. */
+void text_measure_words(const text_buffer *buffer, int width, text_layout *layout)
+{
+    char breaks[TEXT_LIMIT];
+    text_buffer visible;
+    text_project(buffer, &visible);
+    init_linebreak();
+    set_linebreaks_utf32(visible.data, visible.length, NULL, breaks);
+    text_measure(buffer, TEXT_LIMIT * 2 + 1, layout);
+    size_t count = layout->count - 1;
+    int row = 0, column = 0;
+    for (size_t start = 0; start < count;) {
+        size_t end = start, boundary = start;
+        column = 0;
+        while (end < count && !layout->cells[end].newline &&
+               column + layout->cells[end].width <= width) {
+            const text_cell *cell = &layout->cells[end++];
+            column += cell->width;
+            if (breaks[cell->display_end - 1] == LINEBREAK_ALLOWBREAK)
+                boundary = end;
+        }
+        if (end < count && !layout->cells[end].newline && boundary > start)
+            end = boundary;
+        if (end == start && !layout->cells[end].newline)
+            ++end;
+        column = 0;
+        for (size_t k = start; k < end; ++k) {
+            layout->cells[k].row = row;
+            layout->cells[k].column = column;
+            column += layout->cells[k].width;
+        }
+        if (end < count && layout->cells[end].newline) {
+            layout->cells[end].row = row;
+            layout->cells[end].column = column;
+            ++end;
+            ++row;
+            column = 0;
+        } else if (end < count) {
+            ++row;
+            column = 0;
+        }
+        start = end;
+    }
+    layout->cells[count].row = row;
+    layout->cells[count].column = column;
+    layout->rows = row + 1;
 }
 
 static size_t offset_at(const text_layout *layout, int row, int column)

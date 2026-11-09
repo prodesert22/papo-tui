@@ -314,11 +314,18 @@ static const char *appearance_description(app_settings *s)
 {
     if (s->selection < ITEM_THEME)
         return app_mode_description((app_mode)(s->focus == 1 ? s->selection : (int)s->draft));
+    /* Account items are saved on the server and follow the active tab. */
     if (s->selection == ITEM_THEME)
-        return "Sistema segue a cor de fundo do terminal. Salvo na sua conta deste servidor.";
+        return "Cores da tela. Sistema usa o tema claro quando o fundo do terminal é claro. "
+               "Salvo na sua conta deste servidor.";
     if (s->selection == ITEM_DENSITY)
-        return "Espaço entre as mensagens do histórico. Salvo na sua conta deste servidor.";
-    return "Vale para esta aba de servidor. Salvo na sua conta deste servidor.";
+        return "Compacta tira a linha em branco entre autores; Confortável também separa as "
+               "mensagens de um mesmo autor. Salvo na sua conta deste servidor.";
+    if (s->selection == ITEM_TIMESTAMPS)
+        return "Mostra a hora ao lado do nome de quem enviou cada mensagem. Salvo na sua conta "
+               "deste servidor.";
+    return "Mostra a foto, ou as iniciais, à esquerda das mensagens; sem ela, o texto começa "
+           "na borda. Salvo na sua conta deste servidor.";
 }
 /* Rows available for the list, which scrolls on short terminals. */
 static int appearance_rows(int height)
@@ -352,7 +359,7 @@ static void appearance_draw(app_settings *s, WINDOW *w, int height, int width)
     text_layout measured;
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     if (text_decode(&description, appearance_description(s))) {
-        text_measure(&description, width - 6, &measured);
+        text_measure_words(&description, width - 6, &measured);
         text_draw(w, &description, &measured, 0, 3, 6 + row, 3);
     }
 }
@@ -432,7 +439,8 @@ static void notifications_draw(app_settings *s, WINDOW *w, int height, int width
                                                      "Sons", "Avisar quando mencionarem você"};
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     char label[256];
-    snprintf(label, sizeof(label), "Sua conta em %s", *s->server ? s->server : "este servidor");
+    snprintf(label, sizeof(label), "Como você é avisado em %s",
+             *s->server ? s->server : "este servidor");
     text_label(w, 5, 2, width - 4, label);
     if (!s->profile) {
         text_label(w, 7, 2, width - 4, "Indisponível sem um servidor conectado.");
@@ -447,13 +455,27 @@ static void notifications_draw(app_settings *s, WINDOW *w, int height, int width
     }
     if (height < 18)
         return;
+    /* What the selected switch does; the scope of all of them otherwise. */
+    static const char *const help[NOTIFY_ITEMS] = {
+        "Mostra avisos do sistema e toca sons para as notificações deste servidor. Desligado, "
+        "a central (Ctrl+D) e os indicadores de não lidas continuam funcionando.",
+        "Mostra o texto da mensagem no aviso do sistema. Desligado, o aviso diz só \"Nova "
+        "notificação\".",
+        "Toca um som quando chega uma notificação e quando você ou outra pessoa entra ou sai "
+        "de uma chamada de voz.",
+        "Avisa quando alguém menciona você, responde sua mensagem ou usa @everyone. "
+        "Desligado, essas mensagens vão só para a central (Ctrl+D), sem aviso nem som.",
+    };
     text_buffer description;
     text_layout measured;
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
-    if (text_decode(&description,
-                    "Cada aparelho também tem chaves próprias em Ctrl+D → Preferências; um aviso "
-                    "ou som só acontece quando a conta e o aparelho permitem.")) {
-        text_measure(&description, width - 6, &measured);
+    if (text_decode(&description, s->focus == 1
+                                      ? help[s->notify_selection]
+                                      : "Valem para todos os canais deste servidor, em qualquer "
+                                        "aparelho. Quais mensagens avisam se escolhe no canal "
+                                        "(Notificações…); Ctrl+D → Preferências silencia só este "
+                                        "computador.")) {
+        text_measure_words(&description, width - 6, &measured);
         text_draw(w, &description, &measured, 0, 3, 12, 3);
     }
 }
