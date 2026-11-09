@@ -49,29 +49,30 @@ static const unsigned char dark_rgb[THEME_COLOR_COUNT][3] = {
     {0x50, 0x38, 0x1f}, /* #50381f dark orange profile focus */
     {0xff, 0x00, 0x00}, /* #ff0000 unread notification dot */
 };
-/* Same roles on a white canvas: the accent and status colors are darker so
- * text keeps its contrast, and "white" labels become near-black. */
+/* Same roles on a soft gray canvas rather than white, which glares in a
+ * terminal: the accent and status colors are darker so text keeps its
+ * contrast, and "white" labels become near-black. */
 static const unsigned char light_rgb[THEME_COLOR_COUNT][3] = {
-    {0xff, 0xff, 0xff}, /* #ffffff canvas */
-    {0xff, 0xff, 0xff}, /* #ffffff panels */
-    {0xe6, 0xe8, 0xec}, /* #e6e8ec subtle panel focus */
-    {0x1f, 0x23, 0x28}, /* #1f2328 text */
-    {0x59, 0x63, 0x6e}, /* #59636e secondary text */
-    {0xa8, 0x55, 0x00}, /* #a85500 accent */
-    {0xc4, 0x1d, 0x2a}, /* #c41d2a errors */
-    {0x1a, 0x7f, 0x37}, /* #1a7f37 success */
-    {0xd0, 0xd7, 0xde}, /* #d0d7de separators */
-    {0xfb, 0xe7, 0xcf}, /* #fbe7cf selected conversation */
-    {0xf3, 0xf4, 0xf6}, /* #f3f4f6 subtle history focus */
+    {0xc8, 0xcc, 0xd2}, /* #c8ccd2 canvas */
+    {0xc8, 0xcc, 0xd2}, /* #c8ccd2 panels */
+    {0xb4, 0xb9, 0xc1}, /* #b4b9c1 subtle panel focus */
+    {0x16, 0x19, 0x1d}, /* #16191d text */
+    {0x3f, 0x46, 0x4f}, /* #3f464f secondary text */
+    {0x86, 0x42, 0x00}, /* #864200 accent */
+    {0x9e, 0x12, 0x1c}, /* #9e121c errors */
+    {0x0f, 0x5c, 0x26}, /* #0f5c26 success */
+    {0x9c, 0xa3, 0xad}, /* #9ca3ad separators */
+    {0xd6, 0xbf, 0xa0}, /* #d6bfa0 selected conversation */
+    {0xbe, 0xc2, 0xc9}, /* #bec2c9 subtle history focus */
     {0x00, 0x00, 0x00}, /* #000000 profile labels and controls */
-    {0xff, 0xd6, 0xa5}, /* #ffd6a5 light orange profile focus */
-    {0xd7, 0x26, 0x26}, /* #d72626 unread notification dot */
+    {0xd9, 0xaa, 0x6c}, /* #d9aa6c orange profile focus */
+    {0xb5, 0x1a, 0x1a}, /* #b51a1a unread notification dot */
 };
 /* xterm-256 approximations, used when the palette cannot be redefined. */
 static const int dark_indexed[THEME_COLOR_COUNT] = {16,  16,  234, 254, 247, 215, 210,
                                                     150, 238, 235, 233, 231, 94,  196};
-static const int light_indexed[THEME_COLOR_COUNT] = {231, 231, 254, 235, 241, 130, 160,
-                                                     28,  251, 223, 255, 16,  222, 160};
+static const int light_indexed[THEME_COLOR_COUNT] = {251, 251, 249, 234, 238, 94, 124,
+                                                     22,  246, 180, 250, 16,  179, 124};
 static const int dark_basic[THEME_COLOR_COUNT] = {
     COLOR_BLACK, COLOR_BLACK, COLOR_BLACK, COLOR_WHITE, COLOR_WHITE,  COLOR_YELLOW, COLOR_RED,
     COLOR_GREEN, COLOR_WHITE, COLOR_BLACK, COLOR_BLACK, COLOR_WHITE,  COLOR_YELLOW, COLOR_RED};

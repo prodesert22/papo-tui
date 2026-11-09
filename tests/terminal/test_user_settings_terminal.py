@@ -86,7 +86,7 @@ class UserSettingsTerminal(support.R8Terminal):
             while not CLOCK.search(self.history(t)) and time.monotonic() < end:
                 t.read(0.05)
             self.assertIsNotNone(CLOCK.search(self.history(t)), "\n".join(t.screen.display))
-            # Claro: the conversation is drawn on a light background now.
+            # Claro: the conversation is drawn on a light gray background now.
             self.assertTrue(self.light_text_background(t, "Mensagem 0001"), self.colors(t))
             t.read(0.5)
             self.assertEqual(len(server.settings_calls), 1)
@@ -105,7 +105,7 @@ class UserSettingsTerminal(support.R8Terminal):
             backgrounds = self.colors(t)
             if backgrounds and all(
                 re.fullmatch(r"[0-9a-f]{6}", bg)
-                and sum(int(bg[i : i + 2], 16) for i in (0, 2, 4)) > 3 * 200
+                and sum(int(bg[i : i + 2], 16) for i in (0, 2, 4)) > 3 * 150
                 for bg in backgrounds
             ):
                 return True
