@@ -4,12 +4,13 @@
 #include "ui/components/theme.h"
 #include "ui/input/mouse.h"
 
-static const char *const tab_names[ADMIN_TABS] = {"Visão geral", "Cargos",  "Canais",
-                                                  "Emojis",      "Membros", "Auditoria"};
+static const char *const tab_names[ADMIN_TABS] = {"Visão geral", "Cargos",   "Canais",   "Emojis",
+                                                  "Webhooks",    "Membros", "Auditoria"};
 static const admin_tab_ops *ops_of(admin_tab tab)
 {
-    static const admin_tab_ops *const all[ADMIN_TABS] = {&tab_overview, &tab_roles,   &tab_channels,
-                                                         &tab_emojis,   &tab_members, &tab_audit};
+    static const admin_tab_ops *const all[ADMIN_TABS] = {
+        &tab_overview, &tab_roles, &tab_channels, &tab_emojis, &tab_webhooks, &tab_members,
+        &tab_audit};
     return all[tab < ADMIN_TABS ? tab : 0];
 }
 

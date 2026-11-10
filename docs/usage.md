@@ -864,6 +864,7 @@ are hidden:
 | **Cargos** (Roles) | has **Gerenciar cargos** (Manage roles) |
 | **Canais** (Channels) | has **Gerenciar canais** (Manage channels) |
 | **Emojis** | always |
+| **Webhooks** | owns the server or has **Gerenciar webhooks** (Manage webhooks) |
 | **Membros** (Members) | has **Gerenciar cargos** or **Gerenciar servidor** |
 | **Auditoria** (Audit log) | owns the server or has **Gerenciar servidor** |
 
@@ -879,7 +880,7 @@ Shift+Tab move between the tabs, the list on the left, the form on the right
 and **Fechar** (Close). In the list, ↑/↓, PageUp/PageDown and Home/End choose an
 item and Enter opens it in the form. In the form, ↑/↓ move between fields,
 Enter in a text field saves, Space or Enter toggles a box or presses a button,
-and ←/→ change an option shown as **< … >**. Buttons that delete or ban ask
+and ←/→ change an option shown as **< … >**. Buttons that delete, revoke, remove an avatar or ban ask
 for a second press: the first one changes the label to **Confirmar: …**
 (Confirm). Esc closes the panel without saving the open form.
 
@@ -893,7 +894,7 @@ for a second press: the first one changes the label to **Confirmar: …**
   changes) sends only what you changed. The owner, creation date and counts are
   shown for reference.
 - **Cargos**: choose **+ Novo cargo** (New role) or a role. Edit its name, its
-  color as `#RRGGBB` and its seven permissions, then press **Criar cargo**
+  color as `#RRGGBB` and its eight permissions, including **Gerenciar webhooks**, then press **Criar cargo**
   (Create role) or **Salvar cargo** (Save role). Leaving the color empty sends
   no color. **Excluir cargo** (Delete role) removes the role from the server.
 - **Canais**: choose **+ Novo canal** (New channel) to create a text, voice or
@@ -911,6 +912,25 @@ for a second press: the first one changes the label to **Confirmar: …**
   PNG or WEBP file. You can delete emojis you added; deleting other people's
   emojis needs **Gerenciar servidor**. **Carregar mais…** (Load more) at the
   end of the list fetches the next page.
+- **Webhooks**: a webhook lets another program post messages in one channel. The
+  list shows each webhook by its nickname (or name) and its channel. Choose
+  **+ Novo webhook** (New webhook), pick a text or voice channel with ←/→ on
+  **Canal** (Channel), type a name of up to 80 characters and press **Criar
+  webhook** (Create webhook). The new webhook opens with **Token de acesso**
+  (Access token), its **URL de envio** (sending address) and **Copiar URL** and
+  **Copiar token** (Copy URL, Copy token): the token is shown **only now**. It is
+  kept in memory while this form stays open and is dropped when you choose
+  another webhook, close the panel or reopen it; to get a new one, revoke the
+  webhook and create another. Anyone with the token can post in that channel, so
+  keep it private. In an existing webhook, **Apelido** (Nickname, up to 100
+  characters, empty to use the name) with **Salvar apelido** (Save nickname)
+  changes the name shown on its messages, **Escolher avatar e enviar…** (Choose
+  avatar and send) picks a GIF, JPEG, PNG or WEBP image, and **Remover avatar**
+  (Remove avatar) takes it off; both ask the server, which refuses avatars above
+  2 MB or 512 pixels, and the new picture can take a while to replace the one
+  already loaded in the history. **Revogar webhook** (Revoke webhook) ends the
+  token's access; the messages it already posted stay. The **Auditoria** filter
+  **Entidade** also lists **Webhooks**.
 - **Membros**: type while the list is focused to filter by nickname or
   @username; Backspace erases the filter. With **Gerenciar cargos**, the boxes
   under **Cargos** assign or remove each role at once. With **Gerenciar
@@ -947,8 +967,8 @@ keeps your text so you can correct it. **Alteração não confirmada; confira
 antes de repetir** (Change not confirmed; check before repeating) means the
 connection ended before the server answered: the panel reloads what the server
 kept, and the change is never sent again automatically. The server does not
-announce changes made by other administrators to roles, emojis, channel
-permissions or the server itself. They appear when you return to that tab or
+announce changes made by other administrators to roles, emojis, webhooks,
+channel permissions or the server itself. They appear when you return to that tab or
 reopen the panel; roles and channels also refresh about every 30 seconds.
 
 ## Messages, editing, replies and reactions

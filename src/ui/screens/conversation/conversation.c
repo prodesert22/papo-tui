@@ -934,8 +934,10 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         if (ui->server_settings.open) {
             server_settings_key(&ui->server_settings, type, key);
             if (ui->server_settings.pick) {
-                conversation_server_image_pick(ui, ui->server_settings.pick == SERVER_PICK_EMOJI,
-                                               ui->server_settings.emoji_name);
+                conversation_server_image_pick(ui, ui->server_settings.pick,
+                                               ui->server_settings.pick == SERVER_PICK_WEBHOOK
+                                                   ? ui->server_settings.webhook_pick
+                                                   : ui->server_settings.emoji_name);
                 ui->server_settings.pick = SERVER_PICK_NONE;
             }
             scope = DRAW_ALL;

@@ -14,15 +14,18 @@ typedef enum {
     ADMIN_TAB_ROLES,
     ADMIN_TAB_CHANNELS,
     ADMIN_TAB_EMOJIS,
+    ADMIN_TAB_WEBHOOKS,
     ADMIN_TAB_MEMBERS,
     ADMIN_TAB_AUDIT,
     ADMIN_TABS
 } admin_tab;
 /* PENDING: the permission it needs is not confirmed yet. */
 typedef enum { ADMIN_HIDDEN, ADMIN_SHOWN, ADMIN_PENDING } admin_visibility;
-typedef enum { ADMIN_LIST_EMOJIS, ADMIN_LIST_AUDIT, ADMIN_LISTS } admin_list;
+typedef enum { ADMIN_LIST_EMOJIS, ADMIN_LIST_AUDIT, ADMIN_LIST_WEBHOOKS, ADMIN_LISTS } admin_list;
 #define ADMIN_SERVER_NAME_MAX 32
 #define ADMIN_TOPIC_MAX 512
+#define ADMIN_WEBHOOK_NAME_MAX 80
+#define ADMIN_WEBHOOK_NICKNAME_MAX 100
 
 /* Pure policy, from the contract's permission checks; the owner holds all. */
 admin_visibility server_admin_visibility(const permissions *p, admin_tab tab);
@@ -94,6 +97,28 @@ bool server_admin_channel_role_remove(history *h, const char *channel, const cha
 bool server_admin_emoji_create(history *h, const char *name, char *base64, const char *format);
 bool server_admin_emoji_delete(history *h, const char *id);
 bool server_admin_emoji_deletable(history *h, const json_t *emoji);
+/* Webhooks (manage_webhooks). Creating one answers with its access token, shown
+ * once: it is kept only in memory, for that webhook, until the modal closes or
+ * the account looks at something else, and never goes to a notice or a log.
+ * An empty nickname returns to the webhook's name. */
+bool server_admin_webhook_create(history *h, const char *channel, const char *name);
+bool server_admin_webhook_nickname(history *h, const char *id, const char *nickname);
+bool server_admin_webhook_avatar(history *h, const char *id, char *base64, const char *format);
+bool server_admin_webhook_avatar_remove(history *h, const char *id);
+bool server_admin_webhook_revoke(history *h, const char *id);
+/* Token of webhook id from its creation; "" when it is not held. */
+const char *server_admin_webhook_token(history *h, const char *id);
+/* Whether the creation's answer for webhook id came without a usable token. */
+bool server_admin_webhook_token_lost(history *h, const char *id);
+/* Whether the token (or its absence) held now belongs to webhook id. */
+bool server_admin_webhook_held(history *h, const char *id);
+/* ID of the webhook just created whose form was not shown yet; "" otherwise. */
+const char *server_admin_webhook_created(history *h);
+void server_admin_webhook_created_clear(history *h);
+/* Base address of this instance, borrowed. */
+const char *server_admin_instance_url(history *h);
+/* Drops the held token. */
+void server_admin_webhook_forget_token(history *h);
 bool server_admin_member_role(history *h, const char *user, const char *role, bool assign);
 bool server_admin_member_ban(history *h, const char *user, bool ban);
 bool server_admin_member_reset(history *h, const char *user);

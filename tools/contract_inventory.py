@@ -30,6 +30,8 @@ OPERATIONS = {
     "/users/{user_id}/reset": ["post"],
     "/emojis": ["get", "post"],
     "/emojis/{emoji_id}": ["delete"],
+    "/webhooks": ["get", "post"],
+    "/webhooks/{webhook_id}": ["patch", "delete"],
     "/admin/audit-logs": ["get"],
     "/channels/{channel_id}/messages": ["get"],
     "/messages": ["post"],

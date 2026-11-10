@@ -238,7 +238,8 @@ typedef struct {
      * avatar (1), banner (2), server icon (3) or a new emoji (4).
      * profile_target is the model the image was picked for; profile_watch the
      * model whose outcome the footer follows. profile_server: the image in
-     * preparation is the server icon (1) or the emoji named pick_emoji (2). */
+     * preparation is the server icon (1), the emoji named pick_emoji (2) or the
+     * avatar of the webhook whose ID is pick_emoji (3). */
     int profile_pick, profile_server;
     char pick_emoji[129];
     profile_image profile_kind;
@@ -371,7 +372,7 @@ void conversation_downloads_close(view *ui);
 void conversation_attachments_open(view *ui, bool clipboard);
 void conversation_profile_pick(view *ui, profile_image kind);
 /* Picks the server icon or, with emoji, the image of the emoji being added. */
-void conversation_server_image_pick(view *ui, bool emoji, const char *name);
+void conversation_server_image_pick(view *ui, server_settings_pick kind, const char *name);
 /* Takes the picker's files when it was opened for the profile. */
 bool conversation_profile_picked(view *ui, GPtrArray *paths);
 bool conversation_profile_poll(view *ui);

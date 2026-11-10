@@ -4,10 +4,11 @@
 enum { NAME, COLOR, FLAG, SAVE, DELETE };
 static const char *const flag_keys[PERMISSION_ROLE_COUNT] = {
     "manage_server", "manage_channels",  "manage_roles",   "ban_members",
-    "pin_message",   "everyone_message", "send_attachment"};
+    "pin_message",   "everyone_message", "send_attachment", "manage_webhooks"};
 static const char *const flag_labels[PERMISSION_ROLE_COUNT] = {
     "Gerenciar servidor", "Gerenciar canais",    "Gerenciar cargos", "Banir membros",
-    "Fixar mensagens",    "Mencionar @everyone", "Enviar anexos"};
+    "Fixar mensagens",    "Mencionar @everyone", "Enviar anexos",
+    "Gerenciar webhooks"};
 
 static const json_t *selected_role(server_settings *s)
 {

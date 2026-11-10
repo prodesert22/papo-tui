@@ -55,8 +55,8 @@ typedef struct {
     /* A row was chosen in the list (Enter or click). */
     void (*choose)(server_settings *s, const admin_row *row);
 } admin_tab_ops;
-extern const admin_tab_ops tab_overview, tab_roles, tab_channels, tab_emojis, tab_members,
-    tab_audit;
+extern const admin_tab_ops tab_overview, tab_roles, tab_channels, tab_emojis, tab_webhooks,
+    tab_members, tab_audit;
 
 admin_field *admin_field_add(GArray *fields, field_kind kind, int id, const char *label);
 void admin_note(GArray *fields, const char *text);

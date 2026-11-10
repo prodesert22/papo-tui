@@ -54,15 +54,17 @@ void conversation_profile_pick(view *ui, profile_image kind)
     ui->profile_pick = kind == PROFILE_AVATAR ? 1 : 2;
     file_picker_show_image(ui->files);
 }
-void conversation_server_image_pick(view *ui, bool emoji, const char *name)
+void conversation_server_image_pick(view *ui, server_settings_pick kind, const char *name)
 {
     if (ui->profile_task || file_picker_open(ui->files) || ui->attachment_task) {
         snprintf(ui->server_settings.error, sizeof(ui->server_settings.error), "%s",
                  "Aguarde a imagem ou os anexos em preparação.");
         return;
     }
-    g_strlcpy(ui->pick_emoji, emoji && name ? name : "", sizeof(ui->pick_emoji));
-    ui->profile_pick = emoji ? 4 : 3;
+    /* The emoji's name or the webhook's ID the image is for. */
+    g_strlcpy(ui->pick_emoji, kind != SERVER_PICK_ICON && name ? name : "",
+              sizeof(ui->pick_emoji));
+    ui->profile_pick = kind == SERVER_PICK_WEBHOOK ? 5 : kind == SERVER_PICK_EMOJI ? 4 : 3;
     file_picker_show_image(ui->files);
 }
 bool conversation_profile_picked(view *ui, GPtrArray *paths)
@@ -81,7 +83,7 @@ bool conversation_profile_picked(view *ui, GPtrArray *paths)
     /* The server icon and emojis share the avatar's 512 px limit. */
     job->side = pick == 2 ? PROFILE_BANNER_SIDE : PROFILE_AVATAR_SIDE;
     g_ptr_array_unref(paths);
-    ui->profile_server = pick == 3 ? 1 : pick == 4 ? 2 : 0;
+    ui->profile_server = pick == 3 ? 1 : pick == 4 ? 2 : pick == 5 ? 3 : 0;
     ui->profile_kind = kind;
     ui->profile_target = ui->model;
     ui->profile_generation = auth_context_generation(ui->connections->items[ui->active_tab].auth);
@@ -91,24 +93,27 @@ bool conversation_profile_picked(view *ui, GPtrArray *paths)
     g_task_run_in_thread(ui->profile_task, image_worker);
     watch(ui, ui->profile_server == 1   ? "Preparando o ícone…"
               : ui->profile_server == 2 ? "Preparando o emoji…"
+              : ui->profile_server == 3 ? "Preparando o avatar do webhook…"
               : kind == PROFILE_AVATAR  ? "Preparando o avatar…"
                                         : "Preparando o banner…");
     return true;
 }
-/* The server icon or emoji is handed to the administration model; the
- * modal shows its outcome. */
+/* The server icon, an emoji or a webhook's avatar is handed to the
+ * administration model; the modal shows its outcome. */
 static void server_image_ready(view *ui, char *data, const char *format, bool reduced)
 {
-    bool emoji = ui->profile_server == 2;
-    bool queued = emoji ? server_admin_emoji_create(ui->model, ui->pick_emoji, data, format)
-                        : server_admin_set_icon(ui->model, data, format);
+    bool emoji = ui->profile_server == 2, webhook = ui->profile_server == 3;
+    bool queued = webhook ? server_admin_webhook_avatar(ui->model, ui->pick_emoji, data, format)
+                  : emoji ? server_admin_emoji_create(ui->model, ui->pick_emoji, data, format)
+                          : server_admin_set_icon(ui->model, data, format);
     if (queued && ui->server_settings.open && emoji) {
         /* The name stays until the server confirms the emoji. */
         ui->server_settings.awaiting = ui->server_settings.dirty = true;
     }
     watch(ui, !queued ? "Não foi possível enviar a imagem agora."
-              : emoji ? (reduced ? "Enviando emoji reduzido…" : "Enviando emoji…")
-                      : (reduced ? "Enviando ícone reduzido…" : "Enviando ícone…"));
+              : webhook ? (reduced ? "Enviando avatar reduzido…" : "Enviando avatar…")
+              : emoji   ? (reduced ? "Enviando emoji reduzido…" : "Enviando emoji…")
+                        : (reduced ? "Enviando ícone reduzido…" : "Enviando ícone…"));
 }
 bool conversation_profile_poll(view *ui)
 {

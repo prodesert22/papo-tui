@@ -23,7 +23,7 @@ static bool uuid_value(const json_t *v)
 }
 static const char *const role_keys[] = {"manage_server",  "manage_channels", "manage_roles",
                                         "ban_members",    "pin_message",     "everyone_message",
-                                        "send_attachment"};
+                                        "send_attachment", "manage_webhooks"};
 static const char *const channel_keys[] = {"read_channel", "send_messages", "delete_messages",
                                            "connect_voice"};
 static bool flags_valid(const json_t *o, const char *const *keys, size_t count)

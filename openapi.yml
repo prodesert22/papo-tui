@@ -24,6 +24,7 @@ tags:
   - name: Roles
   - name: UserRoles
   - name: Emojis
+  - name: Webhooks
   - name: Attachments
   - name: Media
   - name: Embeds
@@ -2097,6 +2098,129 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /webhooks:
+    get:
+      tags: [Webhooks]
+      summary: Lista os webhooks ativos de todos os canais
+      description: |
+        Permission Check: `manage_webhooks` (o dono do servidor tem todas as permissões).
+        Retorna só os webhooks não revogados, do mais novo para o mais antigo (created_at),
+        em uma única resposta, sem paginação. O token e o segredo nunca são retornados aqui.
+      responses:
+        '200':
+          description: Webhooks ativos
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  webhooks:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Webhook'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags: [Webhooks]
+      summary: Cria um webhook em um canal de texto ou de voz
+      description: |
+        Permission Check: `manage_webhooks`. O token de acesso em texto puro (hex de 32 bytes
+        aleatórios) aparece somente nesta resposta; o servidor guarda apenas o hash. Quem tem o
+        token envia mensagens ao canal por `POST /webhooks/{webhook_id}/messages` com
+        `Authorization: Bearer <token>`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWebhookRequest'
+      responses:
+        '201':
+          description: Webhook criado, com o token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateWebhookResponse'
+        '400':
+          description: Nome vazio ou com mais de 80 caracteres, ou JSON inválido
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Sem `manage_webhooks`, ou o canal não é text nem voice
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /webhooks/{webhook_id}:
+    patch:
+      tags: [Webhooks]
+      summary: Atualiza a identidade persistente (apelido e avatar) de um webhook
+      description: |
+        Permission Check: `manage_webhooks`. Campos ausentes preservam o valor atual.
+        `display_name` vazio remove o apelido (volta a usar `name`); `avatar` vazio remove o
+        avatar. Um webhook revogado responde 404.
+      parameters:
+        - $ref: '#/components/parameters/WebhookId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateWebhookRequest'
+      responses:
+        '200':
+          description: Webhook atualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Webhook'
+        '400':
+          description: Apelido com mais de 100 caracteres ou avatar inválido (formato, tamanho ou dimensões)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      tags: [Webhooks]
+      summary: Revoga um webhook
+      description: |
+        Permission Check: `manage_webhooks`. Soft delete: o token deixa de autenticar, mas as
+        mensagens já enviadas mantêm a atribuição. Um webhook inexistente ou já revogado
+        responde 404.
+      parameters:
+        - $ref: '#/components/parameters/WebhookId'
+      responses:
+        '204':
+          description: Webhook revogado
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /attachments/{file_id}:
     get:
       tags: [Attachments]
@@ -2363,7 +2487,7 @@ paths:
           required: false
           schema:
             type: string
-          description: Filtra por tipo de entidade (user, server, channel, message, attachment, role, user_role, emoji)
+          description: Filtra por tipo de entidade (user, server, channel, message, attachment, role, user_role, emoji, webhook)
         - name: since
           in: query
           required: false
@@ -2518,6 +2642,13 @@ components:
         format: uuid
     EmojiId:
       name: emoji_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    WebhookId:
+      name: webhook_id
       in: path
       required: true
       schema:
@@ -4131,6 +4262,8 @@ components:
           type: boolean
         send_attachment:
           type: boolean
+        manage_webhooks:
+          type: boolean
 
     CreateRoleRequest:
       type: object
@@ -4207,6 +4340,76 @@ components:
           type: string
           format: byte
         format:
+          type: string
+          enum: [GIF, JPEG, JPG, PNG, WEBP]
+
+    Webhook:
+      type: object
+      description: >
+        Remetente com credencial própria (token Bearer, nunca um JWT de usuário), limitado a um
+        único canal. O hash do segredo e o avatar nunca são serializados; o avatar persistente
+        é servido por `GET /webhooks/{webhook_id}/avatar` (público).
+      properties:
+        id:
+          type: string
+          format: uuid
+        channel_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          description: Nome do webhook (1 a 80 caracteres)
+        display_name:
+          type: string
+          nullable: true
+          description: Apelido persistente; ausente ou nulo quando se usa `name`
+        created_by:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        revoked_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Presente apenas em webhooks revogados, que a listagem não retorna
+
+    CreateWebhookRequest:
+      type: object
+      required: [channel_id, name]
+      properties:
+        channel_id:
+          type: string
+          format: uuid
+          description: Canal de tipo text ou voice
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+
+    CreateWebhookResponse:
+      allOf:
+        - $ref: '#/components/schemas/Webhook'
+        - type: object
+          properties:
+            token:
+              type: string
+              description: Token de acesso em texto puro; só existe nesta resposta
+
+    UpdateWebhookRequest:
+      type: object
+      description: Todos os campos são opcionais; ausente preserva o valor atual
+      properties:
+        display_name:
+          type: string
+          maxLength: 100
+          description: Apelido; vazio remove
+        avatar:
+          type: string
+          format: byte
+          description: Base64 de GIF, JPEG, PNG ou WEBP (máx. 2MB, 512px, mesmas regras do avatar de usuário); vazio remove
+        avatar_format:
           type: string
           enum: [GIF, JPEG, JPG, PNG, WEBP]
 
@@ -4302,7 +4505,7 @@ components:
           description: 'Ação auditável (ex.: user.ban, message.delete, role.create)'
         entity_type:
           type: string
-          description: Tipo da entidade afetada (user, server, channel, message, attachment, role, user_role, emoji)
+          description: Tipo da entidade afetada (user, server, channel, message, attachment, role, user_role, emoji, webhook)
         target_user_id:
           type: string
           format: uuid

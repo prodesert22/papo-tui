@@ -17,6 +17,11 @@ enum admin_kind {
     OP_CHANNEL_ROLE_REMOVE,
     OP_EMOJI_CREATE,
     OP_EMOJI_DELETE,
+    OP_WEBHOOK_CREATE,
+    OP_WEBHOOK_NICKNAME,
+    OP_WEBHOOK_AVATAR,
+    OP_WEBHOOK_AVATAR_REMOVE,
+    OP_WEBHOOK_REVOKE,
     OP_MEMBER_ROLE_ADD,
     OP_MEMBER_ROLE_REMOVE,
     OP_MEMBER_BAN,
@@ -51,15 +56,24 @@ struct history_server_admin {
     admin_state state;
     char notice[256];
     char reset_url[2049], reset_expires[65], reset_user[37];
+    char webhook_token[129], webhook_for[37], webhook_created[37];
+    bool token_lost;
     uint64_t revision;
 };
 #define LIST_LIMIT 2000U
-static const char *const entity_types[] = {"user",       "server", "channel",   "message",
-                                           "attachment", "role",   "user_role", "emoji"};
+static const char *const entity_types[] = {"user", "server",    "channel", "message", "attachment",
+                                           "role", "user_role", "emoji",   "webhook"};
 
 static void changed(struct history_server_admin *a)
 {
     ++a->revision;
+}
+/* Zeroes a secret in a way the compiler may not drop before the memory goes. */
+static void wipe(void *secret, size_t size)
+{
+    volatile unsigned char *bytes = secret;
+    while (size--)
+        *bytes++ = 0;
 }
 static struct history_server_admin *admin(history *h)
 {
@@ -112,6 +126,7 @@ void history_internal_server_admin_destroy(history *h)
     json_decref(a->audit_actions);
     json_decref(a->audit_sorted);
     memset(a->reset_url, 0, sizeof(a->reset_url));
+    wipe(a->webhook_token, sizeof(a->webhook_token));
     free(a);
     h->server_admin = NULL;
     h->admin_users = false;
@@ -136,6 +151,8 @@ admin_visibility server_admin_visibility(const permissions *p, admin_tab tab)
     case ADMIN_TAB_EMOJIS:
         /* The contract sets no permission for adding emojis. */
         return ADMIN_SHOWN;
+    case ADMIN_TAB_WEBHOOKS:
+        return of(permissions_role(p, PERMISSION_MANAGE_WEBHOOKS));
     case ADMIN_TAB_MEMBERS: {
         admin_visibility roles = of(permissions_role(p, PERMISSION_MANAGE_ROLES)),
                          server = of(permissions_role(p, PERMISSION_MANAGE_SERVER));
@@ -191,9 +208,11 @@ const char *server_admin_check_text(const char *text, size_t max, bool required)
     if (required && blank)
         return "Preencha este campo.";
     if (max && (size_t)g_utf8_strlen(text, -1) > max)
-        return max == ADMIN_SERVER_NAME_MAX ? "Nome com mais de 32 caracteres."
-               : max == ADMIN_TOPIC_MAX     ? "Tópico com mais de 512 caracteres."
-                                            : "Texto longo demais.";
+        return max == ADMIN_SERVER_NAME_MAX        ? "Nome com mais de 32 caracteres."
+               : max == ADMIN_TOPIC_MAX            ? "Tópico com mais de 512 caracteres."
+               : max == ADMIN_WEBHOOK_NAME_MAX     ? "Nome com mais de 80 caracteres."
+               : max == ADMIN_WEBHOOK_NICKNAME_MAX ? "Apelido com mais de 100 caracteres."
+                                                   : "Texto longo demais.";
     for (const char *at = text; *at; at = g_utf8_next_char(at))
         if (g_unichar_iscntrl(g_utf8_get_char(at)))
             return "Use uma única linha, sem caracteres de controle.";
@@ -441,6 +460,9 @@ void server_admin_close(history *h)
     a->audit_actions = a->audit_sorted = NULL;
     memset(a->reset_url, 0, sizeof(a->reset_url));
     a->reset_expires[0] = a->reset_user[0] = 0;
+    wipe(a->webhook_token, sizeof(a->webhook_token));
+    a->webhook_for[0] = a->webhook_created[0] = 0;
+    a->token_lost = false;
     if (!a->sending && !a->has_queued) {
         a->notice[0] = 0;
         a->state = ADMIN_IDLE;
@@ -478,7 +500,7 @@ bool server_admin_remove_icon(history *h)
 }
 static const char *const role_keys[PERMISSION_ROLE_COUNT] = {
     "manage_server", "manage_channels",  "manage_roles",   "ban_members",
-    "pin_message",   "everyone_message", "send_attachment"};
+    "pin_message",   "everyone_message", "send_attachment", "manage_webhooks"};
 static const char *const channel_keys[PERMISSION_CHANNEL_COUNT] = {
     "read_channel", "send_messages", "delete_messages", "connect_voice"};
 static json_t *flags_object(const char *const *keys, const bool *flags, size_t count)
@@ -601,6 +623,94 @@ bool server_admin_emoji_delete(history *h, const char *id)
     snprintf(path, sizeof(path), "/emojis/%s", id);
     return enqueue(h, OP_EMOJI_DELETE, "DELETE", path, NULL, id, NULL);
 }
+/* The channel must take messages: the contract allows webhooks only there. */
+static bool webhook_channel(history *h, const char *channel)
+{
+    const char *type =
+        history_internal_str(json_object_get(server_admin_channels(h), channel), "type");
+    return history_uuid(channel) && (!type || !strcmp(type, "text") || !strcmp(type, "voice"));
+}
+bool server_admin_webhook_create(history *h, const char *channel, const char *name)
+{
+    if (!webhook_channel(h, channel) || server_admin_check_text(name, ADMIN_WEBHOOK_NAME_MAX, true))
+        return false;
+    json_t *body = json_pack("{s:s,s:s}", "channel_id", channel, "name", name);
+    return body && enqueue(h, OP_WEBHOOK_CREATE, "POST", "/webhooks", body, NULL, NULL);
+}
+bool server_admin_webhook_nickname(history *h, const char *id, const char *nickname)
+{
+    if (!history_uuid(id) || server_admin_check_text(nickname, ADMIN_WEBHOOK_NICKNAME_MAX, false))
+        return false;
+    json_t *body = json_pack("{s:s}", "display_name", nickname);
+    char path[64];
+    snprintf(path, sizeof(path), "/webhooks/%s", id);
+    return body && enqueue(h, OP_WEBHOOK_NICKNAME, "PATCH", path, body, id, NULL);
+}
+bool server_admin_webhook_avatar(history *h, const char *id, char *base64, const char *format)
+{
+    if (!history_uuid(id) || !base64 || !*base64 || !image_format(format)) {
+        g_free(base64);
+        return false;
+    }
+    json_t *body = json_pack("{s:s,s:s}", "avatar", base64, "avatar_format", format);
+    g_free(base64);
+    char path[64];
+    snprintf(path, sizeof(path), "/webhooks/%s", id);
+    return body && enqueue(h, OP_WEBHOOK_AVATAR, "PATCH", path, body, id, NULL);
+}
+bool server_admin_webhook_avatar_remove(history *h, const char *id)
+{
+    if (!history_uuid(id))
+        return false;
+    json_t *body = json_pack("{s:s}", "avatar", "");
+    char path[64];
+    snprintf(path, sizeof(path), "/webhooks/%s", id);
+    return body && enqueue(h, OP_WEBHOOK_AVATAR_REMOVE, "PATCH", path, body, id, NULL);
+}
+bool server_admin_webhook_revoke(history *h, const char *id)
+{
+    if (!history_uuid(id))
+        return false;
+    char path[64];
+    snprintf(path, sizeof(path), "/webhooks/%s", id);
+    return enqueue(h, OP_WEBHOOK_REVOKE, "DELETE", path, NULL, id, NULL);
+}
+const char *server_admin_webhook_token(history *h, const char *id)
+{
+    struct history_server_admin *a = h ? h->server_admin : NULL;
+    return a && id && *id && !strcmp(a->webhook_for, id) ? a->webhook_token : "";
+}
+bool server_admin_webhook_token_lost(history *h, const char *id)
+{
+    return server_admin_webhook_held(h, id) && h->server_admin->token_lost;
+}
+bool server_admin_webhook_held(history *h, const char *id)
+{
+    return h && h->server_admin && id && *id && !strcmp(h->server_admin->webhook_for, id);
+}
+const char *server_admin_webhook_created(history *h)
+{
+    return h && h->server_admin ? h->server_admin->webhook_created : "";
+}
+void server_admin_webhook_created_clear(history *h)
+{
+    if (h && h->server_admin)
+        h->server_admin->webhook_created[0] = 0;
+}
+const char *server_admin_instance_url(history *h)
+{
+    return auth_instance_url(h->auth);
+}
+void server_admin_webhook_forget_token(history *h)
+{
+    struct history_server_admin *a = h ? h->server_admin : NULL;
+    if (!a)
+        return;
+    wipe(a->webhook_token, sizeof(a->webhook_token));
+    a->webhook_for[0] = 0;
+    a->token_lost = false;
+    changed(a);
+}
 bool server_admin_emoji_deletable(history *h, const json_t *emoji)
 {
     const char *author = history_internal_str(emoji, "created_by");
@@ -686,6 +796,11 @@ static bool query_add(GString *path, const char *key, const char *value)
 static bool list_path(struct history_server_admin *a, admin_list list, char *path, size_t size)
 {
     struct admin_page *page = &a->pages[list];
+    /* The contract returns every active webhook at once, without a cursor. */
+    if (list == ADMIN_LIST_WEBHOOKS) {
+        snprintf(path, size, "/webhooks");
+        return true;
+    }
     GString *text = g_string_new(list == ADMIN_LIST_EMOJIS ? "/emojis?order=asc"
                                                            : "/admin/audit-logs?order=desc");
     bool ok = query_add(text, "since", page->since) &&
@@ -785,6 +900,11 @@ static bool valid_item(json_t *item, admin_list list)
         return history_internal_string_field(item, "name", 512, false) &&
                history_internal_string_field(item, "format", 8, true) &&
                history_internal_string_field(item, "created_by", 36, true);
+    if (list == ADMIN_LIST_WEBHOOKS)
+        return history_uuid(history_internal_str(item, "channel_id")) &&
+               history_internal_string_field(item, "name", 512, false) &&
+               history_internal_string_field(item, "display_name", 512, true) &&
+               history_internal_string_field(item, "created_by", 36, true);
     json_t *metadata = json_object_get(item, "metadata");
     return history_internal_string_field(item, "actor_username", 1024, true) &&
            history_internal_string_field(item, "action", 256, false) &&
@@ -797,13 +917,20 @@ static void page_response(struct history_server_admin *a, admin_list list, json_
     if (!page->loading)
         return; /* Closed or refiltered meanwhile. */
     page->loading = false;
-    json_t *items = json_object_get(body, list == ADMIN_LIST_EMOJIS ? "emojis" : "logs");
-    bool ok = code == 200 && json_is_array(items) && json_array_size(items) <= 100;
+    json_t *items = json_object_get(body, list == ADMIN_LIST_EMOJIS     ? "emojis"
+                                          : list == ADMIN_LIST_WEBHOOKS ? "webhooks"
+                                                                        : "logs");
+    /* Webhooks come whole, so their one answer is bounded by the list limit. */
+    bool ok = code == 200 && json_is_array(items) &&
+              json_array_size(items) <= (list == ADMIN_LIST_WEBHOOKS ? LIST_LIMIT : 100);
     size_t i;
     json_t *item;
     json_array_foreach(items, i, item) if (ok && !valid_item(item, list)) ok = false;
     if (ok && !page->items)
         page->items = json_array();
+    /* Webhooks always come whole: a new answer replaces the earlier one. */
+    if (ok && list == ADMIN_LIST_WEBHOOKS)
+        json_array_clear(page->items);
     if (ok && json_array_size(page->items) + json_array_size(items) > LIST_LIMIT)
         ok = false;
     if (!ok || !page->items) {
@@ -899,6 +1026,16 @@ static const char *success_notice(enum admin_kind kind)
         return "Emoji adicionado";
     case OP_EMOJI_DELETE:
         return "Emoji excluído";
+    case OP_WEBHOOK_CREATE:
+        return "Webhook criado";
+    case OP_WEBHOOK_NICKNAME:
+        return "Apelido do webhook salvo";
+    case OP_WEBHOOK_AVATAR:
+        return "Avatar do webhook atualizado";
+    case OP_WEBHOOK_AVATAR_REMOVE:
+        return "Avatar do webhook removido";
+    case OP_WEBHOOK_REVOKE:
+        return "Webhook revogado";
     case OP_MEMBER_ROLE_ADD:
         return "Cargo atribuído";
     case OP_MEMBER_ROLE_REMOVE:
@@ -937,6 +1074,13 @@ static void reconcile(history *h, struct history_server_admin *a, enum admin_kin
     else if (kind == OP_EMOJI_CREATE || kind == OP_EMOJI_DELETE) {
         server_admin_load(h, ADMIN_LIST_EMOJIS, false);
         chat_assets_emojis_request(h->assets, true);
+    } else if (kind >= OP_WEBHOOK_CREATE && kind <= OP_WEBHOOK_REVOKE) {
+        /* Read again without emptying the list: the open form belongs to one
+         * of its items and must not lose its place meanwhile. */
+        struct admin_page *page = &a->pages[ADMIN_LIST_WEBHOOKS];
+        page->want = true;
+        page->failed = false;
+        changed(a);
     } else if (kind >= OP_MEMBER_ROLE_ADD && kind <= OP_MEMBER_UNBAN)
         history_users_refresh(h);
     /* Roles, channels and the owner come back with the permission snapshot. */
@@ -960,6 +1104,28 @@ static void reset_response(struct history_server_admin *a, const struct admin_op
         snprintf(a->reset_user, sizeof(a->reset_user), "%s", op->target);
     }
 }
+/* The token comes only in this answer. It is held for that webhook alone and
+ * never copied into a notice. An answer without a usable one still created the
+ * webhook: the form says so and offers revoking it. */
+static void webhook_created(struct history_server_admin *a, json_t *body)
+{
+    const char *id = history_internal_str(body, "id"),
+               *token = history_internal_str(body, "token");
+    wipe(a->webhook_token, sizeof(a->webhook_token));
+    a->webhook_for[0] = a->webhook_created[0] = 0;
+    a->token_lost = false;
+    if (!history_uuid(id))
+        return;
+    bool usable = token && *token && strlen(token) < sizeof(a->webhook_token);
+    for (const unsigned char *p = (const unsigned char *)token; usable && *p; ++p)
+        usable = *p > 32 && *p < 127;
+    snprintf(a->webhook_created, sizeof(a->webhook_created), "%s", id);
+    snprintf(a->webhook_for, sizeof(a->webhook_for), "%s", id);
+    if (usable)
+        snprintf(a->webhook_token, sizeof(a->webhook_token), "%s", token);
+    else
+        a->token_lost = true;
+}
 static void mutation_response(history *h, struct history_server_admin *a, json_t *body, long code,
                               bool uncertain)
 {
@@ -971,6 +1137,10 @@ static void mutation_response(history *h, struct history_server_admin *a, json_t
         detail = json_string_value(json_object_get(body, "title"));
     if (ok && op->kind == OP_MEMBER_RESET)
         reset_response(a, op, body, &ok);
+    if (ok && op->kind == OP_WEBHOOK_CREATE)
+        webhook_created(a, body);
+    if (ok && op->kind == OP_WEBHOOK_REVOKE && !strcmp(a->webhook_for, op->target))
+        server_admin_webhook_forget_token(h);
     if (ok) {
         if ((op->kind == OP_SERVER || op->kind == OP_ICON || op->kind == OP_ICON_REMOVE) &&
             valid_server(body))
@@ -981,6 +1151,8 @@ static void mutation_response(history *h, struct history_server_admin *a, json_t
             observe_ban(h, op->target, op->kind == OP_MEMBER_BAN);
         a->state = ADMIN_SAVED;
         set_notice(a, success_notice(op->kind), NULL);
+        if (op->kind == OP_WEBHOOK_CREATE && a->token_lost)
+            set_notice(a, "Webhook criado, mas sem token na resposta; revogue-o e crie outro", NULL);
         if (op->kind != OP_MEMBER_RESET && op->kind != OP_MEMBER_ROLE_ADD &&
             op->kind != OP_MEMBER_ROLE_REMOVE && op->kind != OP_MEMBER_BAN &&
             op->kind != OP_MEMBER_UNBAN)

@@ -271,6 +271,7 @@ add_executable(
     src/ui/components/server_settings/roles.c
     src/ui/components/server_settings/channels.c
     src/ui/components/server_settings/emojis.c
+    src/ui/components/server_settings/webhooks.c
     src/ui/components/server_settings/members.c
     src/ui/components/server_settings/audit.c
     src/ui/screens/message_browser.c

@@ -599,6 +599,37 @@ def build_cases():
             "has_more": False,
         },
     )
+    webhook = {
+        "id": str(UUID(int=70)),
+        "channel_id": CHANNEL,
+        "name": "fixture-deploys",
+        "display_name": "Robô de deploy",
+        "created_by": USER,
+        "created_at": DATE,
+    }
+    add(
+        "webhook_create_request",
+        "/webhooks",
+        "post",
+        {"channel_id": CHANNEL, "name": "fixture-deploys"},
+        request=True,
+    )
+    add(
+        "webhook_create_response",
+        "/webhooks",
+        "post",
+        dict(webhook, token="0123456789abcdef" * 4),
+        201,
+    )
+    add("webhooks_list", "/webhooks", "get", {"webhooks": [webhook]})
+    add(
+        "webhook_update_request",
+        "/webhooks/{webhook_id}",
+        "patch",
+        {"display_name": "Robô de deploy", "avatar": "iVBORw0KGgo=", "avatar_format": "PNG"},
+        request=True,
+    )
+    add("webhook_update_response", "/webhooks/{webhook_id}", "patch", webhook)
     add(
         "user_role_request",
         "/users/{user_id}/roles",

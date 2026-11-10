@@ -1056,6 +1056,61 @@
     "file": "emojis_page.json"
   },
   {
+    "name": "webhook_create_request",
+    "path": "/webhooks",
+    "method": "post",
+    "status": 200,
+    "kind": "request",
+    "media": "application/json",
+    "valid": true,
+    "purpose": "Exemplo sintético conforme contrato",
+    "file": "webhook_create_request.json"
+  },
+  {
+    "name": "webhook_create_response",
+    "path": "/webhooks",
+    "method": "post",
+    "status": 201,
+    "kind": "response",
+    "media": "application/json",
+    "valid": true,
+    "purpose": "Exemplo sintético conforme contrato",
+    "file": "webhook_create_response.json"
+  },
+  {
+    "name": "webhooks_list",
+    "path": "/webhooks",
+    "method": "get",
+    "status": 200,
+    "kind": "response",
+    "media": "application/json",
+    "valid": true,
+    "purpose": "Exemplo sintético conforme contrato",
+    "file": "webhooks_list.json"
+  },
+  {
+    "name": "webhook_update_request",
+    "path": "/webhooks/{webhook_id}",
+    "method": "patch",
+    "status": 200,
+    "kind": "request",
+    "media": "application/json",
+    "valid": true,
+    "purpose": "Exemplo sintético conforme contrato",
+    "file": "webhook_update_request.json"
+  },
+  {
+    "name": "webhook_update_response",
+    "path": "/webhooks/{webhook_id}",
+    "method": "patch",
+    "status": 200,
+    "kind": "response",
+    "media": "application/json",
+    "valid": true,
+    "purpose": "Exemplo sintético conforme contrato",
+    "file": "webhook_update_response.json"
+  },
+  {
     "name": "user_role_request",
     "path": "/users/{user_id}/roles",
     "method": "post",

@@ -8,7 +8,12 @@
 /* Configurações do servidor: one tab per category, shown only when the
  * signed-in account may act there. The modal borrows the active server's
  * model while open and owns its window, drafts and hit boxes. */
-typedef enum { SERVER_PICK_NONE, SERVER_PICK_ICON, SERVER_PICK_EMOJI } server_settings_pick;
+typedef enum {
+    SERVER_PICK_NONE,
+    SERVER_PICK_ICON,
+    SERVER_PICK_EMOJI,
+    SERVER_PICK_WEBHOOK
+} server_settings_pick;
 #define SERVER_SETTINGS_FIELDS 512
 #define SERVER_SETTINGS_ROWS 128
 typedef struct {
@@ -41,6 +46,7 @@ typedef struct {
     char query[129];
     server_settings_pick pick; /* Taken by the screen, which opens the file picker. */
     char emoji_name[129];      /* Name of the emoji whose image is being picked. */
+    char webhook_pick[37];     /* ID of the webhook whose avatar is being picked. */
     /* Geometry and hit boxes from the last draw. */
     int top, bottom, list_x, list_w, form_x, form_w;
     int row_y[SERVER_SETTINGS_ROWS], row_index[SERVER_SETTINGS_ROWS], row_count;

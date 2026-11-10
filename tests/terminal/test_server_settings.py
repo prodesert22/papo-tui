@@ -9,13 +9,22 @@ import unittest
 from pathlib import Path
 
 from history_mock import OTHER, uuid
-from server_admin_mock import EMOJI, ME, MODERATOR, OTHER_OWNER, PIXEL, ServerAdminMock
+from server_admin_mock import (
+    EMOJI,
+    ME,
+    MODERATOR,
+    OTHER_OWNER,
+    PIXEL,
+    TOKEN,
+    WEBHOOK,
+    ServerAdminMock,
+)
 from terminal_support import Terminal
 import terminal_interactions as interactions
 
 UP, DOWN, RIGHT, LEFT = "\x1bOA", "\x1bOB", "\x1bOC", "\x1bOD"
 TITLE = "Configurações do servidor ·"
-TABS = ("Visão geral", "Cargos", "Canais", "Emojis", "Membros", "Auditoria")
+TABS = ("Visão geral", "Cargos", "Canais", "Emojis", "Webhooks", "Membros", "Auditoria")
 
 
 class ServerSettings(unittest.TestCase):
@@ -131,6 +140,12 @@ class ServerSettings(unittest.TestCase):
             t = self.open(server)
             self.wait(t, "< Cargos >")
             self.assertEqual(self.tabs(t), ["Cargos", "Emojis", "Membros"])
+        with ServerAdminMock() as server:
+            server.set_owner(OTHER_OWNER)
+            server.give("manage_webhooks")
+            t = self.open(server)
+            self.wait(t, "< Emojis >")
+            self.assertEqual(self.tabs(t), ["Emojis", "Webhooks"])
 
     def test_a_tab_closes_when_its_permission_is_removed(self):
         with ServerAdminMock() as server:
@@ -155,12 +170,15 @@ class ServerSettings(unittest.TestCase):
             self.type_in(t, "Cor", "#12ab34")
             self.click(t, "[ ] Fixar mensagens")
             self.wait(t, "[x] Fixar mensagens")
+            self.click(t, "[ ] Gerenciar webhooks")
+            self.wait(t, "[x] Gerenciar webhooks")
             self.click(t, "Criar cargo")
             self.wait(t, "Cargo criado")
             ((_, _, body),) = self.calls(server, "POST", "/roles", 1)
             self.assertEqual(body["name"], "Suporte")
             self.assertEqual(body["color"], "#12ab34")
             self.assertTrue(body["permissions"]["pin_message"])
+            self.assertTrue(body["permissions"]["manage_webhooks"])
             self.assertFalse(body["permissions"]["manage_server"])
             self.wait(t, "Suporte")
             # An invalid color never leaves the client.
@@ -328,6 +346,143 @@ class ServerSettings(unittest.TestCase):
             self.calls(server, "DELETE", "/emojis/", 1)
             self.settled(t, lambda: ":aceno:" not in self.screen(t))
             self.assertNotIn(f"/emojis/{EMOJI}", [c[1] for c in server.admin_calls])
+
+    def type_unseen(self, terminal, label, text):
+        """Types text that is longer than its field shows, so it cannot be waited for."""
+        self.click(terminal, label + ":")
+        terminal.send("\x03" + text)
+        terminal.read(0.4)
+
+    def webhooks(self, server):
+        t = self.open(server)
+        t.resize(50, 110)
+        self.tab(t, "Webhooks")
+        self.wait(t, "Robô de deploy")
+        return t
+
+    def test_a_webhook_is_created_and_its_token_is_shown_only_while_its_form_is_open(self):
+        with ServerAdminMock() as server:
+            t = self.webhooks(server)
+            # The list names each webhook by its nickname and its channel.
+            self.wait(t, "#geral")
+            self.wait(t, "+ Novo webhook")
+            self.wait(t, "< #geral >")
+            # Categories take no webhook: clicking the label steps back through the
+            # other channels only, wrapping around.
+            for expected in ("#voz", "#outro", "#geral", "#voz", "#outro"):
+                self.click(t, "Canal:")
+                self.wait(t, f"< {expected} >")
+                self.assertNotIn("Categoria >", self.screen(t))
+            self.type_unseen(t, "Nome", "x" * 81)
+            self.click(t, "Criar webhook")
+            self.wait(t, "Nome com mais de 80 caracteres.")
+            self.calls(server, "POST", "/webhooks", 0)
+            self.type_in(t, "Nome", "Build")
+            self.click(t, "Criar webhook")
+            self.wait(t, "Webhook criado")
+            ((_, _, body),) = self.calls(server, "POST", "/webhooks", 1)
+            self.assertEqual(set(body), {"channel_id", "name"})
+            self.assertEqual((body["name"], body["channel_id"]), ("Build", OTHER))
+            # The new webhook opens with its address and token, which are shown once.
+            self.wait(t, "Token de acesso")
+            self.wait(t, TOKEN[:30])
+            self.wait(t, "/messages")
+            self.assertIn("/webhooks/", self.screen(t))
+            self.click(t, "Copiar token")
+            self.wait(t, "Token copiado.")
+            copied = base64.b64encode(TOKEN.encode())
+            self.settled(t, lambda: b"\x1b]52;c;" + copied in t.output)
+            # Looking at another webhook drops the token for good.
+            self.click(t, "Robô de deploy")
+            self.wait(t, "Salvar apelido")
+            self.settled(t, lambda: TOKEN[:30] not in self.screen(t))
+            self.click(t, "Build")
+            self.wait(t, "Salvar apelido")
+            self.assertNotIn("Token de acesso", self.screen(t))
+            self.assertNotIn(TOKEN[:30], self.screen(t))
+            # Only the list and the first answer ever carried it.
+            self.assertEqual(sum(TOKEN in str(c) for c in server.admin_calls), 0)
+            self.calls(server, "GET", "/webhooks", 2)
+
+    def test_nickname_avatar_and_revocation_of_a_webhook(self):
+        with tempfile.TemporaryDirectory() as folder, ServerAdminMock() as server:
+            image = Path(folder, "robo.png")
+            image.write_bytes(base64.b64decode(PIXEL))
+            t = self.webhooks(server)
+            self.click(t, "Robô de deploy")
+            self.wait(t, "Salvar apelido")
+            self.wait(t, "Apelido:")
+            self.type_in(t, "Apelido", "Bot do deploy")
+            t.send("\n")
+            self.wait(t, "Apelido do webhook salvo")
+            ((_, path, body),) = self.calls(server, "PATCH", "/webhooks/", 1)
+            self.assertEqual((path, body), (f"/webhooks/{WEBHOOK}", {"display_name": "Bot do deploy"}))
+            # The form keeps its place while the list is read again.
+            self.wait(t, "Salvar apelido")
+            self.wait(t, "Bot do deploy")
+            self.type_unseen(t, "Apelido", "y" * 101)
+            t.send("\n")
+            self.wait(t, "Apelido com mais de 100 caracteres.")
+            self.calls(server, "PATCH", "/webhooks/", 1)
+            # An empty nickname returns to the webhook's name.
+            self.click(t, "Apelido:")
+            t.send("\x03\n")
+            ((_, _, _), (_, _, body)) = self.calls(server, "PATCH", "/webhooks/", 2)
+            self.assertEqual(body, {"display_name": ""})
+            self.click(t, "Escolher avatar e enviar")
+            self.wait(t, "Escolher imagem")
+            t.send("\x03" + str(image) + "\n")
+            self.wait(t, "Avatar do webhook atualizado")
+            (_, _, (_, _, avatar)) = self.calls(server, "PATCH", "/webhooks/", 3)
+            self.assertEqual(avatar["avatar_format"], "PNG")
+            self.assertEqual(base64.b64decode(avatar["avatar"])[:4], b"\x89PNG")
+            self.click(t, "Remover avatar")
+            self.click(t, "Confirmar: Remover avatar")
+            self.wait(t, "Avatar do webhook removido")
+            self.assertEqual(self.calls(server, "PATCH", "/webhooks/", 4)[3][2], {"avatar": ""})
+            # Revoking asks for a second press and then leaves the list.
+            self.click(t, "Revogar webhook")
+            self.wait(t, "Confirmar: Revogar webhook")
+            self.calls(server, "DELETE", "/webhooks/", 0)
+            self.click(t, "Confirmar: Revogar webhook")
+            self.wait(t, "Webhook revogado")
+            ((_, deleted, _),) = self.calls(server, "DELETE", "/webhooks/", 1)
+            self.assertEqual(deleted, f"/webhooks/{WEBHOOK}")
+            self.settled(t, lambda: "Deploys" not in self.screen(t))
+
+    def test_refused_webhook_changes_keep_the_draft_and_are_never_repeated(self):
+        with ServerAdminMock() as server:
+            server.set_owner(OTHER_OWNER)
+            server.give("manage_webhooks")
+            t = self.webhooks(server)
+            server.admin_status[("POST", "/webhooks")] = 403
+            self.type_in(t, "Nome", "Build")
+            self.click(t, "Criar webhook")
+            self.wait(t, "Sem permissão para esta ação")
+            self.wait(t, "Nome:             Build")
+            self.assertNotIn(b"\x1b]52;", t.output)
+            server.admin_status[("POST", "/webhooks")] = 400
+            self.click(t, "Criar webhook")
+            self.wait(t, "O servidor recusou a alteração")
+            server.admin_status[("POST", "/webhooks")] = "drop"
+            self.click(t, "Criar webhook")
+            self.wait(t, "Alteração não confirmada; confira antes de repetir")
+            time.sleep(1)
+            self.calls(server, "POST", "/webhooks", 3)
+            # An answer without a token still created the webhook: it must be revoked.
+            server.admin_status.clear()
+            original = server.apply_webhook
+
+            def without_token(method, resource, body):
+                status, answer = original(method, resource, body)
+                if method == "POST":
+                    answer.pop("token")
+                return status, answer
+
+            server.apply_webhook = without_token
+            self.click(t, "Criar webhook")
+            self.wait(t, "revogue-o e crie outro")
+            self.wait(t, "O servidor não enviou o token deste webhook")
 
     def test_members_get_roles_and_are_banned(self):
         with ServerAdminMock() as server:

@@ -20,11 +20,11 @@ enum {
 };
 #define ROW_FILTERS "filters"
 #define MATCHES 6
-static const char *const entities[] = {"",           "user", "server",    "channel", "message",
-                                       "attachment", "role", "user_role", "emoji"};
-static const char *const entity_labels[] = {"Todas",  "Usuários",          "Servidor",
-                                            "Canais", "Mensagens",         "Anexos",
-                                            "Cargos", "Cargos de membros", "Emojis"};
+static const char *const entities[] = {"",     "user",      "server", "channel", "message",
+                                       "attachment", "role", "user_role", "emoji",   "webhook"};
+static const char *const entity_labels[] = {"Todas",  "Usuários",          "Servidor", "Canais",
+                                            "Mensagens", "Anexos",         "Cargos",
+                                            "Cargos de membros", "Emojis", "Webhooks"};
 #define ENTITIES ((int)G_N_ELEMENTS(entities))
 
 static const json_t *selected_log(server_settings *s)

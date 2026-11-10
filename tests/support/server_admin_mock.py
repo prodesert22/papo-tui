@@ -12,6 +12,8 @@ BASE = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc)
 OTHER_OWNER = uuid(999)
 MODERATOR = uuid(403)
 EMOJI = uuid(601)
+WEBHOOK = uuid(951)
+TOKEN = "c0ffee" * 10 + "abcd"  # 64 hex-like characters, like the backend's
 PIXEL = base64.b64encode(
     bytes.fromhex(
         "89504e470d0a1a0a0000000d4948445200000001000000010806000000"
@@ -26,6 +28,7 @@ ROLE_KEYS = (
     "pin_message",
     "everyone_message",
     "send_attachment",
+    "manage_webhooks",
 )
 CHANNEL_KEYS = ("read_channel", "send_messages", "delete_messages", "connect_voice")
 
@@ -59,6 +62,16 @@ class ServerAdminMock(ProfileMock):
                 "name": "festa",
                 "format": "PNG",
                 "image_blob": PIXEL,
+                "created_by": uuid(4),
+                "created_at": STAMP,
+            }
+        ]
+        self.webhooks = [
+            {
+                "id": WEBHOOK,
+                "channel_id": CHANNEL,
+                "name": "Deploys",
+                "display_name": "Robô de deploy",
                 "created_by": uuid(4),
                 "created_at": STAMP,
             }
@@ -155,6 +168,23 @@ class ServerAdminMock(ProfileMock):
             if status:
                 return status, None
             return 200, {"logs": copy.deepcopy(logs[:100]), "has_more": len(logs) > 100}
+        if resource == "/webhooks" and method == "GET":
+            self.admin_calls.append((method, resource, None))
+            status = self.outcome(method, resource)
+            if status:
+                return status, {"detail": "Recusado pelo teste"}
+            return 200, {"webhooks": copy.deepcopy(self.webhooks)}
+        if (resource == "/webhooks" and method == "POST") or (
+            resource.startswith("/webhooks/")
+            and resource.count("/") == 2
+            and method in ("PATCH", "DELETE")
+        ):
+            self.admin_calls.append((method, resource, copy.deepcopy(body)))
+            status = self.outcome(method, resource)
+            if status and status != "drop":
+                return status, {"detail": "Recusado\x1b]52;c;x\x07 pelo teste"}
+            result = self.apply_webhook(method, resource, body)
+            return "drop" if status == "drop" else result
         if method in ("POST", "PUT", "DELETE") and (
             resource.startswith("/roles")
             or resource.startswith("/emojis")
@@ -168,6 +198,44 @@ class ServerAdminMock(ProfileMock):
             result = self.apply_admin(method, resource, body)
             return "drop" if status == "drop" else result
         return super().route(method, path, body)
+
+    def apply_webhook(self, method, resource, body):
+        """Mirrors the backend: only text and voice channels, the token only on creation."""
+        if method == "POST":
+            assert set(body) == {"channel_id", "name"}, body
+            channel = next((c for c in self.channels if c["id"] == body["channel_id"]), None)
+            if not channel:
+                return 404, {"detail": "canal inexistente"}
+            if not body["name"].strip() or len(body["name"]) > 80:
+                return 400, {"detail": "parâmetro inválido"}
+            if channel["type"] not in ("text", "voice"):
+                return 403, {"detail": "operação não permitida"}
+            webhook = dict(
+                id=uuid(960 + len(self.webhooks)),
+                channel_id=body["channel_id"],
+                name=body["name"],
+                created_by=ME,
+                created_at=STAMP,
+            )
+            self.webhooks.insert(0, webhook)
+            return 201, dict(copy.deepcopy(webhook), token=TOKEN)
+        webhook = next((w for w in self.webhooks if w["id"] == resource.split("/")[2]), None)
+        if not webhook:
+            return 404, {"detail": "webhook inexistente"}
+        if method == "DELETE":
+            self.webhooks.remove(webhook)
+            return 204, None
+        assert set(body) <= {"display_name", "avatar", "avatar_format"}, body
+        if "display_name" in body:
+            if body["display_name"]:
+                webhook["display_name"] = body["display_name"]
+            else:
+                webhook.pop("display_name", None)
+        if "avatar" in body:
+            webhook["avatar"] = bool(body["avatar"])
+            if body["avatar"]:
+                assert body.get("avatar_format") in ("GIF", "JPEG", "PNG", "WEBP"), body
+        return 200, copy.deepcopy(webhook)
 
     @staticmethod
     def channel_admin(resource):
@@ -252,4 +320,14 @@ class ServerAdminMock(ProfileMock):
         return 204, None
 
 
-__all__ = ["CHANNEL", "EMOJI", "ME", "MODERATOR", "OTHER_OWNER", "PIXEL", "ServerAdminMock"]
+__all__ = [
+    "CHANNEL",
+    "EMOJI",
+    "ME",
+    "MODERATOR",
+    "OTHER_OWNER",
+    "PIXEL",
+    "TOKEN",
+    "WEBHOOK",
+    "ServerAdminMock",
+]
