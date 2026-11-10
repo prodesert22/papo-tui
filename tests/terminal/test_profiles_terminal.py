@@ -129,13 +129,13 @@ class ProfileTerminalTests(unittest.TestCase):
         self.assertEqual(self.config()["profiles"], [])
 
     def refused(self, terminal, before):
-        """Waits for the cursor to move up to the refused input; returns its cell and color."""
+        """Waits for the cursor to move up to the refused input; returns its row and sides."""
         deadline = time.monotonic() + 4
         while terminal.screen.cursor.y >= before and time.monotonic() < deadline:
             terminal.read(0.03)
         self.assertLess(terminal.screen.cursor.y, before)
-        cursor = terminal.screen.cursor
-        return cursor.y, cursor.x, terminal.screen.buffer[cursor.y][cursor.x].bg
+        row = terminal.screen.cursor.y
+        return row, terminal.screen.display[row].count("x")
 
     def test_refused_dialog_inputs_take_the_cursor_and_turn_red(self):
         self.seed(["http://127.0.0.1:9/papo"])
@@ -148,12 +148,13 @@ class ProfileTerminalTests(unittest.TestCase):
         before = terminal.screen.cursor.y
         terminal.send("\n\n")
         self.wait(terminal, "Informe um nome")
-        row, column, red = self.refused(terminal, before)
+        row, sides = self.refused(terminal, before)
+        # The border (its sides here) goes away with the first character typed.
         terminal.send("A")
         deadline = time.monotonic() + 3
-        while terminal.screen.buffer[row][column].bg == red and time.monotonic() < deadline:
+        while terminal.screen.display[row].count("x") >= sides and time.monotonic() < deadline:
             terminal.read(0.03)
-        self.assertNotEqual(terminal.screen.buffer[row][column].bg, red)
+        self.assertLess(terminal.screen.display[row].count("x"), sides)
 
     def test_a_refused_rate_or_burst_takes_the_cursor(self):
         self.seed(["http://127.0.0.1:9/papo"])

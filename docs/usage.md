@@ -1448,12 +1448,14 @@ above.
 
 ## Troubleshooting
 
-- **A field turned red:** the program refused what you typed in that field, for
-  example an empty required name, a password that does not match, an invalid
-  date or a message with nothing in it. The field is shown in red, the cursor
-  is already in it and the message at the bottom says what to fix, naming the
-  field when it was left empty, such as **Preencha o campo Nome.** (Fill in the
-  Name field). The red goes away with the first character you type or paste
+- **A field got a red border:** the program refused what you typed in that field,
+  for example an empty required name, a password that does not match, an invalid
+  date or a message with nothing in it. The field keeps its own background and
+  is surrounded by a red border (only its two sides where there is no room for
+  the lines above and below), the cursor is already in it and the message at the
+  bottom stays until your next action, saying what to fix and naming the field
+  when it was left empty, such as **Preencha o campo Nome.** (Fill in the Name
+  field). The border goes away with the first character you type or paste
   there. This applies to the sign-in form, the **Configurações do servidor**
   forms, **Perfil** and **Conta** in Settings, the server profile dialogs, the
   save dialog and the message box.

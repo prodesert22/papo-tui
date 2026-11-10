@@ -1,5 +1,6 @@
 #include "config/app_mode.h"
 #include "ui/components/button.h"
+#include "ui/components/input_border.h"
 #include "ui/components/server_settings/private.h"
 #include "ui/components/theme.h"
 #include "ui/input/mouse.h"
@@ -396,8 +397,16 @@ bool admin_previews(void)
     graphics_terminal terminal = graphics_terminal_get();
     return app_mode_get() != APP_MODE_ULTRALIGHT && terminal.supported && terminal.cell_height > 0;
 }
-static int field_height(const admin_field *f, int width)
+/* The text field whose value was refused: it gets a border of three rows. */
+static bool field_refused(const server_settings *s, const admin_field *f)
 {
+    return s->invalid && s->invalid_tab == s->tab && f->id == s->invalid_id &&
+           (f->kind == FIELD_TEXT || f->kind == FIELD_SECRET);
+}
+static int field_height(const server_settings *s, const admin_field *f, int width)
+{
+    if (field_refused(s, f))
+        return 3;
     if (f->kind == FIELD_EMOJI) {
         int cell = graphics_terminal_get().cell_height;
         return cell > 0 ? (EMOJI_PREVIEW_PIXELS + cell - 1) / cell : 1;
@@ -518,8 +527,11 @@ static void draw_field(server_settings *s, WINDOW *w, const admin_field *f, int 
         break;
     case FIELD_TEXT:
     case FIELD_SECRET: {
-        bool refused = s->invalid && s->invalid_tab == s->tab && f->id == s->invalid_id;
-        wattrset(w, COLOR_PAIR(refused ? THEME_ERROR : focused ? THEME_PANEL_ACCENT : THEME_PANEL) |
+        bool refused = field_refused(s, f);
+        /* A refused input sits inside a red border: the rows above and below are its own. */
+        if (refused)
+            ++y;
+        wattrset(w, COLOR_PAIR(refused ? THEME_NOTIFICATION : focused ? THEME_PANEL_ACCENT : THEME_PANEL) |
                         (focused || refused ? A_BOLD : 0));
         snprintf(line, sizeof(line), "%s:", f->label);
         text_label(w, y, x, label_width - 1, line);
@@ -527,8 +539,12 @@ static void draw_field(server_settings *s, WINDOW *w, const admin_field *f, int 
         int fx = x + label_width, fw = width - label_width - counter - (f->rgb ? 2 : 0);
         if (fw < 4)
             fw = 4;
-        wattrset(w, COLOR_PAIR(refused ? THEME_DESTRUCTIVE : focused ? THEME_FOCUSED : THEME_INPUT) |
-                        ((focused || refused) && !has_colors() ? A_REVERSE : 0));
+        if (refused) {
+            --fw;
+            input_border_draw(w, y, fx, fw, THEME_NOTIFICATION, true, true);
+        }
+        wattrset(w, COLOR_PAIR(focused ? THEME_FOCUSED : THEME_INPUT) |
+                        (focused && !has_colors() ? A_REVERSE : 0));
         mvwhline(w, y, fx, ' ', fw);
         if (f->text)
             text_draw_field(w, f->text, f->first, y, fx, fw, f->kind == FIELD_SECRET);
@@ -598,7 +614,7 @@ static void draw_form(server_settings *s, WINDOW *w, GArray *fields)
         return;
     int heights[SERVER_SETTINGS_FIELDS];
     for (int i = 0; i < count; ++i)
-        heights[i] = field_height(&g_array_index(fields, admin_field, i), s->form_w);
+        heights[i] = field_height(s, &g_array_index(fields, admin_field, i), s->form_w);
     /* Scroll so the focused control and the title above it stay visible. */
     if (s->focus != 2)
         s->field_first = s->field_first < count ? s->field_first : 0;
@@ -811,6 +827,7 @@ static void mouse(server_settings *s, GArray *rows, GArray *fields)
     MEVENT e;
     if (ui_mouse_get(&e) != OK || !s->window)
         return;
+    s->error[0] = 0;
     int y = e.y, x = e.x;
     if (!wmouse_trafo(s->window, &y, &x, false))
         return;
@@ -1007,8 +1024,12 @@ void server_settings_key(server_settings *s, int type, uint32_t key)
         (type == OK && (key == '\r' || key == '\n')) || (type == KEY_CODE_YES && key == KEY_ENTER);
     char error[sizeof(s->error)];
     snprintf(error, sizeof(error), "%s", s->error);
-    s->error[0] = 0;
-    if (type == KEY_CODE_YES && key == KEY_MOUSE) {
+    /* Releases and pointer motion do nothing, so they leave the last notice
+     * alone: the click that raised it is followed by them at once. */
+    bool pointer = type == KEY_CODE_YES && key == KEY_MOUSE;
+    if (!pointer)
+        s->error[0] = 0;
+    if (pointer) {
         mouse(s, rows, fields);
         goto done;
     }

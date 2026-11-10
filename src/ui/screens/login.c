@@ -8,6 +8,7 @@
 #include "platform/unicode.h"
 #include "ui/components/button.h"
 #include "ui/components/help.h"
+#include "ui/components/input_border.h"
 #include "ui/components/terminal_title.h"
 #include "ui/components/theme.h"
 #include "ui/input/mouse.h"
@@ -708,18 +709,37 @@ static void draw(login_ui *ui, auth_client *client)
             continue;
         bool selected = ui->focus == i && !busy && !ready;
         bool refused = ui->refused_plus == i + 1 && !busy && !ready;
-        chtype attributes =
-            COLOR_PAIR(refused ? THEME_DESTRUCTIVE : selected ? THEME_FOCUSED : THEME_INPUT);
+        chtype attributes = COLOR_PAIR(selected ? THEME_FOCUSED : THEME_INPUT);
         if (field_back(ui->fields[i]) != attributes)
             set_field_back(ui->fields[i], attributes);
         if (field_fore(ui->fields[i]) != attributes)
             set_field_fore(ui->fields[i], attributes);
-        wattrset(ui->body, COLOR_PAIR((i == 3 && ui->server_password_error) ||
+        int row = field_row(ui, i);
+        /* The rows below an input are free when the fields are three apart, which
+         * is where a refusal draws its frame: clear the last one. The server
+         * password clears its own band below. */
+        bool room = !ui->registering && i != 3;
+        if (i != 3) {
+            /* Whatever frame an earlier refusal left around the input goes. */
+            wattrset(ui->body, COLOR_PAIR(THEME_NORMAL));
+            for (int r = room ? 0 : 1; r < (room ? 3 : 2); ++r)
+                mvwhline(ui->body, row + r, 1, ' ', ui->width - 6);
+        }
+        wattrset(ui->body, COLOR_PAIR((i == 3 && ui->server_password_error) || refused ||
                                               (*ui->validation_message && i == ui->validation_field)
                                           ? THEME_ERROR
                                       : selected ? THEME_ACCENT
                                                  : THEME_MUTED));
-        text(ui->body, field_row(ui, i), 2, ui->width - 8, labels[i]);
+        text(ui->body, row, 2, ui->width - 8, labels[i]);
+        /* The refused input keeps its background; a red frame goes around it, as it
+         * does around the server password: a box where the rows are free, else its sides. */
+        if (refused && i != 3) {
+            input_border_draw(ui->body, row + 1, 2, ui->width - 8, THEME_ERROR, room, room);
+            if (room) {
+                wattrset(ui->body, COLOR_PAIR(THEME_ERROR));
+                text(ui->body, row, 3, ui->width - 10, labels[i]);
+            }
+        }
     }
     wattrset(ui->body, COLOR_PAIR(THEME_MUTED));
     mvwhline(ui->body, 11, 1, ' ', ui->width - 6);
@@ -730,7 +750,7 @@ static void draw(login_ui *ui, auth_client *client)
         mvwaddch(ui->body, server_row + 1, 1, ' ');
         mvwaddch(ui->body, server_row + 1, ui->width - 6, ' ');
     }
-    if (ui->server_password_error && ui->fields[3]) {
+    if ((ui->server_password_error || ui->refused_plus == 4) && ui->fields[3]) {
         wattrset(ui->body, COLOR_PAIR(THEME_ERROR));
         mvwhline(ui->body, server_row, 2, ACS_HLINE, ui->width - 8);
         mvwhline(ui->body, server_row + 2, 2, ACS_HLINE, ui->width - 8);
@@ -844,10 +864,8 @@ static void draw(login_ui *ui, auth_client *client)
     text(ui->footer, 4, hint_x, ui->width - 4 - hint_x, UI_HELP_HINT);
     for (int i = 0; i < FIELD_COUNT; ++i)
         if (ui->fields[i]) {
-            bool refused = ui->refused_plus == i + 1 && !busy && !ready;
-            wattrset(ui->input, COLOR_PAIR(refused ? THEME_DESTRUCTIVE
-                                           : ui->focus == i && !busy && !ready ? THEME_FOCUSED
-                                                                               : THEME_INPUT));
+            wattrset(ui->input,
+                     COLOR_PAIR(ui->focus == i && !busy && !ready ? THEME_FOCUSED : THEME_INPUT));
             mvwhline(ui->input, field_row(ui, i), 0, ' ', ui->width - 8);
             text_draw_field(ui->input, &ui->values[i], &ui->scroll[i], field_row(ui, i), 0,
                             ui->width - 8, i >= 2);

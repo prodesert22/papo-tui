@@ -131,10 +131,9 @@ class ProfileEdit(unittest.TestCase):
             self.wait(t, "Apelido com mais de 32 caracteres.")
             row = next(i for i, line in enumerate(t.screen.display) if "Apelido:" in line)
             self.settled(t, lambda: t.screen.cursor.y == row)
-            column = t.screen.cursor.x - 1  # inside the text, which sits on the input
-            red = t.screen.buffer[row][column].bg
+            sides = t.screen.display[row].count("x")
             t.send("\x7f")
-            self.settled(t, lambda: t.screen.buffer[row][column].bg != red)
+            self.settled(t, lambda: t.screen.display[row].count("x") < sides)
             self.assertEqual(len(server.profile_puts), 0)
 
     def test_rejected_and_unconfirmed_changes_are_never_repeated(self):

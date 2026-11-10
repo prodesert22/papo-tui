@@ -82,17 +82,18 @@ class SessionTerminal(unittest.TestCase):
                     self.assertNotIn(password.encode(), terminal.output)
                     if confirmation:
                         self.assertNotIn(confirmation.encode(), terminal.output)
-                    # The refused input itself is red, until the first character typed in it.
-                    cursor = terminal.screen.cursor
-                    refused = terminal.screen.buffer[cursor.y][cursor.x].bg
-                    terminal.send("x")
+                    # The refused input has a red border (its two vertical sides here),
+                    # which goes away with the first character typed in it.
+                    row = terminal.screen.cursor.y
+                    sides = terminal.screen.display[row].count("x")
+                    terminal.send("y")
                     deadline = time.monotonic() + 3
                     while (
-                        terminal.screen.buffer[cursor.y][cursor.x].bg == refused
+                        terminal.screen.display[row].count("x") >= sides
                         and time.monotonic() < deadline
                     ):
                         terminal.read(0.03)
-                    self.assertNotEqual(terminal.screen.buffer[cursor.y][cursor.x].bg, refused)
+                    self.assertLess(terminal.screen.display[row].count("x"), sides)
                     terminal.send("\x7f")
                     error_row, error_column = self.position(terminal, field)
                     hint_row, hint_column = self.position(terminal, "Senha: 8+")

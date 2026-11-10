@@ -7,6 +7,7 @@
 #include "platform/clipboard.h"
 #include "ui/components/button.h"
 #include "ui/components/help.h"
+#include "ui/components/input_border.h"
 #include "ui/components/theme.h"
 #include "ui/input/mouse.h"
 #include "ui/input/text.h"
@@ -204,9 +205,13 @@ static void draw_profile_list(profile_ui *ui)
 static void field_draw(profile_ui *ui, text_buffer *buffer, int index, int row, const char *name)
 {
     bool refused = ui->refused_plus == index + 1;
-    label(ui->dialog, row - 1, 2, ui->dialog_width - 4, refused ? THEME_ERROR : THEME_PROFILE_PANEL,
-          name);
-    int color = refused ? THEME_DESTRUCTIVE : ui->field == index ? THEME_PROFILE_FOCUS : THEME_PROFILE_PANEL;
+    label(ui->dialog, row - 1, 2, ui->dialog_width - 4,
+          refused ? THEME_NOTIFICATION : THEME_PROFILE_PANEL, name);
+    /* The refused input keeps its background and gets a red border on its sides. */
+    if (refused)
+        input_border_draw(ui->dialog, row, 2, ui->dialog_width - 4, THEME_NOTIFICATION, false,
+                          false);
+    int color = ui->field == index ? THEME_PROFILE_FOCUS : THEME_PROFILE_PANEL;
     wattrset(ui->dialog, attributes(color));
     mvwhline(ui->dialog, row, 2, ' ', ui->dialog_width - 4);
     text_draw_field(ui->dialog, buffer, &ui->scroll[index], row, 2, ui->dialog_width - 4, false);

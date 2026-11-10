@@ -354,14 +354,26 @@ class ServerSettings(unittest.TestCase):
         terminal.read(0.4)
 
     def refused_field(self, terminal, label):
-        """Row, column and background of the cursor, which must sit in the label's field."""
+        """Row of the field called label: the cursor sits in it and a border surrounds it."""
         row = next(i for i, line in enumerate(terminal.screen.display) if label + ":" in line)
         # The notice and the cursor belong to one frame, but may be read between its parts.
         self.settled(terminal, lambda: terminal.screen.cursor.y == row, seconds=4)
-        cursor = terminal.screen.cursor
-        return row, cursor.x, terminal.screen.buffer[row][cursor.x].bg
+        for edge in (row - 1, row + 1):
+            self.assertIn("qqqq", terminal.screen.display[edge], "No border around the input")
+        return row
 
-    def test_a_refused_text_field_turns_red_takes_the_cursor_and_is_named(self):
+    def border_gone(self, terminal, label):
+        """The field called label no longer has its border, once the text there changed."""
+        def gone():
+            rows = [i for i, line in enumerate(terminal.screen.display) if label + ":" in line]
+            return rows and all(
+                "qqqq" not in terminal.screen.display[edge]
+                for edge in (rows[0] - 1, rows[0] + 1)
+            )
+
+        self.settled(terminal, gone)
+
+    def test_a_refused_text_field_gets_a_border_takes_the_cursor_and_is_named(self):
         with ServerAdminMock() as server:
             t = self.open(server)
             # Each form names the field to fill and moves the cursor into it.
@@ -378,14 +390,19 @@ class ServerSettings(unittest.TestCase):
                         self.click(t, new)
                     self.click(t, button)
                     self.wait(t, f"Preencha o campo {label}.")
-                    row, column, red = self.refused_field(t, label)
-                    # Typing goes to the field, and the red goes away with the first character.
+                    # The click is followed by the button's release and by pointer motion:
+                    # none of them may take the notice away.
+                    t.send("\x1b[<0;5;5m\x1b[<35;6;6M\x1b[<35;7;7M")
+                    t.read(0.4)
+                    self.assertIn(f"Preencha o campo {label}.", self.screen(t))
+                    self.refused_field(t, label)
+                    # Typing goes to the field, and the border goes away with the first character.
                     t.send("Z")
                     self.settled(
                         t,
                         lambda: any(f"{label}:" in l and "Z" in l for l in t.screen.display),
                     )
-                    self.assertNotEqual(t.screen.buffer[row][column].bg, red)
+                    self.border_gone(t, label)
                     self.assertEqual(self.screen(t).count("Preencha o campo"), 0)
             # A name made of spaces counts as missing, and other refusals flag their field too.
             self.tab(t, "Cargos")

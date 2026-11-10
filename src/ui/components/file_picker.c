@@ -1,6 +1,7 @@
 #include "ui/components/file_picker.h"
 #include "platform/file_transfer.h"
 #include "ui/components/button.h"
+#include "ui/components/input_border.h"
 #include "ui/components/theme.h"
 #include <string.h>
 
@@ -614,9 +615,10 @@ WINDOW *file_picker_draw(file_picker *p)
                : p->save ? "Salvar em (pasta e nome do arquivo):"
                          : "Caminho:");
     if (!p->choice) {
-        wattrset(w, COLOR_PAIR(p->path_refused ? THEME_DESTRUCTIVE
-                               : p->focus == 0 ? THEME_FOCUSED
-                                               : THEME_PANEL));
+        /* An empty destination keeps the input as it is and borders it in red. */
+        if (p->path_refused)
+            input_border_draw(w, 2, 2, width - 4, THEME_NOTIFICATION, false, false);
+        wattrset(w, COLOR_PAIR(p->focus == 0 ? THEME_FOCUSED : THEME_PANEL));
         mvwhline(w, 2, 2, ' ', width - 4);
         text_draw_field(w, &p->path, &p->path_first, 2, 2, width - 4, false);
     }

@@ -1,6 +1,7 @@
 #include "ui/components/settings.h"
 #include "model/conversation/profile_edit.h"
 #include "ui/components/button.h"
+#include "ui/components/input_border.h"
 #include "ui/components/tabs.h"
 #include "ui/components/theme.h"
 #include "ui/input/mouse.h"
@@ -577,7 +578,9 @@ static void profile_draw(app_settings *s, WINDOW *w, int height, int width)
         s->item_y[i] = y;
         s->item_rows[i] = rows[i];
         bool focused = s->focus == 1 && s->profile_item == i, refused = s->profile_bad == i + 1;
-        wattrset(w, COLOR_PAIR(refused ? THEME_ERROR : focused ? THEME_PANEL_ACCENT : THEME_PANEL) |
+        wattrset(w, COLOR_PAIR(refused ? THEME_NOTIFICATION
+                                       : focused ? THEME_PANEL_ACCENT
+                                                 : THEME_PANEL) |
                         (focused || refused ? A_BOLD : 0));
         snprintf(line, sizeof(line), "%s:",
                  i < PROFILE_FIELDS ? field_labels[i]
@@ -587,8 +590,11 @@ static void profile_draw(app_settings *s, WINDOW *w, int height, int width)
         text_label(w, y, 2, label_width - 1, line);
         if (i < PROFILE_FIELDS) {
             text_buffer *field = &s->fields[i];
-            wattrset(w, COLOR_PAIR(refused ? THEME_DESTRUCTIVE : focused ? THEME_FOCUSED : THEME_INPUT) |
-                            ((focused || refused) && !has_colors() ? A_REVERSE : 0));
+            /* The items follow one another, so the border is its two sides. */
+            for (int r = 0; refused && r < rows[i]; ++r)
+                input_border_draw(w, y + r, fx, fw, THEME_NOTIFICATION, false, false);
+            wattrset(w, COLOR_PAIR(focused ? THEME_FOCUSED : THEME_INPUT) |
+                            (focused && !has_colors() ? A_REVERSE : 0));
             for (int r = 0; r < rows[i]; ++r)
                 mvwhline(w, y + r, fx, ' ', fw);
             int cy, cx;
@@ -827,11 +833,16 @@ static void account_draw(app_settings *s, WINDOW *w, int height, int width)
         int y = roomy ? 7 + i * 2 : 6 + i;
         s->account_y[i] = y;
         bool focused = s->focus == 1 && s->account_item == i, refused = s->account_bad == i + 1;
-        wattrset(w, COLOR_PAIR(refused ? THEME_ERROR : focused ? THEME_PANEL_ACCENT : THEME_PANEL) |
+        wattrset(w, COLOR_PAIR(refused ? THEME_NOTIFICATION
+                                       : focused ? THEME_PANEL_ACCENT
+                                                 : THEME_PANEL) |
                         (focused || refused ? A_BOLD : 0));
         text_label(w, y, 2, label_width - 1, account_labels[i]);
-        wattrset(w, COLOR_PAIR(refused ? THEME_DESTRUCTIVE : focused ? THEME_FOCUSED : THEME_INPUT) |
-                        ((focused || refused) && !has_colors() ? A_REVERSE : 0));
+        /* With room between the inputs the border is a box; otherwise its two sides. */
+        if (refused)
+            input_border_draw(w, y, fx, fw, THEME_NOTIFICATION, roomy, roomy);
+        wattrset(w, COLOR_PAIR(focused ? THEME_FOCUSED : THEME_INPUT) |
+                        (focused && !has_colors() ? A_REVERSE : 0));
         mvwhline(w, y, fx, ' ', fw);
         text_draw_field(w, &s->account[i], &s->account_first[i], y, fx, fw, true);
         int cy, cx;

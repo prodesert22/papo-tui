@@ -67,11 +67,11 @@ class Downloads(support.MessageInteractions):
                 # From the Salvar button, with nothing typed.
                 terminal.send("\x03\t\t\t\n")
                 self.wait(terminal, "Informe o caminho do arquivo.")
-                red = terminal.screen.buffer[path_row][5].bg
-                # Typing now goes to the path, and the red goes away with the first character.
+                sides = terminal.screen.display[path_row].count("x")
+                # Typing now goes to the path, and the border goes away with the first character.
                 terminal.send("a")
                 self.settled(terminal, lambda: "a" in terminal.screen.display[path_row])
-                self.assertNotEqual(terminal.screen.buffer[path_row][5].bg, red)
+                self.assertLess(terminal.screen.display[path_row].count("x"), sides)
                 self.assertEqual(server.downloads, [])
             finally:
                 self.assertTrue(terminal.close())
