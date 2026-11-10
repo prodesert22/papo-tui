@@ -113,6 +113,12 @@ class PasswordTerminal(unittest.TestCase):
         self.wait(t, "Conversar em #geral")
         return t
 
+    def refused_input(self, t, label):
+        """Cursor row and background of the label's input, once the cursor is in it."""
+        row = next(i for i, line in enumerate(t.screen.display) if label in line)
+        self.settled(t, lambda: t.screen.cursor.y == row)
+        return row, t.screen.cursor.x, t.screen.buffer[row][t.screen.cursor.x].bg
+
     def conta(self, t):
         t.send("\x13")
         self.wait(t, "Seu perfil em")
@@ -149,8 +155,15 @@ class PasswordTerminal(unittest.TestCase):
             # Local checks send nothing.
             t.send("curta\n")
             self.wait(t, "8 caracteres")
+            row, column, red = self.refused_input(t, "Nova senha:")
+            t.send("x")
+            self.settled(t, lambda: t.screen.buffer[row][column].bg != red)
             t.send("\x15" + NEW + DOWN + "Other!456\n")
             self.wait(t, "não coincidem")
+            row, column, red = self.refused_input(t, "Confirmar senha:")
+            t.send("x")
+            self.settled(t, lambda: t.screen.buffer[row][column].bg != red)
+            t.send("\x15Other!456")
             t.read(0.3)
             self.assertEqual(server.password_calls, [])
             server.password_status = 400

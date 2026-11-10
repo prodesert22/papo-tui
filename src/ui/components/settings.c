@@ -37,6 +37,7 @@ static void account_erase(app_settings *s)
         text_clear(&s->account[i]);
         s->account_first[i] = 0;
     }
+    s->account_bad = 0;
 }
 void settings_close(app_settings *s)
 {
@@ -575,9 +576,9 @@ static void profile_draw(app_settings *s, WINDOW *w, int height, int width)
     for (int i = s->profile_first, y = top; i < PROFILE_ITEMS && y + rows[i] <= bottom; ++i) {
         s->item_y[i] = y;
         s->item_rows[i] = rows[i];
-        bool focused = s->focus == 1 && s->profile_item == i;
-        wattrset(w,
-                 COLOR_PAIR(focused ? THEME_PANEL_ACCENT : THEME_PANEL) | (focused ? A_BOLD : 0));
+        bool focused = s->focus == 1 && s->profile_item == i, refused = s->profile_bad == i + 1;
+        wattrset(w, COLOR_PAIR(refused ? THEME_ERROR : focused ? THEME_PANEL_ACCENT : THEME_PANEL) |
+                        (focused || refused ? A_BOLD : 0));
         snprintf(line, sizeof(line), "%s:",
                  i < PROFILE_FIELDS ? field_labels[i]
                  : i == ITEM_STATUS ? "Status"
@@ -586,8 +587,8 @@ static void profile_draw(app_settings *s, WINDOW *w, int height, int width)
         text_label(w, y, 2, label_width - 1, line);
         if (i < PROFILE_FIELDS) {
             text_buffer *field = &s->fields[i];
-            wattrset(w, COLOR_PAIR(focused ? THEME_FOCUSED : THEME_INPUT) |
-                            (focused && !has_colors() ? A_REVERSE : 0));
+            wattrset(w, COLOR_PAIR(refused ? THEME_DESTRUCTIVE : focused ? THEME_FOCUSED : THEME_INPUT) |
+                            ((focused || refused) && !has_colors() ? A_REVERSE : 0));
             for (int r = 0; r < rows[i]; ++r)
                 mvwhline(w, y + r, fx, ' ', fw);
             int cy, cx;
@@ -663,6 +664,8 @@ bool settings_paste(app_settings *s, text_paste *paste)
     if (!s->open || s->section != SETTINGS_PROFILE || s->focus != 1 ||
         s->profile_item >= PROFILE_FIELDS || !history_profile(s->profile))
         return false;
+    if (s->profile_bad == s->profile_item + 1)
+        s->profile_bad = 0;
     if (!text_paste_commit(paste, &s->fields[s->profile_item]))
         snprintf(s->error, sizeof(s->error), "Colagem excede o limite do campo.");
     else
@@ -686,6 +689,7 @@ static void profile_save(app_settings *s)
         if (problem) {
             snprintf(s->error, sizeof(s->error), "%s", problem);
             s->profile_item = i;
+            s->profile_bad = i + 1;
             s->focus = 1;
             return;
         }
@@ -760,6 +764,8 @@ static void profile_key(app_settings *s, int type, uint32_t key)
                           item == PROFILE_FIELD_DESCRIPTION)) {
                 s->dirty = true;
                 s->error[0] = 0;
+                if (s->profile_bad == item + 1)
+                    s->profile_bad = 0;
             }
             return;
         }
@@ -820,12 +826,12 @@ static void account_draw(app_settings *s, WINDOW *w, int height, int width)
     for (int i = 0; i < 2; ++i) {
         int y = roomy ? 7 + i * 2 : 6 + i;
         s->account_y[i] = y;
-        bool focused = s->focus == 1 && s->account_item == i;
-        wattrset(w,
-                 COLOR_PAIR(focused ? THEME_PANEL_ACCENT : THEME_PANEL) | (focused ? A_BOLD : 0));
+        bool focused = s->focus == 1 && s->account_item == i, refused = s->account_bad == i + 1;
+        wattrset(w, COLOR_PAIR(refused ? THEME_ERROR : focused ? THEME_PANEL_ACCENT : THEME_PANEL) |
+                        (focused || refused ? A_BOLD : 0));
         text_label(w, y, 2, label_width - 1, account_labels[i]);
-        wattrset(w, COLOR_PAIR(focused ? THEME_FOCUSED : THEME_INPUT) |
-                        (focused && !has_colors() ? A_REVERSE : 0));
+        wattrset(w, COLOR_PAIR(refused ? THEME_DESTRUCTIVE : focused ? THEME_FOCUSED : THEME_INPUT) |
+                        ((focused || refused) && !has_colors() ? A_REVERSE : 0));
         mvwhline(w, y, fx, ' ', fw);
         text_draw_field(w, &s->account[i], &s->account_first[i], y, fx, fw, true);
         int cy, cx;
@@ -914,6 +920,7 @@ static void account_submit(app_settings *s)
     if (item >= 0) {
         s->account_confirm = false;
         s->account_item = item;
+        s->account_bad = item + 1;
         s->focus = 1;
     }
     memset(text, 0, sizeof(text));
@@ -946,6 +953,8 @@ static void account_key(app_settings *s, int type, uint32_t key)
     if (text_edit(field, type, key, TEXT_LIMIT * 2 + 1, false)) {
         s->error[0] = 0;
         s->account_confirm = s->account_sent = false;
+        if (s->account_bad == s->account_item + 1)
+            s->account_bad = 0;
     }
 }
 void settings_draw(app_settings *s)

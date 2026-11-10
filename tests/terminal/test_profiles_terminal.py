@@ -128,6 +128,51 @@ class ProfileTerminalTests(unittest.TestCase):
         self.wait(terminal, "Nenhum perfil salvo")
         self.assertEqual(self.config()["profiles"], [])
 
+    def refused(self, terminal, before):
+        """Waits for the cursor to move up to the refused input; returns its cell and color."""
+        deadline = time.monotonic() + 4
+        while terminal.screen.cursor.y >= before and time.monotonic() < deadline:
+            terminal.read(0.03)
+        self.assertLess(terminal.screen.cursor.y, before)
+        cursor = terminal.screen.cursor
+        return cursor.y, cursor.x, terminal.screen.buffer[cursor.y][cursor.x].bg
+
+    def test_refused_dialog_inputs_take_the_cursor_and_turn_red(self):
+        self.seed(["http://127.0.0.1:9/papo"])
+        terminal = self.terminal()
+        self.click(terminal, "[+ Adicionar]")
+        self.wait(terminal, "Adicionar perfil")
+        # A valid URL with no name: the cursor leaves the URL for the name.
+        terminal.send("\thttp://127.0.0.1:9/papo")
+        terminal.read(0.2)
+        before = terminal.screen.cursor.y
+        terminal.send("\n\n")
+        self.wait(terminal, "Informe um nome")
+        row, column, red = self.refused(terminal, before)
+        terminal.send("A")
+        deadline = time.monotonic() + 3
+        while terminal.screen.buffer[row][column].bg == red and time.monotonic() < deadline:
+            terminal.read(0.03)
+        self.assertNotEqual(terminal.screen.buffer[row][column].bg, red)
+
+    def test_a_refused_rate_or_burst_takes_the_cursor(self):
+        self.seed(["http://127.0.0.1:9/papo"])
+        terminal = self.terminal()
+        # An invalid burst is flagged on the burst: the cursor stays there, red.
+        terminal.send("\x0c\x152.5\t\x15x")
+        terminal.read(0.2)
+        before = terminal.screen.cursor.y
+        terminal.send("\n\n")
+        self.wait(terminal, "taxa positiva")
+        self.assertEqual(terminal.screen.cursor.y, before)
+        # An invalid rate is flagged on the rate, above the burst.
+        terminal.send("\x1b\x0c\x150\t\x154")
+        terminal.read(0.2)
+        before = terminal.screen.cursor.y
+        terminal.send("\n\n")
+        self.wait(terminal, "taxa positiva")
+        self.refused(terminal, before)
+
     def test_list_scroll_resize_and_clamped_navigation(self):
         self.seed([f"http://127.0.0.1:9/{i}" for i in range(30)])
         terminal = self.terminal()

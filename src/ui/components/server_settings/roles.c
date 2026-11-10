@@ -72,13 +72,10 @@ static void save(server_settings *s)
         return;
     }
     g_strstrip(color);
-    const char *problem = server_admin_check_text(name, 0, true);
-    if (problem) {
-        admin_error(s, problem);
+    if (!admin_check_field(s, NAME, "Nome", name, 0, true))
         return;
-    }
     if (!server_admin_color_valid(color)) {
-        admin_error(s, "Use uma cor no formato #RRGGBB, como #3BA55D.");
+        admin_invalid(s, COLOR, "Use uma cor no formato #RRGGBB, como #3BA55D.");
         return;
     }
     const json_t *role = selected_role(s);

@@ -189,6 +189,7 @@ bool conversation_profile_command(view *ui)
         return false;
     }
     if (command.kind == PROFILE_COMMAND_USAGE) {
+        send_editor_refuse(ui->editor, true);
         ui->feedback = command.usage;
         return true;
     }

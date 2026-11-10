@@ -203,11 +203,8 @@ static void create(server_settings *s)
         admin_error(s, "Escolha um canal de texto ou de voz.");
         return;
     }
-    const char *problem = server_admin_check_text(name, ADMIN_WEBHOOK_NAME_MAX, true);
-    if (problem) {
-        admin_error(s, problem);
+    if (!admin_check_field(s, NAME, "Nome", name, ADMIN_WEBHOOK_NAME_MAX, true))
         return;
-    }
     if (server_admin_webhook_create(s->model, admin_str(channels[s->choice], "id"), name))
         admin_sent(s);
 }
@@ -223,11 +220,8 @@ static void save(server_settings *s)
         return;
     }
     g_strstrip(nickname);
-    const char *problem = server_admin_check_text(nickname, ADMIN_WEBHOOK_NICKNAME_MAX, false);
-    if (problem) {
-        admin_error(s, problem);
+    if (!admin_check_field(s, NICKNAME, "Apelido", nickname, ADMIN_WEBHOOK_NICKNAME_MAX, false))
         return;
-    }
     if (server_admin_webhook_nickname(s->model, s->selected, nickname))
         admin_sent(s);
 }

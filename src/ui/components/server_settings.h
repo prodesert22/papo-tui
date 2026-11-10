@@ -44,6 +44,11 @@ typedef struct {
     char draft_for[40];
     admin_tab draft_tab;
     char query[129];
+    /* The text field whose value was refused: shown in red, focused on the next
+     * draw, until it is edited, another item is chosen or the tab changes. */
+    bool invalid, invalid_pending;
+    int invalid_id;
+    admin_tab invalid_tab;
     server_settings_pick pick; /* Taken by the screen, which opens the file picker. */
     char emoji_name[129];      /* Name of the emoji whose image is being picked. */
     char webhook_pick[37];     /* ID of the webhook whose avatar is being picked. */

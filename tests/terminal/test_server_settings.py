@@ -330,7 +330,7 @@ class ServerSettings(unittest.TestCase):
             self.assertNotIn("Excluir emoji", self.screen(t))
             self.click(t, "+ Adicionar emoji")
             self.click(t, "Escolher imagem e enviar")
-            self.wait(t, "Preencha este campo.")
+            self.wait(t, "Preencha o campo Nome.")
             self.type_in(t, "Nome", "aceno")
             self.click(t, "Escolher imagem e enviar")
             self.wait(t, "Escolher imagem")
@@ -352,6 +352,65 @@ class ServerSettings(unittest.TestCase):
         self.click(terminal, label + ":")
         terminal.send("\x03" + text)
         terminal.read(0.4)
+
+    def refused_field(self, terminal, label):
+        """Row, column and background of the cursor, which must sit in the label's field."""
+        row = next(i for i, line in enumerate(terminal.screen.display) if label + ":" in line)
+        # The notice and the cursor belong to one frame, but may be read between its parts.
+        self.settled(terminal, lambda: terminal.screen.cursor.y == row, seconds=4)
+        cursor = terminal.screen.cursor
+        return row, cursor.x, terminal.screen.buffer[row][cursor.x].bg
+
+    def test_a_refused_text_field_turns_red_takes_the_cursor_and_is_named(self):
+        with ServerAdminMock() as server:
+            t = self.open(server)
+            # Each form names the field to fill and moves the cursor into it.
+            cases = (
+                ("Cargos", None, "Criar cargo", "Nome"),
+                ("Canais", "+ Novo canal", "Criar canal", "Nome"),
+                ("Emojis", "+ Adicionar emoji", "Escolher imagem e enviar", "Nome"),
+                ("Webhooks", "+ Novo webhook", "Criar webhook", "Nome"),
+            )
+            for tab, new, button, label in cases:
+                with self.subTest(tab=tab):
+                    self.tab(t, tab)
+                    if new:
+                        self.click(t, new)
+                    self.click(t, button)
+                    self.wait(t, f"Preencha o campo {label}.")
+                    row, column, red = self.refused_field(t, label)
+                    # Typing goes to the field, and the red goes away with the first character.
+                    t.send("Z")
+                    self.settled(
+                        t,
+                        lambda: any(f"{label}:" in l and "Z" in l for l in t.screen.display),
+                    )
+                    self.assertNotEqual(t.screen.buffer[row][column].bg, red)
+                    self.assertEqual(self.screen(t).count("Preencha o campo"), 0)
+            # A name made of spaces counts as missing, and other refusals flag their field too.
+            self.tab(t, "Cargos")
+            self.type_in(t, "Nome", "Suporte")
+            self.type_in(t, "Cor", "vermelho")
+            self.click(t, "Criar cargo")
+            self.wait(t, "Use uma cor no formato #RRGGBB")
+            self.refused_field(t, "Cor")
+            self.tab(t, "Visão geral")
+            self.click(t, "Nome:")
+            t.send("\x03   ")
+            self.click(t, "Salvar alterações")
+            self.wait(t, "Preencha o campo Nome.")
+            self.refused_field(t, "Nome")
+            self.calls(server, "PATCH", "/server", 0)
+
+    def test_the_server_password_field_is_flagged_when_it_is_required(self):
+        with ServerAdminMock() as server:
+            t = self.open(server)
+            self.click(t, "Público >")
+            self.wait(t, "< Privado >")
+            self.click(t, "Salvar alterações")
+            self.wait(t, "Informe a senha do servidor para torná-lo privado.")
+            self.refused_field(t, "Senha")
+            self.calls(server, "PATCH", "/server", 0)
 
     def webhooks(self, server):
         t = self.open(server)
@@ -596,6 +655,7 @@ class ServerSettings(unittest.TestCase):
             self.type_in(t, "De", "31/02/2026")
             self.click(t, "Aplicar filtros")
             self.wait(t, "Data inválida")
+            self.refused_field(t, "De")
             reads = len(self.audit_reads(server))
             self.type_in(t, "De", "12/10/2026")
             self.type_in(t, "Até", "11/10/2026")

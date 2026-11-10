@@ -171,13 +171,9 @@ static void save(server_settings *s)
         admin_error(s, "Texto inválido.");
         return;
     }
-    const char *problem = server_admin_check_text(name, 0, true);
-    if (!problem && s->choice != 2)
-        problem = server_admin_check_text(topic, ADMIN_TOPIC_MAX, false);
-    if (problem) {
-        admin_error(s, problem);
+    if (!admin_check_field(s, NAME, "Nome", name, 0, true) ||
+        (s->choice != 2 && !admin_check_field(s, TOPIC, "Tópico", topic, ADMIN_TOPIC_MAX, false)))
         return;
-    }
     const json_t *channel = selected_channel(s);
     bool queued;
     if (channel) {

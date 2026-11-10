@@ -54,6 +54,28 @@ class Downloads(support.MessageInteractions):
         self.wait(terminal, "Salvar em")
         terminal.send("\x03" + str(target) + "\n")
 
+    def test_an_empty_destination_is_refused_in_red_with_the_cursor_in_the_path(self):
+        with self.serve() as server:
+            terminal = self.open(server)
+            try:
+                row, column = self.button(terminal)
+                terminal.click(row, column)
+                self.wait(terminal, "Salvar em")
+                path_row = next(
+                    i for i, line in enumerate(terminal.screen.display) if "Salvar em" in line
+                ) + 1
+                # From the Salvar button, with nothing typed.
+                terminal.send("\x03\t\t\t\n")
+                self.wait(terminal, "Informe o caminho do arquivo.")
+                red = terminal.screen.buffer[path_row][5].bg
+                # Typing now goes to the path, and the red goes away with the first character.
+                terminal.send("a")
+                self.settled(terminal, lambda: "a" in terminal.screen.display[path_row])
+                self.assertNotEqual(terminal.screen.buffer[path_row][5].bg, red)
+                self.assertEqual(server.downloads, [])
+            finally:
+                self.assertTrue(terminal.close())
+
     def test_file_card_shows_name_size_and_button_on_the_right(self):
         with self.serve() as server:
             terminal = self.open(server)

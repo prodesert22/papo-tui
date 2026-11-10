@@ -28,6 +28,7 @@ struct file_picker {
     char notice[256];
     text_buffer path;
     int focus, cursor, first, path_first;
+    bool path_refused; /* The empty path was refused: shown in red until edited. */
 };
 static void free_entry(gpointer data)
 {
@@ -240,6 +241,7 @@ void file_picker_show(file_picker *p)
 {
     file_picker_close(p);
     p->open = true;
+    p->path_refused = false;
     p->focus = 0;
     p->save = p->choice = p->image = false;
     g_clear_pointer(&p->result, g_ptr_array_unref);
@@ -262,6 +264,7 @@ void file_picker_show_save(file_picker *p, const char *name)
     file_picker_close(p);
     p->open = p->save = true;
     p->choice = p->image = false;
+    p->path_refused = false;
     p->focus = 0;
     g_free(p->name);
     p->name = g_strdup(name && *name ? name : "arquivo");
@@ -428,6 +431,8 @@ static void resolve(file_picker *p)
     if (!path || !*path) {
         g_free(path);
         g_strlcpy(p->notice, "Informe o caminho do arquivo.", sizeof(p->notice));
+        p->path_refused = true;
+        p->focus = 0;
         return;
     }
     stop_task(p);
@@ -500,8 +505,8 @@ bool file_picker_key(file_picker *p, int type, uint32_t key)
     if (p->focus == 0 && p->save) {
         if (enter)
             resolve(p);
-        else
-            text_edit(&p->path, type, key, COLS - 10, false);
+        else if (text_edit(&p->path, type, key, COLS - 10, false))
+            p->path_refused = false;
     } else if (p->focus == 0) {
         if (enter) {
             char utf8[TEXT_UTF8_BYTES];
@@ -609,7 +614,10 @@ WINDOW *file_picker_draw(file_picker *p)
                : p->save ? "Salvar em (pasta e nome do arquivo):"
                          : "Caminho:");
     if (!p->choice) {
-        wattrset(w, COLOR_PAIR(p->focus == 0 ? THEME_FOCUSED : THEME_PANEL));
+        wattrset(w, COLOR_PAIR(p->path_refused ? THEME_DESTRUCTIVE
+                               : p->focus == 0 ? THEME_FOCUSED
+                                               : THEME_PANEL));
+        mvwhline(w, 2, 2, ' ', width - 4);
         text_draw_field(w, &p->path, &p->path_first, 2, 2, width - 4, false);
     }
     int rows = height - 8;

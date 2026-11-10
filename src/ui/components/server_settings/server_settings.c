@@ -48,6 +48,36 @@ void admin_error(server_settings *s, const char *message)
 {
     snprintf(s->error, sizeof(s->error), "%s", message ? message : "");
 }
+void admin_invalid(server_settings *s, int field_id, const char *message)
+{
+    admin_error(s, message);
+    s->invalid = s->invalid_pending = true;
+    s->invalid_id = field_id;
+    s->invalid_tab = s->tab;
+}
+static bool blank_text(const char *text)
+{
+    if (!g_utf8_validate(text, -1, NULL))
+        return false;
+    for (const char *at = text; *at; at = g_utf8_next_char(at))
+        if (!g_unichar_isspace(g_utf8_get_char(at)))
+            return false;
+    return true;
+}
+bool admin_check_field(server_settings *s, int field_id, const char *label, const char *text,
+                       size_t max, bool required)
+{
+    const char *problem = server_admin_check_text(text, max, required);
+    if (!problem)
+        return true;
+    char message[192];
+    if (required && blank_text(text))
+        snprintf(message, sizeof(message), "Preencha o campo %s.", label);
+    else
+        snprintf(message, sizeof(message), "%s", problem);
+    admin_invalid(s, field_id, message);
+    return false;
+}
 bool admin_text(const text_buffer *buffer, char output[TEXT_UTF8_BYTES])
 {
     return text_encode(buffer, output);
@@ -96,12 +126,14 @@ unsigned admin_color(const char *hex)
 void admin_select(server_settings *s, const char *id)
 {
     snprintf(s->selected, sizeof(s->selected), "%s", id ? id : "");
+    s->invalid = false;
     s->draft_for[0] = 1; /* Forces a refill on the next sync. */
     s->dirty = false;
     s->confirm = -1;
 }
 void admin_sent(server_settings *s)
 {
+    s->invalid = false;
     s->awaiting = true;
     s->dirty = true;
     s->confirm = -1;
@@ -160,6 +192,7 @@ static void enter_tab(server_settings *s, admin_tab tab)
     /* Tabs that list members turn the directory back on when entered. */
     server_admin_members_active(s->model, false);
     s->tab = tab;
+    s->invalid = false;
     s->list_selected = s->list_first = s->field = s->field_first = 0;
     s->selected[0] = 0;
     s->draft_for[0] = 1;
@@ -284,8 +317,21 @@ static GArray *build_fields(server_settings *s)
         ops->fields(s, fields);
     if (fields->len > SERVER_SETTINGS_FIELDS)
         g_array_set_size(fields, SERVER_SETTINGS_FIELDS);
-    /* Keep the focus on a control. */
     int count = (int)fields->len;
+    /* A refused text field takes the focus, so its cursor shows where to type. */
+    if (s->invalid && s->invalid_pending) {
+        s->invalid_pending = false;
+        for (int i = 0; i < count; ++i) {
+            const admin_field *f = &g_array_index(fields, admin_field, i);
+            if (s->invalid_tab == s->tab && f->id == s->invalid_id &&
+                (f->kind == FIELD_TEXT || f->kind == FIELD_SECRET)) {
+                s->field = i;
+                s->focus = 2;
+                s->confirm = -1;
+            }
+        }
+    }
+    /* Keep the focus on a control. */
     if (s->field >= count)
         s->field = count - 1;
     if (s->field < 0)
@@ -472,16 +518,17 @@ static void draw_field(server_settings *s, WINDOW *w, const admin_field *f, int 
         break;
     case FIELD_TEXT:
     case FIELD_SECRET: {
-        wattrset(w,
-                 COLOR_PAIR(focused ? THEME_PANEL_ACCENT : THEME_PANEL) | (focused ? A_BOLD : 0));
+        bool refused = s->invalid && s->invalid_tab == s->tab && f->id == s->invalid_id;
+        wattrset(w, COLOR_PAIR(refused ? THEME_ERROR : focused ? THEME_PANEL_ACCENT : THEME_PANEL) |
+                        (focused || refused ? A_BOLD : 0));
         snprintf(line, sizeof(line), "%s:", f->label);
         text_label(w, y, x, label_width - 1, line);
         int counter = f->max ? 9 : 0;
         int fx = x + label_width, fw = width - label_width - counter - (f->rgb ? 2 : 0);
         if (fw < 4)
             fw = 4;
-        wattrset(w, COLOR_PAIR(focused ? THEME_FOCUSED : THEME_INPUT) |
-                        (focused && !has_colors() ? A_REVERSE : 0));
+        wattrset(w, COLOR_PAIR(refused ? THEME_DESTRUCTIVE : focused ? THEME_FOCUSED : THEME_INPUT) |
+                        ((focused || refused) && !has_colors() ? A_REVERSE : 0));
         mvwhline(w, y, fx, ' ', fw);
         if (f->text)
             text_draw_field(w, f->text, f->first, y, fx, fw, f->kind == FIELD_SECRET);
@@ -931,6 +978,8 @@ static void form_key(server_settings *s, GArray *fields, int type, uint32_t key)
         if (f->text && text_edit(f->text, type, key, TEXT_LIMIT * 2 + 1, false)) {
             s->dirty = true;
             s->error[0] = 0;
+            if (f->id == s->invalid_id && s->invalid_tab == s->tab)
+                s->invalid = false;
         }
         return;
     }

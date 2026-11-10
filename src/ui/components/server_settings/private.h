@@ -65,6 +65,14 @@ bool admin_previews(void);
 void admin_row_add(GArray *rows, const char *id, const char *label, const char *detail,
                    unsigned rgb, bool action);
 void admin_error(server_settings *s, const char *message);
+/* Shows message and marks the text field with this ID: it turns red and takes
+ * the focus and the cursor, so the account sees what to correct. */
+void admin_invalid(server_settings *s, int field_id, const char *message);
+/* True when text fits the rule of the field called label. Otherwise it flags
+ * the field and says what is wrong; a missing required text names the field
+ * to fill ("Preencha o campo Nome."). */
+bool admin_check_field(server_settings *s, int field_id, const char *label, const char *text,
+                       size_t max, bool required);
 /* UTF-8 of a draft in a buffer owned by the caller. */
 bool admin_text(const text_buffer *buffer, char output[TEXT_UTF8_BYTES]);
 void admin_set_text(text_buffer *buffer, const char *utf8);

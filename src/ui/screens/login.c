@@ -102,6 +102,8 @@ typedef struct {
     char reset_user[8193], reset_host[256];
     char validation_message[192];
     int validation_field;
+    /* 1 + the input whose value was refused: red, with the cursor, until it is edited. */
+    int refused_plus;
     char profile_id[PROFILE_ID_BYTES], profile_name[PROFILE_NAME_BYTES];
 } login_ui;
 
@@ -705,7 +707,9 @@ static void draw(login_ui *ui, auth_client *client)
         if (!ui->fields[i])
             continue;
         bool selected = ui->focus == i && !busy && !ready;
-        chtype attributes = COLOR_PAIR(selected ? THEME_FOCUSED : THEME_INPUT);
+        bool refused = ui->refused_plus == i + 1 && !busy && !ready;
+        chtype attributes =
+            COLOR_PAIR(refused ? THEME_DESTRUCTIVE : selected ? THEME_FOCUSED : THEME_INPUT);
         if (field_back(ui->fields[i]) != attributes)
             set_field_back(ui->fields[i], attributes);
         if (field_fore(ui->fields[i]) != attributes)
@@ -840,8 +844,10 @@ static void draw(login_ui *ui, auth_client *client)
     text(ui->footer, 4, hint_x, ui->width - 4 - hint_x, UI_HELP_HINT);
     for (int i = 0; i < FIELD_COUNT; ++i)
         if (ui->fields[i]) {
-            wattrset(ui->input,
-                     COLOR_PAIR(ui->focus == i && !busy && !ready ? THEME_FOCUSED : THEME_INPUT));
+            bool refused = ui->refused_plus == i + 1 && !busy && !ready;
+            wattrset(ui->input, COLOR_PAIR(refused ? THEME_DESTRUCTIVE
+                                           : ui->focus == i && !busy && !ready ? THEME_FOCUSED
+                                                                               : THEME_INPUT));
             mvwhline(ui->input, field_row(ui, i), 0, ' ', ui->width - 8);
             text_draw_field(ui->input, &ui->values[i], &ui->scroll[i], field_row(ui, i), 0,
                             ui->width - 8, i >= 2);
@@ -1004,6 +1010,7 @@ static void apply_input_error(login_ui *ui, auth_client *client)
             set_field_buffer(ui->fields[3], 0, "");
     }
     ui->focus = field;
+    ui->refused_plus = field + 1;
     if (ui->form)
         select_focus(ui, field);
 }
@@ -1013,6 +1020,7 @@ static void validation_error(login_ui *ui, int field, const char *message)
     snprintf(ui->validation_message, sizeof(ui->validation_message), "%s", message);
     ui->mode_changed = true;
     ui->validation_field = field;
+    ui->refused_plus = field + 1;
     select_focus(ui, field);
 }
 
@@ -1063,6 +1071,7 @@ static bool reset_ready(login_ui *ui)
         ui->reset_confirmed = true;
         ui->mode_changed = true;
         ui->validation_field = 0;
+        ui->refused_plus = 1;
         free(server);
         return false;
     }
@@ -1079,6 +1088,7 @@ static void submit(login_ui *ui, auth_client *client)
         ui->mode_changed = false;
         ui->server_password_error = false;
         ui->validation_message[0] = '\0';
+        ui->refused_plus = 0;
         if (ui->registering) {
             auth_input_error error;
             if (!auth_validate_registration(ui->saved[1], ui->saved[2], &error,
@@ -1086,6 +1096,7 @@ static void submit(login_ui *ui, auth_client *client)
                                             sizeof(ui->validation_message))) {
                 ui->mode_changed = true;
                 ui->validation_field = (int)error - 1;
+                ui->refused_plus = ui->validation_field + 1;
                 select_focus(ui, ui->validation_field);
                 return;
             }
@@ -1095,6 +1106,7 @@ static void submit(login_ui *ui, auth_client *client)
                                                     : "As senhas não coincidem.");
                 ui->mode_changed = true;
                 ui->validation_field = CONFIRM_FIELD;
+                ui->refused_plus = CONFIRM_FIELD + 1;
                 select_focus(ui, CONFIRM_FIELD);
                 return;
             }
@@ -1255,6 +1267,8 @@ static void edit_field(login_ui *ui, int type, uint32_t key)
             *buffer = prior;
         else {
             ui->validation_message[0] = 0;
+            if (ui->refused_plus == ui->focus + 1)
+                ui->refused_plus = 0;
             if (ui->focus <= 1)
                 ui->reset_confirmed = false;
             if (ui->focus == 3)
@@ -1307,6 +1321,7 @@ static void set_mode(login_ui *ui, auth_client *client, bool registering, bool r
     auth_cancel(client);
     swap_reset_field(ui, resetting);
     ui->validation_message[0] = '\0';
+    ui->refused_plus = 0;
     ui->registering = registering;
     ui->mode_changed = true;
     ui->server_password_error = false;
@@ -1361,6 +1376,7 @@ static int manage_profiles(login_ui *ui, auth_client **client, profile_config **
     ui->server_password_error = false;
     ui->registering = ui->mode_changed = ui->session_present = false;
     ui->validation_message[0] = '\0';
+    ui->refused_plus = 0;
     server_profile profile;
     int result = chooser ? profiles_choose(*config, allow_http, &interrupted, &profile)
                          : profiles_manage(*config, allow_http, &interrupted, &profile);
@@ -1781,6 +1797,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
             swap_reset_field(&ui, false);
             ui.registering = ui.mode_changed = ui.server_password_error = false;
             ui.validation_message[0] = '\0';
+            ui.refused_plus = 0;
             ui.focus = ui.values[1].length ? 2 : 1;
             if (!layout(&ui)) {
                 result = 1;
@@ -1793,6 +1810,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
             clear_passwords(&ui);
             ui.registering = ui.mode_changed = ui.server_password_error = false;
             ui.validation_message[0] = '\0';
+            ui.refused_plus = 0;
             ui.focus = 2;
             if (!layout(&ui)) {
                 result = 1;

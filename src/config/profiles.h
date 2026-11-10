@@ -41,6 +41,8 @@ typedef struct profile_config {
     char storage_revision[65];
 #endif
     char message[192];
+    /* Input the last refused edit was about: 1 name, 2 URL, 0 none. */
+    int invalid_field;
 } profile_config;
 
 bool profiles_set_mode(profile_config *config, app_mode mode);

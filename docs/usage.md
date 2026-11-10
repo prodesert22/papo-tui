@@ -1448,6 +1448,15 @@ above.
 
 ## Troubleshooting
 
+- **A field turned red:** the program refused what you typed in that field, for
+  example an empty required name, a password that does not match, an invalid
+  date or a message with nothing in it. The field is shown in red, the cursor
+  is already in it and the message at the bottom says what to fix, naming the
+  field when it was left empty, such as **Preencha o campo Nome.** (Fill in the
+  Name field). The red goes away with the first character you type or paste
+  there. This applies to the sign-in form, the **Configurações do servidor**
+  forms, **Perfil** and **Conta** in Settings, the server profile dialogs, the
+  save dialog and the message box.
 - **Command not found:** check that the application is installed and its folder
   is on PATH. For a portable package, run the executable from the extracted
   folder; see the [installation guide](installation.md).

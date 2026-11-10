@@ -359,6 +359,7 @@ static bool commit(profile_config *config, profile_config *copy)
 bool profiles_update(profile_config *config, const char *id, const char *name, const char *url,
                      bool allow_local_http, char output_id[PROFILE_ID_BYTES])
 {
+    config->invalid_field = 0;
     profile_config *copy = candidate(config);
     if (!copy)
         return false;
@@ -377,10 +378,12 @@ bool profiles_update(profile_config *config, const char *id, const char *name, c
     server_profile *profile = &copy->profiles[index];
     if (!profile_name(name, profile->name)) {
         free(copy);
+        config->invalid_field = 1;
         return error(config, "Informe um nome sem controles, com até 128 bytes UTF-8.");
     }
     if (!profile_url(config, url, allow_local_http, profile->url)) {
         free(copy);
+        config->invalid_field = 2;
         return false;
     }
     if (index == copy->count) {

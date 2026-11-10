@@ -107,9 +107,10 @@ static void pick(server_settings *s)
         return;
     }
     g_strstrip(name);
-    const char *problem = server_admin_check_text(name, 0, true);
-    if (problem || strlen(name) >= sizeof(s->emoji_name)) {
-        admin_error(s, problem ? problem : "Nome longo demais.");
+    if (!admin_check_field(s, NAME, "Nome", name, 0, true))
+        return;
+    if (strlen(name) >= sizeof(s->emoji_name)) {
+        admin_invalid(s, NAME, "Nome longo demais.");
         return;
     }
     if (server_admin_busy(s->model)) {

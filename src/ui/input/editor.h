@@ -23,6 +23,10 @@ void send_editor_poll(send_editor *editor);
 const char *send_editor_notice(const send_editor *editor);
 /* NULL for ordinary editing instructions; otherwise a send-context notice. */
 const char *send_editor_feedback(const send_editor *editor);
+/* The composer was refused as it stands (an empty message, a command without
+ * what it needs): it shows red until the text changes. */
+bool send_editor_refused(const send_editor *editor);
+void send_editor_refuse(send_editor *editor, bool refused);
 const char *send_editor_compact_notice(const send_editor *editor);
 /* Borrowed model for status/cancellation and taking Message confirmations.
  * Taking transfers JSON ownership; merge into R5 history by definitive ID. */

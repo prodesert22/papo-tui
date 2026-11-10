@@ -14,6 +14,7 @@
 #include <stdint.h>
 
 #include <limits.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -41,6 +42,7 @@ typedef struct {
     hit top_tabs[2], tabs[PROFILE_LIMIT + 1], actions[ACTION_COUNT], buttons[3];
     int tab_count, action_count, dialog_width, dialog_height;
     int scroll[2];
+    int refused_plus; /* 1 + the refused input, red and focused until edited; 0 none. */
     profile_config *config;
     bool allow_http;
     bool chooser, selection_error;
@@ -201,8 +203,10 @@ static void draw_profile_list(profile_ui *ui)
 
 static void field_draw(profile_ui *ui, text_buffer *buffer, int index, int row, const char *name)
 {
-    label(ui->dialog, row - 1, 2, ui->dialog_width - 4, THEME_PROFILE_PANEL, name);
-    int color = ui->field == index ? THEME_PROFILE_FOCUS : THEME_PROFILE_PANEL;
+    bool refused = ui->refused_plus == index + 1;
+    label(ui->dialog, row - 1, 2, ui->dialog_width - 4, refused ? THEME_ERROR : THEME_PROFILE_PANEL,
+          name);
+    int color = refused ? THEME_DESTRUCTIVE : ui->field == index ? THEME_PROFILE_FOCUS : THEME_PROFILE_PANEL;
     wattrset(ui->dialog, attributes(color));
     mvwhline(ui->dialog, row, 2, ' ', ui->dialog_width - 4);
     text_draw_field(ui->dialog, buffer, &ui->scroll[index], row, 2, ui->dialog_width - 4, false);
@@ -448,6 +452,7 @@ static bool open_dialog(profile_ui *ui, int kind)
         text_decode(&ui->url, profile->url);
     }
     ui->dialog_type = kind == REMOVE ? REMOVE_DIALOG : kind == LIMITS ? RATE_DIALOG : EDIT_DIALOG;
+    ui->refused_plus = 0;
     ui->field = kind == REMOVE ? 2 : 0;
     ui->button = 0;
     snprintf(ui->config->message, sizeof(ui->config->message), "%s",
@@ -480,6 +485,12 @@ static bool confirm(profile_ui *ui)
         else
             snprintf(ui->config->message, sizeof(ui->config->message),
                      "Use taxa positiva e finita; burst inteiro entre 1 e 4294967295.");
+        if (!valid) {
+            /* The cursor goes to the number that was refused: the rate, else the burst. */
+            double rate_number = json_is_number(rate_value) ? json_number_value(rate_value) : 0;
+            ui->field = rate_number > 0 && rate_number < HUGE_VAL ? 1 : 0;
+            ui->refused_plus = ui->field + 1;
+        }
         json_decref(rate_value);
         json_decref(burst_value);
         if (!valid)
@@ -488,8 +499,14 @@ static bool confirm(profile_ui *ui)
         char name[TEXT_UTF8_BYTES], url[TEXT_UTF8_BYTES], id[PROFILE_ID_BYTES];
         if (!text_encode(&ui->name, name) || !text_encode(&ui->url, url))
             return true;
-        if (!profiles_update(ui->config, ui->editing, name, url, ui->allow_http, id))
+        if (!profiles_update(ui->config, ui->editing, name, url, ui->allow_http, id)) {
+            /* The cursor goes to the input that was refused. */
+            if (ui->config->invalid_field) {
+                ui->field = ui->config->invalid_field - 1;
+                ui->refused_plus = ui->config->invalid_field;
+            }
             return true;
+        }
         const server_profile *profile = profiles_find(ui->config, id);
         if (profile)
             ui->cursor = (int)(profile - ui->config->profiles);
@@ -659,9 +676,10 @@ static int click(profile_ui *ui, server_profile *output)
     }
     return 0;
 }
-static void edit(text_buffer *buffer, int type, uint32_t key)
+static void edit(profile_ui *ui, text_buffer *buffer, int type, uint32_t key)
 {
-    text_edit(buffer, type, key, TEXT_LIMIT * 2 + 1, false);
+    if (text_edit(buffer, type, key, TEXT_LIMIT * 2 + 1, false))
+        ui->refused_plus = 0;
 }
 
 static int profiles_run(profile_config *config, bool allow_local_http,
@@ -738,6 +756,7 @@ static int profiles_run(profile_config *config, bool allow_local_http,
             if (!ui->help.open &&
                 (ui->dialog_type == EDIT_DIALOG || ui->dialog_type == RATE_DIALOG) &&
                 ui->field < 2) {
+                ui->refused_plus = 0;
                 if (!text_paste_commit(&ui->paste_data, ui->field ? &ui->url : &ui->name))
                     snprintf(config->message, sizeof(config->message),
                              "Colagem excede o limite do campo; texto preservado.");
@@ -874,7 +893,7 @@ static int profiles_run(profile_config *config, bool allow_local_http,
                     break;
                 }
             } else if (ui->dialog_type != REMOVE_DIALOG && ui->field < 2)
-                edit(ui->field ? &ui->url : &ui->name, type, key);
+                edit(ui, ui->field ? &ui->url : &ui->name, type, key);
             continue;
         }
         if (tab)

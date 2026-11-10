@@ -57,6 +57,8 @@ typedef struct {
     auth_client *auth; /* Borrowed, like profile. */
     text_buffer account[2];
     int account_first[2], account_item, account_y[2];
+    int profile_bad; /* 1 + the profile field refused, shown in red until edited; 0 none. */
+    int account_bad; /* 1 + the password field refused, shown in red until edited; 0 none. */
     bool account_confirm, account_sent;
     unsigned account_seen; /* Outcome shown in the last draw. */
     /* Account settings: the draft, the server copy it was filled from, and

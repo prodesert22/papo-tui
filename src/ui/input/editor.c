@@ -22,7 +22,7 @@ struct send_editor {
     char channel[64];
     uint64_t generation, revision;
     const char *notice;
-    bool feedback;
+    bool feedback, refused;
     const char *compact_notice;
     /* The confirmation notice is shown for confirmed_notice_us from the first
      * poll that sees that operation confirmed, then the hint returns. */
@@ -180,9 +180,20 @@ text_buffer *send_editor_input(send_editor *editor)
     return *editor->channel && auth_has_session(editor->session) ? &editor->text : NULL;
 }
 
+bool send_editor_refused(const send_editor *editor)
+{
+    return editor && editor->refused;
+}
+void send_editor_refuse(send_editor *editor, bool refused)
+{
+    if (editor)
+        editor->refused = refused;
+}
+
 static void submit_notice(send_editor *editor, outbox_submit_result result)
 {
     editor->feedback = true;
+    editor->refused = result == OUTBOX_EMPTY;
     editor->compact_notice = result == OUTBOX_ACCEPTED              ? "Aguardando envio"
                              : result == OUTBOX_EMPTY               ? "Mensagem vazia"
                              : result == OUTBOX_BUSY                ? "Envio em andamento"

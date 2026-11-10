@@ -120,6 +120,23 @@ class ProfileEdit(unittest.TestCase):
             t.read(0.5)
             self.assertEqual(len(server.profile_puts), 2)
 
+    def test_a_refused_perfil_field_takes_the_cursor_back_and_turns_red(self):
+        with ProfileMock() as server:
+            t = self.open(server)
+            self.perfil(t)
+            self.wait(t, "Frase de status")
+            t.send(DOWN + "\x15" + "a" * 33)
+            # Moving on and saving: the refusal brings the cursor back to the nickname.
+            t.send(DOWN + "\n")
+            self.wait(t, "Apelido com mais de 32 caracteres.")
+            row = next(i for i, line in enumerate(t.screen.display) if "Apelido:" in line)
+            self.settled(t, lambda: t.screen.cursor.y == row)
+            column = t.screen.cursor.x - 1  # inside the text, which sits on the input
+            red = t.screen.buffer[row][column].bg
+            t.send("\x7f")
+            self.settled(t, lambda: t.screen.buffer[row][column].bg != red)
+            self.assertEqual(len(server.profile_puts), 0)
+
     def test_rejected_and_unconfirmed_changes_are_never_repeated(self):
         with ProfileMock() as server:
             t = self.open(server)
@@ -176,7 +193,22 @@ class ProfileEdit(unittest.TestCase):
             t.send("/status talvez\n")
             self.wait(t, "Uso: /status online, ausente ou ocupado")
             self.assertIn("/status talvez", self.screen(t))
-            t.send("\x03")
+            # The composer shows the refusal in red until the text changes.
+            row = next(
+                i for i, line in enumerate(t.screen.display) if "> /status talvez" in line
+            )
+            prompt = t.screen.display[row].index("> /status talvez")
+            red = t.screen.buffer[row][prompt].fg
+            t.send("x")
+            self.settled(t, lambda: t.screen.buffer[row][prompt].fg != red)
+            t.send("\x7f\x03")
+            # An empty message is refused the same way.
+            t.send("   \n")
+            self.wait(t, "Escreva uma mensagem antes de enviar.")
+            red = t.screen.buffer[row][prompt].fg
+            t.send("x")
+            self.settled(t, lambda: t.screen.buffer[row][prompt].fg != red)
+            t.send("\x7f\x03")
             # "//" sends one slash; other names are ordinary messages.
             t.send("//comando literal\n")
             t.send("/nickname não é comando\n")

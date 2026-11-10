@@ -302,6 +302,7 @@ void conversation_submit(view *ui, uint64_t retry_id, bool duplicate)
         if (encoded && !*content && conversation_confirm_delete_edit(ui))
             return;
         if (!encoded || !*content) {
+            send_editor_refuse(ui->editor, true);
             ui->feedback = "Escreva uma mensagem antes de editar; Esc cancela.";
             return;
         }
@@ -360,6 +361,7 @@ bool conversation_edit(view *ui, int type, uint32_t key)
     text_buffer before = *editor;
     bool handled = text_edit(editor, type, key, conversation_input_width(ui), true);
     if (handled) {
+        send_editor_refuse(ui->editor, false);
         ui->editor_scrolling = ui->dragging = false;
         ui->feedback =
             send_editor_changed(ui->editor) ? NULL : "Não foi possível salvar o rascunho.";

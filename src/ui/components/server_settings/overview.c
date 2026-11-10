@@ -73,12 +73,24 @@ static void save(server_settings *s)
         admin_error(s, "Texto inválido.");
         return;
     }
+    if (!admin_check_field(s, NAME, "Nome", name, ADMIN_SERVER_NAME_MAX, true)) {
+        memset(password, 0, sizeof(password));
+        return;
+    }
+    /* Whether a refusal is about the password, to point at its field. */
+    bool password_problem =
+        !s->choice && ((json_is_true(json_object_get(server_admin_server(s->model), "public")) &&
+                        !*password) ||
+                       (*password && server_admin_check_text(password, 0, true)));
     const char *problem = NULL;
     json_t *body = server_admin_patch_body(server_admin_server(s->model), name, s->choice,
                                            s->choice ? NULL : password, &problem);
     memset(password, 0, sizeof(password));
     if (!body) {
-        admin_error(s, problem);
+        if (password_problem)
+            admin_invalid(s, PASSWORD, problem);
+        else
+            admin_error(s, problem);
         return;
     }
     bool queued = server_admin_patch(s->model, body);

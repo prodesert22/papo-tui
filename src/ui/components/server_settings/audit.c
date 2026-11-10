@@ -270,7 +270,7 @@ static void apply(server_settings *s)
 {
     static char from_text[TEXT_UTF8_BYTES], until_text[TEXT_UTF8_BYTES];
     if (!admin_text(&s->aux, from_text) || !admin_text(&s->extra, until_text)) {
-        admin_error(s, "Data inválida; use DD/MM/AAAA.");
+        admin_invalid(s, FROM, "Data inválida; use DD/MM/AAAA.");
         return;
     }
     GDateTime *from, *until;
@@ -297,9 +297,9 @@ static void apply(server_settings *s)
     if (until)
         g_date_time_unref(until);
     if (!ok_from || !ok_until)
-        admin_error(s, "Data inválida; use DD/MM/AAAA, como 05/11/2026.");
+        admin_invalid(s, ok_from ? UNTIL : FROM, "Data inválida; use DD/MM/AAAA, como 05/11/2026.");
     else if (!ordered)
-        admin_error(s, "A data inicial é depois da final.");
+        admin_invalid(s, FROM, "A data inicial é depois da final.");
     else if (!server_admin_audit_query(s->model, &q))
         admin_error(s, "Filtro inválido.");
     else {
