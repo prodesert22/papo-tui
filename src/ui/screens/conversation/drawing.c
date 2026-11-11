@@ -503,7 +503,7 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                        scope == DRAW_EDITOR || emoji_picker_open(ui->emojis) ||
                        emoji_picker_suggesting(ui->emojis) || ui->reactors_open ||
                        mention_popup_open(ui->mentions) || r8_modal_is_open(ui->r8) ||
-                       ui->help.open || ui->server_settings.open;
+                       conversation_overlay_open(ui) || ui->server_settings.open;
     graphics_update_begin();
     /* Opening or closing a floating panel or the media viewer recomposes the screen.
      * Force one fresh pixel presentation so terminals that anchor images to
@@ -1003,6 +1003,10 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         icons_overlay(ui->icons, getbegy(help_window), getbegx(help_window), getmaxy(help_window),
                       getmaxx(help_window));
     }
+    WINDOW *switcher_window = quick_switcher_draw(&ui->switcher);
+    if (switcher_window)
+        icons_overlay(ui->icons, getbegy(switcher_window), getbegx(switcher_window),
+                      getmaxy(switcher_window), getmaxx(switcher_window));
     /* The file picker chosen from Perfil stays above the settings panel. */
     bool settings_shown = ui->settings.open && !file_picker_open(ui->files);
     if (settings_shown)
@@ -1030,6 +1034,9 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         if (help_window)
             graphics_frame_occlude(getbegy(help_window), getbegx(help_window), getmaxy(help_window),
                                    getmaxx(help_window));
+        if (switcher_window)
+            graphics_frame_occlude(getbegy(switcher_window), getbegx(switcher_window),
+                                   getmaxy(switcher_window), getmaxx(switcher_window));
         if (panel && !server_shown)
             graphics_frame_occlude(getbegy(panel), getbegx(panel), getmaxy(panel), getmaxx(panel));
         graphics_frame_prepare();
@@ -1053,6 +1060,11 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         caret = true;
     if (ui->help.open) {
         help_draw(&ui->help);
+        caret = false;
+        setsyx(-1, -1);
+    }
+    if (ui->switcher.open) {
+        quick_switcher_draw(&ui->switcher);
         caret = false;
         setsyx(-1, -1);
     }

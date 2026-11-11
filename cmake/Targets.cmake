@@ -280,7 +280,8 @@ add_executable(
     src/ui/screens/profiles.c
     src/ui/components/button.c
     src/ui/components/input_border.c
-    src/ui/components/help.c)
+    src/ui/components/help.c
+    src/ui/components/quick_switcher.c)
 target_sources(papo-tui PRIVATE src/ui/components/file_picker.c)
 target_compile_definitions(papo-tui
                            PRIVATE PAPO_NATIVE_FILE_DIALOGS=$<BOOL:${PAPO_NATIVE_FILE_DIALOGS}>)

@@ -157,7 +157,7 @@ class MediaNavigation(unittest.TestCase):
                 t = self.helper.open(server, protocol=protocol)
                 try:
                     self.helper.wait_frames(t)
-                    t.send("Preserved draft\x0b")
+                    t.send("Preserved draft\x01")
                     self.helper.wait(t, "Mídia 1/2")
                     t.send("\n")
                     self.helper.wait(t, "Reproduzindo")
@@ -272,7 +272,7 @@ class MediaNavigation(unittest.TestCase):
             server.api_handler = route
             t = self.helper.open(server, protocol="kitty", size=(38, 100))
             try:
-                t.send("\x0b\n")
+                t.send("\x01\n")
                 self.helper.wait(t, "←→ ou PgUp/PgDn outra mídia")
                 t.send("\x1bOC")  # Right arrow steps from an image to the video.
                 self.helper.wait(t, "2/3 · clip.mp4")
@@ -316,7 +316,7 @@ class MediaNavigation(unittest.TestCase):
                         size=(38, 100),
                     )
                     try:
-                        t.send("Gallery draft\x0b\n")
+                        t.send("Gallery draft\x01\n")
                         self.helper.wait(t, "1/3 ·")
                         t.send("i")
                         self.helper.wait(t, "Propriedades")

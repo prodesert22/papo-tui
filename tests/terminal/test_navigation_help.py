@@ -84,12 +84,12 @@ class NavigationHelp(HistoryTerminal):
             self.help(t, "Histórico da conversa")
             self.assertIn("PgUp / PgDn", self.screen(t))
             self.assertNotIn("Ctrl+N", self.screen(t))
-            t.send("\x1b\x0b")
+            t.send("\x1b\x01")
             self.wait(t, "Foco: Seleção")
             self.help(t, "Seleção de mensagens")
             self.assertIn("r / e / E", self.screen(t))
             self.assertNotIn("PgUp / PgDn", self.screen(t))
-            t.send("\x1b\x0b\x1b")
+            t.send("\x1b\x01\x1b")
             self.wait(t, "Foco: Canais")
             self.help(t, "Lista de canais")
             self.assertIn("Ctrl+O", self.screen(t))
@@ -166,7 +166,7 @@ class NavigationHelp(HistoryTerminal):
             # The query carries over and filters the contextual rows too.
             self.wait(t, "Buscar: CtRl+Y")
             self.wait(t, "Tentar novamente o último envio")
-            self.assertNotIn("Ctrl+K", self.screen(t))
+            self.assertNotIn("Ctrl+A", self.screen(t))
             self.assertNotIn("Identificar novamente", self.screen(t))
             t.send("\x1f")
             self.wait(t, "Identificar novamente")
@@ -191,7 +191,7 @@ class NavigationHelp(HistoryTerminal):
             t.send("ANEXAR")
             wait_for_screen(
                 t,
-                lambda: "Ctrl+K" not in self.screen(t),
+                lambda: "Ctrl+A" not in self.screen(t),
                 "Contextual search did not filter the table",
             )
             self.assertIn("Ctrl+O", self.screen(t))
@@ -215,7 +215,7 @@ class NavigationHelp(HistoryTerminal):
             self.assertNotIn("ANEXAR", self.screen(t))
             self.help(t, "Editor de mensagens")
             self.assertNotIn("ANEXAR", self.screen(t))
-            self.assertIn("Ctrl+K", self.screen(t))
+            self.assertIn("Ctrl+A", self.screen(t))
             t.send("\x1b")
             self.wait(t, "Draft behind contextual search")
             self.assertEqual(server.sent_messages, [])
@@ -225,7 +225,7 @@ class NavigationHelp(HistoryTerminal):
             t = self.open(server)
             t.send("Protected draft")
             self.help(t, "Editor de mensagens")
-            t.send("\x13\x06\x02\x15\x04\x14\x0f\x05\x19\x0b")
+            t.send("\x13\x06\x02\x15\x04\x14\x0f\x05\x19\x01")
             self.wait(t, "Ajuda do contexto")
             t.send("\x1b[200~ignored\x07\x14\n\x1b[201~")
             self.wait(t, "Ajuda do contexto")

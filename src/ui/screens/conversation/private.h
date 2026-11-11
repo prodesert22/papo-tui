@@ -20,6 +20,7 @@
 #include "ui/components/file_picker.h"
 #include "ui/components/help.h"
 #include "ui/components/mention_popup.h"
+#include "ui/components/quick_switcher.h"
 #include "ui/components/server_settings.h"
 #include "ui/components/settings.h"
 #include "ui/components/status_bar.h"
@@ -163,6 +164,7 @@ typedef struct {
     server_settings server_settings;
     bool server_settings_presented, viewer_presented;
     help_modal help;
+    quick_switcher switcher;
     bool list_dms, initial_channel_pending;
     /* Conversation to open first: the one shown last on this server. The
      * initial channel waits briefly for it before falling back to the first. */
@@ -273,6 +275,18 @@ static inline bool conversation_panel_open(const view *ui)
 {
     return ui->settings.open || ui->server_settings.open;
 }
+/* Help or the conversation switcher: centered windows above everything that
+ * take every key and keep reads, pastes and push-to-talk away from the history. */
+static inline bool conversation_overlay_open(const view *ui)
+{
+    return ui->help.open || ui->switcher.open;
+}
+/* Ctrl+K: lists the conversations every server has loaded and opens the one
+ * chosen, switching server tabs when needed. */
+void conversation_open_switcher(view *ui);
+/* Opens the chosen conversation; returns a loop result when another tab must
+ * take over (its index in *selected), or -1 when the current tab handled it. */
+int conversation_switch_to(view *ui, const switcher_entry *entry, size_t *selected);
 void conversation_open_server_settings(view *ui);
 /* The message's content has text, not only attachments or blanks. */
 bool conversation_message_has_text(const json_t *message);

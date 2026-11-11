@@ -691,7 +691,7 @@ static bool media(message_blocks *b, json_t *message, json_t *entry, const char 
     b->media[n].full_width = true;
     b->media[n].clip = clip && video && graphics;
     size_t start = b->count;
-    /* A graphical preview is the image itself; Ctrl+K is documented in the UI. */
+    /* A graphical preview is the image itself; Ctrl+A is documented in the UI. */
     if ((!graphics || video) &&
         !labeled(b, key, video ? (graphics ? "▶ " : "[▶ Vídeo] ") : "[Imagem] ", label, width,
                  false, card, color))

@@ -69,7 +69,7 @@ class GifAttachments(unittest.TestCase):
             try:
                 self.helper.wait_frames(t, 4)
                 self.helper.settled(t, lambda: len(set(t.stream.frames)) >= 3, seconds=10)
-                t.send("\x0b")
+                t.send("\x01")
                 self.helper.wait(t, "Mídia 1/1")
                 t.send("\n")
                 self.helper.wait(t, "GIF animado")

@@ -37,7 +37,7 @@ class ModalTest(unittest.TestCase):
         t = Terminal(arguments=("--demo",))
         try:
             self.wait(t, "Modal fechado")
-            t.send("\x0b")
+            t.send("\x01")
             self.wait(t, "Modal aberto")
             self.assertIn("Canais preservados", "\n".join(t.screen.display))
             self.wait(t, "[Info]")
@@ -84,7 +84,7 @@ class ModalTest(unittest.TestCase):
             t.click(8, 4)
             self.wait(t, "Modal fechado")
             self.assertIn("Canais acionados: 0", "\n".join(t.screen.display))
-            t.send("\x0b")
+            t.send("\x01")
             self.wait(t, "Modal aberto")
             self.assertNotIn("Propriedades", "\n".join(t.screen.display))
             t.send("\x1b")

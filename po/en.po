@@ -7,6 +7,22 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
+#: src/ui/components/quick_switcher.c
+msgid " (silenciado)"
+msgstr " (muted)"
+
+#: src/ui/screens/conversation/input.c
+msgid "A conversa não está mais disponível."
+msgstr "The conversation is no longer available."
+
+#: src/ui/components/quick_switcher.c
+msgid "Buscar:"
+msgstr "Search:"
+
+#: src/ui/components/quick_switcher.c
+msgid "Enter: abrir · ↑↓: escolher · Esc: fechar"
+msgstr "Enter: open · ↑↓: choose · Esc: close"
+
 #: src/ui/components/settings.c
 msgid "Idioma dos textos do aplicativo neste computador. Sistema segue o idioma do sistema, ou PAPO_LANGUAGE (pt ou en) quando definida. Mensagens e nomes continuam como foram escritos."
 msgstr "Language of the application's text on this computer. System follows the system language, or PAPO_LANGUAGE (pt or en) when it is set. Messages and names stay as they were written."
@@ -15,6 +31,26 @@ msgstr "Language of the application's text on this computer. System follows the 
 msgid "Idioma: < %s >"
 msgstr "Language: < %s >"
 
+#: src/ui/components/quick_switcher.c
+msgid "Ir para conversa"
+msgstr "Go to conversation"
+
+#: src/ui/screens/conversation/input.c
+msgid "Memória insuficiente para listar as conversas."
+msgstr "Not enough memory to list the conversations."
+
+#: src/ui/components/quick_switcher.c
+msgid "Nenhuma conversa carregada."
+msgstr "No conversations loaded."
+
+#: src/ui/components/quick_switcher.c
+msgid "Nenhuma conversa encontrada."
+msgstr "No conversations found."
+
 #: src/model/text/translation.c
 msgid "Sistema"
 msgstr "System"
+
+#: src/ui/components/quick_switcher.c
+msgid "nome do canal, DM ou servidor"
+msgstr "channel, DM or server name"

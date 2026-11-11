@@ -6,12 +6,13 @@
  * Keep Enter/Tab/Backspace, editing controls and terminal escape codes distinct. */
 typedef enum {
     SHORTCUT_MENU = 0,
+    SHORTCUT_MESSAGES = 1,
     SHORTCUT_PINNED = 2,
     SHORTCUT_NOTIFICATIONS = 4,
     SHORTCUT_EMOJIS = 5,
     SHORTCUT_SEARCH = 6,
     SHORTCUT_HELP = 7,
-    SHORTCUT_MESSAGES = 11,
+    SHORTCUT_SWITCHER = 11,
     SHORTCUT_ATTACH = 15,
     SHORTCUT_SETTINGS = 19,
     SHORTCUT_ACCOUNT = 20,

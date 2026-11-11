@@ -272,6 +272,84 @@ int conversation_activate_tab(view *ui, size_t index, size_t *selected)
     return -1;
 }
 
+void conversation_open_switcher(view *ui)
+{
+    instance_connections *connections = ui->connections;
+    size_t count = 0, capacity = 0;
+    switcher_entry *entries = NULL;
+    for (size_t tab = 0; tab < connections->count; ++tab) {
+        history *model = connections->items[tab].model;
+        if (!model)
+            continue;
+        inbox *box = history_inbox(model);
+        /* The conversation on screen is not a destination. */
+        const json_t *current =
+            tab == ui->active_tab ? history_channel(ui->model, history_selected(ui->model)) : NULL;
+        for (size_t i = 0; i < history_channel_count(model); ++i) {
+            json_t *channel = history_channel(model, i);
+            const char *type = conversation_str(channel, "type"),
+                       *id = conversation_str(channel, "id");
+            if (channel == current || !strcmp(type, "category") || !history_uuid(id))
+                continue;
+            if (count == capacity) {
+                size_t grown = capacity ? capacity * 2 : 64;
+                switcher_entry *larger = realloc(entries, grown * sizeof(*entries));
+                if (!larger) {
+                    free(entries);
+                    ui->feedback = _("Memória insuficiente para listar as conversas.");
+                    return;
+                }
+                entries = larger;
+                capacity = grown;
+            }
+            switcher_entry *entry = &entries[count++];
+            memset(entry, 0, sizeof(*entry));
+            entry->instance = tab;
+            snprintf(entry->channel, sizeof(entry->channel), "%s", id);
+            snprintf(entry->name, sizeof(entry->name), "%s", conversation_str(channel, "name"));
+            snprintf(entry->server, sizeof(entry->server), "%s", connections->items[tab].name);
+            snprintf(entry->last, sizeof(entry->last), "%s",
+                     conversation_str(json_object_get(channel, "last_message"), "created_at"));
+            entry->dm = json_is_true(json_object_get(channel, "_dm"));
+            entry->voice = !strcmp(type, "voice");
+            entry->muted = inbox_conversation_muted(box, id);
+            entry->unread = !entry->muted && history_channel_unread(model, channel);
+            entry->mentions = inbox_unread_mentions(box, id);
+        }
+    }
+    if (!quick_switcher_open(&ui->switcher, entries, count))
+        ui->feedback = _("Memória insuficiente para listar as conversas.");
+}
+
+int conversation_switch_to(view *ui, const switcher_entry *entry, size_t *selected)
+{
+    if (entry->instance >= ui->connections->count)
+        return -1;
+    if (entry->instance != ui->active_tab) {
+        /* The other tab opens it as it would a clicked desktop notification
+         * without a message: the conversation at its latest messages. */
+        instance_connection *item = &ui->connections->items[entry->instance];
+        snprintf(item->open_channel, sizeof(item->open_channel), "%s", entry->channel);
+        item->open_message[0] = item->open_time[0] = 0;
+        return conversation_activate_tab(ui, entry->instance, selected);
+    }
+    for (size_t i = 0; i < history_channel_count(ui->model); ++i) {
+        json_t *channel = history_channel(ui->model, i);
+        if (strcmp(entry->channel, conversation_str(channel, "id")))
+            continue;
+        conversation_switch_list(ui, json_is_true(json_object_get(channel, "_dm")));
+        for (size_t j = 0; j < conversation_list_count(ui); ++j)
+            if (conversation_list_index(ui, j) == i)
+                ui->highlighted = j;
+        conversation_open_channel(ui, true);
+        if (history_selected(ui->model) == i && conversation_input(ui))
+            conversation_set_focus(ui, MESSAGE_INPUT);
+        return -1;
+    }
+    ui->feedback = _("A conversa não está mais disponível.");
+    return -1;
+}
+
 void conversation_cancel_edit(view *ui)
 {
     ui->edit_message[0] = 0;

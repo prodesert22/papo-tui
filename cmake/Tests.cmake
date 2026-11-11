@@ -184,6 +184,16 @@ if(BUILD_TESTING)
     papo_set_tests_properties(footer-terminal PROPERTIES TIMEOUT 120)
     papo_add_test(
         NAME
+        quick-switcher-terminal
+        COMMAND
+        ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_quick_switcher.py
+        $<TARGET_FILE:papo-tui>
+        LABELS
+        ui
+        servers)
+    papo_add_test(
+        NAME
         typing-terminal
         COMMAND
         ${Python3_EXECUTABLE}

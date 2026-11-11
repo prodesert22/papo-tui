@@ -459,7 +459,7 @@ class AppModes(unittest.TestCase):
             t = self.open(server)
             try:
                 self.helper.wait(t, "Fixture")
-                t.send("rascunho do vídeo\x1b\x0b\n")
+                t.send("rascunho do vídeo\x1b\x01\n")
                 self.helper.wait(t, "Reproduzindo")
                 self.assertNotIn("Vídeos desativados", "\n".join(t.screen.display))
                 self.assertEqual(t.stream.frames, [])
@@ -501,7 +501,7 @@ class AppModes(unittest.TestCase):
                     t = self.open(server, size=(32, 100))
                     try:
                         self.helper.wait(t, "Mensagem 0001")
-                        t.send("draft stays\x0bE")
+                        t.send("draft stays\x01E")
                         self.helper.wait(t, "Quem reagiu")
                         self.helper.wait(t, "Pessoas")
                         self.wait(
@@ -519,7 +519,7 @@ class AppModes(unittest.TestCase):
                         self.assertNotIn("Respondendo a", "\n".join(t.screen.display))
                         t.send(" tail")
                         self.helper.wait(t, "draft stays tail")
-                        t.send("\x0be")
+                        t.send("\x01e")
                         self.helper.wait(t, "Reagir · Esc voltar")
                         self.choose(t, destination)
                         self.assertNotIn("Reagir · Esc voltar", "\n".join(t.screen.display))
@@ -563,6 +563,7 @@ class AppModes(unittest.TestCase):
                 ("server-settings", "Configurações do servidor ·"),
                 ("\x07", "Ajuda do contexto"),
                 ("\x1f", "Ajuda global"),
+                ("\x0b", "Ir para conversa"),
                 ("\x0f", "Anexar arquivos"),
                 ("attachment-remove", "Remover anexo?"),
                 ("\x05", "Emojis · Esc voltar"),
@@ -573,7 +574,7 @@ class AppModes(unittest.TestCase):
                 ("\x06\t\t\n", "Filtros da busca"),
                 ("\x02", "Mensagens fixadas"),
                 ("\x02", "Ir para mensagem"),
-                # After Ctrl+K, the message menu down to Ver perfil, the last content item.
+                # After Ctrl+A, the message menu down to Ver perfil, the last content item.
                 ("m\x1bOB\x1bOB\x1bOB\x1bOB\x1bOB\n", "Perfil do membro"),
             ):
                 with self.subTest(mode=mode, modal=title):
@@ -619,7 +620,7 @@ class AppModes(unittest.TestCase):
 
                             self.wait(t, lambda: len(red_cells()) > 200)
                             if key == "E" or title == "Perfil do membro":
-                                t.send("\x0b")
+                                t.send("\x01")
                                 self.wait(t, lambda: len(red_cells()) > 200)
                             if key == "attachment-remove":
                                 t.send("\x0f")
@@ -655,6 +656,7 @@ class AppModes(unittest.TestCase):
                                 "Perfil do membro",
                                 "Ajuda do contexto",
                                 "Ajuda global",
+                                "Ir para conversa",
                                 "Remover anexo?",
                                 "Buscar mensagens no servidor",
                                 "Filtros da busca",
@@ -934,7 +936,7 @@ class AppModes(unittest.TestCase):
                 self.assertTrue(red_cells())
                 self.assertEqual(self.children(t), [])
                 t.send("\x1b")
-                t.send("\x0b\n")
+                t.send("\x01\n")
                 self.helper.wait(t, "[Info]")
                 self.wait(t, lambda: bool(self.children(t)))
                 self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), requests)
@@ -947,7 +949,7 @@ class AppModes(unittest.TestCase):
             t = self.open(server)
             try:
                 self.helper.wait(t, "Fixture")
-                t.send("rascunho do vídeo\x1b\x0b\n")
+                t.send("rascunho do vídeo\x1b\x01\n")
                 self.helper.wait(t, "Reproduzindo")
                 self.assertEqual(t.stream.frames, [])
                 self.assertTrue(

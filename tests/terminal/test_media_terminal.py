@@ -70,7 +70,7 @@ class MediaTerminal(support.MediaTerminal):
                             )
                         count = len(t.stream.frames)
                         placements = len(t.stream.placements)
-                        t.send("\x0b\n")
+                        t.send("\x01\n")
                         self.wait(t, "[Info]")
                         if protocol == "kitty":
                             deadline = time.monotonic() + 10
@@ -307,7 +307,7 @@ class MediaTerminal(support.MediaTerminal):
             try:
                 self.wait_frames(t)
                 frames = len(t.stream.frames)
-                t.send("\x0b\n")
+                t.send("\x01\n")
                 self.wait(t, "Imagem")
                 self.wait_frames(t, frames + 1)
                 # A vector is drawn again at the viewer size, not stretched.
@@ -383,7 +383,7 @@ class MediaTerminal(support.MediaTerminal):
                 self.wait_frames(
                     t
                 )  # Identical bytes share one encoded image across two placements.
-                t.send("Draft preserved\x0b")
+                t.send("Draft preserved\x01")
                 self.wait(t, "Mídia 1/2")
                 self.assertNotIn("Escolha uma mídia", "\n".join(t.screen.display))
                 t.send("\x1bOC")
@@ -608,10 +608,11 @@ class MediaTerminal(support.MediaTerminal):
                 ("\x13", "Configurações"),
                 ("\x07", "Ajuda do contexto"),
                 ("\x1f", "Ajuda global"),
+                ("\x0b", "Ir para conversa"),
                 ("\x0f", "Anexar arquivos"),
                 ("attachment-remove", "Remover anexo?"),
                 ("\x05", "Emojis · Esc voltar"),
-                ("\x0bE", "Quem reagiu"),
+                ("\x01E", "Quem reagiu"),
                 ("@", "Menções"),
                 ("\x04", "Notificações"),
                 ("\x06", "Buscar mensagens no servidor"),
@@ -621,7 +622,7 @@ class MediaTerminal(support.MediaTerminal):
                 ("\x02", "Ir para mensagem"),
                 # Message menu, down to Ver perfil, the last content item.
                 (
-                    "\x0bm\x1bOB\x1bOB\x1bOB\x1bOB\x1bOB\n",
+                    "\x01m\x1bOB\x1bOB\x1bOB\x1bOB\x1bOB\n",
                     "Perfil do membro",
                 ),
             ):
@@ -710,6 +711,7 @@ class MediaTerminal(support.MediaTerminal):
                             "Perfil do membro",
                             "Ajuda do contexto",
                             "Ajuda global",
+                            "Ir para conversa",
                             "Remover anexo?",
                             "Buscar mensagens no servidor",
                             "Filtros da busca",
@@ -937,7 +939,7 @@ class MediaTerminal(support.MediaTerminal):
         # avatars and emoji around it stay, as do the ones it does not cover.
         def select(t):
             # Selecting the message repaints it, and its emoji, before the viewer opens.
-            t.send("\x1b\x0b")
+            t.send("\x1b\x01")
             self.wait(t, "Foco: Seleção")
             t.read(0.5)
 
@@ -1182,7 +1184,7 @@ class MediaTerminal(support.MediaTerminal):
                                 ),
                                 "Search panel did not close",
                             )
-                    t.send("\x0b")
+                    t.send("\x01")
                     self.wait(t, "Mídia 1/1")
                     self.assertNotIn("[Info]", "\n".join(t.screen.display))
                     t.send("\n")
@@ -1217,7 +1219,7 @@ class MediaTerminal(support.MediaTerminal):
                 count = len(t.stream.frames)
                 t.read(0.3)
                 self.assertEqual(len(t.stream.frames), count, "Poster must remain static")
-                t.send("\x0b")
+                t.send("\x01")
                 self.wait(t, "Mídia 1/1")
                 t.send("\n")
                 self.wait(t, "Reproduzindo")
@@ -1247,7 +1249,7 @@ class MediaTerminal(support.MediaTerminal):
                 self.assertNotIn("Tipo:", display)
                 # Without a preview, nothing is downloaded before the player opens.
                 self.assertFalse(any("/attachments/" in r[1] for r in server.requests))
-                t.send("\x0b")
+                t.send("\x01")
                 self.wait(t, "Mídia 1/1")
                 t.send("\n")
                 self.wait(t, "Áudio · Esc: segundo plano")
@@ -1327,7 +1329,7 @@ class MediaTerminal(support.MediaTerminal):
             t = self.open(server, protocol="kitty")
             try:
                 self.wait(t, "[▶] nota.wav")
-                t.send("\x0b\n")
+                t.send("\x01\n")
                 self.wait(t, "Reproduzindo")
                 t.send("\x1b")
                 wait_for_screen(t, lambda: "Ctrl+X" in self.footer(t), "Mini-player missing")
@@ -1361,7 +1363,7 @@ class MediaTerminal(support.MediaTerminal):
             t = self.open(server, protocol="kitty")
             try:
                 self.wait(t, "[▶] voz.wav")
-                t.send("\x0b\n")
+                t.send("\x01\n")
                 self.wait(t, "Áudio · Esc: segundo plano")
                 self.wait(t, "Fim · ")
                 t.send(" ")
@@ -1377,7 +1379,7 @@ class MediaTerminal(support.MediaTerminal):
             t = self.open(server, sixel=False)
             try:
                 self.wait(t, "[▶] faixa.flac")
-                t.send("\x0b\n")
+                t.send("\x01\n")
                 self.wait(t, "Reproduzindo")
                 self.wait(t, "[Repetir: Não]")
                 t.send("\x1b")
@@ -1404,7 +1406,7 @@ class MediaTerminal(support.MediaTerminal):
                 try:
                     self.wait(t, "[▶] faixa.flac")
                     frames = len(t.stream.frames)
-                    t.send("\x0b\n")
+                    t.send("\x01\n")
                     self.wait(t, "Reproduzindo")
                     self.wait_frames(t, frames + 1)
                     # The cover is a still picture: the audio keeps playing under it.
@@ -1446,7 +1448,7 @@ class MediaTerminal(support.MediaTerminal):
             try:
                 self.wait(t, "▶ Fixture")
                 self.wait(t, "Carregando prévia do vídeo…")
-                t.send("\x0b")
+                t.send("\x01")
                 self.wait(t, "Mídia 1/1")
                 t.send("\n")
                 self.wait(t, "Carregando mídia")
@@ -1536,7 +1538,7 @@ class MediaTerminal(support.MediaTerminal):
             t = self.open(server, protocol="kitty", size=(64, 160))
             try:
                 self.wait(t, "▶ Abrir player")
-                t.send("\x0b")
+                t.send("\x01")
                 self.wait(t, "Mídia 1/1")
                 t.send("\n")
                 self.wait(t, "Carregando mídia")
@@ -1561,7 +1563,7 @@ class MediaTerminal(support.MediaTerminal):
             t = self.open(server, protocol="kitty")
             try:
                 self.wait_frames(t)
-                t.send("\x0b")
+                t.send("\x01")
                 self.wait(t, "Mídia 1/1")
                 t.send("\n")
                 self.wait(t, "Reproduzindo")
@@ -1582,7 +1584,7 @@ class MediaTerminal(support.MediaTerminal):
                 )
                 try:
                     self.wait_frames(second)
-                    second.send("\x0b")
+                    second.send("\x01")
                     self.wait(second, "Mídia 1/1")
                     second.send("\n")
                     self.wait(second, " 65%")
@@ -1601,7 +1603,7 @@ class MediaTerminal(support.MediaTerminal):
             t = self.open(server, protocol="kitty", environment={"TMPDIR": directory})
             try:
                 self.wait_frames(t)
-                t.send("Rascunho Kitty\x1b\x0b\n")
+                t.send("Rascunho Kitty\x1b\x01\n")
                 self.wait_frames(t, 2)
                 self.wait(t, "Reproduzindo")
                 self.assertEqual(set(t.stream.protocols), {"kitty"})
@@ -1727,7 +1729,7 @@ class MediaTerminal(support.MediaTerminal):
             t = self.open(server, protocol="kitty")
             try:
                 self.wait_frames(t)
-                t.send("\x0b\n")
+                t.send("\x01\n")
                 self.wait(t, "[Info]")
                 t.send("i")
                 self.wait(t, "Propriedades")
@@ -2025,7 +2027,7 @@ class MediaTerminal(support.MediaTerminal):
             t = self.open(server, protocol="kitty")
             try:
                 self.wait_frames(t)
-                t.send("\x0b\n")
+                t.send("\x01\n")
                 self.wait(t, "[Info]")
                 self.wait(t, "Imagem")
                 self.wait_raster(t, lambda w, h: w >= 232 and h >= 176)
@@ -2144,7 +2146,7 @@ class MediaTerminal(support.MediaTerminal):
                 self.assertLessEqual(tags[256], 640)
                 self.assertLessEqual(tags[257], 360)
                 self.assertGreater(payload[tags[273]], 230)
-                t.send("\x0b\n")
+                t.send("\x01\n")
                 self.wait_frames(t, 2)
                 t.send("\x1b")
                 self.wait(t, "Conversar em #")
@@ -2154,7 +2156,7 @@ class MediaTerminal(support.MediaTerminal):
             t = self.open(server, protocol="iterm2")
             try:
                 self.wait(t, "Mensagem 0001")
-                t.send("\x0b\n")
+                t.send("\x01\n")
                 self.wait_frames(t, 2)
                 self.wait(t, "Reproduzindo")
                 t.send(" ")
@@ -2186,7 +2188,7 @@ class MediaTerminal(support.MediaTerminal):
                     self.assertEqual(len(t.stream.frames), frames, "Navigation redrew the image")
                 t.send("\x1bOH\x1bOB\n")
                 self.wait(t, "Rascunho com imagem")
-                t.send("\x0b\n")
+                t.send("\x01\n")
                 self.wait(t, "Imagem")
                 self.wait_frames(t, frames + 1)
                 self.assertEqual(
@@ -2289,7 +2291,7 @@ class MediaTerminal(support.MediaTerminal):
             t = self.open(server, environment={"TMPDIR": directory})
             try:
                 self.wait(t, "▶ Fixture")
-                t.send("\x0b\n")
+                t.send("\x01\n")
                 self.wait(t, "Carregando mídia")
                 t.send("\x1b")
                 self.wait(t, "Conversar em #geral")
@@ -2324,7 +2326,7 @@ class MediaTerminal(support.MediaTerminal):
             ):
                 t = self.open(server, protocol=protocol)
                 try:
-                    t.send("Rascunho\x1b\x0b\n")
+                    t.send("Rascunho\x1b\x01\n")
                     self.wait_frames(t, 2)
                     # Fit the 4:3 video; Kitty/iTerm2 pad the final terminal cell.
                     expected = (234 if protocol == "sixel" else 240, 176)
@@ -2390,7 +2392,7 @@ class MediaTerminal(support.MediaTerminal):
                     t = self.open(server, protocol="kitty")
                     try:
                         self.wait_frames(t)
-                        t.send("\x0b\n")
+                        t.send("\x01\n")
                         self.wait_frames(t, 2)
                         scale = min(320 / original[0], 176 / original[1])
                         expected = tuple(max(1, int(n * scale)) for n in original)
@@ -2436,7 +2438,7 @@ class MediaTerminal(support.MediaTerminal):
         with self.serve(self.video, "video/mp4") as server:
             t = self.open(server, protocol="kitty", environment={"KITTY_WINDOW_ID": "papo-test"})
             try:
-                t.send("Rascunho controles\x1b\x0b\n")
+                t.send("Rascunho controles\x1b\x01\n")
                 self.wait_frames(t, 2)
                 row, controls = self.player_controls(t)
 
@@ -2589,7 +2591,7 @@ class MediaTerminal(support.MediaTerminal):
             try:
                 self.assertIn(b"\x1b[?1006", bytes(t.output))
                 self.wait(t, "▶ Fixture")
-                t.send("\x0b\n")
+                t.send("\x01\n")
                 self.wait_frames(t, 2)
                 row, controls = self.player_controls(t)
                 # Release is a distinct packet, as with a real held click. Input
@@ -2639,7 +2641,7 @@ class MediaTerminal(support.MediaTerminal):
                 self.wait(t, "▶ Fixture")
                 t.send("Rascunho")
                 t.send("\x1b")
-                t.send("\x0b\n")
+                t.send("\x01\n")
                 self.wait_frames(t, 2)
                 self.wait(t, "Reproduzindo")
                 t.send(" ")
@@ -2688,7 +2690,7 @@ class MediaTerminal(support.MediaTerminal):
             t = self.open(server, protocol="kitty")
             try:
                 t.resize(34, 140)
-                t.send("\x0b\n")
+                t.send("\x01\n")
                 self.wait_frames(t, 2)
                 t.send(" ")
                 self.wait(t, "Pausado")
@@ -2750,7 +2752,7 @@ class MediaTerminal(support.MediaTerminal):
                 # Finish the failed cover before opening the player: both paths
                 # must share the downloaded file even when its decode fails.
                 self.wait(t, "Imagem inválida")
-                t.send("Rascunho retry\x1b\x0b\n")
+                t.send("Rascunho retry\x1b\x01\n")
                 self.wait(t, "Vídeo inválido ou codec indisponível")
                 self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), 1)
                 parent = server.api_handler
@@ -2783,7 +2785,7 @@ class MediaTerminal(support.MediaTerminal):
             t = self.open(server)
             try:
                 self.wait_frames(t)
-                t.send("\x0b")
+                t.send("\x01")
                 self.wait(t, "Foco: Seleção")
                 t.send("\n")
                 self.wait_frames(t, 2)

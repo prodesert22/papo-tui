@@ -506,7 +506,7 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
                         icons_paint(ui->icons, ui->body, icon->id, y, x, icon_pair, false,
                                     icon->offset);
                 }
-                if (observed && !ui->help.open && !emoji_picker_open(ui->emojis) &&
+                if (observed && !conversation_overlay_open(ui) && !emoji_picker_open(ui->emojis) &&
                     !(r8_modal_is_open(ui->r8) || conversation_panel_open(ui)) &&
                     !media_view_modal(ui->media) && !ui->context_open && !ui->reactors_open &&
                     !conversation_members_modal(ui) &&

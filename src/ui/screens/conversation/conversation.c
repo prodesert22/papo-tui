@@ -474,6 +474,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         if (ui->model)
             history_active(ui->model, false);
         help_destroy(&ui->help);
+        quick_switcher_destroy(&ui->switcher);
         r8_modal_destroy(ui->r8);
         conversation_destroy_layout(ui);
         g_hash_table_destroy(ui->layout_index);
@@ -514,7 +515,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         text_input_event_reporting(ui->settings.open ? ui->settings.audio.push_to_talk
                                                      : connections->config &&
                                                            connections->config->audio.push_to_talk);
-        bool voice_modal = ui->help.open || conversation_panel_open(ui) ||
+        bool voice_modal = conversation_overlay_open(ui) || conversation_panel_open(ui) ||
                            r8_modal_is_open(ui->r8) || ui->duplicate_modal || ui->context_open ||
                            ui->reactors_open || ui->remove_confirm || file_picker_open(ui->files) ||
                            emoji_picker_open(ui->emojis) || mention_popup_open(ui->mentions) ||
@@ -525,7 +526,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         const audio_config *audio = connections->config ? &connections->config->audio : NULL;
         text_push_to_talk_configure(
             audio && audio->push_to_talk && voice_active() && !voice_modal ? &audio->ptt : NULL);
-        if (ui->help.open || !ui->body || !ui->at_end || r8_modal_is_open(ui->r8) ||
+        if (conversation_overlay_open(ui) || !ui->body || !ui->at_end || r8_modal_is_open(ui->r8) ||
             conversation_panel_open(ui) || ui->duplicate_modal || file_picker_open(ui->files) ||
             ui->remove_confirm || mention_popup_open(ui->mentions) ||
             emoji_picker_open(ui->emojis) || media_view_modal(ui->media) || ui->context_open ||
@@ -738,7 +739,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         }
         instances_visible(
             connections, auth,
-            ui->body && ui->at_end && !ui->help.open &&
+            ui->body && ui->at_end && !conversation_overlay_open(ui) &&
                     !(r8_modal_is_open(ui->r8) || conversation_panel_open(ui)) &&
                     !emoji_picker_open(ui->emojis) && !media_view_modal(ui->media) &&
                     !ui->context_open && !ui->reactors_open && !file_picker_open(ui->files) &&
@@ -799,8 +800,8 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             ui->paste = true;
             text_paste_begin(&ui->paste_data);
             ui->dragging = false;
-            if (!ui->help.open && !file_picker_open(ui->files) && !ui->remove_confirm &&
-                !ui->duplicate_modal &&
+            if (!conversation_overlay_open(ui) && !file_picker_open(ui->files) &&
+                !ui->remove_confirm && !ui->duplicate_modal &&
                 !(r8_modal_is_open(ui->r8) || conversation_panel_open(ui)) &&
                 !media_view_modal(ui->media) && !emoji_picker_open(ui->emojis) &&
                 !ui->context_open && !ui->reactors_open && conversation_input(ui) &&
@@ -819,23 +820,30 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 scope = DRAW_ALL;
                 continue;
             }
-            if (!ui->help.open && file_picker_paste(ui->files, &ui->paste_data)) {
+            if (ui->switcher.open) {
+                quick_switcher_paste(&ui->switcher, &ui->paste_data);
                 redraw = true;
                 scope = DRAW_ALL;
                 continue;
             }
-            if (!ui->help.open && settings_paste(&ui->settings, &ui->paste_data)) {
+            if (!conversation_overlay_open(ui) && file_picker_paste(ui->files, &ui->paste_data)) {
                 redraw = true;
                 scope = DRAW_ALL;
                 continue;
             }
-            if (!ui->help.open && server_settings_paste(&ui->server_settings, &ui->paste_data)) {
+            if (!conversation_overlay_open(ui) && settings_paste(&ui->settings, &ui->paste_data)) {
                 redraw = true;
                 scope = DRAW_ALL;
                 continue;
             }
-            if (!ui->help.open && !file_picker_open(ui->files) && !ui->remove_confirm &&
-                !ui->duplicate_modal &&
+            if (!conversation_overlay_open(ui) &&
+                server_settings_paste(&ui->server_settings, &ui->paste_data)) {
+                redraw = true;
+                scope = DRAW_ALL;
+                continue;
+            }
+            if (!conversation_overlay_open(ui) && !file_picker_open(ui->files) &&
+                !ui->remove_confirm && !ui->duplicate_modal &&
                 !(r8_modal_is_open(ui->r8) || conversation_panel_open(ui)) &&
                 !media_view_modal(ui->media) && !emoji_picker_open(ui->emojis) &&
                 !ui->context_open && !ui->reactors_open && ui->focus == MESSAGE_INPUT &&
@@ -876,6 +884,29 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             break;
         }
         if (help_key(&ui->help, type, key)) {
+            scope = DRAW_ALL;
+            continue;
+        }
+        if (quick_switcher_key(&ui->switcher, type, key)) {
+            switcher_entry chosen;
+            if (quick_switcher_take(&ui->switcher, &chosen)) {
+                int action = conversation_switch_to(ui, &chosen, selected);
+                if (action >= 0) {
+                    result = action;
+                    goto finished;
+                }
+            }
+            scope = DRAW_ALL;
+            continue;
+        }
+        if (shortcut_is(type, key, SHORTCUT_SWITCHER) && !conversation_panel_open(ui) &&
+            !r8_modal_is_open(ui->r8) && !media_view_modal(ui->media) &&
+            !file_picker_open(ui->files) && !ui->remove_confirm && !ui->duplicate_modal &&
+            !ui->context_open && !ui->reactors_open && !conversation_members_modal(ui) &&
+            !emoji_picker_open(ui->emojis)) {
+            mention_popup_close(ui->mentions);
+            ui->dragging = false;
+            conversation_open_switcher(ui);
             scope = DRAW_ALL;
             continue;
         }
@@ -1685,6 +1716,7 @@ finished:
         history_active(ui->model, false);
     }
     help_destroy(&ui->help);
+    quick_switcher_destroy(&ui->switcher);
     r8_modal_destroy(ui->r8);
     g_hash_table_destroy(ui->layout_index);
     json_decref(ui->pending);

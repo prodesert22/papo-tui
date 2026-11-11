@@ -43,6 +43,7 @@ class HarnessTests(unittest.TestCase):
             "configuracoes",
             "ajuda-do-contexto",
             "ajuda-global",
+            "ir-para-conversa",
             "anexar-arquivos",
             "remover-anexo",
             "emojis-esc-voltar",

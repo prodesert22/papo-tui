@@ -124,6 +124,7 @@
     {"glob": "src/net/rate_limit.*", "areas": ["network"]},
 
     {"glob": "src/ui/components/help.*", "areas": ["ui", "input"]},
+    {"glob": "src/ui/components/quick_switcher.*", "areas": ["ui", "servers"]},
 
     {"glob": "src/platform/windows/**", "areas": ["platform"]}
   ]

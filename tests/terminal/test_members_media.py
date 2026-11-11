@@ -241,7 +241,7 @@ class MemberMedia(unittest.TestCase):
 
                     for key, title, border in (
                         ("\x13", "Configurações", False),
-                        ("\x1b\x0b\n", "Mídia · Esc", True),
+                        ("\x1b\x01\n", "Mídia · Esc", True),
                     ):
                         terminal.send(key)
                         self.wait(terminal, title)

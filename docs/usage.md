@@ -594,6 +594,23 @@ Esc or m dismisses the menu. **Ctrl+W** in the DM list also closes the selected
 conversation. The menu keeps the recipient's name visible. Closing preserves its remote history; a new message can make it
 reappear. Pending sends must finish before you close that DM.
 
+## Jump to a conversation
+
+Press **Ctrl+K** in a conversation to open **Ir para conversa** (Go to
+conversation). It lists the channels and DMs of every connected server, except
+the conversation already on screen and categories, with each server's name on
+the right. Conversations that mention you come first, with **@** and the
+count, then unread ones, marked **●**, then the most recently active.
+
+Type in **Buscar** (Search) to filter by conversation or server name; case and
+accents do not matter, so `acao` finds **Ação**. Use ↑/↓, PageUp/PageDown or
+the mouse wheel to choose, and Enter or a click to open. With an empty search,
+Enter opens the first conversation in the list. A conversation of another
+server switches to its tab. Esc, Ctrl+K or a click outside closes the list
+without changing anything, and the text you typed never reaches your draft.
+Voice channels open their message history, not the call. The list only shows
+what each server has already loaded; it makes no requests of its own.
+
 ## Navigation help
 
 The footer shows only **Ctrl+G: ajuda** (Open contextual help), alongside
@@ -658,12 +675,13 @@ that do not report Ctrl+/ can reach global help through contextual help's
 | Ctrl+U / 👤 beside 📌/🖈 | Open or close the server member drawer |
 | Ctrl+D | Open the notification center and preferences |
 | Ctrl+F | Search messages on the current server |
+| Ctrl+K in a conversation | [Jump to a conversation](#jump-to-a-conversation) of any connected server by name |
 | Ctrl+B outside the media player | Open pinned messages in the current conversation |
 | Ctrl+E in the editor | Choose an emoji |
 | Ctrl+O or Anexar | Choose files to attach |
 | Ctrl+V in a conversation | Paste copied files, an image, or text from the local clipboard |
 | Shift+Enter or Ctrl+O on a voice channel in the channel list | Open its message history |
-| Ctrl+K in a conversation | Enter or leave message navigation |
+| Ctrl+A in a conversation | Enter or leave message navigation. In GNU screen, whose prefix is Ctrl+A, press Ctrl+A and then `a` |
 | ↑ / ↓ during message navigation | Select the previous / next message |
 | ← / → during message navigation | Select media within the message |
 | Enter during message navigation | Open selected media |
@@ -989,10 +1007,10 @@ reopen the panel; roles and channels also refresh about every 30 seconds.
 
 ## Messages, editing, replies and reactions
 
-Press **Ctrl+K** to select a message with a highlighted border. Use ↑/↓ to move
+Press **Ctrl+A** to select a message with a highlighted border. Use ↑/↓ to move
 between messages; older or newer pages load as needed. Use ←/→ to select
 media within the message, then Enter to open it. The border shows the selected
-media number. Press Esc or Ctrl+K to return to your previous focus. Closing the
+media number. Press Esc or Ctrl+A to return to your previous focus. Closing the
 media viewer returns to the selected message.
 
 Right-click any visible message to open its context menu immediately, or
@@ -1327,7 +1345,7 @@ or from the internet are not loaded; the rest of the drawing is shown. A damaged
 SVG shows **Imagem inválida, grande demais ou não suportada.** (Invalid, too
 large or unsupported image).
 
-Click a media preview to open it, or use Ctrl+K, select the message and media, then
+Click a media preview to open it, or use Ctrl+A, select the message and media, then
 press Enter. In Normal mode, visible video attachments download automatically in the background
 to generate a static cover; they do not play or produce sound in the history.
 This consumes bandwidth even before you open the player. Opening the player
@@ -1388,7 +1406,7 @@ Use PageUp/PageDown or the mouse wheel over the properties panel to scroll it.
 Audio attachments appear in the history as a player bar: `[▶]`, the file name,
 an empty track and the file size, for example
 `[▶] meeting.mp3  ────────────  3,2 MB`. Nothing is downloaded until you open
-it: click the bar, or use Ctrl+K, select the message and press Enter. While that
+it: click the bar, or use Ctrl+A, select the message and press Enter. While that
 audio plays in the background, its bar shows `[⏸]`, the played part of the track
 and the time, such as `1:23 / 3:45`; click `[⏸]`/`[▶]` on the bar to pause or
 resume without opening the player. Files
