@@ -403,8 +403,7 @@ static bool replace(mention_popup *p, text_buffer *b, size_t from, size_t to, co
 static bool command_key(mention_popup *p, text_buffer *b, int type, uint32_t key, bool *accepted)
 {
     bool tab = type == OK && key == '\t',
-         enter = (type == OK && (key == '\n' || key == '\r')) ||
-                 (type == KEY_CODE_YES && key == KEY_ENTER),
+         enter = (type == OK && key == '\r') || (type == KEY_CODE_YES && key == KEY_ENTER),
          arrows = type == KEY_CODE_YES &&
                   (key == KEY_UP || key == KEY_DOWN || key == KEY_PPAGE || key == KEY_NPAGE);
     if (!p->count)
@@ -455,7 +454,7 @@ bool mention_popup_key(mention_popup *p, text_buffer *b, int type, uint32_t key,
         history_users_retry(p->h);
         return true;
     }
-    if ((type == OK && (key == '\t' || key == '\n' || key == '\r')) ||
+    if ((type == OK && (key == '\t' || key == '\r')) ||
         (type == KEY_CODE_YES && key == KEY_ENTER)) {
         *accepted = choose(p, b);
         return true;

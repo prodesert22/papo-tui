@@ -64,7 +64,7 @@ class DiscoveryTerminal(unittest.TestCase):
             server.user_roles = [dict(id=role)]
             t = self.login(server)
             self.resize(t, 32, 160)
-            t.send("\x01m")
+            t.send("\ue00am")
             self.wait(t, "Fixar mensagem")
             self.assertNotIn("Excluir mensagem", "\n".join(t.screen.display))
             self.click(t, "Fixar mensagem")
@@ -424,7 +424,7 @@ class DiscoveryTerminal(unittest.TestCase):
         with DiscoveryMock(10) as server:
             t = self.login(server)
             self.resize(t, 32, 160)
-            t.send("\x01m")
+            t.send("\ue00am")
             self.wait(t, "Fixar mensagem")
             self.click(t, "Fixar mensagem")
             self.wait(t, "Mensagem fixada.")

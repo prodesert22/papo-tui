@@ -224,8 +224,7 @@ bool conversation_attachments_key(view *ui, int type, uint32_t key)
         ui->feedback = _("Preparação cancelada; rascunho preservado.");
         return true;
     }
-    bool enter =
-        (type == OK && (key == '\n' || key == '\r')) || (type == KEY_CODE_YES && key == KEY_ENTER);
+    bool enter = (type == OK && key == '\r') || (type == KEY_CODE_YES && key == KEY_ENTER);
     if (ui->remove_confirm) {
         if (type == OK && key == 27)
             ui->remove_confirm = false;
@@ -272,7 +271,7 @@ bool conversation_attachments_mouse(view *ui, const MEVENT *event)
             else if (y == 4 && x >= getmaxx(ui->attachment_dialog) - 14 &&
                      x < getmaxx(ui->attachment_dialog) - 2) {
                 ui->remove_accept = true;
-                conversation_attachments_key(ui, OK, '\n');
+                conversation_attachments_key(ui, OK, '\r');
             }
         }
         return true;

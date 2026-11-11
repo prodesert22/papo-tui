@@ -8,7 +8,7 @@ from pathlib import Path
 import stat
 import tempfile
 from history_mock import HistoryMock, CHANNEL
-from terminal_support import Terminal, editor_region, editor_column, wait_for_screen
+from terminal_support import CTRL_J, Terminal, editor_region, editor_column, wait_for_screen
 
 
 import terminal_send as support
@@ -47,6 +47,51 @@ class SendProduct(support.SendProduct):
                 self.assertEqual(server.message_count, 1)
             finally:
                 server.send_release.set()
+                self.assertTrue(terminal.close())
+
+    def test_enter_sends_only_from_the_message_box_and_ctrl_j_selects_messages(self):
+        with HistoryMock(count=3) as server:
+            terminal = self.open(server)
+            try:
+                self.wait(terminal, "Mensagem 0003")
+                terminal.send("Rascunho guardado")
+                self.wait(terminal, "Foco: Mensagem")
+                # Ctrl+J enters and leaves message selection; it never sends.
+                terminal.send(CTRL_J)
+                self.wait(terminal, "Foco: Seleção")
+                terminal.send(CTRL_J)
+                self.wait(terminal, "Foco: Mensagem")
+                # Enter outside the message box only moves the focus.
+                terminal.send("\x1b[1;3A")
+                self.wait(terminal, "Foco: Histórico")
+                terminal.send("\n")
+                self.wait(terminal, "Foco: Mensagem")
+                terminal.send("\x1b[1;3D")
+                self.wait(terminal, "Foco: Canais")
+                terminal.send("\n")
+                terminal.read(0.5)
+                self.assertEqual(server.sent_messages, [])
+                self.assertIn("Rascunho guardado", self.editor_text(terminal))
+                # Ctrl+A selects the whole text, so typing replaces it.
+                terminal.send("\x1b[1;3C")
+                self.wait(terminal, "Foco: Histórico")
+                terminal.send("\x1b[1;3B")
+                self.wait(terminal, "Foco: Mensagem")
+                terminal.send("\x01Texto novo")
+                wait_for_screen(
+                    terminal,
+                    lambda: "Rascunho" not in self.editor_text(terminal),
+                    "Ctrl+A did not select the whole draft",
+                )
+                self.assertIn("Texto novo", self.editor_text(terminal))
+                self.assertEqual(server.sent_messages, [])
+                # Shift+Enter breaks the line; Enter in the box sends.
+                terminal.send("\x1b[13;2usegunda linha\n")
+                wait_for_screen(
+                    terminal, lambda: len(server.sent_messages) == 1, "Enter did not send"
+                )
+                self.assertEqual(server.sent_messages[0]["content"], "Texto novo\nsegunda linha")
+            finally:
                 self.assertTrue(terminal.close())
 
     def test_confirmed_message_merges_without_get_and_keeps_later_edits(self):

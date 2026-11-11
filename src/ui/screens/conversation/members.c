@@ -452,8 +452,8 @@ bool conversation_members_key(view *ui, int type, uint32_t key)
         conversation_members_toggle(ui);
         return true;
     }
-    if (ui->focus == MEMBERS_BUTTON && ((type == OK && (key == '\n' || key == '\r')) ||
-                                        (type == KEY_CODE_YES && key == KEY_ENTER))) {
+    if (ui->focus == MEMBERS_BUTTON &&
+        ((type == OK && key == '\r') || (type == KEY_CODE_YES && key == KEY_ENTER))) {
         conversation_members_toggle(ui);
         return true;
     }
@@ -473,8 +473,7 @@ bool conversation_members_key(view *ui, int type, uint32_t key)
         } else
             return true;
     }
-    bool enter =
-        (type == OK && (key == '\r' || key == '\n')) || (type == KEY_CODE_YES && key == KEY_ENTER);
+    bool enter = (type == OK && key == '\r') || (type == KEY_CODE_YES && key == KEY_ENTER);
     if (type == OK && key == 27) {
         if (d->panel != MEMBER_NO_MODAL)
             close_modal(ui);
@@ -643,9 +642,9 @@ bool conversation_members_mouse(view *ui, const MEVENT *event)
             }
         } else if (d->panel == MEMBER_CONFIRM && left && y == getmaxy(d->modal) - 2) {
             d->accept = x >= getmaxx(d->modal) / 2;
-            conversation_members_key(ui, OK, '\n');
+            conversation_members_key(ui, OK, '\r');
         } else if (d->panel == MEMBER_LINK && left && y == getmaxy(d->modal) - 2)
-            conversation_members_key(ui, OK, '\n');
+            conversation_members_key(ui, OK, '\r');
         else if (d->panel == MEMBER_CARD && (event->bstate & (BUTTON4_PRESSED | BUTTON5_PRESSED)))
             conversation_members_key(ui, KEY_CODE_YES,
                                      event->bstate & BUTTON4_PRESSED ? KEY_UP : KEY_DOWN);

@@ -1752,6 +1752,14 @@ bool text_edit(text_buffer *buffer, int type, uint32_t key, int width, bool mult
         return multiline;
     }
     if (type == OK) {
+        if (key == 1) { /* Ctrl+A selects all the text, as in most programs. */
+            buffer->anchor = 0;
+            buffer->cursor = buffer->length;
+            buffer->selecting = buffer->length > 0;
+            buffer->goal_column = -1;
+            buffer->trailing = false;
+            return true;
+        }
         if (key == 3 || key == 21) {
             text_clear(buffer);
             return true;

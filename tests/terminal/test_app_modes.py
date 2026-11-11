@@ -459,7 +459,7 @@ class AppModes(unittest.TestCase):
             t = self.open(server)
             try:
                 self.helper.wait(t, "Fixture")
-                t.send("rascunho do vídeo\x1b\x01\n")
+                t.send("rascunho do vídeo\x1b\ue00a\n")
                 self.helper.wait(t, "Reproduzindo")
                 self.assertNotIn("Vídeos desativados", "\n".join(t.screen.display))
                 self.assertEqual(t.stream.frames, [])
@@ -501,7 +501,7 @@ class AppModes(unittest.TestCase):
                     t = self.open(server, size=(32, 100))
                     try:
                         self.helper.wait(t, "Mensagem 0001")
-                        t.send("draft stays\x01E")
+                        t.send("draft stays\ue00aE")
                         self.helper.wait(t, "Quem reagiu")
                         self.helper.wait(t, "Pessoas")
                         self.wait(
@@ -519,7 +519,7 @@ class AppModes(unittest.TestCase):
                         self.assertNotIn("Respondendo a", "\n".join(t.screen.display))
                         t.send(" tail")
                         self.helper.wait(t, "draft stays tail")
-                        t.send("\x01e")
+                        t.send("\ue00ae")
                         self.helper.wait(t, "Reagir · Esc voltar")
                         self.choose(t, destination)
                         self.assertNotIn("Reagir · Esc voltar", "\n".join(t.screen.display))
@@ -620,7 +620,7 @@ class AppModes(unittest.TestCase):
 
                             self.wait(t, lambda: len(red_cells()) > 200)
                             if key == "E" or title == "Perfil do membro":
-                                t.send("\x01")
+                                t.send("\ue00a")
                                 self.wait(t, lambda: len(red_cells()) > 200)
                             if key == "attachment-remove":
                                 t.send("\x0f")
@@ -936,7 +936,7 @@ class AppModes(unittest.TestCase):
                 self.assertTrue(red_cells())
                 self.assertEqual(self.children(t), [])
                 t.send("\x1b")
-                t.send("\x01\n")
+                t.send("\ue00a\n")
                 self.helper.wait(t, "[Info]")
                 self.wait(t, lambda: bool(self.children(t)))
                 self.assertEqual(sum("/attachments/" in r[1] for r in server.requests), requests)
@@ -949,7 +949,7 @@ class AppModes(unittest.TestCase):
             t = self.open(server)
             try:
                 self.helper.wait(t, "Fixture")
-                t.send("rascunho do vídeo\x1b\x01\n")
+                t.send("rascunho do vídeo\x1b\ue00a\n")
                 self.helper.wait(t, "Reproduzindo")
                 self.assertEqual(t.stream.frames, [])
                 self.assertTrue(

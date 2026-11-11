@@ -1032,8 +1032,8 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             scope = DRAW_ALL;
             continue;
         }
-        bool enter = (type == OK && (key == '\r' || key == '\n')) ||
-                     (type == KEY_CODE_YES && key == KEY_ENTER);
+        /* LF is Ctrl+J, message selection: it never sends or confirms here. */
+        bool enter = (type == OK && key == '\r') || (type == KEY_CODE_YES && key == KEY_ENTER);
         if (ui->duplicate_modal) {
             size_t removed = ui->remove_index;
             if (conversation_handle_confirmation(ui, type, key, enter)) {

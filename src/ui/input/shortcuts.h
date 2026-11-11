@@ -4,10 +4,13 @@
 #include "ui/input/text.h"
 
 /* ASCII control values are shared by legacy terminals and normalized CSI-u.
- * Keep Enter/Tab/Backspace, editing controls and terminal escape codes distinct. */
+ * Keep Enter/Tab/Backspace, editing controls and terminal escape codes distinct.
+ * The terminal runs without newline translation (nonl), so Enter arrives as CR
+ * and Ctrl+J as LF (10): LF is message selection, never Enter, in conversations.
+ * Ctrl+A (1) selects all the text of the focused field (text_edit). */
 typedef enum {
     SHORTCUT_MENU = 0,
-    SHORTCUT_MESSAGES = 1,
+    SHORTCUT_MESSAGES = 10,
     SHORTCUT_PINNED = 2,
     SHORTCUT_NOTIFICATIONS = 4,
     SHORTCUT_EMOJIS = 5,

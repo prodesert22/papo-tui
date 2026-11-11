@@ -679,8 +679,8 @@ bool conversation_accept_reaction(view *ui)
 }
 bool conversation_interactions_key(view *ui, int type, uint32_t key)
 {
-    bool enter =
-        (type == OK && (key == '\n' || key == '\r')) || (type == KEY_CODE_YES && key == KEY_ENTER);
+    /* LF is Ctrl+J, which toggles message selection below. */
+    bool enter = (type == OK && key == '\r') || (type == KEY_CODE_YES && key == KEY_ENTER);
     if (ui->context_open || ui->reactors_open) {
         if (type == KEY_CODE_YES && key == KEY_MOUSE)
             return false;

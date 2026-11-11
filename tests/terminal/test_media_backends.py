@@ -137,7 +137,7 @@ class MediaBackends(unittest.TestCase):
             try:
                 self.helper.wait_frames(terminal)
                 self.assertNotIn(VIDEO.name, self.maps(terminal))
-                terminal.send("Draft\x1b\x01\n")
+                terminal.send("Draft\x1b\ue00a\n")
                 self.helper.wait_frames(terminal, 2)
                 maps = self.maps(terminal)
                 self.assertIn(VIDEO.name, maps)
@@ -168,7 +168,7 @@ class MediaBackends(unittest.TestCase):
                 server, protocol="kitty", environment={"LANG": selected, "LC_ALL": selected}
             )
             try:
-                terminal.send("Ação ç界\x1b\x01\n")
+                terminal.send("Ação ç界\x1b\ue00a\n")
                 self.helper.wait_frames(terminal, 2)
                 self.helper.wait(terminal, "Reproduzindo")
                 terminal.send(" ")
@@ -189,7 +189,7 @@ class MediaBackends(unittest.TestCase):
                 self.bundle(tmp, source)
                 terminal = self.helper.open(server, protocol="kitty")
                 try:
-                    terminal.send("draft preserved\x1b\x01\n")
+                    terminal.send("draft preserved\x1b\ue00a\n")
                     self.helper.wait(terminal, "Módulo de imagens ausente")
                     terminal.send("\x1b")
                     self.assertIn("draft preserved", "\n".join(terminal.screen.display))
@@ -207,7 +207,7 @@ class MediaBackends(unittest.TestCase):
                 self.bundle(tmp, video=source)
                 terminal = self.helper.open(server, protocol="kitty")
                 try:
-                    terminal.send("draft preserved\x1b\x01\n")
+                    terminal.send("draft preserved\x1b\ue00a\n")
                     self.helper.wait(terminal, "Módulo de vídeo ausente")
                     terminal.send("\x1b")
                     self.assertIn("draft preserved", "\n".join(terminal.screen.display))

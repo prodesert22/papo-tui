@@ -54,7 +54,7 @@ def measure(
                             raise AssertionError("Motion fixture was not requested")
                         t.read(0.01)
                 if video:
-                    t.send("\x01\n")
+                    t.send("\ue00a\n")
                     test.wait(t, "Reproduzindo")
                 else:
                     row, line = next(

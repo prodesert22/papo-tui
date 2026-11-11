@@ -21,7 +21,7 @@ class MessageInteractions(support.MessageInteractions):
             try:
                 self.resize(terminal, 32, 100)
                 self.wait(terminal, "Mensagem 0003")
-                terminal.send("Draft\x01")
+                terminal.send("Draft\ue00a")
                 self.wait(terminal, "Foco: Seleção")
                 self.assertNotIn("Escolha uma mídia", self.screen(terminal))
                 self.assertNotIn("Nenhuma mídia", self.screen(terminal))
@@ -63,7 +63,7 @@ class MessageInteractions(support.MessageInteractions):
             try:
                 self.resize(terminal, 32, 100)
                 self.wait(terminal, "Mensagem 0060")
-                terminal.send("Preserved draft\x01m")
+                terminal.send("Preserved draft\ue00am")
 
                 def check_position(message):
                     # The message row stays within the menu's frame, from the
@@ -146,7 +146,7 @@ class MessageInteractions(support.MessageInteractions):
             try:
                 self.resize(terminal, 32, 100)
                 self.wait(terminal, "Mensagem 0002")
-                terminal.send("Preserved draft\x01\x1bOAR")
+                terminal.send("Preserved draft\ue00a\x1bOAR")
                 self.wait(terminal, "Respondendo a")
                 self.wait(terminal, "Foco: Mensagem")
                 self.assertIn(
@@ -167,7 +167,7 @@ class MessageInteractions(support.MessageInteractions):
             try:
                 self.resize(terminal, 32, 100)
                 self.wait(terminal, "Mensagem 0002")
-                terminal.send("Preserved draft\x01\x1bOAr")
+                terminal.send("Preserved draft\ue00a\x1bOAr")
                 self.wait(terminal, "Respondendo a")
                 border = next(
                     i
@@ -332,7 +332,7 @@ class MessageInteractions(support.MessageInteractions):
             try:
                 terminal.send("Preserved draft")
                 self.wait(terminal, "Mensagem 0001")
-                terminal.send("\x01e")
+                terminal.send("\ue00ae")
                 self.wait(terminal, "Reagir · Esc voltar")
                 self.wait(terminal, "Unicode")
                 terminal.send("grinning\x1bOB\x1bOB\n")
@@ -428,7 +428,7 @@ class MessageInteractions(support.MessageInteractions):
             terminal = self.open(server)
             try:
                 self.wait(terminal, "Mensagem 0001")
-                terminal.send("\x01E")
+                terminal.send("\ue00aE")
                 self.wait(terminal, "Quem reagiu")
                 self.wait(terminal, "Autor")
                 terminal.send("\x1bOC" + "\x1b[6~" * 14)
@@ -485,7 +485,7 @@ class MessageInteractions(support.MessageInteractions):
             try:
                 self.resize(terminal, 32, 100)
                 self.wait(terminal, "Mensagem 0001")
-                terminal.send("Preserved draft\x01E")
+                terminal.send("Preserved draft\ue00aE")
                 self.wait(terminal, "Pessoa 0334")
                 self.wait(terminal, "Fim da lista")
 
@@ -594,7 +594,7 @@ class MessageInteractions(support.MessageInteractions):
             terminal = self.open(server)
             try:
                 self.wait(terminal, "Mensagem 0001")
-                terminal.send("\x01E")
+                terminal.send("\ue00aE")
                 self.wait(terminal, "Falha ao listar")
                 terminal.read(0.4)
 
@@ -618,7 +618,7 @@ class MessageInteractions(support.MessageInteractions):
             terminal = self.open(server)
             try:
                 self.wait(terminal, "Mensagem 0001")
-                terminal.send("\x01E")
+                terminal.send("\ue00aE")
                 self.wait(terminal, "Autor e")
                 self.wait(terminal, "Fim da lista")
                 self.assertIn("☀ 1", self.screen(terminal))
@@ -640,7 +640,7 @@ class MessageInteractions(support.MessageInteractions):
             terminal = self.open(server)
             try:
                 self.wait(terminal, "Mensagem 0001")
-                terminal.send("\x01E")
+                terminal.send("\ue00aE")
                 self.wait(terminal, "Role para carregar mais")
                 terminal.send("\x1bOB\n")
                 self.wait(terminal, "Autor e")

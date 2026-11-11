@@ -116,6 +116,9 @@ PageUp/PageDown skip them. Channel names use color highlighting without a
 leading selection marker. Type in the editor and press **Enter** to send;
 **Shift+Enter** inserts a new line. **Ctrl+N**
 also inserts a new line. Pasting text does not send the message automatically.
+Only Enter in the message box sends: with the focus on the history, the channel
+list or a button, Enter acts there and never sends. **Ctrl+A** selects all
+the text in the box, so typing or pasting replaces it.
 Switching conversations preserves drafts, and they return the next time you
 open the application; see [Drafts](#drafts).
 
@@ -723,7 +726,7 @@ that do not report Ctrl+/ can reach global help through contextual help's
 | Ctrl+O or Anexar | Choose files to attach |
 | Ctrl+V in a conversation | Paste copied files, an image, or text from the local clipboard |
 | Shift+Enter or Ctrl+O on a voice channel in the channel list | Open its message history |
-| Ctrl+A in a conversation | Enter or leave message navigation. In GNU screen, whose prefix is Ctrl+A, press Ctrl+A and then `a` |
+| Ctrl+J in a conversation | Enter or leave message navigation; it never sends |
 | ↑ / ↓ during message navigation | Select the previous / next message |
 | ← / → during message navigation | Select media within the message |
 | Enter during message navigation | Open selected media |
@@ -738,6 +741,7 @@ that do not report Ctrl+/ can reach global help through contextual help's
 | Enter while editing a message | Save the edit |
 | Esc while editing a message | Cancel editing and restore the send draft |
 | Shift+Enter in the editor | Insert a new line |
+| Ctrl+A in a text field | Select all its text. In GNU screen, whose prefix is Ctrl+A, press Ctrl+A and then `a` |
 | Ctrl+Backspace / Ctrl+W | Delete the word before the cursor |
 
 Type `@` in the editor to choose a person to mention; confirm with Tab or Enter.
@@ -1071,10 +1075,10 @@ reopen the panel; roles and channels also refresh about every 30 seconds.
 
 ## Messages, editing, replies and reactions
 
-Press **Ctrl+A** to select a message with a highlighted border. Use ↑/↓ to move
+Press **Ctrl+J** to select a message with a highlighted border. Use ↑/↓ to move
 between messages; older or newer pages load as needed. Use ←/→ to select
 media within the message, then Enter to open it. The border shows the selected
-media number. Press Esc or Ctrl+A to return to your previous focus. Closing the
+media number. Press Esc or Ctrl+J to return to your previous focus. Closing the
 media viewer returns to the selected message.
 
 Right-click any visible message to open its context menu immediately, or
@@ -1410,7 +1414,7 @@ or from the internet are not loaded; the rest of the drawing is shown. A damaged
 SVG shows **Imagem inválida, grande demais ou não suportada.** (Invalid, too
 large or unsupported image).
 
-Click a media preview to open it, or use Ctrl+A, select the message and media, then
+Click a media preview to open it, or use Ctrl+J, select the message and media, then
 press Enter. In Normal mode, visible video attachments download automatically in the background
 to generate a static cover; they do not play or produce sound in the history.
 This consumes bandwidth even before you open the player. Opening the player
@@ -1471,7 +1475,7 @@ Use PageUp/PageDown or the mouse wheel over the properties panel to scroll it.
 Audio attachments appear in the history as a player bar: `[▶]`, the file name,
 an empty track and the file size, for example
 `[▶] meeting.mp3  ────────────  3,2 MB`. Nothing is downloaded until you open
-it: click the bar, or use Ctrl+A, select the message and press Enter. While that
+it: click the bar, or use Ctrl+J, select the message and press Enter. While that
 audio plays in the background, its bar shows `[⏸]`, the played part of the track
 and the time, such as `1:23 / 3:45`; click `[⏸]`/`[▶]` on the bar to pause or
 resume without opening the player. Files

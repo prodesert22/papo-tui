@@ -18,6 +18,8 @@ import tempfile
 
 import pyte
 
+from terminal_keys import CTRL_J, encode_keys  # noqa: F401
+
 
 BINARY = argument(0)
 
@@ -270,7 +272,8 @@ class PosixTerminal:
         raise IndexError(index)
 
     def send(self, value):
-        os.write(self.master, value.encode())
+        keys, self._pasting = encode_keys(value, getattr(self, "_pasting", False))
+        os.write(self.master, keys.encode())
         self.read()
 
     def resize(self, rows, cols):

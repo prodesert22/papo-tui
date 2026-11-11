@@ -6,6 +6,8 @@ import tempfile
 import time
 from winpty import Backend, PtyProcess
 
+from terminal_keys import encode_keys
+
 
 def close_pty_process(child):
     try:
@@ -99,7 +101,8 @@ class WindowsTerminal:
                 time.sleep(0.01)
 
     def send(self, value):
-        self.child.write(value)
+        keys, self._pasting = encode_keys(value, getattr(self, "_pasting", False))
+        self.child.write(keys)
         self.read()
 
     def resize(self, rows, cols):

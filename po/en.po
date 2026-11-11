@@ -2010,6 +2010,10 @@ msgid "Ctrl+G: ajuda"
 msgstr "Ctrl+G: help"
 
 #: src/ui/components/help.c
+msgid "Ctrl+J"
+msgstr "Ctrl+J"
+
+#: src/ui/components/help.c
 msgid "Ctrl+K"
 msgstr "Ctrl+K"
 
@@ -5716,6 +5720,10 @@ msgstr "Select text by characters or lines"
 #: src/ui/components/help.c
 msgid "Selecionar texto por palavras"
 msgstr "Select text by words"
+
+#: src/ui/components/help.c
+msgid "Selecionar todo o texto da caixa"
+msgstr "Select all the text in the box"
 
 #: src/ui/components/help.c
 msgid "Selecionar um servidor ou Adicionar"
