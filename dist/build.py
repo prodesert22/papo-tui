@@ -27,6 +27,8 @@ def build_variant(
     test_only=False,
     build_only=False,
     full_instrumentation=False,
+    areas=(),
+    changed=None,
 ):
     env = dict(os.environ)
     env["PATH"] = str(prefix / "bin") + os.pathsep + env["PATH"]
@@ -82,6 +84,10 @@ def build_variant(
             )
 
     if not test_only:
+        # Ask for the code model before configuring, so test selection can read it.
+        query = build / ".cmake/api/v1/query/client-papo/codemodel-v2"
+        query.parent.mkdir(parents=True, exist_ok=True)
+        query.touch()
         run("configure", ["cmake", "-S", str(ROOT), "-B", str(build), "-G", "Ninja", *options])
         run("build", ["cmake", "--build", str(build), "--parallel", str(jobs)])
     run(
@@ -143,15 +149,19 @@ def build_variant(
         "--output-junit",
         str(reports / "results.xml"),
     ]
-    if suite != "all":
-        command += ["-L", "^" + suite + "$"]
-    elif not full_instrumentation:
-        if mode == "sanitizers":
-            command += ["-L", "^(unit|integration|lifecycle)$"]
-        elif mode == "coverage":
-            command += ["-L", "^(unit|integration)$"]
-    if case:
-        command += ["-R", "^" + re.escape(case) + "$"]
+    layers = layer_filter(suite, mode, full_instrumentation)
+    if areas or changed:
+        names = chosen_tests(build, layers, areas, changed, case)
+        if names == []:
+            print(f"[{mode}] No tests are affected by this selection", flush=True)
+            return
+        if names is not None:
+            command += names_filter(names, reports)
+    else:
+        if layers:
+            command += ["-L", layers]
+        if case:
+            command += ["-R", "^" + re.escape(case) + "$"]
     for filename in ("results.xml", "timings.json", "summary.md"):
         (reports / filename).unlink(missing_ok=True)
     started = time.monotonic()
@@ -163,6 +173,66 @@ def build_variant(
             from test_report import summarize
 
             summarize(reports / "results.xml", reports, time.monotonic() - started)
+
+
+LAYERS = ("all", "unit", "integration", "terminal", "media", "contract", "lifecycle")
+
+
+def layer_filter(suite, mode, full_instrumentation):
+    """CTest label regex for the layer selection, or None for every layer."""
+    if suite != "all":
+        return "^" + suite + "$"
+    if not full_instrumentation:
+        if mode == "sanitizers":
+            return "^(unit|integration|lifecycle)$"
+        if mode == "coverage":
+            return "^(unit|integration)$"
+    return None
+
+
+def chosen_tests(build, layers, areas, changed, case):
+    """Names matching layers, areas, changed files and case; None when that is every test."""
+    sys.path.insert(0, str(ROOT / "tools"))
+    import test_selection
+
+    listing = json.loads(
+        subprocess.check_output(
+            ["ctest", "--test-dir", str(build), "-N", "--show-only=json-v1"], text=True
+        )
+    )
+    tests = {}
+    for test in listing["tests"]:
+        labels = next(
+            (item["value"] for item in test.get("properties", []) if item["name"] == "LABELS"), []
+        )
+        # Setup tests carry no area; CTest adds them for the fixtures selected tests require.
+        if any(label.startswith("area:") for label in labels):
+            tests[test["name"]] = set(labels)
+    names = set(tests)
+    if layers:
+        names = {name for name in names if any(re.match(layers, label) for label in tests[name])}
+    if areas:
+        wanted = {"area:" + area for area in areas}
+        names = {name for name in names if tests[name] & wanted}
+    if changed:
+        selected, reasons, indexed = test_selection.choose(build, changed)
+        print(f"Tests affected by changes since {changed}:", flush=True)
+        test_selection.report(selected, reasons, indexed)
+        if selected != test_selection.ALL:
+            names &= selected
+    if case:
+        names &= {case}
+    return None if names == set(tests) else sorted(names)
+
+
+def names_filter(names, reports):
+    """CTest arguments that run exactly these tests."""
+    version = subprocess.check_output(["ctest", "--version"], text=True).split()[2]
+    if tuple(int(part) for part in re.findall(r"\d+", version)[:2]) >= (3, 29):
+        listing = reports / "selected-tests.txt"
+        listing.write_text("\n".join(names) + "\n", encoding="utf-8")
+        return ["--tests-from-file", str(listing)]
+    return ["-R", "^(" + "|".join(re.escape(name) for name in names) + ")$"]
 
 
 def positive(value):
@@ -190,10 +260,20 @@ def main():
         type=positive,
         help="CTest process budget (default: up to four native CPUs)",
     )
+    parser.add_argument("--suite", choices=LAYERS, default="all")
     parser.add_argument(
-        "--suite",
-        choices=("all", "unit", "integration", "terminal", "media", "contract", "lifecycle"),
-        default="all",
+        "--area",
+        action="append",
+        default=[],
+        metavar="AREA",
+        help="run tests of this feature area from tests/areas.json; repeatable",
+    )
+    parser.add_argument(
+        "--changed",
+        nargs="?",
+        const="dev",
+        metavar="BASE",
+        help="run tests affected by files changed since BASE (default: dev)",
     )
     parser.add_argument("--case", help="exact CTest scenario identifier")
     parser.add_argument(
@@ -223,7 +303,19 @@ def main():
     )
     if len(set(variants)) != len(variants) or set(variants) - {"release", "sanitizers", "coverage"}:
         parser.error("variants must be unique release,sanitizers,coverage names")
+    known = set(json.loads((ROOT / "tests/areas.json").read_text(encoding="utf-8"))["areas"])
+    if set(args.area) - known:
+        parser.error(f"unknown areas {sorted(set(args.area) - known)}; see tests/areas.json")
     prefix, build = args.prefix.resolve(), args.build.resolve()
+    if args.list_tests and (args.area or args.changed):
+        directory = build / variants[0] if args.variants else build
+        layers = layer_filter(args.suite, variants[0], args.full_instrumentation)
+        names = chosen_tests(directory, layers, args.area, args.changed, args.case)
+        if names is None:
+            print("Every configured test is selected")
+        else:
+            print("\n".join(names) if names else "No tests are selected")
+        return
     if args.list_tests:
         directory = build / variants[0] if args.variants else build
         command = ["ctest", "--test-dir", str(directory), "-N", "--show-only=json-v1"]
@@ -293,6 +385,8 @@ def main():
                     test_only=args.test_only,
                     build_only=args.build_only,
                     full_instrumentation=args.full_instrumentation,
+                    areas=args.area,
+                    changed=args.changed,
                 )
         except (subprocess.CalledProcessError, OSError) as error:
             passed = False

@@ -282,11 +282,53 @@ For separate compilation and test stages, run the build command with
 `--build-only`, then repeat it with `--test-only`. CI saves verified dependencies
 between these stages, so test failures preserve the compiled dependency cache.
 
+### Run only the tests a change affects
+
+Every registration declares the feature areas it covers with `LABELS` in
+`papo_add_test`, chosen from `tests/areas.json`; configuring fails for a missing
+or unknown area. They become `area:<name>` CTest labels beside the layer labels
+above. `--area` runs one or more areas, combined with `--suite` when given:
+
+```sh
+build/test-env/bin/python dist/build.py --build build/ci/release --test-only --area voice --area audio
+build/test-env/bin/python dist/build.py --build build/ci/release --test-only --changed
+build/test-env/bin/python dist/build.py --build build/ci/release --list-tests --changed main
+build/test-env/bin/python tools/test_selection.py --build build/ci/release --files src/net/voice/client.c
+```
+
+`--changed [BASE]` (default `dev`) compares the working tree, including
+uncommitted and untracked files, with the merge base and prints why each file
+selects its tests. A test depends on:
+
+- the sources compiled into every executable, library and module its command
+  runs, read from the CMake File API code model; headers and `.inc` files reach
+  them through `#include`;
+- its Python script and the repository modules that script imports;
+- other repository files named in its command.
+
+The `paths` rules in `tests/areas.json` refine this, first match wins: a list of
+areas keeps only the dependent tests in those areas (or the whole area when no
+test uses the file directly), `[]` means no tests (documentation) and `"*"` runs
+everything (CMake, locks, fixtures). A file that no test uses and no rule covers
+also runs everything. Add a rule when a new self-contained feature appears;
+shared screens such as the conversation drawing code have no rule, so they run
+every test that starts the application. Feature rules are deliberately narrower
+than reachability: a voice change skips terminal tests that start the
+application without exercising calls. Use the selection while iterating; run the
+complete suite before a merge, and CI always runs it. `tests/distribution` and
+`tools/quality.py` are not CTest cases and still run separately.
+
+The first configure only requests the code model; `dist/build.py` creates the
+request before configuring, and the selector reconfigures once when an existing
+build has none. CTest 3.29 or newer receives the list through
+`--tests-from-file`; older versions get an equivalent `-R` expression.
+
 CTest remains available directly:
 
 ```sh
 ctest --test-dir build/ci/release --output-on-failure --parallel 2 --output-junit results.xml
 ctest --test-dir build/ci/release --output-on-failure --repeat until-fail:10 -R 'test_grouping_survives_prepend_scroll_and_resize'
+ctest --test-dir build/ci/release --output-on-failure -L '^area:voice$'
 python tools/quality.py
 ```
 

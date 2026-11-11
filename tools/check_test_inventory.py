@@ -17,6 +17,7 @@ def check(build):
             ["ctest", "--test-dir", str(build), "-N", "--show-only=json-v1"], text=True
         )
     )
+    areas = set(json.loads((ROOT / "tests/areas.json").read_text(encoding="utf-8"))["areas"])
     inventory = {}
     for test in data["tests"]:
         command = test.get("command", [])
@@ -31,6 +32,9 @@ def check(build):
         labels = next((p["value"] for p in test["properties"] if p["name"] == "LABELS"), [])
         if not labels:
             raise ValueError(f"Missing labels: {key}")
+        unknown = {label[5:] for label in labels if label.startswith("area:")} - areas
+        if unknown or not any(label.startswith("area:") for label in labels):
+            raise ValueError(f"Missing or unknown feature areas {sorted(unknown)}: {key}")
     exclusions = json.loads((ROOT / "tests/platforms.json").read_text(encoding="utf-8"))
     for relative, policy in exclusions.items():
         declared = discover(ROOT / relative)

@@ -1,8 +1,33 @@
-# One registry for both native platforms. Python discovery parses AST, never runs fixtures.
+# One registry for both native platforms. Python discovery parses AST, never runs fixtures. Every
+# test declares the feature areas it covers (LABELS), from tests/areas.json; they become
+# "area:<name>" CTest labels beside the layer labels assigned in papo_finalize_tests.
+file(READ "${PROJECT_SOURCE_DIR}/tests/areas.json" PAPO_AREAS_JSON)
+string(JSON PAPO_AREA_COUNT LENGTH "${PAPO_AREAS_JSON}" areas)
+set(PAPO_KNOWN_AREAS "")
+math(EXPR PAPO_AREA_LAST "${PAPO_AREA_COUNT} - 1")
+foreach(index RANGE ${PAPO_AREA_LAST})
+    string(JSON area MEMBER "${PAPO_AREAS_JSON}" areas ${index})
+    list(APPEND PAPO_KNOWN_AREAS "${area}")
+endforeach()
+set_property(
+    DIRECTORY
+    APPEND
+    PROPERTY CMAKE_CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/tests/areas.json")
+
 function(papo_add_test)
-    cmake_parse_arguments(SPEC "" "NAME" "COMMAND" ${ARGN})
+    cmake_parse_arguments(SPEC "" "NAME" "COMMAND;LABELS" ${ARGN})
+    if(NOT SPEC_LABELS)
+        message(FATAL_ERROR "Test ${SPEC_NAME} must declare LABELS from tests/areas.json")
+    endif()
+    foreach(area IN LISTS SPEC_LABELS)
+        if(NOT area IN_LIST PAPO_KNOWN_AREAS)
+            message(FATAL_ERROR "Test ${SPEC_NAME} uses unknown area '${area}'; "
+                                "declare it in tests/areas.json")
+        endif()
+    endforeach()
     set_property(GLOBAL APPEND PROPERTY PAPO_REGISTERED_TESTS "${SPEC_NAME}")
     set_property(GLOBAL PROPERTY "PAPO_COMMAND_${SPEC_NAME}" "${SPEC_COMMAND}")
+    set_property(GLOBAL PROPERTY "PAPO_AREAS_${SPEC_NAME}" "${SPEC_LABELS}")
 endfunction()
 
 function(papo_set_tests_properties)
@@ -28,6 +53,9 @@ function(papo_set_tests_properties)
 endfunction()
 
 function(papo_finalize_tests)
+    # The code model maps each source file to the test executables that contain it, so
+    # tools/test_selection.py can choose the tests affected by a change.
+    file(WRITE "${PROJECT_BINARY_DIR}/.cmake/api/v1/query/client-papo/codemodel-v2" "")
     set(paths "${PROJECT_SOURCE_DIR}/tests/support" "${PROJECT_SOURCE_DIR}/tests/terminal"
               "${PROJECT_SOURCE_DIR}/tests/integration" "${PROJECT_SOURCE_DIR}")
     if(WIN32)
@@ -150,6 +178,10 @@ function(papo_finalize_tests)
             else()
                 list(APPEND labels "linux")
             endif()
+            get_property(areas GLOBAL PROPERTY "PAPO_AREAS_${name}")
+            foreach(area IN LISTS areas)
+                list(APPEND labels "area:${area}")
+            endforeach()
             set_tests_properties(
                 "${id}"
                 PROPERTIES
