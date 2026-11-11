@@ -119,6 +119,15 @@ json_t *history_channel(const history *h, size_t index);
  * the normalized instance URL and verified account UUID. NULL h checks only
  * the backend snapshot. Notifications/counts do not override reading. */
 bool history_channel_unread(const history *h, const json_t *channel);
+/* Where reading stopped in channel, as (created_at, id): the later of this
+ * device's read and the server's cursor. Borrowed strings; false when unknown. */
+bool history_read_position(const history *h, const json_t *channel, const char **id,
+                           const char **time);
+/* For the selected conversation: the read position and latest message captured
+ * when it was selected, before this visit read anything. Borrowed strings;
+ * false when either is unknown. */
+bool history_opening(const history *h, const char **read_id, const char **read_time,
+                     const char **last_id, const char **last_time);
 /* Notification preference changes share the authenticated, non-replayed REST queue.
  * Menus can address an inactive channel without reading its history. */
 /* The effective mode: the one kept on this device when the channel does not

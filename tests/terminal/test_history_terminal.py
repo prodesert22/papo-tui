@@ -952,6 +952,75 @@ class HistoryTerminal(support.HistoryTerminal):
             finally:
                 self.assertTrue(t.close())
 
+    @staticmethod
+    def row_of(terminal, text):
+        return next(i for i, line in enumerate(terminal.screen.display) if text in line)
+
+    def test_new_messages_separator_marks_where_reading_stopped_for_this_visit(self):
+        with HistoryMock() as server:
+            geral = next(c for c in server.channels if c["id"] == CHANNEL)
+            stamp = server.message(1)["created_at"]
+            geral.update(
+                last_message={"id": uuid(350), "created_at": stamp},
+                last_read_message=uuid(347),
+                last_read_at=stamp,
+            )
+            t = self.open(server)
+            try:
+                self.wait(t, "Mensagem 0250")
+                t.resize(40, 100)
+                self.wait(t, "Mensagem 0246")
+                self.wait(t, "Novas mensagens")
+                separator = self.row_of(t, "Novas mensagens")
+                self.assertLess(self.row_of(t, "Mensagem 0247"), separator)
+                self.assertLess(separator, self.row_of(t, "Mensagem 0248"))
+                # It is a rule of its own, not a message; line drawing reaches
+                # the observer as "q".
+                rule = t.screen.display[separator]
+                self.assertTrue("─" in rule or "qqq Novas mensagens qqq" in rule, rule)
+                # Reaching the newest message reads the conversation; the
+                # separator stays where it was for the rest of this visit.
+                wait_for_screen(
+                    t,
+                    lambda: (CHANNEL, uuid(350)) in server.channel_reads,
+                    "The conversation was not read",
+                )
+                t.read(0.3)
+                self.assertIn("Novas mensagens", "\n".join(t.screen.display))
+                self.assertLess(self.row_of(t, "Mensagem 0247"), self.row_of(t, "Novas mensagens"))
+                before = sum("/messages" in r[1] for r in server.requests)
+                # Coming back after the read shows no separator.
+                t.send("\x0boutro\n")
+                self.wait(t, "Conteúdo do outro canal")
+                t.send("\x0bgeral\n")
+                self.wait(t, "Mensagem 0250")
+                t.read(0.3)
+                self.assertNotIn("Novas mensagens", "\n".join(t.screen.display))
+                # Nothing was fetched to place the separator.
+                self.assertLessEqual(sum("/messages" in r[1] for r in server.requests), before + 1)
+            finally:
+                self.assertTrue(t.close())
+
+    def test_messages_arriving_while_the_conversation_is_open_add_no_separator(self):
+        with RealtimeMock(count=3) as server:
+            geral = next(c for c in server.channels if c["id"] == CHANNEL)
+            stamp = server.message(1)["created_at"]
+            geral.update(
+                last_message={"id": uuid(103), "created_at": stamp},
+                last_read_message=uuid(103),
+                last_read_at=stamp,
+            )
+            t = self.open(server)
+            try:
+                self.wait(t, "Mensagem 0003")
+                message = dict(server.message(4), content="Chegou agora")
+                server.emit(dict(message, type="message"))
+                self.wait(t, "Chegou agora")
+                t.read(0.5)
+                self.assertNotIn("Novas mensagens", "\n".join(t.screen.display))
+            finally:
+                self.assertTrue(t.close())
+
 
 if __name__ == "__main__":
     test_main(1, verbosity=2)

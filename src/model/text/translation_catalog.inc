@@ -10,6 +10,7 @@ static const translation_entry translation_entries[] = {
     {"", "Memória insuficiente para listar as conversas.", NULL, {"Not enough memory to list the conversations.", NULL}},
     {"", "Nenhuma conversa carregada.", NULL, {"No conversations loaded.", NULL}},
     {"", "Nenhuma conversa encontrada.", NULL, {"No conversations found.", NULL}},
+    {"", "Novas mensagens", NULL, {"New messages", NULL}},
     {"", "Sistema", NULL, {"System", NULL}},
     {"", "nome do canal, DM ou servidor", NULL, {"channel, DM or server name", NULL}},
     {"etiqueta de não lida", "novo", NULL, {"new", NULL}},

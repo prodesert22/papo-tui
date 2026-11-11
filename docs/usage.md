@@ -785,6 +785,15 @@ conversation, in this client or another one, are marked read with it and leave
 the notification count. Delayed copies of already-read messages do not restore the dot.
 The unread-message dot remains until the conversation is read. Your own messages
 never light it, and deleting the last message you read does not light it again.
+
+When you open a conversation with new messages, a red **Novas mensagens** (New
+messages) rule appears above the first message someone else sent after the
+point where you stopped reading, here or on another device. It stays where it
+is while the conversation remains open, even after the conversation is read, so
+you can scroll back to it; messages that arrive while you are in the
+conversation do not add one. The next time you open the conversation it shows
+only what is new by then. The rule appears only when the messages on both sides
+of it are already loaded; the client never loads extra history to place it.
 Webhook names come from their message and remain available when later events omit attribution.
 If an author is missing from a notification in the active conversation, its
 message is looked up to recover the name without moving your reading position.

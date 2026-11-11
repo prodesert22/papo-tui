@@ -117,6 +117,10 @@ struct history {
     history_reading reading, restored;
     bool reading_set, restored_set;
     uint64_t context, selection, request_context, request_selection;
+    /* Where reading stopped in the selected conversation when it was selected,
+     * and its latest message then, before this visit could read anything. */
+    char opened_channel[37], opened_read_id[37], opened_read_time[65];
+    char opened_last_id[37], opened_last_time[65];
     /* Periodic channel list refresh for preferences changed on other devices. */
     uint64_t settings_refresh_at;
     bool background_channels, request_background;
@@ -145,6 +149,8 @@ void history_internal_notice(history *h, history_notice_kind kind, const char *v
 void history_internal_status(history *h, const char *value);
 void history_internal_event_status(history *h, const char *value, const char *compact);
 void history_internal_restore_selection(history *h, const char *id);
+/* Records the opening read position once the selection names another channel. */
+void history_internal_capture_opening(history *h);
 bool history_internal_cache_user(history *h, json_t *u, bool presence);
 void history_internal_typing_remove(history *h, const char *id);
 bool history_internal_typing_event(history *h, const json_t *event);

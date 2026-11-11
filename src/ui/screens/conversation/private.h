@@ -209,6 +209,9 @@ typedef struct {
     bool remove_server;
     size_t remove_index;
     uint64_t unseen;
+    /* Entry above which "Novas mensagens" goes, from history_opening; SIZE_MAX
+     * when nothing was new on opening or that boundary is not loaded. */
+    size_t marker_index;
     int waiting_page;
     bool paging_notice;
     uint64_t menu_permissions;

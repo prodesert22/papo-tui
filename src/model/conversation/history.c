@@ -455,6 +455,7 @@ void history_internal_restore_selection(history *h, const char *id)
             h->selected = i;
             break;
         }
+    history_internal_capture_opening(h);
     if (h->selected == SIZE_MAX) {
         ++h->selection;
         clear_messages(h);
@@ -557,6 +558,69 @@ bool history_internal_server_read(const history *h, const json_t *channel, const
             : preview ? history_internal_str(preview, "created_at")
                       : history_internal_str(channel, "last_read_at");
     return *time != NULL;
+}
+
+bool history_read_position(const history *h, const json_t *channel, const char **id,
+                           const char **time)
+{
+    const char *server_id = NULL, *server_time = NULL;
+    bool server = history_internal_server_read(h, channel, &server_id, &server_time);
+    json_t *local =
+        h ? json_object_get(h->read_messages, history_internal_str(channel, "id")) : NULL;
+    const char *local_id = history_internal_str(local, "id"),
+               *local_time = history_internal_str(local, "created_at");
+    bool known = history_uuid(local_id) && local_time && *local_time;
+    int ordering = 0;
+    /* The later of this device's read and the server's cursor. */
+    if (known &&
+        (!server || (session_time_compare(local_time, server_time, &ordering) &&
+                     (ordering > 0 || (!ordering && strcasecmp(local_id, server_id) > 0))))) {
+        *id = local_id;
+        *time = local_time;
+        return true;
+    }
+    if (server) {
+        *id = server_id;
+        *time = server_time;
+    }
+    return server;
+}
+
+static void copy_field(char *target, size_t size, const json_t *object, const char *key)
+{
+    const char *value = history_internal_str(object, key);
+    snprintf(target, size, "%s", value ? value : "");
+}
+
+void history_internal_capture_opening(history *h)
+{
+    json_t *channel = h->selected == SIZE_MAX ? NULL : history_channel(h, h->selected);
+    const char *id = history_internal_str(channel, "id");
+    if (!id || !strcmp(h->opened_channel, id))
+        return;
+    snprintf(h->opened_channel, sizeof(h->opened_channel), "%s", id);
+    const char *read_id = "", *read_time = "";
+    if (!history_read_position(h, channel, &read_id, &read_time))
+        read_id = read_time = "";
+    snprintf(h->opened_read_id, sizeof(h->opened_read_id), "%s", read_id);
+    snprintf(h->opened_read_time, sizeof(h->opened_read_time), "%s", read_time);
+    json_t *latest = json_object_get(channel, "last_message");
+    copy_field(h->opened_last_id, sizeof(h->opened_last_id), latest, "id");
+    copy_field(h->opened_last_time, sizeof(h->opened_last_time), latest, "created_at");
+}
+
+bool history_opening(const history *h, const char **read_id, const char **read_time,
+                     const char **last_id, const char **last_time)
+{
+    json_t *channel = !h || h->selected == SIZE_MAX ? NULL : history_channel(h, h->selected);
+    const char *id = history_internal_str(channel, "id");
+    if (!id || strcmp(h->opened_channel, id) || !*h->opened_read_time || !*h->opened_last_time)
+        return false;
+    *read_id = h->opened_read_id;
+    *read_time = h->opened_read_time;
+    *last_id = h->opened_last_id;
+    *last_time = h->opened_last_time;
+    return true;
 }
 
 bool history_channel_unread(const history *h, const json_t *channel)
@@ -681,6 +745,7 @@ static bool select_channel(history *h, size_t index, bool cached)
     h->reading_set = h->restored_set = false;
     clear_messages(h);
     h->selected = index;
+    history_internal_capture_opening(h);
     h->older = false;
     if (cached && stash_restore(h, id))
         return true;
@@ -783,6 +848,7 @@ bool history_internal_channels_response(history *h, json_t *body)
     for (size_t i = 0; i < history_channel_count(h); ++i)
         if (!strcmp(selected_id, history_internal_str(history_channel(h, i), "id")))
             h->selected = i;
+    history_internal_capture_opening(h);
     if (*selected_id && h->selected == SIZE_MAX)
         clear_messages(h);
     if ((!h->messages || h->selected == SIZE_MAX) && h->failed != MESSAGES) {

@@ -47,6 +47,10 @@ msgstr "No conversations loaded."
 msgid "Nenhuma conversa encontrada."
 msgstr "No conversations found."
 
+#: src/ui/screens/conversation/layout.c
+msgid "Novas mensagens"
+msgstr "New messages"
+
 #: src/model/text/translation.c
 msgid "Sistema"
 msgstr "System"

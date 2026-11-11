@@ -426,6 +426,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
     if (!ui)
         return HISTORY_ACCOUNT;
     ui->layout_index = g_hash_table_new(g_str_hash, g_str_equal);
+    ui->marker_index = SIZE_MAX;
     ui->connections = connections;
     ui->active_tab = ui->tab_cursor = instances_index(connections, auth);
     ui->editor = instances_editor(connections, auth);

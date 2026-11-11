@@ -1,3 +1,4 @@
+#include "net/auth/session_time.h"
 #include "ui/screens/conversation/private.h"
 
 void conversation_destroy_layout(view *ui)
@@ -158,9 +159,10 @@ cached_layout *conversation_find_layout(view *ui, size_t index, int width)
         *conversation_str(m, "reply_to") ? history_reference_revision(ui->model) : 0;
     graphics_terminal terminal = graphics_terminal_get();
     bool graphics = terminal.supported && ui->media;
-    /* An optimistic entry keeps its own header, which carries the status tag. */
-    bool continuation =
-        !pending && index && message_same_author(conversation_entry(ui, index - 1), m);
+    /* An optimistic entry keeps its own header, which carries the status tag; the
+     * first new message keeps its own below the "Novas mensagens" separator. */
+    bool continuation = !pending && index && index != ui->marker_index &&
+                        message_same_author(conversation_entry(ui, index - 1), m);
     uint64_t assets = chat_assets_emoji_revision(history_assets(ui->model));
     uint64_t display = message_display_revision();
     if (c->continuation != continuation || c->assets != assets ||
@@ -258,6 +260,63 @@ message_blocks *conversation_entry_blocks(view *ui, size_t i, cached_layout *cac
     return blocks;
 }
 
+/* (time, id) strictly after (other_time, other_id); false when a time is unknown. */
+static bool cursor_after(const char *time, const char *id, const char *other_time,
+                         const char *other_id)
+{
+    int ordering;
+    if (!time || !other_time || !session_time_compare(time, other_time, &ordering))
+        return false;
+    return ordering > 0 || (!ordering && strcasecmp(id ? id : "", other_id ? other_id : "") > 0);
+}
+
+/* Index of the first message that was new when the conversation was selected, or
+ * SIZE_MAX. The model captured the read position and latest message before this
+ * visit could read anything; messages arriving later never move the line. A
+ * message read before must be loaded above it, so the boundary is really there. */
+static size_t marker_find(view *ui)
+{
+    const char *read_id, *read_time, *last_id, *last_time;
+    if (!ui->model || !history_opening(ui->model, &read_id, &read_time, &last_id, &last_time) ||
+        !cursor_after(last_time, last_id, read_time, read_id))
+        return SIZE_MAX;
+    const char *me = auth_user_id(ui->connections->items[ui->active_tab].auth);
+    bool boundary = false; /* A message read before this visit is loaded above. */
+    size_t entries = conversation_entry_count(ui);
+    for (size_t i = 0; i < entries; ++i) {
+        if (conversation_entry_pending(ui, i))
+            continue;
+        json_t *m = conversation_entry(ui, i);
+        const char *time = conversation_str(m, "created_at"), *id = conversation_str(m, "id");
+        if (!cursor_after(time, id, read_time, read_id)) {
+            boundary = true;
+            continue;
+        }
+        if (cursor_after(time, id, last_time, last_id))
+            return SIZE_MAX;
+        /* Your own messages after the read are not news. */
+        if (strcmp(conversation_str(m, "author_id"), me))
+            return boundary ? i : SIZE_MAX;
+    }
+    return SIZE_MAX;
+}
+
+static void marker_paint(view *ui, int y)
+{
+    int width = getmaxx(ui->body);
+    const char *label = _("Novas mensagens");
+    int label_width = text_label(NULL, 0, 0, width, label);
+    wattrset(ui->body,
+             COLOR_PAIR(ui->focus == HISTORY_PANEL ? THEME_HISTORY_ERROR : THEME_ERROR) | A_BOLD);
+    mvwhline(ui->body, y, 2, ACS_HLINE, width - 4);
+    int x = (width - label_width - 2) / 2;
+    if (x > 2 && label_width + 2 < width - 4) {
+        mvwaddch(ui->body, y, x, ' ');
+        text_label(ui->body, y, x + 1, label_width, label);
+        mvwaddch(ui->body, y, x + 1 + label_width, ' ');
+    }
+}
+
 int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
 {
     uint64_t now = 0;
@@ -279,9 +338,16 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
             : 1;
     int group_start = 0;
     *anchor = 0;
+    ui->marker_index = marker_find(ui);
     size_t entries = conversation_entry_count(ui);
     for (size_t i = 0; i < entries; ++i) {
         json_t *m = conversation_entry(ui, i);
+        /* "Novas mensagens" takes a row of its own above the first new message. */
+        if (i == ui->marker_index) {
+            if (paint && ui->body && total >= first && total < first + ui->visible)
+                marker_paint(ui, ui->history_top + total - first);
+            ++total;
+        }
         bool selected = (ui->navigating || ui->context_open || ui->reactors_open) &&
                         !strcmp(ui->selected_message, conversation_str(m, "id"));
         bool editing = !strcmp(ui->edit_message, conversation_str(m, "id"));
@@ -300,7 +366,7 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
         bool continuation = cached->continuation;
         if (!continuation)
             group_start = total;
-        bool followed = !conversation_entry_pending(ui, i + 1) &&
+        bool followed = !conversation_entry_pending(ui, i + 1) && i + 1 != ui->marker_index &&
                         message_same_author(m, conversation_entry(ui, i + 1));
         bool compact_end = ui->visible == 1 && i + 1 == entries;
         int measured_rows = cached->height;
