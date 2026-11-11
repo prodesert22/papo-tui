@@ -65,6 +65,18 @@ papo_add_test(
     --check
     LABELS
     audio)
+papo_add_test(
+    NAME
+    translations-catalogue
+    COMMAND
+    ${Python3_EXECUTABLE}
+    ${PROJECT_SOURCE_DIR}/tools/translations.py
+    --check
+    LABELS
+    language)
+add_executable(translation-test tests/unit/test_translation.c)
+target_link_libraries(translation-test PRIVATE papo_platform)
+papo_add_test(NAME translation-unit COMMAND translation-test LABELS language)
 add_executable(gif-search-test tests/unit/test_gif_search.c)
 target_link_libraries(gif-search-test PRIVATE papo_auth)
 papo_add_test(

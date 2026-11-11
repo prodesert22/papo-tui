@@ -72,6 +72,7 @@ void settings_open(app_settings *s, const profile_config *config, voice_client *
     snprintf(s->server, sizeof(s->server), "%s", server ? server : "");
     s->open = true;
     s->draft = config->mode;
+    s->language = config->language;
     s->selection = config->mode;
     s->audio = s->original_audio = config->audio;
     s->voice = voice;
@@ -281,18 +282,28 @@ bool settings_poll(app_settings *s)
     }
     return changed;
 }
-/* Aparência: the modes of this device, then the account's theme and display. */
-enum { ITEM_THEME = 3, ITEM_DENSITY, ITEM_TIMESTAMPS, ITEM_AVATARS, APPEARANCE_ITEMS };
+/* Aparência: the modes and language of this device, then the account's theme and display. */
+enum {
+    ITEM_LANGUAGE = 3,
+    ITEM_THEME,
+    ITEM_DENSITY,
+    ITEM_TIMESTAMPS,
+    ITEM_AVATARS,
+    APPEARANCE_ITEMS
+};
 static const char *const theme_labels[] = {"Escuro", "Claro", "Sistema"};
 static const char *const density_labels[] = {"Compacta", "Normal", "Confortável"};
 /* Account items need the active server's model. */
 static int appearance_last(const app_settings *s)
 {
-    return s->profile ? APPEARANCE_ITEMS - 1 : 2;
+    return s->profile ? APPEARANCE_ITEMS - 1 : ITEM_LANGUAGE;
 }
 static void appearance_label(app_settings *s, int item, char *label, size_t size)
 {
     switch (item) {
+    case ITEM_LANGUAGE:
+        snprintf(label, size, _("Idioma: < %s >"), language_choice_label(s->language));
+        break;
     case ITEM_THEME:
         snprintf(label, size, "Tema: < %s >", theme_labels[s->user.theme]);
         break;
@@ -314,8 +325,12 @@ static void appearance_label(app_settings *s, int item, char *label, size_t size
 }
 static const char *appearance_description(app_settings *s)
 {
-    if (s->selection < ITEM_THEME)
+    if (s->selection < ITEM_LANGUAGE)
         return app_mode_description((app_mode)(s->focus == 1 ? s->selection : (int)s->draft));
+    if (s->selection == ITEM_LANGUAGE)
+        return _("Idioma dos textos do aplicativo neste computador. Sistema segue o idioma do "
+                 "sistema, ou PAPO_LANGUAGE (pt ou en) quando definida. Mensagens e nomes "
+                 "continuam como foram escritos.");
     /* Account items are saved on the server and follow the active tab. */
     if (s->selection == ITEM_THEME)
         return "Cores da tela. Sistema usa o tema claro quando o fundo do terminal é claro. "
@@ -374,6 +389,11 @@ static void appearance_adjust(app_settings *s, int direction, bool choose)
 {
     int value;
     switch (s->selection) {
+    case ITEM_LANGUAGE:
+        value = (int)s->language;
+        cycle(&value, 3, direction);
+        s->language = (language_choice)value;
+        break;
     case ITEM_THEME:
         value = (int)s->user.theme;
         cycle(&value, 3, direction);
@@ -412,7 +432,7 @@ static void appearance_key(app_settings *s, int type, uint32_t key)
         else
             ++s->selection;
     } else if (type == KEY_CODE_YES && (key == KEY_LEFT || key == KEY_RIGHT)) {
-        if (s->selection >= ITEM_THEME)
+        if (s->selection >= ITEM_LANGUAGE)
             appearance_adjust(s, key == KEY_LEFT ? -1 : 1, false);
     } else if (enter || (type == OK && key == ' '))
         appearance_adjust(s, 1, true);
@@ -578,9 +598,9 @@ static void profile_draw(app_settings *s, WINDOW *w, int height, int width)
         s->item_y[i] = y;
         s->item_rows[i] = rows[i];
         bool focused = s->focus == 1 && s->profile_item == i, refused = s->profile_bad == i + 1;
-        wattrset(w, COLOR_PAIR(refused ? THEME_NOTIFICATION
-                                       : focused ? THEME_PANEL_ACCENT
-                                                 : THEME_PANEL) |
+        wattrset(w, COLOR_PAIR(refused   ? THEME_NOTIFICATION
+                               : focused ? THEME_PANEL_ACCENT
+                                         : THEME_PANEL) |
                         (focused || refused ? A_BOLD : 0));
         snprintf(line, sizeof(line), "%s:",
                  i < PROFILE_FIELDS ? field_labels[i]
@@ -833,9 +853,9 @@ static void account_draw(app_settings *s, WINDOW *w, int height, int width)
         int y = roomy ? 7 + i * 2 : 6 + i;
         s->account_y[i] = y;
         bool focused = s->focus == 1 && s->account_item == i, refused = s->account_bad == i + 1;
-        wattrset(w, COLOR_PAIR(refused ? THEME_NOTIFICATION
-                                       : focused ? THEME_PANEL_ACCENT
-                                                 : THEME_PANEL) |
+        wattrset(w, COLOR_PAIR(refused   ? THEME_NOTIFICATION
+                               : focused ? THEME_PANEL_ACCENT
+                                         : THEME_PANEL) |
                         (focused || refused ? A_BOLD : 0));
         text_label(w, y, 2, label_width - 1, account_labels[i]);
         /* With room between the inputs the border is a box; otherwise its two sides. */
@@ -1043,7 +1063,7 @@ static void save(app_settings *s, profile_config *config)
             snprintf(s->error, sizeof(s->error), "Nenhuma alteração para salvar.");
         return;
     }
-    if (profiles_set_settings(config, s->draft, &s->audio)) {
+    if (profiles_set_settings(config, s->draft, s->language, &s->audio)) {
         s->applied = true;
         s->original_audio = s->audio;
         voice_configure(&s->audio);

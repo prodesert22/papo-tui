@@ -926,6 +926,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             if (ui->settings.applied) {
                 ui->settings.applied = false;
                 app_mode_set(connections->config->mode);
+                language_set(connections->config->language);
                 apply_mode(ui);
             }
             scope = DRAW_ALL;

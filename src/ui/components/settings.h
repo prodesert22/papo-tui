@@ -34,6 +34,7 @@ typedef struct {
     bool open, applied, ptt_capture;
     int section, selection, focus;
     app_mode draft;
+    language_choice language; /* Draft of this device's interface language. */
     audio_config audio, original_audio;
     voice_client *voice; /* Borrowed; the instance model outlives the modal. */
     int audio_selection, audio_first;

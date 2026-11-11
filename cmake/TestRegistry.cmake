@@ -194,6 +194,12 @@ function(papo_finalize_tests)
                     ENVIRONMENT
                     "PYTHONPATH=${pythonpath};PYTHONUTF8=1;PYTHONIOENCODING=utf-8;TZ=UTC;PAPO_TEST_REPORTS=${PROJECT_BINARY_DIR}/Testing/Temporary/cases;PAPO_TEST_ASSETS=${PROJECT_BINARY_DIR}/test-assets"
             )
+            # Scenarios assert the Portuguese interface whatever the host's locale; English cases
+            # override this for their own process.
+            set_property(
+                TEST "${id}"
+                APPEND
+                PROPERTY ENVIRONMENT "PAPO_LANGUAGE=pt")
             if(NOT WIN32 AND "media" IN_LIST labels)
                 set_property(
                     TEST "${id}"

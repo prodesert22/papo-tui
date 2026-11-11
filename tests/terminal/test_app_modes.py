@@ -1170,7 +1170,7 @@ class AppModes(unittest.TestCase):
                 self.assertEqual(json.loads(self.config.read_text(encoding="utf-8"))["version"], 1)
                 t.resize(24, 80)
                 self.choose(t, "ultralight")
-                self.assertEqual(json.loads(self.config.read_text(encoding="utf-8"))["version"], 8)
+                self.assertEqual(json.loads(self.config.read_text(encoding="utf-8"))["version"], 9)
             finally:
                 self.assertTrue(t.close())
 

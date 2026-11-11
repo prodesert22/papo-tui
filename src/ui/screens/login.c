@@ -1663,6 +1663,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         return 1;
     }
     app_mode_set(config->mode);
+    language_set(config->language);
     connections->sessions = session_store_create(config, !open_profiles);
     connections->config = config;
     interrupted = 0;

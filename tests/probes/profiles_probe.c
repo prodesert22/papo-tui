@@ -132,6 +132,10 @@ int main(int argc, char **argv)
     if (strcmp(mode, "mode") == 0 && argc == 3) {
         app_mode selected;
         ok = app_mode_parse(argv[2], &selected) && profiles_set_mode(config, selected);
+    } else if (strcmp(mode, "language") == 0 && argc == 3) {
+        language_choice selected;
+        ok = language_choice_parse(argv[2], &selected) &&
+             profiles_set_settings(config, config->mode, selected, &config->audio);
     } else if (strcmp(mode, "member-grouping") == 0 && argc == 3) {
         ok = (!strcmp(argv[2], "role") || !strcmp(argv[2], "status")) &&
              profiles_set_member_grouping(config, !strcmp(argv[2], "status"));
@@ -209,6 +213,9 @@ int main(int argc, char **argv)
               : NULL;
     if (result)
         json_object_set_new(result, "app_mode", json_string(app_mode_name(config->mode)));
+    if (result)
+        json_object_set_new(result, "language",
+                            json_string(language_choice_name(config->language)));
     if (result)
         json_object_set_new(result, "members_by_status", json_boolean(config->members_by_status));
     if (result)

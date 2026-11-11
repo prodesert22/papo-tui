@@ -315,11 +315,27 @@ account uses them too, and each server tab can have different ones. The
 appearance follows the server tab you are looking at; the notifications of each
 server follow that server's account.
 
+### Interface language
+
+Press **Ctrl+S**, go to **Aparência** (Appearance) and change **Idioma**
+(Language) below the [application modes](#application-modes): **Sistema**
+(System), **Português** or **English**. System, the default, uses Portuguese
+when it comes before English in your system's language settings (`LANGUAGE`,
+`LC_ALL`, `LC_MESSAGES` or `LANG` on Linux and Termux, the display language on
+Windows) and English otherwise. To choose for one run without changing the
+setting, start the application with `PAPO_LANGUAGE=pt` or `PAPO_LANGUAGE=en`
+while the setting is System.
+
+The language belongs to this device and applies as soon as you select
+**Salvar e aplicar** (Save and apply). It changes the application's own text;
+messages, names, topics and other text written by people stay as they are.
+Text that has no English translation yet keeps its Portuguese wording.
+
 ### Theme and history display
 
 Press **Ctrl+S** and go to **Aparência** (Appearance). Below the
-[application modes](#application-modes), which belong to this device, are the
-account's settings:
+[application modes](#application-modes) and the interface language, which
+belong to this device, are the account's settings:
 
 - **Tema** (Theme): **Escuro** (Dark), **Claro** (Light) or **Sistema**
   (System). System uses the light theme when the terminal reports a light

@@ -115,6 +115,7 @@ static const char *json_text(json_t *value, size_t limit)
 static bool decode(profile_config *config, json_t *root)
 {
     config->mode = APP_MODE_NORMAL;
+    config->language = LANGUAGE_SYSTEM;
     config->player_volume = PLAYER_VOLUME_DEFAULT;
     audio_config_default(&config->audio);
     if (!json_is_object(root) || !json_is_integer(json_object_get(root, "version")))
@@ -123,7 +124,7 @@ static bool decode(profile_config *config, json_t *root)
     if (version == 1) {
         if (json_object_size(root) != 3)
             return false;
-    } else if (version >= 2 && version <= 8) {
+    } else if (version >= 2 && version <= 9) {
         json_t *rate = json_object_get(root, "requests_per_second");
         json_t *burst = json_object_get(root, "request_burst");
         if (json_object_size(root) != (version == 2   ? 5U
@@ -132,7 +133,8 @@ static bool decode(profile_config *config, json_t *root)
                                        : version == 5 ? 9U
                                        : version == 6 ? 10U
                                        : version == 7 ? 11U
-                                                      : 12U) ||
+                                       : version == 8 ? 12U
+                                                      : 13U) ||
             !json_is_number(rate) || !json_is_integer(burst) || json_integer_value(burst) <= 0 ||
             json_integer_value(burst) > UINT_MAX ||
             !net_rate_parameters_valid(json_number_value(rate),
@@ -174,6 +176,9 @@ static bool decode(profile_config *config, json_t *root)
             return false;
         config->notification_sounds = json_is_true(sounds);
     }
+    if (version >= 9 &&
+        !language_choice_parse(json_text(json_object_get(root, "language"), 8), &config->language))
+        return false;
     json_t *array = json_object_get(root, "profiles");
     json_t *selected = json_object_get(root, "selected_profile");
     if (!json_is_array(array) || json_array_size(array) > PROFILE_LIMIT)
@@ -292,13 +297,14 @@ static bool save_locked(profile_config *config)
     }
     json_t *selection = *config->selected ? json_string(config->selected) : json_null();
     json_t *root =
-        selection ? json_pack("{s:i,s:O,s:O,s:f,s:I,s:b,s:b,s:b,s:s,s:b,s:i}", "version", 8,
+        selection ? json_pack("{s:i,s:O,s:O,s:f,s:I,s:b,s:b,s:b,s:s,s:s,s:b,s:i}", "version", 9,
                               "profiles", array, "selected_profile", selection,
                               "requests_per_second", config->requests_per_second, "request_burst",
                               (json_int_t)config->request_burst, "desktop_notifications",
                               config->desktop_notifications, "notification_preview",
                               config->notification_preview, "notification_sounds",
                               config->notification_sounds, "app_mode", app_mode_name(config->mode),
+                              "language", language_choice_name(config->language),
                               "members_by_status", config->members_by_status, "player_volume",
                               (json_int_t)config->player_volume)
                   : NULL;
@@ -483,14 +489,17 @@ bool profiles_set_mode(profile_config *config, app_mode mode)
     return commit(config, copy);
 }
 
-bool profiles_set_settings(profile_config *config, app_mode mode, const audio_config *audio)
+bool profiles_set_settings(profile_config *config, app_mode mode, language_choice language,
+                           const audio_config *audio)
 {
-    if (mode < APP_MODE_NORMAL || mode > APP_MODE_ULTRALIGHT || !audio_config_valid(audio))
+    if (mode < APP_MODE_NORMAL || mode > APP_MODE_ULTRALIGHT || language < LANGUAGE_SYSTEM ||
+        language > LANGUAGE_ENGLISH || !audio_config_valid(audio))
         return error(config, "Configuração de áudio inválida.");
     profile_config *copy = candidate(config);
     if (!copy)
         return false;
     copy->mode = mode;
+    copy->language = language;
     copy->audio = *audio;
     return commit(config, copy);
 }

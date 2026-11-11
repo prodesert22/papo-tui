@@ -10,6 +10,7 @@
     "history": "Loading, paging, rendering and scrolling conversation history.",
     "input": "Keyboard, mouse, shortcuts and text fields.",
     "interactions": "Replies, reactions, editing, deleting and message selection.",
+    "language": "Interface language, translations and the compiled-in catalogue.",
     "media": "Images, video, GIFs, attachments previews, downloads and media cache.",
     "members": "Member list, member colors and member profiles.",
     "network": "HTTP transport, request budget and retries.",
@@ -49,6 +50,9 @@
     {"glob": "tests/platforms.json", "areas": "*"},
     {"glob": "tests/time_budgets.json", "areas": "*"},
     {"glob": "tests/fixtures/**", "areas": "*"},
+    {"glob": "po/**", "areas": ["language"]},
+    {"glob": "src/model/text/translation_catalog.inc", "areas": ["language"]},
+    {"glob": "tools/translations.py", "areas": ["language"]},
 
     {"glob": "src/net/voice/**", "areas": ["voice"]},
     {"glob": "src/config/audio.*", "areas": ["voice", "audio"]},

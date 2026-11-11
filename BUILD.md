@@ -435,6 +435,35 @@ through the `papo_sound_player` module in `papo-backends`, which keeps libmpv
 out of the main binary. Set `PAPO_SOUND_LOG` to a file path to record one
 `sound=<name>` line per sound; the sounds then play to libmpv's null output.
 
+### Interface translations
+
+The source text is Portuguese and serves as the message ID. Mark interface text
+in C with `_("...")`, `C_("context", "...")` when the same Portuguese words need
+different English ones, `P_("singular", "plural", count)` for counts, and
+`N_()`/`NC_()` in static tables translated where they are used
+(`src/model/text/translation.h`). Never mark text that comes from the server.
+After marking or changing text, run:
+
+```sh
+python tools/translations.py
+```
+
+It merges the marked strings into `po/en.po`, keeping existing translations,
+adding new ones with an empty `msgstr` and dropping removed ones, and regenerates
+`src/model/text/translation_catalog.inc` from the complete entries. Translate
+the empty entries in `po/en.po`, keeping the same `printf` conversions in the
+same order, and run the command again. The `translations-catalogue` test fails
+while any marked string is missing, untranslated, marked `fuzzy`, has different
+conversions or the generated catalogue is out of date.
+
+The catalogue is compiled in rather than loaded through gettext's libintl.
+The language can then change immediately from Settings whatever the system
+locale (gettext ignores `LANGUAGE` under the C locale), and no package format
+has to install and locate `.mo` files or add libintl. The system language comes
+from GLib's `g_get_language_names()`. `po/en.po` keeps the standard format, so
+gettext editors can open it. Tests set `PAPO_LANGUAGE=pt`, so their Portuguese
+assertions hold on hosts with any locale.
+
 ### Update test dependencies
 
 `requirements-dev.txt` is the input; the native CI locks include transitive

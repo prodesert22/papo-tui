@@ -1,0 +1,20 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: papo-tui\n"
+"Language: en\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: src/ui/components/settings.c
+msgid "Idioma dos textos do aplicativo neste computador. Sistema segue o idioma do sistema, ou PAPO_LANGUAGE (pt ou en) quando definida. Mensagens e nomes continuam como foram escritos."
+msgstr "Language of the application's text on this computer. System follows the system language, or PAPO_LANGUAGE (pt or en) when it is set. Messages and names stay as they were written."
+
+#: src/ui/components/settings.c
+msgid "Idioma: < %s >"
+msgstr "Language: < %s >"
+
+#: src/model/text/translation.c
+msgid "Sistema"
+msgstr "System"
