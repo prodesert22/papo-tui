@@ -18,6 +18,12 @@ For the Windows ZIP, open PowerShell in the extracted folder and run:
 For Flatpak, run `flatpak run io.github.prodesert22.PapoTUI`. To run a local
 Linux build from the project folder, use `./build/papo-tui`.
 
+`papo-tui --help` describes the command-line options, the environment
+variables the application reads and where it keeps its files, in the system
+language or the one set with `PAPO_LANGUAGE`; `papo-tui --version` prints the
+version. Keyboard controls are listed in the in-app help and in
+[Keyboard and mouse](#keyboard-and-mouse).
+
 When the system credential store is available, the application restores the
 session of every server you were signed in to. Each server opens as a tab in
 the top bar. The server you used last is selected, on the channel or direct

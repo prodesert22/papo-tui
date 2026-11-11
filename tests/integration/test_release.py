@@ -33,6 +33,30 @@ class ReleaseCLI(unittest.TestCase):
         self.assertIn(b"--profiles", result.stdout)
         self.assertNotIn(b"NeverPrintThis", result.stdout + result.stderr)
 
+    def test_help_details_options_environment_and_files_without_shortcuts(self):
+        sections = {
+            "pt": ("Uso:", "Opções:", "Variáveis de ambiente:", "Arquivos:", "Guia de uso:"),
+            "en": ("Usage:", "Options:", "Environment:", "Files:", "User guide:"),
+        }
+        for language, headings in sections.items():
+            with self.subTest(language=language):
+                result = self.run_cli("--help", env=dict(os.environ, PAPO_LANGUAGE=language))
+                self.assertEqual(result.returncode, 0)
+                self.assertEqual(result.stderr, b"")
+                text = result.stdout.decode("utf-8").replace("\r\n", "\n")
+                self.assertTrue(text.startswith(f"papo-tui {VERSION}\n"))
+                for expected in headings + (
+                    "--profiles",
+                    "--allow-local-http",
+                    "--version",
+                    "PAPO_LANGUAGE",
+                    "CURL_CA_BUNDLE",
+                ):
+                    self.assertIn(expected, text)
+                # Keyboard controls belong to the in-app help and the guide.
+                self.assertNotIn("Ctrl+", text)
+                self.assertLessEqual(max(len(line) for line in text.splitlines()), 80)
+
     def test_unknown_or_repeated_arguments_are_rejected_without_echoing_secrets(self):
         cases = [
             ("--profiles", "--profiles"),
