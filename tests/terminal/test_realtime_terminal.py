@@ -60,7 +60,8 @@ class RealtimeTerminal(unittest.TestCase):
                 self.wait(terminal, "Servidor offline")
                 self.wait(terminal, "(offline)")
                 self.assertIn("(offline)", terminal.screen.display[0])
-                self.assertIn("Reconectando automaticamente", self.screen(terminal))
+                # The tab can change before the history finishes repainting.
+                self.wait(terminal, "Reconectando automaticamente")
                 self.assertNotIn("Mensagem 0003", self.screen(terminal))
                 for error in ("Permissões indisponíveis", "Falha ao carregar", "Revalidando"):
                     self.assertNotIn(error, self.screen(terminal))
