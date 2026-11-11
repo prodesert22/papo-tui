@@ -39,11 +39,16 @@ class MediaBackends(unittest.TestCase):
     def maps(self, terminal):
         maps = Path(f"/proc/{terminal.process.pid}/maps").read_text(encoding="utf-8")
         for task in Path(f"/proc/{terminal.process.pid}/task").iterdir():
-            for pid in (task / "children").read_text(encoding="utf-8").split():
+            # A thread or child that exits meanwhile answers ENOENT or ESRCH.
+            try:
+                pids = (task / "children").read_text(encoding="utf-8").split()
+            except (FileNotFoundError, ProcessLookupError):
+                continue
+            for pid in pids:
                 try:
                     if b"papo-media-worker" in Path(f"/proc/{pid}/cmdline").read_bytes():
                         maps += Path(f"/proc/{pid}/maps").read_text(encoding="utf-8")
-                except FileNotFoundError:
+                except (FileNotFoundError, ProcessLookupError):
                     pass
         return maps
 

@@ -99,15 +99,17 @@ class AppModes(unittest.TestCase):
     def children(self, t):
         found = []
         for task in Path(f"/proc/{t.process.pid}/task").iterdir():
+            # A thread or child that exits between the listing and the read is gone:
+            # /proc then answers ENOENT or, while the process is being reaped, ESRCH.
             try:
                 pids = (task / "children").read_text(encoding="utf-8").split()
-            except FileNotFoundError:
+            except (FileNotFoundError, ProcessLookupError):
                 continue
             for pid in pids:
                 try:
                     if b"papo-media-worker" in Path(f"/proc/{pid}/cmdline").read_bytes():
                         found.append(int(pid))
-                except FileNotFoundError:
+                except (FileNotFoundError, ProcessLookupError):
                     pass
         return list(set(found))
 
