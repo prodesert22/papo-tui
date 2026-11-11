@@ -53,6 +53,8 @@ void history_users_retry(history *h)
     h->users_failed = false;
 }
 
+/* Pages through /users again from the start, keeping the loaded entries on
+ * screen; entries the complete pass no longer returns become unlisted. */
 void history_users_refresh(history *h)
 {
     if (h->pending == USERS) {
@@ -62,7 +64,9 @@ void history_users_refresh(history *h)
     h->users_active = true;
     h->users_complete = h->users_failed = false;
     h->users_id[0] = h->users_time[0] = 0;
-    json_array_clear(h->directory);
+    h->users_complete_at = 0;
+    h->users_refreshing = true;
+    json_object_clear(h->refresh_seen);
     ++h->users_revision;
     const char *id;
     json_t *user;
@@ -71,6 +75,17 @@ void history_users_refresh(history *h)
         (void)id;
         json_object_del(user, "_presence");
     }
+}
+
+void history_users_open(history *h)
+{
+    uint64_t now = 0;
+    if (h->users_complete && !h->users_partial && h->users_complete_at && net_now_ms(&now) &&
+        now >= h->users_complete_at && now - h->users_complete_at < USERS_REUSE_MS) {
+        h->users_active = true;
+        return;
+    }
+    history_users_refresh(h);
 }
 
 size_t history_user_count(const history *h)
@@ -90,7 +105,8 @@ uint64_t history_users_revision(const history *h)
 
 json_t *history_user(const history *h, size_t i)
 {
-    return json_object_get(h->users, json_string_value(json_array_get(h->directory, i)));
+    const char *id = json_string_value(json_array_get(h->directory, i));
+    return id && !json_object_get(h->unlisted, id) ? json_object_get(h->users, id) : NULL;
 }
 
 const char *history_users_notice(const history *h)
@@ -99,7 +115,10 @@ const char *history_users_notice(const history *h)
         return _("Falha ao listar usuários. Ctrl+R: tentar novamente.");
     if (h->users_partial)
         return _("Lista parcial: limite local atingido.");
-    return h->users_complete ? _("Tab / Enter / clique: mencionar") : _("Carregando usuários…");
+    /* A revalidation keeps the loaded list usable while it runs. */
+    return h->users_complete || (h->users_refreshing && json_array_size(h->directory))
+               ? _("Tab / Enter / clique: mencionar")
+               : _("Carregando usuários…");
 }
 
 const char *history_mention_name(void *context, const char *id)
@@ -473,6 +492,28 @@ bool history_internal_presence_event(history *h, const json_t *event)
     return ok;
 }
 
+/* A complete pass: entries a revalidation did not return are unlisted, unless
+ * the local limit cut the pass short. */
+static void finish_users(history *h)
+{
+    if (h->users_refreshing && !h->users_partial) {
+        size_t i;
+        json_t *entry;
+        json_array_foreach(h->directory, i, entry)
+        {
+            const char *id = json_string_value(entry);
+            if (id && !json_object_get(h->refresh_seen, id))
+                json_object_set_new(h->unlisted, id, json_true());
+        }
+    }
+    json_object_clear(h->refresh_seen);
+    h->users_refreshing = false;
+    h->users_complete = true;
+    uint64_t now = 0;
+    h->users_complete_at = net_now_ms(&now) ? now : 0;
+    ++h->users_revision;
+}
+
 bool history_internal_users_response(history *h, json_t *body)
 {
     json_t *users = json_object_get(body, "users"), *more = json_object_get(body, "has_more");
@@ -488,13 +529,15 @@ bool history_internal_users_response(history *h, json_t *body)
             !history_internal_cache_user(h, u, false))
             return false;
         const char *id = history_internal_str(u, "id");
-        bool found = false;
-        for (size_t j = 0; j < json_array_size(h->directory); ++j)
-            if (!strcmp(id, json_string_value(json_array_get(h->directory, j)))) {
-                found = true;
-                break;
-            }
-        if (!found && !h->users_partial && json_array_append_new(h->directory, json_string(id)))
+        if (json_object_get(h->listed, id)) {
+            json_object_del(h->unlisted, id); /* Listed again. */
+        } else if (!h->users_partial) {
+            if (json_array_append_new(h->directory, json_string(id)) ||
+                json_object_set_new(h->listed, id, json_true()))
+                return false;
+        } else
+            continue;
+        if (h->users_refreshing && json_object_set_new(h->refresh_seen, id, json_true()))
             return false;
     }
     if (count) {
@@ -505,7 +548,8 @@ bool history_internal_users_response(history *h, json_t *body)
                  history_internal_str(last, "created_at"));
         snprintf(h->users_id, sizeof(h->users_id), "%s", history_internal_str(last, "id"));
     }
-    h->users_complete |= !count || json_is_false(more);
+    if (!count || json_is_false(more))
+        finish_users(h);
     return true;
 }
 
@@ -721,14 +765,28 @@ bool history_maintain(history *h, uint64_t now)
         }
         iter = next;
     }
-    if (changed) {
-        for (size_t i = json_array_size(h->directory); i > 0; --i)
-            if (!json_object_get(h->users, json_string_value(json_array_get(h->directory, i - 1))))
-                json_array_remove(h->directory, i - 1);
+    /* No panel borrows directory indices here, so entries can move. */
+    bool evicted = false, compacted = false;
+    for (size_t i = json_array_size(h->directory); i > 0; --i) {
+        const char *entry = json_string_value(json_array_get(h->directory, i - 1));
+        bool missing = !json_object_get(h->users, entry);
+        if (!missing && !json_object_get(h->unlisted, entry))
+            continue;
+        evicted |= missing;
+        compacted = true;
+        json_object_del(h->listed, entry);
+        json_object_del(h->unlisted, entry);
+        json_array_remove(h->directory, i - 1);
+    }
+    if (changed || evicted) {
+        /* Evicted entries must be listed again by a new pass. */
         h->users_complete = h->users_partial = false;
         h->users_id[0] = h->users_time[0] = 0;
-        ++h->users_revision;
+        h->users_complete_at = 0;
     }
+    if (changed || compacted)
+        ++h->users_revision;
+    changed |= compacted;
     iter = json_object_iter(h->queried);
     while (iter) {
         id = json_object_iter_key(iter);

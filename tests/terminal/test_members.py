@@ -809,6 +809,45 @@ class Members(unittest.TestCase):
             )
 
 
+    def test_reopening_reuses_the_directory_and_refresh_keeps_it_listed(self):
+        with MemberMock(total=205) as server:
+            terminal = self.open(server)
+
+            def pages():
+                return sum("/users?" in path for method, path, *_ in server.requests if method == "GET")
+
+            self.drawer(terminal)
+            self.wait(terminal, "Membros (205)")
+            self.settled(terminal, lambda: pages() == 3)
+            terminal.send("\x15")
+            self.settled(terminal, lambda: "Membros (" not in self.screen(terminal))
+            # Reopening within a minute reuses the complete directory.
+            terminal.send("\x15")
+            self.wait(terminal, "Membros (205)")
+            terminal.read(0.5)
+            self.assertEqual(pages(), 3)
+            # Ctrl+R pages again; the loaded list stays while a later page is held.
+            held, release = threading.Event(), threading.Event()
+            route = server.api_handler
+
+            def slow(method, path, body):
+                if method == "GET" and "/users?" in path and "last_id=" in path:
+                    held.set()
+                    release.wait(10)
+                return route(method, path, body)
+
+            server.api_handler = slow
+            self.addCleanup(release.set)
+            server.members = [m for m in server.members if m["username"] != "user0010"]
+            terminal.send("\x12")
+            self.assertTrue(held.wait(5))
+            terminal.read(0.3)
+            self.assertIn("Membros (205)", self.screen(terminal))
+            release.set()
+            # A member the new pass no longer returns leaves the list.
+            self.wait(terminal, "Membros (204)")
+
+
 if __name__ == "__main__":
     test_main(
         1,

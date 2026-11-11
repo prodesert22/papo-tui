@@ -97,6 +97,13 @@ struct history {
     char read_url[2049], read_user[37];
     bool read_loaded, read_dirty, read_save_failed;
     json_t *users, *directory, *queried, *summary_ids;
+    /* Sets of UUIDs: listed holds every directory entry; unlisted, those a
+     * complete pass no longer returned, kept in place so indices borrowed by
+     * open panels stay valid until maintenance compacts them; refresh_seen,
+     * the entries the running revalidation pass has returned. */
+    json_t *listed, *unlisted, *refresh_seen;
+    bool users_refreshing;
+    uint64_t users_complete_at;
     size_t user_bytes;
     uint64_t users_revision, messages_revision;
     uint64_t role_events, request_role_events;

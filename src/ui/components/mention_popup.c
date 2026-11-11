@@ -317,6 +317,8 @@ bool mention_popup_update(mention_popup *p, text_buffer *b, bool enabled)
     }
     for (size_t i = 0; i < history_user_count(p->h) && p->count < 10000; ++i) {
         json_t *u = history_user(p->h, i);
+        if (!u) /* No longer listed. */
+            continue;
         if (strstr(str(u, "_fold_name"), folded) || strstr(str(u, "_fold_nick"), folded) ||
             (*normalized && (strstr(str(u, "_normal_name"), normalized) ||
                              strstr(str(u, "_normal_nick"), normalized))))

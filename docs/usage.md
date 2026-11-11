@@ -485,6 +485,11 @@ Use Tab/Shift+Tab to move between search, grouping and results. Use ↑/↓,
 Home/End or PageUp/PageDown to select people, or use the mouse. Press **Ctrl+R**
 to refresh the list and **Esc** or **Ctrl+U** to close the drawer.
 
+Reopening the drawer within a minute shows the members already loaded without
+fetching them again; names, roles and status keep updating live meanwhile.
+After that, or with **Ctrl+R**, the list is checked again in the background
+while it stays on screen, and people no longer on the server leave it.
+
 Press **Ctrl+Space** or **m** on the selected member, or **right-click a member**, to open their
 context menu. It sits to the left of the drawer, or above/below the selected row
 on narrow screens, keeping the member's name visible. Navigate with ↑/↓ and

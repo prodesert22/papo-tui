@@ -160,7 +160,12 @@ bool history_maintain(history *h, uint64_t now);
 void history_users_active(history *h, bool active);
 void history_members_active(history *h, bool active);
 void history_users_retry(history *h);
+/* Pages through the directory again; loaded entries stay listed meanwhile. */
 void history_users_refresh(history *h);
+/* Opening a panel reuses a directory completed less than a minute ago, since
+ * presence, role and nickname changes arrive as events; otherwise refreshes. */
+#define USERS_REUSE_MS 60000U
+void history_users_open(history *h);
 size_t history_user_count(const history *h);
 bool history_users_complete(const history *h);
 uint64_t history_users_revision(const history *h);

@@ -194,7 +194,7 @@ void conversation_members_toggle(view *ui)
         conversation_interactions_close(ui);
         r8_modal_close(ui->r8);
         snprintf(d->restore, sizeof(d->restore), "%s", d->selected);
-        history_users_refresh(ui->model);
+        history_users_open(ui->model);
         history_member_prepare(ui->model);
         history_users_active(ui->model, false);
         conversation_set_focus(ui, MEMBERS_PANEL);

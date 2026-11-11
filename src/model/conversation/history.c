@@ -330,11 +330,14 @@ history *history_create(auth_client *auth)
     h->want_channels = true;
     h->users = json_object();
     h->directory = json_array();
+    h->listed = json_object();
+    h->unlisted = json_object();
+    h->refresh_seen = json_object();
     h->queried = json_object();
     h->read_messages = json_object();
     h->sent_reads = json_object();
-    if (!h->sent_reads || !h->voice || !h->assets || !h->users || !h->directory || !h->queried ||
-        !h->inbox || !h->read_messages) {
+    if (!h->sent_reads || !h->voice || !h->assets || !h->users || !h->directory || !h->listed ||
+        !h->unlisted || !h->refresh_seen || !h->queried || !h->inbox || !h->read_messages) {
         history_destroy(h);
         return NULL;
     }
@@ -372,6 +375,9 @@ void history_destroy(history *h)
     json_decref(h->sent_reads);
     json_decref(h->users);
     json_decref(h->directory);
+    json_decref(h->listed);
+    json_decref(h->unlisted);
+    json_decref(h->refresh_seen);
     json_decref(h->queried);
     json_decref(h->summary_ids);
     g_hash_table_destroy(h->costs);
@@ -1164,9 +1170,14 @@ bool history_poll(history *h)
         json_object_clear(h->sent_reads);
         json_object_clear(h->users);
         json_array_clear(h->directory);
+        json_object_clear(h->listed);
+        json_object_clear(h->unlisted);
+        json_object_clear(h->refresh_seen);
         json_object_clear(h->queried);
         ++h->users_revision;
         h->users_complete = h->users_failed = h->users_partial = false;
+        h->users_refreshing = false;
+        h->users_complete_at = 0;
         h->user_bytes = 0;
         h->users_id[0] = h->users_time[0] = 0;
         history_reload_channels(h);

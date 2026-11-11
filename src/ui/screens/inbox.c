@@ -119,7 +119,7 @@ void r8_modal_open(r8_modal *m, r8_modal_kind kind)
         message_browser_open(m->browser, kind == R8_PINNED);
         m->open = message_browser_is_open(m->browser);
     } else if (kind == R8_USERS)
-        history_users_refresh(m->h);
+        history_users_open(m->h);
     else if (kind == R8_NOTIFICATIONS)
         inbox_refresh(history_inbox(m->h));
 }
@@ -354,7 +354,7 @@ static void update(r8_modal *m)
         m->count = 0;
         for (size_t i = 0; i < history_user_count(m->h) && m->count < 10000; ++i) {
             json_t *u = history_user(m->h, i);
-            if (!strcmp(s(u, "id"), auth_user_id(m->auth)) ||
+            if (!u || !strcmp(s(u, "id"), auth_user_id(m->auth)) ||
                 json_is_true(json_object_get(u, "banned")))
                 continue;
             if (!*query || mention_name_matches(s(u, "username"), query) ||

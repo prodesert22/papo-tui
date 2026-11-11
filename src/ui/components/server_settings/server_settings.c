@@ -107,6 +107,8 @@ const char *admin_user_display(const json_t *user)
 }
 bool admin_user_matches(const json_t *user, const char *folded)
 {
+    if (!user) /* No longer listed. */
+        return false;
     if (!folded || !*folded)
         return true;
     bool found = false;
