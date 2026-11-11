@@ -1,5 +1,6 @@
 #include "model/conversation/discovery.h"
 #include "model/conversation/private.h"
+#include "model/text/translation.h"
 
 /* Auxiliary reads belong to history's single REST dispatcher. The UI never
  * takes transport responses. Cancellation only touches this owner's request. */
@@ -66,7 +67,7 @@ void history_internal_discovery_recover(history *h)
 {
     if (h->discovery && (h->discovery->request == DISCOVERY_SEARCH || h->discovery->want_search))
         snprintf(h->discovery->search_notice, sizeof(h->discovery->search_notice),
-                 "Busca interrompida. Ctrl+R: tentar novamente.");
+                 _("Busca interrompida. Ctrl+R: tentar novamente."));
     cancel(h);
     if (h->discovery) {
         h->discovery->want_search = false;
@@ -139,7 +140,7 @@ bool history_search(history *h, const json_t *filters)
         return false;
     if (!valid_filters(filters)) {
         snprintf(d->search_notice, sizeof(d->search_notice),
-                 "Confira os filtros e datas (AAAA-MM-DD); informe ao menos um critério.");
+                 _("Confira os filtros e datas (AAAA-MM-DD); informe ao menos um critério."));
         return false;
     }
     json_t *copy = json_deep_copy(filters);
@@ -152,7 +153,7 @@ bool history_search(history *h, const json_t *filters)
     d->cursor_time[0] = d->cursor_id[0] = 0;
     d->more = d->limited = false;
     d->want_search = true;
-    snprintf(d->search_notice, sizeof(d->search_notice), "Buscando mensagens…");
+    snprintf(d->search_notice, sizeof(d->search_notice), _("Buscando mensagens…"));
     return true;
 }
 void history_search_more(history *h)
@@ -160,7 +161,7 @@ void history_search_more(history *h)
     struct history_discovery *d = h->discovery;
     if (d && d->filters && d->more && !d->limited && d->request != DISCOVERY_SEARCH) {
         d->want_search = true;
-        snprintf(d->search_notice, sizeof(d->search_notice), "Buscando mensagens…");
+        snprintf(d->search_notice, sizeof(d->search_notice), _("Buscando mensagens…"));
     }
 }
 json_t *history_search_results(history *h)
@@ -174,7 +175,7 @@ bool history_search_has_more(history *h)
 const char *history_search_notice(history *h)
 {
     return h->discovery ? h->discovery->search_notice
-                        : "Informe texto ou filtros e selecione Buscar.";
+                        : _("Informe texto ou filtros e selecione Buscar.");
 }
 void history_pins_open(history *h)
 {
@@ -193,11 +194,11 @@ void history_pins_refresh(history *h)
         if (!history_uuid(s(history_channel(h, h->selected), "id"))) {
             d->want_pins = false;
             snprintf(d->pin_notice, sizeof(d->pin_notice),
-                     "Abra uma conversa para ver as fixadas.");
+                     _("Abra uma conversa para ver as fixadas."));
             return;
         }
         d->want_pins = true;
-        snprintf(d->pin_notice, sizeof(d->pin_notice), "Carregando fixadas…");
+        snprintf(d->pin_notice, sizeof(d->pin_notice), _("Carregando fixadas…"));
     }
 }
 json_t *history_pins(history *h)
@@ -223,7 +224,7 @@ void history_internal_pins_invalidate(history *h)
         bool visible = d->pins_visible && history_uuid(s(history_channel(h, h->selected), "id"));
         d->want_pins |= visible;
         if (visible)
-            snprintf(d->pin_notice, sizeof(d->pin_notice), "Atualizando fixadas…");
+            snprintf(d->pin_notice, sizeof(d->pin_notice), _("Atualizando fixadas…"));
     }
 }
 bool history_internal_discovery_event(history *h, const json_t *event)
@@ -269,7 +270,7 @@ bool history_internal_discovery_dispatch(history *h)
             !auth_busy(h->auth) && !auth_response_ready(h->auth)) {
             char *notice = request == DISCOVERY_SEARCH ? d->search_notice : d->pin_notice;
             snprintf(notice, 192,
-                     "Não foi possível preparar a consulta. Ctrl+R: tentar novamente.");
+                     _("Não foi possível preparar a consulta. Ctrl+R: tentar novamente."));
             if (request == DISCOVERY_SEARCH)
                 d->want_search = false;
             else
@@ -363,9 +364,9 @@ static bool search_page(history *h, json_t *body)
     d->more = json_is_true(json_object_get(body, "has_more"));
     d->limited = limited || (d->more && json_array_size(next) >= HISTORY_MESSAGE_LIMIT);
     snprintf(d->search_notice, sizeof(d->search_notice), "%s",
-             d->limited              ? "Lista parcial: limite local atingido. Refine a busca."
+             d->limited              ? _("Lista parcial: limite local atingido. Refine a busca.")
              : json_array_size(next) ? ""
-                                     : "Nenhuma mensagem encontrada.");
+                                     : _("Nenhuma mensagem encontrada."));
     return true;
 }
 static bool pins_page(history *h, json_t *body)
@@ -395,7 +396,7 @@ static bool pins_page(history *h, json_t *body)
     d->pins_valid = !d->want_pins;
     h->want_authors = true;
     snprintf(d->pin_notice, sizeof(d->pin_notice), "%s",
-             json_array_size(page) ? "" : "Nenhuma mensagem fixada nesta conversa.");
+             json_array_size(page) ? "" : _("Nenhuma mensagem fixada nesta conversa."));
     return true;
 }
 void history_internal_discovery_response(history *h, json_t *body, long code)
@@ -410,10 +411,10 @@ void history_internal_discovery_response(history *h, json_t *body, long code)
     if (!ok) {
         char *notice = request == DISCOVERY_SEARCH ? d->search_notice : d->pin_notice;
         snprintf(notice, 192, "%s",
-                 code == 429   ? "Limite de requisições. Aguarde e use Ctrl+R."
-                 : code == 403 ? "Sem permissão para consultar estas mensagens."
-                 : code == 404 ? "Conversa não disponível."
-                               : "Falha na consulta. Ctrl+R: tentar novamente.");
+                 code == 429   ? _("Limite de requisições. Aguarde e use Ctrl+R.")
+                 : code == 403 ? _("Sem permissão para consultar estas mensagens.")
+                 : code == 404 ? _("Conversa não disponível.")
+                               : _("Falha na consulta. Ctrl+R: tentar novamente."));
         /* A failed request needs explicit retry, including a refresh queued by WS. */
         if (request == DISCOVERY_PINS)
             d->want_pins = false;

@@ -4,6 +4,7 @@
 #include "model/assets/catalog.h"
 #include "config/app_mode.h"
 #include "model/conversation/history.h"
+#include "model/text/translation.h"
 #include "net/auth/session_time.h"
 #include "net/clock.h"
 #include "platform/runtime.h"
@@ -167,7 +168,7 @@ void chat_assets_emojis_request(chat_assets *a, bool refresh)
     a->refreshing = true;
     ++a->epoch;
     a->cursor[0] = a->last_id[0] = 0;
-    snprintf(a->notice, sizeof(a->notice), "Carregando emojis…");
+    snprintf(a->notice, sizeof(a->notice), _("Carregando emojis…"));
     ++a->revision;
 }
 bool chat_assets_emojis_wanted(const chat_assets *a)
@@ -257,15 +258,15 @@ bool chat_assets_emojis_response(chat_assets *a, json_t *response, long status)
         a->wanted = a->refreshing = false;
         a->loaded = true;
         net_now_ms(&a->refreshed);
-        snprintf(a->notice, sizeof(a->notice), "%zu emojis do servidor · Ctrl+R atualizar",
+        snprintf(a->notice, sizeof(a->notice), _("%zu emojis do servidor · Ctrl+R atualizar"),
                  a->count);
     }
     if (!ok) {
         a->wanted = false;
         a->failed = true;
         snprintf(a->notice, sizeof(a->notice),
-                 status == 429 ? "Limite atingido · Aguarde e use Ctrl+R"
-                               : "Falha nos emojis · Ctrl+R tentar novamente");
+                 status == 429 ? _("Limite atingido · Aguarde e use Ctrl+R")
+                               : _("Falha nos emojis · Ctrl+R tentar novamente"));
     }
     ++a->revision;
     ++a->emoji_revision;
@@ -290,7 +291,7 @@ const server_emoji *chat_assets_emoji_id(const chat_assets *a, const char *id)
 }
 const char *chat_assets_notice(const chat_assets *a)
 {
-    return a ? a->notice : "Emojis indisponíveis";
+    return a ? a->notice : _("Emojis indisponíveis");
 }
 uint64_t chat_assets_revision(const chat_assets *a)
 {
@@ -564,7 +565,7 @@ void chat_assets_clear_media(chat_assets *a)
     a->wanted = a->loaded = a->failed = a->refreshing = false;
     ++a->revision;
     ++a->emoji_revision;
-    snprintf(a->notice, sizeof(a->notice), "Emojis gráficos desativados no modo ultralight.");
+    snprintf(a->notice, sizeof(a->notice), _("Emojis gráficos desativados no modo ultralight."));
 }
 
 void chat_assets_profile_observe(chat_assets *a, const json_t *profile, uint64_t version)

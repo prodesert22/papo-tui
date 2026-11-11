@@ -1,4 +1,5 @@
 #include "model/conversation/private.h"
+#include "model/text/translation.h"
 
 void history_older(history *h)
 {
@@ -8,7 +9,7 @@ void history_older(history *h)
     h->older = true;
     h->newer = false;
     h->want_messages = true;
-    history_internal_status(h, "Carregando mensagens anteriores…");
+    history_internal_status(h, _("Carregando mensagens anteriores…"));
     history_internal_notice(h, HISTORY_NOTICE_READ,
                             ""); /* Prefetch is silent until the view reaches the edge. */
 }
@@ -21,7 +22,7 @@ void history_newer(history *h)
     h->newer = true;
     h->older = false;
     h->want_messages = true;
-    history_internal_status(h, "Carregando mensagens posteriores…");
+    history_internal_status(h, _("Carregando mensagens posteriores…"));
     history_internal_notice(h, HISTORY_NOTICE_READ, "");
 }
 
@@ -347,10 +348,10 @@ bool history_internal_messages_response(history *h, json_t *body)
      * latest message sends PUT /channels/{id}/read (history_read_visible). */
     h->want_authors = history_message_count(h) > 0;
     history_internal_status(h, history_message_count(h)
-                                   ? h->newer_more ? "Role para baixo para carregar posteriores."
-                                     : h->more     ? "Role para cima para carregar anteriores."
-                                                   : "Início do histórico alcançado."
-                                   : "Nenhuma mensagem neste canal.");
+                                   ? h->newer_more ? _("Role para baixo para carregar posteriores.")
+                                     : h->more     ? _("Role para cima para carregar anteriores.")
+                                                   : _("Início do histórico alcançado.")
+                                   : _("Nenhuma mensagem neste canal."));
     history_internal_notice(h, HISTORY_NOTICE_READ, "");
     return true;
 fail:
@@ -443,7 +444,7 @@ bool history_internal_recovery_response(history *h, json_t *body)
         else
             h->want_channels = true;
     }
-    history_internal_status(h, "Tempo real conectado. Histórico recuperado.");
+    history_internal_status(h, _("Tempo real conectado. Histórico recuperado."));
     history_internal_notice(h, HISTORY_NOTICE_READ, "");
     return true;
 }

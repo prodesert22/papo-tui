@@ -1,4 +1,5 @@
 #include "net/voice/client.h"
+#include "model/text/translation.h"
 #include "net/clock.h"
 #include "net/voice/audio.h"
 #include <glib.h>
@@ -274,7 +275,7 @@ static bool postpone(voice_client *v, const char *channel)
     uint64_t now = 0;
     net_now_ms(&now);
     v->pending_until = now + 10000;
-    snprintf(v->notice, sizeof(v->notice), "Entrando na chamada de voz…");
+    snprintf(v->notice, sizeof(v->notice), _("Entrando na chamada de voz…"));
     ++v->revision;
     return false;
 }
@@ -283,7 +284,7 @@ static bool begin(voice_client *v, const char *channel)
     permission_decision decision =
         permissions_channel(auth_permissions(v->auth), channel, PERMISSION_CONNECT_VOICE);
     if (!auth_has_session(v->auth) || decision == PERMISSION_DENIED) {
-        snprintf(v->notice, sizeof(v->notice), "Voz indisponível ou sem permissão de conexão.");
+        snprintf(v->notice, sizeof(v->notice), _("Voz indisponível ou sem permissão de conexão."));
         v->pending[0] = 0;
         v->pending_until = 0;
         ++v->revision;
@@ -345,7 +346,7 @@ void voice_leave(voice_client *v)
     stop_engine(v);
     json_array_clear(v->outgoing);
     if (!send_event(v, json_pack("{s:s}", "type", "voice_leave"))) {
-        fail(v, "Não foi possível solicitar a saída da chamada.");
+        fail(v, _("Não foi possível solicitar a saída da chamada."));
         return;
     }
     v->state = VOICE_LEAVING;
@@ -364,13 +365,13 @@ void voice_ice_response(voice_client *v, const json_t *body, long status, uint64
         return;
     const json_t *servers = json_object_get(body, "ice_servers");
     if (status != 200 || !json_is_array(servers) || json_array_size(servers) > 32) {
-        fail(v, "Não foi possível obter STUN/TURN. Entre novamente na chamada para tentar.");
+        fail(v, _("Não foi possível obter STUN/TURN. Entre novamente na chamada para tentar."));
         return;
     }
     json_decref(v->ice);
     v->ice = json_deep_copy(servers);
     if (!v->ice || !send_event(v, json_pack("{s:s}", "type", "voice_join"))) {
-        fail(v, "Não foi possível iniciar a chamada.");
+        fail(v, _("Não foi possível iniciar a chamada."));
         return;
     }
     v->state = VOICE_JOINING;
@@ -477,7 +478,7 @@ bool voice_event(voice_client *v, const json_t *event)
                                       audio_config_slots(&settings, auth_instance_url(v->auth)),
                                       v->ice, false);
         if (!v->engine) {
-            fail(v, "Não foi possível iniciar o áudio.");
+            fail(v, _("Não foi possível iniciar o áudio."));
             return true;
         }
         voice_audio_output(v->audio, output);
@@ -521,9 +522,9 @@ bool voice_event(voice_client *v, const json_t *event)
             idle(v);
         else
             fail(v, !strcmp(str(event, "code"), "voice-invalid-sdp")
-                        ? "Negociação recusada. Confira os fluxos de áudio desta instância."
-                        : "O servidor recusou a operação de voz. Confira permissões e "
-                          "disponibilidade.");
+                        ? _("Negociação recusada. Confira os fluxos de áudio desta instância.")
+                        : _("O servidor recusou a operação de voz. Confira permissões e "
+                            "disponibilidade."));
     } else if (!strcmp(type, "voice_audio_routes"))
         return true; /* Slot IDs are not stable identities; UI uses the server's speaker IDs. */
     else
@@ -600,7 +601,7 @@ bool voice_poll(voice_client *v)
         v->ws_epoch = auth_ws_epoch(v->auth);
         if (in_call)
             snprintf(v->notice, sizeof(v->notice),
-                     "Chamada encerrada: conexão ou sessão interrompida.");
+                     _("Chamada encerrada: conexão ou sessão interrompida."));
     }
     if (!active && *v->pending) {
         permission_decision decision =
@@ -613,7 +614,8 @@ bool voice_poll(voice_client *v)
         } else if (decision == PERMISSION_DENIED) {
             v->pending[0] = 0;
             v->pending_until = 0;
-            snprintf(v->notice, sizeof(v->notice), "Voz indisponível ou sem permissão de conexão.");
+            snprintf(v->notice, sizeof(v->notice),
+                     _("Voz indisponível ou sem permissão de conexão."));
             ++v->revision;
         } else if (decision == PERMISSION_ALLOWED && auth_ws_state(v->auth) == WS_OPEN) {
             char channel[37];
@@ -625,7 +627,7 @@ bool voice_poll(voice_client *v)
             v->pending[0] = 0;
             v->pending_until = 0;
             snprintf(v->notice, sizeof(v->notice),
-                     "Não foi possível entrar na chamada de voz. Tente novamente.");
+                     _("Não foi possível entrar na chamada de voz. Tente novamente."));
             ++v->revision;
         }
     }
@@ -642,7 +644,7 @@ bool voice_poll(voice_client *v)
         } else if ((uint64_t)json_integer_value(json_object_get(event, "epoch")) == v->epoch &&
                    v->engine) {
             if (!strcmp(type, "audio_error"))
-                fail(v, "Falha no áudio. Confira dispositivos, permissões e plugins GStreamer.");
+                fail(v, _("Falha no áudio. Confira dispositivos, permissões e plugins GStreamer."));
             else if (!strcmp(type, "level")) {
                 v->rms = json_number_value(json_object_get(event, "rms"));
                 v->peak = json_number_value(json_object_get(event, "peak"));
@@ -661,13 +663,13 @@ bool voice_poll(voice_client *v)
                     v->deadline = now + 10000;
                     ++v->revision;
                 } else if (state == 4 || state == 5)
-                    fail(v, "Conexão de voz interrompida. Entre novamente para tentar.");
+                    fail(v, _("Conexão de voz interrompida. Entre novamente para tentar."));
             } else if (!strcmp(type, "offer") || !strcmp(type, "answer")) {
                 if (!send_event(v,
                                 json_pack("{s:s,s:s}", "type",
                                           !strcmp(type, "offer") ? "voice_offer" : "voice_answer",
                                           "sdp", str(event, "sdp"))))
-                    fail(v, "Fila de sinalização de voz cheia.");
+                    fail(v, _("Fila de sinalização de voz cheia."));
                 else {
                     v->local_description = true;
                     for (size_t i = 0; i < json_array_size(v->early_local); ++i)
@@ -688,7 +690,7 @@ bool voice_poll(voice_client *v)
                     json_decref(candidate);
                 }
                 if (!ok)
-                    fail(v, "Fila de candidatos ICE cheia.");
+                    fail(v, _("Fila de candidatos ICE cheia."));
             }
         }
         json_decref(event);
@@ -699,7 +701,8 @@ bool voice_poll(voice_client *v)
         if (permissions_channel(auth_permissions(v->auth), v->channel, PERMISSION_CONNECT_VOICE) ==
             PERMISSION_DENIED) {
             voice_leave(v);
-            snprintf(v->notice, sizeof(v->notice), "Chamada encerrada: permissão de voz removida.");
+            snprintf(v->notice, sizeof(v->notice),
+                     _("Chamada encerrada: permissão de voz removida."));
         }
     }
     if (v->state == VOICE_CONNECTED) {
@@ -715,7 +718,7 @@ bool voice_poll(voice_client *v)
         voice_audio_transmit(v->audio, !muted && !v->server_muted);
     }
     if (v->deadline && now >= v->deadline)
-        fail(v, "Tempo de conexão/saída esgotado. Entre novamente para tentar.");
+        fail(v, _("Tempo de conexão/saída esgotado. Entre novamente para tentar."));
     dispatch(v, now);
     if (!active && next_call) {
         voice_client *next = next_call;

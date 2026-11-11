@@ -2,6 +2,7 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 #include "ui/components/mention_popup.h"
+#include "model/text/translation.h"
 #include "ui/components/theme.h"
 #include "ui/input/profile_commands.h"
 #include <glib.h>
@@ -302,7 +303,7 @@ bool mention_popup_update(mention_popup *p, text_buffer *b, bool enabled)
     if (was && !changed && !users_changed && !messages_changed)
         return false;
     if (messages_changed && !update_recent(p)) {
-        snprintf(p->error, sizeof(p->error), "Não foi possível ordenar usuários.");
+        snprintf(p->error, sizeof(p->error), _("Não foi possível ordenar usuários."));
         return true;
     }
     p->messages_revision = messages_revision;
@@ -364,7 +365,7 @@ static bool choose(mention_popup *p, text_buffer *b)
     text_buffer insertion;
     if (!text_decode(&insertion, token) ||
         b->length - (p->end - p->start) + insertion.length > TEXT_LIMIT) {
-        snprintf(p->error, sizeof(p->error), "Menção excede o limite de texto.");
+        snprintf(p->error, sizeof(p->error), _("Menção excede o limite de texto."));
         return false;
     }
     memmove(b->data + p->start + insertion.length, b->data + p->end,
@@ -384,7 +385,7 @@ static bool replace(mention_popup *p, text_buffer *b, size_t from, size_t to, co
     text_buffer insertion;
     if (to > b->length || from > to || !text_decode(&insertion, text) ||
         b->length - (to - from) + insertion.length > TEXT_LIMIT) {
-        snprintf(p->error, sizeof(p->error), "O comando excede o limite de texto.");
+        snprintf(p->error, sizeof(p->error), _("O comando excede o limite de texto."));
         return false;
     }
     memmove(b->data + from + insertion.length, b->data + to,
@@ -533,16 +534,16 @@ static WINDOW *command_draw(mention_popup *p, int cy, int cx, int left, int avai
     wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
     char line[256];
     if (p->mode == COMMAND_LIST)
-        snprintf(line, sizeof(line), " Comandos ");
+        snprintf(line, sizeof(line), _(" Comandos "));
     else
         snprintf(line, sizeof(line), " /%s ", info->name);
     text_label(w, 0, 2, width - 4, line);
     int top = 1;
     if (p->mode == COMMAND_OPTIONS) {
         wattrset(w, COLOR_PAIR(THEME_PANEL));
-        text_label(w, 1, 2, width - 4, info->description);
+        text_label(w, 1, 2, width - 4, _(info->description));
         wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED) | A_BOLD);
-        text_label(w, 2, 2, width - 4, "Opções");
+        text_label(w, 2, 2, width - 4, _("Opções"));
         top = 3;
     }
     int column = 16;
@@ -552,17 +553,17 @@ static WINDOW *command_draw(mention_popup *p, int cy, int cx, int left, int avai
         if (p->mode == COMMAND_LIST) {
             snprintf(line, sizeof(line), "/%s", p->listed[row]->name);
             label = line;
-            detail = p->listed[row]->description;
+            detail = _(p->listed[row]->description);
         } else if (info->choices && p->count) {
             label = info->choices[p->choices[row]];
-            detail = info->choice_descriptions[p->choices[row]];
+            detail = _(info->choice_descriptions[p->choices[row]]);
         } else if (info->choices) {
             label = "";
-            detail = "Nenhuma opção corresponde ao texto.";
+            detail = _("Nenhuma opção corresponde ao texto.");
             selected = false;
         } else {
             label = info->option ? info->option : "";
-            detail = info->option ? info->option_description : "Sem opções; Enter executa.";
+            detail = info->option ? _(info->option_description) : _("Sem opções; Enter executa.");
             selected = false;
         }
         wattrset(w, COLOR_PAIR(selected ? THEME_FOCUSED : THEME_PANEL) |
@@ -577,25 +578,26 @@ static WINDOW *command_draw(mention_popup *p, int cy, int cx, int left, int avai
     }
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     text_label(w, height - 2, 2, width - 4,
-               *p->error                   ? p->error
-               : p->mode == COMMAND_LIST   ? "↑↓ escolhe · Tab completa · Esc fecha"
-               : info->choices && p->count ? "↑↓ escolhe · Tab completa · Enter envia · Esc fecha"
-                                           : "Enter envia · Esc fecha");
+               *p->error                 ? p->error
+               : p->mode == COMMAND_LIST ? _("↑↓ escolhe · Tab completa · Esc fecha")
+               : info->choices && p->count
+                   ? _("↑↓ escolhe · Tab completa · Enter envia · Esc fecha")
+                   : _("Enter envia · Esc fecha"));
     wnoutrefresh(w);
     if (p->hint) {
         delwin(p->hint);
         p->hint = NULL;
     }
     /* Like a placeholder, beside the caret, until the option is typed. */
-    static const char hint[] = "+1 opção";
-    int hint_width = text_label(NULL, 0, 0, 32, hint);
+    static const char hint[] = N_("+1 opção");
+    int hint_width = text_label(NULL, 0, 0, 32, _(hint));
     if (p->mode == COMMAND_OPTIONS && p->hint_shown && cx + 1 + hint_width <= left + available &&
         (p->hint = newwin(1, hint_width, cy, cx + 1))) {
         leaveok(p->hint, true);
         wbkgd(p->hint, COLOR_PAIR(THEME_INPUT));
         werase(p->hint);
         wattrset(p->hint, COLOR_PAIR(THEME_MUTED));
-        text_label(p->hint, 0, 0, hint_width, hint);
+        text_label(p->hint, 0, 0, hint_width, _(hint));
         wnoutrefresh(p->hint);
     }
     setsyx(cy, cx);
@@ -635,7 +637,7 @@ WINDOW *mention_popup_draw(mention_popup *p, int cy, int cx, int left, int avail
     wattrset(p->window, COLOR_PAIR(THEME_BORDER));
     box(p->window, 0, 0);
     wattrset(p->window, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
-    text_label(p->window, 0, 2, width - 4, " Menções ");
+    text_label(p->window, 0, 2, width - 4, _(" Menções "));
     if (p->selected < p->first)
         p->first = p->selected;
     if (p->selected >= p->first + (size_t)rows)
@@ -659,8 +661,8 @@ WINDOW *mention_popup_draw(mention_popup *p, int cy, int cx, int left, int avail
         } else
             text_label(p->window, row + 1, 1, width - 2,
                        !strncmp(history_users_notice(p->h), "Carregando", 10)
-                           ? "Carregando…"
-                           : "Nenhum usuário encontrado.");
+                           ? _("Carregando…")
+                           : _("Nenhum usuário encontrado."));
     }
     wattrset(p->window, COLOR_PAIR(THEME_PANEL_MUTED));
     text_label(p->window, height - 2, 1, width - 2,

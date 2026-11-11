@@ -2,6 +2,7 @@
  * interface keeps the same shape, but no call can be joined and no audio
  * device is opened. The stub owns a single inert controller; the callers
  * treat it as an opaque handle. */
+#include "model/text/translation.h"
 #include "net/voice/client.h"
 #include <jansson.h>
 #include <stdio.h>
@@ -51,7 +52,7 @@ bool voice_join(voice_client *voice, const char *channel)
 {
     (void)voice;
     (void)channel;
-    snprintf(inert.notice, sizeof(inert.notice), "Voz indisponível nesta compilação.");
+    snprintf(inert.notice, sizeof(inert.notice), _("Voz indisponível nesta compilação."));
     return false;
 }
 

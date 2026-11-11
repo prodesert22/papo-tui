@@ -4,6 +4,7 @@
 #include "ui/media/media.h"
 #include "config/app_mode.h"
 #include "config/player_volume.h"
+#include "model/text/translation.h"
 #include "net/clock.h"
 #include "net/http/download.h"
 #include "ui/components/button.h"
@@ -235,11 +236,11 @@ static void *worker(void *context)
                 player = api ? api->open(current.path) : NULL;
                 if (!player) {
                     graphics_image empty = {0};
-                    publish(
-                        v, current.token, &empty, NULL,
-                        media_service_error() ? media_service_error()
-                        : api ? "Não foi possível iniciar o player."
-                              : "Módulo de vídeo ausente ou incompatível. Reinstale o aplicativo.");
+                    publish(v, current.token, &empty, NULL,
+                            media_service_error() ? media_service_error()
+                            : api ? _("Não foi possível iniciar o player.")
+                                  : _("Módulo de vídeo ausente ou incompatível. Reinstale o "
+                                      "aplicativo."));
                     free_job(&current);
                     atomic_store(&v->player_idle, true);
                     continue;
@@ -276,8 +277,8 @@ static void *worker(void *context)
                 atomic_store(&v->player_idle, true);
                 graphics_image empty = {0};
                 publish(v, token, &empty, NULL,
-                        audio ? "Áudio inválido ou codec indisponível."
-                              : "Vídeo inválido ou codec indisponível.");
+                        audio ? _("Áudio inválido ou codec indisponível.")
+                              : _("Vídeo inválido ou codec indisponível."));
                 continue;
             }
             g_mutex_lock(&v->lock);
@@ -992,7 +993,7 @@ bool media_view_poll(media_view *v, history *h)
                                .volume = player_volume_get(),
                                .image_id = v->modal_image.id};
                 if (!submit_job(v, &request)) {
-                    v->modal_error = "Não foi possível preparar o player.";
+                    v->modal_error = _("Não foi possível preparar o player.");
                     v->modal = MODAL_ERROR;
                 }
                 changed = true;
@@ -1153,11 +1154,11 @@ bool media_view_open(media_view *v, const message_media *source)
             stop_player(v);
     }
     if (v->modal_entry >= 0 && v->selected_item.video && app_mode_get() == APP_MODE_ULTRALIGHT) {
-        v->modal_error = v->selected_item.audio ? "Áudios desativados neste modo."
-                                                : "Vídeos desativados neste modo.";
+        v->modal_error = v->selected_item.audio ? _("Áudios desativados neste modo.")
+                                                : _("Vídeos desativados neste modo.");
         v->modal = MODAL_ERROR;
     } else if (v->modal_entry < 0 || !graphics_terminal_get().supported) {
-        v->modal_error = "Este terminal não oferece um protocolo gráfico compatível.";
+        v->modal_error = _("Este terminal não oferece um protocolo gráfico compatível.");
         v->modal = MODAL_ERROR;
     } else if (v->cache[v->modal_entry].state == ENTRY_ERROR &&
                !(item.video && media_resource_path(v->cache[v->modal_entry].resource))) {
@@ -1244,7 +1245,7 @@ bool media_view_key(media_view *v, int type, uint32_t key)
             return false;
         if (!v->visible_count) {
             v->modal = MODAL_ERROR;
-            v->modal_error = "Nenhuma mídia disponível neste trecho do histórico.";
+            v->modal_error = _("Nenhuma mídia disponível neste trecho do histórico.");
         } else if (v->visible_count == 1)
             select_item(v, 0);
         else {
@@ -1487,9 +1488,11 @@ static void draw_properties(media_view *v, WINDOW *w)
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     mvwvline(w, 1, left - 1, ACS_VLINE, g->height - 2);
     wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
-    text_label(w, 1, left, g->info_width, "Propriedades");
+    text_label(w, 1, left, g->info_width, _("Propriedades"));
     message_media *item = &v->selected_item;
-    char bytes[64] = "Não informado", dimensions[64] = "Não informadas";
+    char bytes[64], dimensions[64];
+    snprintf(bytes, sizeof(bytes), "%s", _("Não informado"));
+    snprintf(dimensions, sizeof(dimensions), "%s", _("Não informadas"));
     if (item->size_known)
         snprintf(bytes, sizeof(bytes), "%" PRId64 " bytes", item->size_bytes);
     int source_w = v->modal_image.source_width ? v->modal_image.source_width : item->source_width;
@@ -1504,19 +1507,19 @@ static void draw_properties(media_view *v, WINDOW *w)
         if (isfinite(duration) && duration > 0)
             format_clock(duration, dimensions, sizeof(dimensions));
         else
-            snprintf(dimensions, sizeof(dimensions), "Não informada");
+            snprintf(dimensions, sizeof(dimensions), _("Não informada"));
     }
     struct {
         const char *name, *value;
-    } properties[] = {{"Nome", item->original_file_name},
+    } properties[] = {{_("Nome"), item->original_file_name},
                       {"MIME", item->mime},
-                      {"Tamanho", bytes},
-                      {"Moderação", item->moderation},
-                      {item->audio ? "Duração" : "Dimensões originais", dimensions},
+                      {_("Tamanho"), bytes},
+                      {_("Moderação"), item->moderation},
+                      {item->audio ? _("Duração") : _("Dimensões originais"), dimensions},
                       {"ID", item->id},
-                      {"Mensagem", item->message},
-                      {"Miniatura", item->thumbnail_id},
-                      {"Criado em", item->created_at}};
+                      {_("Mensagem"), item->message},
+                      {_("Miniatura"), item->thumbnail_id},
+                      {_("Criado em"), item->created_at}};
     /* First measure to clamp scrolling, then paint only the visible rows.
      * The shared Unicode renderer sanitizes every remote property value. */
     for (int pass = 0; pass < 2; ++pass) {
@@ -1524,9 +1527,9 @@ static void draw_properties(media_view *v, WINDOW *w)
         for (size_t i = 0; i < sizeof(properties) / sizeof(*properties); ++i) {
             text_buffer buffer;
             text_layout layout;
-            const char *value = *properties[i].value ? properties[i].value : "Não informado";
+            const char *value = *properties[i].value ? properties[i].value : _("Não informado");
             if (!text_decode(&buffer, value))
-                text_decode(&buffer, "Não informado");
+                text_decode(&buffer, _("Não informado"));
             text_measure(&buffer, width, &layout);
             int title = row - v->info_scroll;
             if (pass && title >= 0 && title < available) {
@@ -1548,7 +1551,7 @@ static void draw_properties(media_view *v, WINDOW *w)
             v->info_scroll = maximum;
     }
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
-    text_label(w, g->height - 2, left, g->info_width, "PgUp/PgDn: rolar");
+    text_label(w, g->height - 2, left, g->info_width, _("PgUp/PgDn: rolar"));
 }
 
 static double control_fraction(double value)
@@ -1661,17 +1664,17 @@ static void draw_video_controls(media_view *v, WINDOW *w)
         format_clock(info.duration > 0 ? info.duration : NAN, duration, sizeof(duration));
         format_speed(info.speed, speed, sizeof(speed));
         snprintf(status, sizeof(status), "%s · %s / %s · %s%s%s%s",
-                 info.ended && !info.looping ? "Fim"
-                 : info.paused               ? "Pausado"
-                                             : "Reproduzindo",
-                 position, duration, speed, info.looping ? " · Repetir" : "",
-                 info.muted ? " · Mudo" : "",
-                 info.audio_missing ? " · Sem dispositivo de áudio" : "");
+                 info.ended && !info.looping ? _("Fim")
+                 : info.paused               ? _("Pausado")
+                                             : _("Reproduzindo"),
+                 position, duration, speed, info.looping ? _(" · Repetir") : "",
+                 info.muted ? _(" · Mudo") : "",
+                 info.audio_missing ? _(" · Sem dispositivo de áudio") : "");
     } else
         snprintf(status, sizeof(status), "%s · %.0f / %.0f s%s%s",
-                 info.paused ? "Pausado" : "Reproduzindo", info.position, info.duration,
-                 info.muted ? " · Mudo" : "",
-                 info.audio_missing ? " · Sem dispositivo de áudio" : "");
+                 info.paused ? _("Pausado") : _("Reproduzindo"), info.position, info.duration,
+                 info.muted ? _(" · Mudo") : "",
+                 info.audio_missing ? _(" · Sem dispositivo de áudio") : "");
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     text_label(w, v->layout.height - 2, 3, v->layout.area_width, status);
 }
@@ -1681,24 +1684,24 @@ static void draw_video_controls(media_view *v, WINDOW *w)
  * legend to the shortest, and the longest one that fits is used whole. */
 static const char *modal_keys(const media_view *v, int width)
 {
-    static const char *const audio[] = {"Espaço pausar · ←→ 5s · x parar · Esc segundo plano",
-                                        "Espaço pausar · x parar · Esc segundo plano",
-                                        "Espaço pausar · x parar", "Espaço pausar"};
+    static const char *const audio[] = {N_("Espaço pausar · ←→ 5s · x parar · Esc segundo plano"),
+                                        N_("Espaço pausar · x parar · Esc segundo plano"),
+                                        N_("Espaço pausar · x parar"), N_("Espaço pausar")};
     static const char *const audio_many[] = {
-        "PgUp/PgDn outra mídia · Espaço pausar · x parar · Esc segundo plano",
-        "PgUp/PgDn outra mídia · Espaço pausar · x parar", "PgUp/PgDn outra mídia · Espaço pausar",
-        "PgUp/PgDn outra mídia"};
-    static const char *const video[] = {"Espaço pausar · ←→ 5s · ,/. 1s · ↑↓ volume · m mudo",
-                                        "Espaço pausar · ←→ 5s · ↑↓ volume",
-                                        "Espaço pausar · ←→ 5s", "Espaço pausar"};
+        N_("PgUp/PgDn outra mídia · Espaço pausar · x parar · Esc segundo plano"),
+        N_("PgUp/PgDn outra mídia · Espaço pausar · x parar"),
+        N_("PgUp/PgDn outra mídia · Espaço pausar"), N_("PgUp/PgDn outra mídia")};
+    static const char *const video[] = {N_("Espaço pausar · ←→ 5s · ,/. 1s · ↑↓ volume · m mudo"),
+                                        N_("Espaço pausar · ←→ 5s · ↑↓ volume"),
+                                        N_("Espaço pausar · ←→ 5s"), N_("Espaço pausar")};
     static const char *const video_many[] = {
-        "PgUp/PgDn outra mídia · Espaço pausar · ←→ 5s · ↑↓ volume",
-        "PgUp/PgDn outra mídia · Espaço pausar · ←→ 5s", "PgUp/PgDn outra mídia · Espaço pausar",
-        "PgUp/PgDn outra mídia"};
-    static const char *const image[] = {"i informações · Esc voltar", "Esc voltar"};
+        N_("PgUp/PgDn outra mídia · Espaço pausar · ←→ 5s · ↑↓ volume"),
+        N_("PgUp/PgDn outra mídia · Espaço pausar · ←→ 5s"),
+        N_("PgUp/PgDn outra mídia · Espaço pausar"), N_("PgUp/PgDn outra mídia")};
+    static const char *const image[] = {N_("i informações · Esc voltar"), N_("Esc voltar")};
     static const char *const image_many[] = {
-        "←→ ou PgUp/PgDn outra mídia · i informações · Esc voltar",
-        "←→ ou PgUp/PgDn outra mídia · Esc voltar", "←→ outra mídia", "←→ mídia"};
+        N_("←→ ou PgUp/PgDn outra mídia · i informações · Esc voltar"),
+        N_("←→ ou PgUp/PgDn outra mídia · Esc voltar"), N_("←→ outra mídia"), N_("←→ mídia")};
     bool many = v->member_count > 1;
     const char *const *list = v->selected_item.audio   ? (many ? audio_many : audio)
                               : v->selected_item.video ? (many ? video_many : video)
@@ -1708,8 +1711,8 @@ static const char *modal_keys(const media_view *v, int width)
                        ? (many ? G_N_ELEMENTS(video_many) : G_N_ELEMENTS(video))
                        : (many ? G_N_ELEMENTS(image_many) : G_N_ELEMENTS(image));
     for (size_t k = 0; k < count; ++k)
-        if (text_label(NULL, 0, 0, 1000, list[k]) + 2 <= width)
-            return list[k];
+        if (text_label(NULL, 0, 0, 1000, _(list[k])) + 2 <= width)
+            return _(list[k]);
     return "";
 }
 static void draw_centered(WINDOW *w, int row, int x, int width, const char *text)
@@ -1732,9 +1735,9 @@ static void draw_audio(media_view *v, WINDOW *w)
         char details[128], clock[96], now[32], total[32];
         if (item->size_known)
             snprintf(details, sizeof(details), "%s · %" PRId64 " bytes",
-                     *item->mime ? item->mime : "áudio", item->size_bytes);
+                     *item->mime ? item->mime : _("áudio"), item->size_bytes);
         else
-            snprintf(details, sizeof(details), "%s", *item->mime ? item->mime : "áudio");
+            snprintf(details, sizeof(details), "%s", *item->mime ? item->mime : _("áudio"));
         format_clock(position, now, sizeof(now));
         format_clock(duration > 0 ? duration : NAN, total, sizeof(total));
         snprintf(clock, sizeof(clock), "%s / %s", now, total);
@@ -1766,10 +1769,10 @@ static void draw_audio(media_view *v, WINDOW *w)
     button_draw(w, options.row, options.faster_x, 3, "[+]", BUTTON_NORMAL, BUTTON_PANEL);
     if (options.loop_width)
         button_draw(w, options.row, options.loop_x, options.loop_width,
-                    looping ? "[Repetir: Sim]" : "[Repetir: Não]",
+                    looping ? _("[Repetir: Sim]") : _("[Repetir: Não]"),
                     looping ? BUTTON_SELECTED : BUTTON_NORMAL, BUTTON_PANEL);
     if (options.stop_width)
-        button_draw(w, options.row, options.stop_x, options.stop_width, "[Parar]", BUTTON_NORMAL,
+        button_draw(w, options.row, options.stop_x, options.stop_width, _("[Parar]"), BUTTON_NORMAL,
                     BUTTON_PANEL);
 }
 
@@ -1789,8 +1792,8 @@ void media_view_draw(media_view *v)
                 wbkgd(notice, COLOR_PAIR(THEME_PANEL_MUTED));
                 text_label(notice, 0, 0, p->width,
                            e->state == ENTRY_ERROR ? e->error
-                           : e->item.video         ? "Carregando prévia do vídeo…"
-                                                   : "Carregando imagem…");
+                           : e->item.video         ? _("Carregando prévia do vídeo…")
+                                                   : _("Carregando imagem…"));
                 wnoutrefresh(notice);
                 delwin(notice);
             }
@@ -1815,11 +1818,11 @@ void media_view_draw(media_view *v)
     box(w, 0, 0);
     wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
     text_label(w, 0, 2, width - 4,
-               v->modal != MODAL_LIST && v->selected_item.audio ? " Áudio · Esc: segundo plano "
-                                                                : " Mídia · Esc: voltar ");
+               v->modal != MODAL_LIST && v->selected_item.audio ? _(" Áudio · Esc: segundo plano ")
+                                                                : _(" Mídia · Esc: voltar "));
     wattrset(w, COLOR_PAIR(THEME_PANEL));
     if (v->modal == MODAL_LIST) {
-        text_label(w, 1, 2, width - 4, "Escolha uma mídia · ↑↓ selecionar · Enter abrir");
+        text_label(w, 1, 2, width - 4, _("Escolha uma mídia · ↑↓ selecionar · Enter abrir"));
         int first = v->selected >= height - 5 ? v->selected - (height - 6) : 0;
         for (int i = first; i < v->visible_count && i - first < height - 4; ++i) {
             wattrset(w, COLOR_PAIR(i == v->selected ? THEME_PANEL_ACCENT : THEME_PANEL));
@@ -1842,7 +1845,7 @@ void media_view_draw(media_view *v)
             text_label(w, 1, label_x - v->layout.x, label_end - label_x, title);
         }
         button_draw(w, v->layout.button_y - v->layout.y, v->layout.button_x - v->layout.x,
-                    v->layout.button_width, "[Info]",
+                    v->layout.button_width, _("[Info]"),
                     v->info_focused ? BUTTON_FOCUSED
                     : v->info_open  ? BUTTON_SELECTED
                                     : BUTTON_NORMAL,
@@ -1851,22 +1854,23 @@ void media_view_draw(media_view *v)
             char loading[96];
             size_t available = 0, total = 0;
             if (modal_download(v, &available, &total) && total)
-                snprintf(loading, sizeof(loading), "Carregando mídia… %u%%",
+                snprintf(loading, sizeof(loading), _("Carregando mídia… %u%%"),
                          download_percent(available, total));
             else
-                snprintf(loading, sizeof(loading), "Carregando mídia…");
+                snprintf(loading, sizeof(loading), _("Carregando mídia…"));
             text_label(w, 3, 3, image_width, loading);
         } else if (v->modal == MODAL_ERROR) {
             text_label(w, 3, 3, image_width,
-                       v->modal_error ? v->modal_error : "Mídia indisponível.");
-            text_label(w, height - 3, 3, image_width, "Enter: tentar novamente");
+                       v->modal_error ? v->modal_error : _("Mídia indisponível."));
+            text_label(w, height - 3, 3, image_width, _("Enter: tentar novamente"));
         } else if (v->selected_item.audio) {
             draw_audio(v, w);
             draw_video_controls(v, w);
         } else if (v->selected_item.video)
             draw_video_controls(v, w);
         else
-            text_label(w, height - 3, 3, image_width, v->modal_animated ? "GIF animado" : "Imagem");
+            text_label(w, height - 3, 3, image_width,
+                       v->modal_animated ? _("GIF animado") : _("Imagem"));
         if (v->modal != MODAL_ERROR) {
             char keys[160];
             snprintf(keys, sizeof(keys), " %s ", modal_keys(v, image_width));
@@ -1964,7 +1968,7 @@ void media_view_draw_audio(media_view *v, WINDOW *w, int row)
     format_clock(position, now, sizeof(now));
     format_clock(duration > 0 ? duration : NAN, total, sizeof(total));
     snprintf(clock, sizeof(clock), " %s/%s", now, total);
-    const char *play = paused ? "[▶]" : "[⏸]", *stop = "[✕]", *hint = " · Ctrl+X ";
+    const char *play = paused ? "[▶]" : "[⏸]", *stop = "[✕]", *hint = _(" · Ctrl+X ");
     const message_media *item = &v->audio.item;
     const char *name = *item->original_file_name ? item->original_file_name : item->label;
     int columns = getmaxx(w);
@@ -2101,7 +2105,7 @@ void media_view_draw_rows(media_view *v)
         } else if (item->size_known)
             format_size(item->size_bytes, right, sizeof(right));
         else
-            snprintf(right, sizeof(right), "Áudio");
+            snprintf(right, sizeof(right), _("Áudio"));
         WINDOW *w = newwin(1, width, y, x);
         if (!w)
             continue;

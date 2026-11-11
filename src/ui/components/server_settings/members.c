@@ -1,3 +1,4 @@
+#include "model/text/translation.h"
 #include "ui/components/server_settings/private.h"
 #include "ui/media/message_time.h"
 #include <time.h>
@@ -31,14 +32,14 @@ static void rows(server_settings *s, GArray *out)
         if (!admin_user_matches(user, folded))
             continue;
         if (shown++ == MEMBER_ROWS) {
-            admin_row_add(out, ROW_MORE, "Refine a busca para ver mais", "", 0, true);
+            admin_row_add(out, ROW_MORE, _("Refine a busca para ver mais"), "", 0, true);
             break;
         }
         char detail[160];
         const char *id = admin_str(user, "id");
         snprintf(detail, sizeof(detail), "@%s%s%s", admin_str(user, "username"),
-                 !strcmp(id, owner) ? " · dono" : "",
-                 json_is_true(json_object_get(user, "banned")) ? " · banido" : "");
+                 !strcmp(id, owner) ? _(" · dono") : "",
+                 json_is_true(json_object_get(user, "banned")) ? _(" · banido") : "");
         unsigned color = history_member_color(s->model, id);
         admin_row_add(out, id, admin_user_display(user), detail, color == 0x1ffffff ? 0 : color,
                       false);
@@ -57,30 +58,30 @@ static void fields(server_settings *s, GArray *out)
 {
     json_t *user = selected_user(s);
     if (!user) {
-        admin_note(out, history_user_count(s->model)       ? "Escolha um membro na lista."
-                        : history_users_complete(s->model) ? "Nenhum membro encontrado."
-                                                           : "Carregando membros…");
+        admin_note(out, history_user_count(s->model)       ? _("Escolha um membro na lista.")
+                        : history_users_complete(s->model) ? _("Nenhum membro encontrado.")
+                                                           : _("Carregando membros…"));
         return;
     }
     const char *id = admin_str(user, "id");
     admin_field_add(out, FIELD_HEADING, 0, admin_user_display(user));
-    admin_field *f = admin_field_add(out, FIELD_INFO, 0, "Usuário");
+    admin_field *f = admin_field_add(out, FIELD_INFO, 0, _("Usuário"));
     snprintf(f->value, sizeof(f->value), "@%s", admin_str(user, "username"));
-    f = admin_field_add(out, FIELD_INFO, 0, "Situação");
+    f = admin_field_add(out, FIELD_INFO, 0, _("Situação"));
     bool banned = json_is_true(json_object_get(user, "banned"));
-    snprintf(f->value, sizeof(f->value), "%s%s", banned ? "Banido" : "Ativo",
-             !strcmp(id, server_admin_owner(s->model)) ? " · dono do servidor"
-             : !strcmp(id, server_admin_me(s->model))  ? " · você"
+    snprintf(f->value, sizeof(f->value), "%s%s", banned ? _("Banido") : _("Ativo"),
+             !strcmp(id, server_admin_owner(s->model)) ? _(" · dono do servidor")
+             : !strcmp(id, server_admin_me(s->model))  ? _(" · você")
                                                        : "");
     if (server_admin_allowed(s->model, PERMISSION_MANAGE_ROLES)) {
-        admin_field_add(out, FIELD_HEADING, 0, "Cargos");
+        admin_field_add(out, FIELD_HEADING, 0, _("Cargos"));
         const json_t *roles[4096];
         size_t count = admin_role_list(s, roles, G_N_ELEMENTS(roles));
         if (!count)
-            admin_note(out, server_admin_roles(s->model) ? "O servidor não tem cargos."
-                                                         : "Carregando cargos…");
+            admin_note(out, server_admin_roles(s->model) ? _("O servidor não tem cargos.")
+                                                         : _("Carregando cargos…"));
         else
-            admin_note(out, "Cada caixa é salva no servidor ao ser marcada.");
+            admin_note(out, _("Cada caixa é salva no servidor ao ser marcada."));
         for (size_t i = 0; i < count; ++i) {
             f = admin_field_add(out, FIELD_CHECK, ROLE, admin_str(roles[i], "name"));
             snprintf(f->key, sizeof(f->key), "%s", admin_str(roles[i], "id"));
@@ -90,20 +91,20 @@ static void fields(server_settings *s, GArray *out)
     if (!server_admin_allowed(s->model, PERMISSION_MANAGE_SERVER) ||
         !strcmp(id, server_admin_me(s->model)))
         return;
-    admin_field_add(out, FIELD_HEADING, 0, "Moderação");
+    admin_field_add(out, FIELD_HEADING, 0, _("Moderação"));
     if (server_admin_member_bannable(s->model, id)) {
-        f = admin_field_add(out, FIELD_BUTTON, BAN, banned ? "Desbanir" : "Banir");
+        f = admin_field_add(out, FIELD_BUTTON, BAN, banned ? _("Desbanir") : _("Banir"));
         f->destructive = !banned;
         snprintf(f->key, sizeof(f->key), "%s", id);
         if (!banned)
-            admin_note(out, "Banir encerra as sessões do membro e impede novos acessos.");
+            admin_note(out, _("Banir encerra as sessões do membro e impede novos acessos."));
     }
-    f = admin_field_add(out, FIELD_BUTTON, RESET, "Gerar link de redefinição de senha");
+    f = admin_field_add(out, FIELD_BUTTON, RESET, _("Gerar link de redefinição de senha"));
     f->destructive = true;
     snprintf(f->key, sizeof(f->key), "%s", id);
     const char *url = server_admin_reset_url(s->model, id);
     if (*url) {
-        f = admin_field_add(out, FIELD_INFO, 0, "Link válido até");
+        f = admin_field_add(out, FIELD_INFO, 0, _("Link válido até"));
         if (!message_time_format(server_admin_reset_expires(s->model, id), time(NULL), f->value,
                                  sizeof(f->value)))
             snprintf(f->value, sizeof(f->value), "%s", server_admin_reset_expires(s->model, id));
@@ -129,7 +130,7 @@ static void choose(server_settings *s, const admin_row *row)
 const admin_tab_ops tab_members = {
     .list = true,
     .search = true,
-    .empty = "Nenhum membro encontrado.",
+    .empty = N_("Nenhum membro encontrado."),
     .enter = enter,
     .rows = rows,
     .fields = fields,

@@ -1,3 +1,4 @@
+#include "model/text/translation.h"
 #include "ui/screens/conversation/private.h"
 
 typedef struct {
@@ -36,7 +37,7 @@ static void import_worker(GTask *task, gpointer source, gpointer data, GCancella
     for (guint i = 0; job->paths && i < job->paths->len && !g_cancellable_is_cancelled(cancel);
          ++i) {
         if (job->files->len >= ATTACHMENT_LIMIT) {
-            g_strlcpy(job->notice, "Limite local: 25 anexos por mensagem.", sizeof(job->notice));
+            g_strlcpy(job->notice, _("Limite local: 25 anexos por mensagem."), sizeof(job->notice));
             break;
         }
         GError *failure = NULL;
@@ -47,9 +48,9 @@ static void import_worker(GTask *task, gpointer source, gpointer data, GCancella
         else {
             g_strlcpy(job->notice,
                       g_error_matches(failure, G_IO_ERROR, G_IO_ERROR_NO_SPACE)
-                          ? "Sem espaço para anexos (limite local: 512 MiB)."
-                          : "Um arquivo não pôde ser preparado. Verifique o acesso e selecione "
-                            "novamente.",
+                          ? _("Sem espaço para anexos (limite local: 512 MiB).")
+                          : _("Um arquivo não pôde ser preparado. Verifique o acesso e selecione "
+                              "novamente."),
                       sizeof(job->notice));
         }
         g_clear_error(&failure);
@@ -85,7 +86,7 @@ static void start_import(view *ui, GPtrArray *paths, bool clipboard)
     ui->attachment_task = file_transfer_task_new(ui->attachment_cancel);
     g_task_set_task_data(ui->attachment_task, job, free_job);
     g_task_run_in_thread(ui->attachment_task, import_worker);
-    ui->feedback = clipboard ? "Lendo clipboard…" : "Preparando anexos…";
+    ui->feedback = clipboard ? _("Lendo clipboard…") : _("Preparando anexos…");
 }
 void conversation_attachments_close(view *ui)
 {
@@ -108,7 +109,7 @@ void conversation_attachments_open(view *ui, bool clipboard)
     if (!clipboard &&
         permissions_role(auth_permissions(ui->connections->items[ui->active_tab].auth),
                          PERMISSION_SEND_ATTACHMENT) != PERMISSION_ALLOWED) {
-        ui->feedback = "Permissão indisponível para anexar arquivos.";
+        ui->feedback = _("Permissão indisponível para anexar arquivos.");
         return;
     }
     conversation_interactions_close(ui);
@@ -158,13 +159,13 @@ bool conversation_attachments_poll(view *ui, auth_client *auth)
                 for (guint i = 0; i < job->files->len; ++i)
                     if (!outbox_add_attachment(send_editor_outbox(ui->editor), ui->editor_channel,
                                                g_ptr_array_index(job->files, i)))
-                        g_strlcpy(job->notice, "Limite local: 25 anexos por mensagem.",
+                        g_strlcpy(job->notice, _("Limite local: 25 anexos por mensagem."),
                                   sizeof(job->notice));
                 if (job->text) {
                     text_buffer *text = g_new0(text_buffer, 1);
                     if (!text_decode(text, job->text) ||
                         !text_insert_buffer(conversation_input(ui), text))
-                        g_strlcpy(job->notice, "Colagem excede o limite; rascunho preservado.",
+                        g_strlcpy(job->notice, _("Colagem excede o limite; rascunho preservado."),
                                   sizeof(job->notice));
                     else {
                         send_editor_changed(ui->editor);
@@ -177,11 +178,12 @@ bool conversation_attachments_poll(view *ui, auth_client *auth)
                     ui->feedback = ui->attachment_notice;
                 }
             } else {
-                g_strlcpy(ui->attachment_notice,
-                          g_error_matches(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED)
-                              ? error->message
-                              : "Não foi possível colar. Use 📎/Ctrl+O ou a colagem do terminal.",
-                          sizeof(ui->attachment_notice));
+                g_strlcpy(
+                    ui->attachment_notice,
+                    g_error_matches(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED)
+                        ? error->message
+                        : _("Não foi possível colar. Use 📎/Ctrl+O ou a colagem do terminal."),
+                    sizeof(ui->attachment_notice));
                 ui->feedback = ui->attachment_notice;
             }
             g_clear_error(&error);
@@ -219,7 +221,7 @@ bool conversation_attachments_key(view *ui, int type, uint32_t key)
         return true;
     if (ui->attachment_task && type == OK && key == 27) {
         conversation_attachments_close(ui);
-        ui->feedback = "Preparação cancelada; rascunho preservado.";
+        ui->feedback = _("Preparação cancelada; rascunho preservado.");
         return true;
     }
     bool enter =
@@ -311,7 +313,7 @@ void conversation_attachments_draw_row(view *ui)
     if (ui->attachment_rows == 3) {
         wattrset(ui->attachment_bar, COLOR_PAIR(THEME_BORDER));
         box(ui->attachment_bar, 0, 0);
-        text_label(ui->attachment_bar, 0, 2, getmaxx(ui->attachment_bar) - 4, " Anexos ");
+        text_label(ui->attachment_bar, 0, 2, getmaxx(ui->attachment_bar) - 4, _(" Anexos "));
     }
     int available = getmaxx(ui->attachment_bar) - 2;
     int close_width = text_label(NULL, 0, 0, 8, " 🗙]");
@@ -376,7 +378,7 @@ WINDOW *conversation_attachments_draw_dialog(view *ui)
     wattrset(w, COLOR_PAIR(THEME_BORDER));
     box(w, 0, 0);
     wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
-    text_label(w, 1, 2, width - 4, "Remover anexo?");
+    text_label(w, 1, 2, width - 4, _("Remover anexo?"));
     wattrset(w, COLOR_PAIR(THEME_PROFILE_TEXT));
     const GPtrArray *files = conversation_attachments(ui);
     for (guint i = 0; files && i < files->len; ++i) {
@@ -384,10 +386,10 @@ WINDOW *conversation_attachments_draw_dialog(view *ui)
         if (attachment_id(file) == ui->remove_id)
             text_label(w, 2, 2, width - 4, attachment_name(file));
     }
-    button_draw(w, 4, 2, 12, "Cancelar", !ui->remove_accept ? BUTTON_FOCUSED : BUTTON_NORMAL,
+    button_draw(w, 4, 2, 12, _("Cancelar"), !ui->remove_accept ? BUTTON_FOCUSED : BUTTON_NORMAL,
                 BUTTON_PANEL);
-    button_draw(w, 4, width - 14, 12, "Remover", ui->remove_accept ? BUTTON_FOCUSED : BUTTON_NORMAL,
-                BUTTON_PANEL);
+    button_draw(w, 4, width - 14, 12, _("Remover"),
+                ui->remove_accept ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     wnoutrefresh(w);
     return w;
 }

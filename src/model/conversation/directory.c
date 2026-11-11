@@ -1,5 +1,6 @@
 #include "model/conversation/discovery.h"
 #include "model/conversation/private.h"
+#include "model/text/translation.h"
 
 const char *history_author_username(const history *h, const char *id)
 {
@@ -9,7 +10,7 @@ const char *history_author_username(const history *h, const char *id)
 const char *history_author(const history *h, const char *id)
 {
     const char *name = history_mention_name((void *)h, id);
-    return name ? name : "Autor indisponível";
+    return name ? name : _("Autor indisponível");
 }
 
 unsigned history_member_color(const history *h, const char *id)
@@ -34,7 +35,7 @@ const char *history_message_author(const history *h, const json_t *message)
     return name && *name && strlen(name) <= 512 &&
                    strlen(name) == json_string_length(json_object_get(external, "name"))
                ? name
-               : "Webhook";
+               : _("Webhook");
 }
 
 void history_users_active(history *h, bool active)
@@ -95,10 +96,10 @@ json_t *history_user(const history *h, size_t i)
 const char *history_users_notice(const history *h)
 {
     if (h->users_failed)
-        return "Falha ao listar usuários. Ctrl+R: tentar novamente.";
+        return _("Falha ao listar usuários. Ctrl+R: tentar novamente.");
     if (h->users_partial)
-        return "Lista parcial: limite local atingido.";
-    return h->users_complete ? "Tab / Enter / clique: mencionar" : "Carregando usuários…";
+        return _("Lista parcial: limite local atingido.");
+    return h->users_complete ? _("Tab / Enter / clique: mencionar") : _("Carregando usuários…");
 }
 
 const char *history_mention_name(void *context, const char *id)
@@ -361,14 +362,14 @@ void history_typing_text(const history *h, char *text, size_t capacity)
     if (!h || !h->typing_count)
         return;
     if (h->typing_count > 4) {
-        snprintf(text, capacity, "Várias pessoas estão digitando…");
+        snprintf(text, capacity, _("Várias pessoas estão digitando…"));
         return;
     }
     size_t used = 0;
     for (size_t i = 0; i < h->typing_count; ++i) {
         const char *name = history_mention_name((void *)h, h->typing[i].id);
         int wrote = snprintf(text + used, capacity - used, "%s%s", i ? ", " : "",
-                             name ? name : "Usuário indisponível");
+                             name ? name : _("Usuário indisponível"));
         if (wrote < 0 || (size_t)wrote >= capacity - used)
             return;
         used += (size_t)wrote;
@@ -379,8 +380,8 @@ void history_typing_text(const history *h, char *text, size_t capacity)
             : NULL;
     snprintf(text + used, capacity - used, " %s",
              phrase && *phrase      ? phrase
-             : h->typing_count == 1 ? "está digitando…"
-                                    : "estão digitando…");
+             : h->typing_count == 1 ? _("está digitando…")
+                                    : _("estão digitando…"));
 }
 
 void history_typing_activity(history *h)

@@ -25,14 +25,21 @@ language_choice language_get(void);
  * two, English otherwise. */
 bool language_english(void);
 
+#if defined(__GNUC__) || defined(__clang__)
+/* The result keeps the printf conversions of the argument, so format checks
+ * still apply through a translation; tools/translations.py enforces it. */
+#define TRANSLATION_FORMAT(index) __attribute__((format_arg(index)))
+#else
+#define TRANSLATION_FORMAT(index)
+#endif
 /* Borrowed: the catalogue entry or msgid itself, valid for the process. */
-const char *translate(const char *context, const char *msgid);
+const char *translate(const char *context, const char *msgid) TRANSLATION_FORMAT(2);
 const char *translate_plural(const char *context, const char *singular, const char *plural,
-                             unsigned long count);
+                             unsigned long count) TRANSLATION_FORMAT(2);
 
 #define _(text) translate(NULL, (text))
 #define C_(context, text) translate((context), (text))
 #define P_(singular, plural, count) translate_plural(NULL, (singular), (plural), (count))
-#define N_(text) (text)
-#define NC_(context, text) (text)
+#define N_(text) text
+#define NC_(context, text) text
 #endif

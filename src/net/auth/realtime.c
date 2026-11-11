@@ -1,3 +1,4 @@
+#include "model/text/translation.h"
 #include "net/auth/private.h"
 
 void auth_internal_reconnect_later(auth_client *client, uint64_t now)
@@ -14,12 +15,12 @@ void auth_poll(auth_client *client)
 {
     uint64_t tick;
     if (!net_now_ms(&tick)) {
-        auth_internal_fail(client, "Não foi possível acompanhar a sessão.");
+        auth_internal_fail(client, _("Não foi possível acompanhar a sessão."));
         return;
     }
     if (client->ws_managed && *client->user_id && client->expires_at &&
         tick >= client->expires_at && !client->logout_requested) {
-        auth_internal_fail(client, "Sua sessão expirou sem renovação. Entre novamente.");
+        auth_internal_fail(client, _("Sua sessão expirou sem renovação. Entre novamente."));
         return;
     }
     if (client->ws_managed && client->validation_deadline && tick >= client->validation_deadline &&
@@ -51,7 +52,7 @@ void auth_poll(auth_client *client)
         !client->attached) {
         uint64_t now;
         if (!net_now_ms(&now)) {
-            auth_internal_fail(client, "Não foi possível acompanhar a sessão.");
+            auth_internal_fail(client, _("Não foi possível acompanhar a sessão."));
             return;
         }
         if (client->validation_wait ||
@@ -95,7 +96,7 @@ void auth_poll(auth_client *client)
                 return;
             if (permit < 0) {
                 auth_internal_fail(client,
-                                   "Não foi possível proteger a sessão salva. Tente novamente.");
+                                   _("Não foi possível proteger a sessão salva. Tente novamente."));
                 return;
             }
             client->gate_passed = true;
@@ -107,7 +108,7 @@ void auth_poll(auth_client *client)
             if (client->operation == AUTH_MESSAGE_SEND || client->operation == AUTH_API_MUTATION)
                 auth_internal_complete(client, CURLE_FAILED_INIT, 0);
             else
-                auth_internal_fail(client, "Não foi possível iniciar a conexão.");
+                auth_internal_fail(client, _("Não foi possível iniciar a conexão."));
             return;
         }
         client->queued = false;
@@ -120,7 +121,7 @@ void auth_poll(auth_client *client)
         if (client->operation == AUTH_MESSAGE_SEND || client->operation == AUTH_API_MUTATION)
             auth_internal_complete(client, CURLE_RECV_ERROR, 0);
         else
-            auth_internal_fail(client, "A conexão foi interrompida. Tente novamente.");
+            auth_internal_fail(client, _("A conexão foi interrompida. Tente novamente."));
         return;
     }
     int remaining;

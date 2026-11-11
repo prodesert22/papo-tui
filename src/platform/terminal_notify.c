@@ -1,4 +1,5 @@
 #include "platform/terminal_notify.h"
+#include "model/text/translation.h"
 #include <glib.h>
 #include <stdio.h>
 #include <stdlib.h>

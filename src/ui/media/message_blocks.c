@@ -4,6 +4,7 @@
 #include "ui/media/message_blocks.h"
 #include "config/app_mode.h"
 #include "model/conversation/history.h"
+#include "model/text/translation.h"
 #include "net/auth/session_time.h"
 #include "ui/components/theme.h"
 #include "ui/input/text.h"
@@ -472,7 +473,7 @@ void message_file_size_label(int64_t bytes, char *label, size_t capacity)
 {
     static const char *const units[] = {"bytes", "KB", "MB", "GB"};
     if (bytes < 0) {
-        snprintf(label, capacity, "tamanho desconhecido");
+        snprintf(label, capacity, _("tamanho desconhecido"));
         return;
     }
     double value = (double)bytes;
@@ -509,7 +510,7 @@ static bool file_card(message_blocks *b, const char *key, const char *name, int6
     style(b, row, false, true);
     message_file_size_label(size, size_text, sizeof(size_text));
     if (!strcmp(moderation, "sensitive") || !strcmp(moderation, "blocked"))
-        snprintf(detail, sizeof(detail), "%s · Moderação: %s", size_text, moderation);
+        snprintf(detail, sizeof(detail), _("%s · Moderação: %s"), size_text, moderation);
     else
         snprintf(detail, sizeof(detail), "%s", size_text);
     size_t detail_row = b->count;
@@ -684,7 +685,8 @@ static bool media(message_blocks *b, json_t *message, json_t *entry, const char 
                   bool graphics, bool card, unsigned color, bool clip)
 {
     if (app_mode_get() == APP_MODE_ULTRALIGHT)
-        return labeled(b, key, video ? "Vídeo: " : "Imagem: ", label, width, false, card, color);
+        return labeled(b, key, video ? _("Vídeo: ") : _("Imagem: "), label, width, false, card,
+                       color);
     int n = add_media(b, message, entry, role, label, kind, video);
     if (n < 0)
         return strlen(str(entry, "id")) != 36;
@@ -693,7 +695,7 @@ static bool media(message_blocks *b, json_t *message, json_t *entry, const char 
     size_t start = b->count;
     /* A graphical preview is the image itself; Ctrl+A is documented in the UI. */
     if ((!graphics || video) &&
-        !labeled(b, key, video ? (graphics ? "▶ " : "[▶ Vídeo] ") : "[Imagem] ", label, width,
+        !labeled(b, key, video ? (graphics ? "▶ " : _("[▶ Vídeo] ")) : _("[Imagem] "), label, width,
                  false, card, color))
         return false;
     size_t image_start = b->count;
@@ -984,7 +986,7 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
             author_width = 4;
         text_buffer name;
         if (!text_decode(&name, author))
-            text_decode(&name, "usuário");
+            text_decode(&name, _("usuário"));
         text_layout name_layout;
         text_measure(&name, author_width + 1, &name_layout);
         size_t cut = name.length;
@@ -1001,7 +1003,7 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
         if (!text_encode(&name, author_text))
             goto error;
         snprintf(label, sizeof(label), "%.*s%s%s%s%s", 1024, author_text, app ? " [APP]" : "",
-                 *timestamp ? " · " : "", timestamp, *str(m, "edited_at") ? " · editado" : "");
+                 *timestamp ? " · " : "", timestamp, *str(m, "edited_at") ? _(" · editado") : "");
         size_t header_end;
         if (!column(b, 0, "header", label, author_x, width - author_x, true, false, 0, &header_end))
             goto error;
@@ -1048,7 +1050,7 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
     width -= author_x;
     if (*str(m, "reply_to")) {
         size_t first_reply = b->count;
-        if (!labeled(b, "reply", "↰ ", reply, width, false, false, 0))
+        if (!labeled(b, _("reply"), "↰ ", reply, width, false, false, 0))
             goto error;
         style(b, first_reply, true, false);
     }
@@ -1065,16 +1067,16 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
     {
         char key[128];
         snprintf(key, sizeof(key), "attachment:%s:%zu", str(item, "id"), index);
-        const char *name =
-            *str(item, "original_file_name") ? str(item, "original_file_name") : "arquivo sem nome";
+        const char *name = *str(item, "original_file_name") ? str(item, "original_file_name")
+                                                            : _("arquivo sem nome");
         const char *mime = str(item, "mime_type");
         if (app_mode_get() == APP_MODE_ULTRALIGHT) {
             const char *kind = !strcmp(mime, "image/gif") ? "GIF"
                                : g_str_has_prefix(mime, "image/") || attachment_is_svg(mime, name)
-                                   ? "Imagem"
-                               : attachment_is_video(mime, name) ? "Vídeo"
-                               : attachment_is_audio(mime, name) ? "Áudio"
-                                                                 : "Anexo";
+                                   ? _("Imagem")
+                               : attachment_is_video(mime, name) ? _("Vídeo")
+                               : attachment_is_audio(mime, name) ? _("Áudio")
+                                                                 : _("Anexo");
             json_t *size = json_object_get(item, "size_bytes");
             size_t length = strlen(name);
             if (length > SIZE_MAX - 128)
@@ -1163,7 +1165,7 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
             while (b->count < author_start + 2)
                 if (!blank(b, true, false, false, color))
                     goto error;
-            int n = add_media(b, m, item, "author", "Avatar do autor", AUTH_MEDIA_EMBED, false);
+            int n = add_media(b, m, item, "author", _("Avatar do autor"), AUTH_MEDIA_EMBED, false);
             if (n < 0)
                 goto error;
             if (!region(b, n, author_start, author_start + 2, author_start, 2, 4, 2))
@@ -1197,7 +1199,7 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
             while (b->count < thumbnail_start + 4)
                 if (!blank(b, true, false, false, color))
                     goto error;
-            int thumb = add_media(b, m, item, "thumbnail", "Miniatura", AUTH_MEDIA_EMBED, false);
+            int thumb = add_media(b, m, item, "thumbnail", _("Miniatura"), AUTH_MEDIA_EMBED, false);
             if (thumb < 0)
                 goto error;
             if (!region(b, thumb, thumbnail_start, thumbnail_start + 4, thumbnail_start,
@@ -1243,7 +1245,7 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
         snprintf(key, sizeof(key), "%s:thumbnail", root);
         if (!right_thumbnail && !clip && json_is_object(json_object_get(item, "thumbnail"))) {
             if (!blank(b, true, false, false, color) ||
-                !media(b, m, item, key, "thumbnail", "Miniatura", AUTH_MEDIA_EMBED, false,
+                !media(b, m, item, key, "thumbnail", _("Miniatura"), AUTH_MEDIA_EMBED, false,
                        card_width, graphics, true, color, false))
                 goto error;
         }
@@ -1251,8 +1253,8 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
             if (!blank(b, true, false, false, color))
                 goto error;
             size_t unavailable_start = b->count;
-            if (!text(b, root, "Imagem adicional indisponível no backend.", card_width, false, true,
-                      color))
+            if (!text(b, root, _("Imagem adicional indisponível no backend."), card_width, false,
+                      true, color))
                 goto error;
             style(b, unavailable_start, true, false);
         }
@@ -1263,11 +1265,11 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
                           !strcmp(str(v, "mime_type"), "video/webm") ||
                           !strcmp(str(v, "mime_type"), "video/ogg");
             if (direct) {
-                if (!media(b, m, item, key, "video", "Abrir player", AUTH_MEDIA_VIDEO, true,
+                if (!media(b, m, item, key, "video", _("Abrir player"), AUTH_MEDIA_VIDEO, true,
                            card_width, graphics, true, color, clip))
                     goto error;
-            } else if (!labeled(b, key, "Vídeo externo: ", str(v, "url"), card_width, false, true,
-                                color))
+            } else if (!labeled(b, key, _("Vídeo externo: "), str(v, "url"), card_width, false,
+                                true, color))
                 goto error;
         }
         json_t *footer = json_object_get(item, "footer");

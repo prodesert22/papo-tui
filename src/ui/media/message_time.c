@@ -2,6 +2,7 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 #include "ui/media/message_time.h"
+#include "model/text/translation.h"
 #include "net/auth/session_time.h"
 #include "platform/runtime.h"
 #include <stdint.h>
@@ -21,6 +22,6 @@ bool message_time_format(const char *timestamp, time_t now, char *output, size_t
         return true;
 invalid:
     if (capacity)
-        snprintf(output, capacity, "hora indisponível");
+        snprintf(output, capacity, _("hora indisponível"));
     return false;
 }

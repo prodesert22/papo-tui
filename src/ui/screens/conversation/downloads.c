@@ -1,3 +1,4 @@
+#include "model/text/translation.h"
 #include "net/http/download.h"
 #include "ui/screens/conversation/private.h"
 #include <glib/gstdio.h>
@@ -166,7 +167,7 @@ static bool enqueue(view *ui, const char *message_id, int only, const GPtrArray 
     if (!conversation_download_available(ui, message) || !ensure(ui))
         return false;
     if (file_picker_open(ui->files) || ui->attachment_task || ui->remove_confirm) {
-        ui->feedback = "Feche o seletor de arquivos aberto antes de baixar.";
+        ui->feedback = _("Feche o seletor de arquivos aberto antes de baixar.");
         return false;
     }
     struct downloads *d = ui->downloads;
@@ -196,7 +197,7 @@ static bool enqueue(view *ui, const char *message_id, int only, const GPtrArray 
     if (was_idle && d->queue->len)
         show_head(ui);
     else
-        set_status(ui, "Download na fila: %u arquivo(s).", d->queue->len);
+        set_status(ui, _("Download na fila: %u arquivo(s)."), d->queue->len);
     return true;
 }
 bool conversation_download_start(view *ui, const char *message_id, int only)
@@ -215,11 +216,11 @@ bool conversation_download_menu(view *ui, const char *message_id)
         return enqueue(ui, message_id, -1, NULL);
     struct downloads *d = ui->downloads;
     if (d->stage != DOWNLOAD_IDLE || d->queue->len) {
-        ui->feedback = "Aguarde o download atual terminar.";
+        ui->feedback = _("Aguarde o download atual terminar.");
         return false;
     }
     if (file_picker_open(ui->files) || ui->attachment_task || ui->remove_confirm) {
-        ui->feedback = "Feche o seletor de arquivos aberto antes de baixar.";
+        ui->feedback = _("Feche o seletor de arquivos aberto antes de baixar.");
         return false;
     }
     char *labels[ATTACHMENT_LIMIT];
@@ -280,7 +281,7 @@ bool conversation_downloads_poll(view *ui)
     auth_client *auth = tab_auth(ui);
     if (!auth || ui->active_tab != d->tab || !auth_has_session(auth) ||
         auth_context_generation(auth) != d->generation) {
-        abort_all(ui, "Download cancelado: a sessão ou a aba mudou.");
+        abort_all(ui, _("Download cancelado: a sessão ou a aba mudou."));
         return true;
     }
     if (d->stage == DOWNLOAD_CHOOSING) {
@@ -292,7 +293,7 @@ bool conversation_downloads_poll(view *ui)
             enqueue(ui, d->choice_message, -1, chosen);
             g_ptr_array_unref(chosen);
         } else
-            set_status(ui, "Download cancelado.");
+            set_status(ui, _("Download cancelado."));
         return true;
     }
     if (!d->queue->len)
@@ -305,19 +306,19 @@ bool conversation_downloads_poll(view *ui)
         g_free(item->dest);
         item->dest = file_picker_take_save(ui->files);
         if (!item->dest) {
-            abort_all(ui, "Download cancelado.");
+            abort_all(ui, _("Download cancelado."));
             return true;
         }
         if (!d->transfer)
             d->transfer = media_download_create(auth);
         if (!d->transfer || !media_download_file_request(d->transfer, item->id)) {
-            set_status(ui, "Não foi possível iniciar o download de %s.", item->name);
+            set_status(ui, _("Não foi possível iniciar o download de %s."), item->name);
             next_file(ui);
             return true;
         }
         d->stage = DOWNLOAD_TRANSFER;
         d->percent = -1;
-        set_status(ui, "Baixando %s…", item->name);
+        set_status(ui, _("Baixando %s…"), item->name);
         return true;
     }
     if (d->stage == DOWNLOAD_TRANSFER) {
@@ -326,16 +327,17 @@ bool conversation_downloads_poll(view *ui)
         if (state == MEDIA_READY) {
             char *temporary = media_download_take_file(d->transfer);
             if (!temporary) {
-                set_status(ui, "Não foi possível salvar %s.", item->name);
+                set_status(ui, _("Não foi possível salvar %s."), item->name);
                 next_file(ui);
             } else {
                 begin_move(ui, item, temporary);
-                set_status(ui, "Salvando %s…", item->name);
+                set_status(ui, _("Salvando %s…"), item->name);
             }
             return true;
         }
         if (state == MEDIA_FAILED || state == MEDIA_IDLE) {
-            set_status(ui, "Falha ao baixar %s: %s", item->name, media_download_error(d->transfer));
+            set_status(ui, _("Falha ao baixar %s: %s"), item->name,
+                       media_download_error(d->transfer));
             next_file(ui);
             return true;
         }
@@ -346,7 +348,7 @@ bool conversation_downloads_poll(view *ui)
         if (percent != d->percent) {
             d->percent = percent;
             if (percent >= 0)
-                set_status(ui, "Baixando %s… %d%%", item->name, percent);
+                set_status(ui, _("Baixando %s… %d%%"), item->name, percent);
             changed = true;
         }
         return changed;
@@ -354,9 +356,9 @@ bool conversation_downloads_poll(view *ui)
     if (d->stage == DOWNLOAD_MOVING && g_atomic_int_get(&d->move->done)) {
         bool ok = d->move->ok;
         if (ok)
-            set_status(ui, "Arquivo salvo em %s", item->dest);
+            set_status(ui, _("Arquivo salvo em %s"), item->dest);
         else
-            set_status(ui, "Não foi possível gravar em %s. Verifique o acesso e o espaço.",
+            set_status(ui, _("Não foi possível gravar em %s. Verifique o acesso e o espaço."),
                        item->dest);
         next_file(ui);
         return true;

@@ -1,3 +1,4 @@
+#include "model/text/translation.h"
 #include "ui/screens/conversation/private.h"
 
 static bool graphical_badge(void)
@@ -86,30 +87,30 @@ int conversation_tab_width(view *ui, size_t index, int available)
 /* "Foco: area": in the footer on wide screens, above the panels on narrow ones. */
 static const char *focus_name(view *ui, int focus)
 {
-    const char *areas[] = {"Servidores",
-                           "Canais",
-                           "Histórico",
-                           "Mensagem",
-                           "Emojis",
-                           "Canais/DMs",
-                           "Configurações",
-                           "Anexos",
-                           "Anexar",
-                           "Membros",
-                           "Membros",
-                           "Buscar",
-                           "Fixadas",
-                           "Áudio",
-                           "Microfone",
-                           "Sair da chamada",
-                           "Pressionar para falar"};
+    const char *areas[] = {_("Servidores"),
+                           _("Canais"),
+                           _("Histórico"),
+                           _("Mensagem"),
+                           _("Emojis"),
+                           _("Canais/DMs"),
+                           _("Configurações"),
+                           _("Anexos"),
+                           _("Anexar"),
+                           _("Membros"),
+                           _("Membros"),
+                           _("Buscar"),
+                           _("Fixadas"),
+                           _("Áudio"),
+                           _("Microfone"),
+                           _("Sair da chamada"),
+                           _("Pressionar para falar")};
     if (focus < 0 || focus >= (int)(sizeof(areas) / sizeof(areas[0])))
         return "";
-    return focus == CHANNEL_LIST ? ui->list_dms ? "DMs" : "Canais" : areas[focus];
+    return focus == CHANNEL_LIST ? ui->list_dms ? _("DMs") : _("Canais") : areas[focus];
 }
 static void conversation_focus_label(view *ui, char *label, size_t size)
 {
-    snprintf(label, size, "Foco: %s", ui->navigating ? "Seleção" : focus_name(ui, ui->focus));
+    snprintf(label, size, _("Foco: %s"), ui->navigating ? _("Seleção") : focus_name(ui, ui->focus));
 }
 /* Footer hint items are a key and its action, apart like "↑/↓ move  ●  Tab". */
 #define HINT_SEPARATOR "  ●  "
@@ -204,8 +205,8 @@ void conversation_draw_tabs(view *ui)
     }
     bool adding = focused && ui->tab_cursor == ui->connections->count;
     button_draw(ui->tabs, 0, ui->add_hit.x, ui->add_hit.width,
-                adding ? ">+ Adicionar<" : "[+ Adicionar]", adding ? BUTTON_FOCUSED : BUTTON_NORMAL,
-                BUTTON_PANEL);
+                adding ? _(">+ Adicionar<") : _("[+ Adicionar]"),
+                adding ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     ui->channels_hit = ui->conversation_hit = (click_range){0};
     if (TABS_ROWS < 2)
         return;
@@ -214,13 +215,19 @@ void conversation_draw_tabs(view *ui)
     char summary[160];
     conversation_focus_label(ui, summary, sizeof(summary));
     wattrset(ui->tabs, COLOR_PAIR(focused ? THEME_FOCUS_MUTED : THEME_PANEL_MUTED));
-    text_label(ui->tabs, 1, 0, width - 20, summary);
-    ui->channels_hit = (click_range){width - 19, 8};
-    ui->conversation_hit = (click_range){width - 10, 10};
+    text_label(ui->tabs, 1, 0,
+               width - 2 - text_label(NULL, 0, 0, 24, _("[Canais]")) -
+                   text_label(NULL, 0, 0, 24, _("[Conversa]")),
+               summary);
+    const char *channels = _("[Canais]"), *conversation = _("[Conversa]");
+    int channels_width = text_label(NULL, 0, 0, 24, channels),
+        conversation_width = text_label(NULL, 0, 0, 24, conversation);
+    ui->conversation_hit = (click_range){width - conversation_width, conversation_width};
+    ui->channels_hit = (click_range){ui->conversation_hit.x - 1 - channels_width, channels_width};
     wattrset(ui->tabs, COLOR_PAIR(ui->show_channels ? THEME_PANEL_ACCENT : THEME_PANEL_MUTED));
-    text_label(ui->tabs, 1, ui->channels_hit.x, 8, "[Canais]");
+    text_label(ui->tabs, 1, ui->channels_hit.x, channels_width, channels);
     wattrset(ui->tabs, COLOR_PAIR(ui->show_channels ? THEME_PANEL_MUTED : THEME_PANEL_ACCENT));
-    text_label(ui->tabs, 1, ui->conversation_hit.x, 10, "[Conversa]");
+    text_label(ui->tabs, 1, ui->conversation_hit.x, conversation_width, conversation);
 }
 
 static void draw_centered(WINDOW *window, int y, const char *text)
@@ -237,16 +244,16 @@ static void draw_offline(view *ui, auth_client *auth)
     size_t index = instances_index(ui->connections, auth);
     const char *name = index == SIZE_MAX ? "" : ui->connections->items[index].name;
     char line[256];
-    snprintf(line, sizeof(line), "%s não está respondendo.", *name ? name : "O servidor");
+    snprintf(line, sizeof(line), _("%s não está respondendo."), *name ? name : _("O servidor"));
     int y = ui->history_top + MAX(0, ui->visible / 2 - 2);
     attr_t muted = COLOR_PAIR(ui->focus == HISTORY_PANEL ? THEME_HISTORY_MUTED : THEME_PANEL_MUTED);
     wattrset(ui->body, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
-    draw_centered(ui->body, y, "Servidor offline");
+    draw_centered(ui->body, y, _("Servidor offline"));
     wattrset(ui->body, muted);
     if (ui->visible > 2)
         draw_centered(ui->body, y + 2, line);
     if (ui->visible > 3)
-        draw_centered(ui->body, y + 3, "Reconectando automaticamente…");
+        draw_centered(ui->body, y + 3, _("Reconectando automaticamente…"));
 }
 bool conversation_collect_notices(view *ui, auth_client *auth)
 {
@@ -254,48 +261,48 @@ bool conversation_collect_notices(view *ui, auth_client *auth)
     const char *connection = NULL;
     if (!auth_has_session(auth))
         connection = auth_ws_epoch(auth) && auth_ws_state(auth) != WS_OPEN
-                         ? "Desconectado · Revalidando sessão…"
-                         : "Revalidando sessão…";
+                         ? _("Desconectado · Revalidando sessão…")
+                         : _("Revalidando sessão…");
     else if (auth_server_unreachable(auth))
-        connection = "Servidor offline · Reconectando…";
+        connection = _("Servidor offline · Reconectando…");
     else if (auth_ws_reconnecting(auth))
         connection =
-            auth_ws_epoch(auth) ? "Desconectado · Reconectando…" : "Conectando tempo real…";
+            auth_ws_epoch(auth) ? _("Desconectado · Reconectando…") : _("Conectando tempo real…");
     else
         switch (auth_ws_state(auth)) {
         case WS_OPEN:
-            connection = "Tempo real conectado";
+            connection = _("Tempo real conectado");
             break;
         case WS_QUEUED:
         case WS_CONNECTING:
-            connection = "Conectando tempo real…";
+            connection = _("Conectando tempo real…");
             break;
         case WS_ERROR:
-            connection = "Desconectado · Ctrl+R: reconectar";
+            connection = _("Desconectado · Ctrl+R: reconectar");
             break;
         case WS_CLOSING:
         case WS_CLOSED:
-            connection = "Desconectado";
+            connection = _("Desconectado");
             break;
         default:
             break;
         }
     const char *compact_connection =
         auth_ws_state(auth) == WS_OPEN && auth_has_session(auth) && !auth_ws_reconnecting(auth)
-            ? "Conectado"
+            ? _("Conectado")
             : connection;
     bool changed =
         status_bar_set_compact(&ui->status, STATUS_CONNECTION, connection, compact_connection);
     ui->status.connection_critical = auth_ws_epoch(auth) && auth_ws_state(auth) != WS_OPEN;
     if (ui->status.connection_critical)
-        changed |= status_bar_set_compact(
-            &ui->status, STATUS_CONNECTION, connection,
-            auth_server_unreachable(auth) ? "Servidor offline" : "Desconectado");
+        changed |= status_bar_set_compact(&ui->status, STATUS_CONNECTION, connection,
+                                          auth_server_unreachable(auth) ? _("Servidor offline")
+                                                                        : _("Desconectado"));
     inbox *box = history_inbox(ui->model);
     char notifications[192] = "";
     if (inbox_unread(box))
         snprintf(notifications, sizeof(notifications), "%zu %s%s", inbox_unread(box),
-                 inbox_unread(box) == 1 ? "notificação" : "notificações",
+                 inbox_unread(box) == 1 ? _("notificação") : _("notificações"),
                  inbox_has_more(box) ? "+" : "");
     changed |= status_bar_set(&ui->status, STATUS_NOTIFICATIONS,
                               *inbox_notice(box) && !auth_server_unreachable(auth)
@@ -306,20 +313,20 @@ bool conversation_collect_notices(view *ui, auth_client *auth)
                                               ui->connections->config->desktop_notifications
                                           ? desktop_notice(ui->connections->desktop)
                                           : "",
-                                      "Desktop indisponível");
+                                      _("Desktop indisponível"));
     char voice_status[1024];
     snprintf(voice_status, sizeof(voice_status), "%s", voice_notice(history_voice(ui->model)));
     if (call)
-        snprintf(voice_status, sizeof(voice_status), "%s · %s · microfone %s · áudio %s%s",
-                 voice_get_state(call) == VOICE_CONNECTED ? "Chamada conectada"
-                                                          : "Conectando/saindo da chamada",
+        snprintf(voice_status, sizeof(voice_status), _("%s · %s · microfone %s · áudio %s%s"),
+                 voice_get_state(call) == VOICE_CONNECTED ? _("Chamada conectada")
+                                                          : _("Conectando/saindo da chamada"),
                  voice_instance(call), voice_microphone_enabled() ? "ativado" : "desativado",
                  voice_output_enabled() ? "ativado" : "desativado",
-                 voice_testing()       ? " · teste local"
-                 : voice_ptt_pressed() ? " · transmitindo"
+                 voice_testing()       ? _(" · teste local")
+                 : voice_ptt_pressed() ? _(" · transmitindo")
                                        : "");
     changed |= status_bar_set_compact(&ui->status, STATUS_VOICE, voice_status,
-                                      call ? "Chamada de voz" : "Falha de voz");
+                                      call ? _("Chamada de voz") : _("Falha de voz"));
     changed |= status_bar_set_compact(
         &ui->status, STATUS_SEND, *ui->editor_channel ? send_editor_feedback(ui->editor) : NULL,
         *ui->editor_channel ? send_editor_compact_notice(ui->editor) : NULL);
@@ -364,7 +371,7 @@ bool conversation_collect_notices(view *ui, auth_client *auth)
         uint64_t now = 0;
         net_now_ms(&now);
         char loading[128];
-        snprintf(loading, sizeof(loading), "%s Carregando próximas mensagens",
+        snprintf(loading, sizeof(loading), _("%s Carregando próximas mensagens"),
                  frames[(now / 100) % 10]);
         changed |= status_bar_set(&ui->status, STATUS_HISTORY, loading);
         ui->paging_notice = true;
@@ -383,7 +390,7 @@ bool conversation_collect_notices(view *ui, auth_client *auth)
     }
     char unread[128] = "";
     if (ui->unseen)
-        snprintf(unread, sizeof(unread), "%llu novas mensagens", (unsigned long long)ui->unseen);
+        snprintf(unread, sizeof(unread), _("%llu novas mensagens"), (unsigned long long)ui->unseen);
     changed |= status_bar_set(&ui->status, STATUS_UNREAD, unread);
     return changed;
 }
@@ -419,7 +426,7 @@ void conversation_draw_confirmation(view *ui)
         ui->confirm = newwin(9, width, (LINES - 9) / 2, (COLS - width) / 2);
         if (!ui->confirm) {
             ui->duplicate_modal = false;
-            ui->feedback = "Não foi possível abrir a confirmação.";
+            ui->feedback = _("Não foi possível abrir a confirmação.");
             return;
         }
     }
@@ -431,20 +438,20 @@ void conversation_draw_confirmation(view *ui)
     box(modal, 0, 0);
     wattrset(modal, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
     bool removing = ui->remove_server && ui->remove_index < ui->connections->count;
-    text_label(modal, 1, 2, width - 4, removing ? "Remover servidor?" : "Reenviar mensagem?");
+    text_label(modal, 1, 2, width - 4, removing ? _("Remover servidor?") : _("Reenviar mensagem?"));
     wattrset(modal, COLOR_PAIR(THEME_PANEL));
     if (removing) {
         text_label(modal, 3, 2, width - 4, ui->connections->items[ui->remove_index].name);
-        text_label(modal, 4, 2, width - 4, "Tira a aba e apaga a sessão salva");
-        text_label(modal, 5, 2, width - 4, "neste computador.");
+        text_label(modal, 4, 2, width - 4, _("Tira a aba e apaga a sessão salva"));
+        text_label(modal, 5, 2, width - 4, _("neste computador."));
     } else {
-        text_label(modal, 3, 2, width - 4, "O servidor pode já ter criado");
-        text_label(modal, 4, 2, width - 4, "esta mensagem. Reenviar pode");
-        text_label(modal, 5, 2, width - 4, "criar uma duplicata.");
+        text_label(modal, 3, 2, width - 4, _("O servidor pode já ter criado"));
+        text_label(modal, 4, 2, width - 4, _("esta mensagem. Reenviar pode"));
+        text_label(modal, 5, 2, width - 4, _("criar uma duplicata."));
     }
-    button_draw(modal, 7, 2, 12, "[Cancelar]", ui->reenviar ? BUTTON_NORMAL : BUTTON_FOCUSED,
+    button_draw(modal, 7, 2, 12, _("[Cancelar]"), ui->reenviar ? BUTTON_NORMAL : BUTTON_FOCUSED,
                 BUTTON_PANEL);
-    button_draw(modal, 7, width - 14, 12, removing ? "[Remover]" : "[Reenviar]",
+    button_draw(modal, 7, width - 14, 12, removing ? _("[Remover]") : _("[Reenviar]"),
                 ui->reenviar ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     wnoutrefresh(modal);
 }
@@ -483,7 +490,7 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
     json_t *channel = history_channel(ui->model, history_selected(ui->model));
     char conversation[2200];
     snprintf(conversation, sizeof(conversation), "%s%s",
-             json_is_true(json_object_get(channel, "_dm")) ? "DM com " : "",
+             json_is_true(json_object_get(channel, "_dm")) ? _("DM com ") : "",
              conversation_str(channel, "name"));
     size_t mentions = 0;
     for (size_t i = 0; i < ui->connections->count; ++i) {
@@ -533,7 +540,7 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         icons_begin_navigation(ui->icons);
     if (!ui->frame) {
         erase();
-        text_label(stdscr, 0, 0, COLS, "Amplie o terminal para 44×14.");
+        text_label(stdscr, 0, 0, COLS, _("Amplie o terminal para 44×14."));
         refresh();
         graphics_frame_prepare();
         graphics_frame_flush();
@@ -560,15 +567,21 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         wbkgd(ui->list, COLOR_PAIR(focused ? THEME_FOCUS_AREA : THEME_PANEL));
         werase(ui->list);
         wattrset(ui->list, COLOR_PAIR(focused ? THEME_FOCUS_MUTED : THEME_PANEL_MUTED) | A_BOLD);
-        conversation_list_button(ui, 0, 1, 9, "[Canais]");
-        conversation_list_button(ui, 1, 11, 8, "[DMs]");
+        /* Each button leaves room for its notification dot after the label. */
+        const char *channels = _("[Canais]"), *dms = _("[DMs]");
+        int channels_width = text_label(NULL, 0, 0, 24, channels) + 1;
+        int dms_width = text_label(NULL, 0, 0, 24, dms) + 3;
+        ui->list_dms_x = 1 + channels_width + 1;
+        ui->list_buttons_end = ui->list_dms_x + dms_width;
+        conversation_list_button(ui, 0, 1, channels_width, channels);
+        conversation_list_button(ui, 1, ui->list_dms_x, dms_width, dms);
         int rows = conversation_list_rows(ui);
         if (rows < 1)
             rows = 1;
         size_t count = conversation_list_count(ui);
         if (!count)
             text_label(ui->list, 1, 1, ui->side - 2,
-                       ui->list_dms ? "Nenhuma DM disponível." : "Nenhum canal disponível.");
+                       ui->list_dms ? _("Nenhuma DM disponível.") : _("Nenhum canal disponível."));
         conversation_list_normalize(ui);
         int selected_row = (int)conversation_list_visual_row(ui, ui->highlighted);
         if (selected_row < ui->first_channel)
@@ -744,8 +757,8 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
             snprintf(label, sizeof(label), "%s · %s", channel_name, instance_name);
             wattrset(ui->list, COLOR_PAIR(THEME_PANEL_ACCENT));
             text_label(ui->list, y - 2, 1, w - 2, label);
-            const char *state = voice_get_state(call) == VOICE_CONNECTED ? "[Sair da chamada]"
-                                                                         : "[Cancelar conexão]";
+            const char *state = voice_get_state(call) == VOICE_CONNECTED ? _("[Sair da chamada]")
+                                                                         : _("[Cancelar conexão]");
             ui->voice_leave_hit = (click_range){1, MIN(20, w - 2)};
             button_draw(ui->list, y - 1, 1, ui->voice_leave_hit.width, state,
                         ui->focus == VOICE_LEAVE_BUTTON ? BUTTON_FOCUSED : BUTTON_NORMAL,
@@ -754,7 +767,7 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                 /* Replace the instance label with the mouse hold target on narrow rails. */
                 ui->voice_ptt_hit = (click_range){1, w - 2};
                 button_draw(ui->list, y - 2, 1, w - 2,
-                            voice_ptt_pressed() ? "[Transmitindo]" : "[Segure para falar]",
+                            voice_ptt_pressed() ? _("[Transmitindo]") : _("[Segure para falar]"),
                             ui->focus == VOICE_PTT_BUTTON ? BUTTON_FOCUSED : BUTTON_NORMAL,
                             BUTTON_PANEL);
             }
@@ -771,12 +784,12 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                     mvwhline(ui->body, row, 0, ' ', getmaxx(ui->body));
             }
             char title[2200];
-            snprintf(title, sizeof(title), "%s%s · Histórico",
-                     c ? json_is_true(json_object_get(c, "_dm"))         ? "DM com "
+            snprintf(title, sizeof(title), _("%s%s · Histórico"),
+                     c ? json_is_true(json_object_get(c, "_dm"))         ? _("DM com ")
                          : !strcmp(conversation_str(c, "type"), "voice") ? "♪ "
                                                                          : "# "
                        : "",
-                     c ? conversation_str(c, "name") : "Conversa");
+                     c ? conversation_str(c, "name") : _("Conversa"));
             wattrset(ui->body, COLOR_PAIR(ui->focus == HISTORY_PANEL ? THEME_HISTORY_MUTED
                                                                      : THEME_PANEL_MUTED) |
                                    A_BOLD);
@@ -813,7 +826,7 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                 draw_offline(ui, auth);
             else if (!auth_has_session(auth))
                 text_label(ui->body, ui->history_top, 2, getmaxx(ui->body) - 4,
-                           "Revalidando sessão…");
+                           _("Revalidando sessão…"));
             else if (conversation_entry_count(ui)) {
                 int ignored;
                 ui->first = conversation_position(ui);
@@ -839,13 +852,13 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         if (*ui->edit_message) {
             wattrset(ui->body, COLOR_PAIR(THEME_MUTED));
             text_label(ui->body, ui->editor_border, 2, getmaxx(ui->body) - 8,
-                       "Editando mensagem · Enter editar · Esc cancelar");
+                       _("Editando mensagem · Enter editar · Esc cancelar"));
             text_label(ui->body, ui->editor_border, getmaxx(ui->body) - 5, 3, "[x]");
         } else if (*conversation_reply_target(ui)) {
             char reply[TEXT_UTF8_BYTES], label[TEXT_UTF8_BYTES + 64];
             conversation_reply_label(ui, conversation_reply_target(ui), getmaxx(ui->body) - 25,
                                      reply, sizeof(reply));
-            snprintf(label, sizeof(label), "↰ Respondendo a %s", reply);
+            snprintf(label, sizeof(label), _("↰ Respondendo a %s"), reply);
             wattrset(ui->body, COLOR_PAIR(THEME_PANEL_MUTED));
             text_label(ui->body, ui->editor_border, 2, getmaxx(ui->body) - 8, label);
             text_label(ui->body, ui->editor_border, getmaxx(ui->body) - 5, 3, "[x]");
@@ -867,11 +880,11 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
             if (!editor->length) {
                 char placeholder[2200];
                 if (*ui->edit_message)
-                    snprintf(placeholder, sizeof(placeholder), "Novo texto da mensagem");
+                    snprintf(placeholder, sizeof(placeholder), _("Novo texto da mensagem"));
                 else
                     snprintf(placeholder, sizeof(placeholder),
-                             json_is_true(json_object_get(c, "_dm")) ? "Conversar com %s"
-                                                                     : "Conversar em #%s",
+                             json_is_true(json_object_get(c, "_dm")) ? _("Conversar com %s")
+                                                                     : _("Conversar em #%s"),
                              conversation_str(c, "name"));
                 wattrset(ui->body, COLOR_PAIR(refused ? THEME_ERROR
                                               : editing ? THEME_FOCUS_MUTED
@@ -905,7 +918,8 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         } else {
             wattrset(ui->body, COLOR_PAIR(THEME_PANEL_MUTED));
             text_label(ui->body, conversation_input_top(ui), 3, conversation_input_width(ui),
-                       auth_has_session(auth) ? "Abra um canal de texto" : "Confirme a sessão");
+                       auth_has_session(auth) ? _("Abra um canal de texto")
+                                              : _("Confirme a sessão"));
         }
         wattrset(ui->body, COLOR_PAIR(editing ? THEME_FOCUS_BORDER : THEME_BORDER));
         mvwhline(ui->body, conversation_input_top(ui) + ui->editor_rows + ui->editor_padding, 0,

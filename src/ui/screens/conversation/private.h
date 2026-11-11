@@ -172,6 +172,8 @@ typedef struct {
     uint64_t restore_deadline;
     char saved_conversation[37]; /* Last conversation recorded in view_state. */
     int list_button;
+    /* Columns of the [DMs] button and just past it, from the translated labels. */
+    int list_dms_x, list_buttons_end;
     size_t highlights[2];
     uint64_t inbox_revision;
     uint64_t view_requested_until;

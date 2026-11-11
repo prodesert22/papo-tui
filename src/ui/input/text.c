@@ -2,6 +2,7 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 #include "ui/input/text.h"
+#include "model/text/translation.h"
 #ifdef _WIN32
 #include "platform/runtime.h"
 #endif
@@ -1293,8 +1294,8 @@ static void project(const text_buffer *source, text_buffer *display, size_t *sta
         {
             const char *name =
                 source->resolver ? source->resolver(source->resolver_context, range.id) : NULL;
-            if (!text_decode(&label, name && *name ? name : "usuário indisponível"))
-                text_decode(&label, "usuário indisponível");
+            if (!text_decode(&label, name && *name ? name : _("usuário indisponível")))
+                text_decode(&label, _("usuário indisponível"));
             if (label.length > 47) {
                 char breaks[TEXT_LIMIT];
                 set_graphemebreaks_utf32(label.data, label.length, NULL, breaks);

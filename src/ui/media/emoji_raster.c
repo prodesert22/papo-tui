@@ -1,3 +1,4 @@
+#include "model/text/translation.h"
 #include "ui/media/emoji_image.h"
 #include "ui/media/image_decode.h"
 #include <pango/pangocairo.h>

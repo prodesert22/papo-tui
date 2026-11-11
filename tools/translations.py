@@ -96,6 +96,12 @@ def tokens(text):
         value = match.group()
         if kind in ("string", "name", "other"):
             yield kind, value, line
+        elif kind == "directive":
+            # Macros may carry interface text, such as #define HINT _("...").
+            body = re.match(r"\s*#\s*define\s+\w+(?:\([^)]*\))?(.*)", value, re.DOTALL)
+            if body:
+                for inner, inner_value, inner_line in tokens(body.group(1)):
+                    yield inner, inner_value, line + inner_line - 1
         line += value.count("\n")
 
 

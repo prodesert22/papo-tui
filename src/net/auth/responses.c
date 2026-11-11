@@ -1,3 +1,4 @@
+#include "model/text/translation.h"
 #include "net/auth/private.h"
 
 static void complete_send(auth_client *client, CURLcode result, long status, bool transmitted)
@@ -32,7 +33,7 @@ static void complete_send(auth_client *client, CURLcode result, long status, boo
         auth_internal_recover_session(client); /* Never resubmit the POST. */
     else if (result == CURLE_OK && status == 403 && auth_internal_problem_is(client, "banned"))
         auth_internal_fail(
-            client, "O servidor bloqueou esta conta. Entre novamente após resolver o acesso.");
+            client, _("O servidor bloqueou esta conta. Entre novamente após resolver o acesso."));
     if (!client->attached && !client->queued) {
         free(client->response);
         client->response = NULL;
@@ -49,12 +50,12 @@ static void complete_api(auth_client *client, CURLcode result, long status, bool
             auth_internal_recover_session(client);
         } else
             auth_internal_fail(
-                client, "Não foi possível confirmar a sessão após renovar. Entre novamente.");
+                client, _("Não foi possível confirmar a sessão após renovar. Entre novamente."));
         return;
     }
     if (result == CURLE_OK && status == 403 && auth_internal_problem_is(client, "banned")) {
         auth_internal_fail(
-            client, "O servidor bloqueou esta conta. Entre novamente após resolver o acesso.");
+            client, _("O servidor bloqueou esta conta. Entre novamente após resolver o acesso."));
         return;
     }
     if (result == CURLE_OK && status == 403)
@@ -73,7 +74,7 @@ static void complete_api(auth_client *client, CURLcode result, long status, bool
                                    client->user_id) != 0)))) {
         json_decref(body);
         auth_internal_fail(client,
-                           "A identidade da sessão não pôde ser confirmada. Entre novamente.");
+                           _("A identidade da sessão não pôde ser confirmada. Entre novamente."));
         return;
     }
     client->api_uncertain =
@@ -108,9 +109,10 @@ static void complete_api(auth_client *client, CURLcode result, long status, bool
     client->response_ready = true;
     client->state = AUTH_READY;
     snprintf(client->message, sizeof(client->message), "%s",
-             status == 200   ? "Consulta concluída."
-             : status == 429 ? "Limite de requisições atingido. Aguarde antes de tentar novamente."
-                             : "Não foi possível concluir a consulta autenticada.");
+             status == 200 ? _("Consulta concluída.")
+             : status == 429
+                 ? _("Limite de requisições atingido. Aguarde antes de tentar novamente.")
+                 : _("Não foi possível concluir a consulta autenticada."));
     if (mutation && result == CURLE_OK && status == 401)
         auth_internal_recover_session(client);
 }
@@ -125,7 +127,7 @@ static void complete_server(auth_client *client, json_t *body, auth_state previo
          (!json_is_string(name_value) || json_string_length(name_value) != strlen(name)))) {
         auth_internal_fail(
             client,
-            "Backend incompatível: não foi possível identificar a configuração da instância.");
+            _("Backend incompatível: não foi possível identificar a configuração da instância."));
     } else {
         permissions_update(client->permissions, PERMISSIONS_SERVER, body);
         auth_internal_copy_server_name(client, name);
@@ -136,20 +138,21 @@ static void complete_server(auth_client *client, json_t *body, auth_state previo
             client->state = AUTH_IDENTIFIED;
             snprintf(client->message, sizeof(client->message), "%s",
                      client->server_public
-                         ? "Instância pública identificada."
-                         : "Instância privada identificada; login exige senha do servidor.");
+                         ? _("Instância pública identificada.")
+                         : _("Instância privada identificada; login exige senha do servidor."));
         } else if (client->restoring)
             auth_internal_request(client, AUTH_WHOAMI, "/auth/whoami", NULL, false);
         else if (json_is_true(public_value))
             auth_internal_user_login(client);
         else if (!*client->server_password) {
-            auth_internal_fail(client, "Esta instância é privada. Preencha a senha do servidor.");
+            auth_internal_fail(client,
+                               _("Esta instância é privada. Preencha a senha do servidor."));
             client->server_password_error = true;
             client->input_error = AUTH_INPUT_SERVER_PASSWORD;
         } else {
             json_t *payload = json_pack("{s:s}", "server_password", client->server_password);
             if (!payload)
-                auth_internal_fail(client, "Não foi possível preparar a autorização.");
+                auth_internal_fail(client, _("Não foi possível preparar a autorização."));
             else {
                 auth_internal_request(client, AUTH_SERVER_PASSWORD, "/auth/login_server", payload,
                                       true);
@@ -163,7 +166,7 @@ static void complete_server(auth_client *client, json_t *body, auth_state previo
 static void complete_login(auth_client *client, json_t *body)
 {
     if (json_is_true(json_object_get(body, "connection_violation")))
-        auth_internal_fail(client, "A sessão foi revogada pelo servidor. Entre novamente.");
+        auth_internal_fail(client, _("A sessão foi revogada pelo servidor. Entre novamente."));
     else {
         const char *expected_id =
             auth_internal_json_text(json_object_get(body, "user"), "id", sizeof(client->user_id));
@@ -179,13 +182,13 @@ static void complete_register(auth_client *client, json_t *body)
         !auth_internal_json_text(body, "username", sizeof(client->user)))
         auth_internal_fail(
             client,
-            "Cadastro não confirmado pelo servidor. Tente entrar antes de enviar novamente.");
+            _("Cadastro não confirmado pelo servidor. Tente entrar antes de enviar novamente."));
     else {
         auth_internal_clear_cookies(client); /* Registration never authenticates a user. */
         auth_internal_clear_identity(client);
         client->state = AUTH_REGISTERED;
         snprintf(client->message, sizeof(client->message),
-                 "Conta criada. Faça login com sua nova conta.");
+                 _("Conta criada. Faça login com sua nova conta."));
     }
 }
 
@@ -197,7 +200,7 @@ static void complete_refresh(auth_client *client, json_t *body)
     if (!id || !expires || !session_time_schedule(expires, &client->refresh_at) ||
         !session_time_expiration(expires, &client->expires_at))
         auth_internal_fail(client,
-                           "Não foi possível confirmar a renovação da sessão. Entre novamente.");
+                           _("Não foi possível confirmar a renovação da sessão. Entre novamente."));
     else
         auth_internal_request(client, AUTH_WHOAMI, "/auth/whoami", NULL, false);
 }
@@ -209,7 +212,7 @@ static void complete_whoami(auth_client *client, json_t *body)
     if (!username || !id || (*client->user_id && strcmp(id, client->user_id) != 0) ||
         json_is_true(json_object_get(body, "connection_violation"))) {
         client->session_rejected = true;
-        auth_internal_fail(client, "Não foi possível confirmar a sessão. Entre novamente.");
+        auth_internal_fail(client, _("Não foi possível confirmar a sessão. Entre novamente."));
     } else {
         permissions_identity(client->permissions, body, client->permission_serial);
         if (!client->authenticated)
@@ -230,7 +233,7 @@ static void complete_whoami(auth_client *client, json_t *body)
         }
         uint64_t now;
         if (!net_now_ms(&now))
-            auth_internal_fail(client, "Não foi possível acompanhar a sessão.");
+            auth_internal_fail(client, _("Não foi possível acompanhar a sessão."));
         else {
             /* Start early enough for the existing 15s REST timeout. A
              * rate-limited or busy queue must not keep WS trusted forever. */
@@ -251,7 +254,7 @@ static void complete_whoami(auth_client *client, json_t *body)
             client->recovering = client->after_refresh = false;
             client->state = AUTH_READY;
             snprintf(client->message, sizeof(client->message),
-                     "Login realizado. Você está conectado.");
+                     _("Login realizado. Você está conectado."));
             if (client->api_path)
                 auth_internal_request(client, AUTH_API_GET, client->api_path, client->api_body,
                                       client->api_body != NULL);
@@ -265,24 +268,24 @@ static void complete_whoami(auth_client *client, json_t *body)
 const char *auth_internal_connection_message(auth_client *client, CURLcode result)
 {
     if (client->overflow)
-        return "O servidor enviou uma resposta grande demais.";
+        return _("O servidor enviou uma resposta grande demais.");
     if (result == CURLE_COULDNT_RESOLVE_HOST)
-        return "Nome do servidor não encontrado (DNS). Confira o host.";
+        return _("Nome do servidor não encontrado (DNS). Confira o host.");
     if (result == CURLE_COULDNT_RESOLVE_PROXY)
-        return "Não foi possível resolver o proxy (DNS). Confira sua configuração.";
+        return _("Não foi possível resolver o proxy (DNS). Confira sua configuração.");
     if (result == CURLE_COULDNT_CONNECT) {
         long system_error = 0;
         curl_easy_getinfo(client->easy, CURLINFO_OS_ERRNO, &system_error);
         return system_error == ECONNREFUSED
-                   ? "Conexão recusada. Confira o host e a porta."
-                   : "Serviço indisponível ou rede inacessível. Confira host e porta.";
+                   ? _("Conexão recusada. Confira o host e a porta.")
+                   : _("Serviço indisponível ou rede inacessível. Confira host e porta.");
     }
     if (result == CURLE_OPERATION_TIMEDOUT)
-        return "O servidor demorou para responder. Tente novamente.";
+        return _("O servidor demorou para responder. Tente novamente.");
     if (result == CURLE_PEER_FAILED_VERIFICATION || result == CURLE_SSL_CONNECT_ERROR ||
         result == CURLE_SSL_CACERT_BADFILE || result == CURLE_SSL_CERTPROBLEM)
-        return "Falha ao verificar a conexão segura com o servidor.";
-    return "Não foi possível conectar. Confira a URL e tente novamente.";
+        return _("Falha ao verificar a conexão segura com o servidor.");
+    return _("Não foi possível conectar. Confira a URL e tente novamente.");
 }
 
 void auth_internal_complete(auth_client *client, CURLcode result, long status)
@@ -327,7 +330,7 @@ void auth_internal_complete(auth_client *client, CURLcode result, long status)
          (result == CURLE_OK && (status == 429 || status >= 500)))) {
         uint64_t now;
         if (!net_now_ms(&now)) {
-            auth_internal_fail(client, "Não foi possível acompanhar a sessão.");
+            auth_internal_fail(client, _("Não foi possível acompanhar a sessão."));
             return;
         }
         if (status == 429)
@@ -337,13 +340,13 @@ void auth_internal_complete(auth_client *client, CURLcode result, long status)
         client->validation_wait = true;
         client->unreachable = true;
         client->state = AUTH_READY;
-        snprintf(client->message, sizeof(client->message), "Rede indisponível. Reconectando…");
+        snprintf(client->message, sizeof(client->message), _("Rede indisponível. Reconectando…"));
         return;
     }
     if (result != CURLE_OK) {
         const char *message = auth_internal_connection_message(client, result);
         if (previous == AUTH_REGISTER)
-            message = "Cadastro não confirmado. Tente entrar antes de enviar novamente.";
+            message = _("Cadastro não confirmado. Tente entrar antes de enviar novamente.");
         if (status == 401 || status == 403)
             client->session_rejected = true;
         auth_internal_fail(client, message);
@@ -360,51 +363,53 @@ void auth_internal_complete(auth_client *client, CURLcode result, long status)
         if (status == 401 && !client->server_public &&
             (previous == AUTH_REGISTER ||
              (previous == AUTH_LOGIN && auth_internal_problem_is(client, "unauthorized")))) {
-            auth_internal_input_fail(
-                client, AUTH_INPUT_SERVER_PASSWORD,
-                "Autorização privada expirou. Informe a senha do servidor e confirme novamente.");
+            auth_internal_input_fail(client, AUTH_INPUT_SERVER_PASSWORD,
+                                     _("Autorização privada expirou. Informe a senha do servidor e "
+                                       "confirme novamente."));
             return;
         }
-        const char *message = "O servidor não aceitou a solicitação. Tente novamente.";
+        const char *message = _("O servidor não aceitou a solicitação. Tente novamente.");
         if (status == 401) {
             message = previous == AUTH_SERVER_PASSWORD
-                          ? "Senha do servidor incorreta."
-                          : "Usuário ou senha inválidos, ou sessão não autorizada.";
+                          ? _("Senha do servidor incorreta.")
+                          : _("Usuário ou senha inválidos, ou sessão não autorizada.");
             if (previous == AUTH_REFRESH || previous == AUTH_WHOAMI)
-                message = "Sua sessão expirou ou foi revogada. Entre novamente.";
+                message = _("Sua sessão expirou ou foi revogada. Entre novamente.");
         } else if (status == 429) {
             net_rate_defer(client->retry_after);
-            message = "Limite de requisições atingido. Aguarde antes de tentar novamente.";
+            message = _("Limite de requisições atingido. Aguarde antes de tentar novamente.");
         } else if (status == 403) {
             if (auth_internal_problem_is(client, "banned"))
                 message =
                     previous == AUTH_SERVER_PASSWORD
-                        ? "O servidor bloqueou este IP. Contate a administração da instância."
+                        ? _("O servidor bloqueou este IP. Contate a administração da instância.")
                     : previous == AUTH_LOGIN || previous == AUTH_REGISTER
-                        ? "O servidor bloqueou a conta ou este IP. Contate a administração."
-                        : "O servidor bloqueou esta conta. Contate a administração da instância.";
+                        ? _("O servidor bloqueou a conta ou este IP. Contate a administração.")
+                        : _("O servidor bloqueou esta conta. Contate a administração da "
+                            "instância.");
             else
                 message = previous == AUTH_SERVER_PASSWORD
-                              ? "O servidor recusou a autorização da instância (HTTP 403)."
+                              ? _("O servidor recusou a autorização da instância (HTTP 403).")
                           : previous == AUTH_LOGIN || previous == AUTH_REGISTER
-                              ? "O servidor recusou o acesso à conta (HTTP 403)."
+                              ? _("O servidor recusou o acesso à conta (HTTP 403).")
                           : previous == AUTH_WHOAMI || previous == AUTH_REFRESH
-                              ? "O servidor recusou a validação da sessão (HTTP 403)."
-                              : "O servidor recusou o acesso à instância (HTTP 403).";
+                              ? _("O servidor recusou a validação da sessão (HTTP 403).")
+                              : _("O servidor recusou o acesso à instância (HTTP 403).");
         } else if (status == 409 && previous == AUTH_REGISTER)
-            message = "Nome de usuário já está em uso. Escolha outro.";
+            message = _("Nome de usuário já está em uso. Escolha outro.");
         else if (status == 400 && previous == AUTH_REGISTER)
-            message = "Cadastro recusado. Confira usuário e a política de senha desta instância.";
+            message =
+                _("Cadastro recusado. Confira usuário e a política de senha desta instância.");
         else if (status == 404 && (previous == AUTH_SERVER || previous == AUTH_DISCOVERY_SERVER))
-            message = "Instância não inicializada ou URL incompatível com o Papo.";
+            message = _("Instância não inicializada ou URL incompatível com o Papo.");
         else if (status == 404 && previous == AUTH_HEALTH)
-            message = "Backend incompatível: /health não está disponível nessa URL.";
+            message = _("Backend incompatível: /health não está disponível nessa URL.");
         else if (status == 502 || status == 503 || status == 504)
-            message = "Serviço indisponível. Tente novamente ou corrija a URL.";
+            message = _("Serviço indisponível. Tente novamente ou corrija a URL.");
         else if (status >= 500 && (previous == AUTH_HEALTH || previous == AUTH_DISCOVERY_SERVER))
-            message = "Serviço indisponível. Tente novamente ou corrija a URL.";
+            message = _("Serviço indisponível. Tente novamente ou corrija a URL.");
         else if (status >= 300 && status < 400)
-            message = "O servidor redirecionou a conexão. Informe a URL final.";
+            message = _("O servidor redirecionou a conexão. Informe a URL final.");
         if (status == 401 || status == 403)
             client->session_rejected = true;
         auth_internal_fail(client, message);
@@ -425,7 +430,7 @@ void auth_internal_complete(auth_client *client, CURLcode result, long status)
         auth_internal_erase_free(&client->refresh_cookie);
         if (!changed) {
             auth_internal_fail(client,
-                               "O servidor não confirmou a rotação do cookie. Entre novamente.");
+                               _("O servidor não confirmou a rotação do cookie. Entre novamente."));
             return;
         }
     }
@@ -450,7 +455,7 @@ void auth_internal_complete(auth_client *client, CURLcode result, long status)
                               JSON_REJECT_DUPLICATES, &error);
     if (!json_is_object(body)) {
         json_decref(body);
-        auth_internal_fail(client, "O servidor retornou uma resposta incompatível com o Papo.");
+        auth_internal_fail(client, _("O servidor retornou uma resposta incompatível com o Papo."));
         return;
     }
     switch (previous) {

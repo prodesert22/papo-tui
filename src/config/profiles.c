@@ -3,6 +3,7 @@
 #endif
 #include "config/profiles.h"
 #include "config/profiles_storage.h"
+#include "model/text/translation.h"
 #include "net/auth/client.h"
 #include "net/rate_limit.h"
 #include "platform/runtime.h"
@@ -84,9 +85,10 @@ static bool profile_url(profile_config *config, const char *input, bool allow_ht
         return error(config, reason);
     bool result = true;
     if (strlen(normalized) >= PROFILE_URL_BYTES)
-        result = error(config, "URL muito longa; use até 2048 bytes UTF-8.");
+        result = error(config, _("URL muito longa; use até 2048 bytes UTF-8."));
     else if (!allow_http && strncmp(normalized, "http://", 7) == 0)
-        result = error(config, "HTTP local exige iniciar com --allow-local-http. Prefira HTTPS.");
+        result =
+            error(config, _("HTTP local exige iniciar com --allow-local-http. Prefira HTTPS."));
     else
         snprintf(output, PROFILE_URL_BYTES, "%s", normalized);
     curl_free(normalized);
@@ -224,12 +226,13 @@ bool profiles_reload(profile_config *config)
     size_t length = 0;
     int loaded = profiles_storage_read(config, &buffer, &length);
     if (loaded < 0)
-        return error(config,
-                     "Configuração inacessível; o arquivo foi preservado. Corrija-o e use Ctrl+R.");
+        return error(
+            config,
+            _("Configuração inacessível; o arquivo foi preservado. Corrija-o e use Ctrl+R."));
     if (!loaded) {
         config->writable = true;
         net_rate_configure(config->requests_per_second, config->request_burst);
-        snprintf(config->message, sizeof(config->message), "Adicione um servidor para começar.");
+        snprintf(config->message, sizeof(config->message), _("Adicione um servidor para começar."));
         return true;
     }
     bool valid = true;
@@ -249,17 +252,17 @@ bool profiles_reload(profile_config *config)
         audio_config_default(&config->audio);
         config->player_volume = PLAYER_VOLUME_DEFAULT;
         player_volume_set(PLAYER_VOLUME_DEFAULT);
-        return error(
-            config,
-            "Configuração inválida ou incompatível; arquivo preservado. Corrija-o e use Ctrl+R.");
+        return error(config, _("Configuração inválida ou incompatível; arquivo preservado. "
+                               "Corrija-o e use Ctrl+R."));
     }
     config->writable = config->existed = true;
     player_volume_set(config->player_volume);
     if (!net_rate_configure(config->requests_per_second, config->request_burst))
         return error(
-            config, "Perfis carregados; falha no relógio impediu aplicar os limites nesta sessão.");
+            config,
+            _("Perfis carregados; falha no relógio impediu aplicar os limites nesta sessão."));
     snprintf(config->message, sizeof(config->message),
-             "Perfis carregados; senhas e cookies não são salvos.");
+             _("Perfis carregados; senhas e cookies não são salvos."));
     return true;
 }
 
@@ -285,14 +288,14 @@ static bool save_locked(profile_config *config)
 {
     json_t *array = json_array();
     if (!array)
-        return error(config, "Memória insuficiente para salvar os perfis.");
+        return error(config, _("Memória insuficiente para salvar os perfis."));
     for (size_t i = 0; i < config->count; ++i) {
         const server_profile *profile = &config->profiles[i];
         json_t *item = json_pack("{s:s,s:s,s:s}", "id", profile->id, "name", profile->name, "url",
                                  profile->url);
         if (!item || json_array_append_new(array, item) < 0) {
             json_decref(array);
-            return error(config, "Memória insuficiente para salvar os perfis.");
+            return error(config, _("Memória insuficiente para salvar os perfis."));
         }
     }
     json_t *selection = *config->selected ? json_string(config->selected) : json_null();
@@ -319,10 +322,10 @@ static bool save_locked(profile_config *config)
     char *serialized = root ? json_dumps(root, JSON_INDENT(2) | JSON_SORT_KEYS) : NULL;
     json_decref(root);
     if (!serialized)
-        return error(config, "Memória insuficiente para salvar os perfis.");
+        return error(config, _("Memória insuficiente para salvar os perfis."));
     if (strlen(serialized) > CONFIG_BYTES) {
         free(serialized);
-        return error(config, "A configuração ultrapassou o limite de 256 KiB.");
+        return error(config, _("A configuração ultrapassou o limite de 256 KiB."));
     }
     bool result = profiles_storage_commit(config, serialized);
     free(serialized);
@@ -337,14 +340,13 @@ static bool save(profile_config *config)
 static profile_config *candidate(profile_config *config)
 {
     if (!config->writable) {
-        error(
-            config,
-            "Configuração bloqueada; corrija o arquivo e use Ctrl+R. Nenhum perfil foi alterado.");
+        error(config, _("Configuração bloqueada; corrija o arquivo e use Ctrl+R. Nenhum perfil foi "
+                        "alterado."));
         return NULL;
     }
     profile_config *copy = malloc(sizeof(*copy));
     if (!copy) {
-        error(config, "Memória insuficiente para alterar os perfis.");
+        error(config, _("Memória insuficiente para alterar os perfis."));
         return NULL;
     }
     *copy = *config;
@@ -374,18 +376,18 @@ bool profiles_update(profile_config *config, const char *id, const char *name, c
         const server_profile *found = profiles_find(copy, id);
         if (!found) {
             free(copy);
-            return error(config, "Perfil não encontrado. Use Ctrl+R.");
+            return error(config, _("Perfil não encontrado. Use Ctrl+R."));
         }
         index = (size_t)(found - copy->profiles);
     } else if (index >= PROFILE_LIMIT) {
         free(copy);
-        return error(config, "Limite de 64 perfis atingido.");
+        return error(config, _("Limite de 64 perfis atingido."));
     }
     server_profile *profile = &copy->profiles[index];
     if (!profile_name(name, profile->name)) {
         free(copy);
         config->invalid_field = 1;
-        return error(config, "Informe um nome sem controles, com até 128 bytes UTF-8.");
+        return error(config, _("Informe um nome sem controles, com até 128 bytes UTF-8."));
     }
     if (!profile_url(config, url, allow_local_http, profile->url)) {
         free(copy);
@@ -396,7 +398,7 @@ bool profiles_update(profile_config *config, const char *id, const char *name, c
         do {
             if (!profiles_random_id(profile->id)) {
                 free(copy);
-                return error(config, "Não foi possível gerar o ID do perfil.");
+                return error(config, _("Não foi possível gerar o ID do perfil."));
             }
         } while (profiles_find(copy, profile->id));
         ++copy->count;
@@ -413,7 +415,7 @@ bool profiles_remove(profile_config *config, const char *id)
 {
     const server_profile *found = profiles_find(config, id);
     if (!found)
-        return error(config, "Perfil não encontrado.");
+        return error(config, _("Perfil não encontrado."));
     size_t index = (size_t)(found - config->profiles);
     profile_config *copy = candidate(config);
     if (!copy)
@@ -430,7 +432,7 @@ bool profiles_select(profile_config *config, const char *id, bool allow_local_ht
 {
     const server_profile *found = profiles_find(config, id);
     if (!found)
-        return error(config, "Perfil não encontrado.");
+        return error(config, _("Perfil não encontrado."));
     char url[PROFILE_URL_BYTES];
     if (!profile_url(config, found->url, allow_local_http, url))
         return false;
@@ -444,7 +446,7 @@ bool profiles_select(profile_config *config, const char *id, bool allow_local_ht
 bool profiles_set_rate(profile_config *config, double requests_per_second, unsigned burst)
 {
     if (!net_rate_parameters_valid(requests_per_second, burst))
-        return error(config, "Use uma taxa positiva e finita e um burst inteiro positivo.");
+        return error(config, _("Use uma taxa positiva e finita e um burst inteiro positivo."));
     profile_config *copy = candidate(config);
     if (!copy)
         return false;
@@ -454,10 +456,11 @@ bool profiles_set_rate(profile_config *config, double requests_per_second, unsig
         return false;
     if (!net_rate_configure(requests_per_second, burst))
         snprintf(config->message, sizeof(config->message),
-                 "Limites salvos; falha no relógio impediu aplicá-los nesta sessão.");
-    else if (strncmp(config->message, "Perfis salvos;", strlen("Perfis salvos;")) == 0)
-        snprintf(config->message, sizeof(config->message), "Limites salvos: %.8g req/s · burst %u.",
-                 requests_per_second, burst);
+                 _("Limites salvos; falha no relógio impediu aplicá-los nesta sessão."));
+    /* The storage notices start with this text in every language (see po/en.po). */
+    else if (strncmp(config->message, _("Perfis salvos;"), strlen(_("Perfis salvos;"))) == 0)
+        snprintf(config->message, sizeof(config->message),
+                 _("Limites salvos: %.8g req/s · burst %u."), requests_per_second, burst);
     return true;
 }
 bool profiles_set_notifications(profile_config *config, bool desktop, bool preview)
@@ -481,7 +484,7 @@ bool profiles_set_sounds(profile_config *config, bool sounds)
 bool profiles_set_mode(profile_config *config, app_mode mode)
 {
     if (mode < APP_MODE_NORMAL || mode > APP_MODE_ULTRALIGHT)
-        return error(config, "Modo inválido.");
+        return error(config, _("Modo inválido."));
     profile_config *copy = candidate(config);
     if (!copy)
         return false;
@@ -494,7 +497,7 @@ bool profiles_set_settings(profile_config *config, app_mode mode, language_choic
 {
     if (mode < APP_MODE_NORMAL || mode > APP_MODE_ULTRALIGHT || language < LANGUAGE_SYSTEM ||
         language > LANGUAGE_ENGLISH || !audio_config_valid(audio))
-        return error(config, "Configuração de áudio inválida.");
+        return error(config, _("Configuração de áudio inválida."));
     profile_config *copy = candidate(config);
     if (!copy)
         return false;
@@ -515,7 +518,7 @@ bool profiles_set_member_grouping(profile_config *config, bool by_status)
 bool profiles_set_player_volume(profile_config *config, int level)
 {
     if (level < PLAYER_VOLUME_MIN || level > PLAYER_VOLUME_MAX)
-        return error(config, "Escolha um volume entre 0 e 100.");
+        return error(config, _("Escolha um volume entre 0 e 100."));
     profile_config *copy = candidate(config);
     if (!copy)
         return false;

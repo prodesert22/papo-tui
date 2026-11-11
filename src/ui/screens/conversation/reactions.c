@@ -1,3 +1,4 @@
+#include "model/text/translation.h"
 #include "ui/screens/conversation/private.h"
 
 /* All JSON below is borrowed from the active history for this event/frame. */
@@ -201,16 +202,16 @@ void conversation_reactors_draw(view *ui, WINDOW *w)
     build_page(ui, &page);
     int width = getmaxx(w), height = getmaxy(w), split = column_split(width), rows = height - 6;
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
-    text_label(w, 0, 2, width - 4, " Quem reagiu ");
+    text_label(w, 0, 2, width - 4, _(" Quem reagiu "));
     mvwvline(w, 1, split, ACS_VLINE, height - 3);
     mvwhline(w, 2, 1, ACS_HLINE, width - 2);
     mvwaddch(w, 2, split, ACS_PLUS);
     wattrset(w,
              COLOR_PAIR(ui->reactor_users_focus ? THEME_PANEL_MUTED : THEME_PANEL_ACCENT) | A_BOLD);
-    text_label(w, 1, 2, split - 4, "Reações");
+    text_label(w, 1, 2, split - 4, _("Reações"));
     wattrset(w,
              COLOR_PAIR(ui->reactor_users_focus ? THEME_PANEL_ACCENT : THEME_PANEL_MUTED) | A_BOLD);
-    text_label(w, 1, split + 2, width - split - 4, "Pessoas");
+    text_label(w, 1, split + 2, width - split - 4, _("Pessoas"));
     icons_scope(ui->icons, "reaction-users", 0);
     for (int row = 0; row < rows; ++row) {
         int index = ui->reactor_first[0] + row;
@@ -248,9 +249,9 @@ void conversation_reactors_draw(view *ui, WINDOW *w)
     }
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     if (!page.groups)
-        text_label(w, 3, 2, split - 4, "Sem reações");
+        text_label(w, 3, 2, split - 4, _("Sem reações"));
     if (!page.count)
-        text_label(w, 3, split + 2, width - split - 4, "Nenhuma pessoa carregada");
+        text_label(w, 3, split + 2, width - split - 4, _("Nenhuma pessoa carregada"));
     scrollbar(w, split - 1, rows, ui->reactor_first[0], page.groups);
     scrollbar(w, width - 2, rows, ui->reactor_first[1], page.count);
     position(w, 2, split - 4, ui->reactor_first[0], page.groups, rows);

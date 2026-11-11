@@ -1,3 +1,4 @@
+#include "model/text/translation.h"
 #include "net/auth/private.h"
 
 permissions *auth_permissions(auth_client *client)
@@ -15,8 +16,8 @@ void auth_permissions_refresh(auth_client *client)
 }
 const char *auth_permissions_notice(const auth_client *client)
 {
-    return client->permission_failed   ? "Permissões indisponíveis. Ctrl+R: tentar novamente."
-           : client->permission_wanted ? "Atualizando permissões…"
+    return client->permission_failed   ? _("Permissões indisponíveis. Ctrl+R: tentar novamente.")
+           : client->permission_wanted ? _("Atualizando permissões…")
                                        : "";
 }
 void auth_internal_permissions_observe(void *context, const json_t *event)
@@ -86,13 +87,13 @@ void auth_internal_permissions_response(auth_client *client, CURLcode result, lo
     if (status == 401) {
         if (client->permission_retried & bit)
             auth_internal_fail(
-                client, "Não foi possível confirmar permissões após renovar. Entre novamente.");
+                client, _("Não foi possível confirmar permissões após renovar. Entre novamente."));
         else {
             client->permission_retried |= bit;
             auth_internal_recover_session(client);
         }
     } else if (status == 403 && auth_internal_problem_is(client, "banned"))
-        auth_internal_fail(client, "O servidor bloqueou esta conta. Entre novamente.");
+        auth_internal_fail(client, _("O servidor bloqueou esta conta. Entre novamente."));
     free(client->response);
     client->response = NULL;
     client->response_length = 0;

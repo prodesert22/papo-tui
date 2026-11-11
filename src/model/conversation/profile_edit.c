@@ -1,5 +1,6 @@
 #include "model/conversation/profile_edit.h"
 #include "model/conversation/private.h"
+#include "model/text/translation.h"
 
 enum op_kind { OP_FIELDS, OP_STATUS, OP_IMAGE, OP_BANNER_REMOVE };
 #define FIELD_COUNT 4
@@ -142,18 +143,18 @@ const char *history_profile_check(const char *field, const char *text)
         if (field && !strcmp(field, field_names[i]))
             index = i;
     if (index == FIELD_COUNT || !text || !g_utf8_validate(text, -1, NULL))
-        return "Texto inválido.";
+        return _("Texto inválido.");
     if ((size_t)g_utf8_strlen(text, -1) > field_limits[index])
-        return index == 0   ? "Apelido com mais de 32 caracteres."
-               : index == 2 ? "Descrição com mais de 512 caracteres."
-               : index == 1 ? "Frase de status com mais de 64 caracteres."
-                            : "Frase de digitação com mais de 64 caracteres.";
+        return index == 0   ? _("Apelido com mais de 32 caracteres.")
+               : index == 2 ? _("Descrição com mais de 512 caracteres.")
+               : index == 1 ? _("Frase de status com mais de 64 caracteres.")
+                            : _("Frase de digitação com mais de 64 caracteres.");
     /* Only the description may span lines; no field carries other controls. */
     for (const char *at = text; *at; at = g_utf8_next_char(at)) {
         gunichar c = g_utf8_get_char(at);
         if ((c == '\n' && index != 2) || (c != '\n' && g_unichar_iscntrl(c)))
-            return index == 2 ? "A descrição contém caracteres de controle."
-                              : "Use uma única linha, sem caracteres de controle.";
+            return index == 2 ? _("A descrição contém caracteres de controle.")
+                              : _("Use uma única linha, sem caracteres de controle.");
     }
     return NULL;
 }
@@ -163,7 +164,7 @@ static struct profile_op *enqueue(history *h, enum op_kind kind)
     if (!p || !auth_has_session(h->auth) || !history_uuid(auth_user_id(h->auth)))
         return NULL;
     if (p->count == QUEUE_LIMIT) {
-        set_notice(p, "Aguarde as alterações anteriores do perfil", NULL);
+        set_notice(p, _("Aguarde as alterações anteriores do perfil"), NULL);
         return NULL;
     }
     struct profile_op *op = &p->queue[p->count++];
@@ -368,24 +369,25 @@ static void confirmed(history *h, struct history_profile_edit *p)
             if (op->fields[i])
                 json_object_set_new(p->profile, profile_names[i], json_string(op->fields[i]));
         observe(h, p->profile, NULL);
-        set_notice(p, "Perfil salvo", NULL);
+        set_notice(p, _("Perfil salvo"), NULL);
     } else if (op->kind == OP_STATUS) {
         if (p->profile)
             json_object_set_new(p->profile, "status",
                                 *op->status ? json_string(op->status) : json_null());
         observe(h, p->profile, *op->status ? op->status : "online");
         set_notice(p,
-                   !strcmp(op->status, "away")   ? "Status: ausente"
-                   : !strcmp(op->status, "busy") ? "Status: ocupado"
-                                                 : "Status: online",
+                   !strcmp(op->status, "away")   ? _("Status: ausente")
+                   : !strcmp(op->status, "busy") ? _("Status: ocupado")
+                                                 : _("Status: online"),
                    NULL);
     } else if (op->kind == OP_IMAGE && op->image == PROFILE_AVATAR) {
         chat_assets_avatar_invalidate(h->assets, auth_user_id(h->auth));
-        set_notice(p, "Avatar atualizado", NULL);
+        set_notice(p, _("Avatar atualizado"), NULL);
     } else {
         /* The new banner reference only comes with the profile. */
         p->want_load = true;
-        set_notice(p, op->kind == OP_BANNER_REMOVE ? "Banner removido" : "Banner atualizado", NULL);
+        set_notice(p, op->kind == OP_BANNER_REMOVE ? _("Banner removido") : _("Banner atualizado"),
+                   NULL);
     }
 }
 void history_internal_profile_response(history *h, json_t *body, long code, bool uncertain)
@@ -422,7 +424,7 @@ void history_internal_profile_response(history *h, json_t *body, long code, bool
                 } else
                     ++i;
             p->state = PROFILE_FAILED;
-            set_notice(p, "Não foi possível carregar o perfil", NULL);
+            set_notice(p, _("Não foi possível carregar o perfil"), NULL);
         }
         return;
     }
@@ -440,12 +442,12 @@ void history_internal_profile_response(history *h, json_t *body, long code, bool
         if (uncertain || !code) {
             p->state = PROFILE_UNCERTAIN;
             p->want_load = true;
-            set_notice(p, "Alteração não confirmada; confira o perfil antes de repetir", NULL);
+            set_notice(p, _("Alteração não confirmada; confira o perfil antes de repetir"), NULL);
         } else {
             p->state = PROFILE_FAILED;
             set_notice(p,
-                       code == 429 ? "Muitas alterações; aguarde e tente de novo"
-                                   : "O servidor recusou a alteração",
+                       code == 429 ? _("Muitas alterações; aguarde e tente de novo")
+                                   : _("O servidor recusou a alteração"),
                        code == 429 ? NULL : detail);
         }
     }

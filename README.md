@@ -10,6 +10,11 @@ and notification settings are saved on each server in **Ctrl+S → Aparência** 
 **Ctrl+S → Notificações**, and the client plays short sounds of its own for
 notifications, mentions and voice calls.
 
+The interface is available in Portuguese and English: it follows the system
+language, or the choice in **Ctrl+S → Aparência → Idioma**. **Ctrl+K** jumps to
+any channel or DM of the connected servers by name, and unsent drafts come back
+the next time you open the application.
+
 Join a voice channel with Enter or a click. The buttons **🔊 🎤** beside the
 gear toggle call audio and microphone independently; text terminals use **♪ ●**.
 Configure devices, volumes, microphone testing and push-to-talk in

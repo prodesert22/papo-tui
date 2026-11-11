@@ -1,4 +1,5 @@
 #include "model/conversation/private.h"
+#include "model/text/translation.h"
 
 bool history_internal_apply_patch(history *h, json_t *message, json_t *patch)
 {
@@ -121,7 +122,7 @@ void history_recover(history *h)
             h->recovering = h->want_channels = false;
             h->failed = CHANNELS;
             history_internal_status(
-                h, "Não foi possível preparar a recuperação. Ctrl+R: tentar novamente.");
+                h, _("Não foi possível preparar a recuperação. Ctrl+R: tentar novamente."));
             return;
         }
         json_t *latest = history_message(h, count - 1);
@@ -130,7 +131,7 @@ void history_recover(history *h)
                  history_internal_str(latest, "created_at"));
         h->ascending = true;
     }
-    history_internal_status(h, "Recuperando canais e histórico…");
+    history_internal_status(h, _("Recuperando canais e histórico…"));
 }
 
 bool history_internal_remember(history *h, const json_t *event)
@@ -144,7 +145,7 @@ bool history_internal_remember(history *h, const json_t *event)
         return false;
     if (json_array_size(h->journal) >= 256 || size > 1024U * 1024U - h->journal_bytes) {
         history_recover(h);
-        history_internal_status(h, "Eventos excederam o limite. Recuperando…");
+        history_internal_status(h, _("Eventos excederam o limite. Recuperando…"));
         return false;
     }
     json_t *copy = json_deep_copy(event);
@@ -242,8 +243,8 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
     if (!strcmp(type, "presence_sync"))
         return true;
     if (!strcmp(type, "error")) {
-        history_internal_event_status(h, "O servidor informou um erro de tempo real.",
-                                      "Erro remoto");
+        history_internal_event_status(h, _("O servidor informou um erro de tempo real."),
+                                      _("Erro remoto"));
         return true;
     }
     if (!strcmp(type, "message_pin") || !strcmp(type, "react_update"))
@@ -265,8 +266,8 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
     bool create = !strcmp(type, "channel_create"), update = !strcmp(type, "channel_update"),
          remove = !strcmp(type, "channel_delete");
     if (!(message || edit || del || embeds || moderation || create || update || remove)) {
-        history_internal_event_status(h, "Evento de tempo real não suportado ignorado.",
-                                      "Evento ignorado");
+        history_internal_event_status(h, _("Evento de tempo real não suportado ignorado."),
+                                      _("Evento ignorado"));
         return true;
     }
     /* These two name their message in message_id, the others in id. */
@@ -396,7 +397,7 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
                 h->pending = NONE;
             }
             ++h->selection;
-            history_internal_status(h, "Canal removido ou indisponível. Rascunho preservado.");
+            history_internal_status(h, _("Canal removido ou indisponível. Rascunho preservado."));
         }
         return true;
     }
@@ -440,7 +441,7 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
             goto allocation;
         if (!json_object_get(h->patches, id) && json_object_size(h->patches) >= 256) {
             history_recover(h);
-            history_internal_status(h, "Marcas excederam o limite. Recuperando…");
+            history_internal_status(h, _("Marcas excederam o limite. Recuperando…"));
             return false;
         }
         json_t *patch;
@@ -483,7 +484,7 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
         if (patch_bytes > 1024U * 1024U) {
             json_object_del(h->patches, id);
             history_recover(h);
-            history_internal_status(h, "Marcas excederam o limite. Recuperando…");
+            history_internal_status(h, _("Marcas excederam o limite. Recuperando…"));
             return false;
         }
         size_t index = history_internal_find(h->messages, id);
@@ -509,10 +510,11 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
         h->want_authors = true;
     return true;
 invalid:
-    history_internal_event_status(h, "Evento de tempo real inválido ignorado.", "Evento inválido");
+    history_internal_event_status(h, _("Evento de tempo real inválido ignorado."),
+                                  _("Evento inválido"));
     return false;
 allocation:
-    history_internal_event_status(h, "Não foi possível aplicar o evento. Ctrl+R: recuperar.",
-                                  "Falha no evento");
+    history_internal_event_status(h, _("Não foi possível aplicar o evento. Ctrl+R: recuperar."),
+                                  _("Falha no evento"));
     return false;
 }

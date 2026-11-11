@@ -1,4 +1,5 @@
 #include "model/conversation/private.h"
+#include "model/text/translation.h"
 
 bool history_uuid(const char *value)
 {
@@ -91,12 +92,12 @@ static bool save_reads(history *h)
     bool changed = failed != h->read_save_failed;
     if (failed && changed)
         history_internal_event_status(
-            h, "Não foi possível salvar a leitura local. Será mantida apenas nesta sessão.",
-            "Leitura local não salva");
+            h, _("Não foi possível salvar a leitura local. Será mantida apenas nesta sessão."),
+            _("Leitura local não salva"));
     if (!failed) {
         h->read_dirty = false;
         if (h->read_save_failed && h->event_compact &&
-            !strcmp(h->event_compact, "Leitura local não salva"))
+            !strcmp(h->event_compact, _("Leitura local não salva")))
             history_internal_event_status(h, "", "");
     }
     h->read_save_failed = failed;
@@ -284,12 +285,12 @@ static bool stash_restore(history *h, const char *channel)
     h->want_authors = count > 0;
     h->restored = entry.reading;
     h->restored_set = true;
-    history_internal_status(h, h->want_messages ? "Carregando histórico…"
+    history_internal_status(h, h->want_messages ? _("Carregando histórico…")
                                : count          ? h->newer_more
-                                                      ? "Role para baixo para carregar posteriores."
-                                                  : h->more ? "Role para cima para carregar anteriores."
-                                                            : "Início do histórico alcançado."
-                                                : "Nenhuma mensagem neste canal.");
+                                                      ? _("Role para baixo para carregar posteriores.")
+                                                  : h->more ? _("Role para cima para carregar anteriores.")
+                                                            : _("Início do histórico alcançado.")
+                                                : _("Nenhuma mensagem neste canal."));
     return true;
 }
 void history_conversation_changed(history *h, const char *channel)
@@ -338,7 +339,7 @@ history *history_create(auth_client *auth)
         return NULL;
     }
     h->epoch = auth_ws_epoch(auth);
-    history_internal_status(h, "Carregando canais…");
+    history_internal_status(h, _("Carregando canais…"));
     return h;
 }
 
@@ -710,7 +711,7 @@ void history_reload_channels(history *h)
     h->channels = NULL;
     h->selected = SIZE_MAX;
     h->want_channels = true;
-    history_internal_status(h, "Carregando canais…");
+    history_internal_status(h, _("Carregando canais…"));
 }
 
 static bool select_channel(history *h, size_t index, bool cached)
@@ -750,7 +751,7 @@ static bool select_channel(history *h, size_t index, bool cached)
     if (cached && stash_restore(h, id))
         return true;
     h->want_messages = true;
-    history_internal_status(h, "Carregando histórico…");
+    history_internal_status(h, _("Carregando histórico…"));
     return true;
 }
 
@@ -793,7 +794,7 @@ bool history_retry(history *h)
     else
         history_reload_channels(h);
     h->failed = NONE;
-    history_internal_status(h, "Carregando…");
+    history_internal_status(h, _("Carregando…"));
     return inplace;
 }
 
@@ -852,8 +853,8 @@ bool history_internal_channels_response(history *h, json_t *body)
     if (*selected_id && h->selected == SIZE_MAX)
         clear_messages(h);
     if ((!h->messages || h->selected == SIZE_MAX) && h->failed != MESSAGES) {
-        history_internal_status(h,
-                                count ? "Escolha um canal para ler." : "Nenhum canal disponível.");
+        history_internal_status(h, count ? _("Escolha um canal para ler.")
+                                         : _("Nenhum canal disponível."));
         if (count)
             history_internal_notice(h, HISTORY_NOTICE_READ, "");
     }
@@ -923,7 +924,7 @@ static bool sync_permissions(history *h)
         clear_messages(h);
         h->selected = SIZE_MAX;
         history_internal_notice(h, HISTORY_NOTICE_EVENT,
-                                "Acesso ao canal indisponível; rascunho preservado.");
+                                _("Acesso ao canal indisponível; rascunho preservado."));
     }
     return true;
 }
@@ -1108,17 +1109,19 @@ static int process_response(history *h, uint64_t maintenance_now)
                         h->want_messages = true;
                 }
                 history_internal_status(
-                    h, "Recuperação pendente. Nova tentativa automática; Ctrl+R: tentar agora.");
+                    h, _("Recuperação pendente. Nova tentativa automática; Ctrl+R: tentar agora."));
             } else {
                 h->recovering = false;
                 if (kind == AUTHORS)
-                    history_internal_status(h, "Autores indisponíveis. Ctrl+R: tentar novamente.");
+                    history_internal_status(h,
+                                            _("Autores indisponíveis. Ctrl+R: tentar novamente."));
                 else
                     history_internal_status(
-                        h, code == 403   ? "Sem permissão para ler este canal."
-                           : code == 404 ? "Canal removido ou indisponível."
-                           : code == 429 ? "Limite de requisições atingido. Aguarde e use Ctrl+R."
-                                         : "Falha ao carregar. Ctrl+R: tentar novamente.");
+                        h, code == 403   ? _("Sem permissão para ler este canal.")
+                           : code == 404 ? _("Canal removido ou indisponível.")
+                           : code == 429
+                               ? _("Limite de requisições atingido. Aguarde e use Ctrl+R.")
+                               : _("Falha ao carregar. Ctrl+R: tentar novamente."));
             }
         } else if (h->failed == kind)
             h->failed = NONE;
@@ -1370,7 +1373,7 @@ bool history_poll(history *h)
             h->failed = kind;
             h->want_channels = h->want_messages = h->want_authors = false;
             history_internal_status(
-                h, "Não foi possível preparar a consulta. Ctrl+R: tentar novamente.");
+                h, _("Não foi possível preparar a consulta. Ctrl+R: tentar novamente."));
             changed = true;
         }
     }

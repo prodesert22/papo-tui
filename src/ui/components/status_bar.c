@@ -1,4 +1,5 @@
 #include "ui/components/status_bar.h"
+#include "model/text/translation.h"
 #include "ui/components/theme.h"
 #include "ui/input/text.h"
 #include <stdio.h>
@@ -68,7 +69,7 @@ static void label(WINDOW *window, int row, int x, int width, const char *text)
         text_label(window, row, x, width, text);
     else {
         int used = text_label(window, row, x, width - 1, text);
-        text_label(window, row, x + used, 1, "…");
+        text_label(window, row, x + used, 1, _("…"));
     }
 }
 /* Room the notices take with their full texts, measured as the layout draws

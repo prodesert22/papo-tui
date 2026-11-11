@@ -4,6 +4,7 @@
 #include "ui/components/emoji_picker.h"
 #include "model/text/emoji_catalog.h"
 #include "model/text/emoji_usage.h"
+#include "model/text/translation.h"
 #include "net/clock.h"
 #include "net/gif_search.h"
 #include "ui/components/theme.h"
@@ -122,7 +123,7 @@ static void update_matches(emoji_picker *p)
 {
     if ((p->suggesting || !p->server) && !prepare_search(p)) {
         p->count = 0;
-        snprintf(p->error, sizeof(p->error), "Não foi possível carregar a busca de emojis.");
+        snprintf(p->error, sizeof(p->error), _("Não foi possível carregar a busca de emojis."));
         return;
     }
     char query[TEXT_UTF8_BYTES];
@@ -427,7 +428,7 @@ static bool choose_gif(emoji_picker *p, text_buffer *editor)
     text_buffer insertion;
     text_buffer next = *editor;
     if (!text_decode(&insertion, value) || !text_insert_buffer(&next, &insertion)) {
-        snprintf(p->error, sizeof(p->error), "O endereço do GIF excede o limite do editor.");
+        snprintf(p->error, sizeof(p->error), _("O endereço do GIF excede o limite do editor."));
         return false;
     }
     *editor = next;
@@ -468,7 +469,7 @@ static bool choose(emoji_picker *p, text_buffer *editor)
         next.selecting = true;
     }
     if (!text_decode(&insertion, value) || !text_insert_buffer(&next, &insertion)) {
-        snprintf(p->error, sizeof(p->error), "O emoji excede o limite do editor.");
+        snprintf(p->error, sizeof(p->error), _("O emoji excede o limite do editor."));
         return false;
     }
     *editor = next;
@@ -689,9 +690,10 @@ void emoji_picker_draw(emoji_picker *p)
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     box(w, 0, 0);
     wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
-    text_label(w, 0, 2, width - 4, p->reaction ? " Reagir · Esc voltar " : " Emojis · Esc voltar ");
+    text_label(w, 0, 2, width - 4,
+               p->reaction ? _(" Reagir · Esc voltar ") : _(" Emojis · Esc voltar "));
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
-    text_label(w, 1, 2, 7, "Buscar:");
+    text_label(w, 1, 2, 7, _("Buscar:"));
     wattrset(w, COLOR_PAIR(p->focus == 0 ? THEME_FOCUS_AREA : THEME_PANEL));
     mvwhline(w, 1, 9, ' ', width - 12);
     text_layout search;
@@ -701,14 +703,14 @@ void emoji_picker_draw(emoji_picker *p)
     int chosen = p->focus == 1 ? THEME_PROFILE_BUTTON_FOCUS : THEME_PANEL_ACCENT;
     wattrset(w, COLOR_PAIR(!p->server && !p->gif ? chosen : THEME_PANEL_MUTED) |
                     (p->focus == 1 ? A_BOLD : 0));
-    text_label(w, 2, 2, 10, "[Unicode]");
+    text_label(w, 2, 2, 10, _("[Unicode]"));
     wattrset(w, COLOR_PAIR(p->server ? chosen : THEME_PANEL_MUTED) |
                     (p->focus == 1 ? A_BOLD : 0));
-    text_label(w, 2, 13, 11, "[Servidor]");
+    text_label(w, 2, 13, 11, _("[Servidor]"));
     if (p->gif_auth && !p->reaction) {
         wattrset(w, COLOR_PAIR(p->gif ? chosen : THEME_PANEL_MUTED) |
                         (p->focus == 1 ? A_BOLD : 0));
-        text_label(w, 2, 25, 5, "[GIF]");
+        text_label(w, 2, 25, 5, _("[GIF]"));
     }
     for (size_t i = p->first; p->gif && i < p->count && i < p->first + page; ++i) {
         const gif_result *r = gif_search_result(p->gifs, i);
@@ -737,7 +739,7 @@ void emoji_picker_draw(emoji_picker *p)
         icons_scope(p->icons, "emoji-picker", 0);
         if (!icons_paint_size(p->icons, w, id, y, image_x, pair, id, 32)) {
             if (id & ICON_CUSTOM)
-                text_label(w, y, x, p->tile_width - 1, ":emoji:");
+                text_label(w, y, x, p->tile_width - 1, _(":emoji:"));
             else
                 text_label(w, y, image_x, 2, item_key(p, id));
         }
@@ -746,10 +748,10 @@ void emoji_picker_draw(emoji_picker *p)
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     if (!p->count)
         text_label(w, 4, 2, width - 4,
-                   !p->gif                                           ? "Nenhum emoji encontrado"
-                   : gif_search_state(p->gifs) == GIF_SEARCH_LOADING ? "Buscando GIFs…"
-                   : gif_search_state(p->gifs) == GIF_SEARCH_FAILED  ? "A busca de GIFs falhou"
-                                                                     : "Nenhum GIF encontrado");
+                   !p->gif                                           ? _("Nenhum emoji encontrado")
+                   : gif_search_state(p->gifs) == GIF_SEARCH_LOADING ? _("Buscando GIFs…")
+                   : gif_search_state(p->gifs) == GIF_SEARCH_FAILED  ? _("A busca de GIFs falhou")
+                                                                     : _("Nenhum GIF encontrado"));
     text_label(w, height - 3, 2, width - 4,
                *p->error ? p->error
                : p->gif
@@ -757,10 +759,10 @@ void emoji_picker_draw(emoji_picker *p)
                : p->selected < p->count ? item_name(p, p->matches[p->selected].id)
                                         : "");
     text_label(w, height - 2, 2, width - 4,
-               p->gif        ? "Busca no Wikimedia Commons · Enter inserir o link · Ctrl+R repetir"
-               : p->server   ? chat_assets_notice(p->assets)
-               : p->reaction ? "↑↓←→ escolher · Enter reagir · Ctrl+R atualizar"
-                             : "↑↓←→ escolher · Enter inserir · Ctrl+R atualizar");
+               p->gif      ? _("Busca no Wikimedia Commons · Enter inserir o link · Ctrl+R repetir")
+               : p->server ? chat_assets_notice(p->assets)
+               : p->reaction ? _("↑↓←→ escolher · Enter reagir · Ctrl+R atualizar")
+                             : _("↑↓←→ escolher · Enter inserir · Ctrl+R atualizar"));
     wnoutrefresh(w);
     if (p->focus == 0) {
         curs_set(1);
@@ -814,7 +816,7 @@ void emoji_picker_draw_suggestions(emoji_picker *p, int cy, int cx, int left, in
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     box(w, 0, 0);
     wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
-    text_label(w, 0, 2, p->width - 4, " Emojis · mais usados ");
+    text_label(w, 0, 2, p->width - 4, _(" Emojis · mais usados "));
     icons_scope(p->icons, "emoji-popup", 0);
     for (int row = 0; row < p->rows; ++row) {
         size_t i = p->first + (size_t)row;
@@ -831,13 +833,13 @@ void emoji_picker_draw_suggestions(emoji_picker *p, int cy, int cx, int left, in
         int x = image_columns + 3;
         text_label(w, y, x, p->width - x - 2, item_name(p, id));
         wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
-        text_label(w, y + 1, x, p->width - x - 2, id & ICON_CUSTOM ? "Servidor" : "Unicode");
+        text_label(w, y + 1, x, p->width - x - 2, id & ICON_CUSTOM ? _("Servidor") : _("Unicode"));
     }
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     if (!p->count)
-        text_label(w, 1, 2, p->width - 4, "Nenhum emoji encontrado");
+        text_label(w, 1, 2, p->width - 4, _("Nenhum emoji encontrado"));
     text_label(w, p->height - 2, 1, p->width - 2,
-               *p->error ? p->error : "↑↓ escolher · Tab/Enter inserir · Esc fechar");
+               *p->error ? p->error : _("↑↓ escolher · Tab/Enter inserir · Esc fechar"));
     wnoutrefresh(w);
     setsyx(cy, cx);
 }

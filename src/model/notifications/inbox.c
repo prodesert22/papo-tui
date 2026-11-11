@@ -5,6 +5,7 @@
 #include "config/channel_mutes.h"
 #include "config/channel_notifications.h"
 #include "model/conversation/history.h"
+#include "model/text/translation.h"
 #include "net/auth/session_time.h"
 #include "net/clock.h"
 #include <glib.h>
@@ -668,7 +669,7 @@ bool inbox_open_dm(inbox *b, const char *user)
     b->open_cancelled = false;
     snprintf(b->action_id, sizeof(b->action_id), "%s", user);
     b->action = OPEN;
-    notice(b, "Abrindo DM…");
+    notice(b, _("Abrindo DM…"));
     return true;
 }
 bool inbox_close_dm(inbox *b, const char *id)
@@ -677,7 +678,7 @@ bool inbox_close_dm(inbox *b, const char *id)
         return false;
     snprintf(b->action_id, sizeof(b->action_id), "%s", id);
     b->action = CLOSE;
-    notice(b, "Fechando DM…");
+    notice(b, _("Fechando DM…"));
     return true;
 }
 void inbox_resolve_dm(inbox *b, const char *id)
@@ -718,7 +719,7 @@ bool inbox_dispatch(inbox *b)
     if (b->pending != NONE || !auth_has_session(b->auth) || auth_busy(b->auth))
         return false;
     if (!history_uuid(auth_user_id(b->auth))) {
-        notice(b, "Identidade incompatível com o serviço.");
+        notice(b, _("Identidade incompatível com o serviço."));
         return false;
     }
     uint64_t now;
@@ -766,7 +767,7 @@ bool inbox_dispatch(inbox *b)
     }
     json_decref(body);
     if (!ok) {
-        notice(b, "Não foi possível preparar a operação. Ctrl+R: tentar novamente.");
+        notice(b, _("Não foi possível preparar a operação. Ctrl+R: tentar novamente."));
         return false;
     }
     b->pending = kind;
@@ -872,12 +873,12 @@ bool inbox_response(inbox *b, json_t *body, long code, bool uncertain)
         return ok;
     }
     notice(b, ok             ? ""
-              : uncertain    ? "Resultado incerto. Atualize antes de tentar novamente."
-              : code == 403  ? "Acesso recusado ou DM bloqueada."
-              : code == 404  ? "Conversa ou notificação indisponível."
-              : code == 429  ? "Limite de requisições. Aguarde e tente novamente."
-              : kind == READ ? "Leitura não confirmada. Ctrl+R: tentar novamente."
-                             : "Falha ao carregar. Ctrl+R: tentar novamente.");
+              : uncertain    ? _("Resultado incerto. Atualize antes de tentar novamente.")
+              : code == 403  ? _("Acesso recusado ou DM bloqueada.")
+              : code == 404  ? _("Conversa ou notificação indisponível.")
+              : code == 429  ? _("Limite de requisições. Aguarde e tente novamente.")
+              : kind == READ ? _("Leitura não confirmada. Ctrl+R: tentar novamente.")
+                             : _("Falha ao carregar. Ctrl+R: tentar novamente."));
     if (uncertain && (kind == OPEN || kind == CLOSE))
         b->want_dms = true;
     return ok;

@@ -1,3 +1,4 @@
+#include "model/text/translation.h"
 #include "net/auth/private.h"
 #include <glib.h>
 
@@ -64,11 +65,11 @@ bool auth_password_reset(auth_client *client, const char *url, const char *token
     char parsed[257], host[256], reason[192];
     if (!token || !auth_reset_token(token, parsed, sizeof(parsed), host, sizeof(host)))
         return auth_internal_input_fail(client, AUTH_INPUT_RESET_LINK,
-                                        "Cole o link de redefinição recebido da administração.");
+                                        _("Cole o link de redefinição recebido da administração."));
     if (!password || strlen(password) > 4096) {
         memset(parsed, 0, sizeof(parsed));
         return auth_internal_input_fail(client, AUTH_INPUT_PASSWORD,
-                                        "A senha excedeu o limite do cliente.");
+                                        _("A senha excedeu o limite do cliente."));
     }
     if (!auth_validate_password(password, reason, sizeof(reason))) {
         memset(parsed, 0, sizeof(parsed));
@@ -83,12 +84,12 @@ bool auth_password_reset(auth_client *client, const char *url, const char *token
         memset(parsed, 0, sizeof(parsed));
         return auth_internal_input_fail(
             client, AUTH_INPUT_URL,
-            "HTTP local exige --allow-local-http. Use HTTPS para acesso remoto.");
+            _("HTTP local exige --allow-local-http. Use HTTPS para acesso remoto."));
     }
     json_t *body = json_pack("{s:s,s:s}", "token", parsed, "password", password);
     memset(parsed, 0, sizeof(parsed));
     if (!body) {
-        auth_internal_fail(client, "Não foi possível preparar a redefinição.");
+        auth_internal_fail(client, _("Não foi possível preparar a redefinição."));
         return false;
     }
     bool started =
@@ -105,7 +106,7 @@ bool auth_change_password(auth_client *client, const char *password)
         return false;
     char reason[192];
     if (!password || strlen(password) > 4096) {
-        set_notice(client, AUTH_PASSWORD_REFUSED, "A senha excedeu o limite do cliente.", NULL);
+        set_notice(client, AUTH_PASSWORD_REFUSED, _("A senha excedeu o limite do cliente."), NULL);
         return false;
     }
     if (!auth_validate_password(password, reason, sizeof(reason))) {
@@ -115,13 +116,13 @@ bool auth_change_password(auth_client *client, const char *password)
     auth_internal_erase_free(&client->new_password);
     client->new_password = strdup(password);
     if (!client->new_password) {
-        set_notice(client, AUTH_PASSWORD_REFUSED, "Não foi possível preparar a troca de senha.",
+        set_notice(client, AUTH_PASSWORD_REFUSED, _("Não foi possível preparar a troca de senha."),
                    NULL);
         return false;
     }
     char path[96];
     snprintf(path, sizeof(path), "/users/%s/reset", client->user_id);
-    set_notice(client, AUTH_PASSWORD_PENDING, "Alterando a senha…", NULL);
+    set_notice(client, AUTH_PASSWORD_PENDING, _("Alterando a senha…"), NULL);
     /* The server only accepts the new password after this bodyless request. */
     return auth_internal_request(client, AUTH_PASSWORD_PREPARE, path, NULL, true);
 }
@@ -144,7 +145,7 @@ static void password_updated(auth_client *client)
     client->name[0] = '\0';
     client->state = AUTH_PASSWORD_UPDATED;
     snprintf(client->message, sizeof(client->message), "%s",
-             "Senha alterada. As sessões da conta foram encerradas; entre com a nova senha.");
+             _("Senha alterada. As sessões da conta foram encerradas; entre com a nova senha."));
 }
 
 void auth_internal_password_complete(auth_client *client, auth_state previous, CURLcode result,
@@ -159,8 +160,8 @@ void auth_internal_password_complete(auth_client *client, auth_state previous, C
         auth_internal_erase_free(&client->new_password);
         if (!body) {
             drop_response(client);
-            set_notice(client, AUTH_PASSWORD_REFUSED, "Não foi possível preparar a troca de senha.",
-                       NULL);
+            set_notice(client, AUTH_PASSWORD_REFUSED,
+                       _("Não foi possível preparar a troca de senha."), NULL);
             return;
         }
         auth_internal_request(client, AUTH_PASSWORD_CHANGE, path, body, true);
@@ -174,7 +175,7 @@ void auth_internal_password_complete(auth_client *client, auth_state previous, C
     }
     if (result == CURLE_OK && status == 403 && auth_internal_problem_is(client, "banned")) {
         auth_internal_fail(
-            client, "O servidor bloqueou esta conta. Entre novamente após resolver o acesso.");
+            client, _("O servidor bloqueou esta conta. Entre novamente após resolver o acesso."));
         return;
     }
     if (result == CURLE_OK && status == 429)
@@ -184,8 +185,8 @@ void auth_internal_password_complete(auth_client *client, auth_state previous, C
                    (result == CURLE_OK && (status >= 500 || (status >= 200 && status < 300))))) {
         drop_response(client);
         set_notice(client, AUTH_PASSWORD_UNCONFIRMED,
-                   "Troca de senha não confirmada. Se a nova senha funcionar ao entrar, ela já "
-                   "vale",
+                   _("Troca de senha não confirmada. Se a nova senha funcionar ao entrar, ela já "
+                     "vale"),
                    NULL);
         /* If it took effect, the next session check finds this session revoked. */
         client->recheck_at = 0;
@@ -196,25 +197,25 @@ void auth_internal_password_complete(auth_client *client, auth_state previous, C
     drop_response(client);
     if (result != CURLE_OK)
         set_notice(client, AUTH_PASSWORD_REFUSED,
-                   "Não foi possível conectar para trocar a senha. Tente de novo", NULL);
+                   _("Não foi possível conectar para trocar a senha. Tente de novo"), NULL);
     else if (status == 401)
         set_notice(client, AUTH_PASSWORD_REFUSED,
-                   "A sessão precisou ser confirmada de novo. Tente trocar a senha outra vez",
+                   _("A sessão precisou ser confirmada de novo. Tente trocar a senha outra vez"),
                    NULL);
     else if (status == 400)
-        set_notice(client, AUTH_PASSWORD_REFUSED, "O servidor recusou a nova senha", detail);
+        set_notice(client, AUTH_PASSWORD_REFUSED, _("O servidor recusou a nova senha"), detail);
     else if (status == 409)
         set_notice(client, AUTH_PASSWORD_REFUSED,
-                   "O servidor não preparou a troca de senha. Tente de novo", NULL);
+                   _("O servidor não preparou a troca de senha. Tente de novo"), NULL);
     else if (status == 429)
-        set_notice(client, AUTH_PASSWORD_REFUSED, "Muitas tentativas; aguarde e tente de novo",
+        set_notice(client, AUTH_PASSWORD_REFUSED, _("Muitas tentativas; aguarde e tente de novo"),
                    NULL);
     else if (previous == AUTH_PASSWORD_PREPARE && status >= 500)
         set_notice(client, AUTH_PASSWORD_REFUSED,
-                   "O servidor não preparou a troca de senha. Tente de novo", NULL);
+                   _("O servidor não preparou a troca de senha. Tente de novo"), NULL);
     else {
         char text[96];
-        snprintf(text, sizeof(text), "O servidor recusou a troca de senha (HTTP %ld)", status);
+        snprintf(text, sizeof(text), _("O servidor recusou a troca de senha (HTTP %ld)"), status);
         set_notice(client, AUTH_PASSWORD_REFUSED, text, detail);
     }
     if (result == CURLE_OK && status == 401)
@@ -232,7 +233,7 @@ void auth_internal_reset_complete(auth_client *client, CURLcode result, long sta
         client->server_password_error = false;
         client->state = AUTH_PASSWORD_UPDATED;
         snprintf(client->message, sizeof(client->message), "%s",
-                 "Senha redefinida. Entre com a nova senha.");
+                 _("Senha redefinida. Entre com a nova senha."));
         return;
     }
     char detail[128], text[192];
@@ -240,36 +241,36 @@ void auth_internal_reset_complete(auth_client *client, CURLcode result, long sta
     auth_input_error field = AUTH_INPUT_NONE;
     if (result != CURLE_OK)
         snprintf(text, sizeof(text), "%s",
-                 transmitted ? "Redefinição não confirmada. Tente entrar com a nova senha antes "
-                               "de pedir outro link."
+                 transmitted ? _("Redefinição não confirmada. Tente entrar com a nova senha antes "
+                                 "de pedir outro link.")
                              : auth_internal_connection_message(client, result));
     else if (status == 410) {
         snprintf(text, sizeof(text), "%s",
-                 "Link inválido, expirado ou já usado. Peça um novo link à administração.");
+                 _("Link inválido, expirado ou já usado. Peça um novo link à administração."));
         field = AUTH_INPUT_RESET_LINK;
     } else if (status == 400) {
         if (*detail)
-            snprintf(text, sizeof(text), "O servidor recusou a nova senha: %s", detail);
+            snprintf(text, sizeof(text), _("O servidor recusou a nova senha: %s"), detail);
         else
-            snprintf(text, sizeof(text), "%s", "O servidor recusou a nova senha.");
+            snprintf(text, sizeof(text), "%s", _("O servidor recusou a nova senha."));
         field = AUTH_INPUT_PASSWORD;
     } else if (status == 429) {
         net_rate_defer(client->retry_after);
         snprintf(text, sizeof(text), "%s",
-                 "Limite de requisições atingido. Aguarde antes de tentar novamente.");
+                 _("Limite de requisições atingido. Aguarde antes de tentar novamente."));
     } else if (status == 404) {
         snprintf(text, sizeof(text), "%s",
-                 "Instância sem redefinição de senha ou URL incompatível com o Papo.");
+                 _("Instância sem redefinição de senha ou URL incompatível com o Papo."));
         field = AUTH_INPUT_URL;
     } else if (status >= 500)
         snprintf(text, sizeof(text), "%s",
-                 "O servidor não confirmou a redefinição. Tente entrar com a nova senha antes de "
-                 "repetir.");
+                 _("O servidor não confirmou a redefinição. Tente entrar com a nova senha antes de "
+                   "repetir."));
     else if (status >= 300 && status < 400)
         snprintf(text, sizeof(text), "%s",
-                 "O servidor redirecionou a conexão. Informe a URL final.");
+                 _("O servidor redirecionou a conexão. Informe a URL final."));
     else
-        snprintf(text, sizeof(text), "O servidor recusou a redefinição (HTTP %ld).", status);
+        snprintf(text, sizeof(text), _("O servidor recusou a redefinição (HTTP %ld)."), status);
     size_t length = strlen(text);
     while (length && !g_utf8_validate(text, (gssize)length, NULL))
         text[--length] = '\0';

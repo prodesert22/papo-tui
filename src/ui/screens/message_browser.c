@@ -1,4 +1,5 @@
 #include "ui/screens/message_browser.h"
+#include "model/text/translation.h"
 #include "ui/components/button.h"
 #include "ui/components/mention_popup.h"
 #include "ui/components/theme.h"
@@ -67,8 +68,8 @@ static void content(message_browser *m, json_t *v, text_buffer *text)
 {
     const char *raw = s(v, "content");
     if (!*raw)
-        raw =
-            json_array_size(json_object_get(v, "attachments")) ? "[Anexo]" : "[Mensagem sem texto]";
+        raw = json_array_size(json_object_get(v, "attachments")) ? _("[Anexo]")
+                                                                 : _("[Mensagem sem texto]");
     /* Same bounded, control-sanitizing text and mention projection as notifications. */
     text_decode_chunk(text, &raw);
     text_mentions(text, history_mention_name, m->h);
@@ -308,13 +309,13 @@ static void activate(message_browser *m)
     if (m->detail) {
         json_t *v = find_detail(m);
         if (!v) {
-            snprintf(m->notice, sizeof(m->notice), "Mensagem não disponível. Atualize a lista.");
+            snprintf(m->notice, sizeof(m->notice), _("Mensagem não disponível. Atualize a lista."));
             return;
         }
         if (m->pins && m->focus == 1) {
             if (permissions_role(auth_permissions(m->auth), PERMISSION_PIN_MESSAGE) ==
                 PERMISSION_DENIED) {
-                snprintf(m->notice, sizeof(m->notice), "Sem permissão para desafixar mensagem.");
+                snprintf(m->notice, sizeof(m->notice), _("Sem permissão para desafixar mensagem."));
                 return;
             }
             if (!m->unpin_pending && history_pin_message(m->h, s(v, "id"), true)) {
@@ -323,7 +324,7 @@ static void activate(message_browser *m)
                 snprintf(m->unpin_id, sizeof(m->unpin_id), "%s", s(v, "id"));
             } else if (!m->unpin_pending)
                 snprintf(m->notice, sizeof(m->notice),
-                         "Aguarde a consulta ou atualize com Ctrl+R.");
+                         _("Aguarde a consulta ou atualize com Ctrl+R."));
             return;
         }
         if (history_uuid(s(v, "channel_id")) && history_uuid(s(v, "id"))) {
@@ -341,7 +342,7 @@ static void activate(message_browser *m)
         submit(m);
     else if (m->focus == MORE && !m->pins) {
         if (dirty(m))
-            snprintf(m->notice, sizeof(m->notice), "Execute Buscar para aplicar as alterações.");
+            snprintf(m->notice, sizeof(m->notice), _("Execute Buscar para aplicar as alterações."));
         else {
             if (history_search_has_more(m->h)) {
                 json_decref(m->location_items);
@@ -604,7 +605,7 @@ static void picker_draw(message_browser *m, int width, int height)
     WINDOW *w = m->window;
 
     wattrset(w, COLOR_PAIR(m->picker_focus == 0 ? THEME_FOCUSED : THEME_PANEL));
-    text_label(w, 2, 2, 6, "Nome: ");
+    text_label(w, 2, 2, 6, _("Nome: "));
     text_draw_field(w, &m->picker_query, &m->picker_field_first, 2, 8, width - 10, false);
     keep_visible(m->picker_selected, &m->picker_first, MAX(1, height - 9));
     for (int y = 4; y < height - 5 && m->picker_first + (size_t)(y - 4) < m->picker_count; ++y) {
@@ -625,15 +626,15 @@ static void picker_draw(message_browser *m, int width, int height)
                                    : history_user(m->h, m->choices[m->picker_selected]);
         snprintf(m->picker_id, sizeof(m->picker_id), "%s", s(v, "id"));
     } else
-        text_label(w, 4, 2, width - 4, "Nenhum nome encontrado.");
-    button_draw(w, height - 4, 2, width - 4, "[Qualquer / limpar filtro]",
+        text_label(w, 4, 2, width - 4, _("Nenhum nome encontrado."));
+    button_draw(w, height - 4, 2, width - 4, _("[Qualquer / limpar filtro]"),
                 m->picker_focus == 2 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
 }
 static void settings_draw(message_browser *m, int width, int height)
 {
     WINDOW *w = m->window;
 
-    text_label(w, 2, 2, width - 4, "Datas inclusivas: AAAA-MM-DD");
+    text_label(w, 2, 2, width - 4, _("Datas inclusivas: AAAA-MM-DD"));
     int visible = MAX(1, height - 7);
     if (m->settings_focus < m->settings_first)
         m->settings_first = m->settings_focus;
@@ -642,33 +643,33 @@ static void settings_draw(message_browser *m, int width, int height)
     for (int y = 3, i = m->settings_first; y < height - 4 && i <= 10; ++y, ++i) {
         char label[2200];
         if (i == 0)
-            snprintf(label, sizeof(label), "Autor: %s",
-                     *m->draft.author ? history_author(m->h, m->draft.author) : "Qualquer");
+            snprintf(label, sizeof(label), _("Autor: %s"),
+                     *m->draft.author ? history_author(m->h, m->draft.author) : _("Qualquer"));
         else if (i == 1)
-            snprintf(label, sizeof(label), "Conversa: %s",
+            snprintf(label, sizeof(label), _("Conversa: %s"),
                      *m->draft.channel ? s(conversation(m, m->draft.channel), "name")
-                                       : "Servidor inteiro");
+                                       : _("Servidor inteiro"));
         else if (i == 2)
-            snprintf(label, sizeof(label), "Menciona: %s",
-                     *m->draft.mention ? history_author(m->h, m->draft.mention) : "Qualquer");
+            snprintf(label, sizeof(label), _("Menciona: %s"),
+                     *m->draft.mention ? history_author(m->h, m->draft.mention) : _("Qualquer"));
         else if (i == 3)
-            snprintf(label, sizeof(label), "[%c] Contém link", m->draft.link ? 'x' : ' ');
+            snprintf(label, sizeof(label), _("[%c] Contém link"), m->draft.link ? 'x' : ' ');
         else if (i == 6)
-            snprintf(label, sizeof(label), "Anexos: %s",
-                     m->draft.attachments == 1   ? "Com anexos"
-                     : m->draft.attachments == 2 ? "Sem anexos"
-                                                 : "Qualquer");
+            snprintf(label, sizeof(label), _("Anexos: %s"),
+                     m->draft.attachments == 1   ? _("Com anexos")
+                     : m->draft.attachments == 2 ? _("Sem anexos")
+                                                 : _("Qualquer"));
         else if (i == 7)
-            snprintf(label, sizeof(label), "Ordem: %s",
-                     m->draft.ascending ? "Mais antigas" : "Mais recentes");
+            snprintf(label, sizeof(label), _("Ordem: %s"),
+                     m->draft.ascending ? _("Mais antigas") : _("Mais recentes"));
         else if (i >= 8)
             snprintf(label, sizeof(label), "%s",
-                     i == 8   ? "[Aplicar]"
-                     : i == 9 ? "[Cancelar]"
-                              : "[Limpar filtros]");
+                     i == 8   ? _("[Aplicar]")
+                     : i == 9 ? _("[Cancelar]")
+                              : _("[Limpar filtros]"));
         else {
             wattrset(w, COLOR_PAIR(m->settings_focus == i ? THEME_FOCUSED : THEME_PANEL));
-            text_label(w, y, 2, 14, i == 4 ? "Data inicial: " : "Data final: ");
+            text_label(w, y, 2, 14, i == 4 ? _("Data inicial: ") : _("Data final: "));
             text_draw_field(w, i == 4 ? &m->draft.start : &m->draft.end, &m->date_first[i - 4], y,
                             16, width - 18, false);
             continue;
@@ -698,13 +699,13 @@ WINDOW *message_browser_draw(message_browser *m)
     werase(w);
     box(w, 0, 0);
     wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
-    const char *title = m->picker == 1       ? "Selecionar autor"
-                        : m->picker == 2     ? "Selecionar conversa"
-                        : m->picker == 3     ? "Selecionar menção"
-                        : m->editing_filters ? "Filtros da busca"
-                        : m->detail          ? "Detalhes da mensagem"
-                        : m->pins            ? "Mensagens fixadas"
-                                             : "Buscar mensagens no servidor";
+    const char *title = m->picker == 1       ? _("Selecionar autor")
+                        : m->picker == 2     ? _("Selecionar conversa")
+                        : m->picker == 3     ? _("Selecionar menção")
+                        : m->editing_filters ? _("Filtros da busca")
+                        : m->detail          ? _("Detalhes da mensagem")
+                        : m->pins            ? _("Mensagens fixadas")
+                                             : _("Buscar mensagens no servidor");
     text_label(w, 1, 2, width - 4, title);
     wattrset(w, COLOR_PAIR(THEME_PANEL));
     if (m->picker)
@@ -719,7 +720,7 @@ WINDOW *message_browser_draw(message_browser *m)
                  s(v, "created_at"));
         text_label(w, 2, 2, width - 4, metadata);
         text_label(w, 3, 2, width - 4,
-                   v ? author(m, v) : "Mensagem não disponível. Atualize a lista.");
+                   v ? author(m, v) : _("Mensagem não disponível. Atualize a lista."));
         text_buffer text;
         content(m, v, &text);
         text_measure(&text, width - 4, &m->measured);
@@ -727,20 +728,20 @@ WINDOW *message_browser_draw(message_browser *m)
         m->detail_scroll = MIN(m->detail_scroll, max);
         text_draw(w, &text, &m->measured, (int)m->detail_scroll, height - 8, 4, 2);
         int button_width = m->pins ? width / 2 - 2 : width - 4;
-        button_draw(w, height - 4, 2, button_width, "[Ir para mensagem]",
+        button_draw(w, height - 4, 2, button_width, _("[Ir para mensagem]"),
                     m->focus == 0 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
         if (m->pins)
             button_draw(w, height - 4, width / 2, width / 2 - 2,
-                        m->unpin_pending ? "[Aguarde…]" : "[Desafixar]",
+                        m->unpin_pending ? _("[Aguarde…]") : _("[Desafixar]"),
                         m->focus == 1 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     } else {
         wattrset(w, COLOR_PAIR(m->focus == QUERY ? THEME_FOCUSED : THEME_PANEL));
-        text_label(w, 2, 2, 8, "Buscar: ");
+        text_label(w, 2, 2, 8, _("Buscar: "));
         text_draw_field(w, &m->query, &m->field_first, 2, 10, width - 12, false);
         if (!m->pins) {
-            button_draw(w, 3, 2, width / 2 - 2, "[Buscar]",
+            button_draw(w, 3, 2, width / 2 - 2, _("[Buscar]"),
                         m->focus == SUBMIT ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
-            button_draw(w, 3, width / 2, width / 2 - 2, "[Filtros]",
+            button_draw(w, 3, width / 2, width / 2 - 2, _("[Filtros]"),
                         m->focus == FILTERS ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
         }
         keep_visible(m->selected, &m->first, MAX(1, height - 9));
@@ -765,17 +766,18 @@ WINDOW *message_browser_draw(message_browser *m)
             snprintf(m->selected_id, sizeof(m->selected_id), "%s", s(v, "id"));
         } else
             text_label(w, 4, 2, width - 4,
-                       m->pins        ? "Nenhuma fixada corresponde à busca."
-                       : m->submitted ? "Nenhuma mensagem encontrada."
-                                      : "Informe texto ou filtros e selecione Buscar.");
+                       m->pins        ? _("Nenhuma fixada corresponde à busca.")
+                       : m->submitted ? _("Nenhuma mensagem encontrada.")
+                                      : _("Informe texto ou filtros e selecione Buscar."));
         char total[128];
         snprintf(total, sizeof(total), "%zu resultado(s)%s", m->count,
-                 dirty(m) ? " · Alterações pendentes: Buscar para aplicar" : "");
+                 dirty(m) ? _(" · Alterações pendentes: Buscar para aplicar") : "");
         wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
         text_label(w, height - 5, 2, width - 4, total);
         if (!m->pins)
             button_draw(w, height - 4, 2, width - 4,
-                        history_search_has_more(m->h) ? "[Carregar mais]" : "[Sem mais resultados]",
+                        history_search_has_more(m->h) ? _("[Carregar mais]")
+                                                      : _("[Sem mais resultados]"),
                         m->focus == MORE ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     }
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
@@ -791,10 +793,10 @@ WINDOW *message_browser_draw(message_browser *m)
     }
     text_label(w, height - 3, 2, width - 4, notice);
     text_label(w, height - 2, 2, width - 4,
-               m->detail && m->pins ? "←→/Tab: ações · ↑↓ rolar · Enter: abrir · Esc: voltar"
+               m->detail && m->pins ? _("←→/Tab: ações · ↑↓ rolar · Enter: abrir · Esc: voltar")
                : !m->pins && !m->editing_filters && !m->picker && !m->detail
-                   ? "↑↓: áreas · ←→: botões · Enter: abrir · Esc: voltar"
-                   : "Tab: áreas · ↑↓ rolar · Enter: abrir/aplicar · Esc: voltar");
+                   ? _("↑↓: áreas · ←→: botões · Enter: abrir · Esc: voltar")
+                   : _("Tab: áreas · ↑↓ rolar · Enter: abrir/aplicar · Esc: voltar"));
     wnoutrefresh(w);
     return w;
 }

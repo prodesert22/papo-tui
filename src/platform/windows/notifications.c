@@ -1,4 +1,5 @@
 #include "app/desktop.h"
+#include "model/text/translation.h"
 #include "net/clock.h"
 #include <gio/gio.h>
 #include <stdio.h>
@@ -78,7 +79,7 @@ desktop_notifier *desktop_create(void)
 static void copy_utf8(char *out, size_t capacity, const char *source)
 {
     if (!source || !g_utf8_validate(source, -1, NULL))
-        source = "Texto indisponível";
+        source = _("Texto indisponível");
     size_t size = strlen(source);
     if (size >= capacity) {
         size = capacity - 1;
@@ -95,7 +96,7 @@ void desktop_queue(desktop_notifier *n, const char *key, const char *title, cons
     if (!n || n->dying || !key || strlen(key) >= sizeof(n->alerts[0].key))
         return;
     if (!n->ready) {
-        snprintf(n->notice, sizeof(n->notice), "Avisos desktop indisponíveis; central mantida.");
+        snprintf(n->notice, sizeof(n->notice), _("Avisos desktop indisponíveis; central mantida."));
         return;
     }
     size_t at = 64;

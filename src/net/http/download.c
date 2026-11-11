@@ -2,6 +2,7 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 #include "net/http/download.h"
+#include "model/text/translation.h"
 #include "net/rate_limit.h"
 #include "platform/runtime.h"
 #include <errno.h>
@@ -270,21 +271,21 @@ static void finish(media_download *m, CURLcode result)
     }
     if (m->status == 429) {
         net_rate_defer(m->retry_after);
-        m->error = "Limite de requisições. Aguarde e tente novamente.";
+        m->error = _("Limite de requisições. Aguarde e tente novamente.");
     } else if (m->status == 401) {
-        m->error = "Sessão rejeitada. Aguarde a revalidação e tente novamente.";
+        m->error = _("Sessão rejeitada. Aguarde a revalidação e tente novamente.");
         if (!m->public_avatar && !auth_busy(m->auth))
             auth_refresh(m->auth);
     } else if (m->status == 403 || m->status == 404)
-        m->error = "Mídia indisponível ou sem permissão.";
+        m->error = _("Mídia indisponível ou sem permissão.");
     else if (m->overflow || result == CURLE_FILESIZE_EXCEEDED)
-        m->error = "Mídia excede o limite de tamanho.";
+        m->error = _("Mídia excede o limite de tamanho.");
     else if (result == CURLE_PEER_FAILED_VERIFICATION)
-        m->error = "Certificado TLS da mídia não é confiável.";
+        m->error = _("Certificado TLS da mídia não é confiável.");
     else if (result == CURLE_OK && !type)
-        m->error = "Formato de mídia não suportado.";
+        m->error = _("Formato de mídia não suportado.");
     else
-        m->error = "Não foi possível carregar a mídia. Tente novamente.";
+        m->error = _("Não foi possível carregar a mídia. Tente novamente.");
     if (m->path) {
         unlink(m->path);
         free(m->path);
@@ -354,7 +355,7 @@ size_t media_download_total(const media_download *m)
 }
 const char *media_download_error(const media_download *m)
 {
-    return m && m->error ? m->error : "Mídia indisponível.";
+    return m && m->error ? m->error : _("Mídia indisponível.");
 }
 const char *media_download_mime(const media_download *m)
 {

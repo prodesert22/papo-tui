@@ -1,4 +1,5 @@
 #include "config/profiles_storage.h"
+#include "model/text/translation.h"
 #include "platform/windows/files.h"
 #include <glib.h>
 #include <stdio.h>
@@ -19,7 +20,7 @@ bool profiles_storage_open(profile_config *config)
     config->directory_path = papo_win_directory(false);
     config->directory = config->directory_path ? 0 : -1;
     return config->directory_path ||
-           error(config, "Não foi possível abrir a configuração privada.");
+           error(config, _("Não foi possível abrir a configuração privada."));
 }
 void profiles_storage_close(profile_config *config)
 {
@@ -61,12 +62,12 @@ bool profiles_storage_commit(profile_config *config, const char *serialized)
     bool ok = unchanged(config) && papo_win_write_private(path, serialized, strlen(serialized));
     g_free(path);
     if (!ok)
-        return error(config, "Não foi possível salvar. Os perfis anteriores foram preservados.");
+        return error(config, _("Não foi possível salvar. Os perfis anteriores foram preservados."));
     char *hash = g_compute_checksum_for_string(G_CHECKSUM_SHA256, serialized, -1);
     snprintf(config->storage_revision, sizeof(config->storage_revision), "%s", hash);
     g_free(hash);
     config->existed = true;
-    snprintf(config->message, sizeof(config->message), "Perfis salvos; senhas não são salvas.");
+    snprintf(config->message, sizeof(config->message), _("Perfis salvos; senhas não são salvas."));
     return true;
 }
 bool profiles_storage_save(profile_config *config, bool (*serialize)(profile_config *))
@@ -75,11 +76,11 @@ bool profiles_storage_save(profile_config *config, bool (*serialize)(profile_con
     HANDLE lock = papo_win_lock(path);
     g_free(path);
     if (lock == INVALID_HANDLE_VALUE)
-        return error(config, "Configuração ocupada por outro processo. Tente salvar novamente.");
-    bool ok =
-        unchanged(config)
-            ? serialize(config)
-            : error(config, "A configuração mudou em outro processo. Use Ctrl+R antes de salvar.");
+        return error(config, _("Configuração ocupada por outro processo. Tente salvar novamente."));
+    bool ok = unchanged(config)
+                  ? serialize(config)
+                  : error(config,
+                          _("A configuração mudou em outro processo. Use Ctrl+R antes de salvar."));
     CloseHandle(lock);
     return ok;
 }

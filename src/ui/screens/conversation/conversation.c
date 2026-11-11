@@ -1,52 +1,53 @@
 #include "config/view_state.h"
 #include "model/conversation/user_settings.h"
+#include "model/text/translation.h"
 #include "platform/terminal_notify.h"
 #include "ui/screens/conversation/private.h"
 
 help_context conversation_help_context(view *ui, const char **area)
 {
     if (file_picker_open(ui->files)) {
-        *area = "Seleção de arquivos";
+        *area = _("Seleção de arquivos");
         return HELP_FILES;
     }
     if (ui->remove_confirm || ui->duplicate_modal || ui->delete_confirm) {
-        *area = "Confirmação";
+        *area = _("Confirmação");
         return HELP_CONFIRM;
     }
     if (ui->settings.open) {
-        *area = "Configurações";
+        *area = _("Configurações");
         return HELP_SETTINGS;
     }
     if (ui->server_settings.open) {
-        *area = "Configurações do servidor";
+        *area = _("Configurações do servidor");
         return HELP_SERVER_SETTINGS;
     }
     if (emoji_picker_open(ui->emojis)) {
-        *area = "Seletor de emojis";
+        *area = _("Seletor de emojis");
         return HELP_EMOJIS;
     }
     if (ui->context_open) {
-        *area = "Menu de contexto";
+        *area = _("Menu de contexto");
         return HELP_MENU;
     }
     if (ui->reactors_open) {
-        *area = "Reações e pessoas";
+        *area = _("Reações e pessoas");
         return HELP_REACTIONS;
     }
     if (r8_modal_is_open(ui->r8)) {
         bool notifications = r8_modal_type(ui->r8) == R8_NOTIFICATIONS;
-        *area = notifications ? "Central de notificações" : "Busca e mensagens fixadas";
+        *area = notifications ? _("Central de notificações") : _("Busca e mensagens fixadas");
         return notifications ? HELP_NOTIFICATIONS : HELP_SEARCH;
     }
     if (media_view_modal(ui->media)) {
         media_context context = media_view_context(ui->media);
         if (context == MEDIA_CONTEXT_LIST) {
-            *area = "Lista de mídias";
+            *area = _("Lista de mídias");
             return HELP_MEDIA_LIST;
         }
-        *area = context == MEDIA_CONTEXT_VIDEO   ? "Player de vídeo"
-                : context == MEDIA_CONTEXT_AUDIO ? "Player de áudio"
-                                                 : "Visualizador de mídia";
+        *area = context == MEDIA_CONTEXT_VIDEO   ? _("Player de vídeo")
+                : context == MEDIA_CONTEXT_AUDIO ? _("Player de áudio")
+                                                 : _("Visualizador de mídia");
         return HELP_MEDIA | (context == MEDIA_CONTEXT_AUDIO   ? HELP_PLAYER | HELP_AUDIO
                              : context == MEDIA_CONTEXT_VIDEO ? HELP_PLAYER
                              : context == MEDIA_CONTEXT_IMAGE ? HELP_IMAGE
@@ -56,35 +57,35 @@ help_context conversation_help_context(view *ui, const char **area)
     if (conversation_members_modal(ui))
         return conversation_members_help(ui, area);
     if (ui->focus == MESSAGE_INPUT) {
-        *area = "Editor de mensagens";
+        *area = _("Editor de mensagens");
         return HELP_EDITOR;
     }
     if (ui->focus == HISTORY_PANEL) {
-        *area = ui->navigating ? "Seleção de mensagens" : "Histórico da conversa";
+        *area = ui->navigating ? _("Seleção de mensagens") : _("Histórico da conversa");
         return ui->navigating ? HELP_SELECTION : HELP_HISTORY;
     }
     if (ui->focus == CHANNEL_LIST) {
-        *area = ui->list_dms ? "Lista de DMs" : "Lista de canais";
+        *area = ui->list_dms ? _("Lista de DMs") : _("Lista de canais");
         return HELP_CHANNELS | (ui->list_dms ? HELP_DM_LIST : 0);
     }
     if (ui->focus == MEMBERS_PANEL) {
         bool editing = conversation_members_input(ui) != NULL;
-        *area = editing ? "Busca de membros" : "Lista de membros";
+        *area = editing ? _("Busca de membros") : _("Lista de membros");
         return editing ? HELP_FIELDS | HELP_MEMBER_SEARCH : HELP_MEMBERS;
     }
     if (ui->focus == SERVER_TABS) {
-        *area = "Servidores conectados";
+        *area = _("Servidores conectados");
         return HELP_SERVER_TABS;
     }
     if (ui->focus == ATTACH_BUTTON || ui->focus == EMOJI_BUTTON || ui->focus == ATTACHMENT_ROW) {
-        *area = "Anexos e botões do editor";
+        *area = _("Anexos e botões do editor");
         return HELP_EDITOR_BUTTONS;
     }
     if (ui->focus == SETTINGS_BUTTON) {
-        *area = "Botão Configurações";
+        *area = _("Botão Configurações");
         return HELP_SETTINGS_BUTTON;
     }
-    *area = "Botões de navegação";
+    *area = _("Botões de navegação");
     return HELP_HEADER;
 }
 
@@ -173,7 +174,7 @@ static void open_player(view *ui)
 {
     char channel[37], message[37], created[64];
     if (!media_view_audio(ui->media, channel, message, created)) {
-        ui->feedback = "Nenhum áudio em segundo plano.";
+        ui->feedback = _("Nenhum áudio em segundo plano.");
         return;
     }
     json_t *shown = history_channel(ui->model, history_selected(ui->model));
@@ -192,12 +193,12 @@ static void open_player(view *ui)
             break;
         }
         if (!found) {
-            ui->feedback = "Mensagem do áudio não está disponível.";
+            ui->feedback = _("Mensagem do áudio não está disponível.");
             return;
         }
     }
     if (!history_jump_at(ui->model, message, *created ? created : NULL)) {
-        ui->feedback = "Mensagem do áudio não está disponível.";
+        ui->feedback = _("Mensagem do áudio não está disponível.");
         return;
     }
     snprintf(ui->player_message, sizeof(ui->player_message), "%s", message);
@@ -233,11 +234,11 @@ static bool refresh_pending(view *ui, auth_client *auth)
             operation->file_count
                 ? g_strdup_printf("%s%s📎 %zu %s", operation->content,
                                   *operation->content ? "\n" : "", operation->file_count,
-                                  operation->file_count == 1 ? "anexo" : "anexos")
+                                  P_("anexo", "anexos", operation->file_count))
                 : g_strdup(operation->content);
-        const char *status = operation->state == OUTBOX_FAILED      ? "falhou"
-                             : operation->state == OUTBOX_UNCERTAIN ? "não confirmado"
-                                                                    : "enviando";
+        const char *status = operation->state == OUTBOX_FAILED      ? _("falhou")
+                             : operation->state == OUTBOX_UNCERTAIN ? _("não confirmado")
+                                                                    : _("enviando");
         json_t *entry = json_pack("{s:s,s:s,s:s,s:s,s:s,s:s,s:s}", "id", id, "channel_id",
                                   ui->editor_channel, "author_id", auth_user_id(auth), "content",
                                   content ? content : "", "created_at", created ? created : "",
@@ -270,7 +271,7 @@ bool conversation_poll_editor(view *ui, auth_client *auth)
         if (operation.generation == auth_context_generation(auth) &&
             !strcmp(operation.channel_id, ui->editor_channel)) {
             if (!history_confirm(ui->model, message, operation.generation))
-                ui->feedback = "Envio confirmado; Ctrl+R para consultar o histórico.";
+                ui->feedback = _("Envio confirmado; Ctrl+R para consultar o histórico.");
         } else if (operation.generation == auth_context_generation(auth))
             history_conversation_changed(ui->model, operation.channel_id);
         json_decref(message);
@@ -712,7 +713,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                     if (located)
                         r8_modal_location_started(ui->r8);
                     else
-                        r8_modal_location_error(ui->r8, "Mensagem não disponível.");
+                        r8_modal_location_error(ui->r8, _("Mensagem não disponível."));
                     ui->notification_channel[0] = ui->notification_message[0] = 0;
                 }
                 found = true;
@@ -725,13 +726,13 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             redraw = true;
         }
         if (*ui->notification_message && !inbox_opening(box)) {
-            r8_modal_location_error(ui->r8, "Não foi possível abrir a conversa.");
+            r8_modal_location_error(ui->r8, _("Não foi possível abrir a conversa."));
             ui->notification_channel[0] = ui->notification_message[0] = 0;
         }
         conversation_interactions_sync(ui);
         if (*ui->player_message && *history_jump_error(ui->model)) {
             ui->player_message[0] = 0;
-            ui->feedback = "Mensagem do áudio não está disponível.";
+            ui->feedback = _("Mensagem do áudio não está disponível.");
             redraw = true;
         }
         if (r8_modal_poll(ui->r8)) {
@@ -850,11 +851,11 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 !ui->context_open && !ui->reactors_open && ui->focus == MESSAGE_INPUT &&
                 conversation_input(ui)) {
                 if (!text_paste_commit(&ui->paste_data, conversation_input(ui)))
-                    ui->feedback = "Colagem excede o limite; rascunho preservado.";
+                    ui->feedback = _("Colagem excede o limite; rascunho preservado.");
                 else {
                     ui->feedback = send_editor_changed(ui->editor)
                                        ? NULL
-                                       : "Não foi possível salvar o rascunho.";
+                                       : _("Não foi possível salvar o rascunho.");
                     history_typing_activity(ui->model);
                     history_activity(ui->model);
                     uint64_t now;
@@ -915,7 +916,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             const char *area;
             help_context context = conversation_help_context(ui, &area);
             if (!help_open(&ui->help, context, area, shortcut_is(type, key, SHORTCUT_HELP_ALL)))
-                ui->feedback = "Não foi possível abrir a ajuda.";
+                ui->feedback = _("Não foi possível abrir a ajuda.");
             scope = DRAW_ALL;
             continue;
         }
@@ -1110,7 +1111,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             ((shortcut_is(type, key, SHORTCUT_ATTACH) && ui->focus != CHANNEL_LIST) ||
              (type == OK && key == 22))) {
             if (*ui->edit_message)
-                ui->feedback = "Conclua a edição antes de anexar arquivos.";
+                ui->feedback = _("Conclua a edição antes de anexar arquivos.");
             else
                 conversation_attachments_open(ui, type == OK && key == 22);
             scope = DRAW_ALL;
@@ -1132,7 +1133,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 (latest.state == OUTBOX_FAILED || latest.state == OUTBOX_UNCERTAIN))
                 conversation_submit(ui, latest.id, false);
             else
-                ui->feedback = "Nenhum envio falhou nesta conversa.";
+                ui->feedback = _("Nenhum envio falhou nesta conversa.");
             continue;
         }
         if (type == OK && key == 18) {
@@ -1405,12 +1406,13 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                             if (conversation_hit(ui->voice_output_hit, x)) {
                                 voice_output_toggle();
                                 ui->feedback = voice_output_enabled()
-                                                   ? "Áudio da chamada ativado."
-                                                   : "Áudio da chamada desativado.";
+                                                   ? _("Áudio da chamada ativado.")
+                                                   : _("Áudio da chamada desativado.");
                             } else if (conversation_hit(ui->voice_microphone_hit, x)) {
                                 voice_microphone_toggle();
-                                ui->feedback = voice_microphone_enabled() ? "Microfone ativado."
-                                                                          : "Microfone desativado.";
+                                ui->feedback = voice_microphone_enabled()
+                                                   ? _("Microfone ativado.")
+                                                   : _("Microfone desativado.");
                             } else if (x >= getmaxx(ui->list) - 6 && x < getmaxx(ui->list) - 1)
                                 open_settings(ui, connections->config);
                             scope = DRAW_ALL;
@@ -1422,8 +1424,8 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                                        ? conversation_list_visual_hit(
                                              ui, (size_t)(ui->first_channel + y - 1), &participant)
                                        : SIZE_MAX;
-                    if (y == 0 && x >= 1 && x < 19) {
-                        conversation_switch_list(ui, x >= 11);
+                    if (y == 0 && x >= 1 && x < ui->list_buttons_end) {
+                        conversation_switch_list(ui, x >= ui->list_dms_x);
                         ui->navigating = false;
                         conversation_set_focus(ui, ui->list_dms ? CHANNEL_LIST : LIST_BUTTONS);
                         scope = DRAW_ALL;
@@ -1473,16 +1475,16 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                     open_settings(ui, connections->config);
                 else if (ui->focus == VOICE_OUTPUT_BUTTON) {
                     voice_output_toggle();
-                    ui->feedback = voice_output_enabled() ? "Áudio da chamada ativado."
-                                                          : "Áudio da chamada desativado.";
+                    ui->feedback = voice_output_enabled() ? _("Áudio da chamada ativado.")
+                                                          : _("Áudio da chamada desativado.");
                 } else if (ui->focus == VOICE_MICROPHONE_BUTTON) {
                     voice_microphone_toggle();
-                    ui->feedback =
-                        voice_microphone_enabled() ? "Microfone ativado." : "Microfone desativado.";
+                    ui->feedback = voice_microphone_enabled() ? _("Microfone ativado.")
+                                                              : _("Microfone desativado.");
                 } else if (ui->focus == VOICE_LEAVE_BUTTON)
                     voice_leave(voice_active());
                 else
-                    ui->feedback = "Segure com o mouse ou use a tecla configurada em Áudio.";
+                    ui->feedback = _("Segure com o mouse ou use a tecla configurada em Áudio.");
             } else if (type == KEY_CODE_YES && (key == KEY_LEFT || key == KEY_RIGHT) &&
                        voice_available() &&
                        (ui->focus == SETTINGS_BUTTON || ui->focus == VOICE_OUTPUT_BUTTON ||

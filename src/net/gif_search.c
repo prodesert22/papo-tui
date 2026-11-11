@@ -2,6 +2,7 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 #include "net/gif_search.h"
+#include "model/text/translation.h"
 #include <glib.h>
 #include <jansson.h>
 #include <stdio.h>
@@ -212,7 +213,7 @@ static void start(gif_search *s)
     s->pending = false;
     if (!media_download_json_request(s->download, url)) {
         s->state = GIF_SEARCH_FAILED;
-        s->error = "Não foi possível iniciar a busca de GIFs.";
+        s->error = _("Não foi possível iniciar a busca de GIFs.");
     }
     g_free(url);
     g_free(escaped);
@@ -230,7 +231,7 @@ static void finish(gif_search *s)
         s->state = GIF_SEARCH_READY;
     } else {
         s->state = GIF_SEARCH_FAILED;
-        s->error = "Resposta inválida da busca de GIFs.";
+        s->error = _("Resposta inválida da busca de GIFs.");
     }
     g_free(origin);
     g_free(contents);
@@ -257,8 +258,8 @@ bool gif_search_poll(gif_search *s, uint64_t now)
     if (state == MEDIA_FAILED || state == MEDIA_IDLE) {
         s->state = GIF_SEARCH_FAILED;
         s->error = media_download_http_status(s->download) == 429
-                       ? "Limite de requisições. Aguarde e tente novamente."
-                       : "Não foi possível buscar GIFs. Verifique a conexão.";
+                       ? _("Limite de requisições. Aguarde e tente novamente.")
+                       : _("Não foi possível buscar GIFs. Verifique a conexão.");
         return true;
     }
     return false;

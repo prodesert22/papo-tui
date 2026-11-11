@@ -1,3 +1,4 @@
+#include "model/text/translation.h"
 #include "ui/input/shortcuts.h"
 #include "ui/screens/conversation/private.h"
 
@@ -48,7 +49,8 @@ static void draw_initial(WINDOW *w, int y, int x, int width, int rows, const jso
         text_label(w, y + (rows - 1) / 2, x + MAX(0, width - columns) / 2, columns, initial);
     }
 }
-static const char *const statuses[] = {"Online", "Ausente", "Ocupado", "Offline", "Desconhecido"};
+static const char *const statuses[] = {N_("Online"), N_("Ausente"), N_("Ocupado"), N_("Offline"),
+                                       N_("Desconhecido")};
 static const unsigned status_colors[] = {0x12ecc71, 0x1f1c40f, 0x1e74c3c, 0x195a5a6, 0x195a5a6};
 static unsigned status_index(view *ui, const char *id)
 {
@@ -137,7 +139,7 @@ static bool refresh_rows(view *ui)
         r->status = status_index(ui, s(u, "id"));
         if (d->by_status) {
             snprintf(r->group_id, sizeof(r->group_id), "s%u", r->status);
-            r->group = g_strdup(statuses[r->status]);
+            r->group = g_strdup(_(statuses[r->status]));
         } else {
             json_t *role = json_array_get(json_object_get(u, "roles"), 0);
             const json_t *info = permissions_role_info(
@@ -145,8 +147,8 @@ static bool refresh_rows(view *ui)
             snprintf(r->group_id, sizeof(r->group_id), "%s", s(role, "id"));
             r->group = g_strdup(*s(info, "name")   ? s(info, "name")
                                 : *s(role, "name") ? s(role, "name")
-                                : *r->group_id     ? "Cargo indisponível"
-                                                   : "Sem cargo");
+                                : *r->group_id     ? _("Cargo indisponível")
+                                                   : _("Sem cargo"));
         }
         if (!r->sort || !r->group) {
             row_free(r);
@@ -236,9 +238,9 @@ bool conversation_members_modal(view *ui)
 help_context conversation_members_help(view *ui, const char **area)
 {
     enum member_modal panel = ui->members->panel;
-    *area = panel == MEMBER_MENU   ? "Menu de membro"
-            : panel == MEMBER_CARD ? "Perfil do membro"
-                                   : "Confirmação de ação sobre membro";
+    *area = panel == MEMBER_MENU   ? _("Menu de membro")
+            : panel == MEMBER_CARD ? _("Perfil do membro")
+                                   : _("Confirmação de ação sobre membro");
     return panel == MEMBER_MENU   ? HELP_MENU
            : panel == MEMBER_CARD ? HELP_MEMBER_PROFILE
                                   : HELP_CONFIRM;
@@ -328,21 +330,21 @@ static int menu_items(view *ui, int items[5], const char *labels[5])
         return 0;
     }
     items[count] = 0;
-    labels[count++] = "Ver perfil";
+    labels[count++] = _("Ver perfil");
     if (!strcmp(d->target, auth_user_id(auth)))
         return count;
     items[count] = 1;
-    labels[count++] = "Mensagem";
+    labels[count++] = _("Mensagem");
     if (history_member_ready(ui->model)) {
         items[count] = 2;
-        labels[count++] = history_member_blocked(ui->model) ? "Desbloquear" : "Bloquear";
+        labels[count++] = history_member_blocked(ui->model) ? _("Desbloquear") : _("Bloquear");
         if (history_member_can_ban(ui->model)) {
             items[count] = 3;
-            labels[count++] = history_member_banned(ui->model) ? "Desbanir" : "Banir";
+            labels[count++] = history_member_banned(ui->model) ? _("Desbanir") : _("Banir");
         }
         if (history_member_admin(ui->model)) {
             items[count] = 4;
-            labels[count++] = "Gerar link de reset de senha";
+            labels[count++] = _("Gerar link de reset de senha");
         }
     }
     d->menu = CLAMP(d->menu, 0, count - 1);
@@ -363,7 +365,7 @@ static void activate_menu(view *ui)
     case 1:
         if (inbox_open_dm(history_inbox(ui->model), d->target)) {
             d->opening_dm = true;
-            snprintf(d->notice, sizeof(d->notice), "Abrindo conversa…");
+            snprintf(d->notice, sizeof(d->notice), _("Abrindo conversa…"));
         }
         break;
     case 2:
@@ -536,7 +538,7 @@ bool conversation_members_key(view *ui, int type, uint32_t key)
             }
             memset(&link, 0, sizeof(link));
             snprintf(d->notice, sizeof(d->notice),
-                     copied ? "Cópia solicitada." : "Não foi possível copiar o link.");
+                     copied ? _("Cópia solicitada.") : _("Não foi possível copiar o link."));
         }
         return true;
     }
@@ -694,7 +696,7 @@ static void status_label(view *ui, WINDOW *w, const char *id, int y, int x, int 
     wattrset(w, COLOR_PAIR(theme_member_pair(status_colors[status], THEME_PANEL)));
     text_label(w, y, x, width, "●");
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
-    text_label(w, y, x + 2, width - 2, statuses[status]);
+    text_label(w, y, x + 2, width - 2, _(statuses[status]));
 }
 static int wrapped(view *ui, WINDOW *w, const char *text, int y, int x, int width, int first,
                    int limit)
@@ -745,7 +747,7 @@ static void draw_card(view *ui, WINDOW *w)
                                                            AUTH_MEDIA_CONTENT, banner, 0, false);
             if (media_resource_error(resource, false)) {
                 wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
-                text_label(w, 2, 2, width - 4, "Banner indisponível · Ctrl+R: tentar novamente");
+                text_label(w, 2, 2, width - 4, _("Banner indisponível · Ctrl+R: tentar novamente"));
             }
             media_resource_release(resource);
         }
@@ -772,10 +774,10 @@ static void draw_card(view *ui, WINDOW *w)
     const char *phrase = json_object_get(presence, "status_message") ? s(presence, "status_message")
                                                                      : s(profile, "status_message");
     if (*phrase)
-        g_string_append_printf(body, "Status: %s\n\n", phrase);
+        g_string_append_printf(body, _("Status: %s\n\n"), phrase);
     if (*s(profile, "description"))
         g_string_append_printf(body, "%s\n\n", s(profile, "description"));
-    g_string_append(body, "Cargos\n");
+    g_string_append(body, _("Cargos\n"));
     size_t i;
     json_t *role;
     json_t *user_roles = json_object_get(profile, "roles");
@@ -794,7 +796,7 @@ static void draw_card(view *ui, WINDOW *w)
     wrapped(ui, w, body->str, y, 2, width - 4, d->scroll, available);
     int row_y = y + total - d->scroll;
     if (!role_count && row_y >= y && row_y < y + available)
-        text_label(w, row_y, 2, width - 4, "Sem cargo");
+        text_label(w, row_y, 2, width - 4, _("Sem cargo"));
     json_array_foreach(user_roles, i, role)
     {
         int line = row_y + (int)i;
@@ -807,12 +809,13 @@ static void draw_card(view *ui, WINDOW *w)
         wattrset(w, COLOR_PAIR(theme_member_pair(role_color(info), THEME_PANEL)));
         char label[1100];
         snprintf(label, sizeof(label), "● %s",
-                 *s(info, "name") ? s(info, "name") : "Cargo indisponível");
+                 *s(info, "name") ? s(info, "name") : _("Cargo indisponível"));
         text_label(w, line, 2, width - 4, label);
     }
     g_string_free(body, true);
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
-    text_label(w, height - 2, 2, width - 4, "↑↓ / roda: rolar · Ctrl+R: atualizar · Esc: voltar");
+    text_label(w, height - 2, 2, width - 4,
+               _("↑↓ / roda: rolar · Ctrl+R: atualizar · Esc: voltar"));
 }
 static void draw_list(view *ui)
 {
@@ -825,13 +828,13 @@ static void draw_list(view *ui)
     member_overlay(ui, w);
     wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
     char title[80];
-    snprintf(title, sizeof(title), "Membros (%u) · Ctrl+U", d->rows->len);
+    snprintf(title, sizeof(title), _("Membros (%u) · Ctrl+U"), d->rows->len);
     text_label(w, 0, 2, width - 4, title);
     wattrset(w,
              COLOR_PAIR(d->focus == 0 && ui->focus == MEMBERS_PANEL ? THEME_FOCUSED : THEME_INPUT));
-    text_label(w, 1, 2, width - 4, "Buscar nickname / @username");
+    text_label(w, 1, 2, width - 4, _("Buscar nickname / @username"));
     text_draw_field(w, &d->query, &d->field_first, 2, 2, width - 4, false);
-    button_draw(w, 4, 2, width - 4, d->by_status ? "Agrupar: Status ↔" : "Agrupar: Cargo ↔",
+    button_draw(w, 4, 2, width - 4, d->by_status ? _("Agrupar: Status ↔") : _("Agrupar: Cargo ↔"),
                 d->focus == 1 && ui->focus == MEMBERS_PANEL ? BUTTON_FOCUSED : BUTTON_NORMAL,
                 BUTTON_PANEL);
     graphics_terminal terminal = graphics_terminal_get();
@@ -888,8 +891,8 @@ static void draw_list(view *ui)
         text_label(w, y, width - 3, 2, "●");
         wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
         text_label(w, y + 1, image_columns + 3, width - image_columns - 5,
-                   json_is_true(json_object_get(r->user, "banned")) ? "Banido"
-                                                                    : statuses[r->status]);
+                   json_is_true(json_object_get(r->user, "banned")) ? _("Banido")
+                                                                    : _(statuses[r->status]));
         if (d->hit_count < 256) {
             int n = d->hit_count++;
             d->hit_first[n] = y;
@@ -900,12 +903,12 @@ static void draw_list(view *ui)
     }
     if (!d->rows->len) {
         wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
-        text_label(w, 6, 2, width - 4, "Nenhum membro encontrado.");
+        text_label(w, 6, 2, width - 4, _("Nenhum membro encontrado."));
     }
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     const char *users_notice = history_users_notice(ui->model);
     text_label(w, height - 3, 2, width - 4, !strncmp(users_notice, "Tab /", 5) ? "" : users_notice);
-    text_label(w, height - 2, 2, width - 4, "m / botão direito: opções");
+    text_label(w, height - 2, 2, width - 4, _("m / botão direito: opções"));
     wnoutrefresh(w);
 }
 void conversation_members_draw(view *ui)
@@ -959,13 +962,13 @@ void conversation_members_draw(view *ui)
     wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
     const char *target_name = history_author(ui->model, d->target);
     text_label(w, 1, 2, modal_width - 4,
-               d->panel == MEMBER_CARD ? "Perfil do membro" : target_name);
+               d->panel == MEMBER_CARD ? _("Perfil do membro") : target_name);
     if (d->panel == MEMBER_CARD)
         draw_card(ui, w);
     else if (d->panel == MEMBER_MENU) {
         if (!count) {
             wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
-            text_label(w, 3, 2, modal_width - 4, "Consultando opções…");
+            text_label(w, 3, 2, modal_width - 4, _("Consultando opções…"));
         }
         for (int i = 0; i < count; ++i) {
             wattrset(w, COLOR_PAIR(i == d->menu ? THEME_FOCUSED : THEME_PANEL));
@@ -977,22 +980,22 @@ void conversation_members_draw(view *ui)
     } else if (d->panel == MEMBER_CONFIRM) {
         wattrset(w, COLOR_PAIR(THEME_PANEL));
         const char *question =
-            d->confirmation == MEMBER_BAN ? "Banir este membro de toda a instância?"
+            d->confirmation == MEMBER_BAN ? _("Banir este membro de toda a instância?")
             : d->confirmation == MEMBER_UNBAN
-                ? "Desbanir este membro?"
-                : "Gerar link de reset de senha? O novo link invalida o anterior.";
+                ? _("Desbanir este membro?")
+                : _("Gerar link de reset de senha? O novo link invalida o anterior.");
         wrapped(ui, w, question, 3, 2, modal_width - 4, 0, 5);
-        button_draw(w, modal_height - 2, 2, 14, "Cancelar",
+        button_draw(w, modal_height - 2, 2, 14, _("Cancelar"),
                     !d->accept ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
-        button_draw(w, modal_height - 2, modal_width - 17, 15, "Confirmar",
+        button_draw(w, modal_height - 2, modal_width - 17, 15, _("Confirmar"),
                     d->accept ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     } else if (d->panel == MEMBER_LINK) {
         wattrset(w, COLOR_PAIR(THEME_PANEL));
-        text_label(w, 2, 2, modal_width - 4, "Link de reset de senha (uso único)");
+        text_label(w, 2, 2, modal_width - 4, _("Link de reset de senha (uso único)"));
         wrapped(ui, w, history_member_reset_url(ui->model), 4, 2, modal_width - 4, 0, 3);
         text_label(w, 8, 2, modal_width - 4, history_member_reset_expires(ui->model));
         text_label(w, 9, 2, modal_width - 4, d->notice);
-        button_draw(w, modal_height - 2, 2, 18, "Copiar · Enter", BUTTON_FOCUSED, BUTTON_PANEL);
+        button_draw(w, modal_height - 2, 2, 18, _("Copiar · Enter"), BUTTON_FOCUSED, BUTTON_PANEL);
     }
     wnoutrefresh(w);
 }

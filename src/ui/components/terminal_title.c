@@ -1,4 +1,5 @@
 #include "ui/components/terminal_title.h"
+#include "model/text/translation.h"
 #include <glib.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -82,7 +83,7 @@ void terminal_title_set(const char *conversation, const char *server, size_t men
     if (!*safe_conversation)
         snprintf(safe_conversation, sizeof(safe_conversation), "%s", "Papo TUI");
     if (!*safe_server)
-        snprintf(safe_server, sizeof(safe_server), "%s", "Servidor");
+        snprintf(safe_server, sizeof(safe_server), "%s", _("Servidor"));
     if (mentions)
         snprintf(title, sizeof(title), "%s | %s (%zu)", safe_conversation, safe_server, mentions);
     else

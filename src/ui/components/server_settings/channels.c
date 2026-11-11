@@ -1,14 +1,15 @@
+#include "model/text/translation.h"
 #include "ui/components/server_settings/private.h"
 
 /* Canais: create, edit, reorder and delete channels, and each role's access
  * to a channel (manage_channels). */
 enum { NAME, TYPE, TOPIC, SAVE, UP, DOWN, DELETE, PERMISSION, UNLINK, ADD_ROLE, LINK };
 static const char *const types[3] = {"text", "voice", "category"};
-static const char *const type_labels[3] = {"Texto", "Voz", "Categoria"};
+static const char *const type_labels[3] = {N_("Texto"), N_("Voz"), N_("Categoria")};
 static const char *const flag_keys[PERMISSION_CHANNEL_COUNT] = {"read_channel", "send_messages",
                                                                 "delete_messages", "connect_voice"};
 static const char *const flag_labels[PERMISSION_CHANNEL_COUNT] = {
-    "Ler o canal", "Enviar mensagens", "Excluir mensagens", "Entrar em chamadas"};
+    N_("Ler o canal"), N_("Enviar mensagens"), N_("Excluir mensagens"), N_("Entrar em chamadas")};
 #define CHANNEL_MAX 500
 
 static int by_position(const void *a, const void *b)
@@ -42,7 +43,7 @@ static int type_index(const char *type)
 }
 static void rows(server_settings *s, GArray *out)
 {
-    admin_row_add(out, ROW_NEW, "+ Novo canal", "", 0, true);
+    admin_row_add(out, ROW_NEW, _("+ Novo canal"), "", 0, true);
     const json_t *channels[CHANNEL_MAX];
     size_t count = sorted(s, channels);
     for (size_t i = 0; i < count; ++i) {
@@ -98,41 +99,41 @@ static void neighbours(server_settings *s, const json_t *channel, const json_t *
 static void fields(server_settings *s, GArray *out)
 {
     if (!server_admin_channels(s->model)) {
-        admin_note(out, "Carregando canais…");
+        admin_note(out, _("Carregando canais…"));
         return;
     }
     const json_t *channel = selected_channel(s);
-    admin_field_add(out, FIELD_HEADING, 0, channel ? "Editar canal" : "Novo canal");
-    admin_field *f = admin_field_add(out, FIELD_TEXT, NAME, "Nome");
+    admin_field_add(out, FIELD_HEADING, 0, channel ? _("Editar canal") : _("Novo canal"));
+    admin_field *f = admin_field_add(out, FIELD_TEXT, NAME, _("Nome"));
     f->text = &s->name;
     f->first = &s->name_first;
     if (channel) {
-        f = admin_field_add(out, FIELD_INFO, 0, "Tipo");
-        snprintf(f->value, sizeof(f->value), "%s", type_labels[s->choice]);
+        f = admin_field_add(out, FIELD_INFO, 0, _("Tipo"));
+        snprintf(f->value, sizeof(f->value), "%s", _(type_labels[s->choice]));
     } else {
-        f = admin_field_add(out, FIELD_CHOICE, TYPE, "Tipo");
-        snprintf(f->value, sizeof(f->value), "%s", type_labels[s->choice]);
+        f = admin_field_add(out, FIELD_CHOICE, TYPE, _("Tipo"));
+        snprintf(f->value, sizeof(f->value), "%s", _(type_labels[s->choice]));
     }
     if (s->choice != 2) {
-        f = admin_field_add(out, FIELD_TEXT, TOPIC, "Tópico");
+        f = admin_field_add(out, FIELD_TEXT, TOPIC, _("Tópico"));
         f->text = &s->aux;
         f->first = &s->aux_first;
         f->max = ADMIN_TOPIC_MAX;
     }
-    admin_field_add(out, FIELD_BUTTON, SAVE, channel ? "Salvar canal" : "Criar canal");
+    admin_field_add(out, FIELD_BUTTON, SAVE, channel ? _("Salvar canal") : _("Criar canal"));
     if (!channel)
         return;
     const json_t *above, *below;
     neighbours(s, channel, &above, &below);
     if (above)
-        admin_field_add(out, FIELD_BUTTON, UP, "Mover para cima");
+        admin_field_add(out, FIELD_BUTTON, UP, _("Mover para cima"));
     if (below)
-        admin_field_add(out, FIELD_BUTTON, DOWN, "Mover para baixo");
-    f = admin_field_add(out, FIELD_BUTTON, DELETE, "Excluir canal");
+        admin_field_add(out, FIELD_BUTTON, DOWN, _("Mover para baixo"));
+    f = admin_field_add(out, FIELD_BUTTON, DELETE, _("Excluir canal"));
     f->destructive = true;
     snprintf(f->key, sizeof(f->key), "%s", s->selected);
-    admin_field_add(out, FIELD_HEADING, 0, "Permissões por cargo");
-    admin_note(out, "Cada caixa é salva no servidor ao ser marcada.");
+    admin_field_add(out, FIELD_HEADING, 0, _("Permissões por cargo"));
+    admin_note(out, _("Cada caixa é salva no servidor ao ser marcada."));
     size_t i;
     json_t *entry;
     json_array_foreach(json_object_get(channel, "permissions"), i, entry)
@@ -142,15 +143,15 @@ static void fields(server_settings *s, GArray *out)
         f = admin_field_add(out, FIELD_HEADING, 0,
                             *admin_str(info, "name")         ? admin_str(info, "name")
                             : *admin_str(entry, "role_name") ? admin_str(entry, "role_name")
-                                                             : "Cargo");
+                                                             : _("Cargo"));
         const json_t *flags = json_object_get(entry, "permissions");
         for (int k = 0; k < PERMISSION_CHANNEL_COUNT; ++k) {
-            f = admin_field_add(out, FIELD_CHECK, PERMISSION, flag_labels[k]);
+            f = admin_field_add(out, FIELD_CHECK, PERMISSION, _(flag_labels[k]));
             f->arg = k;
             f->checked = json_is_true(json_object_get(flags, flag_keys[k]));
             snprintf(f->key, sizeof(f->key), "%s", role);
         }
-        f = admin_field_add(out, FIELD_BUTTON, UNLINK, "Remover vínculo");
+        f = admin_field_add(out, FIELD_BUTTON, UNLINK, _("Remover vínculo"));
         f->destructive = true;
         snprintf(f->key, sizeof(f->key), "%s", role);
     }
@@ -159,20 +160,21 @@ static void fields(server_settings *s, GArray *out)
     if (!count)
         return;
     s->choice2 = (s->choice2 % (int)count + (int)count) % (int)count;
-    f = admin_field_add(out, FIELD_CHOICE, ADD_ROLE, "Novo vínculo");
+    f = admin_field_add(out, FIELD_CHOICE, ADD_ROLE, _("Novo vínculo"));
     snprintf(f->value, sizeof(f->value), "%s", admin_str(candidates[s->choice2], "name"));
-    f = admin_field_add(out, FIELD_BUTTON, LINK, "Vincular cargo");
+    f = admin_field_add(out, FIELD_BUTTON, LINK, _("Vincular cargo"));
     snprintf(f->key, sizeof(f->key), "%s", admin_str(candidates[s->choice2], "id"));
 }
 static void save(server_settings *s)
 {
     static char name[TEXT_UTF8_BYTES], topic[TEXT_UTF8_BYTES];
     if (!admin_text(&s->name, name) || !admin_text(&s->aux, topic)) {
-        admin_error(s, "Texto inválido.");
+        admin_error(s, _("Texto inválido."));
         return;
     }
-    if (!admin_check_field(s, NAME, "Nome", name, 0, true) ||
-        (s->choice != 2 && !admin_check_field(s, TOPIC, "Tópico", topic, ADMIN_TOPIC_MAX, false)))
+    if (!admin_check_field(s, NAME, _("Nome"), name, 0, true) ||
+        (s->choice != 2 &&
+         !admin_check_field(s, TOPIC, _("Tópico"), topic, ADMIN_TOPIC_MAX, false)))
         return;
     const json_t *channel = selected_channel(s);
     bool queued;
@@ -199,7 +201,7 @@ static void reorder(server_settings *s, bool up)
     int from = (int)json_integer_value(json_object_get(channel, "position")),
         to = (int)json_integer_value(json_object_get(target, "position"));
     if (!server_admin_channel_move(s->model, s->selected, from, to))
-        admin_error(s, "Não foi possível mover o canal agora.");
+        admin_error(s, _("Não foi possível mover o canal agora."));
 }
 static void toggle(server_settings *s, const admin_field *f)
 {
@@ -245,7 +247,7 @@ static void activate(server_settings *s, const admin_field *f, int direction)
 }
 const admin_tab_ops tab_channels = {
     .list = true,
-    .empty = "Nenhum canal.",
+    .empty = N_("Nenhum canal."),
     .rows = rows,
     .fill = fill,
     .fields = fields,

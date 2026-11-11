@@ -1,4 +1,5 @@
 #include "ui/input/profile_commands.h"
+#include "model/text/translation.h"
 #include <glib.h>
 #include <stdio.h>
 #include <string.h>
@@ -66,12 +67,12 @@ void profile_command_parse(const char *text, profile_command *c)
             snprintf(c->status, sizeof(c->status), "busy");
         else if (!one_of(word, online)) {
             c->kind = PROFILE_COMMAND_USAGE;
-            c->usage = "Uso: /status online, ausente ou ocupado";
+            c->usage = _("Uso: /status online, ausente ou ocupado");
         }
     } else if ((rest = command(text, "/avatar"))) {
         trimmed(word, sizeof(word), rest);
         c->kind = *word ? PROFILE_COMMAND_USAGE : PROFILE_COMMAND_AVATAR;
-        c->usage = *word ? "Uso: /avatar (abre a escolha da imagem)" : NULL;
+        c->usage = *word ? _("Uso: /avatar (abre a escolha da imagem)") : NULL;
     } else if ((rest = command(text, "/banner"))) {
         static const char *const remove[] = {"remover", "remove", NULL};
         trimmed(word, sizeof(word), rest);
@@ -79,24 +80,25 @@ void profile_command_parse(const char *text, profile_command *c)
                   : one_of(word, remove) ? PROFILE_COMMAND_BANNER_REMOVE
                                          : PROFILE_COMMAND_USAGE;
         if (c->kind == PROFILE_COMMAND_USAGE)
-            c->usage = "Uso: /banner para escolher a imagem, ou /banner remover";
+            c->usage = _("Uso: /banner para escolher a imagem, ou /banner remover");
     }
 }
 
 static const char *const status_choices[] = {"online", "ausente", "ocupado", NULL};
-static const char *const status_descriptions[] = {"Disponível", "Ausente", "Ocupado", NULL};
+static const char *const status_descriptions[] = {N_("Disponível"), N_("Ausente"), N_("Ocupado"),
+                                                  NULL};
 static const char *const banner_choices[] = {"remover", NULL};
-static const char *const banner_descriptions[] = {"Remover o banner do perfil", NULL};
+static const char *const banner_descriptions[] = {N_("Remover o banner do perfil"), NULL};
 static const profile_command_info commands[] = {
-    {"nick", "Alterar seu apelido neste servidor.", "novo_apelido",
-     "Novo apelido; vazio remove o apelido", true, NULL, NULL},
-    {"status", "Alterar seu status neste servidor.", "status", "online, ausente ou ocupado", false,
-     status_choices, status_descriptions},
-    {"bio", "Alterar a descrição do seu perfil neste servidor.", "texto",
-     "Nova descrição; vazio a apaga", true, NULL, NULL},
-    {"avatar", "Escolher a imagem do seu avatar neste servidor.", NULL, NULL, true, NULL, NULL},
-    {"banner", "Escolher a imagem do seu banner neste servidor.", "remover",
-     "Opcional: remove o banner em vez de escolher uma imagem", true, banner_choices,
+    {"nick", N_("Alterar seu apelido neste servidor."), "novo_apelido",
+     N_("Novo apelido; vazio remove o apelido"), true, NULL, NULL},
+    {"status", N_("Alterar seu status neste servidor."), "status", N_("online, ausente ou ocupado"),
+     false, status_choices, status_descriptions},
+    {"bio", N_("Alterar a descrição do seu perfil neste servidor."), "texto",
+     N_("Nova descrição; vazio a apaga"), true, NULL, NULL},
+    {"avatar", N_("Escolher a imagem do seu avatar neste servidor."), NULL, NULL, true, NULL, NULL},
+    {"banner", N_("Escolher a imagem do seu banner neste servidor."), "remover",
+     N_("Opcional: remove o banner em vez de escolher uma imagem"), true, banner_choices,
      banner_descriptions},
 };
 const profile_command_info *profile_commands(size_t *count)

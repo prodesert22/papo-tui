@@ -188,6 +188,16 @@ if(BUILD_TESTING)
     papo_set_tests_properties(footer-terminal PROPERTIES TIMEOUT 120)
     papo_add_test(
         NAME
+        language-terminal
+        COMMAND
+        ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_language_terminal.py
+        $<TARGET_FILE:papo-tui>
+        LABELS
+        language
+        ui)
+    papo_add_test(
+        NAME
         quick-switcher-terminal
         COMMAND
         ${Python3_EXECUTABLE}
@@ -636,8 +646,9 @@ if(BUILD_TESTING)
         LABELS
         auth
         ui)
-    add_executable(text-test tests/unit/test_text.c src/ui/input/text.c src/ui/input/mouse.c
-                             src/model/text/mentions.c src/config/key_binding.c)
+    add_executable(
+        text-test tests/unit/test_text.c src/ui/input/text.c src/ui/input/mouse.c
+                  src/model/text/mentions.c src/config/key_binding.c src/model/text/translation.c)
     target_include_directories(text-test PRIVATE src)
     target_link_libraries(text-test PRIVATE PkgConfig::GLIB PkgConfig::NCURSES PkgConfig::UNIBREAK
                                             PkgConfig::JANSSON)

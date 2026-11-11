@@ -1,3 +1,4 @@
+#include "model/text/translation.h"
 #include "ui/components/server_settings/private.h"
 #include "ui/media/message_time.h"
 #include <time.h>
@@ -22,9 +23,9 @@ enum {
 #define MATCHES 6
 static const char *const entities[] = {"",     "user",      "server", "channel", "message",
                                        "attachment", "role", "user_role", "emoji",   "webhook"};
-static const char *const entity_labels[] = {"Todas",  "Usuários",          "Servidor", "Canais",
-                                            "Mensagens", "Anexos",         "Cargos",
-                                            "Cargos de membros", "Emojis", "Webhooks"};
+static const char *const entity_labels[] = {
+    N_("Todas"),  N_("Usuários"), N_("Servidor"),          N_("Canais"), N_("Mensagens"),
+    N_("Anexos"), N_("Cargos"),   N_("Cargos de membros"), N_("Emojis"), N_("Webhooks")};
 #define ENTITIES ((int)G_N_ELEMENTS(entities))
 
 static const json_t *selected_log(server_settings *s)
@@ -104,10 +105,11 @@ static void rows(server_settings *s, GArray *out)
     int active = active_filters(server_admin_audit_current(s->model));
     char label[64];
     if (active)
-        snprintf(label, sizeof(label), "▾ Filtros (%d %s)", active,
-                 active == 1 ? "ativo" : "ativos");
+        snprintf(label, sizeof(label),
+                 P_("▾ Filtros (%d ativo)", "▾ Filtros (%d ativos)", (unsigned long)active),
+                 active);
     else
-        snprintf(label, sizeof(label), "▾ Filtros");
+        snprintf(label, sizeof(label), _("▾ Filtros"));
     admin_row_add(out, ROW_FILTERS, label, "", 0, true);
     size_t i;
     json_t *log;
@@ -123,8 +125,8 @@ static void rows(server_settings *s, GArray *out)
     }
     if (server_admin_more(s->model, ADMIN_LIST_AUDIT))
         admin_row_add(out, ROW_MORE,
-                      server_admin_loading(s->model, ADMIN_LIST_AUDIT) ? "Carregando…"
-                                                                       : "Carregar mais…",
+                      server_admin_loading(s->model, ADMIN_LIST_AUDIT) ? _("Carregando…")
+                                                                       : _("Carregar mais…"),
                       "", 0, true);
 }
 static void choose(server_settings *s, const admin_row *row)
@@ -157,26 +159,26 @@ static void fill(server_settings *s)
 }
 static void filter_fields(server_settings *s, GArray *out)
 {
-    admin_field_add(out, FIELD_HEADING, 0, "Filtros");
-    admin_field *f = admin_field_add(out, FIELD_CHOICE, ENTITY, "Entidade");
-    snprintf(f->value, sizeof(f->value), "%s", entity_labels[s->choice]);
-    f = admin_field_add(out, FIELD_CHOICE, ACTION, "Ação");
-    snprintf(f->value, sizeof(f->value), "%s", *s->draft_action ? s->draft_action : "Todas");
+    admin_field_add(out, FIELD_HEADING, 0, _("Filtros"));
+    admin_field *f = admin_field_add(out, FIELD_CHOICE, ENTITY, _("Entidade"));
+    snprintf(f->value, sizeof(f->value), "%s", _(entity_labels[s->choice]));
+    f = admin_field_add(out, FIELD_CHOICE, ACTION, _("Ação"));
+    snprintf(f->value, sizeof(f->value), "%s", *s->draft_action ? s->draft_action : _("Todas"));
     json_t *actor = user_by_id(s, s->draft_actor);
     if (*s->draft_actor) {
-        f = admin_field_add(out, FIELD_INFO, 0, "Feito por");
+        f = admin_field_add(out, FIELD_INFO, 0, _("Feito por"));
         snprintf(f->value, sizeof(f->value), "%s (@%s)",
                  actor ? admin_user_display(actor) : s->draft_actor,
                  actor ? admin_str(actor, "username") : "?");
-        admin_field_add(out, FIELD_BUTTON, ANYONE, "Qualquer pessoa");
+        admin_field_add(out, FIELD_BUTTON, ANYONE, _("Qualquer pessoa"));
     } else {
-        f = admin_field_add(out, FIELD_TEXT, SEARCH, "Feito por");
+        f = admin_field_add(out, FIELD_TEXT, SEARCH, _("Feito por"));
         f->text = &s->name;
         f->first = &s->name_first;
         static char query[TEXT_UTF8_BYTES];
         bool typed = admin_text(&s->name, query) && *g_strstrip(query);
         if (!typed)
-            admin_note(out, "Digite parte do nome ou do @usuário de quem fez a ação.");
+            admin_note(out, _("Digite parte do nome ou do @usuário de quem fez a ação."));
         else {
             char *folded = g_utf8_casefold(query, -1);
             int shown = 0;
@@ -193,57 +195,57 @@ static void filter_fields(server_settings *s, GArray *out)
             }
             g_free(folded);
             if (!shown)
-                admin_note(out, history_users_complete(s->model) ? "Ninguém com esse nome."
-                                                                 : "Carregando membros…");
+                admin_note(out, history_users_complete(s->model) ? _("Ninguém com esse nome.")
+                                                                 : _("Carregando membros…"));
         }
     }
     f = admin_field_add(out, FIELD_TEXT, FROM, "De");
     f->text = &s->aux;
     f->first = &s->aux_first;
-    f = admin_field_add(out, FIELD_TEXT, UNTIL, "Até");
+    f = admin_field_add(out, FIELD_TEXT, UNTIL, _("Até"));
     f->text = &s->extra;
     f->first = &s->extra_first;
-    admin_note(out, "Datas em DD/MM/AAAA, no fuso deste computador; incluem o dia todo.");
-    admin_field_add(out, FIELD_BUTTON, APPLY, "Aplicar filtros");
+    admin_note(out, _("Datas em DD/MM/AAAA, no fuso deste computador; incluem o dia todo."));
+    admin_field_add(out, FIELD_BUTTON, APPLY, _("Aplicar filtros"));
     if (active_filters(server_admin_audit_current(s->model)))
-        admin_field_add(out, FIELD_BUTTON, RESET, "Limpar filtros");
+        admin_field_add(out, FIELD_BUTTON, RESET, _("Limpar filtros"));
 }
 static void log_fields(server_settings *s, GArray *out, const json_t *log)
 {
     admin_field_add(out, FIELD_HEADING, 0, admin_str(log, "action"));
-    admin_field *f = admin_field_add(out, FIELD_INFO, 0, "Data");
+    admin_field *f = admin_field_add(out, FIELD_INFO, 0, _("Data"));
     if (!message_time_format(admin_str(log, "created_at"), time(NULL), f->value, sizeof(f->value)))
         snprintf(f->value, sizeof(f->value), "—");
     const char *actor = admin_str(log, "actor_username");
-    f = admin_field_add(out, FIELD_INFO, 0, "Feito por");
+    f = admin_field_add(out, FIELD_INFO, 0, _("Feito por"));
     snprintf(f->value, sizeof(f->value), "%s", *actor ? actor : "—");
-    f = admin_field_add(out, FIELD_INFO, 0, "Entidade");
+    f = admin_field_add(out, FIELD_INFO, 0, _("Entidade"));
     const char *entity = admin_str(log, "entity_type");
     int index = entity_index(entity);
     snprintf(f->value, sizeof(f->value), "%s",
-             index     ? entity_labels[index]
+             index     ? _(entity_labels[index])
              : *entity ? entity
                        : "—");
     const char *target = admin_str(log, "target_user_id");
     if (*target) {
-        f = admin_field_add(out, FIELD_INFO, 0, "Membro afetado");
+        f = admin_field_add(out, FIELD_INFO, 0, _("Membro afetado"));
         snprintf(f->value, sizeof(f->value), "%s", admin_user_name(s, target, target));
     }
     const json_t *metadata = json_object_get(log, "metadata");
     if (json_is_object(metadata) && json_object_size(metadata)) {
-        admin_field_add(out, FIELD_HEADING, 0, "Detalhes");
+        admin_field_add(out, FIELD_HEADING, 0, _("Detalhes"));
         char *text = json_dumps(metadata, JSON_COMPACT | JSON_SORT_KEYS);
         admin_note(out, text ? text : "");
         free(text);
     }
-    admin_field_add(out, FIELD_HEADING, 0, "Filtrar a partir deste evento");
+    admin_field_add(out, FIELD_HEADING, 0, _("Filtrar a partir deste evento"));
     char label[192];
-    snprintf(label, sizeof(label), "Só a ação %s", admin_str(log, "action"));
+    snprintf(label, sizeof(label), _("Só a ação %s"), admin_str(log, "action"));
     f = admin_field_add(out, FIELD_BUTTON, ONLY_ACTION, label);
     snprintf(f->key, sizeof(f->key), "%.39s", admin_str(log, "id"));
     json_t *user = user_by_name(s, actor);
     if (user) {
-        snprintf(label, sizeof(label), "Só as ações de %s", admin_user_display(user));
+        snprintf(label, sizeof(label), _("Só as ações de %s"), admin_user_display(user));
         f = admin_field_add(out, FIELD_BUTTON, ONLY_ACTOR, label);
         snprintf(f->key, sizeof(f->key), "%s", admin_str(user, "id"));
     }
@@ -253,12 +255,12 @@ static void fields(server_settings *s, GArray *out)
     if (!strcmp(s->selected, ROW_FILTERS) || !*s->selected) {
         filter_fields(s, out);
         if (server_admin_failed(s->model, ADMIN_LIST_AUDIT)) {
-            admin_note(out, "Não foi possível carregar o registro.");
-            admin_field_add(out, FIELD_BUTTON, RETRY, "Tentar de novo");
+            admin_note(out, _("Não foi possível carregar o registro."));
+            admin_field_add(out, FIELD_BUTTON, RETRY, _("Tentar de novo"));
         } else if (!server_admin_items(s->model, ADMIN_LIST_AUDIT))
-            admin_note(out, "Carregando registro…");
+            admin_note(out, _("Carregando registro…"));
         else if (!json_array_size(server_admin_items(s->model, ADMIN_LIST_AUDIT)))
-            admin_note(out, "Nenhum evento registrado com estes filtros.");
+            admin_note(out, _("Nenhum evento registrado com estes filtros."));
         return;
     }
     const json_t *log = selected_log(s);
@@ -270,7 +272,7 @@ static void apply(server_settings *s)
 {
     static char from_text[TEXT_UTF8_BYTES], until_text[TEXT_UTF8_BYTES];
     if (!admin_text(&s->aux, from_text) || !admin_text(&s->extra, until_text)) {
-        admin_invalid(s, FROM, "Data inválida; use DD/MM/AAAA.");
+        admin_invalid(s, FROM, _("Data inválida; use DD/MM/AAAA."));
         return;
     }
     GDateTime *from, *until;
@@ -297,11 +299,12 @@ static void apply(server_settings *s)
     if (until)
         g_date_time_unref(until);
     if (!ok_from || !ok_until)
-        admin_invalid(s, ok_from ? UNTIL : FROM, "Data inválida; use DD/MM/AAAA, como 05/11/2026.");
+        admin_invalid(s, ok_from ? UNTIL : FROM,
+                      _("Data inválida; use DD/MM/AAAA, como 05/11/2026."));
     else if (!ordered)
-        admin_invalid(s, FROM, "A data inicial é depois da final.");
+        admin_invalid(s, FROM, _("A data inicial é depois da final."));
     else if (!server_admin_audit_query(s->model, &q))
-        admin_error(s, "Filtro inválido.");
+        admin_error(s, _("Filtro inválido."));
     else {
         s->dirty = false;
         admin_select(s, ROW_FILTERS);
@@ -326,7 +329,7 @@ static void submit(server_settings *s)
             return;
         }
         if (count > 1) {
-            admin_error(s, "Escolha a pessoa na lista abaixo do campo.");
+            admin_error(s, _("Escolha a pessoa na lista abaixo do campo."));
             return;
         }
     }
@@ -348,7 +351,7 @@ static void cycle_action(server_settings *s, int direction)
     snprintf(s->draft_action, sizeof(s->draft_action), "%s",
              next < 0 ? "" : json_string_value(json_array_get(actions, (size_t)next)));
     if (!count)
-        admin_error(s, "Nenhuma ação carregada ainda para escolher.");
+        admin_error(s, _("Nenhuma ação carregada ainda para escolher."));
 }
 static void activate(server_settings *s, const admin_field *f, int direction)
 {
@@ -385,12 +388,12 @@ static void activate(server_settings *s, const admin_field *f, int direction)
         if (server_admin_audit_query(s->model, &q))
             admin_select(s, ROW_FILTERS);
         else
-            admin_error(s, "Filtro inválido.");
+            admin_error(s, _("Filtro inválido."));
     }
 }
 const admin_tab_ops tab_audit = {
     .list = true,
-    .empty = "Nenhum evento para mostrar.",
+    .empty = N_("Nenhum evento para mostrar."),
     .enter = enter,
     .rows = rows,
     .fill = fill,

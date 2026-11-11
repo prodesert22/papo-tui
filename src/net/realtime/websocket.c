@@ -2,6 +2,7 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 #include "net/realtime/websocket.h"
+#include "model/text/translation.h"
 #include "net/clock.h"
 #include "net/rate_limit.h"
 #include "net/tls.h"
@@ -212,13 +213,13 @@ bool ws_connect(ws_client *client, const char *base)
     client->peer_closed = false;
     char *url = endpoint(base); /* Base is validated by the owning auth context. */
     if (!url) {
-        fail(client, "Não foi possível preparar o endereço de tempo real.");
+        fail(client, _("Não foi possível preparar o endereço de tempo real."));
         return false;
     }
     client->easy = curl_easy_init();
     if (!client->easy) {
         curl_free(url);
-        fail(client, "Não foi possível preparar o tempo real.");
+        fail(client, _("Não foi possível preparar o tempo real."));
         return false;
     }
 #define SET(option, value)                                                                         \
@@ -252,11 +253,11 @@ bool ws_connect(ws_client *client, const char *base)
 #undef SET
     curl_free(url);
     client->state = WS_QUEUED;
-    snprintf(client->message, sizeof(client->message), "Conectando tempo real…");
+    snprintf(client->message, sizeof(client->message), _("Conectando tempo real…"));
     return true;
 error:
     curl_free(url);
-    fail(client, "Não foi possível preparar o tempo real.");
+    fail(client, _("Não foi possível preparar o tempo real."));
     return false;
 }
 
@@ -265,13 +266,13 @@ static bool enqueue(ws_client *client, char *data, size_t length, unsigned flags
     uint64_t now;
     if (!net_now_ms(&now)) {
         free(data);
-        fail(client, "Não foi possível acompanhar o envio de tempo real.");
+        fail(client, _("Não foi possível acompanhar o envio de tempo real."));
         return false;
     }
     if (length > WS_MESSAGE_LIMIT || client->output_count == WS_QUEUE_LIMIT ||
         length > WS_QUEUE_BYTES - client->output_bytes) {
         free(data);
-        fail(client, "A fila de envio de tempo real excedeu o limite.");
+        fail(client, _("A fila de envio de tempo real excedeu o limite."));
         return false;
     }
     size_t index = (client->output_head + client->output_count) % WS_QUEUE_LIMIT;
@@ -291,12 +292,12 @@ static bool enqueue_pong(ws_client *client, const char *payload, size_t length)
     if (length > 125 || !net_now_ms(&now))
         return false;
     if (client->output_count == WS_QUEUE_LIMIT || length > WS_QUEUE_BYTES - client->output_bytes) {
-        fail(client, "A fila de envio de tempo real excedeu o limite.");
+        fail(client, _("A fila de envio de tempo real excedeu o limite."));
         return false;
     }
     char *data = malloc(length ? length : 1);
     if (!data) {
-        fail(client, "Não foi possível preparar o tempo real.");
+        fail(client, _("Não foi possível preparar o tempo real."));
         return false;
     }
     if (length)
@@ -321,7 +322,7 @@ bool ws_send(ws_client *client, const json_t *event)
         return false;
     char *data = json_dumps(event, JSON_COMPACT);
     if (!data) {
-        fail(client, "Não foi possível preparar o evento de tempo real.");
+        fail(client, _("Não foi possível preparar o evento de tempo real."));
         return false;
     }
     return enqueue(client, data, strlen(data), CURLWS_TEXT, strcmp(type, "heartbeat") == 0);
@@ -332,7 +333,7 @@ static void begin_close(ws_client *client, const char *payload, size_t length, u
     clear_output(client);
     char *data = malloc(length ? length : 1);
     if (!data) {
-        fail(client, "Não foi possível encerrar o tempo real.");
+        fail(client, _("Não foi possível encerrar o tempo real."));
         return;
     }
     if (length)
@@ -341,7 +342,7 @@ static void begin_close(ws_client *client, const char *payload, size_t length, u
         return;
     client->state = WS_CLOSING;
     client->close_deadline = now + CLOSE_TIMEOUT_MS;
-    snprintf(client->message, sizeof(client->message), "Encerrando tempo real…");
+    snprintf(client->message, sizeof(client->message), _("Encerrando tempo real…"));
 }
 
 void ws_close(ws_client *client)
@@ -366,19 +367,19 @@ static void flush(ws_client *client, uint64_t now)
     for (unsigned work = 0; work < 4 && client->output_count; ++work) {
         output_item *item = &client->output[client->output_head];
         if (now >= item->deadline) {
-            fail(client, "O envio de tempo real excedeu o prazo.");
+            fail(client, _("O envio de tempo real excedeu o prazo."));
             return;
         }
         size_t sent = 0;
         CURLcode result = curl_ws_send(client->easy, item->data + item->offset,
                                        item->length - item->offset, &sent, 0, item->flags);
         if (sent > item->length - item->offset) {
-            fail(client, "Falha ao enviar o evento de tempo real.");
+            fail(client, _("Falha ao enviar o evento de tempo real."));
             return;
         }
         item->offset += sent;
         if (result != CURLE_OK && result != CURLE_AGAIN) {
-            fail(client, "A conexão de tempo real falhou durante o envio.");
+            fail(client, _("A conexão de tempo real falhou durante o envio."));
             return;
         }
         if (result == CURLE_OK && item->offset == item->length) {
@@ -405,13 +406,13 @@ static bool finish_event(ws_client *client)
     const char *type = json_string_value(json_object_get(event, "type"));
     if (!json_is_object(event) || !type || !*type) {
         json_decref(event);
-        fail(client, "O servidor enviou um evento de tempo real inválido.");
+        fail(client, _("O servidor enviou um evento de tempo real inválido."));
         return false;
     }
     if (client->event_count == WS_QUEUE_LIMIT ||
         client->incoming_length > WS_QUEUE_BYTES - client->event_bytes) {
         json_decref(event);
-        fail(client, "A fila de eventos de tempo real excedeu o limite.");
+        fail(client, _("A fila de eventos de tempo real excedeu o limite."));
         return false;
     }
     if (client->observer)
@@ -445,7 +446,7 @@ static void read_events(ws_client *client, uint64_t now)
                 release(client);
                 client->state = WS_CLOSED;
             } else
-                fail(client, "A conexão de tempo real foi interrompida.");
+                fail(client, _("A conexão de tempo real foi interrompida."));
             return;
         }
         /* Consume metadata before the next libcurl call invalidates it. */
@@ -454,7 +455,7 @@ static void read_events(ws_client *client, uint64_t now)
         if (flags & CURLWS_CLOSE) {
             if (bytes > sizeof(client->close_payload) - client->close_length || offset < 0 ||
                 (uint64_t)offset != client->close_length) {
-                fail(client, "O servidor enviou um encerramento de tempo real inválido.");
+                fail(client, _("O servidor enviou um encerramento de tempo real inválido."));
                 return;
             }
             memcpy(client->close_payload + client->close_length, buffer, bytes);
@@ -477,13 +478,13 @@ static void read_events(ws_client *client, uint64_t now)
         if (client->state == WS_CLOSING)
             continue;
         if ((flags & CURLWS_BINARY) || (!(flags & CURLWS_TEXT) && !client->receiving)) {
-            fail(client, "O servidor enviou um evento de tempo real incompatível.");
+            fail(client, _("O servidor enviou um evento de tempo real incompatível."));
             return;
         }
         if (offset < 0 || remaining < 0 || (uint64_t)offset != client->frame_offset ||
             bytes > WS_MESSAGE_LIMIT - client->incoming_length ||
             (uint64_t)remaining > WS_MESSAGE_LIMIT - client->incoming_length - bytes) {
-            fail(client, "O evento de tempo real excedeu o limite ou chegou incompleto.");
+            fail(client, _("O evento de tempo real excedeu o limite ou chegou incompleto."));
             return;
         }
         if (!client->receiving)
@@ -491,7 +492,7 @@ static void read_events(ws_client *client, uint64_t now)
         client->receiving = true;
         char *data = realloc(client->incoming, client->incoming_length + bytes + 1);
         if (!data) {
-            fail(client, "Não foi possível receber o evento de tempo real.");
+            fail(client, _("Não foi possível receber o evento de tempo real."));
             return;
         }
         client->incoming = data;
@@ -513,7 +514,7 @@ void ws_poll(ws_client *client)
         return;
     uint64_t now;
     if (!net_now_ms(&now)) {
-        fail(client, "Não foi possível acompanhar a conexão de tempo real.");
+        fail(client, _("Não foi possível acompanhar a conexão de tempo real."));
         return;
     }
     if (client->state == WS_QUEUED) {
@@ -521,7 +522,7 @@ void ws_poll(ws_client *client)
         if (!admitted)
             return;
         if (admitted < 0 || curl_multi_add_handle(client->multi, client->easy) != CURLM_OK) {
-            fail(client, "Não foi possível iniciar o tempo real.");
+            fail(client, _("Não foi possível iniciar o tempo real."));
             return;
         }
         client->attached = true;
@@ -530,7 +531,7 @@ void ws_poll(ws_client *client)
     if (client->state == WS_CONNECTING) {
         int running, remaining;
         if (curl_multi_perform(client->multi, &running) != CURLM_OK) {
-            fail(client, "Não foi possível conectar o tempo real.");
+            fail(client, _("Não foi possível conectar o tempo real."));
             return;
         }
         CURLMsg *done;
@@ -542,43 +543,43 @@ void ws_poll(ws_client *client)
             if (client->status == 429)
                 net_rate_defer(client->retry_after);
             if (result != CURLE_OK || client->status != 101) {
-                const char *message = "Não foi possível conectar o tempo real.";
+                const char *message = _("Não foi possível conectar o tempo real.");
                 if (client->http_overflow)
-                    message = "A resposta de tempo real excedeu o limite.";
+                    message = _("A resposta de tempo real excedeu o limite.");
                 else if (client->status == 401 || client->status == 403)
-                    message = "A sessão não foi autorizada para tempo real.";
+                    message = _("A sessão não foi autorizada para tempo real.");
                 else if (client->status == 429)
-                    message = "Limite de requisições atingido no tempo real. Aguarde.";
+                    message = _("Limite de requisições atingido no tempo real. Aguarde.");
                 else if (client->status >= 300 && client->status < 400)
-                    message = "O tempo real redirecionou a conexão. Confira a URL.";
+                    message = _("O tempo real redirecionou a conexão. Confira a URL.");
                 else if (result == CURLE_PEER_FAILED_VERIFICATION ||
                          result == CURLE_SSL_CONNECT_ERROR)
-                    message = "Falha ao verificar a conexão segura de tempo real.";
+                    message = _("Falha ao verificar a conexão segura de tempo real.");
                 else if (result == CURLE_OPERATION_TIMEDOUT)
-                    message = "O tempo real demorou para responder.";
+                    message = _("O tempo real demorou para responder.");
                 fail(client, message);
                 return;
             }
             /* CONNECT_ONLY handles must stay in their multi until close. */
             client->state = WS_OPEN;
             client->heartbeat_at = now;
-            snprintf(client->message, sizeof(client->message), "Tempo real conectado.");
+            snprintf(client->message, sizeof(client->message), _("Tempo real conectado."));
             break;
         }
     }
     if (client->state == WS_OPEN) {
         if (client->incoming_deadline && now >= client->incoming_deadline) {
-            fail(client, "O evento de tempo real não chegou completo no prazo.");
+            fail(client, _("O evento de tempo real não chegou completo no prazo."));
             return;
         }
         if (client->ack_deadline && now >= client->ack_deadline) {
-            fail(client, "O tempo real não confirmou a conexão no prazo.");
+            fail(client, _("O tempo real não confirmou a conexão no prazo."));
             return;
         }
         if (!client->ack_deadline && !client->heartbeat_queued && now >= client->heartbeat_at) {
             json_t *heartbeat = json_pack("{s:s}", "type", "heartbeat");
             if (!heartbeat) {
-                fail(client, "Não foi possível preparar o heartbeat.");
+                fail(client, _("Não foi possível preparar o heartbeat."));
                 return;
             }
             bool queued = ws_send(client, heartbeat);
@@ -603,7 +604,7 @@ void ws_poll(ws_client *client)
             ((client->peer_closed && !client->output_count) || now >= client->close_deadline)) {
             release(client);
             client->state = WS_CLOSED;
-            snprintf(client->message, sizeof(client->message), "Tempo real encerrado.");
+            snprintf(client->message, sizeof(client->message), _("Tempo real encerrado."));
         }
     }
 }

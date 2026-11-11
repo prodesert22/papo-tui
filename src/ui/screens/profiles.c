@@ -2,6 +2,7 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 #include "ui/screens/profiles.h"
+#include "model/text/translation.h"
 #include "net/auth/client.h"
 #include "net/rate_limit.h"
 #include "platform/clipboard.h"
@@ -150,7 +151,7 @@ static void label(WINDOW *window, int row, int column, int width, int color, con
 
 static void draw_tabs(profile_ui *ui)
 {
-    const char *titles[] = {"[Listar]", "[+ Adicionar]"};
+    const char *titles[] = {_("[Listar]"), _("[+ Adicionar]")};
     int x = 2;
     for (int i = 0; i < 2; ++i) {
         int width = (int)strlen(titles[i]);
@@ -179,7 +180,7 @@ static void draw_profile_list(profile_ui *ui)
         ui->first_tab = last;
     if (!ui->config->count) {
         label(ui->window, 4, 2, COLS - 4, THEME_MUTED,
-              "Nenhum perfil salvo. Use Adicionar no topo.");
+              _("Nenhum perfil salvo. Use Adicionar no topo."));
         return;
     }
     for (int i = ui->first_tab, row = 4; i < (int)ui->config->count && row < 4 + visible;
@@ -225,45 +226,48 @@ static void draw_dialog(profile_ui *ui)
     wattrset(ui->dialog, COLOR_PAIR(THEME_BORDER));
     box(ui->dialog, 0, 0);
     label(ui->dialog, 0, 2, ui->dialog_width - 4, THEME_PROFILE_PANEL,
-          ui->dialog_type == REMOVE_DIALOG ? " Remover perfil "
-          : ui->dialog_type == RATE_DIALOG ? " Limites de requisições "
-          : *ui->editing                   ? " Editar perfil "
-                                           : " Adicionar perfil ");
+          ui->dialog_type == REMOVE_DIALOG ? _(" Remover perfil ")
+          : ui->dialog_type == RATE_DIALOG ? _(" Limites de requisições ")
+          : *ui->editing                   ? _(" Editar perfil ")
+                                           : _(" Adicionar perfil "));
     if (ui->dialog_type == EDIT_DIALOG || ui->dialog_type == RATE_DIALOG) {
         field_draw(ui, &ui->name, 0, 3,
-                   ui->dialog_type == RATE_DIALOG ? "Requisições por segundo (positivo e finito)"
-                                                  : "Nome local (até 128 bytes UTF-8)");
+                   ui->dialog_type == RATE_DIALOG ? _("Requisições por segundo (positivo e finito)")
+                                                  : _("Nome local (até 128 bytes UTF-8)"));
         field_draw(ui, &ui->url, 1, 6,
-                   ui->dialog_type == RATE_DIALOG ? "Burst (inteiro positivo)"
-                                                  : "URL base (HTTPS)");
+                   ui->dialog_type == RATE_DIALOG ? _("Burst (inteiro positivo)")
+                                                  : _("URL base (HTTPS)"));
         label(ui->dialog, 7, 2, ui->dialog_width - 4, THEME_PANEL_MUTED,
-              ui->dialog_type == RATE_DIALOG ? "Padrão preenche 10/25; Salvar aplica globalmente."
-              : ui->allow_http ? "HTTP permitido somente em localhost, 127.0.0.1 ou [::1]."
-                               : "HTTP local: use --allow-local-http ao iniciar.");
+              ui->dialog_type == RATE_DIALOG
+                  ? _("Padrão preenche 10/25; Salvar aplica globalmente.")
+              : ui->allow_http ? _("HTTP permitido somente em localhost, 127.0.0.1 ou [::1].")
+                               : _("HTTP local: use --allow-local-http ao iniciar."));
     } else {
         const server_profile *profile = profiles_find(ui->config, ui->editing);
         label(ui->dialog, 2, 2, ui->dialog_width - 4, THEME_PROFILE_PANEL,
-              "Remover este perfil salvo?");
+              _("Remover este perfil salvo?"));
         label(ui->dialog, 4, 2, ui->dialog_width - 4, THEME_PROFILE_PANEL,
-              profile ? profile->name : "Perfil indisponível");
+              profile ? profile->name : _("Perfil indisponível"));
         label(ui->dialog, 6, 2, ui->dialog_width - 4, THEME_PANEL_MUTED,
-              "A remoção só acontece após confirmar.");
+              _("A remoção só acontece após confirmar."));
     }
     ui->buttons[0] = (hit){8, 2, 12, 0};
     ui->buttons[1] = (hit){8, 17, 12, 1};
-    ui->buttons[2] = (hit){8, 29, 8, 2};
-    button_draw(ui->dialog, 8, 2, 12, "[Cancelar]",
+    ui->buttons[2] = (hit){8, 29, text_label(NULL, 0, 0, 16, _("[Padrão]")), 2};
+    button_draw(ui->dialog, 8, 2, 12, _("[Cancelar]"),
                 ui->field == 2 && !ui->button ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
-    button_draw(ui->dialog, 8, 17, 12, ui->dialog_type == REMOVE_DIALOG ? "[Remover]" : "[Salvar]",
+    button_draw(ui->dialog, 8, 17, 12,
+                ui->dialog_type == REMOVE_DIALOG ? _("[Remover]") : _("[Salvar]"),
                 ui->field == 2 && ui->button == 1 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     if (ui->dialog_type == RATE_DIALOG)
-        button_draw(ui->dialog, 8, 29, 8, "[Padrão]",
+        button_draw(ui->dialog, 8, 29, text_label(NULL, 0, 0, 16, _("[Padrão]")), _("[Padrão]"),
                     ui->field == 2 && ui->button == 2 ? BUTTON_FOCUSED : BUTTON_NORMAL,
                     BUTTON_PANEL);
     label(ui->dialog, 9, 2, ui->dialog_width - 4,
           ui->config->writable ? THEME_PANEL_MUTED : THEME_ERROR, ui->config->message);
     label(ui->dialog, 10, 2, ui->dialog_width - 4, THEME_PANEL_MUTED,
-          clipboard_notice() ? clipboard_notice() : "Tab: foco · Enter: confirmar · Esc: cancelar");
+          clipboard_notice() ? clipboard_notice()
+                             : _("Tab: foco · Enter: confirmar · Esc: cancelar"));
     if (!ui->help.open && (ui->dialog_type == EDIT_DIALOG || ui->dialog_type == RATE_DIALOG) &&
         ui->field < 2) {
         text_buffer *buffer = ui->field ? &ui->url : &ui->name;
@@ -278,7 +282,7 @@ static void draw_discovery(profile_ui *ui, int row, int width)
 {
     const server_profile *profile = selected(ui);
     if (profile && auth_get_state(ui->discovery) == AUTH_IDENTIFIED) {
-        const char *mode = auth_server_public(ui->discovery) ? "Pública · " : "Privada · ";
+        const char *mode = auth_server_public(ui->discovery) ? _("Pública · ") : _("Privada · ");
         int prefix = text_label(NULL, 0, 0, width, mode);
         label(ui->window, row, 2, prefix, ui->chooser ? THEME_PROFILE_PANEL : THEME_PROFILE_TEXT,
               mode);
@@ -286,12 +290,12 @@ static void draw_discovery(profile_ui *ui, int row, int width)
         if (!text_label(ui->window, row, 2 + prefix, width - prefix,
                         auth_server_name(ui->discovery)))
             label(ui->window, row, 2 + prefix, width - prefix,
-                  ui->chooser ? THEME_PROFILE_PANEL : THEME_PROFILE_TEXT, "Nome indisponível");
+                  ui->chooser ? THEME_PROFILE_PANEL : THEME_PROFILE_TEXT, _("Nome indisponível"));
     } else
         label(ui->window, row, 2, width,
               auth_get_state(ui->discovery) == AUTH_ERROR ? THEME_ERROR : THEME_MUTED,
               profile ? auth_message(ui->discovery)
-                      : "HTTPS · Nenhuma senha ou cookie é persistido.");
+                      : _("HTTPS · Nenhuma senha ou cookie é persistido."));
 }
 
 static void draw_chooser(profile_ui *ui)
@@ -299,9 +303,9 @@ static void draw_chooser(profile_ui *ui)
     werase(ui->window);
     wattrset(ui->window, COLOR_PAIR(THEME_BORDER));
     box(ui->window, 0, 0);
-    label(ui->window, 1, 2, ui->width - 4, THEME_PROFILE_PANEL, "Selecione um perfil");
+    label(ui->window, 1, 2, ui->width - 4, THEME_PROFILE_PANEL, _("Selecione um perfil"));
     label(ui->window, 2, 2, ui->width - 4, THEME_PANEL_MUTED,
-          "↑↓: escolher · Enter: abrir · Esc: login manual");
+          _("↑↓: escolher · Enter: abrir · Esc: login manual"));
     wattrset(ui->window, COLOR_PAIR(THEME_BORDER));
     mvwhline(ui->window, 3, 1, ACS_HLINE, ui->width - 2);
     int visible = ui->height - 10;
@@ -329,12 +333,12 @@ static void draw_chooser(profile_ui *ui)
     const server_profile *profile = selected(ui);
     label(ui->window, ui->height - 6, 2, ui->width - 4,
           profile ? THEME_PROFILE_PANEL : THEME_PANEL_MUTED,
-          profile ? profile->url : "Nenhum perfil salvo. Abra Gerenciar.");
+          profile ? profile->url : _("Nenhum perfil salvo. Abra Gerenciar."));
     if (ui->selection_error || !ui->config->writable)
         label(ui->window, ui->height - 5, 2, ui->width - 4, THEME_ERROR, ui->config->message);
     else
         draw_discovery(ui, ui->height - 5, ui->width - 4);
-    const char *buttons[] = {"[Selecionar]", "[Gerenciar]", "[Cancelar]"};
+    const char *buttons[] = {_("[Selecionar]"), _("[Gerenciar]"), _("[Cancelar]")};
     const int actions[] = {SELECT, MANAGE, CANCEL};
     ui->action_count = 0;
     int row = ui->height - 4, column = 2;
@@ -360,7 +364,7 @@ static void draw(profile_ui *ui)
     curs_set(0);
     if (!ui->window) {
         erase();
-        label(stdscr, 0, 0, COLS, THEME_MUTED, "Amplie o terminal para 44 colunas e 14 linhas.");
+        label(stdscr, 0, 0, COLS, THEME_MUTED, _("Amplie o terminal para 44 colunas e 14 linhas."));
         if (LINES > 1)
             label(stdscr, 1, 0, COLS, THEME_MUTED, UI_HELP_HINT);
         refresh();
@@ -373,36 +377,37 @@ static void draw(profile_ui *ui)
     werase(ui->window);
     wattrset(ui->window, COLOR_PAIR(THEME_BORDER));
     box(ui->window, 0, 0);
-    label(ui->window, 1, 2, COLS - 4, THEME_PROFILE_TEXT, "papo · Servidores salvos");
+    label(ui->window, 1, 2, COLS - 4, THEME_PROFILE_TEXT, _("papo · Servidores salvos"));
     draw_tabs(ui);
     wattrset(ui->window, COLOR_PAIR(THEME_BORDER));
     mvwhline(ui->window, 3, 1, ACS_HLINE, COLS - 2);
     draw_profile_list(ui);
     const server_profile *profile = selected(ui);
     if (ui->top_tab == ADD_TAB) {
-        label(ui->window, 4, 2, COLS - 4, THEME_PROFILE_TEXT, "Adicionar uma instância");
-        label(ui->window, 5, 2, COLS - 4, THEME_MUTED, "Enter abre o cadastro de nome e URL.");
+        label(ui->window, 4, 2, COLS - 4, THEME_PROFILE_TEXT, _("Adicionar uma instância"));
+        label(ui->window, 5, 2, COLS - 4, THEME_MUTED, _("Enter abre o cadastro de nome e URL."));
     }
     char summary[192];
-    snprintf(summary, sizeof(summary), "Perfil %d/%zu · %.8g req/s · burst %u",
+    snprintf(summary, sizeof(summary), _("Perfil %d/%zu · %.8g req/s · burst %u"),
              profile ? ui->cursor + 1 : 0, ui->config->count, ui->config->requests_per_second,
              ui->config->request_burst);
     label(ui->window, LINES - 9, 2, COLS - 4, profile ? THEME_PROFILE_TEXT : THEME_MUTED,
-          profile ? profile->url : "HTTPS · Nenhuma senha ou cookie é persistido.");
+          profile ? profile->url : _("HTTPS · Nenhuma senha ou cookie é persistido."));
     if (profile)
         draw_discovery(ui, LINES - 8, COLS - 4);
     label(ui->window, LINES - 7, 2, COLS - 4, THEME_PROFILE_TEXT, summary);
-    static const char *buttons[] = {"[Selecionar]", "[Editar]", "[Remover]", "[Limites]",
-                                    "[Identificar]"};
+    static const char *buttons[] = {N_("[Selecionar]"), N_("[Editar]"), N_("[Remover]"),
+                                    N_("[Limites]"), N_("[Identificar]")};
     int row = LINES - 6, column = 2;
     ui->action_count = 0;
     for (int i = 0; profile && i < ACTION_COUNT; ++i) {
-        int width = (int)strlen(buttons[i]);
+        const char *button = _(buttons[i]);
+        int width = text_label(NULL, 0, 0, COLS, button);
         if (column + width >= COLS - 1) {
             column = 2;
             ++row;
         }
-        button_draw(ui->window, row, column, width, buttons[i],
+        button_draw(ui->window, row, column, width, button,
                     ui->focus == i + SELECT && !ui->dialog_type ? BUTTON_FOCUSED : BUTTON_NORMAL,
                     BUTTON_CANVAS);
         ui->actions[ui->action_count++] = (hit){row, column, width, i + SELECT};
@@ -410,7 +415,7 @@ static void draw(profile_ui *ui)
     }
     if (!profile)
         label(ui->window, row, column, COLS - 4, THEME_MUTED,
-              "Selecione um perfil para habilitar as ações.");
+              _("Selecione um perfil para habilitar as ações."));
     label(ui->window, LINES - 4, 2, COLS - 4, ui->config->writable ? THEME_MUTED : THEME_ERROR,
           ui->config->message);
     label(ui->window, LINES - 2, 2, COLS - 4, THEME_MUTED, UI_HELP_HINT);
@@ -461,9 +466,9 @@ static bool open_dialog(profile_ui *ui, int kind)
     ui->field = kind == REMOVE ? 2 : 0;
     ui->button = 0;
     snprintf(ui->config->message, sizeof(ui->config->message), "%s",
-             kind == REMOVE   ? "Cancelar mantém o perfil."
-             : kind == LIMITS ? "Alterações não recarregam tokens nem limpam Retry-After."
-                              : "Informe somente nome e URL; não inclua credenciais.");
+             kind == REMOVE   ? _("Cancelar mantém o perfil.")
+             : kind == LIMITS ? _("Alterações não recarregam tokens nem limpam Retry-After.")
+                              : _("Informe somente nome e URL; não inclua credenciais."));
     return layout(ui);
 }
 
@@ -489,7 +494,7 @@ static bool confirm(profile_ui *ui)
                                       (unsigned)json_integer_value(burst_value));
         else
             snprintf(ui->config->message, sizeof(ui->config->message),
-                     "Use taxa positiva e finita; burst inteiro entre 1 e 4294967295.");
+                     _("Use taxa positiva e finita; burst inteiro entre 1 e 4294967295."));
         if (!valid) {
             /* The cursor goes to the number that was refused: the rate, else the burst. */
             double rate_number = json_is_number(rate_value) ? json_number_value(rate_value) : 0;
@@ -578,7 +583,7 @@ static void restore_rate_fields(profile_ui *ui)
     ui->scroll[0] = ui->scroll[1] = 0;
     ui->field = 0;
     snprintf(ui->config->message, sizeof(ui->config->message),
-             "Padrão preenchido. Salvar aplica 10 req/s e burst 25.");
+             _("Padrão preenchido. Salvar aplica 10 req/s e burst 25."));
 }
 
 static int click_event(profile_ui *ui, server_profile *output, MEVENT mouse)
@@ -764,7 +769,7 @@ static int profiles_run(profile_config *config, bool allow_local_http,
                 ui->refused_plus = 0;
                 if (!text_paste_commit(&ui->paste_data, ui->field ? &ui->url : &ui->name))
                     snprintf(config->message, sizeof(config->message),
-                             "Colagem excede o limite do campo; texto preservado.");
+                             _("Colagem excede o limite do campo; texto preservado."));
             } else
                 text_paste_cancel(&ui->paste_data);
             continue;
@@ -783,7 +788,7 @@ static int profiles_run(profile_config *config, bool allow_local_http,
                                                  : 0)
                            : HELP_PROFILES;
             help_open(&ui->help, context,
-                      ui->dialog ? "Formulário de perfil" : "Perfis de servidores",
+                      ui->dialog ? _("Formulário de perfil") : _("Perfis de servidores"),
                       shortcut_is(type, key, SHORTCUT_HELP_ALL));
             continue;
         }

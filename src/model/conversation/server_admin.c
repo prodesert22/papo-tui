@@ -1,5 +1,6 @@
 #include "model/conversation/server_admin.h"
 #include "model/conversation/private.h"
+#include "model/text/translation.h"
 
 /* What a confirmed mutation changed, for its notice and the data to reload. */
 enum admin_kind {
@@ -201,21 +202,21 @@ const char *server_admin_permissions_notice(history *h)
 const char *server_admin_check_text(const char *text, size_t max, bool required)
 {
     if (!text || !g_utf8_validate(text, -1, NULL))
-        return "Texto inválido.";
+        return _("Texto inválido.");
     bool blank = true;
     for (const char *at = text; *at && blank; at = g_utf8_next_char(at))
         blank = g_unichar_isspace(g_utf8_get_char(at));
     if (required && blank)
-        return "Preencha este campo.";
+        return _("Preencha este campo.");
     if (max && (size_t)g_utf8_strlen(text, -1) > max)
-        return max == ADMIN_SERVER_NAME_MAX        ? "Nome com mais de 32 caracteres."
-               : max == ADMIN_TOPIC_MAX            ? "Tópico com mais de 512 caracteres."
-               : max == ADMIN_WEBHOOK_NAME_MAX     ? "Nome com mais de 80 caracteres."
-               : max == ADMIN_WEBHOOK_NICKNAME_MAX ? "Apelido com mais de 100 caracteres."
-                                                   : "Texto longo demais.";
+        return max == ADMIN_SERVER_NAME_MAX        ? _("Nome com mais de 32 caracteres.")
+               : max == ADMIN_TOPIC_MAX            ? _("Tópico com mais de 512 caracteres.")
+               : max == ADMIN_WEBHOOK_NAME_MAX     ? _("Nome com mais de 80 caracteres.")
+               : max == ADMIN_WEBHOOK_NICKNAME_MAX ? _("Apelido com mais de 100 caracteres.")
+                                                   : _("Texto longo demais.");
     for (const char *at = text; *at; at = g_utf8_next_char(at))
         if (g_unichar_iscntrl(g_utf8_get_char(at)))
-            return "Use uma única linha, sem caracteres de controle.";
+            return _("Use uma única linha, sem caracteres de controle.");
     return NULL;
 }
 bool server_admin_color_valid(const char *color)
@@ -239,12 +240,12 @@ json_t *server_admin_patch_body(const json_t *server, const char *name, int visi
     if (problem)
         *problem = NULL;
     if (!json_is_object(server)) {
-        reason = "O servidor ainda não foi carregado.";
+        reason = _("O servidor ainda não foi carregado.");
         goto fail;
     }
     json_t *body = json_object();
     if (!body) {
-        reason = "Memória insuficiente.";
+        reason = _("Memória insuficiente.");
         goto fail;
     }
     const char *current = history_internal_str(server, "name");
@@ -252,7 +253,7 @@ json_t *server_admin_patch_body(const json_t *server, const char *name, int visi
         if ((reason = server_admin_check_text(name, ADMIN_SERVER_NAME_MAX, true)) ||
             json_object_set_new(body, "name", json_string(name))) {
             json_decref(body);
-            reason = reason ? reason : "Memória insuficiente.";
+            reason = reason ? reason : _("Memória insuficiente.");
             goto fail;
         }
     }
@@ -261,26 +262,26 @@ json_t *server_admin_patch_body(const json_t *server, const char *name, int visi
     if (public_next != public_now &&
         json_object_set_new(body, "public", json_boolean(public_next))) {
         json_decref(body);
-        reason = "Memória insuficiente.";
+        reason = _("Memória insuficiente.");
         goto fail;
     }
     bool has_password = password && *password;
     if (public_now && !public_next && !has_password) {
         json_decref(body);
-        reason = "Informe a senha do servidor para torná-lo privado.";
+        reason = _("Informe a senha do servidor para torná-lo privado.");
         goto fail;
     }
     if (has_password && !public_next) {
         if (server_admin_check_text(password, 0, true) ||
             json_object_set_new(body, "password", json_string(password))) {
             json_decref(body);
-            reason = "Senha inválida.";
+            reason = _("Senha inválida.");
             goto fail;
         }
     }
     if (!json_object_size(body)) {
         json_decref(body);
-        reason = "Nenhuma alteração para salvar.";
+        reason = _("Nenhuma alteração para salvar.");
         goto fail;
     }
     return body;
@@ -301,7 +302,7 @@ static bool enqueue(history *h, enum admin_kind kind, const char *method, const 
     }
     if (a->has_queued || a->sending) {
         json_decref(body);
-        set_notice(a, "Aguarde a alteração anterior terminar", NULL);
+        set_notice(a, _("Aguarde a alteração anterior terminar"), NULL);
         return false;
     }
     char *copy = g_strdup(path);
@@ -999,53 +1000,53 @@ static const char *success_notice(enum admin_kind kind)
 {
     switch (kind) {
     case OP_SERVER:
-        return "Servidor atualizado";
+        return _("Servidor atualizado");
     case OP_ICON:
-        return "Ícone atualizado";
+        return _("Ícone atualizado");
     case OP_ICON_REMOVE:
-        return "Ícone removido";
+        return _("Ícone removido");
     case OP_ROLE_CREATE:
-        return "Cargo criado";
+        return _("Cargo criado");
     case OP_ROLE_SAVE:
-        return "Cargo salvo";
+        return _("Cargo salvo");
     case OP_ROLE_DELETE:
-        return "Cargo excluído";
+        return _("Cargo excluído");
     case OP_CHANNEL_CREATE:
-        return "Canal criado";
+        return _("Canal criado");
     case OP_CHANNEL_SAVE:
-        return "Canal salvo";
+        return _("Canal salvo");
     case OP_CHANNEL_DELETE:
-        return "Canal excluído";
+        return _("Canal excluído");
     case OP_CHANNEL_MOVE:
-        return "Canal movido";
+        return _("Canal movido");
     case OP_CHANNEL_ROLE:
-        return "Permissões do canal salvas";
+        return _("Permissões do canal salvas");
     case OP_CHANNEL_ROLE_REMOVE:
-        return "Vínculo do cargo removido";
+        return _("Vínculo do cargo removido");
     case OP_EMOJI_CREATE:
-        return "Emoji adicionado";
+        return _("Emoji adicionado");
     case OP_EMOJI_DELETE:
-        return "Emoji excluído";
+        return _("Emoji excluído");
     case OP_WEBHOOK_CREATE:
-        return "Webhook criado";
+        return _("Webhook criado");
     case OP_WEBHOOK_NICKNAME:
-        return "Apelido do webhook salvo";
+        return _("Apelido do webhook salvo");
     case OP_WEBHOOK_AVATAR:
-        return "Avatar do webhook atualizado";
+        return _("Avatar do webhook atualizado");
     case OP_WEBHOOK_AVATAR_REMOVE:
-        return "Avatar do webhook removido";
+        return _("Avatar do webhook removido");
     case OP_WEBHOOK_REVOKE:
-        return "Webhook revogado";
+        return _("Webhook revogado");
     case OP_MEMBER_ROLE_ADD:
-        return "Cargo atribuído";
+        return _("Cargo atribuído");
     case OP_MEMBER_ROLE_REMOVE:
-        return "Cargo removido do membro";
+        return _("Cargo removido do membro");
     case OP_MEMBER_BAN:
-        return "Membro banido";
+        return _("Membro banido");
     case OP_MEMBER_UNBAN:
-        return "Membro desbanido";
+        return _("Membro desbanido");
     default:
-        return "Link de redefinição gerado";
+        return _("Link de redefinição gerado");
     }
 }
 static const char *conflict_notice(enum admin_kind kind)
@@ -1053,17 +1054,17 @@ static const char *conflict_notice(enum admin_kind kind)
     switch (kind) {
     case OP_ROLE_CREATE:
     case OP_ROLE_SAVE:
-        return "Já existe um cargo com esse nome";
+        return _("Já existe um cargo com esse nome");
     case OP_CHANNEL_CREATE:
-        return "Nome de canal já existe ou o limite de canais foi atingido";
+        return _("Nome de canal já existe ou o limite de canais foi atingido");
     case OP_CHANNEL_SAVE:
-        return "Já existe um canal com esse nome";
+        return _("Já existe um canal com esse nome");
     case OP_CHANNEL_MOVE:
-        return "A ordem dos canais mudou; confira e tente de novo";
+        return _("A ordem dos canais mudou; confira e tente de novo");
     case OP_EMOJI_CREATE:
-        return "Nome de emoji já existe ou o limite de emojis foi atingido";
+        return _("Nome de emoji já existe ou o limite de emojis foi atingido");
     default:
-        return "O servidor recusou a alteração por conflito";
+        return _("O servidor recusou a alteração por conflito");
     }
 }
 /* Reloads what a mutation may have changed, confirmed or not. */
@@ -1152,7 +1153,8 @@ static void mutation_response(history *h, struct history_server_admin *a, json_t
         a->state = ADMIN_SAVED;
         set_notice(a, success_notice(op->kind), NULL);
         if (op->kind == OP_WEBHOOK_CREATE && a->token_lost)
-            set_notice(a, "Webhook criado, mas sem token na resposta; revogue-o e crie outro", NULL);
+            set_notice(a, _("Webhook criado, mas sem token na resposta; revogue-o e crie outro"),
+                       NULL);
         if (op->kind != OP_MEMBER_RESET && op->kind != OP_MEMBER_ROLE_ADD &&
             op->kind != OP_MEMBER_ROLE_REMOVE && op->kind != OP_MEMBER_BAN &&
             op->kind != OP_MEMBER_UNBAN)
@@ -1162,20 +1164,20 @@ static void mutation_response(history *h, struct history_server_admin *a, json_t
     } else if (uncertain || !code || (code >= 200 && code < 300)) {
         /* Never replayed: show what the server kept before a manual retry. */
         a->state = ADMIN_UNCERTAIN;
-        set_notice(a, "Alteração não confirmada; confira antes de repetir", NULL);
+        set_notice(a, _("Alteração não confirmada; confira antes de repetir"), NULL);
         reconcile(h, a, op->kind);
     } else {
         a->state = ADMIN_FAILED;
         if (code == 429)
-            set_notice(a, "Muitas alterações; aguarde e tente de novo", NULL);
+            set_notice(a, _("Muitas alterações; aguarde e tente de novo"), NULL);
         else if (code == 409)
             set_notice(a, conflict_notice(op->kind), detail);
         else if (code == 403)
-            set_notice(a, "Sem permissão para esta ação", detail);
+            set_notice(a, _("Sem permissão para esta ação"), detail);
         else if (code == 404)
-            set_notice(a, "Item não encontrado; a lista foi atualizada", NULL);
+            set_notice(a, _("Item não encontrado; a lista foi atualizada"), NULL);
         else
-            set_notice(a, "O servidor recusou a alteração", detail);
+            set_notice(a, _("O servidor recusou a alteração"), detail);
         if (code == 403 || code == 404 || code == 409)
             reconcile(h, a, op->kind);
     }
@@ -1197,7 +1199,7 @@ void history_internal_server_admin_response(history *h, json_t *body, long code,
             keep_server(a, body);
             changed(a);
         } else if (!a->server)
-            set_notice(a, "Não foi possível carregar o servidor", NULL);
+            set_notice(a, _("Não foi possível carregar o servidor"), NULL);
     } else if (reading == READ_LIST)
         page_response(a, a->reading_list, body, code);
 }

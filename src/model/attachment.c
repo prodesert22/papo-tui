@@ -1,4 +1,5 @@
 #include "model/attachment.h"
+#include "model/text/translation.h"
 #include "platform/runtime.h"
 #include <glib/gstdio.h>
 #include <stdio.h>
@@ -22,7 +23,7 @@ static attachment_file *import_stream(GInputStream *in, guint64 size, const char
     g_mutex_unlock(&storage_lock);
     if (!room) {
         g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NO_SPACE,
-                            "Limite local de anexos: 512 MiB entre rascunhos e envios.");
+                            _("Limite local de anexos: 512 MiB entre rascunhos e envios."));
         return NULL;
     }
     attachment_file *file = g_new0(attachment_file, 1);
@@ -42,7 +43,7 @@ static attachment_file *import_stream(GInputStream *in, guint64 size, const char
     char *directory = g_build_filename(g_get_tmp_dir(), "papo-attachment-XXXXXX", NULL);
     if (!papo_mkdtemp(directory)) {
         g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_FAILED,
-                            "Não foi possível preparar o anexo temporário.");
+                            _("Não foi possível preparar o anexo temporário."));
         g_free(directory);
         attachment_unref(file);
         return NULL;
@@ -65,7 +66,7 @@ static attachment_file *import_stream(GInputStream *in, guint64 size, const char
             break;
         if ((guint64)n > size - copied) {
             g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_FAILED,
-                                "O arquivo mudou durante a preparação; selecione novamente.");
+                                _("O arquivo mudou durante a preparação; selecione novamente."));
             ok = false;
             break;
         }
@@ -79,7 +80,7 @@ static attachment_file *import_stream(GInputStream *in, guint64 size, const char
     }
     if (ok && copied != size) {
         g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_FAILED,
-                            "O arquivo mudou durante a preparação; selecione novamente.");
+                            _("O arquivo mudou durante a preparação; selecione novamente."));
         ok = false;
     }
     if (!ok) {
@@ -97,7 +98,7 @@ attachment_file *attachment_import(const char *path, GCancellable *cancel, GErro
     if (!kind || g_file_info_get_file_type(kind) != G_FILE_TYPE_REGULAR) {
         if (kind) {
             g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_REGULAR_FILE,
-                                "Selecione um arquivo regular.");
+                                _("Selecione um arquivo regular."));
             g_object_unref(kind);
         }
         g_object_unref(source);
@@ -114,7 +115,7 @@ attachment_file *attachment_import(const char *path, GCancellable *cancel, GErro
     if (info) {
         if (g_file_info_get_file_type(info) != G_FILE_TYPE_REGULAR)
             g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_REGULAR_FILE,
-                                "Selecione um arquivo regular.");
+                                _("Selecione um arquivo regular."));
         else {
             char *name = g_file_get_basename(source);
             result = import_stream(G_INPUT_STREAM(in), (guint64)g_file_info_get_size(info), name,

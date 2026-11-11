@@ -1,4 +1,5 @@
 #include "platform/clipboard.h"
+#include "model/text/translation.h"
 #include "net/clock.h"
 #include <glib.h>
 #include <stdlib.h>
@@ -34,7 +35,7 @@ bool clipboard_copy(const text_buffer *buffer)
     pending_length = TEXT_UTF8_BYTES;
     if (!(pending = malloc(pending_length))) {
         pending_length = 0;
-        feedback("Falha ao copiar texto");
+        feedback(_("Falha ao copiar texto"));
         return false;
     }
     text_buffer selected = {0}, projected;
@@ -49,7 +50,7 @@ bool clipboard_copy(const text_buffer *buffer)
     SecureZeroMemory(&projected, sizeof(projected));
     if (!ok) {
         wipe();
-        feedback("Falha ao copiar texto");
+        feedback(_("Falha ao copiar texto"));
         return false;
     }
     net_now_ms(&started);
@@ -62,11 +63,11 @@ bool clipboard_copy_text(const char *utf8)
     if (busy || !length)
         return false;
     if (length > CLIPBOARD_TEXT_LIMIT) {
-        feedback("Seleção grande demais para copiar");
+        feedback(_("Seleção grande demais para copiar"));
         return false;
     }
     if (!(pending = malloc(length + 1))) {
-        feedback("Falha ao copiar texto");
+        feedback(_("Falha ao copiar texto"));
         return false;
     }
     pending_length = length + 1;
@@ -98,11 +99,11 @@ bool clipboard_poll(void)
             SecureZeroMemory(wide, ((size_t)units + 1) * sizeof(wchar_t));
         g_free(wide);
         wipe();
-        feedback(ok ? "Texto copiado" : "Falha ao copiar texto");
+        feedback(ok ? _("Texto copiado") : _("Falha ao copiar texto"));
         changed = true;
     } else if (busy && now - started >= 2000) {
         wipe();
-        feedback("Clipboard indisponível");
+        feedback(_("Clipboard indisponível"));
         changed = true;
     }
     if (notice && now >= until) {

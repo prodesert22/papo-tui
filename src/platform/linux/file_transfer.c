@@ -1,4 +1,5 @@
 #include "platform/file_transfer.h"
+#include "model/text/translation.h"
 #include <string.h>
 
 typedef struct {
@@ -22,7 +23,7 @@ static GPtrArray *portal_choose(const char *save_name, GCancellable *cancel, GEr
     if ((!g_getenv("DISPLAY") || !*g_getenv("DISPLAY")) &&
         (!g_getenv("WAYLAND_DISPLAY") || !*g_getenv("WAYLAND_DISPLAY")) &&
         !g_getenv("FLATPAK_ID")) {
-        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED, "Sem desktop local.");
+        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED, _("Sem desktop local."));
         return NULL;
     }
     GMainContext *context = g_main_context_new();
@@ -86,14 +87,14 @@ static GPtrArray *portal_choose(const char *save_name, GCancellable *cancel, GEr
             } else
                 g_set_error_literal(error, G_IO_ERROR,
                                     status == 1 ? G_IO_ERROR_CANCELLED : G_IO_ERROR_NOT_SUPPORTED,
-                                    "Seletor nativo fechado.");
+                                    _("Seletor nativo fechado."));
             g_variant_unref(results);
         }
         g_variant_unref(reply);
     } else if (!g_cancellable_is_cancelled(cancel)) {
         g_clear_error(error);
         g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
-                            "Seletor nativo indisponível.");
+                            _("Seletor nativo indisponível."));
     }
     if (subscription)
         g_dbus_connection_signal_unsubscribe(bus, subscription);
@@ -113,7 +114,7 @@ char *platform_pick_save(const char *name, GCancellable *cancel, GError **error)
     GPtrArray *paths = portal_choose(name && *name ? name : "arquivo", cancel, error);
     char *path = paths && paths->len ? g_strdup(g_ptr_array_index(paths, 0)) : NULL;
     if (paths && !path)
-        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_CANCELLED, "Seletor nativo fechado.");
+        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_CANCELLED, _("Seletor nativo fechado."));
     g_clear_pointer(&paths, g_ptr_array_unref);
     return path;
 }
@@ -138,7 +139,7 @@ static GBytes *helper(const char *const *argv, gsize limit, GCancellable *cancel
             break;
         if ((gsize)n > limit - bytes->len) {
             g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NO_SPACE,
-                                "Conteúdo do clipboard excede o limite local.");
+                                _("Conteúdo do clipboard excede o limite local."));
             ok = false;
         } else
             g_byte_array_append(bytes, buffer, (guint)n);
@@ -175,8 +176,9 @@ clipboard_content *platform_read_clipboard(GCancellable *cancel, GError **error)
 {
     bool wayland = g_getenv("WAYLAND_DISPLAY") && *g_getenv("WAYLAND_DISPLAY");
     if (!wayland && (!g_getenv("DISPLAY") || !*g_getenv("DISPLAY"))) {
-        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
-                            "Clipboard indisponível; use Anexar/Ctrl+O ou a colagem do terminal.");
+        g_set_error_literal(
+            error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
+            _("Clipboard indisponível; use Anexar/Ctrl+O ou a colagem do terminal."));
         return NULL;
     }
     const char *wl[] = {"wl-paste", "--list-types", NULL};
@@ -188,7 +190,7 @@ clipboard_content *platform_read_clipboard(GCancellable *cancel, GError **error)
     g_bytes_unref(offered);
     if (!types) {
         g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                            "Formatos do clipboard inválidos.");
+                            _("Formatos do clipboard inválidos."));
         return NULL;
     }
     const char *type = strstr(types, "x-special/gnome-copied-files")
@@ -203,7 +205,7 @@ clipboard_content *platform_read_clipboard(GCancellable *cancel, GError **error)
     g_free(types);
     if (!type) {
         g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
-                            "Clipboard sem arquivos, imagem ou texto compatível.");
+                            _("Clipboard sem arquivos, imagem ou texto compatível."));
         return NULL;
     }
     bool image = g_str_has_prefix(type, "image/");

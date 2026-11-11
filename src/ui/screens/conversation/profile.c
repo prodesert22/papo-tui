@@ -1,3 +1,4 @@
+#include "model/text/translation.h"
 #include "platform/file_transfer.h"
 #include "ui/input/profile_commands.h"
 #include "ui/media/profile_image.h"
@@ -45,7 +46,7 @@ void conversation_profile_close(view *ui)
 void conversation_profile_pick(view *ui, profile_image kind)
 {
     if (ui->profile_task || file_picker_open(ui->files) || ui->attachment_task) {
-        ui->feedback = "Aguarde a imagem ou os anexos em preparação.";
+        ui->feedback = _("Aguarde a imagem ou os anexos em preparação.");
         return;
     }
     conversation_interactions_close(ui);
@@ -58,7 +59,7 @@ void conversation_server_image_pick(view *ui, server_settings_pick kind, const c
 {
     if (ui->profile_task || file_picker_open(ui->files) || ui->attachment_task) {
         snprintf(ui->server_settings.error, sizeof(ui->server_settings.error), "%s",
-                 "Aguarde a imagem ou os anexos em preparação.");
+                 _("Aguarde a imagem ou os anexos em preparação."));
         return;
     }
     /* The emoji's name or the webhook's ID the image is for. */
@@ -91,11 +92,11 @@ bool conversation_profile_picked(view *ui, GPtrArray *paths)
     ui->profile_task = file_transfer_task_new(ui->profile_cancel);
     g_task_set_task_data(ui->profile_task, job, free_job);
     g_task_run_in_thread(ui->profile_task, image_worker);
-    watch(ui, ui->profile_server == 1   ? "Preparando o ícone…"
-              : ui->profile_server == 2 ? "Preparando o emoji…"
-              : ui->profile_server == 3 ? "Preparando o avatar do webhook…"
-              : kind == PROFILE_AVATAR  ? "Preparando o avatar…"
-                                        : "Preparando o banner…");
+    watch(ui, ui->profile_server == 1   ? _("Preparando o ícone…")
+              : ui->profile_server == 2 ? _("Preparando o emoji…")
+              : ui->profile_server == 3 ? _("Preparando o avatar do webhook…")
+              : kind == PROFILE_AVATAR  ? _("Preparando o avatar…")
+                                        : _("Preparando o banner…"));
     return true;
 }
 /* The server icon, an emoji or a webhook's avatar is handed to the
@@ -110,10 +111,10 @@ static void server_image_ready(view *ui, char *data, const char *format, bool re
         /* The name stays until the server confirms the emoji. */
         ui->server_settings.awaiting = ui->server_settings.dirty = true;
     }
-    watch(ui, !queued ? "Não foi possível enviar a imagem agora."
-              : webhook ? (reduced ? "Enviando avatar reduzido…" : "Enviando avatar…")
-              : emoji   ? (reduced ? "Enviando emoji reduzido…" : "Enviando emoji…")
-                        : (reduced ? "Enviando ícone reduzido…" : "Enviando ícone…"));
+    watch(ui, !queued   ? _("Não foi possível enviar a imagem agora.")
+              : webhook ? (reduced ? _("Enviando avatar reduzido…") : _("Enviando avatar…"))
+              : emoji   ? (reduced ? _("Enviando emoji reduzido…") : _("Enviando emoji…"))
+                        : (reduced ? _("Enviando ícone reduzido…") : _("Enviando ícone…")));
 }
 bool conversation_profile_poll(view *ui)
 {
@@ -125,9 +126,10 @@ bool conversation_profile_poll(view *ui)
         /* The image belongs to the server it was picked for. */
         if (ui->profile_target != ui->model ||
             ui->profile_generation != auth_context_generation(auth))
-            watch(ui, "Imagem descartada: o servidor ou a sessão mudou.");
+            watch(ui, _("Imagem descartada: o servidor ou a sessão mudou."));
         else if (!ok)
-            watch(ui, *job->result.error ? job->result.error : "Não foi possível usar a imagem.");
+            watch(ui,
+                  *job->result.error ? job->result.error : _("Não foi possível usar a imagem."));
         else if (ui->profile_server) {
             char *data = job->result.base64;
             job->result.base64 = NULL;
@@ -137,11 +139,12 @@ bool conversation_profile_poll(view *ui)
             job->result.base64 = NULL;
             bool queued =
                 history_profile_set_image(ui->model, ui->profile_kind, data, job->result.format);
-            watch(ui,
-                  !queued ? "Não foi possível enviar a imagem agora."
-                  : ui->profile_kind == PROFILE_AVATAR
-                      ? (job->result.reduced ? "Enviando avatar reduzido…" : "Enviando avatar…")
-                      : (job->result.reduced ? "Enviando banner reduzido…" : "Enviando banner…"));
+            watch(ui, !queued ? _("Não foi possível enviar a imagem agora.")
+                      : ui->profile_kind == PROFILE_AVATAR
+                          ? (job->result.reduced ? _("Enviando avatar reduzido…")
+                                                 : _("Enviando avatar…"))
+                          : (job->result.reduced ? _("Enviando banner reduzido…")
+                                                 : _("Enviando banner…")));
         }
         g_clear_object(&ui->profile_task);
         g_clear_object(&ui->profile_cancel);
@@ -218,14 +221,14 @@ bool conversation_profile_command(view *ui)
     }
     if (!queued) {
         const char *notice = history_profile_notice(ui->model);
-        watch(ui, *notice ? notice : "Não foi possível alterar o perfil agora.");
+        watch(ui, *notice ? notice : _("Não foi possível alterar o perfil agora."));
         return true;
     }
     clear_draft(ui);
     watch(ui, command.kind == PROFILE_COMMAND_NICK
-                  ? (*command.argument ? "Alterando o apelido…" : "Removendo o apelido…")
-              : command.kind == PROFILE_COMMAND_BIO    ? "Alterando a descrição…"
-              : command.kind == PROFILE_COMMAND_STATUS ? "Alterando o status…"
-                                                       : "Removendo o banner…");
+                  ? (*command.argument ? _("Alterando o apelido…") : _("Removendo o apelido…"))
+              : command.kind == PROFILE_COMMAND_BIO    ? _("Alterando a descrição…")
+              : command.kind == PROFILE_COMMAND_STATUS ? _("Alterando o status…")
+                                                       : _("Removendo o banner…"));
     return true;
 }

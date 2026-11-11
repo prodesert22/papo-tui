@@ -1,5 +1,6 @@
 #include "ui/media/media_service.h"
 #include "config/app_mode.h"
+#include "model/text/translation.h"
 #include "ui/media/media_process.h"
 #include "ui/media/media_wire.h"
 #include <stdatomic.h>
@@ -23,7 +24,7 @@ static GVariant *rpc(unsigned op, GVariant *payload, bool (*cancel)(void *), voi
     last_error = NULL;
     GVariant *v = media_process_call(op, payload, cancel, context);
     if (!v)
-        last_error = "Auxiliar de mídia ausente ou indisponível. Reinstale o aplicativo.";
+        last_error = _("Auxiliar de mídia ausente ou indisponível. Reinstale o aplicativo.");
     return v;
 }
 static GVariant *result(GVariant *response)
@@ -40,9 +41,10 @@ static GVariant *result(GVariant *response)
         if (g_variant_is_of_type(value, G_VARIANT_TYPE_STRING)) {
             const char *message = g_variant_get_string(value, NULL);
             if (!strcmp(message, "image-module"))
-                last_error = "Módulo de imagens ausente ou incompatível. Reinstale o aplicativo.";
+                last_error =
+                    _("Módulo de imagens ausente ou incompatível. Reinstale o aplicativo.");
             if (!strcmp(message, "video-module"))
-                last_error = "Módulo de vídeo ausente ou incompatível. Reinstale o aplicativo.";
+                last_error = _("Módulo de vídeo ausente ou incompatível. Reinstale o aplicativo.");
         }
         g_variant_unref(value);
         return NULL;

@@ -4,7 +4,9 @@
 #include "ui/screens/login.h"
 #include "app/session_store.h"
 #include "config/app_mode.h"
+#include "model/text/translation.h"
 #include "net/auth/client.h"
+#include "platform/terminal_notify.h"
 #include "platform/unicode.h"
 #include "ui/components/button.h"
 #include "ui/components/help.h"
@@ -12,7 +14,6 @@
 #include "ui/components/terminal_title.h"
 #include "ui/components/theme.h"
 #include "ui/input/mouse.h"
-#include "platform/terminal_notify.h"
 #include "ui/media/graphics.h"
 #include "ui/media/media_service.h"
 #include "ui/media/sound.h"
@@ -429,7 +430,7 @@ static void tab_label(const login_ui *ui, auth_client *client, size_t index, cha
         host += 3;
         snprintf(label, size, "%.*s", (int)strcspn(host, "/"), host);
     } else
-        snprintf(label, size, "Novo servidor");
+        snprintf(label, size, _("Novo servidor"));
 }
 
 static int tab_width(const login_ui *ui, auth_client *client, size_t index, int available)
@@ -580,7 +581,7 @@ static void draw_tab_menu(login_ui *ui, auth_client *client)
     text(w, 0, 2, width - 4, label);
     wattrset(w, COLOR_PAIR(THEME_PANEL_ACTIVE));
     mvwhline(w, 1, 1, ' ', width - 2);
-    text(w, 1, 1, width - 2, "Remover servidor");
+    text(w, 1, 1, width - 2, _("Remover servidor"));
     wnoutrefresh(w);
 }
 
@@ -633,33 +634,33 @@ static void draw_remove(login_ui *ui, auth_client *client)
     wattrset(w, COLOR_PAIR(THEME_BORDER));
     box(w, 0, 0);
     wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
-    text(w, 1, 2, width - 4, "Remover servidor?");
+    text(w, 1, 2, width - 4, _("Remover servidor?"));
     wattrset(w, COLOR_PAIR(THEME_PANEL));
     text(w, 3, 2, width - 4, label);
-    text(w, 4, 2, width - 4, "Tira a aba e apaga a sessão salva");
+    text(w, 4, 2, width - 4, _("Tira a aba e apaga a sessão salva"));
     text(w, 5, 2, width - 4, "neste computador.");
-    button_draw(w, 7, 2, 12, "[Cancelar]", ui->remove_accept ? BUTTON_NORMAL : BUTTON_FOCUSED,
+    button_draw(w, 7, 2, 12, _("[Cancelar]"), ui->remove_accept ? BUTTON_NORMAL : BUTTON_FOCUSED,
                 BUTTON_PANEL);
-    button_draw(w, 7, width - 14, 12, "[Remover]",
+    button_draw(w, 7, width - 14, 12, _("[Remover]"),
                 ui->remove_accept ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     wnoutrefresh(w);
 }
 
 static const char *primary_button(const login_ui *ui, auth_client *client)
 {
-    return auth_has_session(client) ? "[ Sair da conta ]"
-           : auth_busy(client)      ? "[ Conectando… ]"
-           : ui->registering        ? "[Criar conta]"
-           : ui->resetting          ? "[Redefinir]"
-                                    : "[ Entrar ]";
+    return auth_has_session(client) ? _("[ Sair da conta ]")
+           : auth_busy(client)      ? _("[ Conectando… ]")
+           : ui->registering        ? _("[Criar conta]")
+           : ui->resetting          ? _("[Redefinir]")
+                                    : _("[ Entrar ]");
 }
 
 static const char *extra_button(const login_ui *ui, auth_client *client)
 {
     if (!auth_has_session(client))
-        return ui->registering || ui->resetting ? "[Login]" : "[Cadastro]";
+        return ui->registering || ui->resetting ? _("[Login]") : _("[Cadastro]");
     ws_state state = auth_ws_state(client);
-    return state == WS_ERROR || state == WS_CLOSED ? "[Reconectar]" : "[Renovar]";
+    return state == WS_ERROR || state == WS_CLOSED ? _("[Reconectar]") : _("[Renovar]");
 }
 
 static void draw(login_ui *ui, auth_client *client)
@@ -668,7 +669,7 @@ static void draw(login_ui *ui, auth_client *client)
     curs_set(0);
     if (!ui->card) {
         erase();
-        text(stdscr, 0, 0, COLS, "Amplie o terminal para 44 colunas e 22 linhas.");
+        text(stdscr, 0, 0, COLS, _("Amplie o terminal para 44 colunas e 22 linhas."));
         if (LINES > 1)
             text(stdscr, 1, 0, COLS, UI_HELP_HINT);
         curs_set(0);
@@ -678,12 +679,13 @@ static void draw(login_ui *ui, auth_client *client)
     snapshot(ui);
     const bool busy = auth_busy(client);
     const bool ready = auth_has_session(client);
-    const char *labels[FIELD_COUNT] = {"URL do servidor", "Usuário (username)", "Senha (password)",
-                                       "Senha do servidor", "Confirmar senha"};
+    const char *labels[FIELD_COUNT] = {_("URL do servidor"), _("Usuário (username)"),
+                                       _("Senha (password)"), _("Senha do servidor"),
+                                       _("Confirmar senha")};
     if (ui->resetting) {
-        labels[1] = "Link de redefinição";
-        labels[2] = "Nova senha";
-        labels[CONFIRM_FIELD] = "Confirmar nova senha";
+        labels[1] = _("Link de redefinição");
+        labels[2] = _("Nova senha");
+        labels[CONFIRM_FIELD] = _("Confirmar nova senha");
     }
     wattrset(ui->card, COLOR_PAIR(THEME_BORDER));
     box(ui->card, 0, 0);
@@ -697,10 +699,10 @@ static void draw(login_ui *ui, auth_client *client)
     wattrset(ui->header, COLOR_PAIR(THEME_NORMAL));
     mvwhline(ui->header, 1, 2, ' ', ui->width - 8);
     text(ui->header, 1, 2, ui->width - 8,
-         ui->registering      ? "Crie sua conta nesta instância"
-         : ui->resetting      ? "Redefina sua senha com o link recebido"
+         ui->registering      ? _("Crie sua conta nesta instância")
+         : ui->resetting      ? _("Redefina sua senha com o link recebido")
          : ui->profile_active ? ui->profile_name
-                              : "Entre na sua comunidade");
+                              : _("Entre na sua comunidade"));
     wattrset(ui->header, COLOR_PAIR(THEME_BORDER));
     mvwhline(ui->header, 2, 0, ACS_HLINE, ui->width - 4);
 
@@ -760,7 +762,7 @@ static void draw(login_ui *ui, auth_client *client)
         mvwaddch(ui->body, server_row + 2, ui->width - 6, ACS_LRCORNER);
         mvwaddch(ui->body, server_row + 1, 1, ACS_VLINE);
         mvwaddch(ui->body, server_row + 1, ui->width - 6, ACS_VLINE);
-        text(ui->body, server_row, 3, ui->width - 10, "Senha do servidor *");
+        text(ui->body, server_row, 3, ui->width - 10, _("Senha do servidor *"));
     } else {
         /* Clear the previous error frame before restoring the normal label. */
         if (ui->fields[3]) {
@@ -780,8 +782,8 @@ static void draw(login_ui *ui, auth_client *client)
         } else
             text(ui->body, 11, 2, ui->width - 8,
                  ui->registering || ui->resetting
-                     ? "Senha: 8+ caracteres, maiúscula e símbolo."
-                     : "Preencha a senha do servidor se a instância for privada.");
+                     ? _("Senha: 8+ caracteres, maiúscula e símbolo.")
+                     : _("Preencha a senha do servidor se a instância for privada."));
     }
 
     wattrset(ui->footer, COLOR_PAIR(THEME_BORDER));
@@ -809,9 +811,9 @@ static void draw(login_ui *ui, auth_client *client)
     wattrset(ui->footer, COLOR_PAIR(status_color));
     const char *message = *ui->validation_message ? ui->validation_message
                           : ui->mode_changed && auth_get_state(client) == AUTH_IDLE
-                              ? ui->registering ? "Preencha os dados para criar sua conta."
-                                : ui->resetting ? "Cole o link recebido e escolha a nova senha."
-                                                : "Preencha os dados para entrar."
+                              ? ui->registering ? _("Preencha os dados para criar sua conta.")
+                                : ui->resetting ? _("Cole o link recebido e escolha a nova senha.")
+                                                : _("Preencha os dados para entrar.")
                               : auth_message(client);
     char status_message[384];
     if (clipboard_notice()) {
@@ -845,14 +847,15 @@ static void draw(login_ui *ui, auth_client *client)
         mvwhline(ui->footer, 2, 2, ' ', ui->width - 8);
         mvwhline(ui->footer, 3, 2, ' ', ui->width - 8);
         text(ui->footer, 2, 2, ui->width - 8,
-             ui->retrying ? "Recuperando sessão salva…" : "Recuperando sessão… Esc: abrir login");
+             ui->retrying ? _("Recuperando sessão salva…")
+                          : _("Recuperando sessão… Esc: abrir login"));
     } else if (ready && !*remaining)
         text(ui->footer, 3, 2, ui->width - 8, session_store_notice(connections->sessions));
     wattrset(ui->footer, COLOR_PAIR(THEME_MUTED));
     mvwhline(ui->footer, 4, 0, ' ', ui->width - 4);
     int hint_x = 0;
     if (ready) {
-        button_draw(ui->footer, 4, 0, 13, "[Canais]",
+        button_draw(ui->footer, 4, 0, 13, _("[Canais]"),
                     ui->focus == CHAT_FOCUS ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_CANVAS);
         hint_x = 15;
     } else if (!busy && !ui->resetting) {
@@ -1066,7 +1069,7 @@ static bool reset_ready(login_ui *ui)
     bool parsed = auth_reset_token(ui->saved[1], token, sizeof(token), host, sizeof(host));
     erase_text(token, sizeof(token));
     if (!parsed) {
-        validation_error(ui, 1, "Cole o link de redefinição completo, como foi recebido.");
+        validation_error(ui, 1, _("Cole o link de redefinição completo, como foi recebido."));
         return false;
     }
     if (!auth_validate_password(ui->saved[2], reason, sizeof(reason))) {
@@ -1075,16 +1078,16 @@ static bool reset_ready(login_ui *ui)
     }
     if (!*ui->saved[CONFIRM_FIELD] || strcmp(ui->saved[2], ui->saved[CONFIRM_FIELD]) != 0) {
         validation_error(ui, CONFIRM_FIELD,
-                         !*ui->saved[CONFIRM_FIELD] ? "Confirme a nova senha."
-                                                    : "As senhas não coincidem.");
+                         !*ui->saved[CONFIRM_FIELD] ? _("Confirme a nova senha.")
+                                                    : _("As senhas não coincidem."));
         return false;
     }
     char *server = *host ? url_host(ui->saved[0]) : NULL;
     bool other = server && *server && g_ascii_strcasecmp(server, host) != 0;
     if (other && !(ui->reset_confirmed && !strcmp(ui->reset_host, host))) {
         snprintf(ui->validation_message, sizeof(ui->validation_message),
-                 "O link é de %.48s, não de %.48s. Confira a URL ou confirme em Redefinir.", host,
-                 server);
+                 _("O link é de %.48s, não de %.48s. Confira a URL ou confirme em Redefinir."),
+                 host, server);
         snprintf(ui->reset_host, sizeof(ui->reset_host), "%s", host);
         ui->reset_confirmed = true;
         ui->mode_changed = true;
@@ -1120,8 +1123,8 @@ static void submit(login_ui *ui, auth_client *client)
             }
             if (!*ui->saved[CONFIRM_FIELD] || strcmp(ui->saved[2], ui->saved[CONFIRM_FIELD]) != 0) {
                 snprintf(ui->validation_message, sizeof(ui->validation_message), "%s",
-                         !*ui->saved[CONFIRM_FIELD] ? "Confirme sua senha."
-                                                    : "As senhas não coincidem.");
+                         !*ui->saved[CONFIRM_FIELD] ? _("Confirme sua senha.")
+                                                    : _("As senhas não coincidem."));
                 ui->mode_changed = true;
                 ui->validation_field = CONFIRM_FIELD;
                 ui->refused_plus = CONFIRM_FIELD + 1;
@@ -1610,8 +1613,9 @@ static int open_history(login_ui *ui, auth_client **client, profile_config **con
     }
     if (action == HISTORY_ADD) {
         if (connections->count == INSTANCE_LIMIT) {
-            snprintf(ui->validation_message, sizeof(ui->validation_message),
-                     "Limite de 64 conexões abertas. Saia de uma conta antes de adicionar outra.");
+            snprintf(
+                ui->validation_message, sizeof(ui->validation_message),
+                _("Limite de 64 conexões abertas. Saia de uma conta antes de adicionar outra."));
             return layout(ui) ? 0 : -1;
         }
         auth_client *next = auth_create();
@@ -1638,12 +1642,12 @@ static int open_history(login_ui *ui, auth_client **client, profile_config **con
 int login_run_profiles(bool open_profiles, bool allow_local_http)
 {
     if (!isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO)) {
-        fputs("Abra o papo-tui em um terminal interativo.\n", stderr);
+        fputs(_("Abra o papo-tui em um terminal interativo.\n"), stderr);
         return 1;
     }
     auth_client *client = auth_create();
     if (!client) {
-        fputs("Não foi possível preparar a comunicação com o servidor.\n", stderr);
+        fputs(_("Não foi possível preparar a comunicação com o servidor.\n"), stderr);
         return 1;
     }
     login_ui ui = {.previous_instance = SIZE_MAX, .tab_request = SIZE_MAX};
@@ -1659,7 +1663,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         auth_destroy(client);
         instances_destroy(connections);
         connections = NULL;
-        fputs("Não foi possível carregar os perfis locais.\n", stderr);
+        fputs(_("Não foi possível carregar os perfis locais.\n"), stderr);
         return 1;
     }
     app_mode_set(config->mode);
@@ -1672,7 +1676,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         instances_destroy(connections);
         connections = NULL;
         profiles_destroy(config);
-        fputs("Não foi possível preservar o estado do terminal.\n", stderr);
+        fputs(_("Não foi possível preservar o estado do terminal.\n"), stderr);
         return 1;
     }
     if (!initscr()) {
@@ -1923,7 +1927,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
                     ui.reset_confirmed = false;
                 if (!text_paste_commit(&ui.paste_data, buffer))
                     snprintf(ui.validation_message, sizeof(ui.validation_message),
-                             "Colagem excede o limite do campo; texto preservado.");
+                             _("Colagem excede o limite do campo; texto preservado."));
                 else
                     ui.validation_message[0] = 0;
             } else
@@ -1950,7 +1954,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
                           (ui.focus < FIELD_COUNT && !auth_has_session(client)
                                ? HELP_FIELDS | HELP_FIELD_CLEAR
                                : 0),
-                      auth_has_session(client) ? "Conta e sessão" : "Login e cadastro",
+                      auth_has_session(client) ? _("Conta e sessão") : _("Login e cadastro"),
                       shortcut_is(type, key, SHORTCUT_HELP_ALL));
             continue;
         }
@@ -2105,7 +2109,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
     connections = NULL;
     profiles_destroy(config);
     if (result)
-        fputs("Não foi possível criar a tela de login.\n", stderr);
+        fputs(_("Não foi possível criar a tela de login.\n"), stderr);
     return result;
 }
 

@@ -1,5 +1,6 @@
 #include "model/conversation/members.h"
 #include "model/conversation/private.h"
+#include "model/text/translation.h"
 
 enum member_request { MEMBER_IDLE, MEMBER_SUMMARY, MEMBER_BLOCKS, MEMBER_PROFILE, MEMBER_MUTATE };
 struct history_members {
@@ -65,7 +66,7 @@ void history_internal_members_recover(history *h)
     h->members->ready = false;
     history_member_refresh(h);
     snprintf(h->members->notice, sizeof(h->members->notice),
-             "Conexão alterada. Ctrl+R: atualizar membro.");
+             _("Conexão alterada. Ctrl+R: atualizar membro."));
 }
 static bool select_member(history *h, const char *id, enum member_request request)
 {
@@ -85,7 +86,8 @@ static bool select_member(history *h, const char *id, enum member_request reques
     if (!preparing)
         m->wanted = request;
     m->visible = true;
-    snprintf(m->notice, sizeof(m->notice), request == MEMBER_PROFILE ? "Carregando perfil…" : "");
+    snprintf(m->notice, sizeof(m->notice),
+             request == MEMBER_PROFILE ? _("Carregando perfil…") : "");
     if (known) {
         m->banned = json_is_true(json_object_get(user, "banned"));
         m->blocked = json_object_get(m->blocks, id) != NULL;
@@ -175,7 +177,7 @@ bool history_member_change(history *h, member_action action)
         return false;
     m->action = action;
     m->wanted = MEMBER_MUTATE;
-    snprintf(m->notice, sizeof(m->notice), "Enviando ação…");
+    snprintf(m->notice, sizeof(m->notice), _("Enviando ação…"));
     return true;
 }
 const char *history_member_reset_url(history *h)
@@ -214,7 +216,7 @@ bool history_internal_members_dispatch(history *h)
             ((m->action == MEMBER_BAN || m->action == MEMBER_UNBAN) &&
              !history_member_can_ban(h))) {
             m->wanted = MEMBER_IDLE;
-            snprintf(m->notice, sizeof(m->notice), "Permissão removida; ação cancelada.");
+            snprintf(m->notice, sizeof(m->notice), _("Permissão removida; ação cancelada."));
             return true;
         }
         started = auth_member_action(h->auth, m->target, (int)m->action);
@@ -328,14 +330,15 @@ void history_internal_members_response(history *h, json_t *body, long code, bool
             history_member_refresh(h);
             snprintf(m->notice, sizeof(m->notice),
                      (uncertain || (code >= 200 && code < 300))
-                         ? "Resultado incerto. Ctrl+R: consultar estado antes de repetir."
-                         : "Ação recusada ou indisponível. Ctrl+R: atualizar estado.");
+                         ? _("Resultado incerto. Ctrl+R: consultar estado antes de repetir.")
+                         : _("Ação recusada ou indisponível. Ctrl+R: atualizar estado."));
         } else
             snprintf(m->notice, sizeof(m->notice),
-                     code == 404 ? "Membro não encontrado. Esc: voltar."
-                                 : "Falha ao consultar membro. Ctrl+R: tentar novamente.");
+                     code == 404 ? _("Membro não encontrado. Esc: voltar.")
+                                 : _("Falha ao consultar membro. Ctrl+R: tentar novamente."));
     } else if (m->wanted == MEMBER_IDLE)
-        snprintf(m->notice, sizeof(m->notice), request == MEMBER_MUTATE ? "Ação concluída." : "");
+        snprintf(m->notice, sizeof(m->notice),
+                 request == MEMBER_MUTATE ? _("Ação concluída.") : "");
 }
 
 void history_member_view_save(history *h, const char *query, const char *selected)

@@ -1,3 +1,4 @@
+#include "model/text/translation.h"
 #include "net/auth/private.h"
 #include "net/tls.h"
 
@@ -142,7 +143,8 @@ error:
         client->response_generation = client->generation;
         client->response_ready = true;
         client->state = AUTH_READY;
-        snprintf(client->message, sizeof(client->message), "Não foi possível preparar a operação.");
+        snprintf(client->message, sizeof(client->message),
+                 _("Não foi possível preparar a operação."));
         return true; /* Accepted with an unsent local rejection. */
     }
     if (state == AUTH_PASSWORD_PREPARE || state == AUTH_PASSWORD_CHANGE) {
@@ -152,7 +154,7 @@ error:
         client->state = AUTH_READY;
         client->password_outcome = AUTH_PASSWORD_REFUSED;
         snprintf(client->password_notice, sizeof(client->password_notice), "%s",
-                 "Não foi possível preparar a troca de senha.");
+                 _("Não foi possível preparar a troca de senha."));
         return false;
     }
     if (state == AUTH_MESSAGE_SEND) {
@@ -162,7 +164,7 @@ error:
         client->state = AUTH_READY;
         return false;
     }
-    auth_internal_fail(client, "Não foi possível preparar a conexão.");
+    auth_internal_fail(client, _("Não foi possível preparar a conexão."));
     return false;
 }
 

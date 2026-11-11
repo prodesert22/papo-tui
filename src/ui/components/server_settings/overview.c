@@ -1,3 +1,4 @@
+#include "model/text/translation.h"
 #include "ui/components/server_settings/private.h"
 #include "ui/media/message_time.h"
 #include <time.h>
@@ -23,57 +24,59 @@ static void fields(server_settings *s, GArray *out)
     const json_t *server = server_admin_server(s->model);
     if (!server) {
         bool failed = *server_admin_notice(s->model) && server_admin_state(s->model) == ADMIN_IDLE;
-        admin_note(out, failed ? "Não foi possível carregar o servidor." : "Carregando servidor…");
+        admin_note(out,
+                   failed ? _("Não foi possível carregar o servidor.") : _("Carregando servidor…"));
         if (failed)
-            admin_field_add(out, FIELD_BUTTON, RETRY, "Tentar de novo");
+            admin_field_add(out, FIELD_BUTTON, RETRY, _("Tentar de novo"));
         return;
     }
-    admin_field *f = admin_field_add(out, FIELD_INFO, 0, "Dono");
+    admin_field *f = admin_field_add(out, FIELD_INFO, 0, _("Dono"));
     snprintf(f->value, sizeof(f->value), "%s",
              *admin_str(server, "owner_username") ? admin_str(server, "owner_username") : "—");
-    f = admin_field_add(out, FIELD_INFO, 0, "Criado em");
+    f = admin_field_add(out, FIELD_INFO, 0, _("Criado em"));
     if (!message_time_format(admin_str(server, "created_at"), time(NULL), f->value,
                              sizeof(f->value)))
         snprintf(f->value, sizeof(f->value), "—");
-    f = admin_field_add(out, FIELD_INFO, 0, "Tamanho");
-    snprintf(f->value, sizeof(f->value), "%lld canais · %lld membros · %lld cargos",
+    f = admin_field_add(out, FIELD_INFO, 0, _("Tamanho"));
+    snprintf(f->value, sizeof(f->value), _("%lld canais · %lld membros · %lld cargos"),
              (long long)json_integer_value(json_object_get(server, "channel_count")),
              (long long)json_integer_value(json_object_get(server, "member_count")),
              (long long)json_integer_value(json_object_get(server, "role_count")));
-    admin_field_add(out, FIELD_HEADING, 0, "Identidade");
-    f = admin_field_add(out, FIELD_TEXT, NAME, "Nome");
+    admin_field_add(out, FIELD_HEADING, 0, _("Identidade"));
+    f = admin_field_add(out, FIELD_TEXT, NAME, _("Nome"));
     f->text = &s->name;
     f->first = &s->name_first;
     f->max = ADMIN_SERVER_NAME_MAX;
     bool icon = json_is_true(json_object_get(server, "_icon"));
-    f = admin_field_add(out, FIELD_INFO, 0, "Ícone");
-    snprintf(f->value, sizeof(f->value), icon ? "%s" : "Sem ícone",
-             *admin_str(server, "icon_format") ? admin_str(server, "icon_format") : "Definido");
-    admin_field_add(out, FIELD_BUTTON, ICON, "Alterar ícone…");
+    f = admin_field_add(out, FIELD_INFO, 0, _("Ícone"));
+    snprintf(f->value, sizeof(f->value), icon ? "%s" : _("Sem ícone"),
+             *admin_str(server, "icon_format") ? admin_str(server, "icon_format") : _("Definido"));
+    admin_field_add(out, FIELD_BUTTON, ICON, _("Alterar ícone…"));
     if (icon)
-        admin_field_add(out, FIELD_BUTTON, ICON_REMOVE, "Remover ícone")->destructive = true;
-    admin_field_add(out, FIELD_HEADING, 0, "Acesso");
-    f = admin_field_add(out, FIELD_CHOICE, VISIBILITY, "Visibilidade");
-    snprintf(f->value, sizeof(f->value), "%s", s->choice ? "Público" : "Privado");
+        admin_field_add(out, FIELD_BUTTON, ICON_REMOVE, _("Remover ícone"))->destructive = true;
+    admin_field_add(out, FIELD_HEADING, 0, _("Acesso"));
+    f = admin_field_add(out, FIELD_CHOICE, VISIBILITY, _("Visibilidade"));
+    snprintf(f->value, sizeof(f->value), "%s", s->choice ? _("Público") : _("Privado"));
     bool was_public = json_is_true(json_object_get(server, "public"));
     if (!s->choice) {
-        f = admin_field_add(out, FIELD_SECRET, PASSWORD, was_public ? "Senha" : "Nova senha");
+        f = admin_field_add(out, FIELD_SECRET, PASSWORD, was_public ? _("Senha") : _("Nova senha"));
         f->text = &s->secret;
         f->first = &s->secret_first;
-        admin_note(out, was_public
-                            ? "Quem entrar precisará desta senha. Ela não fica salva no aplicativo."
-                            : "Deixe vazia para manter a senha atual.");
+        admin_note(out,
+                   was_public
+                       ? _("Quem entrar precisará desta senha. Ela não fica salva no aplicativo.")
+                       : _("Deixe vazia para manter a senha atual."));
     }
-    admin_field_add(out, FIELD_BUTTON, SAVE, "Salvar alterações");
+    admin_field_add(out, FIELD_BUTTON, SAVE, _("Salvar alterações"));
 }
 static void save(server_settings *s)
 {
     static char name[TEXT_UTF8_BYTES], password[TEXT_UTF8_BYTES];
     if (!admin_text(&s->name, name) || !admin_text(&s->secret, password)) {
-        admin_error(s, "Texto inválido.");
+        admin_error(s, _("Texto inválido."));
         return;
     }
-    if (!admin_check_field(s, NAME, "Nome", name, ADMIN_SERVER_NAME_MAX, true)) {
+    if (!admin_check_field(s, NAME, _("Nome"), name, ADMIN_SERVER_NAME_MAX, true)) {
         memset(password, 0, sizeof(password));
         return;
     }
@@ -109,7 +112,7 @@ static void activate(server_settings *s, const admin_field *f, int direction)
         s->pick = SERVER_PICK_ICON;
     else if (f->id == ICON_REMOVE) {
         if (admin_confirmed(s, f) && !server_admin_remove_icon(s->model))
-            admin_error(s, "Não foi possível remover o ícone agora.");
+            admin_error(s, _("Não foi possível remover o ícone agora."));
     } else if (f->id == SAVE)
         save(s);
     else if (f->id == RETRY)

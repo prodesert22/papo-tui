@@ -1,3 +1,4 @@
+#include "model/text/translation.h"
 #include "ui/components/server_settings/private.h"
 #include "ui/media/message_time.h"
 #include <time.h>
@@ -25,7 +26,7 @@ static void enter(server_settings *s)
 }
 static void rows(server_settings *s, GArray *out)
 {
-    admin_row_add(out, ROW_NEW, "+ Adicionar emoji", "", 0, true);
+    admin_row_add(out, ROW_NEW, _("+ Adicionar emoji"), "", 0, true);
     size_t i;
     json_t *emoji;
     json_array_foreach(server_admin_items(s->model, ADMIN_LIST_EMOJIS), i, emoji)
@@ -37,8 +38,8 @@ static void rows(server_settings *s, GArray *out)
     }
     if (server_admin_more(s->model, ADMIN_LIST_EMOJIS))
         admin_row_add(out, ROW_MORE,
-                      server_admin_loading(s->model, ADMIN_LIST_EMOJIS) ? "Carregando…"
-                                                                        : "Carregar mais…",
+                      server_admin_loading(s->model, ADMIN_LIST_EMOJIS) ? _("Carregando…")
+                                                                        : _("Carregar mais…"),
                       "", 0, true);
 }
 static void choose(server_settings *s, const admin_row *row)
@@ -58,21 +59,22 @@ static void fill(server_settings *s)
 static void fields(server_settings *s, GArray *out)
 {
     if (server_admin_failed(s->model, ADMIN_LIST_EMOJIS)) {
-        admin_note(out, "Não foi possível carregar os emojis.");
-        admin_field_add(out, FIELD_BUTTON, RETRY, "Tentar de novo");
+        admin_note(out, _("Não foi possível carregar os emojis."));
+        admin_field_add(out, FIELD_BUTTON, RETRY, _("Tentar de novo"));
     } else if (!server_admin_items(s->model, ADMIN_LIST_EMOJIS))
-        admin_note(out, "Carregando emojis…");
+        admin_note(out, _("Carregando emojis…"));
     const json_t *emoji = selected_emoji(s);
     if (!emoji) {
         if (!strcmp(s->selected, ROW_MORE))
             return;
-        admin_field_add(out, FIELD_HEADING, 0, "Adicionar emoji");
-        admin_field *f = admin_field_add(out, FIELD_TEXT, NAME, "Nome");
+        admin_field_add(out, FIELD_HEADING, 0, _("Adicionar emoji"));
+        admin_field *f = admin_field_add(out, FIELD_TEXT, NAME, _("Nome"));
         f->text = &s->name;
         f->first = &s->name_first;
-        admin_note(out, "Escolha uma imagem GIF, JPEG, PNG ou WEBP. Imagens grandes são reduzidas; "
-                        "animações grandes são recusadas.");
-        admin_field_add(out, FIELD_BUTTON, PICK, "Escolher imagem e enviar…");
+        admin_note(out,
+                   _("Escolha uma imagem GIF, JPEG, PNG ou WEBP. Imagens grandes são reduzidas; "
+                     "animações grandes são recusadas."));
+        admin_field_add(out, FIELD_BUTTON, PICK, _("Escolher imagem e enviar…"));
         return;
     }
     char title[160];
@@ -83,38 +85,38 @@ static void fields(server_settings *s, GArray *out)
         f = admin_field_add(out, FIELD_EMOJI, 0, title);
         snprintf(f->key, sizeof(f->key), "%s", s->selected);
     }
-    f = admin_field_add(out, FIELD_INFO, 0, "Formato");
+    f = admin_field_add(out, FIELD_INFO, 0, _("Formato"));
     snprintf(f->value, sizeof(f->value), "%s", admin_str(emoji, "format"));
-    f = admin_field_add(out, FIELD_INFO, 0, "Adicionado em");
+    f = admin_field_add(out, FIELD_INFO, 0, _("Adicionado em"));
     if (!message_time_format(admin_str(emoji, "created_at"), time(NULL), f->value,
                              sizeof(f->value)))
         snprintf(f->value, sizeof(f->value), "—");
-    f = admin_field_add(out, FIELD_INFO, 0, "Autor");
+    f = admin_field_add(out, FIELD_INFO, 0, _("Autor"));
     snprintf(f->value, sizeof(f->value), "%s",
              admin_user_name(s, admin_str(emoji, "created_by"), "—"));
     if (server_admin_emoji_deletable(s->model, emoji)) {
-        f = admin_field_add(out, FIELD_BUTTON, DELETE, "Excluir emoji");
+        f = admin_field_add(out, FIELD_BUTTON, DELETE, _("Excluir emoji"));
         f->destructive = true;
         snprintf(f->key, sizeof(f->key), "%s", s->selected);
     } else
-        admin_note(out, "Só quem adicionou o emoji ou quem gerencia o servidor pode excluí-lo.");
+        admin_note(out, _("Só quem adicionou o emoji ou quem gerencia o servidor pode excluí-lo."));
 }
 static void pick(server_settings *s)
 {
     static char name[TEXT_UTF8_BYTES];
     if (!admin_text(&s->name, name)) {
-        admin_error(s, "Texto inválido.");
+        admin_error(s, _("Texto inválido."));
         return;
     }
     g_strstrip(name);
-    if (!admin_check_field(s, NAME, "Nome", name, 0, true))
+    if (!admin_check_field(s, NAME, _("Nome"), name, 0, true))
         return;
     if (strlen(name) >= sizeof(s->emoji_name)) {
-        admin_invalid(s, NAME, "Nome longo demais.");
+        admin_invalid(s, NAME, _("Nome longo demais."));
         return;
     }
     if (server_admin_busy(s->model)) {
-        admin_error(s, "Aguarde a alteração anterior terminar.");
+        admin_error(s, _("Aguarde a alteração anterior terminar."));
         return;
     }
     memcpy(s->emoji_name, name, strlen(name) + 1);
@@ -134,7 +136,7 @@ static void activate(server_settings *s, const admin_field *f, int direction)
 }
 const admin_tab_ops tab_emojis = {
     .list = true,
-    .empty = "Carregando emojis…",
+    .empty = N_("Carregando emojis…"),
     .enter = enter,
     .rows = rows,
     .fill = fill,

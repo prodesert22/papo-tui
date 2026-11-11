@@ -2,6 +2,7 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 #include "ui/media/media_cache.h"
+#include "model/text/translation.h"
 #include "net/clock.h"
 #include "platform/runtime.h"
 #include "ui/media/emoji_image.h"
@@ -352,7 +353,7 @@ static void worker(gpointer data, gpointer unused)
             }
         } else if (t->kind == TASK_DECODE) {
             if (!media_image_backend())
-                t->error = "Módulo de imagens ausente ou incompatível. Reinstale o aplicativo.";
+                t->error = _("Módulo de imagens ausente ou incompatível. Reinstale o aplicativo.");
             else {
                 t->ok = image_decode_file(&t->request, &t->image, &t->output_frames, cancelled, t);
                 if (!t->ok)
@@ -657,7 +658,7 @@ static bool collect(media_cache *c)
                 if (ok)
                     r->expired = 0;
                 r->state = cancelled(t) ? RESOURCE_NEW : ok ? RESOURCE_READY : RESOURCE_ERROR;
-                r->error = ok ? NULL : "Imagem inválida ou indisponível.";
+                r->error = ok ? NULL : _("Imagem inválida ou indisponível.");
                 /* Full file budget is retryable after maintenance. */
                 if (ok && !r->objects[0] && !r->objects[1])
                     r->state = RESOURCE_NEW;
@@ -1176,7 +1177,7 @@ bool media_cache_poll(media_cache *c, uint64_t now)
             if (stat(r->source, &info) || info.st_size < 1 ||
                 (uint64_t)info.st_size > MEDIA_IMAGE_LIMIT) {
                 r->state = RESOURCE_ERROR;
-                r->error = "Arquivo de imagem indisponível.";
+                r->error = _("Arquivo de imagem indisponível.");
                 changed = true;
                 continue;
             }
@@ -1267,7 +1268,7 @@ bool media_cache_poll(media_cache *c, uint64_t now)
                 media_download_poll(c->downloads[i]);
             } else {
                 best->state = RESOURCE_ERROR;
-                best->error = "Não foi possível preparar o download.";
+                best->error = _("Não foi possível preparar o download.");
             }
         }
     queue_trim(c);
@@ -1671,7 +1672,7 @@ bool media_resource_failed(const media_resource *r)
 const char *media_resource_error(const media_resource *r, bool author)
 {
     if (!r)
-        return "Memória insuficiente para carregar a mídia.";
+        return _("Memória insuficiente para carregar a mídia.");
     if (r->state == RESOURCE_ERROR)
         return r->error;
     if (r->state != RESOURCE_READY)
@@ -1680,10 +1681,11 @@ const char *media_resource_error(const media_resource *r, bool author)
     if (o)
         for (variant *v = o->variants; v; v = v->next)
             if (v->pinned && v->failed)
-                return "Não foi possível preparar a imagem. Tente novamente.";
-    return !o          ? "Imagem do embed indisponível."
-           : o->failed ? (o->error ? o->error : "Imagem inválida, grande demais ou não suportada.")
-                       : NULL;
+                return _("Não foi possível preparar a imagem. Tente novamente.");
+    return !o ? _("Imagem do embed indisponível.")
+           : o->failed
+               ? (o->error ? o->error : _("Imagem inválida, grande demais ou não suportada."))
+               : NULL;
 }
 bool media_resource_dimensions(const media_resource *r, bool author, int *width, int *height)
 {

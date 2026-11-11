@@ -1,3 +1,4 @@
+#include "model/text/translation.h"
 #include "net/auth/session_time.h"
 #include "ui/screens/conversation/private.h"
 
@@ -98,7 +99,7 @@ static json_t *edit_overlay(view *ui, size_t index, json_t *m)
         return ui->edit_view;
     json_t *copy = json_deep_copy(m);
     if (!copy || json_object_set_new(copy, "content", json_string(content)) ||
-        json_object_set_new(copy, "_papo_status", json_string("editando"))) {
+        json_object_set_new(copy, "_papo_status", json_string(_("editando")))) {
         json_decref(copy);
         return m;
     }
@@ -464,11 +465,11 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
                 if (border_start >= first && border_start < first + ui->visible &&
                     (editing || replying || (selected && blocks->media_count))) {
                     char label[96];
-                    const char *action = editing    ? " ✎ Editando "
-                                         : replying ? " ↰ Respondendo "
+                    const char *action = editing    ? _(" ✎ Editando ")
+                                         : replying ? _(" ↰ Respondendo ")
                                                     : " ";
                     if (selected && blocks->media_count)
-                        snprintf(label, sizeof(label), "%s%sMídia %zu/%zu ", action,
+                        snprintf(label, sizeof(label), _("%s%sMídia %zu/%zu "), action,
                                  editing || replying ? "· " : "", ui->selected_media + 1,
                                  blocks->media_count);
                     else

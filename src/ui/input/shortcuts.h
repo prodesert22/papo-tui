@@ -1,5 +1,6 @@
 #ifndef PAPO_SHORTCUTS_H
 #define PAPO_SHORTCUTS_H
+#include "model/text/translation.h"
 #include "ui/input/text.h"
 
 /* ASCII control values are shared by legacy terminals and normalized CSI-u.
@@ -22,7 +23,7 @@ typedef enum {
     SHORTCUT_HELP_ALL = 31
 } ui_shortcut;
 
-#define UI_HELP_HINT "Ctrl+G: ajuda"
+#define UI_HELP_HINT _("Ctrl+G: ajuda")
 static inline bool shortcut_is(int type, uint32_t key, ui_shortcut shortcut)
 {
     return (type == OK && key == (uint32_t)shortcut) ||

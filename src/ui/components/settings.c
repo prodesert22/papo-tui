@@ -1,5 +1,6 @@
 #include "ui/components/settings.h"
 #include "model/conversation/profile_edit.h"
+#include "model/text/translation.h"
 #include "ui/components/button.h"
 #include "ui/components/input_border.h"
 #include "ui/components/tabs.h"
@@ -20,7 +21,8 @@ static int first_mode(app_settings *s)
     return APP_MODE_LIGHT;
 }
 static const char *sections[SETTINGS_SECTIONS] = {
-    "Perfil", "Aparência", "Notificações", "Áudio", "Acessibilidade", "Atalhos", "Conta"};
+    N_("Perfil"),         N_("Aparência"), N_("Notificações"), N_("Áudio"),
+    N_("Acessibilidade"), N_("Atalhos"),   N_("Conta")};
 /* Sections that have controls between the tabs and the buttons. */
 static bool has_content(int section)
 {
@@ -85,7 +87,7 @@ void settings_open(app_settings *s, const profile_config *config, voice_client *
 static const char *device_name(app_settings *s, const char *id, bool input)
 {
     if (!*id)
-        return "Padrão do sistema";
+        return _("Padrão do sistema");
     size_t i;
     json_t *device;
     json_array_foreach(voice_devices(s->voice), i, device)
@@ -94,7 +96,7 @@ static const char *device_name(app_settings *s, const char *id, bool input)
         if (key && !strcmp(id, key) && json_is_true(json_object_get(device, "input")) == input)
             return json_string_value(json_object_get(device, "name"));
     }
-    return "Dispositivo indisponível";
+    return _("Dispositivo indisponível");
 }
 static void begin_capture(app_settings *s)
 {
@@ -102,7 +104,7 @@ static void begin_capture(app_settings *s)
         return;
     voice_test(s->voice, false);
     if (!text_capture_begin()) {
-        snprintf(s->error, sizeof(s->error), "Não foi possível capturar a tecla.");
+        snprintf(s->error, sizeof(s->error), _("Não foi possível capturar a tecla."));
         return;
     }
     s->ptt_capture = true;
@@ -123,42 +125,43 @@ static void audio_draw(app_settings *s, WINDOW *w, int height, int width)
         char label[1024];
         switch (item) {
         case 0:
-            snprintf(label, sizeof(label), "Entrada: < %s >",
-                     voice ? device_name(s, s->audio.input, true) : "Indisponível");
+            snprintf(label, sizeof(label), _("Entrada: < %s >"),
+                     voice ? device_name(s, s->audio.input, true) : _("Indisponível"));
             break;
         case 1:
-            snprintf(label, sizeof(label), "Saída: < %s >",
-                     voice ? device_name(s, s->audio.output, false) : "Indisponível");
+            snprintf(label, sizeof(label), _("Saída: < %s >"),
+                     voice ? device_name(s, s->audio.output, false) : _("Indisponível"));
             break;
         case 2:
-            snprintf(label, sizeof(label), "Volume do microfone: < %d%% >",
+            snprintf(label, sizeof(label), _("Volume do microfone: < %d%% >"),
                      s->audio.microphone_volume);
             break;
         case 3:
-            snprintf(label, sizeof(label), "Volume da chamada: < %d%% >", s->audio.output_volume);
+            snprintf(label, sizeof(label), _("Volume da chamada: < %d%% >"),
+                     s->audio.output_volume);
             break;
         case 4:
-            snprintf(label, sizeof(label), "[%s teste do microfone]",
-                     voice_testing() ? "Parar" : "Iniciar");
+            snprintf(label, sizeof(label), _("[%s teste do microfone]"),
+                     voice_testing() ? _("Parar") : _("Iniciar"));
             break;
         case 5:
-            snprintf(label, sizeof(label), "Pressionar para falar: < %s >",
-                     s->audio.push_to_talk ? "Ativado" : "Desativado");
+            snprintf(label, sizeof(label), _("Pressionar para falar: < %s >"),
+                     s->audio.push_to_talk ? _("Ativado") : _("Desativado"));
             break;
         case 6: {
             char key[64] = "?";
             if (!s->ptt_capture)
                 key_binding_label(&s->audio.ptt, key, sizeof(key));
-            snprintf(label, sizeof(label), "Tecla para falar: < %s >",
-                     s->ptt_capture ? "pressione uma combinação" : key);
+            snprintf(label, sizeof(label), _("Tecla para falar: < %s >"),
+                     s->ptt_capture ? _("pressione uma combinação") : key);
             break;
         }
         case 7:
-            snprintf(label, sizeof(label), "Fluxos desta instância: < %u >",
+            snprintf(label, sizeof(label), _("Fluxos desta instância: < %u >"),
                      audio_config_slots(&s->audio, voice_instance(s->voice)));
             break;
         default:
-            snprintf(label, sizeof(label), "[Atualizar dispositivos]");
+            snprintf(label, sizeof(label), _("[Atualizar dispositivos]"));
             break;
         }
         bool focused = s->focus == 1 && s->audio_selection == item;
@@ -171,7 +174,7 @@ static void audio_draw(app_settings *s, WINDOW *w, int height, int width)
     int length = width - 18;
     int filled = rms <= -60 ? 0 : rms >= 0 ? length : (int)((rms + 60) * length / 60);
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
-    text_label(w, height - 6, 2, 7, "Nível:");
+    text_label(w, height - 6, 2, 7, _("Nível:"));
     for (int i = 0; i < length; ++i) {
         wattrset(w,
                  COLOR_PAIR(i < filled ? theme_volume_pair(i * 100 / length) : THEME_PANEL_MUTED));
@@ -182,35 +185,39 @@ static void audio_draw(app_settings *s, WINDOW *w, int height, int width)
     wattrset(w, COLOR_PAIR(peak >= -1 ? THEME_ERROR : THEME_PANEL));
     text_label(w, height - 6, width - 9, 7, number);
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
-    text_label(w, height - 5, 2, width - 4,
-               !voice ? "Voz indisponível: esta compilação não inclui suporte WebRTC."
-               : s->ptt_capture
-                   ? "Pressione a combinação completa; Ctrl/Alt sozinhos não contam. Esc cancela. "
-                     "Mouse 4/5."
-               : voice_testing() ? "Retorno local ativo; sua voz não é enviada à chamada."
-               : s->focus == 1 && s->audio_selection == 6
-                   ? "Enter captura qualquer combinação ou os botões 4/5 do mouse."
-                   : "←/→ ajusta; Enter alterna. O teste reproduz sua voz localmente.");
+    text_label(
+        w, height - 5, 2, width - 4,
+        !voice ? _("Voz indisponível: esta compilação não inclui suporte WebRTC.")
+        : s->ptt_capture
+            ? _("Pressione a combinação completa; Ctrl/Alt sozinhos não contam. Esc cancela. "
+                "Mouse 4/5.")
+        : voice_testing() ? _("Retorno local ativo; sua voz não é enviada à chamada.")
+        : s->focus == 1 && s->audio_selection == 6
+            ? _("Enter captura qualquer combinação ou os botões 4/5 do mouse.")
+            : _("←/→ ajusta; Enter alterna. O teste reproduz sua voz localmente."));
     text_label(w, height - 4, 2, width - 4,
-               !voice ? "As opções de áudio ficam disponíveis quando o WebRTC estiver presente."
+               !voice ? _("As opções de áudio ficam disponíveis quando o WebRTC estiver presente.")
                : s->audio_selection == 7
-                   ? "Use o valor VOICE_AUDIO_SLOTS do servidor; vale no próximo ingresso."
+                   ? _("Use o valor VOICE_AUDIO_SLOTS do servidor; vale no próximo ingresso.")
                : s->audio.push_to_talk && s->audio.ptt.kind != KEY_BINDING_MOUSE &&
                        !text_keyboard_events_supported()
                    ? key_binding_legacy_ctrl_byte(&s->audio.ptt)
-                         ? "Terminal sem soltura: a tecla alterna o microfone."
-                         : "Tecla sem eventos neste terminal: use o botão Segure para falar."
-                   : "O microfone e a saída podem ser silenciados ao lado de ⚙.");
+                         ? _("Terminal sem soltura: a tecla alterna o microfone.")
+                         : _("Tecla sem eventos neste terminal: use o botão Segure para falar.")
+                   : _("O microfone e a saída podem ser silenciados ao lado de ⚙."));
 }
 static void tabs_draw(app_settings *s, WINDOW *w, int width)
 {
-    tab_strip_draw(&s->tabs, w, 3, width, sections, SETTINGS_SECTIONS, s->section, s->focus == 0);
+    const char *names[SETTINGS_SECTIONS];
+    for (int i = 0; i < SETTINGS_SECTIONS; ++i)
+        names[i] = _(sections[i]);
+    tab_strip_draw(&s->tabs, w, 3, width, names, SETTINGS_SECTIONS, s->section, s->focus == 0);
 }
 /* Perfil: items 0-3 are the text fields, then status, avatar and banner. */
 #define PROFILE_ITEMS 7
 enum { ITEM_STATUS = PROFILE_FIELDS, ITEM_AVATAR, ITEM_BANNER };
-static const char *const field_labels[PROFILE_FIELDS] = {"Apelido", "Frase de status", "Descrição",
-                                                         "Frase de digitação"};
+static const char *const field_labels[PROFILE_FIELDS] = {N_("Apelido"), N_("Frase de status"),
+                                                         N_("Descrição"), N_("Frase de digitação")};
 static const char *const field_keys[PROFILE_FIELDS] = {"nickname", "status", "description",
                                                        "typing"};
 /* The status phrase is read back from the profile as status_message. */
@@ -218,7 +225,7 @@ static const char *const profile_keys[PROFILE_FIELDS] = {"nickname", "status_mes
                                                          "description", "typing"};
 static const size_t field_max[PROFILE_FIELDS] = {PROFILE_NICKNAME_MAX, PROFILE_STATUS_MAX,
                                                  PROFILE_DESCRIPTION_MAX, PROFILE_TYPING_MAX};
-static const char *const status_labels[3] = {"Online", "Ausente", "Ocupado"};
+static const char *const status_labels[3] = {N_("Online"), N_("Ausente"), N_("Ocupado")};
 static const char *const status_values[3] = {NULL, "away", "busy"};
 
 static const char *profile_text(const json_t *profile, const char *key)
@@ -291,8 +298,8 @@ enum {
     ITEM_AVATARS,
     APPEARANCE_ITEMS
 };
-static const char *const theme_labels[] = {"Escuro", "Claro", "Sistema"};
-static const char *const density_labels[] = {"Compacta", "Normal", "Confortável"};
+static const char *const theme_labels[] = {N_("Escuro"), N_("Claro"), N_("Sistema")};
+static const char *const density_labels[] = {N_("Compacta"), N_("Normal"), N_("Confortável")};
 /* Account items need the active server's model. */
 static int appearance_last(const app_settings *s)
 {
@@ -305,22 +312,22 @@ static void appearance_label(app_settings *s, int item, char *label, size_t size
         snprintf(label, size, _("Idioma: < %s >"), language_choice_label(s->language));
         break;
     case ITEM_THEME:
-        snprintf(label, size, "Tema: < %s >", theme_labels[s->user.theme]);
+        snprintf(label, size, _("Tema: < %s >"), _(theme_labels[s->user.theme]));
         break;
     case ITEM_DENSITY:
-        snprintf(label, size, "Densidade: < %s >", density_labels[s->user.density]);
+        snprintf(label, size, _("Densidade: < %s >"), _(density_labels[s->user.density]));
         break;
     case ITEM_TIMESTAMPS:
-        snprintf(label, size, "[%c] Mostrar horários", s->user.timestamps ? 'x' : ' ');
+        snprintf(label, size, _("[%c] Mostrar horários"), s->user.timestamps ? 'x' : ' ');
         break;
     case ITEM_AVATARS:
-        snprintf(label, size, "[%c] Mostrar avatares", s->user.avatars ? 'x' : ' ');
+        snprintf(label, size, _("[%c] Mostrar avatares"), s->user.avatars ? 'x' : ' ');
         break;
     default:
         snprintf(label, size, "(%c) %s", s->draft == (app_mode)item ? '*' : ' ',
-                 item == 0   ? "Normal"
-                 : item == 1 ? "Light"
-                             : "Ultralight");
+                 item == 0   ? _("Normal")
+                 : item == 1 ? _("Light")
+                             : _("Ultralight"));
     }
 }
 static const char *appearance_description(app_settings *s)
@@ -333,16 +340,16 @@ static const char *appearance_description(app_settings *s)
                  "continuam como foram escritos.");
     /* Account items are saved on the server and follow the active tab. */
     if (s->selection == ITEM_THEME)
-        return "Cores da tela. Sistema usa o tema claro quando o fundo do terminal é claro. "
-               "Salvo na sua conta deste servidor.";
+        return _("Cores da tela. Sistema usa o tema claro quando o fundo do terminal é claro. "
+                 "Salvo na sua conta deste servidor.");
     if (s->selection == ITEM_DENSITY)
-        return "Compacta tira a linha em branco entre autores; Confortável também separa as "
-               "mensagens de um mesmo autor. Salvo na sua conta deste servidor.";
+        return _("Compacta tira a linha em branco entre autores; Confortável também separa as "
+                 "mensagens de um mesmo autor. Salvo na sua conta deste servidor.");
     if (s->selection == ITEM_TIMESTAMPS)
-        return "Mostra a hora ao lado do nome de quem enviou cada mensagem. Salvo na sua conta "
-               "deste servidor.";
-    return "Mostra a foto, ou as iniciais, à esquerda das mensagens; sem ela, o texto começa "
-           "na borda. Salvo na sua conta deste servidor.";
+        return _("Mostra a hora ao lado do nome de quem enviou cada mensagem. Salvo na sua conta "
+                 "deste servidor.");
+    return _("Mostra a foto, ou as iniciais, à esquerda das mensagens; sem ela, o texto começa "
+             "na borda. Salvo na sua conta deste servidor.");
 }
 /* Rows available for the list, which scrolls on short terminals. */
 static int appearance_rows(int height)
@@ -457,46 +464,47 @@ static bool *notify_value(app_settings *s, int item)
 }
 static void notifications_draw(app_settings *s, WINDOW *w, int height, int width)
 {
-    static const char *const labels[NOTIFY_ITEMS] = {"Notificações ativadas", "Prévia da mensagem",
-                                                     "Sons", "Avisar quando mencionarem você"};
+    static const char *const labels[NOTIFY_ITEMS] = {N_("Notificações ativadas"),
+                                                     N_("Prévia da mensagem"), N_("Sons"),
+                                                     N_("Avisar quando mencionarem você")};
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     char label[256];
-    snprintf(label, sizeof(label), "Como você é avisado em %s",
-             *s->server ? s->server : "este servidor");
+    snprintf(label, sizeof(label), _("Como você é avisado em %s"),
+             *s->server ? s->server : _("este servidor"));
     text_label(w, 5, 2, width - 4, label);
     if (!s->profile) {
-        text_label(w, 7, 2, width - 4, "Indisponível sem um servidor conectado.");
+        text_label(w, 7, 2, width - 4, _("Indisponível sem um servidor conectado."));
         return;
     }
     for (int i = 0; i < NOTIFY_ITEMS && 7 + i < height - 4; ++i) {
         bool focused = s->focus == 1 && s->notify_selection == i;
         wattrset(w, COLOR_PAIR(focused ? THEME_FOCUSED : THEME_PANEL) |
                         (focused && !has_colors() ? A_REVERSE : 0));
-        snprintf(label, sizeof(label), "[%c] %s", *notify_value(s, i) ? 'x' : ' ', labels[i]);
+        snprintf(label, sizeof(label), "[%c] %s", *notify_value(s, i) ? 'x' : ' ', _(labels[i]));
         text_label(w, 7 + i, 2, width - 4, label);
     }
     if (height < 18)
         return;
     /* What the selected switch does; the scope of all of them otherwise. */
     static const char *const help[NOTIFY_ITEMS] = {
-        "Mostra avisos do sistema e toca sons para as notificações deste servidor. Desligado, "
-        "a central (Ctrl+D) e os indicadores de não lidas continuam funcionando.",
-        "Mostra o texto da mensagem no aviso do sistema. Desligado, o aviso diz só \"Nova "
-        "notificação\".",
-        "Toca um som quando chega uma notificação e quando você ou outra pessoa entra ou sai "
-        "de uma chamada de voz.",
-        "Avisa quando alguém menciona você, responde sua mensagem ou usa @everyone. "
-        "Desligado, essas mensagens vão só para a central (Ctrl+D), sem aviso nem som.",
+        N_("Mostra avisos do sistema e toca sons para as notificações deste servidor. Desligado, "
+           "a central (Ctrl+D) e os indicadores de não lidas continuam funcionando."),
+        N_("Mostra o texto da mensagem no aviso do sistema. Desligado, o aviso diz só \"Nova "
+           "notificação\"."),
+        N_("Toca um som quando chega uma notificação e quando você ou outra pessoa entra ou sai "
+           "de uma chamada de voz."),
+        N_("Avisa quando alguém menciona você, responde sua mensagem ou usa @everyone. "
+           "Desligado, essas mensagens vão só para a central (Ctrl+D), sem aviso nem som."),
     };
     text_buffer description;
     text_layout measured;
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     if (text_decode(&description, s->focus == 1
-                                      ? help[s->notify_selection]
-                                      : "Valem para todos os canais deste servidor, em qualquer "
-                                        "aparelho. Quais mensagens avisam se escolhe no canal "
-                                        "(Notificações…); Ctrl+D → Preferências silencia só este "
-                                        "computador.")) {
+                                      ? _(help[s->notify_selection])
+                                      : _("Valem para todos os canais deste servidor, em qualquer "
+                                          "aparelho. Quais mensagens avisam se escolhe no canal "
+                                          "(Notificações…); Ctrl+D → Preferências silencia só este "
+                                          "computador."))) {
         text_measure_words(&description, width - 6, &measured);
         text_draw(w, &description, &measured, 0, 3, 12, 3);
     }
@@ -540,11 +548,11 @@ static bool user_save(app_settings *s)
     if (!s->profile || user_config_equal(&s->user, history_user_config(s->profile)))
         return false;
     if (history_user_settings_busy(s->profile)) {
-        snprintf(s->error, sizeof(s->error), "Aguarde a alteração anterior terminar.");
+        snprintf(s->error, sizeof(s->error), _("Aguarde a alteração anterior terminar."));
         return true;
     }
     if (!history_user_settings_save(s->profile, &s->user)) {
-        snprintf(s->error, sizeof(s->error), "Sem conexão com o servidor; tente novamente.");
+        snprintf(s->error, sizeof(s->error), _("Sem conexão com o servidor; tente novamente."));
         return true;
     }
     s->error[0] = 0;
@@ -556,7 +564,7 @@ static void profile_notice_draw(app_settings *s, WINDOW *w, int height, int widt
     profile_state state = history_profile_state(s->profile);
     const char *notice = history_profile_notice(s->profile);
     if (state == PROFILE_SAVING && !*notice)
-        notice = "Salvando…";
+        notice = _("Salvando…");
     if (!*notice)
         return;
     wattrset(w, COLOR_PAIR(state == PROFILE_FAILED || state == PROFILE_UNCERTAIN ? THEME_ERROR
@@ -571,14 +579,15 @@ static void profile_draw(app_settings *s, WINDOW *w, int height, int width)
         s->item_y[i] = s->item_rows[i] = -1;
     char line[320];
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
-    snprintf(line, sizeof(line), "Seu perfil em %s", *s->server ? s->server : "este servidor");
+    snprintf(line, sizeof(line), _("Seu perfil em %s"),
+             *s->server ? s->server : _("este servidor"));
     text_label(w, 5, 2, width - 4, line);
     const json_t *profile = history_profile(s->profile);
     if (!profile) {
         text_label(w, 7, 3, width - 6,
                    history_profile_state(s->profile) == PROFILE_FAILED
-                       ? "Não foi possível carregar o perfil. Enter tenta de novo."
-                       : "Carregando perfil…");
+                       ? _("Não foi possível carregar o perfil. Enter tenta de novo.")
+                       : _("Carregando perfil…"));
         return;
     }
     int top = 6, bottom = height - 3, available = bottom - top;
@@ -603,10 +612,10 @@ static void profile_draw(app_settings *s, WINDOW *w, int height, int width)
                                          : THEME_PANEL) |
                         (focused || refused ? A_BOLD : 0));
         snprintf(line, sizeof(line), "%s:",
-                 i < PROFILE_FIELDS ? field_labels[i]
-                 : i == ITEM_STATUS ? "Status"
-                 : i == ITEM_AVATAR ? "Avatar"
-                                    : "Banner");
+                 i < PROFILE_FIELDS ? _(field_labels[i])
+                 : i == ITEM_STATUS ? _("Status")
+                 : i == ITEM_AVATAR ? _("Avatar")
+                                    : _("Banner"));
         text_label(w, y, 2, label_width - 1, line);
         if (i < PROFILE_FIELDS) {
             text_buffer *field = &s->fields[i];
@@ -639,24 +648,24 @@ static void profile_draw(app_settings *s, WINDOW *w, int height, int width)
             snprintf(line, sizeof(line), "%zu/%zu", field->length, field_max[i]);
             text_label(w, y, fx + fw + 1, 8, line);
         } else if (i == ITEM_STATUS) {
-            snprintf(line, sizeof(line), "< %s >", status_labels[s->status_choice]);
+            snprintf(line, sizeof(line), "< %s >", _(status_labels[s->status_choice]));
             button_draw(w, y, fx, 13, line, focused ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
         } else if (i == ITEM_AVATAR) {
-            button_draw(w, y, fx, 12, "Alterar…", focused ? BUTTON_FOCUSED : BUTTON_NORMAL,
+            button_draw(w, y, fx, 12, _("Alterar…"), focused ? BUTTON_FOCUSED : BUTTON_NORMAL,
                         BUTTON_PANEL);
         } else {
             bool has_banner = *profile_text(profile, "banner_media");
-            button_draw(w, y, fx, 12, "Alterar…",
+            button_draw(w, y, fx, 12, _("Alterar…"),
                         focused && !s->banner_button ? BUTTON_FOCUSED : BUTTON_NORMAL,
                         BUTTON_PANEL);
             if (has_banner)
-                button_draw(w, y, fx + 14, 11, "Remover",
+                button_draw(w, y, fx + 14, 11, _("Remover"),
                             focused && s->banner_button ? BUTTON_FOCUSED : BUTTON_NORMAL,
                             BUTTON_PANEL);
             else {
                 s->banner_button = 0;
                 wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
-                text_label(w, y, fx + 14, width - fx - 16, "sem banner");
+                text_label(w, y, fx + 14, width - fx - 16, _("sem banner"));
             }
         }
         y += rows[i];
@@ -681,7 +690,7 @@ bool settings_paste(app_settings *s, text_paste *paste)
         if (account_locked(s))
             text_paste_cancel(paste);
         else if (!text_paste_commit(paste, &s->account[s->account_item]))
-            snprintf(s->error, sizeof(s->error), "Colagem excede o limite do campo.");
+            snprintf(s->error, sizeof(s->error), _("Colagem excede o limite do campo."));
         else
             s->error[0] = 0;
         s->account_confirm = false;
@@ -693,7 +702,7 @@ bool settings_paste(app_settings *s, text_paste *paste)
     if (s->profile_bad == s->profile_item + 1)
         s->profile_bad = 0;
     if (!text_paste_commit(paste, &s->fields[s->profile_item]))
-        snprintf(s->error, sizeof(s->error), "Colagem excede o limite do campo.");
+        snprintf(s->error, sizeof(s->error), _("Colagem excede o limite do campo."));
     else
         s->error[0] = 0;
     s->dirty = true;
@@ -703,7 +712,7 @@ static void profile_save(app_settings *s)
 {
     const json_t *profile = history_profile(s->profile);
     if (!profile) {
-        snprintf(s->error, sizeof(s->error), "O perfil ainda não foi carregado.");
+        snprintf(s->error, sizeof(s->error), _("O perfil ainda não foi carregado."));
         return;
     }
     static char text[PROFILE_FIELDS][TEXT_UTF8_BYTES];
@@ -711,7 +720,7 @@ static void profile_save(app_settings *s)
     for (int i = 0; i < PROFILE_FIELDS; ++i) {
         const char *problem = text_encode(&s->fields[i], text[i])
                                   ? history_profile_check(field_keys[i], text[i])
-                                  : "Texto inválido.";
+                                  : _("Texto inválido.");
         if (problem) {
             snprintf(s->error, sizeof(s->error), "%s", problem);
             s->profile_item = i;
@@ -724,18 +733,18 @@ static void profile_save(app_settings *s)
     }
     bool status = s->status_choice != s->loaded_status;
     if (!any && !status) {
-        snprintf(s->error, sizeof(s->error), "Nenhuma alteração para salvar.");
+        snprintf(s->error, sizeof(s->error), _("Nenhuma alteração para salvar."));
         return;
     }
     s->error[0] = 0;
     if (any &&
         !history_profile_save(s->profile, changed[0] ? text[0] : NULL, changed[1] ? text[1] : NULL,
                               changed[2] ? text[2] : NULL, changed[3] ? text[3] : NULL)) {
-        snprintf(s->error, sizeof(s->error), "Não foi possível preparar a alteração do perfil.");
+        snprintf(s->error, sizeof(s->error), _("Não foi possível preparar a alteração do perfil."));
         return;
     }
     if (status && !history_profile_set_status(s->profile, status_values[s->status_choice])) {
-        snprintf(s->error, sizeof(s->error), "Não foi possível preparar a mudança de status.");
+        snprintf(s->error, sizeof(s->error), _("Não foi possível preparar a mudança de status."));
         return;
     }
     s->loaded_status = s->status_choice;
@@ -751,7 +760,7 @@ static void profile_activate(app_settings *s, int item)
         if (!s->banner_button)
             s->pick = SETTINGS_PICK_BANNER;
         else if (!history_profile_remove_banner(s->profile))
-            snprintf(s->error, sizeof(s->error), "Não foi possível remover o banner agora.");
+            snprintf(s->error, sizeof(s->error), _("Não foi possível remover o banner agora."));
     }
 }
 static void profile_key(app_settings *s, int type, uint32_t key)
@@ -836,15 +845,15 @@ static void profile_click(app_settings *s, int y, int x)
 }
 /* Conta: new password and confirmation, then the change after a confirmation. */
 #define ACCOUNT_PASSWORD_MAX 1024
-static const char *const account_labels[2] = {"Nova senha:", "Confirmar senha:"};
+static const char *const account_labels[2] = {N_("Nova senha:"), N_("Confirmar senha:")};
 static void account_draw(app_settings *s, WINDOW *w, int height, int width)
 {
     s->cursor = false;
     s->account_y[0] = s->account_y[1] = -1;
     char line[1280];
     const char *user = s->auth ? auth_username(s->auth) : "";
-    snprintf(line, sizeof(line), "Sua conta em %s%s%s", *s->server ? s->server : "este servidor",
-             *user ? " · @" : "", user);
+    snprintf(line, sizeof(line), _("Sua conta em %s%s%s"),
+             *s->server ? s->server : _("este servidor"), *user ? " · @" : "", user);
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     text_label(w, 5, 2, width - 4, line);
     bool roomy = height >= 16, locked = account_locked(s);
@@ -857,7 +866,7 @@ static void account_draw(app_settings *s, WINDOW *w, int height, int width)
                                : focused ? THEME_PANEL_ACCENT
                                          : THEME_PANEL) |
                         (focused || refused ? A_BOLD : 0));
-        text_label(w, y, 2, label_width - 1, account_labels[i]);
+        text_label(w, y, 2, label_width - 1, _(account_labels[i]));
         /* With room between the inputs the border is a box; otherwise its two sides. */
         if (refused)
             input_border_draw(w, y, fx, fw, THEME_NOTIFICATION, roomy, roomy);
@@ -876,12 +885,13 @@ static void account_draw(app_settings *s, WINDOW *w, int height, int width)
     int info = (roomy ? 9 : 7) + 2;
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     if (info < height - 3)
-        text_label(w, info, 2, width - 4, "Use 8+ caracteres, uma letra maiúscula e um símbolo.");
+        text_label(w, info, 2, width - 4,
+                   _("Use 8+ caracteres, uma letra maiúscula e um símbolo."));
     text_buffer warning;
     text_layout measured;
     if (info + 1 < height - 3 &&
-        text_decode(&warning, "Trocar a senha encerra todas as sessões desta conta, inclusive "
-                              "esta: depois, entre de novo com a nova senha.")) {
+        text_decode(&warning, _("Trocar a senha encerra todas as sessões desta conta, inclusive "
+                                "esta: depois, entre de novo com a nova senha."))) {
         text_measure(&warning, width - 4, &measured);
         text_draw(w, &warning, &measured, 0, height - 3 - (info + 1), info + 1, 2);
     }
@@ -892,15 +902,15 @@ static void account_notice_draw(app_settings *s, WINDOW *w, int height, int widt
     int color = THEME_PANEL_MUTED;
     auth_password_outcome outcome = s->auth ? auth_password_state(s->auth) : AUTH_PASSWORD_NONE;
     if (s->profile && history_password_waiting(s->profile))
-        notice = "Aguardando para enviar a troca de senha…";
+        notice = _("Aguardando para enviar a troca de senha…");
     else if (s->account_sent && s->profile && history_password_not_started(s->profile)) {
-        notice = "Não foi possível iniciar a troca de senha. Tente de novo.";
+        notice = _("Não foi possível iniciar a troca de senha. Tente de novo.");
         color = THEME_ERROR;
     } else if (s->account_sent && outcome != AUTH_PASSWORD_NONE) {
         notice = auth_password_notice(s->auth);
         color = outcome == AUTH_PASSWORD_PENDING ? THEME_PANEL_MUTED : THEME_ERROR;
     } else if (s->account_confirm) {
-        notice = "Todas as sessões da conta serão encerradas. Escolha Confirmar para trocar.";
+        notice = _("Todas as sessões da conta serão encerradas. Escolha Confirmar para trocar.");
         color = THEME_PANEL_ACCENT;
     }
     if (!notice || !*notice)
@@ -913,7 +923,7 @@ static void account_submit(app_settings *s)
     if (account_locked(s))
         return;
     if (!s->profile || !s->auth || !auth_has_session(s->auth)) {
-        snprintf(s->error, sizeof(s->error), "A sessão não está disponível.");
+        snprintf(s->error, sizeof(s->error), _("A sessão não está disponível."));
         return;
     }
     static char text[2][TEXT_UTF8_BYTES];
@@ -921,17 +931,18 @@ static void account_submit(app_settings *s)
     bool encoded = text_encode(&s->account[0], text[0]) && text_encode(&s->account[1], text[1]);
     int item = -1;
     if (!encoded) {
-        snprintf(s->error, sizeof(s->error), "Senha inválida.");
+        snprintf(s->error, sizeof(s->error), _("Senha inválida."));
         item = 0;
     } else if (s->account[0].length > ACCOUNT_PASSWORD_MAX) {
-        snprintf(s->error, sizeof(s->error), "A senha excedeu o limite do cliente.");
+        snprintf(s->error, sizeof(s->error), _("A senha excedeu o limite do cliente."));
         item = 0;
     } else if (!auth_validate_password(text[0], reason, sizeof(reason))) {
         snprintf(s->error, sizeof(s->error), "%s", reason);
         item = 0;
     } else if (!s->account[1].length || strcmp(text[0], text[1])) {
         snprintf(s->error, sizeof(s->error), "%s",
-                 s->account[1].length ? "As senhas não coincidem." : "Confirme a nova senha.");
+                 s->account[1].length ? _("As senhas não coincidem.")
+                                      : _("Confirme a nova senha."));
         item = 1;
     } else if (!s->account_confirm) {
         /* Ending every session is asked for twice. */
@@ -940,7 +951,7 @@ static void account_submit(app_settings *s)
         s->error[0] = 0;
         s->focus = 2;
     } else if (!history_password_change(s->profile, text[0]))
-        snprintf(s->error, sizeof(s->error), "Uma troca de senha já está em andamento.");
+        snprintf(s->error, sizeof(s->error), _("Uma troca de senha já está em andamento."));
     else {
         s->account_sent = true;
         s->account_confirm = false;
@@ -1009,7 +1020,7 @@ void settings_draw(app_settings *s)
     wattrset(w, COLOR_PAIR(THEME_BORDER));
     box(w, 0, 0);
     wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
-    text_label(w, 1, 2, width - 4, "Configurações");
+    text_label(w, 1, 2, width - 4, _("Configurações"));
     tabs_draw(s, w, width);
     if (s->section == SETTINGS_APPEARANCE) {
         appearance_draw(s, w, height, width);
@@ -1023,7 +1034,7 @@ void settings_draw(app_settings *s)
         account_draw(s, w, height, width);
     } else {
         wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
-        text_label(w, 6, 3, width - 6, "Em breve. Esta seção ainda não altera configurações.");
+        text_label(w, 6, 3, width - 6, _("Em breve. Esta seção ainda não altera configurações."));
     }
     wattrset(w, COLOR_PAIR(THEME_ERROR));
     if (*s->error)
@@ -1038,13 +1049,13 @@ void settings_draw(app_settings *s)
     bool profile = s->section == SETTINGS_PROFILE, account = s->section == SETTINGS_ACCOUNT,
          notifications = s->section == SETTINGS_NOTIFICATIONS;
     button_draw(w, height - 2, 2, 18,
-                profile         ? "Salvar perfil"
-                : account       ? s->account_confirm ? "Confirmar" : "Alterar senha"
-                : notifications ? "Salvar"
-                                : "Salvar e aplicar",
+                profile         ? _("Salvar perfil")
+                : account       ? s->account_confirm ? _("Confirmar") : _("Alterar senha")
+                : notifications ? _("Salvar")
+                                : _("Salvar e aplicar"),
                 s->focus == 2 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     button_draw(w, height - 2, width - 14, 12,
-                profile || account || notifications ? "Fechar" : "Cancelar",
+                profile || account || notifications ? _("Fechar") : _("Cancelar"),
                 s->focus == 3 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     wnoutrefresh(w);
 }
@@ -1060,7 +1071,7 @@ static void save(app_settings *s, profile_config *config)
     }
     if (s->section == SETTINGS_NOTIFICATIONS) {
         if (!user_save(s))
-            snprintf(s->error, sizeof(s->error), "Nenhuma alteração para salvar.");
+            snprintf(s->error, sizeof(s->error), _("Nenhuma alteração para salvar."));
         return;
     }
     if (profiles_set_settings(config, s->draft, s->language, &s->audio)) {
@@ -1108,7 +1119,7 @@ static void audio_adjust(app_settings *s, int direction)
             *value = 100;
     } else if (s->audio_selection == 4) {
         if (!voice_test(s->voice, !voice_testing()))
-            snprintf(s->error, sizeof(s->error), "Não foi possível iniciar o teste de áudio.");
+            snprintf(s->error, sizeof(s->error), _("Não foi possível iniciar o teste de áudio."));
         return;
     } else if (s->audio_selection == 5)
         s->audio.push_to_talk = !s->audio.push_to_talk;
@@ -1120,7 +1131,7 @@ static void audio_adjust(app_settings *s, int direction)
         if ((slots > 1 || direction > 0) && (slots < 64 || direction < 0))
             if (!audio_config_set_slots(&s->audio, voice_instance(s->voice), slots + direction))
                 snprintf(s->error, sizeof(s->error),
-                         "Limite de configurações de instâncias atingido.");
+                         _("Limite de configurações de instâncias atingido."));
     } else {
         voice_refresh_devices(s->voice);
         return;

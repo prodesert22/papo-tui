@@ -1,3 +1,4 @@
+#include "model/text/translation.h"
 #include "ui/screens/conversation/private.h"
 #include <limits.h>
 
@@ -419,7 +420,7 @@ bool conversation_copy_message(view *ui, const json_t *message)
     while (mention_next(content, from, &range)) {
         g_string_append_len(text, content + from, (gssize)(range.start - from));
         const char *name = history_mention_name(ui->model, range.id);
-        g_string_append_printf(text, "@%s", name && *name ? name : "usuário indisponível");
+        g_string_append_printf(text, "@%s", name && *name ? name : _("usuário indisponível"));
         from = range.end;
     }
     g_string_append(text, content + from);

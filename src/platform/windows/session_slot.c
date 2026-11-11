@@ -1,5 +1,6 @@
 #include "app/session_slot.h"
 #include "config/profiles.h"
+#include "model/text/translation.h"
 #include "platform/windows/files.h"
 #include <gio/gio.h>
 #include <stdio.h>
@@ -133,7 +134,7 @@ static void done(GObject *source, GAsyncResult *result, gpointer data)
         s->available = false;
         s->restoring = false;
         snprintf(s->notice, sizeof(s->notice),
-                 "Não foi possível salvar a sessão no cofre. Entre novamente ao reabrir.");
+                 _("Não foi possível salvar a sessão no cofre. Entre novamente ao reabrir."));
     }
 }
 static void start(session_slot *s, enum operation op)
@@ -145,7 +146,7 @@ static void start(session_slot *s, enum operation op)
         s->failed = true;
         s->available = s->restoring = false;
         snprintf(s->notice, sizeof(s->notice),
-                 "Não foi possível preparar o cofre. Entre novamente ao reabrir.");
+                 _("Não foi possível preparar o cofre. Entre novamente ao reabrir."));
         return;
     }
     job->store = s;
@@ -259,7 +260,7 @@ session_slot *session_slot_create(const profile_config *config, unsigned sequenc
 disabled:
     s->available = false;
     snprintf(s->notice, sizeof(s->notice),
-             "Cofre indisponível ou em uso por outra janela. Sessão somente nesta execução.");
+             _("Cofre indisponível ou em uso por outra janela. Sessão somente nesta execução."));
     return s;
 }
 bool session_slot_poll(session_slot *s, auth_client *active)
@@ -407,7 +408,7 @@ session_scope *session_scope_open(const profile_config *config, char *notice, si
 {
     session_scope *scope = calloc(1, sizeof(*scope));
     if (!scope) {
-        snprintf(notice, size, "Cofre indisponível. Sessão somente nesta execução.");
+        snprintf(notice, size, _("Cofre indisponível. Sessão somente nesta execução."));
         return NULL;
     }
     scope->lock = INVALID_HANDLE_VALUE;
@@ -421,8 +422,9 @@ session_scope *session_scope_open(const profile_config *config, char *notice, si
         g_free(name);
     }
     if (scope->lock == INVALID_HANDLE_VALUE) {
-        snprintf(notice, size,
-                 "Cofre indisponível ou em uso por outra janela. Sessão somente nesta execução.");
+        snprintf(
+            notice, size,
+            _("Cofre indisponível ou em uso por outra janela. Sessão somente nesta execução."));
         session_scope_close(scope);
         return NULL;
     }

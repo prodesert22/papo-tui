@@ -1,5 +1,6 @@
 #include "model/conversation/user_settings.h"
 #include "model/conversation/private.h"
+#include "model/text/translation.h"
 
 struct history_user_settings {
     user_config config, wanted;
@@ -99,7 +100,7 @@ bool history_user_settings_save(history *h, const user_config *config)
     s->wanted = *config;
     s->queued = true;
     s->state = USER_SETTINGS_SAVING;
-    snprintf(s->notice, sizeof(s->notice), "Salvando configurações da conta…");
+    snprintf(s->notice, sizeof(s->notice), _("Salvando configurações da conta…"));
     changed(s);
     return true;
 }
@@ -141,7 +142,7 @@ bool history_internal_user_settings_dispatch(history *h)
     if (!started) {
         /* Nothing left the client: the choice stays open to repeat by hand. */
         s->state = USER_SETTINGS_FAILED;
-        set_notice(s, "Não foi possível enviar as configurações", NULL);
+        set_notice(s, _("Não foi possível enviar as configurações"), NULL);
         changed(s);
         return false;
     }
@@ -181,21 +182,21 @@ void history_internal_user_settings_response(history *h, json_t *body, long code
         s->seen = auth_user_settings_revision(h->auth);
         s->synced = true;
         s->state = USER_SETTINGS_SAVED;
-        snprintf(s->notice, sizeof(s->notice), "Configurações da conta salvas.");
+        snprintf(s->notice, sizeof(s->notice), _("Configurações da conta salvas."));
     } else if (uncertain || !code || (code >= 200 && code < 300)) {
         /* Shown values return to the last server copy until whoami confirms. */
         s->synced = false;
         s->state = USER_SETTINGS_UNCERTAIN;
         snprintf(s->notice, sizeof(s->notice),
-                 "Resultado não confirmado. Confira as configurações antes de repetir.");
+                 _("Resultado não confirmado. Confira as configurações antes de repetir."));
     } else {
         s->state = USER_SETTINGS_FAILED;
         if (code == 429)
-            set_notice(s, "Muitas alterações; aguarde e tente de novo", NULL);
+            set_notice(s, _("Muitas alterações; aguarde e tente de novo"), NULL);
         else if (code == 401)
-            set_notice(s, "Sessão expirada; entre novamente e repita a alteração", NULL);
+            set_notice(s, _("Sessão expirada; entre novamente e repita a alteração"), NULL);
         else
-            set_notice(s, "O servidor recusou as configurações", detail);
+            set_notice(s, _("O servidor recusou as configurações"), detail);
     }
     changed(s);
 }

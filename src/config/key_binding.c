@@ -1,4 +1,5 @@
 #include "config/key_binding.h"
+#include "model/text/translation.h"
 
 #include <glib.h>
 #include <stdio.h>
@@ -110,33 +111,33 @@ static const char *friendly_name(key_binding_code code)
 {
     switch (code) {
     case KEY_BINDING_UP:
-        return "Seta ↑";
+        return _("Seta ↑");
     case KEY_BINDING_DOWN:
-        return "Seta ↓";
+        return _("Seta ↓");
     case KEY_BINDING_LEFT:
-        return "Seta ←";
+        return _("Seta ←");
     case KEY_BINDING_RIGHT:
-        return "Seta →";
+        return _("Seta →");
     case KEY_BINDING_HOME:
-        return "Home";
+        return _("Home");
     case KEY_BINDING_END:
-        return "End";
+        return _("End");
     case KEY_BINDING_PAGE_UP:
-        return "Page Up";
+        return _("Page Up");
     case KEY_BINDING_PAGE_DOWN:
-        return "Page Down";
+        return _("Page Down");
     case KEY_BINDING_INSERT:
-        return "Insert";
+        return _("Insert");
     case KEY_BINDING_DELETE:
-        return "Delete";
+        return _("Delete");
     case KEY_BINDING_ENTER:
-        return "Enter";
+        return _("Enter");
     case KEY_BINDING_TAB:
-        return "Tab";
+        return _("Tab");
     case KEY_BINDING_BACKSPACE:
-        return "Backspace";
+        return _("Backspace");
     case KEY_BINDING_ESCAPE:
-        return "Esc";
+        return _("Esc");
     case KEY_BINDING_F1:
         return "F1";
     case KEY_BINDING_F2:
@@ -358,16 +359,16 @@ bool key_binding_label(const key_binding *binding, char *output, size_t size)
         return false;
     size_t used = 0;
     output[0] = 0;
-    if ((binding->modifiers & KEY_BINDING_CTRL) && !append(output, size, &used, "Ctrl+"))
+    if ((binding->modifiers & KEY_BINDING_CTRL) && !append(output, size, &used, _("Ctrl+")))
         return false;
-    if ((binding->modifiers & KEY_BINDING_ALT) && !append(output, size, &used, "Alt+"))
+    if ((binding->modifiers & KEY_BINDING_ALT) && !append(output, size, &used, _("Alt+")))
         return false;
-    if ((binding->modifiers & KEY_BINDING_SHIFT) && !append(output, size, &used, "Shift+"))
+    if ((binding->modifiers & KEY_BINDING_SHIFT) && !append(output, size, &used, _("Shift+")))
         return false;
     switch (binding->kind) {
     case KEY_BINDING_CHAR:
         if (binding->code == ' ')
-            return append(output, size, &used, "Espaço");
+            return append(output, size, &used, _("Espaço"));
         if (binding->code == '+')
             return append(output, size, &used, "+");
         {
@@ -388,7 +389,7 @@ bool key_binding_label(const key_binding *binding, char *output, size_t size)
     }
     case KEY_BINDING_MOUSE: {
         char buffer[16];
-        snprintf(buffer, sizeof(buffer), "Mouse %u", binding->code);
+        snprintf(buffer, sizeof(buffer), _("Mouse %u"), binding->code);
         return append(output, size, &used, buffer);
     }
     default:
@@ -430,16 +431,16 @@ const char *key_binding_error(const key_binding *binding)
     if (key_binding_valid(binding))
         return NULL;
     if (!binding)
-        return "Combinação de teclas inválida.";
+        return _("Combinação de teclas inválida.");
     if (binding->kind == KEY_BINDING_CHAR)
-        return "Use Ctrl ou Alt com letras, números, espaço e símbolos.";
+        return _("Use Ctrl ou Alt com letras, números, espaço e símbolos.");
     if (binding->kind == KEY_BINDING_KEY && binding->code == KEY_BINDING_ESCAPE)
-        return "Esc sozinho fecha painéis; use Ctrl, Alt ou Shift com Esc.";
+        return _("Esc sozinho fecha painéis; use Ctrl, Alt ou Shift com Esc.");
     if (binding->kind == KEY_BINDING_KEY &&
         (binding->code == KEY_BINDING_ENTER || binding->code == KEY_BINDING_TAB ||
          binding->code == KEY_BINDING_BACKSPACE))
-        return "Use Ctrl, Alt ou Shift com Enter, Tab ou Backspace.";
-    return "Combinação de teclas inválida.";
+        return _("Use Ctrl, Alt ou Shift com Enter, Tab ou Backspace.");
+    return _("Combinação de teclas inválida.");
 }
 
 bool key_binding_equal(const key_binding *left, const key_binding *right)

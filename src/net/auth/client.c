@@ -1,3 +1,4 @@
+#include "model/text/translation.h"
 #include "net/auth/private.h"
 #include "net/tls.h"
 #include "platform/runtime.h"
@@ -91,8 +92,8 @@ void auth_internal_logout_done(auth_client *client, bool revoked)
     client->name[0] = '\0';
     client->state = AUTH_IDLE;
     snprintf(client->message, sizeof(client->message), "%s",
-             revoked ? "Você saiu da conta."
-                     : "Sessão local encerrada; revogação remota não confirmada.");
+             revoked ? _("Você saiu da conta.")
+                     : _("Sessão local encerrada; revogação remota não confirmada."));
 }
 
 void auth_internal_fail(auth_client *client, const char *message)
@@ -128,7 +129,7 @@ bool auth_internal_user_login(auth_client *client)
     json_t *body =
         json_pack("{s:s,s:s}", "username", client->username, "password", client->password);
     if (!body) {
-        auth_internal_fail(client, "Não foi possível preparar o login.");
+        auth_internal_fail(client, _("Não foi possível preparar o login."));
         return false;
     }
     bool result =
@@ -196,7 +197,7 @@ auth_client *auth_create(void)
         SET(CURLOPT_CAINFO, ca_bundle);
 #undef SET
     ws_observe(client->websocket, auth_internal_permissions_observe, client);
-    snprintf(client->message, sizeof(client->message), "Preencha os dados para entrar.");
+    snprintf(client->message, sizeof(client->message), _("Preencha os dados para entrar."));
     return client;
 }
 
@@ -223,12 +224,14 @@ static bool start_account(auth_client *client, const char *url, const char *user
     client->name[0] = client->user[0] = '\0';
     client->user_id[0] = '\0';
     if (!username || !*username)
-        return auth_internal_input_fail(client, AUTH_INPUT_USERNAME, "Preencha usuário e senha.");
+        return auth_internal_input_fail(client, AUTH_INPUT_USERNAME,
+                                        _("Preencha usuário e senha."));
     if (!password || !*password)
-        return auth_internal_input_fail(client, AUTH_INPUT_PASSWORD, "Preencha usuário e senha.");
+        return auth_internal_input_fail(client, AUTH_INPUT_PASSWORD,
+                                        _("Preencha usuário e senha."));
     if (strlen(username) > 1024 || strlen(password) > 4096 ||
         (server_password && strlen(server_password) > 4096)) {
-        auth_internal_fail(client, "O usuário ou a senha excedeu o limite do cliente.");
+        auth_internal_fail(client, _("O usuário ou a senha excedeu o limite do cliente."));
         return false;
     }
     if (registering && !auth_internal_registration_valid(client, username, password))
@@ -241,13 +244,13 @@ static bool start_account(auth_client *client, const char *url, const char *user
     if (!allow_local_http && strncmp(client->base, "http://", 7) == 0) {
         return auth_internal_input_fail(
             client, AUTH_INPUT_URL,
-            "HTTP local exige --allow-local-http. Use HTTPS para acesso remoto.");
+            _("HTTP local exige --allow-local-http. Use HTTPS para acesso remoto."));
     }
     client->username = strdup(username);
     client->password = strdup(password);
     client->server_password = strdup(server_password ? server_password : "");
     if (!client->username || !client->password || !client->server_password) {
-        auth_internal_fail(client, "Não foi possível preparar o login.");
+        auth_internal_fail(client, _("Não foi possível preparar o login."));
         return false;
     }
     return auth_internal_request(client, AUTH_SERVER, "/server", NULL, false);
@@ -287,7 +290,7 @@ bool auth_discover(auth_client *client, const char *url, bool allow_local_http)
     }
     if (!allow_local_http && strncmp(client->base, "http://", 7) == 0) {
         auth_internal_fail(client,
-                           "HTTP local exige --allow-local-http. Use HTTPS para acesso remoto.");
+                           _("HTTP local exige --allow-local-http. Use HTTPS para acesso remoto."));
         return false;
     }
     return auth_internal_request(client, AUTH_HEALTH, "/health", NULL, false);
@@ -339,10 +342,10 @@ void auth_cancel(auth_client *client)
     client->ws_requested = false;
     client->input_error = AUTH_INPUT_NONE;
     snprintf(client->message, sizeof(client->message), "%s",
-             unknown_registration ? "Envio cancelado. Tente entrar antes de repetir o cadastro."
+             unknown_registration ? _("Envio cancelado. Tente entrar antes de repetir o cadastro.")
              : unknown_reset
-                 ? "Envio cancelado. Tente entrar com a nova senha antes de usar o link de novo."
-                 : "Conexão cancelada.");
+                 ? _("Envio cancelado. Tente entrar com a nova senha antes de usar o link de novo.")
+                 : _("Conexão cancelada."));
 }
 
 void auth_destroy(auth_client *client)
@@ -390,46 +393,46 @@ const char *auth_message(const auth_client *client)
 {
     switch (client->state) {
     case AUTH_SERVER:
-        return "Consultando a instância…";
+        return _("Consultando a instância…");
     case AUTH_HEALTH:
-        return "Consultando a disponibilidade da instância…";
+        return _("Consultando a disponibilidade da instância…");
     case AUTH_DISCOVERY_SERVER:
-        return "Identificando a instância…";
+        return _("Identificando a instância…");
     case AUTH_SERVER_PASSWORD:
-        return "Autorizando acesso ao servidor…";
+        return _("Autorizando acesso ao servidor…");
     case AUTH_LOGIN:
-        return "Entrando na sua conta…";
+        return _("Entrando na sua conta…");
     case AUTH_REGISTER:
-        return "Criando sua conta…";
+        return _("Criando sua conta…");
     case AUTH_PASSWORD_RESET:
-        return "Redefinindo a senha…";
+        return _("Redefinindo a senha…");
     case AUTH_PASSWORD_PREPARE:
     case AUTH_PASSWORD_CHANGE:
-        return "Alterando a senha…";
+        return _("Alterando a senha…");
     case AUTH_REFRESH:
-        return "Renovando sua sessão…";
+        return _("Renovando sua sessão…");
     case AUTH_MESSAGE_SEND:
-        return "Enviando sua mensagem…";
+        return _("Enviando sua mensagem…");
     case AUTH_API_GET:
-        return "Consultando com a sessão autenticada…";
+        return _("Consultando com a sessão autenticada…");
     case AUTH_WHOAMI:
-        return "Confirmando sua sessão…";
+        return _("Confirmando sua sessão…");
     case AUTH_LOGOUT:
-        return "Saindo da conta…";
+        return _("Saindo da conta…");
     case AUTH_READY:
         if (client->ws_managed && client->ws_requested &&
             (client->ws_validate || client->ws_validated || client->validation_wait))
-            return "Login realizado. Reconectando tempo real…";
+            return _("Login realizado. Reconectando tempo real…");
         switch (ws_get_state(client->websocket)) {
         case WS_QUEUED:
         case WS_CONNECTING:
-            return "Login realizado. Conectando tempo real…";
+            return _("Login realizado. Conectando tempo real…");
         case WS_OPEN:
-            return "Login realizado. Tempo real conectado.";
+            return _("Login realizado. Tempo real conectado.");
         case WS_ERROR:
             return ws_message(client->websocket);
         case WS_CLOSED:
-            return "Login realizado. Tempo real encerrado.";
+            return _("Login realizado. Tempo real encerrado.");
         default:
             return client->message;
         }

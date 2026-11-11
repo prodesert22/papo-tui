@@ -1,4 +1,5 @@
 #include "ui/screens/inbox.h"
+#include "model/text/translation.h"
 #include "net/auth/session_time.h"
 #include "net/clock.h"
 #include "ui/components/button.h"
@@ -162,11 +163,11 @@ static const char *author(r8_modal *m, json_t *n, bool event)
         history_reference_request(m->h, s(n, "message_id"));
         json_t *reference = history_find_message(m->h, s(n, "message_id"));
         if (json_is_false(reference))
-            return "Mensagem não disponível";
+            return _("Mensagem não disponível");
         if (!json_is_object(reference))
             return history_reference_notice(m->h);
     }
-    return history_message_webhook(v) ? "Webhook" : "Autor ainda não carregado";
+    return history_message_webhook(v) ? _("Webhook") : _("Autor ainda não carregado");
 }
 static const char *channel_id(r8_modal *m, json_t *n, bool event)
 {
@@ -225,13 +226,13 @@ static int chronological(const void *a, const void *b)
 static void filter_label(r8_modal *m, char *label, size_t capacity)
 {
     json_t *c = channel(m, m->filter_channel);
-    snprintf(label, capacity, "Filtro: %s%s",
-             m->conversation_filter == 0               ? "Todos"
-             : m->conversation_filter == 1             ? "Canais"
-             : m->conversation_filter == 2             ? "DMs"
+    snprintf(label, capacity, _("Filtro: %s%s"),
+             m->conversation_filter == 0               ? _("Todos")
+             : m->conversation_filter == 1             ? _("Canais")
+             : m->conversation_filter == 2             ? _("DMs")
              : json_is_true(json_object_get(c, "_dm")) ? "DM: "
                                                        : "# ",
-             m->conversation_filter == 3 ? (c ? s(c, "name") : "indisponível") : "");
+             m->conversation_filter == 3 ? (c ? s(c, "name") : _("indisponível")) : "");
 }
 static int name_button_column(const char *label, int width)
 {
@@ -442,7 +443,7 @@ static void activate(r8_modal *m)
                 r8_modal_close(m);
         } else
             snprintf(m->notice, sizeof(m->notice),
-                     "Destino ainda indisponível. Ctrl+R: atualizar.");
+                     _("Destino ainda indisponível. Ctrl+R: atualizar."));
     } else if (m->kind == R8_USERS) {
         json_t *u = m->count ? history_user(m->h, m->users[m->selected]) : NULL;
         if (u && inbox_open_dm(b, s(u, "id")))
@@ -805,11 +806,11 @@ bool r8_modal_key(r8_modal *m, int type, uint32_t key)
 static void choices_draw(r8_modal *m, WINDOW *w, int width, int height)
 {
     wattrset(w, COLOR_PAIR(m->choice_focus == 0 ? THEME_FOCUSED : THEME_PANEL));
-    text_label(w, 2, 2, 6, "Nome: ");
+    text_label(w, 2, 2, 6, _("Nome: "));
     text_draw_field(w, &m->choice_query, &m->choice_field_first, 2, 8, width - 10, false);
-    button_draw(w, 3, 2, width / 2 - 3, "[Canais]",
+    button_draw(w, 3, 2, width / 2 - 3, _("[Canais]"),
                 m->choice_kind == 1 ? BUTTON_SELECTED : BUTTON_NORMAL, BUTTON_PANEL);
-    button_draw(w, 3, width / 2, width - width / 2 - 2, "[DMs]",
+    button_draw(w, 3, width / 2, width - width / 2 - 2, _("[DMs]"),
                 m->choice_kind == 2 ? BUTTON_SELECTED : BUTTON_NORMAL, BUTTON_PANEL);
     int rows = height - 9;
     if (m->choice_selected < m->choice_first)
@@ -841,15 +842,17 @@ static void choices_draw(r8_modal *m, WINDOW *w, int width, int height)
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     if (!m->choice_count)
         text_label(w, 4, 2, width - 4,
-                   m->choice_kind == 2 ? "Nenhuma DM encontrada." : "Nenhum canal encontrado.");
+                   m->choice_kind == 2 ? _("Nenhuma DM encontrada.")
+                                       : _("Nenhum canal encontrado."));
     char total[96];
     snprintf(total, sizeof(total), "%zu %s", m->choice_count,
-             m->choice_kind == 2    ? (m->choice_count == 1 ? "DM encontrada" : "DMs encontradas")
-             : m->choice_count == 1 ? "canal encontrado"
-                                    : "canais encontrados");
+             m->choice_kind == 2
+                 ? (m->choice_count == 1 ? _("DM encontrada") : _("DMs encontradas"))
+             : m->choice_count == 1 ? _("canal encontrado")
+                                    : _("canais encontrados"));
     text_label(w, height - 5, 2, width - 4, total);
     button_draw(w, height - 4, 2, width - 4,
-                m->choice_kind == 2 ? "[Todas as DMs]" : "[Todos os canais]",
+                m->choice_kind == 2 ? _("[Todas as DMs]") : _("[Todos os canais]"),
                 m->choice_focus == 2 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
 }
 WINDOW *r8_modal_draw(r8_modal *m)
@@ -881,27 +884,27 @@ WINDOW *r8_modal_draw(r8_modal *m)
     if (m->locating) {
         char loading[192];
         static const char *frames[] = {"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"};
-        snprintf(loading, sizeof(loading), "%s Localizando mensagem…",
+        snprintf(loading, sizeof(loading), _("%s Localizando mensagem…"),
                  frames[m->location_frame % G_N_ELEMENTS(frames)]);
         wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
-        text_label(w, 1, 2, width - 4, "Ir para mensagem");
+        text_label(w, 1, 2, width - 4, _("Ir para mensagem"));
         text_label(w, height / 2 - 1, 2, width - 4,
                    m->location_failed ? m->location_notice : loading);
         wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
         text_label(w, height / 2 + 1, 2, width - 4,
-                   m->location_failed ? "Enter: tentar novamente"
-                                      : "Buscando no histórico da conversa");
-        text_label(w, height - 2, 2, width - 4, "Esc: voltar");
+                   m->location_failed ? _("Enter: tentar novamente")
+                                      : _("Buscando no histórico da conversa"));
+        text_label(w, height - 2, 2, width - 4, _("Esc: voltar"));
         wnoutrefresh(w);
         return w;
     }
     update(m);
     const char *title = m->choosing_conversation
-                            ? (m->choice_kind == 2 ? "Selecionar DM" : "Selecionar canal")
-                        : m->kind == R8_USERS ? "Nova DM"
-                        : m->prefs            ? "Preferências"
-                        : m->detail           ? "Detalhes da notificação"
-                                              : "Notificações";
+                            ? (m->choice_kind == 2 ? _("Selecionar DM") : _("Selecionar canal"))
+                        : m->kind == R8_USERS ? _("Nova DM")
+                        : m->prefs            ? _("Preferências")
+                        : m->detail           ? _("Detalhes da notificação")
+                                              : _("Notificações");
     wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
     text_label(w, 1, 2, width - 4, title);
     wattrset(w, COLOR_PAIR(THEME_PANEL));
@@ -909,33 +912,33 @@ WINDOW *r8_modal_draw(r8_modal *m)
         choices_draw(m, w, width, height);
     } else if (m->prefs) {
         button_draw(w, 3, 2, width - 4,
-                    m->config && m->config->desktop_notifications ? "[x] Avisos no desktop"
-                                                                  : "[ ] Avisos no desktop",
+                    m->config && m->config->desktop_notifications ? _("[x] Avisos no desktop")
+                                                                  : _("[ ] Avisos no desktop"),
                     m->focus == 0 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
         button_draw(w, 5, 2, width - 4,
-                    m->config && m->config->notification_preview ? "[x] Mostrar prévia"
-                                                                 : "[ ] Mostrar prévia",
+                    m->config && m->config->notification_preview ? _("[x] Mostrar prévia")
+                                                                 : _("[ ] Mostrar prévia"),
                     m->focus == 1 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
         button_draw(w, 7, 2, width - 4,
-                    m->config && m->config->notification_sounds ? "[x] Sons neste aparelho"
-                                                                : "[ ] Sons neste aparelho",
+                    m->config && m->config->notification_sounds ? _("[x] Sons neste aparelho")
+                                                                : _("[ ] Sons neste aparelho"),
                     m->focus == 2 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
         /* What the focused switch does, then where the other settings live.
          * Rows stop above the notice and hints at the bottom. */
         static const char *const help[3] = {
-            "Avisos no desktop: mostra um aviso do sistema quando chega uma notificação.",
-            "Mostrar prévia: inclui o texto da mensagem no aviso do sistema.",
-            "Sons neste aparelho: toca os sons de notificação e de chamada de voz.",
+            N_("Avisos no desktop: mostra um aviso do sistema quando chega uma notificação."),
+            N_("Mostrar prévia: inclui o texto da mensagem no aviso do sistema."),
+            N_("Sons neste aparelho: toca os sons de notificação e de chamada de voz."),
         };
         int rows = height - 12;
         text_buffer text;
         text_layout layout;
         char about[640];
         snprintf(about, sizeof(about),
-                 "%s Estas opções valem só neste computador, para todos os servidores. Como cada "
-                 "conta é avisada: Ctrl+S → Notificações. Quais mensagens avisam: menu do canal "
-                 "→ Notificações…",
-                 help[m->focus >= 0 && m->focus < 3 ? m->focus : 0]);
+                 _("%s Estas opções valem só neste computador, para todos os servidores. Como cada "
+                   "conta é avisada: Ctrl+S → Notificações. Quais mensagens avisam: menu do canal "
+                   "→ Notificações…"),
+                 _(help[m->focus >= 0 && m->focus < 3 ? m->focus : 0]));
         if (rows > 0 && text_decode(&text, about)) {
             wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
             text_measure_words(&text, width - 4, &layout);
@@ -950,32 +953,33 @@ WINDOW *r8_modal_draw(r8_modal *m)
         text_buffer content;
         text_layout layout;
         text_decode(&content,
-                    n ? s(n, "message_content") : "Notificação indisponível. Atualize a lista.");
+                    n ? s(n, "message_content") : _("Notificação indisponível. Atualize a lista."));
         text_mentions(&content, history_mention_name, m->h);
         text_measure(&content, width - 4, &layout);
         size_t max = layout.rows > height - 8 ? (size_t)(layout.rows - (height - 8)) : 0;
         if (m->detail_scroll > max)
             m->detail_scroll = max;
         text_draw(w, &content, &layout, (int)m->detail_scroll, height - 8, 4, 2);
-        button_draw(w, height - 4, 2, width - 4, "[Abrir conversa]", BUTTON_FOCUSED, BUTTON_PANEL);
+        button_draw(w, height - 4, 2, width - 4, _("[Abrir conversa]"), BUTTON_FOCUSED,
+                    BUTTON_PANEL);
     } else {
         if (m->kind == R8_USERS)
             text_draw_field(w, &m->filter, &m->field_first, 2, 2, width - 4, false);
         else {
             wattrset(w, COLOR_PAIR(m->focus == 3 ? THEME_FOCUSED : THEME_PANEL));
-            text_label(w, 2, 2, 8, "Buscar: ");
+            text_label(w, 2, 2, 8, _("Buscar: "));
             text_draw_field(w, &m->filter, &m->field_first, 2, 10, width - 12, false);
             char label[2200];
             filter_label(m, label, sizeof(label));
             int name_x = name_button_column(label, width), date_x = date_button_column(width);
             button_draw(w, 3, 2, name_x - 3, label, m->focus == 4 ? BUTTON_FOCUSED : BUTTON_NORMAL,
                         BUTTON_PANEL);
-            button_draw(w, 3, name_x, 6, "[Nome]", m->focus == 6 ? BUTTON_FOCUSED : BUTTON_NORMAL,
-                        BUTTON_PANEL);
+            button_draw(w, 3, name_x, 6, _("[Nome]"),
+                        m->focus == 6 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
             button_draw(w, 3, date_x, width - date_x - 2,
-                        width < 60        ? (m->oldest_first ? "Antigas ↑" : "Recentes ↓")
-                        : m->oldest_first ? "Data: antigas ↑"
-                                          : "Data: recentes ↓",
+                        width < 60        ? (m->oldest_first ? _("Antigas ↑") : _("Recentes ↓"))
+                        : m->oldest_first ? _("Data: antigas ↑")
+                                          : _("Data: recentes ↓"),
                         m->focus == 5 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
         }
         int rows = height - (m->kind == R8_NOTIFICATIONS ? 10 : 9);
@@ -1009,7 +1013,8 @@ WINDOW *r8_modal_draw(r8_modal *m)
                 char content[TEXT_UTF8_BYTES];
                 projected(m, s(v, "message_content"), content);
                 const char *stamp = timestamp(m, &m->rows[i]);
-                char date[32] = "sem data";
+                char date[32];
+                snprintf(date, sizeof(date), "%s", _("sem data"));
                 GDateTime *time = g_date_time_new_from_iso8601(stamp, NULL);
                 if (time) {
                     GDateTime *local = g_date_time_to_local(time);
@@ -1023,12 +1028,12 @@ WINDOW *r8_modal_draw(r8_modal *m)
                 }
                 json_t *c = channel(m, channel_id(m, v, event));
                 snprintf(label, sizeof(label), "%s%s · %s · %s%s · %s",
-                         event                                      ? "Aviso · "
+                         event                                      ? _("Aviso · ")
                          : json_is_true(json_object_get(v, "read")) ? ""
                                                                     : "* ",
                          author(m, v, event), content,
                          json_is_true(json_object_get(c, "_dm")) ? "DM: " : "# ",
-                         c ? s(c, "name") : "destino indisponível", date);
+                         c ? s(c, "name") : _("destino indisponível"), date);
             }
             int pair = i == m->selected && m->focus == 0 ? THEME_FOCUSED : THEME_PANEL;
             wattrset(w, COLOR_PAIR(pair));
@@ -1041,17 +1046,17 @@ WINDOW *r8_modal_draw(r8_modal *m)
         wattrset(w, COLOR_PAIR(THEME_PANEL));
         if (!m->count)
             text_label(w, 4, 2, width - 4,
-                       m->kind == R8_USERS ? "Nenhum usuário disponível neste filtro."
-                                           : "Nenhuma notificação disponível.");
+                       m->kind == R8_USERS ? _("Nenhum usuário disponível neste filtro.")
+                                           : _("Nenhuma notificação disponível."));
         if (m->kind == R8_NOTIFICATIONS) {
             char total[128];
-            snprintf(total, sizeof(total), "%zu resultados · %zu não lidas conhecidas%s", m->count,
-                     inbox_unread(history_inbox(m->h)),
-                     inbox_has_more(history_inbox(m->h)) ? " · há mais páginas" : "");
+            snprintf(total, sizeof(total), _("%zu resultados · %zu não lidas conhecidas%s"),
+                     m->count, inbox_unread(history_inbox(m->h)),
+                     inbox_has_more(history_inbox(m->h)) ? _(" · há mais páginas") : "");
             text_label(w, height - 5, 2, width - 4, total);
-            button_draw(w, height - 4, 2, 17, "[Preferências]",
+            button_draw(w, height - 4, 2, 17, _("[Preferências]"),
                         m->focus == 1 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
-            button_draw(w, height - 4, 21, width - 23, "[Mais antigas]",
+            button_draw(w, height - 4, 21, width - 23, _("[Mais antigas]"),
                         m->focus == 2 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
         }
     }
@@ -1061,11 +1066,12 @@ WINDOW *r8_modal_draw(r8_modal *m)
                                                : inbox_notice(history_inbox(m->h));
     text_label(w, height - 3, 2, width - 4, notice);
     text_label(w, height - 2, 2, width - 4,
-               m->choosing_conversation ? "Digite buscar · ↑↓ escolher · Enter aplicar · Esc voltar"
+               m->choosing_conversation
+                   ? _("Digite buscar · ↑↓ escolher · Enter aplicar · Esc voltar")
                : m->kind == R8_NOTIFICATIONS && !m->detail && !m->prefs
-                   ? (m->focus == 4 ? "←→ filtro · Enter buscar nome · ↑ busca · ↓ lista · Esc"
-                                    : "↑↓ lista · Digite buscar · Tab ações · ←→ filtro · Esc")
-                   : "↑↓ escolher · Enter abrir · Ctrl+R tentar · Esc voltar");
+                   ? (m->focus == 4 ? _("←→ filtro · Enter buscar nome · ↑ busca · ↓ lista · Esc")
+                                    : _("↑↓ lista · Digite buscar · Tab ações · ←→ filtro · Esc"))
+                   : _("↑↓ escolher · Enter abrir · Ctrl+R tentar · Esc voltar"));
     wnoutrefresh(w);
     return w;
 }

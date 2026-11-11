@@ -2,6 +2,7 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 #include "platform/clipboard.h"
+#include "model/text/translation.h"
 #include "net/clock.h"
 #include <errno.h>
 #include <fcntl.h>
@@ -53,7 +54,7 @@ static bool terminal_copy(void)
         scrub(encoded, strlen(encoded));
     g_free(encoded);
     wipe();
-    feedback(ok ? "Texto copiado" : "Falha ao copiar texto");
+    feedback(ok ? _("Texto copiado") : _("Falha ao copiar texto"));
     return ok;
 }
 static bool native_copy(char *const arguments[])
@@ -112,7 +113,7 @@ bool clipboard_copy(const text_buffer *buffer)
     if (!text_selection(buffer, &lo, &hi))
         return false;
     if (copy.child) {
-        feedback("Cópia em andamento");
+        feedback(_("Cópia em andamento"));
         return false;
     }
     text_buffer selected = {0}, visible;
@@ -133,7 +134,7 @@ bool clipboard_copy(const text_buffer *buffer)
     if (!ok) {
         scrub(data, data ? TEXT_UTF8_BYTES : 0);
         free(data);
-        feedback("Falha ao copiar texto");
+        feedback(_("Falha ao copiar texto"));
         return false;
     }
     return start(data, strlen(data));
@@ -144,16 +145,16 @@ bool clipboard_copy_text(const char *utf8)
     if (!length)
         return false;
     if (copy.child) {
-        feedback("Cópia em andamento");
+        feedback(_("Cópia em andamento"));
         return false;
     }
     if (length > CLIPBOARD_TEXT_LIMIT) {
-        feedback("Seleção grande demais para copiar");
+        feedback(_("Seleção grande demais para copiar"));
         return false;
     }
     char *data = malloc(length + 1);
     if (!data) {
-        feedback("Falha ao copiar texto");
+        feedback(_("Falha ao copiar texto"));
         return false;
     }
     memcpy(data, utf8, length + 1);
@@ -187,7 +188,7 @@ bool clipboard_poll(void)
             if (result > 0 && WIFEXITED(status) && WEXITSTATUS(status) == 0 &&
                 copy.sent == copy.length) {
                 wipe();
-                feedback("Texto copiado");
+                feedback(_("Texto copiado"));
             } else
                 terminal_copy();
             changed = true;

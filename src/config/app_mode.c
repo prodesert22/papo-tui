@@ -1,4 +1,5 @@
 #include "config/app_mode.h"
+#include "model/text/translation.h"
 #include <stdatomic.h>
 #include <string.h>
 static atomic_int current_mode;
@@ -11,10 +12,10 @@ const char *app_mode_name(app_mode mode)
 const char *app_mode_description(app_mode mode)
 {
     static const char *descriptions[] = {
-        "Protocolo gráfico ou Chafa; GIFs animados e vídeos sob demanda.",
-        "Imagens, GIFs animados e vídeos em caracteres pela Chafa.",
-        "Somente texto; sem imagens ou vídeos; libera a pilha de mídia."};
-    return descriptions[mode >= APP_MODE_NORMAL && mode <= APP_MODE_ULTRALIGHT ? mode : 0];
+        N_("Protocolo gráfico ou Chafa; GIFs animados e vídeos sob demanda."),
+        N_("Imagens, GIFs animados e vídeos em caracteres pela Chafa."),
+        N_("Somente texto; sem imagens ou vídeos; libera a pilha de mídia.")};
+    return _(descriptions[mode >= APP_MODE_NORMAL && mode <= APP_MODE_ULTRALIGHT ? mode : 0]);
 }
 bool app_mode_parse(const char *name, app_mode *mode)
 {

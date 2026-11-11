@@ -2,6 +2,7 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 #include "app/session_slot.h"
+#include "model/text/translation.h"
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -216,7 +217,7 @@ static void start_operation(session_slot *s);
 static void unavailable(session_slot *s)
 {
     s->available = s->restore = false;
-    notice(s, "Chaveiro indisponível. A sessão fica apenas nesta execução.");
+    notice(s, _("Chaveiro indisponível. A sessão fica apenas nesta execução."));
 }
 typedef struct {
     int directory;
@@ -250,7 +251,7 @@ static void state_done(GObject *source, GAsyncResult *result, gpointer data)
     else {
         s->state_failed = true;
         s->gate_failed = true;
-        notice(s, "Não foi possível proteger o estado da sessão. Recuperação desativada.");
+        notice(s, _("Não foi possível proteger o estado da sessão. Recuperação desativada."));
     }
     release(s);
 }
@@ -751,11 +752,12 @@ session_slot *session_slot_create(const profile_config *configuration, unsigned 
     s->lock =
         openat(s->directory, lock, O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK, 0600);
     if (s->lock < 0 || !private_file(s->lock, 0600) || flock(s->lock, LOCK_EX | LOCK_NB)) {
-        notice(s, "Outra janela usa a sessão salva. Esta janela exige login e não salvará sessão.");
+        notice(s,
+               _("Outra janela usa a sessão salva. Esta janela exige login e não salvará sessão."));
         goto disabled;
     }
     if (!read_state(s)) {
-        notice(s, "Estado de sessão inválido. Recuperação desativada.");
+        notice(s, _("Estado de sessão inválido. Recuperação desativada."));
         s->state_failed = true;
         goto disabled;
     }
@@ -775,7 +777,7 @@ session_slot *session_slot_create(const profile_config *configuration, unsigned 
     g_main_context_pop_thread_default(s->context);
 #else
     s->restore = false;
-    notice(s, "Este build não oferece chaveiro. A sessão fica apenas nesta execução.");
+    notice(s, _("Este build não oferece chaveiro. A sessão fica apenas nesta execução."));
 #endif
     return s;
 disabled:
@@ -789,7 +791,8 @@ disabled:
     }
     s->restore = false;
     if (!*s->notice)
-        notice(s, "Não foi possível abrir o estado privado. A sessão fica apenas nesta execução.");
+        notice(s,
+               _("Não foi possível abrir o estado privado. A sessão fica apenas nesta execução."));
     return s;
 }
 bool session_slot_poll(session_slot *s, auth_client *active)
@@ -1023,8 +1026,8 @@ session_scope *session_scope_open(const profile_config *config, char *notice, si
     session_scope *scope = calloc(1, sizeof(*scope));
     if (!scope) {
         snprintf(notice, size,
-                 "Não foi possível abrir o estado privado. A sessão fica apenas "
-                 "nesta execução.");
+                 _("Não foi possível abrir o estado privado. A sessão fica apenas "
+                   "nesta execução."));
         return NULL;
     }
     scope->lock = -1;
@@ -1036,14 +1039,15 @@ session_scope *session_scope_open(const profile_config *config, char *notice, si
                              O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK, 0600);
     if (scope->directory < 0 || scope->lock < 0 || !private_file(scope->lock, 0600)) {
         snprintf(notice, size,
-                 "Não foi possível abrir o estado privado. A sessão fica apenas "
-                 "nesta execução.");
+                 _("Não foi possível abrir o estado privado. A sessão fica apenas "
+                   "nesta execução."));
         session_scope_close(scope);
         return NULL;
     }
     if (flock(scope->lock, LOCK_EX | LOCK_NB)) {
-        snprintf(notice, size,
-                 "Outra janela usa a sessão salva. Esta janela exige login e não salvará sessão.");
+        snprintf(
+            notice, size,
+            _("Outra janela usa a sessão salva. Esta janela exige login e não salvará sessão."));
         session_scope_close(scope);
         return NULL;
     }

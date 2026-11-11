@@ -345,7 +345,12 @@ while the setting is System.
 The language belongs to this device and applies as soon as you select
 **Salvar e aplicar** (Save and apply). It changes the application's own text;
 messages, names, topics and other text written by people stay as they are.
-Text that has no English translation yet keeps its Portuguese wording.
+The option words of the message box commands stay as they are, so
+`/banner remover` works in both languages, and `/status` accepts `away` and
+`busy` as well as `ausente` and `ocupado`. This guide names buttons and notices
+as they appear in Portuguese, followed by their meaning in English, which is
+also what the English interface shows. On Windows, the titles of the native
+file dialogs stay in Portuguese.
 
 ### Theme and history display
 

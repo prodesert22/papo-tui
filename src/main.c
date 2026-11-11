@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "model/text/mentions.h"
+#include "model/text/translation.h"
 #include "platform/file_transfer.h"
 #include "ui/media/resources.h"
 #include "ui/screens/login.h"
@@ -15,14 +16,14 @@ int main(int argc, char **argv)
         return 0;
     }
     if (argc == 2 && strcmp(argv[1], "--help") == 0) {
-        puts("Uso: papo-tui [--profiles] [--allow-local-http] | --help | --version\n"
-             "Sem argumentos: recuperar a última sessão ou abrir login.\n"
-             "--profiles: gerenciar servidores salvos antes do login.\n"
-             "--allow-local-http: permitir HTTP de desenvolvimento em loopback.\n"
-             "Ctrl+P: selecionar perfil; Ctrl+L no gerenciador: limites; Ctrl+Y: identificar "
-             "instância.\n"
-             "Ctrl+G: ajuda do contexto; Ctrl+/: ajuda global.\n"
-             "Tab: foco; Enter: confirmar; Ctrl+Q: sair.");
+        puts(_("Uso: papo-tui [--profiles] [--allow-local-http] | --help | --version\n"
+               "Sem argumentos: recuperar a última sessão ou abrir login.\n"
+               "--profiles: gerenciar servidores salvos antes do login.\n"
+               "--allow-local-http: permitir HTTP de desenvolvimento em loopback.\n"
+               "Ctrl+P: selecionar perfil; Ctrl+L no gerenciador: limites; Ctrl+Y: identificar "
+               "instância.\n"
+               "Ctrl+G: ajuda do contexto; Ctrl+/: ajuda global.\n"
+               "Tab: foco; Enter: confirmar; Ctrl+Q: sair."));
         return 0;
     }
     bool profiles = false, allow_http = false;
@@ -32,7 +33,7 @@ int main(int argc, char **argv)
         else if (strcmp(argv[i], "--allow-local-http") == 0 && !allow_http)
             allow_http = true;
         else {
-            fputs("Argumento desconhecido ou repetido. Use papo-tui --help.\n", stderr);
+            fputs(_("Argumento desconhecido ou repetido. Use papo-tui --help.\n"), stderr);
             return 1;
         }
     }
@@ -43,11 +44,11 @@ int main(int argc, char **argv)
 #endif
     /* libmpv requires C numeric formatting; preserve the terminal's UTF-8 locale. */
     if (!setlocale(LC_ALL, locale) || !setlocale(LC_NUMERIC, "C")) {
-        fputs("Não foi possível inicializar a localidade do terminal.\n", stderr);
+        fputs(_("Não foi possível inicializar a localidade do terminal.\n"), stderr);
         return 1;
     }
     if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK) {
-        fputs("Não foi possível inicializar a comunicação.\n", stderr);
+        fputs(_("Não foi possível inicializar a comunicação.\n"), stderr);
         return 1;
     }
     media_resources_init();

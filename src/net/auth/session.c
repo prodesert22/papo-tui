@@ -1,3 +1,4 @@
+#include "model/text/translation.h"
 #include "net/auth/private.h"
 
 char *auth_internal_cookie_snapshot(auth_client *client)
@@ -39,7 +40,7 @@ static bool begin_refresh(auth_client *client)
     auth_internal_erase_free(&client->refresh_cookie);
     client->refresh_cookie = auth_internal_cookie_snapshot(client);
     if (!client->refresh_cookie) {
-        auth_internal_fail(client, "A sessão não possui um cookie válido. Entre novamente.");
+        auth_internal_fail(client, _("A sessão não possui um cookie válido. Entre novamente."));
         return false;
     }
     client->after_refresh = true;
@@ -182,9 +183,9 @@ bool auth_session_restore(auth_client *client, const char *snapshot, const char 
         if (safe_fields && !policy)
             auth_internal_input_fail(
                 client, AUTH_INPUT_URL,
-                "HTTP local exige --allow-local-http. Use HTTPS para acesso remoto.");
+                _("HTTP local exige --allow-local-http. Use HTTPS para acesso remoto."));
         else
-            auth_internal_fail(client, "Sessão salva indisponível. Entre novamente.");
+            auth_internal_fail(client, _("Sessão salva indisponível. Entre novamente."));
     }
     return ok;
 }

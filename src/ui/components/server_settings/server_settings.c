@@ -1,12 +1,14 @@
 #include "config/app_mode.h"
+#include "model/text/translation.h"
 #include "ui/components/button.h"
 #include "ui/components/input_border.h"
 #include "ui/components/server_settings/private.h"
 #include "ui/components/theme.h"
 #include "ui/input/mouse.h"
 
-static const char *const tab_names[ADMIN_TABS] = {"Visão geral", "Cargos",   "Canais",   "Emojis",
-                                                  "Webhooks",    "Membros", "Auditoria"};
+static const char *const tab_names[ADMIN_TABS] = {N_("Visão geral"), N_("Cargos"),   N_("Canais"),
+                                                  N_("Emojis"),      N_("Webhooks"), N_("Membros"),
+                                                  N_("Auditoria")};
 static const admin_tab_ops *ops_of(admin_tab tab)
 {
     static const admin_tab_ops *const all[ADMIN_TABS] = {
@@ -73,7 +75,7 @@ bool admin_check_field(server_settings *s, int field_id, const char *label, cons
         return true;
     char message[192];
     if (required && blank_text(text))
-        snprintf(message, sizeof(message), "Preencha o campo %s.", label);
+        snprintf(message, sizeof(message), _("Preencha o campo %s."), label);
     else
         snprintf(message, sizeof(message), "%s", problem);
     admin_invalid(s, field_id, message);
@@ -147,7 +149,7 @@ bool admin_confirmed(server_settings *s, const admin_field *field)
     }
     s->confirm = field->id;
     snprintf(s->confirm_key, sizeof(s->confirm_key), "%s", field->key);
-    admin_error(s, "Pressione de novo para confirmar.");
+    admin_error(s, _("Pressione de novo para confirmar."));
     return false;
 }
 size_t admin_role_list(server_settings *s, const json_t **roles, size_t capacity)
@@ -363,7 +365,7 @@ bool server_settings_poll(server_settings *s)
             /* The account lost the permission this tab needs. */
             enter_tab(s, s->tab_count ? s->tabs[0] : ADMIN_TAB_EMOJIS);
             s->focus = 0;
-            snprintf(s->feedback, sizeof(s->feedback), "Permissão removida; a aba foi fechada.");
+            snprintf(s->feedback, sizeof(s->feedback), _("Permissão removida; a aba foi fechada."));
         }
         changed = true;
     }
@@ -425,7 +427,7 @@ static void draw_emoji(server_settings *s, WINDOW *w, const admin_field *f, int 
     if (!icon || !icons_paint_size(s->icons, w, icon, y, s->form_x, THEME_PANEL, icon,
                                    EMOJI_PREVIEW_PIXELS)) {
         wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
-        text_label(w, y, s->form_x, s->form_w, "Carregando imagem…");
+        text_label(w, y, s->form_x, s->form_w, _("Carregando imagem…"));
     }
 }
 static void draw_list(server_settings *s, WINDOW *w, GArray *rows)
@@ -435,11 +437,11 @@ static void draw_list(server_settings *s, WINDOW *w, GArray *rows)
     s->row_count = 0;
     if (ops->search) {
         char line[192];
-        snprintf(line, sizeof(line), "Buscar: %s%s", s->query, s->focus == 1 ? "▏" : "");
+        snprintf(line, sizeof(line), _("Buscar: %s%s"), s->query, s->focus == 1 ? "▏" : "");
         wattrset(w, COLOR_PAIR(*s->query ? THEME_PANEL : THEME_PANEL_MUTED));
         mvwhline(w, y, x, ' ', width);
         text_label(w, y, x, width,
-                   *s->query || s->focus == 1 ? line : "Buscar: digite para filtrar");
+                   *s->query || s->focus == 1 ? line : _("Buscar: digite para filtrar"));
         ++y;
     }
     int visible = s->bottom - y;
@@ -453,7 +455,7 @@ static void draw_list(server_settings *s, WINDOW *w, GArray *rows)
         s->list_first = 0;
     if (!rows->len) {
         wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
-        text_label(w, y, x + 1, width - 1, ops->empty ? ops->empty : "Nada para mostrar.");
+        text_label(w, y, x + 1, width - 1, ops->empty ? _(ops->empty) : _("Nada para mostrar."));
         return;
     }
     for (int i = s->list_first; i < (int)rows->len && y < s->bottom; ++i, ++y) {
@@ -592,7 +594,7 @@ static void draw_field(server_settings *s, WINDOW *w, const admin_field *f, int 
         break;
     case FIELD_BUTTON: {
         bool confirming = s->confirm == f->id && !strcmp(s->confirm_key, f->key);
-        snprintf(line, sizeof(line), confirming ? "Confirmar: %s" : "%s", f->label);
+        snprintf(line, sizeof(line), confirming ? _("Confirmar: %s") : "%s", f->label);
         int bw = text_label(NULL, 0, 0, width, line) + 4;
         if (bw > width)
             bw = width;
@@ -658,7 +660,7 @@ static void draw_notice(server_settings *s, WINDOW *w, int height, int width)
         admin_state state = server_admin_state(s->model);
         text = server_admin_notice(s->model);
         if (state == ADMIN_SAVING && !*text)
-            text = "Enviando…";
+            text = _("Enviando…");
         pair = state == ADMIN_FAILED || state == ADMIN_UNCERTAIN ? THEME_ERROR
                : state == ADMIN_SAVED                            ? THEME_SUCCESS
                                                                  : THEME_PANEL_MUTED;
@@ -694,13 +696,13 @@ void server_settings_draw(server_settings *s)
     wattrset(w, COLOR_PAIR(THEME_BORDER));
     box(w, 0, 0);
     char title[200];
-    snprintf(title, sizeof(title), "Configurações do servidor · %s",
+    snprintf(title, sizeof(title), _("Configurações do servidor · %s"),
              *s->server ? s->server : "servidor");
     wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
     text_label(w, 1, 2, width - 4, title);
     const char *labels[ADMIN_TABS];
     for (int i = 0; i < s->tab_count; ++i)
-        labels[i] = tab_names[s->tabs[i]];
+        labels[i] = _(tab_names[s->tabs[i]]);
     tab_strip_draw(&s->strip, w, 3, width, labels, s->tab_count, tab_index(s), s->focus == 0);
     wattrset(w, COLOR_PAIR(THEME_BORDER));
     mvwhline(w, 4, 1, ACS_HLINE, width - 2);
@@ -726,7 +728,7 @@ void server_settings_draw(server_settings *s)
     GArray *fields = build_fields(s);
     draw_form(s, w, fields);
     draw_notice(s, w, height, width);
-    button_draw(w, height - 2, width - 14, 12, "Fechar",
+    button_draw(w, height - 2, width - 14, 12, _("Fechar"),
                 s->focus == 3 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     g_array_unref(fields);
     g_array_unref(rows);
@@ -757,7 +759,7 @@ bool server_settings_paste(server_settings *s, text_paste *paste)
     bool handled = f && (f->kind == FIELD_TEXT || f->kind == FIELD_SECRET) && f->text;
     if (handled) {
         if (!text_paste_commit(paste, f->text))
-            admin_error(s, "Colagem excede o limite do campo.");
+            admin_error(s, _("Colagem excede o limite do campo."));
         else
             s->error[0] = 0;
         s->dirty = true;

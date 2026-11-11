@@ -2,6 +2,7 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 #include "ui/input/editor.h"
+#include "model/text/translation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -94,7 +95,7 @@ send_editor *send_editor_create(auth_client *session)
         return NULL;
     }
     editor->generation = auth_context_generation(session);
-    editor->notice = "Escreva uma mensagem; Enter envia.";
+    editor->notice = _("Escreva uma mensagem; Enter envia.");
     text_clear(&editor->text);
     return editor;
 }
@@ -116,7 +117,7 @@ static void synchronize_generation(send_editor *editor)
     memset(editor->cursors, 0, sizeof(editor->cursors));
     editor->channel[0] = '\0';
     editor->generation = generation;
-    editor->notice = "Confirme a sessão para continuar.";
+    editor->notice = _("Confirme a sessão para continuar.");
     editor->feedback = false;
 }
 
@@ -167,7 +168,7 @@ bool send_editor_select(send_editor *editor, const char *channel)
     editor->text = next;
     memcpy(editor->channel, channel, strlen(channel) + 1);
     editor->revision = revision;
-    editor->notice = "Escreva uma mensagem; Enter envia.";
+    editor->notice = _("Escreva uma mensagem; Enter envia.");
     editor->feedback = false;
     return true;
 }
@@ -194,74 +195,74 @@ static void submit_notice(send_editor *editor, outbox_submit_result result)
 {
     editor->feedback = true;
     editor->refused = result == OUTBOX_EMPTY;
-    editor->compact_notice = result == OUTBOX_ACCEPTED              ? "Aguardando envio"
-                             : result == OUTBOX_EMPTY               ? "Mensagem vazia"
-                             : result == OUTBOX_BUSY                ? "Envio em andamento"
-                             : result == OUTBOX_CONFIRM_DUPLICATION ? "Confirmar reenvio"
-                             : result == OUTBOX_FORBIDDEN           ? "Sem permissão"
-                             : result == OUTBOX_PERMISSIONS_PENDING ? "Confirmando permissões"
-                             : result == OUTBOX_NO_SESSION          ? "Confirme a sessão"
-                                                                    : "Falha no envio";
+    editor->compact_notice = result == OUTBOX_ACCEPTED              ? _("Aguardando envio")
+                             : result == OUTBOX_EMPTY               ? _("Mensagem vazia")
+                             : result == OUTBOX_BUSY                ? _("Envio em andamento")
+                             : result == OUTBOX_CONFIRM_DUPLICATION ? _("Confirmar reenvio")
+                             : result == OUTBOX_FORBIDDEN           ? _("Sem permissão")
+                             : result == OUTBOX_PERMISSIONS_PENDING ? _("Confirmando permissões")
+                             : result == OUTBOX_NO_SESSION          ? _("Confirme a sessão")
+                                                                    : _("Falha no envio");
     switch (result) {
     case OUTBOX_ACCEPTED:
-        editor->notice = "Mensagem aguardando envio; você pode continuar digitando.";
+        editor->notice = _("Mensagem aguardando envio; você pode continuar digitando.");
         break;
     case OUTBOX_EMPTY:
-        editor->notice = "Escreva uma mensagem antes de enviar.";
+        editor->notice = _("Escreva uma mensagem antes de enviar.");
         break;
     case OUTBOX_BUSY:
-        editor->notice = "Esta conversa já tem um envio em andamento.";
+        editor->notice = _("Esta conversa já tem um envio em andamento.");
         break;
     case OUTBOX_CONFIRM_DUPLICATION:
-        editor->notice = "O envio anterior pode já existir. Confirme se deseja reenviar e "
-                         "possivelmente duplicar.";
+        editor->notice = _("O envio anterior pode já existir. Confirme se deseja reenviar e "
+                           "possivelmente duplicar.");
         break;
     case OUTBOX_NO_SESSION:
-        editor->notice = "Confirme a sessão antes de enviar.";
+        editor->notice = _("Confirme a sessão antes de enviar.");
         break;
     case OUTBOX_FORBIDDEN:
-        editor->notice = "Sem permissão para enviar nesta conversa; rascunho preservado.";
+        editor->notice = _("Sem permissão para enviar nesta conversa; rascunho preservado.");
         break;
     case OUTBOX_PERMISSIONS_PENDING:
         editor->notice =
-            "Permissões ainda não confirmadas. Aguarde ou use Ctrl+R; rascunho preservado.";
+            _("Permissões ainda não confirmadas. Aguarde ou use Ctrl+R; rascunho preservado.");
         break;
     case OUTBOX_FULL:
-        editor->notice = "Não há espaço para mais envios; revise os resultados pendentes.";
+        editor->notice = _("Não há espaço para mais envios; revise os resultados pendentes.");
         break;
     default:
-        editor->notice = "Não foi possível preparar o envio; rascunho preservado.";
+        editor->notice = _("Não foi possível preparar o envio; rascunho preservado.");
         break;
     }
 }
 static const char *compact_operation(const outbox_operation *operation)
 {
     if (operation->state == OUTBOX_CONFIRMED)
-        return "Mensagem confirmada";
+        return _("Mensagem confirmada");
     if (operation->state == OUTBOX_SENDING)
-        return "Enviando mensagem";
+        return _("Enviando mensagem");
     if (operation->state == OUTBOX_QUEUED)
-        return "Aguardando envio";
+        return _("Aguardando envio");
     if (operation->state == OUTBOX_UNCERTAIN)
-        return "Envio sem confirmação";
+        return _("Envio sem confirmação");
     if (operation->cancelled)
-        return "Envio cancelado";
+        return _("Envio cancelado");
     switch (operation->status) {
     case 400:
     case 413:
     case 415:
     case 422:
-        return "Mensagem recusada";
+        return _("Mensagem recusada");
     case 401:
-        return "Envio não autorizado";
+        return _("Envio não autorizado");
     case 403:
-        return "Sem permissão";
+        return _("Sem permissão");
     case 404:
-        return "Conversa indisponível";
+        return _("Conversa indisponível");
     case 429:
-        return "Limite de envios";
+        return _("Limite de envios");
     default:
-        return "Envio falhou";
+        return _("Envio falhou");
     }
 }
 
@@ -344,7 +345,7 @@ void send_editor_poll(send_editor *editor)
                 editor->confirmed_since = now;
             }
             if (now - editor->confirmed_since >= editor->confirmed_notice_us) {
-                editor->notice = "Escreva uma mensagem; Enter envia.";
+                editor->notice = _("Escreva uma mensagem; Enter envia.");
                 editor->feedback = false;
                 return;
             }

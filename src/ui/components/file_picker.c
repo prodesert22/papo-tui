@@ -1,4 +1,5 @@
 #include "ui/components/file_picker.h"
+#include "model/text/translation.h"
 #include "platform/file_transfer.h"
 #include "ui/components/button.h"
 #include "ui/components/input_border.h"
@@ -101,13 +102,13 @@ static void target_worker(GTask *task, gpointer source, gpointer data, GCancella
         target->exists = true;
         if (type != G_FILE_TYPE_DIRECTORY && type != G_FILE_TYPE_REGULAR)
             g_set_error_literal(&error, G_IO_ERROR, G_IO_ERROR_NOT_REGULAR_FILE,
-                                "O destino não é um arquivo comum.");
+                                _("O destino não é um arquivo comum."));
     } else if (g_error_matches(error, G_IO_ERROR, G_IO_ERROR_NOT_FOUND)) {
         GFile *parent = g_file_get_parent(file);
         g_clear_error(&error);
         if (!parent || !existing_directory(parent, cancel))
             g_set_error_literal(&error, G_IO_ERROR, G_IO_ERROR_NOT_FOUND,
-                                "A pasta do destino não existe.");
+                                _("A pasta do destino não existe."));
         g_clear_object(&parent);
     }
     g_clear_object(&info);
@@ -160,8 +161,9 @@ static void directory_worker(GTask *task, gpointer source, gpointer data, GCance
             }
             g_object_unref(child);
             if (result->entries->len > 10000) {
-                g_set_error_literal(&error, G_IO_ERROR, G_IO_ERROR_NO_SPACE,
-                                    "Mais de 10.000 entradas; informe um subdiretório no caminho.");
+                g_set_error_literal(
+                    &error, G_IO_ERROR, G_IO_ERROR_NO_SPACE,
+                    _("Mais de 10.000 entradas; informe um subdiretório no caminho."));
                 break;
             }
         }
@@ -202,7 +204,7 @@ static void browse(file_picker *p, const char *path)
     p->task = file_transfer_task_new(p->cancel);
     g_task_set_task_data(p->task, g_strdup(absolute), g_free);
     g_task_run_in_thread(p->task, directory_worker);
-    g_strlcpy(p->notice, "Carregando arquivos…", sizeof(p->notice));
+    g_strlcpy(p->notice, _("Carregando arquivos…"), sizeof(p->notice));
 }
 file_picker *file_picker_create(void)
 {
@@ -329,7 +331,7 @@ bool file_picker_paste(file_picker *p, text_paste *paste)
     if (!file_picker_open(p) || p->native || p->focus != 0)
         return false;
     if (!text_paste_commit(paste, &p->path))
-        g_strlcpy(p->notice, "Caminho excede o limite; campo preservado.", sizeof(p->notice));
+        g_strlcpy(p->notice, _("Caminho excede o limite; campo preservado."), sizeof(p->notice));
     return true;
 }
 bool file_picker_poll(file_picker *p)
@@ -368,7 +370,7 @@ bool file_picker_poll(file_picker *p)
         } else if (target->exists && (!p->confirm || strcmp(p->confirm, target->path))) {
             g_free(p->confirm);
             p->confirm = g_strdup(target->path);
-            g_strlcpy(p->notice, "O arquivo já existe. Salve de novo para substituí-lo.",
+            g_strlcpy(p->notice, _("O arquivo já existe. Salve de novo para substituí-lo."),
                       sizeof(p->notice));
         } else {
             g_free(p->save_result);
@@ -396,10 +398,10 @@ bool file_picker_poll(file_picker *p)
         g_strlcpy(p->notice,
                   error && g_error_matches(error, G_IO_ERROR, G_IO_ERROR_NOT_FOUND)
                       ? error->message
-                      : "Não foi possível usar esse destino. Verifique o acesso.",
+                      : _("Não foi possível usar esse destino. Verifique o acesso."),
                   sizeof(p->notice));
     } else
-        g_strlcpy(p->notice, "Não foi possível listar o caminho. Verifique o acesso.",
+        g_strlcpy(p->notice, _("Não foi possível listar o caminho. Verifique o acesso."),
                   sizeof(p->notice));
     if (error && !p->resolving && g_error_matches(error, G_IO_ERROR, G_IO_ERROR_NO_SPACE))
         g_strlcpy(p->notice, error->message, sizeof(p->notice));
@@ -421,7 +423,7 @@ static void toggle(file_picker *p, entry *item)
     else if (p->selected->len < ATTACHMENT_LIMIT)
         g_ptr_array_add(p->selected, g_strdup(item->path));
     else
-        g_strlcpy(p->notice, "Limite local: 25 anexos por mensagem.", sizeof(p->notice));
+        g_strlcpy(p->notice, _("Limite local: 25 anexos por mensagem."), sizeof(p->notice));
 }
 /* Save mode: checks the typed destination before the dialog closes. */
 static void resolve(file_picker *p)
@@ -431,7 +433,7 @@ static void resolve(file_picker *p)
         text_encode(&p->path, utf8) ? g_filename_from_utf8(utf8, -1, NULL, NULL, NULL) : NULL;
     if (!path || !*path) {
         g_free(path);
-        g_strlcpy(p->notice, "Informe o caminho do arquivo.", sizeof(p->notice));
+        g_strlcpy(p->notice, _("Informe o caminho do arquivo."), sizeof(p->notice));
         p->path_refused = true;
         p->focus = 0;
         return;
@@ -444,13 +446,13 @@ static void resolve(file_picker *p)
     p->task = file_transfer_task_new(p->cancel);
     g_task_set_task_data(p->task, absolute, g_free);
     g_task_run_in_thread(p->task, target_worker);
-    g_strlcpy(p->notice, "Verificando destino…", sizeof(p->notice));
+    g_strlcpy(p->notice, _("Verificando destino…"), sizeof(p->notice));
 }
 static void accept(file_picker *p)
 {
     if (p->choice) {
         if (!p->selected->len) {
-            g_strlcpy(p->notice, "Marque ao menos um anexo com Espaço.", sizeof(p->notice));
+            g_strlcpy(p->notice, _("Marque ao menos um anexo com Espaço."), sizeof(p->notice));
             return;
         }
         /* Item positions, in list order, whatever order they were marked. */
@@ -468,7 +470,7 @@ static void accept(file_picker *p)
         return;
     }
     if (!p->selected->len) {
-        g_strlcpy(p->notice, "Marque arquivos com Espaço ou Enter.", sizeof(p->notice));
+        g_strlcpy(p->notice, _("Marque arquivos com Espaço ou Enter."), sizeof(p->notice));
         return;
     }
     p->result = g_ptr_array_new_with_free_func(g_free);
@@ -605,15 +607,15 @@ WINDOW *file_picker_draw(file_picker *p)
     box(w, 0, 0);
     wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
     text_label(w, 0, 2, width - 4,
-               p->choice  ? " Baixar anexos "
-               : p->save  ? " Salvar anexo "
-               : p->image ? " Escolher imagem "
-                          : " Anexar arquivos ");
+               p->choice  ? _(" Baixar anexos ")
+               : p->save  ? _(" Salvar anexo ")
+               : p->image ? _(" Escolher imagem ")
+                          : _(" Anexar arquivos "));
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     text_label(w, 1, 2, width - 4,
-               p->choice ? "Escolha os anexos que deseja baixar:"
-               : p->save ? "Salvar em (pasta e nome do arquivo):"
-                         : "Caminho:");
+               p->choice ? _("Escolha os anexos que deseja baixar:")
+               : p->save ? _("Salvar em (pasta e nome do arquivo):")
+                         : _("Caminho:"));
     if (!p->choice) {
         /* An empty destination keeps the input as it is and borders it in red. */
         if (p->path_refused)
@@ -643,21 +645,21 @@ WINDOW *file_picker_draw(file_picker *p)
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     char hint[256];
     if (p->choice)
-        g_snprintf(hint, sizeof(hint), "%u marcado(s) · Espaço marcar · A todos · Tab ações",
+        g_snprintf(hint, sizeof(hint), _("%u marcado(s) · Espaço marcar · A todos · Tab ações"),
                    p->selected->len);
     else if (p->save)
-        g_strlcpy(hint, "Enter abre pasta ou usa o nome do arquivo · Tab ações", sizeof(hint));
+        g_strlcpy(hint, _("Enter abre pasta ou usa o nome do arquivo · Tab ações"), sizeof(hint));
     else
-        g_snprintf(hint, sizeof(hint), "%u marcado(s) · Espaço marcar · Tab ações",
+        g_snprintf(hint, sizeof(hint), _("%u marcado(s) · Espaço marcar · Tab ações"),
                    p->selected->len);
     text_label(w, height - 4, 2, width - 4, hint);
     text_label(w, height - 3, 2, width - 4, p->notice);
-    button_draw(w, height - 2, 2, 12, "Cancelar", p->focus == 2 ? BUTTON_FOCUSED : BUTTON_NORMAL,
+    button_draw(w, height - 2, 2, 12, _("Cancelar"), p->focus == 2 ? BUTTON_FOCUSED : BUTTON_NORMAL,
                 BUTTON_PANEL);
     button_draw(w, height - 2, width - 14, 12,
-                p->choice ? "Baixar"
-                : p->save ? "Salvar"
-                          : "Anexar",
+                p->choice ? _("Baixar")
+                : p->save ? _("Salvar")
+                          : _("Anexar"),
                 p->focus == 3 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     wnoutrefresh(w);
     return w;

@@ -3,6 +3,7 @@
 #endif
 #include "app/outbox.h"
 #include "config/draft_state.h"
+#include "model/text/translation.h"
 #include "net/clock.h"
 #include "platform/unicode.h"
 
@@ -719,30 +720,30 @@ const char *outbox_operation_notice(const outbox_operation *item)
     if (!item)
         return "";
     if (item->state == OUTBOX_QUEUED)
-        return "Aguardando para enviar.";
+        return _("Aguardando para enviar.");
     if (item->state == OUTBOX_SENDING)
-        return "Enviando mensagem; você pode continuar digitando.";
+        return _("Enviando mensagem; você pode continuar digitando.");
     if (item->state == OUTBOX_CONFIRMED)
-        return "Mensagem confirmada pelo servidor.";
+        return _("Mensagem confirmada pelo servidor.");
     if (item->state == OUTBOX_UNCERTAIN)
-        return "Envio sem confirmação. Pode já existir; reenviar pode duplicar.";
+        return _("Envio sem confirmação. Pode já existir; reenviar pode duplicar.");
     if (item->cancelled)
-        return "Envio cancelado; rascunho preservado.";
+        return _("Envio cancelado; rascunho preservado.");
     switch (item->status) {
     case 400:
     case 413:
     case 415:
     case 422:
-        return "Mensagem recusada. Confira o texto; rascunho preservado.";
+        return _("Mensagem recusada. Confira o texto; rascunho preservado.");
     case 401:
-        return "Envio não autorizado. Confirme a sessão antes de tentar novamente.";
+        return _("Envio não autorizado. Confirme a sessão antes de tentar novamente.");
     case 403:
-        return "Sem permissão para enviar neste canal; rascunho preservado.";
+        return _("Sem permissão para enviar neste canal; rascunho preservado.");
     case 404:
-        return "Conversa indisponível; rascunho preservado.";
+        return _("Conversa indisponível; rascunho preservado.");
     case 429:
-        return "Limite de envios atingido. Aguarde e tente manualmente.";
+        return _("Limite de envios atingido. Aguarde e tente manualmente.");
     default:
-        return "Não foi possível enviar; rascunho preservado.";
+        return _("Não foi possível enviar; rascunho preservado.");
     }
 }

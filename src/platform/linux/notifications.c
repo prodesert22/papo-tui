@@ -2,6 +2,7 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 #include "app/desktop.h"
+#include "model/text/translation.h"
 #include "net/clock.h"
 #include "platform/linux/terminal_focus.h"
 #include "platform/terminal_notify.h"
@@ -59,7 +60,7 @@ static void unavailable(desktop_notifier *n)
 {
     n->ready = false;
     if (n->attempted)
-        snprintf(n->notice, sizeof(n->notice), "Avisos desktop indisponíveis; central mantida.");
+        snprintf(n->notice, sizeof(n->notice), _("Avisos desktop indisponíveis; central mantida."));
 }
 static void close_notification(desktop_notifier *n, unsigned id)
 {
@@ -229,7 +230,7 @@ desktop_notifier *desktop_create(void)
 static void utf8_copy(char *out, size_t capacity, const char *source)
 {
     if (!source || !g_utf8_validate(source, -1, NULL))
-        source = "Texto indisponível";
+        source = _("Texto indisponível");
     size_t length = strlen(source);
     if (length >= capacity) {
         length = capacity - 1;
@@ -384,7 +385,7 @@ bool desktop_poll(desktop_notifier *n)
         char body[2200];
         snprintf(body, sizeof(body), count > 1 ? "%s\n%u novos avisos" : "%s", s->body, count);
         char *escaped = n->markup ? g_markup_escape_text(body, -1) : NULL;
-        const char *actions[] = {"default", "Abrir", NULL};
+        const char *actions[] = {"default", _("Abrir"), NULL};
         GVariantBuilder hints;
         g_variant_builder_init(&hints, G_VARIANT_TYPE_VARDICT);
         g_variant_builder_add(&hints, "{sv}", "urgency", g_variant_new_byte(1));
@@ -513,6 +514,6 @@ void desktop_raise_terminal(desktop_notifier *n, const char *title)
 }
 const char *desktop_notice(const desktop_notifier *n)
 {
-    return n && n->attempted ? "Desktop desabilitado neste build; central disponível." : "";
+    return n && n->attempted ? _("Desktop desabilitado neste build; central disponível.") : "";
 }
 #endif

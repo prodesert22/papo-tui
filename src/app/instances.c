@@ -8,6 +8,7 @@
 #include "model/conversation/history.h"
 #include "model/conversation/user_settings.h"
 #include "model/text/mentions.h"
+#include "model/text/translation.h"
 #include "net/clock.h"
 #include "net/retry.h"
 #include "ui/components/terminal_title.h"
@@ -140,20 +141,20 @@ static bool alert_attachment(const json_t *preview, char output[TEXT_UTF8_BYTES]
     mime = mime ? mime : "";
     char label[TEXT_UTF8_BYTES];
     if (count > 1)
-        snprintf(label, sizeof(label), "%lld anexos", (long long)count);
+        snprintf(label, sizeof(label), _("%lld anexos"), (long long)count);
     else if (!strncmp(mime, "image/", 6))
-        snprintf(label, sizeof(label), "Imagem");
+        snprintf(label, sizeof(label), _("Imagem"));
     else if (!strncmp(mime, "video/", 6))
-        snprintf(label, sizeof(label), "Vídeo");
+        snprintf(label, sizeof(label), _("Vídeo"));
     else if (!strncmp(mime, "audio/", 6))
-        snprintf(label, sizeof(label), "Áudio");
+        snprintf(label, sizeof(label), _("Áudio"));
     else if (name && *name) {
         char safe[TEXT_UTF8_BYTES];
         if (!alert_plain(name, safe))
             return false;
-        snprintf(label, sizeof(label), "Arquivo: %.512s", safe);
+        snprintf(label, sizeof(label), _("Arquivo: %.512s"), safe);
     } else
-        snprintf(label, sizeof(label), "Anexo");
+        snprintf(label, sizeof(label), _("Anexo"));
     *output = 0;
     alert_append(output, "[");
     alert_append(output, label);
@@ -184,11 +185,11 @@ static bool alert_message_body(const instance_connection *item, inbox *box, cons
                                              : NULL;
         char safe[TEXT_UTF8_BYTES];
         if (author && !strcmp(author, auth_user_id(item->auth)))
-            snprintf(reply, sizeof(reply), "Respondeu a você");
+            snprintf(reply, sizeof(reply), _("Respondeu a você"));
         else if (name && alert_plain(name, safe))
-            snprintf(reply, sizeof(reply), "Respondeu a %.512s", safe);
+            snprintf(reply, sizeof(reply), _("Respondeu a %.512s"), safe);
         else
-            snprintf(reply, sizeof(reply), "Respondeu");
+            snprintf(reply, sizeof(reply), _("Respondeu"));
     }
     *output = 0;
     alert_append(output, reply);
@@ -199,7 +200,7 @@ static bool alert_message_body(const instance_connection *item, inbox *box, cons
         alert_append(output, " ");
     alert_append(output, attachment);
     if (!*output)
-        alert_append(output, "Nova mensagem");
+        alert_append(output, _("Nova mensagem"));
     return true;
 }
 static void release_model(instance_connections *c, size_t i)
@@ -332,7 +333,7 @@ static bool attach(instance_connections *connections, auth_client *auth)
     else if (!*item->name && host && host[3])
         snprintf(item->name, sizeof(item->name), "%.*s", (int)strcspn(host + 3, "/"), host + 3);
     else if (!*item->name)
-        snprintf(item->name, sizeof(item->name), "Servidor");
+        snprintf(item->name, sizeof(item->name), _("Servidor"));
     return true;
 }
 bool instances_attach(instance_connections *connections, auth_client *auth)
@@ -554,7 +555,7 @@ bool instances_poll(instance_connections *connections, auth_client *active)
                                                 json_object_get(event, "message_content")),
                                             safe_body))
                         continue;
-                } else if (!alert_plain("Nova notificação", safe_body))
+                } else if (!alert_plain(_("Nova notificação"), safe_body))
                     continue;
                 const json_t *created = inbox_message_preview(box, message);
                 const char *at = json_string_value(json_object_get(created, "created_at"));

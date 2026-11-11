@@ -2,6 +2,7 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 #include "ui/media/media_stream.h"
+#include "model/text/translation.h"
 #include "platform/runtime.h"
 #include <gio/gio.h>
 #include <glib.h>

@@ -1,4 +1,5 @@
 #include "ui/media/sound.h"
+#include "model/text/translation.h"
 #include "net/clock.h"
 #include "ui/media/backend_module.h"
 #include "ui/media/sound_player.h"

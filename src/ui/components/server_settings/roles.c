@@ -1,3 +1,4 @@
+#include "model/text/translation.h"
 #include "ui/components/server_settings/private.h"
 
 /* Cargos: create, edit and delete roles (manage_roles). */
@@ -6,9 +7,9 @@ static const char *const flag_keys[PERMISSION_ROLE_COUNT] = {
     "manage_server", "manage_channels",  "manage_roles",   "ban_members",
     "pin_message",   "everyone_message", "send_attachment", "manage_webhooks"};
 static const char *const flag_labels[PERMISSION_ROLE_COUNT] = {
-    "Gerenciar servidor", "Gerenciar canais",    "Gerenciar cargos", "Banir membros",
-    "Fixar mensagens",    "Mencionar @everyone", "Enviar anexos",
-    "Gerenciar webhooks"};
+    N_("Gerenciar servidor"), N_("Gerenciar canais"),  N_("Gerenciar cargos"),
+    N_("Banir membros"),      N_("Fixar mensagens"),   N_("Mencionar @everyone"),
+    N_("Enviar anexos"),      N_("Gerenciar webhooks")};
 
 static const json_t *selected_role(server_settings *s)
 {
@@ -16,7 +17,7 @@ static const json_t *selected_role(server_settings *s)
 }
 static void rows(server_settings *s, GArray *out)
 {
-    admin_row_add(out, ROW_NEW, "+ Novo cargo", "", 0, true);
+    admin_row_add(out, ROW_NEW, _("+ Novo cargo"), "", 0, true);
     const json_t *roles[4096];
     size_t count = admin_role_list(s, roles, G_N_ELEMENTS(roles));
     for (size_t i = 0; i < count; ++i)
@@ -36,30 +37,30 @@ static void fill(server_settings *s)
 static void fields(server_settings *s, GArray *out)
 {
     if (!server_admin_roles(s->model)) {
-        admin_note(out, "Carregando cargos…");
+        admin_note(out, _("Carregando cargos…"));
         return;
     }
     bool creating = !selected_role(s);
-    admin_field_add(out, FIELD_HEADING, 0, creating ? "Novo cargo" : "Editar cargo");
-    admin_field *f = admin_field_add(out, FIELD_TEXT, NAME, "Nome");
+    admin_field_add(out, FIELD_HEADING, 0, creating ? _("Novo cargo") : _("Editar cargo"));
+    admin_field *f = admin_field_add(out, FIELD_TEXT, NAME, _("Nome"));
     f->text = &s->name;
     f->first = &s->name_first;
-    f = admin_field_add(out, FIELD_TEXT, COLOR, "Cor");
+    f = admin_field_add(out, FIELD_TEXT, COLOR, _("Cor"));
     f->text = &s->aux;
     f->first = &s->aux_first;
     static char color[TEXT_UTF8_BYTES];
     if (admin_text(&s->aux, color))
         f->rgb = admin_color(color);
-    admin_note(out, "Cor no formato #RRGGBB. Vazio não envia cor.");
-    admin_field_add(out, FIELD_HEADING, 0, "Permissões");
+    admin_note(out, _("Cor no formato #RRGGBB. Vazio não envia cor."));
+    admin_field_add(out, FIELD_HEADING, 0, _("Permissões"));
     for (int i = 0; i < PERMISSION_ROLE_COUNT; ++i) {
-        f = admin_field_add(out, FIELD_CHECK, FLAG, flag_labels[i]);
+        f = admin_field_add(out, FIELD_CHECK, FLAG, _(flag_labels[i]));
         f->arg = i;
         f->checked = s->flags[i];
     }
-    admin_field_add(out, FIELD_BUTTON, SAVE, creating ? "Criar cargo" : "Salvar cargo");
+    admin_field_add(out, FIELD_BUTTON, SAVE, creating ? _("Criar cargo") : _("Salvar cargo"));
     if (!creating) {
-        f = admin_field_add(out, FIELD_BUTTON, DELETE, "Excluir cargo");
+        f = admin_field_add(out, FIELD_BUTTON, DELETE, _("Excluir cargo"));
         f->destructive = true;
         snprintf(f->key, sizeof(f->key), "%s", s->selected);
     }
@@ -68,14 +69,14 @@ static void save(server_settings *s)
 {
     static char name[TEXT_UTF8_BYTES], color[TEXT_UTF8_BYTES];
     if (!admin_text(&s->name, name) || !admin_text(&s->aux, color)) {
-        admin_error(s, "Texto inválido.");
+        admin_error(s, _("Texto inválido."));
         return;
     }
     g_strstrip(color);
-    if (!admin_check_field(s, NAME, "Nome", name, 0, true))
+    if (!admin_check_field(s, NAME, _("Nome"), name, 0, true))
         return;
     if (!server_admin_color_valid(color)) {
-        admin_invalid(s, COLOR, "Use uma cor no formato #RRGGBB, como #3BA55D.");
+        admin_invalid(s, COLOR, _("Use uma cor no formato #RRGGBB, como #3BA55D."));
         return;
     }
     const json_t *role = selected_role(s);
@@ -97,7 +98,7 @@ static void activate(server_settings *s, const admin_field *f, int direction)
 }
 const admin_tab_ops tab_roles = {
     .list = true,
-    .empty = "Nenhum cargo.",
+    .empty = N_("Nenhum cargo."),
     .rows = rows,
     .fill = fill,
     .fields = fields,

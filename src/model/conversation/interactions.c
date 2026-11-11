@@ -1,5 +1,6 @@
 #include "model/conversation/discovery.h"
 #include "model/conversation/private.h"
+#include "model/text/translation.h"
 
 /* One auxiliary owner shares history's REST dispatcher. All JSON is owned here;
  * public accessors borrow until the next event/poll/context change. */
@@ -207,9 +208,9 @@ void history_reference_request(history *h, const char *id)
 const char *history_reference_notice(history *h)
 {
     struct history_actions *a = h->actions;
-    return a && a->failed ? "Falha ao buscar mensagem; Ctrl+R: tentar novamente"
-           : a && a->end  ? "mensagem não disponível"
-                          : "Carregando mensagem…";
+    return a && a->failed ? _("Falha ao buscar mensagem; Ctrl+R: tentar novamente")
+           : a && a->end  ? _("mensagem não disponível")
+                          : _("Carregando mensagem…");
 }
 uint64_t history_reference_revision(history *h)
 {
@@ -231,9 +232,9 @@ bool history_jump(history *h, const char *id)
     if (ok) {
         h->actions->jump_silent = false;
         if (*h->actions->jump)
-            history_internal_status(h, "Localizando mensagem…");
+            history_internal_status(h, _("Localizando mensagem…"));
     } else if (h)
-        history_internal_status(h, "Mensagem original não disponível.");
+        history_internal_status(h, _("Mensagem original não disponível."));
     return ok;
 }
 bool history_jump_at(history *h, const char *id, const char *created_at)
@@ -294,13 +295,13 @@ bool history_jump_near(history *h, const char *id, const char *hint)
 const char *history_jump_error(history *h)
 {
     if (!h || !h->actions)
-        return "Não foi possível localizar a mensagem.";
+        return _("Não foi possível localizar a mensagem.");
     if (h->actions->jump_missing)
-        return "Mensagem não disponível.";
+        return _("Mensagem não disponível.");
     if (h->actions->failed || h->failed == MESSAGES)
-        return "Falha ao localizar mensagem. Enter: tentar novamente.";
+        return _("Falha ao localizar mensagem. Enter: tentar novamente.");
     if (!*h->actions->jump && !*h->actions->ready)
-        return "Busca interrompida. Enter: tentar novamente.";
+        return _("Busca interrompida. Enter: tentar novamente.");
     return "";
 }
 bool history_take_jump(history *h, char id[37])
@@ -320,7 +321,7 @@ bool history_take_jump(history *h, char id[37])
         h->actions->jump[0] = 0;
         h->actions->jump_missing = true;
         if (!h->actions->jump_silent)
-            history_internal_status(h, "Mensagem não disponível.");
+            history_internal_status(h, _("Mensagem não disponível."));
     }
     if (!h->actions || !*h->actions->ready)
         return false;
@@ -381,7 +382,7 @@ bool history_react(history *h, const char *message, const json_t *emoji, bool re
     a->remove = remove;
     a->mutation = ACTION_REACT;
     a->queued = true;
-    history_internal_status(h, "Reação aguardando envio…");
+    history_internal_status(h, _("Reação aguardando envio…"));
     return true;
 }
 static bool queue_message_mutation(history *h, const char *message, const char *content,
@@ -420,9 +421,10 @@ static bool queue_message_mutation(history *h, const char *message, const char *
     if (kind == ACTION_EDIT)
         ++h->messages_revision; /* The UI now shows the submitted text. */
     history_internal_notice(h, HISTORY_NOTICE_MUTATION,
-                            kind == ACTION_PIN || kind == ACTION_UNPIN ? "Fixação aguardando envio…"
-                            : kind == ACTION_EDIT ? "Edição aguardando envio…"
-                                                  : "Exclusão aguardando envio…");
+                            kind == ACTION_PIN || kind == ACTION_UNPIN
+                                ? _("Fixação aguardando envio…")
+                            : kind == ACTION_EDIT ? _("Edição aguardando envio…")
+                                                  : _("Exclusão aguardando envio…"));
     return true;
 }
 bool history_edit_message(history *h, const char *message, const char *content)
@@ -502,12 +504,12 @@ json_t *history_reactors(history *h)
 const char *history_reactors_notice(history *h)
 {
     struct history_actions *a = h->actions;
-    return !a || a->users_failed ? "Falha ao listar reações. Ctrl+R: tentar novamente."
+    return !a || a->users_failed ? _("Falha ao listar reações. Ctrl+R: tentar novamente.")
            : json_array_size(a->users) >= HISTORY_MESSAGE_LIMIT
-               ? "Lista parcial: limite local atingido."
-           : a->want_users || a->request == ACTION_USERS ? "Carregando reações…"
-           : a->users_more                               ? "Role para carregar mais · Esc fechar"
-                                                         : "Fim da lista · Esc fechar";
+               ? _("Lista parcial: limite local atingido.")
+           : a->want_users || a->request == ACTION_USERS ? _("Carregando reações…")
+           : a->users_more                               ? _("Role para carregar mais · Esc fechar")
+                                                         : _("Fim da lista · Esc fechar");
 }
 /* messages adds the page size the message list accepts; other lists keep
  * their own server default. */
@@ -560,7 +562,7 @@ bool history_internal_actions_dispatch(history *h, bool foreground)
                 a->pin_success = false;
             }
             history_internal_notice(h, HISTORY_NOTICE_MUTATION,
-                                    "Permissão indisponível; operação não enviada.");
+                                    _("Permissão indisponível; operação não enviada."));
             return true;
         }
         const char *method;
@@ -802,13 +804,13 @@ void history_internal_actions_response(history *h, json_t *body, long code, bool
                 history_internal_pins_invalidate(h);
             history_internal_notice(
                 h, HISTORY_NOTICE_MUTATION,
-                ok            ? (remove ? "Fixação removida." : "Mensagem fixada.")
-                : code == 403 ? "Sem permissão para alterar a fixação."
-                : code == 404 ? "Mensagem ou fixação não disponível."
-                : code == 409 ? "Limite de 100 mensagens fixadas atingido."
-                : code == 429 ? "Limite de requisições. Aguarde antes de tentar novamente."
-                : uncertain   ? "Fixação sem confirmação. Atualize antes de tentar novamente."
-                              : "Não foi possível alterar a fixação.");
+                ok            ? (remove ? _("Fixação removida.") : _("Mensagem fixada."))
+                : code == 403 ? _("Sem permissão para alterar a fixação.")
+                : code == 404 ? _("Mensagem ou fixação não disponível.")
+                : code == 409 ? _("Limite de 100 mensagens fixadas atingido.")
+                : code == 429 ? _("Limite de requisições. Aguarde antes de tentar novamente.")
+                : uncertain   ? _("Fixação sem confirmação. Atualize antes de tentar novamente.")
+                              : _("Não foi possível alterar a fixação."));
         }
         json_decref(a->payload);
         a->payload = NULL;
@@ -856,13 +858,13 @@ void history_internal_actions_response(history *h, json_t *body, long code, bool
         if (current || edit)
             history_internal_notice(
                 h, HISTORY_NOTICE_MUTATION,
-                ok            ? edit ? "Mensagem editada." : "Mensagem excluída."
-                : code == 429 ? "Limite de requisições. Aguarde antes de tentar novamente."
-                : code == 403 ? "Sem permissão para alterar esta mensagem."
-                : code == 404 ? "Mensagem não disponível."
+                ok            ? edit ? _("Mensagem editada.") : _("Mensagem excluída.")
+                : code == 429 ? _("Limite de requisições. Aguarde antes de tentar novamente.")
+                : code == 403 ? _("Sem permissão para alterar esta mensagem.")
+                : code == 404 ? _("Mensagem não disponível.")
                 : uncertain
-                    ? "Alteração sem confirmação. Confira o histórico antes de tentar novamente."
-                    : "Não foi possível alterar a mensagem.");
+                    ? _("Alteração sem confirmação. Confira o histórico antes de tentar novamente.")
+                    : _("Não foi possível alterar a mensagem."));
         json_decref(a->payload);
         a->payload = NULL;
         return;
@@ -882,13 +884,13 @@ void history_internal_actions_response(history *h, json_t *body, long code, bool
             if (ok)
                 own_reaction(h, a);
             history_internal_status(
-                h, ok            ? "Reação confirmada."
-                   : code == 429 ? "Limite de requisições. Aguarde antes de tentar novamente."
-                   : code == 409 ? "Limite de 20 tipos de reação atingido."
-                   : code == 403 ? "Sem permissão para reagir."
+                h, ok            ? _("Reação confirmada.")
+                   : code == 429 ? _("Limite de requisições. Aguarde antes de tentar novamente.")
+                   : code == 409 ? _("Limite de 20 tipos de reação atingido.")
+                   : code == 403 ? _("Sem permissão para reagir.")
                    : uncertain
-                       ? "Reação sem confirmação. Atualizando histórico antes de nova tentativa."
-                       : "Não foi possível alterar a reação.");
+                       ? _("Reação sem confirmação. Atualizando histórico antes de nova tentativa.")
+                       : _("Não foi possível alterar a reação."));
         }
         json_decref(a->payload);
         a->payload = NULL;
@@ -953,7 +955,7 @@ void history_internal_actions_response(history *h, json_t *body, long code, bool
             a->jump[0] = 0;
             a->jump_missing = true;
             if (!a->jump_silent)
-                history_internal_status(h, "Mensagem não disponível.");
+                history_internal_status(h, _("Mensagem não disponível."));
         }
     } else if (kind == ACTION_JUMP && ok) {
         a->jump_hint[0] = 0;
@@ -963,7 +965,7 @@ void history_internal_actions_response(history *h, json_t *body, long code, bool
             a->jump[0] = 0;
             a->jump_missing = true;
             if (!a->jump_silent)
-                history_internal_status(h, "Mensagem não disponível.");
+                history_internal_status(h, _("Mensagem não disponível."));
         } else {
             json_t *old = h->messages;
             h->messages = NULL;
@@ -1046,10 +1048,10 @@ void history_internal_actions_response(history *h, json_t *body, long code, bool
     if (!ok) {
         a->failed = true;
         if (kind == ACTION_SCAN && *a->jump && !a->jump_silent)
-            history_internal_status(h, "Falha ao localizar mensagem. Ctrl+R: tentar novamente.");
+            history_internal_status(h, _("Falha ao localizar mensagem. Ctrl+R: tentar novamente."));
         else if (kind == ACTION_JUMP && !a->jump_silent)
             history_internal_status(
-                h, "Falha ao carregar mensagem original. Ctrl+R: tentar novamente.");
+                h, _("Falha ao carregar mensagem original. Ctrl+R: tentar novamente."));
     }
     ++a->revision;
 }

@@ -1,5 +1,6 @@
 #include "ui/media/profile_image.h"
 #include "config/app_mode.h"
+#include "model/text/translation.h"
 #include "ui/media/image_decode.h"
 #include <glib/gstdio.h>
 #include <stdint.h>
@@ -254,17 +255,17 @@ bool profile_image_prepare(const char *path, int max_side, profile_image_result 
     *result = (profile_image_result){0};
     GStatBuf status;
     if (!path || g_stat(path, &status) || !S_ISREG(status.st_mode))
-        return fail(result, "Arquivo de imagem não encontrado.");
+        return fail(result, _("Arquivo de imagem não encontrado."));
     if ((guint64)status.st_size > READ_LIMIT)
-        return fail(result, "Arquivo grande demais; use uma imagem de até 2 MB.");
+        return fail(result, _("Arquivo grande demais; use uma imagem de até 2 MB."));
     gchar *data = NULL;
     gsize length = 0;
     if (!g_file_get_contents(path, &data, &length, NULL))
-        return fail(result, "Não foi possível ler a imagem.");
+        return fail(result, _("Não foi possível ler a imagem."));
     profile_image_info info;
     if (!profile_image_inspect((const unsigned char *)data, length, &info)) {
         g_free(data);
-        return fail(result, "Use uma imagem PNG, JPEG, GIF ou WEBP.");
+        return fail(result, _("Use uma imagem PNG, JPEG, GIF ou WEBP."));
     }
     if (length <= PROFILE_IMAGE_BYTES && info.width <= max_side && info.height <= max_side) {
         result->base64 = g_base64_encode((const guchar *)data, length);
@@ -278,7 +279,7 @@ bool profile_image_prepare(const char *path, int max_side, profile_image_result 
     snprintf(limits, sizeof(limits), "2 MB e %d px", max_side);
     if (info.animated) {
         snprintf(result->error, sizeof(result->error),
-                 "Animação acima do limite (%s); reduza o arquivo.", limits);
+                 _("Animação acima do limite (%s); reduza o arquivo."), limits);
         return false;
     }
     int side = MIN(max_side, MAX(info.width, info.height));
@@ -287,11 +288,11 @@ bool profile_image_prepare(const char *path, int max_side, profile_image_result 
         size_t png_length = 0;
         if (!reduce(path, side, &png, &png_length, cancel)) {
             if (g_cancellable_is_cancelled(cancel))
-                return fail(result, "Envio da imagem cancelado.");
+                return fail(result, _("Envio da imagem cancelado."));
             /* Ultralight runs no media helper, so nothing can be decoded. */
             snprintf(result->error, sizeof(result->error),
-                     "Imagem acima do limite (%s) e não foi possível reduzi-la%s.", limits,
-                     app_mode_get() == APP_MODE_ULTRALIGHT ? " no modo Ultralight" : "");
+                     _("Imagem acima do limite (%s) e não foi possível reduzi-la%s."), limits,
+                     app_mode_get() == APP_MODE_ULTRALIGHT ? _(" no modo Ultralight") : "");
             return false;
         }
         if (png_length <= PROFILE_IMAGE_BYTES) {
@@ -304,7 +305,7 @@ bool profile_image_prepare(const char *path, int max_side, profile_image_result 
         g_free(png);
         side = side * 3 / 4;
     }
-    snprintf(result->error, sizeof(result->error), "Não foi possível reduzir a imagem para %s.",
+    snprintf(result->error, sizeof(result->error), _("Não foi possível reduzir a imagem para %s."),
              limits);
     return false;
 }

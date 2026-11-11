@@ -1,3 +1,4 @@
+#include "model/text/translation.h"
 #include "net/auth/private.h"
 #include "platform/unicode.h"
 
@@ -44,7 +45,7 @@ bool auth_validate_password(const char *password, char *message, size_t capacity
     if (message && capacity)
         *message = '\0';
     if (!password || !*password)
-        return password_error(message, capacity, "Preencha a senha.");
+        return password_error(message, capacity, _("Preencha a senha."));
     size_t characters = 0;
     bool upper = false, special = false;
     while (*password) {
@@ -52,18 +53,18 @@ bool auth_validate_password(const char *password, char *message, size_t capacity
         size_t bytes = papo_utf8_next(password, &character);
         if (!bytes || bytes == (size_t)-1 || bytes == (size_t)-2 || !g_unichar_isprint(character))
             return password_error(message, capacity,
-                                  "Informe uma senha válida, sem controles de terminal.");
+                                  _("Informe uma senha válida, sem controles de terminal."));
         upper |= g_unichar_isupper(character) != 0;
         special |= g_unichar_isalnum(character) == 0;
         ++characters;
         password += bytes;
     }
     if (characters < 8)
-        return password_error(message, capacity, "A senha precisa ter pelo menos 8 caracteres.");
+        return password_error(message, capacity, _("A senha precisa ter pelo menos 8 caracteres."));
     if (!upper)
-        return password_error(message, capacity, "A senha precisa de uma letra maiúscula.");
+        return password_error(message, capacity, _("A senha precisa de uma letra maiúscula."));
     if (!special)
-        return password_error(message, capacity, "A senha precisa de um caractere especial.");
+        return password_error(message, capacity, _("A senha precisa de um caractere especial."));
     return true;
 }
 
@@ -76,10 +77,10 @@ bool auth_validate_registration(const char *username, const char *password, auth
         *message = '\0';
     if (!username || !*username)
         return registration_error(field, message, capacity, AUTH_INPUT_USERNAME,
-                                  "Preencha o usuário.");
+                                  _("Preencha o usuário."));
     if (!password || !*password)
         return registration_error(field, message, capacity, AUTH_INPUT_PASSWORD,
-                                  "Preencha a senha.");
+                                  _("Preencha a senha."));
 
     size_t characters = 0;
     while (*username) {
@@ -87,13 +88,13 @@ bool auth_validate_registration(const char *username, const char *password, auth
         size_t bytes = papo_utf8_next(username, &character);
         if (!bytes || bytes == (size_t)-1 || bytes == (size_t)-2 || !g_unichar_isprint(character))
             return registration_error(field, message, capacity, AUTH_INPUT_USERNAME,
-                                      "Informe um usuário válido, sem controles de terminal.");
+                                      _("Informe um usuário válido, sem controles de terminal."));
         ++characters;
         username += bytes;
     }
     if (characters < 3)
         return registration_error(field, message, capacity, AUTH_INPUT_USERNAME,
-                                  "O usuário precisa ter pelo menos 3 caracteres.");
+                                  _("O usuário precisa ter pelo menos 3 caracteres."));
     if (!auth_validate_password(password, message, capacity)) {
         if (field)
             *field = AUTH_INPUT_PASSWORD;
@@ -227,7 +228,7 @@ char *auth_normalize_url(const char *url, char *error, size_t error_size)
 {
     CURLU *parsed = curl_url();
     char *scheme = NULL, *host = NULL, *path = NULL, *part = NULL, *result = NULL;
-    const char *reason = "Informe uma URL válida com https:// ou http://.";
+    const char *reason = _("Informe uma URL válida com https:// ou http://.");
     if (!parsed || !url || !*url || strlen(url) > 2048 ||
         curl_url_set(parsed, CURLUPART_URL, url, 0) != CURLUE_OK)
         goto done;
@@ -236,11 +237,11 @@ char *auth_normalize_url(const char *url, char *error, size_t error_size)
         goto done;
     if (strcmp(scheme, "https") != 0 && strcmp(scheme, "http") != 0)
         goto done;
-    reason = "HTTP é permitido apenas em localhost. Use HTTPS para outros servidores.";
+    reason = _("HTTP é permitido apenas em localhost. Use HTTPS para outros servidores.");
     if (strcmp(scheme, "http") == 0 && strcmp(host, "localhost") != 0 &&
         strcmp(host, "127.0.0.1") != 0 && strcmp(host, "[::1]") != 0)
         goto done;
-    reason = "Use uma URL sem credenciais, query ou fragmento.";
+    reason = _("Use uma URL sem credenciais, query ou fragmento.");
     const CURLUPart forbidden[] = {CURLUPART_USER, CURLUPART_PASSWORD, CURLUPART_QUERY,
                                    CURLUPART_FRAGMENT};
     for (size_t i = 0; i < sizeof(forbidden) / sizeof(forbidden[0]); ++i) {
@@ -277,7 +278,7 @@ done:
 void auth_internal_copy_server_name(auth_client *client, const char *name)
 {
     if (!name || !*name)
-        name = "Nome não informado";
+        name = _("Nome não informado");
     size_t length = strlen(name);
     if (length >= sizeof(client->name))
         length = sizeof(client->name) - 1;

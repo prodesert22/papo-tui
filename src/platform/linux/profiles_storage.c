@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include "config/profiles_storage.h"
+#include "model/text/translation.h"
 #include "platform/runtime.h"
 #include <errno.h>
 #include <fcntl.h>
@@ -40,12 +41,12 @@ static int open_directory(profile_config *config)
     char path[PATH_MAX];
     if (!base || *base != '/' ||
         snprintf(path, sizeof(path), "%s%s", base, xdg ? "" : "/.config") >= (int)sizeof(path)) {
-        error(config, "Não foi possível localizar a configuração XDG. Defina HOME ou "
-                      "XDG_CONFIG_HOME absoluto.");
+        error(config, _("Não foi possível localizar a configuração XDG. Defina HOME ou "
+                        "XDG_CONFIG_HOME absoluto."));
         return -1;
     }
     if (!mkdir_parents(path)) {
-        error(config, "Não foi possível criar o diretório de configuração.");
+        error(config, _("Não foi possível criar o diretório de configuração."));
         return -1;
     }
     int root = open(path, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
@@ -67,7 +68,7 @@ static int open_directory(profile_config *config)
     }
     return directory;
 failed:
-    error(config, "Não foi possível abrir um diretório privado de configuração.");
+    error(config, _("Não foi possível abrir um diretório privado de configuração."));
     return -1;
 }
 static bool unchanged(const profile_config *config)
@@ -137,7 +138,7 @@ bool profiles_storage_commit(profile_config *config, const char *serialized)
     bool result = false;
     if (!profiles_random_id(token)) {
 
-        return error(config, "Não foi possível criar o arquivo temporário.");
+        return error(config, _("Não foi possível criar o arquivo temporário."));
     }
     snprintf(temporary, sizeof(temporary), "config.tmp.%s", token);
     fd = openat(config->directory, temporary, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC,
@@ -169,14 +170,14 @@ bool profiles_storage_commit(profile_config *config, const char *serialized)
     result = true;
     snprintf(config->message, sizeof(config->message), "%s",
              fsync(config->directory) == 0
-                 ? "Perfis salvos; senhas e cookies permanecem somente em memória."
-                 : "Alteração salva; não foi possível confirmar a sincronização do diretório.");
+                 ? _("Perfis salvos; senhas e cookies permanecem somente em memória.")
+                 : _("Alteração salva; não foi possível confirmar a sincronização do diretório."));
 done:
     if (fd >= 0)
         close(fd);
     if (!result) {
         unlinkat(config->directory, temporary, 0);
-        error(config, "Não foi possível salvar. Os perfis anteriores foram preservados.");
+        error(config, _("Não foi possível salvar. Os perfis anteriores foram preservados."));
     }
 
     return result;
@@ -184,11 +185,12 @@ done:
 bool profiles_storage_save(profile_config *config, bool (*serialize)(profile_config *))
 {
     if (flock(config->directory, LOCK_EX | LOCK_NB) < 0)
-        return error(config, "Configuração ocupada por outro processo. Tente salvar novamente.");
+        return error(config, _("Configuração ocupada por outro processo. Tente salvar novamente."));
     bool result =
         unchanged(config)
             ? serialize(config)
-            : error(config, "A configuração mudou em outro processo. Use Ctrl+R antes de salvar.");
+            : error(config,
+                    _("A configuração mudou em outro processo. Use Ctrl+R antes de salvar."));
     flock(config->directory, LOCK_UN);
     return result;
 }

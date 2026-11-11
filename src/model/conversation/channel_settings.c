@@ -1,4 +1,5 @@
 #include "model/conversation/private.h"
+#include "model/text/translation.h"
 
 static bool valid_mode(const char *mode)
 {
@@ -58,12 +59,12 @@ bool history_set_channel_notifications_synced(history *h, const char *id, bool s
      * returns to the server's preference without sending the device mode. */
     if (!inbox_set_local_notifications(h->inbox, id, synced ? NULL : server_notifications(h, id))) {
         history_internal_notice(h, HISTORY_NOTICE_MUTATION,
-                                "Não foi possível salvar a preferência; arquivo preservado.");
+                                _("Não foi possível salvar a preferência; arquivo preservado."));
         return false;
     }
     history_internal_notice(h, HISTORY_NOTICE_MUTATION,
-                            synced ? "Notificações do canal sincronizadas com o servidor."
-                                   : "Notificações do canal salvas só neste dispositivo.");
+                            synced ? _("Notificações do canal sincronizadas com o servidor.")
+                                   : _("Notificações do canal salvas só neste dispositivo."));
     return true;
 }
 bool history_channel_notifications_pending(const history *h)
@@ -76,10 +77,10 @@ bool history_set_channel_notifications(history *h, const char *id, const char *m
         return false;
     if (!history_channel_notifications_synced(h, id)) {
         bool saved = inbox_set_local_notifications(h->inbox, id, mode);
-        history_internal_notice(h, HISTORY_NOTICE_MUTATION,
-                                saved
-                                    ? "Notificações do canal salvas neste dispositivo."
-                                    : "Não foi possível salvar a preferência; arquivo preservado.");
+        history_internal_notice(
+            h, HISTORY_NOTICE_MUTATION,
+            saved ? _("Notificações do canal salvas neste dispositivo.")
+                  : _("Não foi possível salvar a preferência; arquivo preservado."));
         return saved;
     }
     if (history_channel_notifications_pending(h))
@@ -87,7 +88,7 @@ bool history_set_channel_notifications(history *h, const char *id, const char *m
     snprintf(h->notification_channel, sizeof(h->notification_channel), "%s", id);
     snprintf(h->notification_mode, sizeof(h->notification_mode), "%s", mode);
     h->notification_queued = true;
-    history_internal_notice(h, HISTORY_NOTICE_MUTATION, "Salvando notificações do canal…");
+    history_internal_notice(h, HISTORY_NOTICE_MUTATION, _("Salvando notificações do canal…"));
     return true;
 }
 bool history_internal_channel_settings_dispatch(history *h)
@@ -100,7 +101,7 @@ bool history_internal_channel_settings_dispatch(history *h)
             PERMISSION_ALLOWED) {
         h->notification_queued = false;
         history_internal_notice(h, HISTORY_NOTICE_MUTATION,
-                                "Canal indisponível; configuração cancelada.");
+                                _("Canal indisponível; configuração cancelada."));
         return false;
     }
     char path[160];
@@ -133,13 +134,13 @@ void history_internal_channel_settings_response(history *h, json_t *body, long c
         h->want_channels = true; /* Reconcile metadata only; never replay the mutation. */
     history_internal_notice(
         h, HISTORY_NOTICE_MUTATION,
-        ok            ? "Notificações do canal atualizadas."
-        : code == 429 ? "Limite de requisições. Aguarde e escolha a opção novamente."
-        : code == 403 ? "Sem permissão para alterar as notificações deste canal."
-        : code == 404 ? "Canal indisponível. Configuração não confirmada."
+        ok            ? _("Notificações do canal atualizadas.")
+        : code == 429 ? _("Limite de requisições. Aguarde e escolha a opção novamente.")
+        : code == 403 ? _("Sem permissão para alterar as notificações deste canal.")
+        : code == 404 ? _("Canal indisponível. Configuração não confirmada.")
         : uncertain || !code || code == 200
-            ? "Resultado não confirmado. Atualize os canais antes de tentar novamente."
-            : "Falha ao salvar notificações. Escolha novamente para tentar.");
+            ? _("Resultado não confirmado. Atualize os canais antes de tentar novamente.")
+            : _("Falha ao salvar notificações. Escolha novamente para tentar."));
     h->notification_channel[0] = h->notification_mode[0] = 0;
 }
 void history_internal_notification_reads(history *h)

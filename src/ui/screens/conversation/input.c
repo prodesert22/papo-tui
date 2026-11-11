@@ -1,3 +1,4 @@
+#include "model/text/translation.h"
 #include "ui/screens/conversation/private.h"
 
 const char *conversation_str(const json_t *obj, const char *key)
@@ -229,7 +230,7 @@ void conversation_open_channel(view *ui, bool voice_history)
         return;
     }
     if (!send_editor_select(ui->editor, conversation_str(channel, "id"))) {
-        ui->feedback = "Não foi possível trocar o editor; rascunho preservado.";
+        ui->feedback = _("Não foi possível trocar o editor; rascunho preservado.");
         return;
     }
     /* The reading position is cached with the conversation being left. */
@@ -364,7 +365,7 @@ void conversation_cancel_edit(view *ui)
 void conversation_submit(view *ui, uint64_t retry_id, bool duplicate)
 {
     if (ui->attachment_task) {
-        ui->feedback = "Aguarde a preparação dos anexos; Esc cancela.";
+        ui->feedback = _("Aguarde a preparação dos anexos; Esc cancela.");
         return;
     }
     if (!conversation_input(ui))
@@ -372,7 +373,7 @@ void conversation_submit(view *ui, uint64_t retry_id, bool duplicate)
     ui->feedback = NULL;
     if (*ui->edit_message) {
         if (retry_id) {
-            ui->feedback = "Edição aberta; Enter edita ou Esc cancela.";
+            ui->feedback = _("Edição aberta; Enter edita ou Esc cancela.");
             return;
         }
         char content[TEXT_UTF8_BYTES];
@@ -381,11 +382,11 @@ void conversation_submit(view *ui, uint64_t retry_id, bool duplicate)
             return;
         if (!encoded || !*content) {
             send_editor_refuse(ui->editor, true);
-            ui->feedback = "Escreva uma mensagem antes de editar; Esc cancela.";
+            ui->feedback = _("Escreva uma mensagem antes de editar; Esc cancela.");
             return;
         }
         if (!history_edit_message(ui->model, ui->edit_message, content)) {
-            ui->feedback = "Não foi possível preparar a edição; aguarde ou tente novamente.";
+            ui->feedback = _("Não foi possível preparar a edição; aguarde ou tente novamente.");
             return;
         }
         /* Optimistic: the history shows the text at once and the send draft
@@ -442,7 +443,7 @@ bool conversation_edit(view *ui, int type, uint32_t key)
         send_editor_refuse(ui->editor, false);
         ui->editor_scrolling = ui->dragging = false;
         ui->feedback =
-            send_editor_changed(ui->editor) ? NULL : "Não foi possível salvar o rascunho.";
+            send_editor_changed(ui->editor) ? NULL : _("Não foi possível salvar o rascunho.");
         if (before.length != editor->length ||
             memcmp(before.data, editor->data, editor->length * sizeof(editor->data[0])))
             history_typing_activity(ui->model);
