@@ -276,7 +276,10 @@ applicable cases, sanitizers run unit/integration/lifecycle cases, and coverage
 runs unit/integration cases. Add `--full-instrumentation` to execute the entire
 suite with sanitizers or coverage; the scheduled CI does this automatically.
 `--suite all` with that option also reproduces the full instrumented suite.
-`--jobs` limits compilation and `--test-jobs` limits concurrent test processes.
+`--jobs` limits compilation and `--test-jobs` limits concurrent test processes;
+by default half the native CPUs, at least four, so 4-CPU CI runners keep four.
+On a 24-CPU host the whole suite took about 4 minutes with 12 processes and
+about 12 minutes with four; keep such comparisons under `build/reports/`.
 Multiple local `--variants release,sanitizers,coverage` execute sequentially.
 For separate compilation and test stages, run the build command with
 `--build-only`, then repeat it with `--test-only`. CI saves verified dependencies

@@ -17,6 +17,11 @@ import ci_linux  # noqa: E402
 
 
 class BuildOrchestration(unittest.TestCase):
+    def test_default_test_jobs_use_half_the_cpus_but_keep_small_runners_at_four(self):
+        for cpus, jobs in ((1, 1), (2, 2), (4, 4), (8, 4), (12, 6), (24, 12), (64, 32)):
+            with self.subTest(cpus=cpus):
+                self.assertEqual(ci_build.default_test_jobs(cpus), jobs)
+
     def test_variants_prepare_once_and_run_sequentially_without_hiding_failure(self):
         attempts = []
         active = peak = 0

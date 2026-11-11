@@ -149,6 +149,8 @@ def build_variant(
         "--output-junit",
         str(reports / "results.xml"),
     ]
+    # A list from an earlier selective run must not describe this one.
+    (reports / "selected-tests.txt").unlink(missing_ok=True)
     layers = layer_filter(suite, mode, full_instrumentation)
     if areas or changed:
         names = chosen_tests(build, layers, areas, changed, case)
@@ -173,6 +175,15 @@ def build_variant(
             from test_report import summarize
 
             summarize(reports / "results.xml", reports, time.monotonic() - started)
+
+
+def default_test_jobs(cpus=None):
+    """Half the native CPUs, never below four or above the CPU count.
+
+    The full suite passed with 12 processes on 24 CPUs; 4-CPU CI runners keep 4.
+    """
+    cpus = cpus or os.cpu_count() or 2
+    return min(cpus, max(4, cpus // 2))
 
 
 LAYERS = ("all", "unit", "integration", "terminal", "media", "contract", "lifecycle")
@@ -258,7 +269,7 @@ def main():
     parser.add_argument(
         "--test-jobs",
         type=positive,
-        help="CTest process budget (default: up to four native CPUs)",
+        help="CTest process budget (default: half the native CPUs, at least four)",
     )
     parser.add_argument("--suite", choices=LAYERS, default="all")
     parser.add_argument(
@@ -378,7 +389,7 @@ def main():
                     prefix,
                     variant,
                     args.jobs,
-                    args.test_jobs or min(os.cpu_count() or 2, 4),
+                    args.test_jobs or default_test_jobs(),
                     log,
                     suite=args.suite,
                     case=args.case,
