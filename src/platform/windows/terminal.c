@@ -4,6 +4,8 @@
 #include <io.h>
 #include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <windows.h>
 static DWORD input_mode, output_mode, input_cp, output_cp;
 static bool active;
@@ -34,6 +36,27 @@ static BOOL WINAPI control(DWORD event)
         return TRUE;
     }
     return FALSE;
+}
+static DWORD color_mode;
+static bool color_set;
+bool terminal_color_begin(void)
+{
+    const char *no_color = getenv("NO_COLOR"), *term = getenv("TERM");
+    HANDLE output = GetStdHandle(STD_OUTPUT_HANDLE);
+    if ((no_color && *no_color) || (term && !strcmp(term, "dumb")) ||
+        !GetConsoleMode(output, &color_mode))
+        return false; /* Not a console, such as a pipe or a file. */
+    if (color_mode & ENABLE_VIRTUAL_TERMINAL_PROCESSING)
+        return true;
+    color_set = SetConsoleMode(output, color_mode | ENABLE_PROCESSED_OUTPUT |
+                                           ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+    return color_set;
+}
+void terminal_color_end(void)
+{
+    if (color_set)
+        SetConsoleMode(GetStdHandle(STD_OUTPUT_HANDLE), color_mode);
+    color_set = false;
 }
 bool terminal_recovery_begin(void)
 {

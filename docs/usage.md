@@ -21,8 +21,10 @@ Linux build from the project folder, use `./build/papo-tui`.
 `papo-tui --help` describes the command-line options, the environment
 variables the application reads and where it keeps its files, in the system
 language or the one set with `PAPO_LANGUAGE`; `papo-tui --version` prints the
-version. Keyboard controls are listed in the in-app help and in
-[Keyboard and mouse](#keyboard-and-mouse).
+version. In a terminal the help uses colors for its headings, options and
+links; it is plain text when redirected to a file or another program, when
+`NO_COLOR` is set or when `TERM` is `dumb`. Keyboard controls are listed in
+the in-app help and in [Keyboard and mouse](#keyboard-and-mouse).
 
 When the system credential store is available, the application restores the
 session of every server you were signed in to. Each server opens as a tab in

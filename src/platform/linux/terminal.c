@@ -5,8 +5,20 @@
 #include <errno.h>
 #include <signal.h>
 #include <stddef.h>
+#include <stdlib.h>
+#include <string.h>
 #include <termios.h>
 #include <unistd.h>
+
+bool terminal_color_begin(void)
+{
+    const char *no_color = getenv("NO_COLOR"), *term = getenv("TERM");
+    return isatty(STDOUT_FILENO) && !(no_color && *no_color) && term && *term &&
+           strcmp(term, "dumb") != 0;
+}
+void terminal_color_end(void)
+{
+}
 
 static const int fatal_signals[] = {SIGABRT, SIGSEGV, SIGBUS, SIGILL, SIGFPE};
 static struct sigaction previous[sizeof(fatal_signals) / sizeof(fatal_signals[0])];

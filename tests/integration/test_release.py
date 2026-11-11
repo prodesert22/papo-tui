@@ -6,6 +6,7 @@ from test_context import argument
 
 from pathlib import Path
 import os
+import re
 import subprocess
 import tempfile
 import unittest
@@ -56,6 +57,49 @@ class ReleaseCLI(unittest.TestCase):
                 # Keyboard controls belong to the in-app help and the guide.
                 self.assertNotIn("Ctrl+", text)
                 self.assertLessEqual(max(len(line) for line in text.splitlines()), 80)
+                self.assertNotIn("\x1b", text)  # Not a terminal: no colors.
+
+    def help_on_terminal(self, **variables):
+        """--help with stdout on a pseudo-terminal, as the user sees it."""
+        import pty
+
+        primary, secondary = pty.openpty()
+        env = dict(os.environ, PAPO_LANGUAGE="pt", TERM="xterm-256color")
+        env.pop("NO_COLOR", None)
+        env.update(variables)
+        try:
+            process = subprocess.Popen(
+                [str(BINARY), "--help"], stdout=secondary, stderr=subprocess.PIPE, env=env
+            )
+            os.close(secondary)
+            output = b""
+            while True:
+                try:
+                    chunk = os.read(primary, 4096)
+                except OSError:  # The terminal closes once the program exits.
+                    break
+                if not chunk:
+                    break
+                output += chunk
+            self.assertEqual(process.wait(timeout=10), 0)
+            process.stderr.close()
+        finally:
+            os.close(primary)
+        return output.decode("utf-8").replace("\r\n", "\n")
+
+    @unittest.skipIf(os.name == "nt", "pseudo-terminals are POSIX only")
+    def test_help_colors_only_structure_on_a_terminal(self):
+        text = self.help_on_terminal()
+        self.assertIn("\x1b[1mpapo-tui", text)
+        self.assertIn("\x1b[1;33mOpções:\x1b[0m", text)
+        self.assertIn("  \x1b[32m--profiles\x1b[0m          Abre", text)
+        self.assertIn("\x1b[4;34mhttps://", text)
+        plain = re.sub(r"\x1b\[[0-9;]*m", "", text)
+        self.assertLessEqual(max(len(line) for line in plain.splitlines()), 80)
+        self.assertNotIn("Ctrl+", plain)
+        for variables in ({"NO_COLOR": "1"}, {"TERM": "dumb"}):
+            with self.subTest(**variables):
+                self.assertNotIn("\x1b", self.help_on_terminal(**variables))
 
     def test_unknown_or_repeated_arguments_are_rejected_without_echoing_secrets(self):
         cases = [
