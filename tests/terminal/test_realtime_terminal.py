@@ -79,6 +79,37 @@ class RealtimeTerminal(unittest.TestCase):
             finally:
                 self.assertTrue(terminal.close())
 
+    def test_f5_reconnects_without_waiting_for_the_next_attempt(self):
+        with RealtimeMock() as server:
+            terminal = self.open(server)
+            try:
+                self.wait(terminal, "Tempo real conectado")
+                terminal.send("\x1b[15~")
+                self.wait(terminal, "A conexão já está ativa.")
+
+                def checks():
+                    return sum(path.endswith("/auth/whoami") for _, path, *_ in server.requests)
+
+                server.offline = True
+                server.disconnect()
+                self.wait(terminal, "Servidor offline · F5: reconectar")
+                self.wait(terminal, "F5: reconectar agora")
+                # Two more failed checks put the next automatic one about 8 s away.
+                failed = checks()
+                deadline = time.monotonic() + 12
+                while checks() < failed + 2 and time.monotonic() < deadline:
+                    terminal.read(0.05)
+                self.assertGreaterEqual(checks(), failed + 2)
+                terminal.read(0.5)  # Let the client handle that failure first.
+                server.offline = False
+                pressed = time.monotonic()
+                terminal.send("\x1b[15~")
+                self.wait(terminal, "Tempo real conectado")
+                self.assertLess(time.monotonic() - pressed, 4)
+                self.assertNotIn("Servidor offline", self.screen(terminal))
+            finally:
+                self.assertTrue(terminal.close())
+
     def test_channel_navigation_keeps_receiving_current_channel_without_reloading(self):
         with RealtimeMock() as server:
             terminal = self.open(server)

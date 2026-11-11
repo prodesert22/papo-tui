@@ -43,6 +43,13 @@ automaticamente…** (Reconnecting automatically) instead of loading or
 permission errors. Your session is kept, and the conversation comes back when
 the server answers again.
 
+When the connection drops, the footer shows **Desconectado · F5: reconectar**
+(Disconnected · F5: reconnect), or **Servidor offline · F5: reconectar** when
+the server stops answering. The application keeps retrying by itself, waiting
+longer after each failure, up to 30 seconds. Press **F5** to try again right
+away instead of waiting: your session is checked first, then the realtime
+connection opens again. Messages already sent are never sent again.
+
 To remove a server from the list, right-click its tab, or select the tab and
 press **m** or Ctrl+Space, to open the tab's menu below it. Choose **Remover
 servidor** (Remove server), then confirm **Remover** (Remove). On the server
@@ -688,6 +695,7 @@ that do not report Ctrl+/ can reach global help through contextual help's
 | PageUp / PageDown in the editor | Scroll the conversation one line per press; Shift+PageUp/PageDown scroll a page where the terminal reports the modified key |
 | Home / End in history | Go to the start of loaded history / recent messages |
 | Ctrl+R | Refresh or retry a request/connection |
+| F5 | Reconnect now when the connection drops |
 | Ctrl+Y | Retry the last failed send |
 | Ctrl+T | Open the account screen |
 | Ctrl+X | Go back to the message of the audio playing in the background and reopen its player |
@@ -1544,6 +1552,8 @@ above.
   Private servers also require the server password.
 - **A tab shows (offline):** the server is not answering. Wait for it to come
   back; the application reconnects by itself, or open the tab to try at once.
+- **Disconnected:** the application reconnects by itself; press **F5** in the
+  conversation to try at once.
 - **Server reports an IP block:** contact the instance administrator. A block
   during private server authorization happens before your account is checked;
   an already open session in another client does not confirm that a new login

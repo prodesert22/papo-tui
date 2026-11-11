@@ -254,6 +254,8 @@ static void draw_offline(view *ui, auth_client *auth)
         draw_centered(ui->body, y + 2, line);
     if (ui->visible > 3)
         draw_centered(ui->body, y + 3, _("Reconectando automaticamente…"));
+    if (ui->visible > 5)
+        draw_centered(ui->body, y + 5, _("F5: reconectar agora"));
 }
 bool conversation_collect_notices(view *ui, auth_client *auth)
 {
@@ -264,10 +266,10 @@ bool conversation_collect_notices(view *ui, auth_client *auth)
                          ? _("Desconectado · Revalidando sessão…")
                          : _("Revalidando sessão…");
     else if (auth_server_unreachable(auth))
-        connection = _("Servidor offline · Reconectando…");
+        connection = _("Servidor offline · F5: reconectar");
     else if (auth_ws_reconnecting(auth))
         connection =
-            auth_ws_epoch(auth) ? _("Desconectado · Reconectando…") : _("Conectando tempo real…");
+            auth_ws_epoch(auth) ? _("Desconectado · F5: reconectar") : _("Conectando tempo real…");
     else
         switch (auth_ws_state(auth)) {
         case WS_OPEN:
@@ -278,10 +280,10 @@ bool conversation_collect_notices(view *ui, auth_client *auth)
             connection = _("Conectando tempo real…");
             break;
         case WS_ERROR:
-            connection = _("Desconectado · Ctrl+R: reconectar");
+        case WS_CLOSED:
+            connection = _("Desconectado · F5: reconectar");
             break;
         case WS_CLOSING:
-        case WS_CLOSED:
             connection = _("Desconectado");
             break;
         default:

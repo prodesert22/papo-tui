@@ -311,6 +311,10 @@ msgstr "The real-time connection was interrupted."
 msgid "A conexão foi interrompida. Tente novamente."
 msgstr "The connection was interrupted. Try again."
 
+#: src/ui/screens/conversation/conversation.c
+msgid "A conexão já está ativa."
+msgstr "The connection is already active."
+
 #: src/platform/linux/profiles_storage.c src/platform/windows/profiles_storage.c
 msgid "A configuração mudou em outro processo. Use Ctrl+R antes de salvar."
 msgstr "The configuration changed in another process. Use Ctrl+R before saving."
@@ -2108,12 +2112,8 @@ msgid "Desconectado"
 msgstr "Disconnected"
 
 #: src/ui/screens/conversation/drawing.c
-msgid "Desconectado · Ctrl+R: reconectar"
-msgstr "Disconnected · Ctrl+R: reconnect"
-
-#: src/ui/screens/conversation/drawing.c
-msgid "Desconectado · Reconectando…"
-msgstr "Disconnected · Reconnecting…"
+msgid "Desconectado · F5: reconectar"
+msgstr "Disconnected · F5: reconnect"
 
 #: src/ui/screens/conversation/drawing.c
 msgid "Desconectado · Revalidando sessão…"
@@ -2790,6 +2790,14 @@ msgstr "Deletion waiting to send…"
 #: src/ui/screens/message_browser.c
 msgid "Execute Buscar para aplicar as alterações."
 msgstr "Run Search to apply the changes."
+
+#: src/ui/components/help.c
+msgid "F5"
+msgstr "F5"
+
+#: src/ui/screens/conversation/drawing.c
+msgid "F5: reconectar agora"
+msgstr "F5: reconnect now"
 
 #: src/ui/screens/conversation/downloads.c
 msgid "Falha ao baixar %s: %s"
@@ -4579,6 +4587,10 @@ msgstr "Not given"
 msgid "Não informado"
 msgstr "Not given"
 
+#: src/ui/screens/conversation/conversation.c
+msgid "Não é possível reconectar agora."
+msgstr "Cannot reconnect right now."
+
 #: src/ui/components/settings.c
 msgid "Nível:"
 msgstr "Level:"
@@ -5267,6 +5279,14 @@ msgstr "Restart the audio from the beginning"
 msgid "Reconectando automaticamente…"
 msgstr "Reconnecting automatically…"
 
+#: src/ui/screens/conversation/conversation.c
+msgid "Reconectando…"
+msgstr "Reconnecting…"
+
+#: src/ui/components/help.c
+msgid "Reconectar agora quando a conexão cair"
+msgstr "Reconnect now when the connection drops"
+
 #: src/model/conversation/events.c
 msgid "Recuperando canais e histórico…"
 msgstr "Recovering channels and history…"
@@ -5780,8 +5800,8 @@ msgid "Servidor offline"
 msgstr "Server offline"
 
 #: src/ui/screens/conversation/drawing.c
-msgid "Servidor offline · Reconectando…"
-msgstr "Server offline · Reconnecting…"
+msgid "Servidor offline · F5: reconectar"
+msgstr "Server offline · F5: reconnect"
 
 #: src/ui/components/help.c src/ui/screens/conversation/drawing.c
 msgid "Servidores"

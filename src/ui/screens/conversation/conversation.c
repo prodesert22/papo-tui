@@ -1136,6 +1136,16 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 ui->feedback = _("Nenhum envio falhou nesta conversa.");
             continue;
         }
+        /* F5 reconnects now instead of at the next automatic attempt. The
+         * session is validated first and nothing already sent is repeated. */
+        if (type == KEY_CODE_YES && key == KEY_F(5)) {
+            bool connected = auth_ws_state(auth) == WS_OPEN && !auth_ws_reconnecting(auth) &&
+                             !auth_server_unreachable(auth);
+            ui->feedback = connected               ? _("A conexão já está ativa.")
+                           : auth_connect_ws(auth) ? _("Reconectando…")
+                                                   : _("Não é possível reconectar agora.");
+            continue;
+        }
         if (type == OK && key == 18) {
             chat_assets_profiles_retry(history_assets(ui->model));
             if (auth_ws_reconnecting(auth)) {

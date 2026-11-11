@@ -40,6 +40,7 @@ static const help_row rows[] = {
      N_("Voltar à mensagem do áudio em segundo plano e abrir o player")},
     {HELP_CONVERSATION, N_("Ctrl+L"), N_("Sair da conta atual")},
     {HELP_CONVERSATION, N_("Ctrl+R"), N_("Atualizar a conversa e permissões ou reconectar")},
+    {HELP_CONVERSATION, N_("F5"), N_("Reconectar agora quando a conexão cair")},
     {HELP_SERVER_TABS, N_("← / →"), N_("Selecionar um servidor ou Adicionar")},
     {HELP_SERVER_TABS, N_("Enter"), N_("Ativar o servidor ou abrir a conexão de outro servidor")},
     {HELP_SERVER_TABS, N_("↓"), N_("Entrar nos controles Canais/DMs")},
