@@ -256,11 +256,12 @@ int main(void)
     json_object_set_new(old, "type", json_string("message"));
     assert(inbox_event(history_inbox(first), old));
     assert(!history_instance_unread(first));
+    /* A newer message lights the tab through its channel in the list. */
     json_object_set_new(old, "id", json_string("00000000-0000-4000-8000-000000000104"));
-    assert(inbox_event(history_inbox(first), old));
+    assert(history_event(first, old, auth_context_generation(auth)));
     assert(history_instance_unread(first));
     json_decref(old);
-    assert(!history_channel_unread(first, history_channel(first, 0)));
+    assert(history_channel_unread(first, history_channel(first, 0)));
     assert(!history_channel_unread(restart, history_channel(restart, 0)));
     history_destroy(first);
     history_destroy(restart);

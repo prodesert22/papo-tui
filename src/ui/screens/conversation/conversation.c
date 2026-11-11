@@ -512,8 +512,6 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             redraw = true;
             scope = DRAW_ALL;
         }
-        uint64_t visible_now = 0;
-        net_now_ms(&visible_now);
         text_input_event_reporting(ui->settings.open ? ui->settings.audio.push_to_talk
                                                      : connections->config &&
                                                            connections->config->audio.push_to_talk);
@@ -528,14 +526,16 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         const audio_config *audio = connections->config ? &connections->config->audio : NULL;
         text_push_to_talk_configure(
             audio && audio->push_to_talk && voice_active() && !voice_modal ? &audio->ptt : NULL);
+        /* Without focus reports, a message counts as seen only shortly after
+         * input (conversation_walk). A read already queued for one keeps going
+         * when that window closes, since the reader did see it. */
         if (conversation_overlay_open(ui) || !ui->body || !ui->at_end || r8_modal_is_open(ui->r8) ||
             conversation_panel_open(ui) || ui->duplicate_modal || file_picker_open(ui->files) ||
             ui->remove_confirm || mention_popup_open(ui->mentions) ||
             emoji_picker_open(ui->emojis) || media_view_modal(ui->media) || ui->context_open ||
             ui->reactors_open || conversation_members_modal(ui) ||
             (ui->members_open && !ui->members_reserved) ||
-            !(text_terminal_focused() ||
-              (text_terminal_focus_unknown() && visible_now < ui->view_requested_until)))
+            (!text_terminal_focused() && !text_terminal_focus_unknown()))
             history_read_visible(ui->model, NULL);
         auth_state before = auth_get_state(auth);
         if (session_store_poll(connections->sessions, auth) | instances_resume(connections)) {

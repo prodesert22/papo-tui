@@ -786,7 +786,8 @@ nothing appears beside a read conversation. The server counts unread messages
 when it lists your DMs; messages arriving afterwards add to that count until
 you read the conversation, and a dot appears while the count is not known.
 
-Red dots beside server names indicate unread messages, and the count shows
+Red dots beside server names indicate unread messages in the channels and DMs
+listed for that server, or unread notifications, and the count shows
 known unread mentions of you or `@everyone`. In graphics terminals, the
 badge is centered vertically in the row, with a white count inside the red
 circle; larger counts use a wider rounded badge. The number is centered inside
@@ -800,7 +801,8 @@ total. Opening a notification clears its mention badge after confirmation.
 The server dot also covers notifications with missing mention metadata.
 A conversation counts as read when its latest message is visible at the bottom
 of the history while the terminal has focus; only then is the read sent to the
-server. Opening a conversation or scrolling through older messages does not mark
+server. In a terminal that does not report focus, a message counts as seen
+when it appears within two seconds of your last key press or click. Opening a conversation or scrolling through older messages does not mark
 it read. Notifications for messages up to the point where you read a
 conversation, in this client or another one, are marked read with it and leave
 the notification count. Delayed copies of already-read messages do not restore the dot.

@@ -8,6 +8,7 @@ import tempfile
 import time
 from r8_mock import R8Mock, DM, AUTHOR, uuid
 from history_mock import CHANNEL, OTHER
+from terminal_support import wait_for_screen
 
 
 import terminal_discovery as support
@@ -1644,6 +1645,59 @@ class R8Terminal(support.R8Terminal):
                 t.read(0.03)
             self.assertFalse(any(c in entry() for c in "●❶❷❸❹"), entry())
             self.assertEqual(server.read_calls, 0)
+
+    def open_other_with_new_message(self, server, t):
+        fresh = dict(server.message(9), id=uuid(7777), channel_id=OTHER, author_id=AUTHOR,
+                     content="Nova no outro", created_at="2026-10-12T12:00:09.000000Z")
+        rows = server.other_rows
+        server.other_rows = lambda: rows() + [fresh]
+        server.emit(dict(fresh, type="message"))
+        self.wait(t, "[Comunidade ")
+        row = next(i for i, line in enumerate(t.screen.display) if "outro" in line[:25])
+        t.click(row, 4)
+        self.wait(t, "Nova no outro")
+        self.wait(t, "[Comunidade]")
+
+    def test_server_tab_clears_after_reading_and_ignores_unlisted_channels(self):
+        with R8Mock(count=0) as server:
+            server.dms[0].update(last_read_message=server.dm_messages[0]["id"], unread_count=0)
+            t = self.login(server)
+            self.wait(t, "Mensagem")
+            t.send("\x1b[I")  # The terminal reports focus.
+            self.assertTrue(t.screen.display[0].startswith("[Comunidade]"), t.screen.display[0])
+            self.open_other_with_new_message(server, t)
+            # A channel missing from the list cannot be opened, so its messages
+            # must not light the server tab.
+            server.emit(dict(server.message(10), type="message", id=uuid(7778),
+                             channel_id=uuid(9999), author_id=AUTHOR, content="Canal oculto",
+                             created_at="2026-10-12T12:00:10.000000Z"))
+            server.emit(dict(server.message(11), type="message", id=uuid(7779),
+                             channel_id=OTHER, author_id=AUTHOR, content="Depois do oculto",
+                             created_at="2026-10-12T12:00:11.000000Z"))
+            self.wait(t, "Depois do oculto")
+            wait_for_screen(t, lambda: (OTHER, uuid(7779)) in server.channel_reads,
+                            "read of the message shown in the open channel")
+            self.wait(t, "[Comunidade]")
+            self.assertNotIn("novo", "\n".join(line[:25] for line in t.screen.display))
+
+    def test_read_seen_shortly_after_input_survives_the_read_pause(self):
+        """Without focus reports, a message counts as seen for 2 s after input.
+        One seen then is still read once the pause between reads ends later."""
+        with R8Mock(count=0) as server:
+            server.dms[0].update(last_read_message=server.dm_messages[0]["id"], unread_count=0)
+            t = self.login(server)
+            self.wait(t, "Mensagem")
+            clicked = time.monotonic()
+            self.open_other_with_new_message(server, t)
+            server.emit(dict(server.message(11), type="message", id=uuid(7779),
+                             channel_id=OTHER, author_id=AUTHOR, content="Visto a tempo",
+                             created_at="2026-10-12T12:00:11.000000Z"))
+            self.wait(t, "Visto a tempo")
+            if time.monotonic() - clicked > 1.5:
+                self.skipTest("the message arrived after the input window")
+            wait_for_screen(t, lambda: (OTHER, uuid(7779)) in server.channel_reads,
+                            "read of the message seen inside the input window")
+            self.wait(t, "[Comunidade]")
 
 
 if __name__ == "__main__":

@@ -162,7 +162,9 @@ bool history_instance_unread(const history *h)
 {
     if (!h)
         return false;
-    if (inbox_has_activity(h->inbox) || inbox_unseen_conversations(h->inbox))
+    /* Only what the lists show: unseen marks also name channels missing from
+     * the list, which nothing on screen could ever clear. */
+    if (inbox_has_activity(h->inbox))
         return true;
     for (size_t i = 0; i < history_channel_count(h); ++i) {
         json_t *c = history_channel(h, i);
