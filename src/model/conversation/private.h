@@ -104,6 +104,9 @@ struct history {
     json_t *listed, *unlisted, *refresh_seen;
     bool users_refreshing;
     uint64_t users_complete_at;
+    /* Owned: the filters of recent searches on this account, newest first,
+     * without the search text. Kept across conversations, in memory only. */
+    json_t *search_recent;
     size_t user_bytes;
     uint64_t users_revision, messages_revision;
     uint64_t role_events, request_role_events;

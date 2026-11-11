@@ -1,4 +1,5 @@
 #include "ui/screens/message_browser.h"
+#include "model/conversation/discovery.h"
 #include "model/text/translation.h"
 #include "ui/components/button.h"
 #include "ui/components/mention_popup.h"
@@ -274,6 +275,102 @@ static void picker_choose(message_browser *m, bool clear)
     snprintf(target, 37, "%s", clear ? "" : s(v, "id"));
     picker_close(m);
 }
+/* Filter screen controls: 0-7 the fields, 8-10 the buttons sharing one row,
+ * then the recent filters. Rows: the fields, the buttons, a heading and one row
+ * per recent filter. */
+#define FILTER_BUTTONS 8
+#define FILTER_RECENT 11
+static int filter_controls(const message_browser *m)
+{
+    return FILTER_RECENT + (int)history_search_recent_count(m->h);
+}
+static int filter_row(int control)
+{
+    return control < FILTER_BUTTONS  ? control
+           : control < FILTER_RECENT ? FILTER_BUTTONS
+                                     : control - FILTER_RECENT + FILTER_BUTTONS + 2;
+}
+static int filter_rows(const message_browser *m)
+{
+    size_t recent = history_search_recent_count(m->h);
+    return FILTER_BUTTONS + 1 + (recent ? 1 + (int)recent : 0);
+}
+static const char *filter_button(int index)
+{
+    return index == 0 ? _("[Aplicar]") : index == 1 ? _("[Cancelar]") : _("[Limpar filtros]");
+}
+/* Column where each button of the row starts, as drawn and clicked. */
+static int filter_button_x(int index)
+{
+    int x = 2;
+    for (int i = 0; i < index; ++i)
+        x += text_label(NULL, 0, 0, 64, filter_button(i)) + 2;
+    return x;
+}
+/* One line describing a recent filter; names are remote text, so the caller
+ * draws it with text_label. */
+static void recent_summary(message_browser *m, const json_t *f, char *out, size_t size)
+{
+    GString *line = g_string_new(NULL);
+    char part[2200];
+    if (*s(f, "author")) {
+        snprintf(part, sizeof(part), _("Autor: %s"), history_author(m->h, s(f, "author")));
+        g_string_append_printf(line, "%s%s", line->len ? " · " : "", part);
+    }
+    if (*s(f, "channel_id")) {
+        json_t *c = conversation(m, s(f, "channel_id"));
+        if (c)
+            snprintf(part, sizeof(part), "%s%s",
+                     json_is_true(json_object_get(c, "_dm")) ? "DM: " : "# ", s(c, "name"));
+        else
+            snprintf(part, sizeof(part), "%s", _("Conversa indisponível"));
+        g_string_append_printf(line, "%s%s", line->len ? " · " : "", part);
+    }
+    if (*s(f, "mention")) {
+        snprintf(part, sizeof(part), _("Menciona: %s"), history_author(m->h, s(f, "mention")));
+        g_string_append_printf(line, "%s%s", line->len ? " · " : "", part);
+    }
+    if (!strcmp(s(f, "has"), "link"))
+        g_string_append_printf(line, "%s%s", line->len ? " · " : "", _("Contém link"));
+    if (*s(f, "date_start") && *s(f, "date_end"))
+        snprintf(part, sizeof(part), _("%s a %s"), s(f, "date_start"), s(f, "date_end"));
+    else if (*s(f, "date_start"))
+        snprintf(part, sizeof(part), _("desde %s"), s(f, "date_start"));
+    else if (*s(f, "date_end"))
+        snprintf(part, sizeof(part), _("até %s"), s(f, "date_end"));
+    else
+        part[0] = 0;
+    if (*part)
+        g_string_append_printf(line, "%s%s", line->len ? " · " : "", part);
+    json_t *attachments = json_object_get(f, "contains_attachment");
+    if (json_is_boolean(attachments))
+        g_string_append_printf(line, "%s%s", line->len ? " · " : "",
+                               json_is_true(attachments) ? _("Com anexos") : _("Sem anexos"));
+    if (!strcmp(s(f, "order"), "asc"))
+        g_string_append_printf(line, "%s%s", line->len ? " · " : "", _("Mais antigas"));
+    snprintf(out, size, "%s", line->str);
+    g_string_free(line, true);
+}
+/* Copies a recent filter into the fields; Apply then uses it as typed ones. */
+static void recent_load(message_browser *m, const json_t *f)
+{
+    search_settings d;
+    memset(&d, 0, sizeof(d));
+    const char *ids[] = {"author", "channel_id", "mention"};
+    char *fields[] = {d.author, d.channel, d.mention};
+    for (size_t i = 0; i < G_N_ELEMENTS(ids); ++i)
+        if (history_uuid(s(f, ids[i])))
+            snprintf(fields[i], 37, "%s", s(f, ids[i]));
+    d.link = !strcmp(s(f, "has"), "link");
+    text_decode(&d.start, s(f, "date_start"));
+    text_decode(&d.end, s(f, "date_end"));
+    json_t *attachments = json_object_get(f, "contains_attachment");
+    d.attachments = json_is_boolean(attachments) ? (json_is_true(attachments) ? 1 : 2) : 0;
+    d.ascending = !strcmp(s(f, "order"), "asc");
+    m->draft = d;
+    m->date_first[0] = m->date_first[1] = 0;
+    m->settings_focus = FILTER_BUTTONS;
+}
 static void setting_activate(message_browser *m)
 {
     int focus = m->settings_focus;
@@ -303,6 +400,8 @@ static void setting_activate(message_browser *m)
         m->editing_filters = false;
     else if (focus == 10)
         memset(&m->draft, 0, sizeof(m->draft));
+    else if (focus >= FILTER_RECENT && focus < filter_controls(m))
+        recent_load(m, history_search_recent(m->h, (size_t)(focus - FILTER_RECENT)));
 }
 static void activate(message_browser *m)
 {
@@ -399,7 +498,8 @@ static void mouse(message_browser *m)
             m->picker_id[0] = 0;
             move_selection(&m->picker_selected, m->picker_count, key);
         } else if (m->editing_filters)
-            m->settings_focus = CLAMP(m->settings_focus + (key == KEY_UP ? -1 : 1), 0, 10);
+            m->settings_focus =
+                CLAMP(m->settings_focus + (key == KEY_UP ? -1 : 1), 0, filter_controls(m) - 1);
         else if (m->detail)
             m->detail_scroll = key == KEY_UP ? (m->detail_scroll ? m->detail_scroll - 1 : 0)
                                              : m->detail_scroll + 1;
@@ -423,8 +523,19 @@ static void mouse(message_browser *m)
             picker_choose(m, false);
         }
     } else if (m->editing_filters) {
-        int index = y - 3 + m->settings_first;
-        if (y >= 3 && y < height - 4 && index >= 0 && index <= 10) {
+        int row = y - 3 + m->settings_first, index = -1;
+        if (row >= 0 && row < FILTER_BUTTONS)
+            index = row;
+        else if (row == FILTER_BUTTONS)
+            for (int i = 0; i < 3; ++i) {
+                int start = filter_button_x(i);
+                if (x >= start && x < start + text_label(NULL, 0, 0, 64, filter_button(i)))
+                    index = FILTER_BUTTONS + i;
+            }
+        else if (row >= FILTER_BUTTONS + 2 &&
+                 row - FILTER_BUTTONS - 2 + FILTER_RECENT < filter_controls(m))
+            index = row - FILTER_BUTTONS - 2 + FILTER_RECENT;
+        if (y >= 3 && y < height - 4 && index >= 0) {
             m->settings_focus = index;
             if (index == 4 || index == 5)
                 text_click(index == 4 ? &m->draft.start : &m->draft.end, TEXT_LIMIT * 2 + 1, 0,
@@ -513,13 +624,23 @@ void message_browser_key(message_browser *m, int type, uint32_t key)
         return;
     }
     if (m->editing_filters) {
-        if (tab || (type == KEY_CODE_YES && (key == KEY_UP || key == KEY_DOWN))) {
-            int delta = tab ? (type == OK ? 1 : 10) : key == KEY_DOWN ? 1 : 10;
-            m->settings_focus = (m->settings_focus + delta) % 11;
-        } else if (enter ||
-                   (type == OK && key == ' ' && m->settings_focus != 4 && m->settings_focus != 5) ||
-                   (type == KEY_CODE_YES && (key == KEY_LEFT || key == KEY_RIGHT) &&
-                    (m->settings_focus == 3 || m->settings_focus == 6 || m->settings_focus == 7)))
+        int controls = filter_controls(m), focus = m->settings_focus;
+        bool button = focus >= FILTER_BUTTONS && focus < FILTER_RECENT;
+        if (tab)
+            m->settings_focus = (focus + (type == OK ? 1 : controls - 1)) % controls;
+        else if (type == KEY_CODE_YES && (key == KEY_UP || key == KEY_DOWN)) {
+            int next = key == KEY_DOWN ? (button ? FILTER_RECENT : focus + 1)
+                                       : (button                   ? FILTER_BUTTONS - 1
+                                          : focus == FILTER_RECENT ? FILTER_BUTTONS
+                                                                   : focus - 1);
+            m->settings_focus = (next + controls) % controls;
+        } else if (button && type == KEY_CODE_YES && (key == KEY_LEFT || key == KEY_RIGHT))
+            m->settings_focus =
+                CLAMP(focus + (key == KEY_RIGHT ? 1 : -1), FILTER_BUTTONS, FILTER_RECENT - 1);
+        else if (enter ||
+                 (type == OK && key == ' ' && m->settings_focus != 4 && m->settings_focus != 5) ||
+                 (type == KEY_CODE_YES && (key == KEY_LEFT || key == KEY_RIGHT) &&
+                  (m->settings_focus == 3 || m->settings_focus == 6 || m->settings_focus == 7)))
             setting_activate(m);
         else if (m->settings_focus == 4 || m->settings_focus == 5)
             text_edit(m->settings_focus == 4 ? &m->draft.start : &m->draft.end, type, key,
@@ -635,14 +756,33 @@ static void settings_draw(message_browser *m, int width, int height)
     WINDOW *w = m->window;
 
     text_label(w, 2, 2, width - 4, _("Datas inclusivas: AAAA-MM-DD"));
-    int visible = MAX(1, height - 7);
-    if (m->settings_focus < m->settings_first)
-        m->settings_first = m->settings_focus;
-    if (m->settings_focus >= m->settings_first + visible)
-        m->settings_first = m->settings_focus - visible + 1;
-    for (int y = 3, i = m->settings_first; y < height - 4 && i <= 10; ++y, ++i) {
+    int visible = MAX(1, height - 7), row = filter_row(m->settings_focus);
+    if (row < m->settings_first)
+        m->settings_first = row;
+    if (row >= m->settings_first + visible)
+        m->settings_first = row - visible + 1;
+    for (int y = 3, r = m->settings_first; y < height - 4 && r < filter_rows(m); ++y, ++r) {
         char label[2200];
-        if (i == 0)
+        int i = r;
+        if (r == FILTER_BUTTONS) {
+            for (int b = 0; b < 3; ++b)
+                button_draw(w, y, filter_button_x(b), MAX(0, width - 2 - filter_button_x(b)),
+                            filter_button(b),
+                            m->settings_focus == FILTER_BUTTONS + b ? BUTTON_FOCUSED
+                                                                    : BUTTON_NORMAL,
+                            BUTTON_PANEL);
+            continue;
+        }
+        if (r == FILTER_BUTTONS + 1) {
+            wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
+            text_label(w, y, 2, width - 4, _("Filtros recentes"));
+            continue;
+        }
+        if (r > FILTER_BUTTONS + 1) {
+            i = r - FILTER_BUTTONS - 2 + FILTER_RECENT;
+            recent_summary(m, history_search_recent(m->h, (size_t)(i - FILTER_RECENT)), label,
+                           sizeof(label));
+        } else if (i == 0)
             snprintf(label, sizeof(label), _("Autor: %s"),
                      *m->draft.author ? history_author(m->h, m->draft.author) : _("Qualquer"));
         else if (i == 1)
@@ -662,11 +802,6 @@ static void settings_draw(message_browser *m, int width, int height)
         else if (i == 7)
             snprintf(label, sizeof(label), _("Ordem: %s"),
                      m->draft.ascending ? _("Mais antigas") : _("Mais recentes"));
-        else if (i >= 8)
-            snprintf(label, sizeof(label), "%s",
-                     i == 8   ? _("[Aplicar]")
-                     : i == 9 ? _("[Cancelar]")
-                              : _("[Limpar filtros]"));
         else {
             wattrset(w, COLOR_PAIR(m->settings_focus == i ? THEME_FOCUSED : THEME_PANEL));
             text_label(w, y, 2, 14, i == 4 ? _("Data inicial: ") : _("Data final: "));
@@ -814,7 +949,7 @@ bool message_browser_cursor(message_browser *m)
                (m->settings_focus == 4 || m->settings_focus == 5)) {
         input = m->settings_focus == 4 ? &m->draft.start : &m->draft.end;
         x = 16;
-        y = 3 + m->settings_focus - m->settings_first;
+        y = 3 + filter_row(m->settings_focus) - m->settings_first;
         first = m->date_first[m->settings_focus - 4];
     } else if (!m->picker && !m->editing_filters && m->focus == QUERY)
         input = &m->query;

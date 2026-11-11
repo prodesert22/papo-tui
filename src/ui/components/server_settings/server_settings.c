@@ -409,6 +409,8 @@ static bool field_refused(const server_settings *s, const admin_field *f)
 }
 static int field_height(const server_settings *s, const admin_field *f, int width)
 {
+    if (f->same_row)
+        return 0;
     if (field_refused(s, f))
         return 3;
     if (f->kind == FIELD_EMOJI) {
@@ -500,10 +502,19 @@ static int label_width(const server_settings *s)
 {
     return s->form_w >= 48 ? 18 : s->form_w / 3;
 }
-static void draw_field(server_settings *s, WINDOW *w, const admin_field *f, int index, int y,
-                       int height)
+/* Cells a button takes, as draw_field paints it. */
+static int button_width(const server_settings *s, const admin_field *f, int width)
 {
-    int x = s->form_x, width = s->form_w;
+    bool confirming = s->confirm == f->id && !strcmp(s->confirm_key, f->key);
+    char line[800];
+    snprintf(line, sizeof(line), confirming ? _("Confirmar: %s") : "%s", f->label);
+    int bw = text_label(NULL, 0, 0, width, line) + 4;
+    return bw > width ? width : bw;
+}
+static void draw_field(server_settings *s, WINDOW *w, const admin_field *f, int index, int y,
+                       int height, int column)
+{
+    int x = column, width = s->form_w - (column - s->form_x);
     int label_width = width >= 48 ? 18 : width / 3;
     bool focused = s->focus == 2 && s->field == index;
     char line[800];
@@ -634,13 +645,26 @@ static void draw_form(server_settings *s, WINDOW *w, GArray *fields)
     }
     if (s->focus != 2 && s->field_first > 0 && s->field == 0)
         s->field_first = 0;
-    int y = s->top;
+    /* A row starts at the button that owns it. */
+    while (s->field_first > 0 && g_array_index(fields, admin_field, s->field_first).same_row)
+        --s->field_first;
+    int y = s->top, row_y = y, row_end = s->form_x;
     for (int i = s->field_first; i < count && y + heights[i] <= s->bottom; ++i) {
-        draw_field(s, w, &g_array_index(fields, admin_field, i), i, y, heights[i]);
+        admin_field *f = &g_array_index(fields, admin_field, i);
+        bool beside = f->same_row && i > s->field_first;
+        int at = beside ? row_y : y, column = beside ? row_end + 2 : s->form_x;
+        if (column >= s->form_x + s->form_w)
+            continue;
+        draw_field(s, w, f, i, at, beside ? 1 : heights[i], column);
         if (s->field_rows < SERVER_SETTINGS_FIELDS) {
-            s->field_y[s->field_rows] = y;
+            s->field_y[s->field_rows] = at;
+            s->field_x[s->field_rows] = column;
             s->field_index[s->field_rows++] = i;
         }
+        row_y = at;
+        row_end =
+            column + (f->kind == FIELD_BUTTON ? button_width(s, f, s->form_w - (column - s->form_x))
+                                              : s->form_w);
         y += heights[i];
     }
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
@@ -881,9 +905,15 @@ static void mouse(server_settings *s, GArray *rows, GArray *fields)
         return;
     }
     if (x >= s->form_x && y >= s->top && y < s->bottom) {
-        int hit = -1;
+        int hit = -1, hit_y = -1;
         for (int i = 0; i < s->field_rows; ++i)
-            if (s->field_y[i] <= y)
+            if (s->field_y[i] <= y) {
+                hit = s->field_index[i];
+                hit_y = s->field_y[i];
+            }
+        /* Buttons sharing a row: the one that starts left of the pointer. */
+        for (int i = 0; i < s->field_rows; ++i)
+            if (s->field_y[i] == hit_y && s->field_x[i] <= x)
                 hit = s->field_index[i];
         if (hit < 0 || hit >= (int)fields->len)
             return;
@@ -1002,6 +1032,18 @@ static void form_key(server_settings *s, GArray *fields, int type, uint32_t key)
             if (f->id == s->invalid_id && s->invalid_tab == s->tab)
                 s->invalid = false;
         }
+        return;
+    }
+    /* ←/→ move between the buttons of one row. */
+    if (type == KEY_CODE_YES && key == KEY_RIGHT && s->field + 1 < (int)fields->len &&
+        g_array_index(fields, admin_field, s->field + 1).same_row) {
+        ++s->field;
+        s->confirm = -1;
+        return;
+    }
+    if (type == KEY_CODE_YES && key == KEY_LEFT && f->same_row && s->field > 0) {
+        --s->field;
+        s->confirm = -1;
         return;
     }
     if (type == KEY_CODE_YES && key == KEY_LEFT && f->kind != FIELD_CHOICE) {

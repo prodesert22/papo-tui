@@ -208,7 +208,7 @@ static void filter_fields(server_settings *s, GArray *out)
     admin_note(out, _("Datas em DD/MM/AAAA, no fuso deste computador; incluem o dia todo."));
     admin_field_add(out, FIELD_BUTTON, APPLY, _("Aplicar filtros"));
     if (active_filters(server_admin_audit_current(s->model)))
-        admin_field_add(out, FIELD_BUTTON, RESET, _("Limpar filtros"));
+        admin_field_add(out, FIELD_BUTTON, RESET, _("Limpar filtros"))->same_row = true;
 }
 static void log_fields(server_settings *s, GArray *out, const json_t *log)
 {

@@ -10,6 +10,7 @@ import unittest
 from urllib.parse import parse_qs, urlsplit
 from discovery_mock import DiscoveryMock
 from history_mock import CHANNEL, uuid
+from terminal_support import wait_for_screen
 import terminal_discovery as r8
 
 
@@ -541,6 +542,56 @@ class DiscoveryTerminal(unittest.TestCase):
                     order="asc",
                 ),
             )
+
+    def test_filter_buttons_share_a_row_and_recent_filters_are_reused(self):
+        with DiscoveryMock(10) as server:
+            t = self.login(server)
+            self.resize(t, 32, 100)
+            t.send("\x06")
+            self.wait(t, "Buscar mensagens no servidor")
+            self.click(t, "[Filtros]")
+            self.wait(t, "Filtros da busca")
+            row = next(line for line in t.screen.display if "[Aplicar]" in line)
+            self.assertIn("[Cancelar]", row)
+            self.assertIn("[Limpar filtros]", row)
+            self.assertNotIn("Filtros recentes", "\n".join(t.screen.display))
+            # ←/→ move along the buttons; Cancel discards the draft.
+            self.click(t, "Contém link")
+            self.wait(t, "[x] Contém link")
+            t.send("\x1b[B" * 5 + "\x1b[C\n")
+            self.wait(t, "Buscar mensagens no servidor")
+            self.click(t, "[Filtros]")
+            self.wait(t, "[ ] Contém link")
+            self.click(t, "Autor: Qualquer")
+            self.wait(t, "@bob")
+            t.send("bob\n")
+            self.wait(t, "Autor: Bia")
+            self.click(t, "Contém link")
+            self.wait(t, "[x] Contém link")
+            self.click(t, "[Aplicar]")
+            self.wait(t, "Buscar mensagens no servidor")
+            self.click(t, "[Buscar]")
+            wait_for_screen(t, lambda: len(server.search_calls) == 1, "first search")
+            first = server.search_calls[-1][0]
+            self.assertEqual(first, dict(author=uuid(2), has="link", order="desc"))
+            # Closing the search forgets its fields, but not the recent filter.
+            t.send("\x1b")
+            wait_for_screen(
+                t, lambda: "Buscar mensagens no servidor" not in "\n".join(t.screen.display), "search closed"
+            )
+            t.send("\x06")
+            self.wait(t, "Buscar mensagens no servidor")
+            self.click(t, "[Filtros]")
+            self.wait(t, "Autor: Qualquer")
+            self.wait(t, "Filtros recentes")
+            self.click(t, "Autor: Bia · Contém link")
+            self.wait(t, "[x] Contém link")
+            self.assertIn("Autor: Bia", "\n".join(t.screen.display))
+            t.send("\n")  # The recent filter leaves the focus on [Aplicar].
+            self.wait(t, "[Buscar]")
+            self.click(t, "[Buscar]")
+            wait_for_screen(t, lambda: len(server.search_calls) == 2, "repeated search")
+            self.assertEqual(server.search_calls[-1][0], first)
 
     def test_pagination_dirty_state_resize_and_keyboard_focus(self):
         with DiscoveryMock(205) as server:

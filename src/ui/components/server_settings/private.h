@@ -30,6 +30,8 @@ typedef struct {
     int *first;
     size_t max;
     bool checked, destructive;
+    /* A button drawn right of the previous button, on its row. */
+    bool same_row;
     unsigned rgb;
 } admin_field;
 typedef struct {

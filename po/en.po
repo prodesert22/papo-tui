@@ -265,6 +265,10 @@ msgstr "%s These options apply only on this computer, for every server. How each
 msgid "%s Localizando mensagem…"
 msgstr "%s Locating message…"
 
+#: src/ui/screens/message_browser.c
+msgid "%s a %s"
+msgstr "%s to %s"
+
 #: src/ui/screens/conversation/drawing.c
 msgid "%s não está respondendo."
 msgstr "%s is not responding."
@@ -1845,11 +1849,15 @@ msgstr "Account: Change password"
 msgid "Conteúdo do clipboard excede o limite local."
 msgstr "The clipboard content exceeds the local limit."
 
+#: src/ui/screens/message_browser.c
+msgid "Contém link"
+msgstr "Contains a link"
+
 #: src/ui/screens/conversation/drawing.c
 msgid "Conversa"
 msgstr "Conversation"
 
-#: src/ui/input/editor.c
+#: src/ui/input/editor.c src/ui/screens/message_browser.c
 msgid "Conversa indisponível"
 msgstr "Conversation unavailable"
 
@@ -2444,6 +2452,10 @@ msgstr "Enter on voice"
 #: src/ui/components/mention_popup.c
 msgid "Enter envia · Esc fecha"
 msgstr "Enter sends · Esc closes"
+
+#: src/ui/components/help.c
+msgid "Enter ou clique preenche os filtros de uma busca anterior"
+msgstr "Enter or a click fills the filters of an earlier search"
 
 #: src/ui/components/quick_switcher.c
 msgid "Enter: abrir · ↑↓: escolher · Esc: fechar"
@@ -3076,6 +3088,14 @@ msgstr "Filters"
 #: src/ui/screens/message_browser.c
 msgid "Filtros da busca"
 msgstr "Search filters"
+
+#: src/ui/components/help.c src/ui/screens/message_browser.c
+msgid "Filtros recentes"
+msgstr "Recent filters"
+
+#: src/ui/components/help.c
+msgid "Filtros: ← / →"
+msgstr "Filters: ← / →"
 
 #: src/ui/media/media.c
 msgid "Fim"
@@ -4973,6 +4993,10 @@ msgstr "Stop"
 msgid "Parar o áudio e fechar o player"
 msgstr "Stop the audio and close the player"
 
+#: src/ui/components/help.c
+msgid "Passar entre Aplicar, Cancelar e Limpar filtros, na mesma linha"
+msgstr "Move between Apply, Cancel and Clear filters, on one row"
+
 #: src/ui/media/media.c
 msgid "Pausado"
 msgstr "Paused"
@@ -6827,6 +6851,10 @@ msgstr[1] "attachments"
 msgid "arquivo sem nome"
 msgstr "unnamed file"
 
+#: src/ui/screens/message_browser.c
+msgid "até %s"
+msgstr "until %s"
+
 #: src/ui/screens/inbox.c
 msgid "canais encontrados"
 msgstr "channels found"
@@ -6842,6 +6870,10 @@ msgstr "channel unavailable"
 #: src/ui/screens/conversation/drawing.c
 msgid "criar uma duplicata."
 msgstr "may create a duplicate."
+
+#: src/ui/screens/message_browser.c
+msgid "desde %s"
+msgstr "since %s"
 
 #: src/ui/screens/inbox.c
 msgid "destino indisponível"

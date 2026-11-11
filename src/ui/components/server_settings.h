@@ -56,6 +56,7 @@ typedef struct {
     int top, bottom, list_x, list_w, form_x, form_w;
     int row_y[SERVER_SETTINGS_ROWS], row_index[SERVER_SETTINGS_ROWS], row_count;
     int field_y[SERVER_SETTINGS_FIELDS], field_index[SERVER_SETTINGS_FIELDS], field_rows;
+    int field_x[SERVER_SETTINGS_FIELDS];
     int cursor_y, cursor_x;
     bool cursor;
 } server_settings;

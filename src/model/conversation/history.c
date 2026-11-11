@@ -378,6 +378,7 @@ void history_destroy(history *h)
     json_decref(h->listed);
     json_decref(h->unlisted);
     json_decref(h->refresh_seen);
+    json_decref(h->search_recent);
     json_decref(h->queried);
     json_decref(h->summary_ids);
     g_hash_table_destroy(h->costs);
@@ -1174,6 +1175,8 @@ bool history_poll(history *h)
         json_object_clear(h->unlisted);
         json_object_clear(h->refresh_seen);
         json_object_clear(h->queried);
+        json_decref(h->search_recent); /* Another account's searches. */
+        h->search_recent = NULL;
         ++h->users_revision;
         h->users_complete = h->users_failed = h->users_partial = false;
         h->users_refreshing = false;

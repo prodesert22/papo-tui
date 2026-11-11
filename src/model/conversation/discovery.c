@@ -131,6 +131,41 @@ static bool valid_filters(const json_t *filters)
     return criterion && (!*s(filters, "date_start") || !*s(filters, "date_end") ||
                          strcmp(s(filters, "date_start"), s(filters, "date_end")) <= 0);
 }
+/* A search worth repeating names something besides the text and the order. */
+static void remember_filters(history *h, const json_t *filters)
+{
+    json_t *recent = json_deep_copy(filters);
+    if (!recent)
+        return;
+    json_object_del(recent, "text");
+    bool chosen = false;
+    const char *key;
+    json_t *value;
+    json_object_foreach(recent, key, value) chosen |= strcmp(key, "order") != 0;
+    if (!chosen || (!h->search_recent && !(h->search_recent = json_array()))) {
+        json_decref(recent);
+        return;
+    }
+    size_t i;
+    json_t *old;
+    json_array_foreach(h->search_recent, i, old) if (json_equal(old, recent))
+    {
+        json_array_remove(h->search_recent, i);
+        break;
+    }
+    if (json_array_insert_new(h->search_recent, 0, recent))
+        return;
+    while (json_array_size(h->search_recent) > SEARCH_RECENT_LIMIT)
+        json_array_remove(h->search_recent, SEARCH_RECENT_LIMIT);
+}
+size_t history_search_recent_count(const history *h)
+{
+    return h ? json_array_size(h->search_recent) : 0;
+}
+const json_t *history_search_recent(const history *h, size_t index)
+{
+    return h ? json_array_get(h->search_recent, index) : NULL;
+}
 bool history_search(history *h, const json_t *filters)
 {
     if (!h || !h->active || !auth_has_session(h->auth))
@@ -146,6 +181,7 @@ bool history_search(history *h, const json_t *filters)
     json_t *copy = json_deep_copy(filters);
     if (!copy)
         return false;
+    remember_filters(h, filters);
     cancel(h);
     json_decref(d->filters);
     d->filters = copy;

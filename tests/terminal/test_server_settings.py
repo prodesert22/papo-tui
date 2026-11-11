@@ -642,6 +642,9 @@ class ServerSettings(unittest.TestCase):
             self.wait(t, "▾ Filtros (1 ativo)")
             self.audit_read(server, "/papo/admin/audit-logs?order=desc&entity_type=user")
             self.settled(t, lambda: "role.create" not in self.screen(t))
+            # Both buttons share one row, and each takes its own clicks.
+            row = next(line for line in t.screen.display if "Aplicar filtros" in line)
+            self.assertIn("Limpar filtros", row)
             self.click(t, "Limpar filtros")
             self.wait(t, "role.create")
             # Actions seen in the log can be chosen; ← from Todas wraps to the last.

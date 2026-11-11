@@ -1056,7 +1056,7 @@ for a second press: the first one changes the label to **Confirmar: …**
     time zone; both include the whole day.
 
   **Aplicar filtros** (Apply filters) reloads the log; **Limpar filtros**
-  (Clear filters) shows every event again. From an event, **Só a ação …**
+  (Clear filters), on the same row, shows every event again. From an event, **Só a ação …**
   (Only action …) and **Só as ações de …** (Only actions by …) narrow the
   filters in use to that event's action or author. The server cannot filter
   by the member affected.
@@ -1328,9 +1328,17 @@ and Up again returns to the text field. Tab/Shift+Tab also moves between areas.
 - **Ordem** (Order) switches between newest and oldest messages first.
 
 Use Tab/Shift+Tab or up/down to reach each filter; the panel scrolls on small
-screens. **Aplicar** (Apply) saves the filters and returns to results without
-sending a request. **Cancelar** (Cancel) or Esc discards filter edits.
-**Limpar filtros** (Clear filters) clears the filter draft. Execute **Buscar**
+screens. **Aplicar** (Apply), **Cancelar** (Cancel) and **Limpar filtros**
+(Clear filters) share one row: ←/→ move between them. **Aplicar** saves the
+filters and returns to results without sending a request. **Cancelar** or Esc
+discards filter edits. **Limpar filtros** clears the filter draft.
+
+Below them, **Filtros recentes** (Recent filters) lists the filters of your last
+five searches on this server, newest first, such as
+`Autor: Bia · # geral · Contém link`. Enter or a click fills the filters with
+one of them, ready for **Aplicar**. The search text is not part of them. The
+list lasts while the application is open and is cleared when you sign out.
+Execute **Buscar**
 to apply your text and filters to a new server query. Text may be empty when
 at least one filter is set; ordering alone is not a search criterion.
 

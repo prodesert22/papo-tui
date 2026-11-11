@@ -3,7 +3,13 @@
 #include "model/conversation/history.h"
 /* Event-loop APIs. Models own bounded JSON copies; accessors borrow until
  * poll/event/reset. No history reads and no notification read mutations. */
+/* A valid search also records its filters, without the text, among the recent
+ * ones of this account (newest first, no duplicates) when they name more than
+ * the order. Borrowed until the next search or account change. */
+#define SEARCH_RECENT_LIMIT 5
 bool history_search(history *h, const json_t *filters);
+size_t history_search_recent_count(const history *h);
+const json_t *history_search_recent(const history *h, size_t index);
 void history_search_more(history *h);
 json_t *history_search_results(history *h);
 bool history_search_has_more(history *h);
