@@ -312,10 +312,23 @@ static bool decode_attempt(const image_decode_request *j, graphics_image *out, a
     unsigned streams = format->nb_streams;
     if (streams > 16)
         goto done;
+    /* Finding a JPEG's size decodes it, which a photo larger than the limit
+     * would fail: probe at the smallest scale. The stream still reports the
+     * photo's full size. */
+    const AVCodec *jpeg = avcodec_find_decoder(AV_CODEC_ID_MJPEG);
+    int probe_lowres = !j->max_side && !j->video_poster && streams == 1 && jpeg &&
+                               format->streams[0]->codecpar->codec_id == AV_CODEC_ID_MJPEG
+                           ? MIN(3, jpeg->max_lowres)
+                           : 0;
     AVDictionary *decode_options[16] = {0};
+    /* FFmpeg checks max_pixels against the full coded size; the frame it
+     * allocates is the reduced one, so the limit grows with the reduction. */
     for (unsigned i = 0; i < streams; ++i) {
-        av_dict_set_int(&decode_options[i], "max_pixels", (int64_t)source_limit, 0);
+        av_dict_set_int(&decode_options[i], "max_pixels",
+                        (int64_t)source_limit << (2 * probe_lowres), 0);
         av_dict_set(&decode_options[i], "threads", "1", 0);
+        if (probe_lowres)
+            av_dict_set_int(&decode_options[i], "lowres", probe_lowres, 0);
     }
     int info = avformat_find_stream_info(format, decode_options);
     for (unsigned i = 0; i < streams; ++i)
@@ -338,16 +351,29 @@ static bool decode_attempt(const image_decode_request *j, graphics_image *out, a
         parameters->codec_id != AV_CODEC_ID_PNG && parameters->codec_id != AV_CODEC_ID_WEBP &&
         !animated_image)
         goto done;
-    if (parameters->width < 1 || parameters->height < 1 ||
-        (size_t)parameters->width > IMAGE_PIXELS / (size_t)parameters->height)
+    const AVCodec *codec = avcodec_find_decoder(parameters->codec_id);
+    if (!codec || parameters->width < 1 || parameters->height < 1)
+        goto done;
+    /* A JPEG photo with more pixels than a decoded image may hold, such as a
+     * 50 MP phone picture, is decoded at 1/2, 1/4 or 1/8 of its size by the
+     * JPEG decoder itself, which never holds every pixel of the original. */
+    int lowres = 0;
+    if (probe_lowres && parameters->codec_id == AV_CODEC_ID_MJPEG)
+        while (lowres < codec->max_lowres &&
+               (size_t)AV_CEIL_RSHIFT(parameters->width, lowres) >
+                   source_limit / (size_t)AV_CEIL_RSHIFT(parameters->height, lowres))
+            ++lowres;
+    int width = AV_CEIL_RSHIFT(parameters->width, lowres),
+        height = AV_CEIL_RSHIFT(parameters->height, lowres);
+    if ((size_t)width > IMAGE_PIXELS / (size_t)height)
         goto done;
     if (j->max_side && (parameters->width > j->max_side || parameters->height > j->max_side))
         goto done;
-    const AVCodec *codec = avcodec_find_decoder(parameters->codec_id);
-    if (!codec || !(decoder = avcodec_alloc_context3(codec)))
+    if (!(decoder = avcodec_alloc_context3(codec)))
         goto done;
-    decoder->max_pixels = source_limit;
+    decoder->max_pixels = (int64_t)source_limit << (2 * lowres);
     decoder->thread_count = 1;
+    decoder->lowres = lowres;
     if (avcodec_parameters_to_context(decoder, parameters) < 0 ||
         avcodec_open2(decoder, codec, NULL) < 0)
         goto done;

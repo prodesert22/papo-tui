@@ -277,6 +277,16 @@ class MediaTerminal(support.MediaTerminal):
         self.assertLess(pixels[center + 1], 25)
         self.assertLess(pixels[center + 2], 25)
 
+    def test_large_phone_photo_is_reduced_instead_of_refused(self):
+        with self.serve(self.photo_image, "image/jpeg", name="foto.jpg") as server:
+            t = self.open(server, protocol="kitty")
+            try:
+                self.wait_frames(t)
+                self.assert_red_center(t)
+                self.assertNotIn("Imagem inválida", "\n".join(t.screen.display))
+            finally:
+                self.assertTrue(t.close())
+
     def test_svg_attachments_render_from_the_types_the_server_sniffs(self):
         # Go's http.DetectContentType has no SVG signature: the backend stores
         # XML, plain text or HTML depending on how the document starts.

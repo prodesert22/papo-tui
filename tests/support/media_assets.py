@@ -12,6 +12,7 @@ from types import SimpleNamespace
 
 FILES = {
     "tall_image": "tall.png",
+    "photo_image": "photo.jpg",
     "animated_gif": "animated.gif",
     "video": "video.mp4",
     "audio": "audio.wav",
@@ -122,6 +123,28 @@ def generate(cls, FFMPEG):
         capture_output=True,
     )
     cls.tall_image = path.read_bytes()
+    # A 50 MP phone photo: more pixels than a decoded image may hold.
+    path = Path(cls.assets.name) / "photo.jpg"
+    subprocess.run(
+        [
+            FFMPEG,
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=red:s=8160x6144",
+            "-frames:v",
+            "1",
+            "-threads",
+            "1",
+            "-y",
+            str(path),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    cls.photo_image = path.read_bytes()
     cls.large_images = {}
     for shape, size in (("landscape", "1000x500"), ("portrait", "1000x1500")):
         path = Path(cls.assets.name) / (shape + ".png")
