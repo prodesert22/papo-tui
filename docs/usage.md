@@ -101,7 +101,8 @@ PageUp/PageDown skip them. Channel names use color highlighting without a
 leading selection marker. Type in the editor and press **Enter** to send;
 **Shift+Enter** inserts a new line. **Ctrl+N**
 also inserts a new line. Pasting text does not send the message automatically.
-Switching conversations preserves drafts during the current run.
+Switching conversations preserves drafts, and they return the next time you
+open the application; see [Drafts](#drafts).
 
 Returning to a conversation you viewed recently on the same server shows it at
 once, at the point where you left it, without loading it again; up to eight
@@ -161,14 +162,29 @@ through `wl-copy` or `xclip`, as when copying from the editor, or through the
 terminal (OSC 52) when no desktop session is available; Windows uses the native
 clipboard.
 
-Closing the application discards drafts. Signing out of a server also stops
-restoring that server; the other servers keep their saved sessions. If a send
-remains unconfirmed, check the history before resending: the message may
-already have reached the server.
-
 To open messages in a voice channel, select it in the channel list and press
 **Shift+Enter** or **Ctrl+O**, or choose **Abrir chat** (Open chat) in its
 context menu.
+
+### Drafts
+
+Text you type but do not send stays with its conversation, together with the
+message you are replying to. It is saved about a second after you stop typing
+and when you close the application, and comes back the next time you sign in
+to the same account on the same server. Attached files are not kept after the
+application closes.
+
+Drafts are stored only on this computer, in a private file readable by your
+user alone (`drafts.json` in the application's state directory, such as
+`~/.local/state/papo-tui/` on Linux and `%LOCALAPPDATA%\papo-tui\state` on
+Windows), and never sent anywhere before you press
+Enter. Each account on each server has its own drafts. Signing out of an
+account removes its drafts from this computer; deleting the text of a draft
+removes it as well.
+
+Signing out of a server stops restoring that server and removes its drafts; the
+other servers keep their saved sessions. If a send remains unconfirmed, check
+the history before resending: the message may already have reached the server.
 
 ## Voice calls and audio settings
 
@@ -1125,8 +1141,8 @@ click it again to remove it. Your reactions are highlighted. Wait for a pending
 reaction to finish before making another change. If an operation cannot be
 confirmed, the client refreshes the history before you try again.
 
-Reply targets are preserved with each conversation's draft during the current
-run, including manual send retries. Confirmed sends clear their reply target.
+Reply targets are kept with each conversation's draft, including after a
+restart and during manual send retries. Confirmed sends clear their reply target.
 
 ## Download attachments
 
@@ -1199,12 +1215,13 @@ kept. Long lists scroll horizontally to keep the selected file visible.
 
 Return to the editor and press Enter to send all attachments and optional text
 in one message. Selecting or pasting files does not send them immediately.
-Attachments stay with each conversation's draft during the current run.
+Attachments stay with each conversation's draft while the application runs;
+unlike the text, they are not kept after it closes.
 Your roles must allow attaching files and sending messages in that conversation.
 This requires `send_attachment` and the conversation's `send_messages` permission.
 If access is revoked before sending, the files remain in the draft.
 Editing an existing message preserves that send draft; finish or cancel editing
-before adding files. Signing out or closing the application discards the drafts.
+before adding files. Signing out or closing the application discards the attached files.
 
 **Ctrl+V** accepts files copied in a file manager, PNG/JPEG images (including
 screenshots), or text. If the clipboard offers several formats, files take

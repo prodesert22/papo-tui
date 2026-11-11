@@ -102,6 +102,7 @@
     {"glob": "src/ui/media/profile_image.*", "areas": ["media", "members", "profiles"]},
 
     {"glob": "src/model/attachment.*", "areas": ["send"]},
+    {"glob": "src/config/draft_state.*", "areas": ["send"]},
     {"glob": "src/ui/components/file_picker.*", "areas": ["send"]},
     {"glob": "src/platform/file_transfer.*", "areas": ["send", "platform"]},
     {"glob": "src/platform/*/file_transfer.c", "areas": ["send", "platform"]},

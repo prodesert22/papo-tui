@@ -293,11 +293,17 @@ bool auth_discover(auth_client *client, const char *url, bool allow_local_http)
     return auth_internal_request(client, AUTH_HEALTH, "/health", NULL, false);
 }
 
+uint64_t auth_logouts(const auth_client *client)
+{
+    return client ? client->logouts : 0;
+}
+
 bool auth_logout(auth_client *client)
 {
     if ((!auth_has_session(client) && !*client->user_id) || client->logout_requested)
         return false;
     client->logout_requested = true;
+    ++client->logouts;
     permissions_reset(client->permissions);
     client->authenticated = false;
     ++client->generation;

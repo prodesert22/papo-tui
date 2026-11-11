@@ -217,6 +217,9 @@ bool auth_server_public(const auth_client *client);
 /* Identifies a missing/rejected server password without parsing UI text. */
 bool auth_server_password_error(const auth_client *client);
 bool auth_logout(auth_client *client);
+/* How many explicit logouts were requested; never reset, so data kept for the
+ * signed-in account can be discarded even when the logout finishes at once. */
+uint64_t auth_logouts(const auth_client *client);
 void auth_poll(auth_client *client);
 void auth_cancel(auth_client *client);
 auth_state auth_get_state(const auth_client *client);

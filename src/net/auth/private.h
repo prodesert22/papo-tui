@@ -60,6 +60,7 @@ struct auth_client {
     uint64_t validation_deadline;
     uint64_t refresh_at, generation;
     bool registering, authenticated, recovering, after_refresh, logout_requested;
+    uint64_t logouts; /* Explicit logouts requested, for owners of per-account data. */
     bool api_retried, response_ready;
     bool api_uncertain;
     const char *api_method; /* Static method literal; no borrowed input. */

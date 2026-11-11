@@ -2,6 +2,8 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 #include "app/outbox.h"
+#include "config/draft_state.h"
+#include "net/clock.h"
 #include "platform/unicode.h"
 
 #include <graphemebreak.h>
@@ -37,9 +39,14 @@ struct outbox {
     auth_client *session;
     char *instance, *account;
     uint64_t generation, next_id, active;
+    /* Drafts changed since they were saved for the next run, and when. */
+    bool dirty;
+    uint64_t dirty_at, logouts;
     draft drafts[OUTBOX_DRAFT_LIMIT];
     operation operations[OUTBOX_OPERATION_LIMIT];
 };
+
+static draft *find_draft(outbox *box, const char *channel, bool create);
 
 static bool valid_channel(const char *value)
 {
@@ -97,6 +104,7 @@ void outbox_reset(outbox *box)
         g_clear_pointer(&box->drafts[i].files, g_ptr_array_unref);
         memset(&box->drafts[i], 0, sizeof(draft));
     }
+    box->dirty = false;
     for (size_t i = 0; i < OUTBOX_OPERATION_LIMIT; ++i)
         dispose_operation(&box->operations[i]);
     free(box->instance);
@@ -105,10 +113,90 @@ void outbox_reset(outbox *box)
     box->active = 0;
 }
 
+/* Text and reply drafts are written after a pause in typing, never on every key. */
+#define DRAFT_SAVE_DELAY_MS 1000U
+
+static void clear_drafts(outbox *box)
+{
+    for (size_t i = 0; i < OUTBOX_DRAFT_LIMIT; ++i) {
+        free(box->drafts[i].text);
+        g_clear_pointer(&box->drafts[i].files, g_ptr_array_unref);
+        memset(&box->drafts[i], 0, sizeof(draft));
+    }
+    box->dirty = false;
+}
+
+/* The save waits for this long without changes. */
+static void mark_dirty(outbox *box)
+{
+    net_now_ms(&box->dirty_at);
+    box->dirty = true;
+}
+
+/* Saves the text and reply of every draft of the verified account; files stay
+ * in memory only. A failed save is retried after the same delay. */
+static void save_drafts(outbox *box)
+{
+    if (!box->dirty || !box->instance || !box->account)
+        return;
+    json_t *drafts = json_object();
+    bool ok = drafts != NULL;
+    for (size_t i = 0; ok && i < OUTBOX_DRAFT_LIMIT; ++i) {
+        const draft *item = &box->drafts[i];
+        bool text = item->text && *item->text;
+        if (!*item->channel || (!text && !*item->reply) || !g_uuid_string_is_valid(item->channel))
+            continue;
+        json_t *entry = json_pack("{s:s,s:o}", "text", text ? item->text : "", "reply_to",
+                                  *item->reply ? json_string(item->reply) : json_null());
+        ok = entry && json_object_set_new(drafts, item->channel, entry) == 0;
+    }
+    if (ok && draft_state_save(box->instance, box->account, drafts))
+        box->dirty = false;
+    else
+        net_now_ms(&box->dirty_at);
+    json_decref(drafts);
+}
+
+/* Fills the drafts of a newly verified account from the previous run. */
+static void load_drafts(outbox *box)
+{
+    json_t *saved = draft_state_load(box->instance, box->account);
+    const char *channel;
+    json_t *entry;
+    json_object_foreach(saved, channel, entry)
+    {
+        const char *text = json_string_value(json_object_get(entry, "text"));
+        const char *reply = json_string_value(json_object_get(entry, "reply_to"));
+        if (!valid_channel(channel) || !valid_text(text, NULL))
+            continue;
+        draft *item = find_draft(box, channel, true);
+        if (!item)
+            break;
+        item->text = *text ? strdup(text) : NULL;
+        if (reply && g_uuid_string_is_valid(reply))
+            snprintf(item->reply, sizeof(item->reply), "%s", reply);
+        if (!item->text && !*item->reply) {
+            memset(item, 0, sizeof(*item));
+            continue;
+        }
+        /* A revision the editor has not seen, so it shows the restored text. */
+        item->revision = item->reply_revision = 1;
+    }
+    json_decref(saved);
+    box->dirty = false;
+}
+
 /* Never move an old operation into a newly authenticated generation. Frozen
  * drafts can be restored only after the same instance/account is verified. */
 static bool synchronize(outbox *box)
 {
+    /* Signing out removes the account's drafts here and from the next run. */
+    if (auth_logouts(box->session) != box->logouts) {
+        box->logouts = auth_logouts(box->session);
+        if (box->instance && box->account)
+            draft_state_forget(box->instance, box->account);
+        clear_drafts(box);
+    }
     uint64_t generation = auth_context_generation(box->session);
     if (box->account && box->generation != generation) {
         for (size_t i = 0; i < OUTBOX_OPERATION_LIMIT; ++i) {
@@ -138,10 +226,12 @@ static bool synchronize(outbox *box)
         free(new_account);
         return false;
     }
+    save_drafts(box); /* The previous account keeps what it typed. */
     outbox_reset(box);
     box->instance = new_instance;
     box->account = new_account;
     box->generation = generation;
+    load_drafts(box);
     return true;
 }
 
@@ -152,6 +242,7 @@ outbox *outbox_create(auth_client *session)
     outbox *box = calloc(1, sizeof(*box));
     if (box) {
         box->session = session;
+        box->logouts = auth_logouts(session);
         init_graphemebreak();
     }
     return box;
@@ -161,6 +252,9 @@ void outbox_destroy(outbox *box)
 {
     if (!box)
         return;
+    /* Closing the application keeps the drafts unless the account signed out. */
+    if (auth_logouts(box->session) == box->logouts)
+        save_drafts(box);
     outbox_reset(box);
     free(box);
 }
@@ -223,6 +317,7 @@ bool outbox_set_draft(outbox *box, const char *channel, const char *content)
     free(item->text);
     item->text = copy;
     ++item->revision;
+    mark_dirty(box);
     return true;
 }
 
@@ -244,6 +339,7 @@ bool outbox_set_reply(outbox *box, const char *channel, const char *reply)
         return false;
     snprintf(item->reply, sizeof(item->reply), "%s", reply ? reply : "");
     ++item->reply_revision;
+    mark_dirty(box);
     return true;
 }
 
@@ -381,6 +477,7 @@ static void consume_draft(outbox *box, operation *item)
     if (editor->reply_revision == item->reply_revision && !strcmp(editor->reply, item->reply)) {
         editor->reply[0] = 0;
         ++editor->reply_revision;
+        mark_dirty(box);
     }
     if (!editor->text || !item->prefix_untouched || editor->revision == UINT64_MAX)
         return;
@@ -393,6 +490,7 @@ static void consume_draft(outbox *box, operation *item)
         return;
     memmove(editor->text, editor->text + length, strlen(editor->text + length) + 1);
     ++editor->revision;
+    mark_dirty(box);
 }
 
 outbox_submit_result outbox_submit(outbox *box, const char *channel, bool accept_duplicate,
@@ -446,6 +544,9 @@ void outbox_poll(outbox *box)
     if (!box)
         return;
     bool verified = synchronize(box);
+    uint64_t now = 0;
+    if (verified && box->dirty && net_now_ms(&now) && now - box->dirty_at >= DRAFT_SAVE_DELAY_MS)
+        save_drafts(box);
     if (auth_send_result_ready(box->session)) {
         auth_send_receipt receipt;
         json_t *message = auth_take_send_result(box->session, &receipt);

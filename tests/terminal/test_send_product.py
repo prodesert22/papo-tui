@@ -2,8 +2,13 @@
 
 from test_context import main as test_main
 
+import json
+import os
+from pathlib import Path
+import stat
+import tempfile
 from history_mock import HistoryMock, CHANNEL
-from terminal_support import editor_region, editor_column
+from terminal_support import Terminal, editor_region, editor_column, wait_for_screen
 
 
 import terminal_send as support
@@ -256,6 +261,56 @@ class SendProduct(support.SendProduct):
                 self.assertIn("Rascunho segundo", self.editor_text(terminal))
             finally:
                 self.assertTrue(terminal.close())
+
+    def reopen(self, server, environment):
+        """Signs in again and opens # geral, where a restored draft replaces the placeholder."""
+        terminal = Terminal(environment=environment)
+        self.addCleanup(lambda: terminal.close() if terminal.process.poll() is None else None)
+        terminal.send(server.url + "\tjosé\tSynthetic!123\n")
+        self.wait(terminal, "geral")
+        terminal.send("\x1bOB\n")
+        self.wait(terminal, "# geral · Histórico")
+        self.wait(terminal, "Mensagem 0250")
+        return terminal
+
+    def test_drafts_return_after_restarting_and_leave_with_the_account(self):
+        with HistoryMock() as server, tempfile.TemporaryDirectory(prefix="papo-drafts-") as state:
+            environment = {"XDG_STATE_HOME": state}
+            saved = Path(state, "papo-tui", "drafts.json")
+            t = self.open(server, environment=environment)
+            t.send("Rascunho guardado")
+            wait_for_screen(t, lambda: "Rascunho guardado" in self.editor_text(t), "draft typed")
+            # The draft is written after a pause in typing, privately.
+            wait_for_screen(
+                t,
+                lambda: saved.is_file() and "Rascunho guardado" in saved.read_text("utf-8"),
+                "draft not saved",
+            )
+            self.assertEqual(stat.S_IMODE(os.stat(saved).st_mode), 0o600)
+            self.assertNotIn("Synthetic!123", saved.read_text("utf-8"))
+            self.assertTrue(t.close())
+            self.assertEqual(server.sent_messages, [])
+
+            t = self.reopen(server, environment)
+            wait_for_screen(
+                t, lambda: "Rascunho guardado" in self.editor_text(t), "draft not restored"
+            )
+            self.assertEqual(server.sent_messages, [])
+            # Signing out removes the account's drafts from this computer.
+            t.send("\x0c")
+            self.wait(t, "URL do servidor")
+            wait_for_screen(
+                t,
+                lambda: "Rascunho guardado" not in saved.read_text("utf-8"),
+                "draft kept after signing out",
+            )
+            self.assertEqual(json.loads(saved.read_text("utf-8"))["contexts"], [])
+            self.assertTrue(t.close())
+
+            t = self.reopen(server, environment)
+            self.wait(t, "Conversar em #geral")
+            self.assertNotIn("Rascunho guardado", self.editor_text(t))
+            self.assertTrue(t.close())
 
 
 if __name__ == "__main__":

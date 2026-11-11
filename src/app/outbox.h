@@ -39,7 +39,10 @@ typedef struct {
 
 /* Borrows auth_client, which must outlive the outbox. All calls use the event
  * loop thread. This is the sole consumer of send receipts for the session.
- * No persistence, networking threads or automatic mutation replay. */
+ * Text and reply drafts of the verified account are saved privately for the
+ * next run after a pause in typing and when destroyed, and removed when the
+ * account signs out; files stay in memory. No networking threads or
+ * automatic mutation replay. */
 outbox *outbox_create(auth_client *session);
 void outbox_destroy(outbox *box);
 /* Explicit logout/context destruction must reset or destroy the outbox. */
