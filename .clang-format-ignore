@@ -2,3 +2,4 @@ build/**
 .worktrees/**
 src/model/text/emoji_data.inc
 src/ui/media/sound_data.inc
+src/model/text/translation_catalog.inc

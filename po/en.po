@@ -54,3 +54,8 @@ msgstr "System"
 #: src/ui/components/quick_switcher.c
 msgid "nome do canal, DM ou servidor"
 msgstr "channel, DM or server name"
+
+#: src/ui/screens/conversation/drawing.c
+msgctxt "etiqueta de não lida"
+msgid "novo"
+msgstr "new"

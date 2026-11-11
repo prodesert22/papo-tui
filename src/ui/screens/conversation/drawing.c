@@ -617,26 +617,34 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                     inbox_conversation_muted(history_inbox(ui->model), conversation_str(c, "id"));
                 bool unread = !muted && history_channel_unread(ui->model, c);
                 char label[2200];
-                snprintf(label, sizeof(label), "%s%s%s",
-                         !strcmp(type, "category") ? "── "
-                         : !strcmp(type, "voice")  ? "♪ "
-                                                   : "# ",
-                         unread ? "* " : "", conversation_str(c, "name"));
-                if (ui->list_dms) {
-                    json_t *user = json_object_get(c, "user");
-                    snprintf(label, sizeof(label), "%s%s · %s (%lld)", unread ? "* " : "",
-                             conversation_str(c, "name"),
-                             r8_presence_label(inbox_presence(history_inbox(ui->model),
-                                                              conversation_str(user, "id"))),
-                             (long long)json_integer_value(json_object_get(c, "unread_count")));
-                }
+                snprintf(label, sizeof(label), "%s%s",
+                         ui->list_dms                ? ""
+                         : !strcmp(type, "category") ? "── "
+                         : !strcmp(type, "voice")    ? "♪ "
+                                                     : "# ",
+                         conversation_str(c, "name"));
                 if (muted)
                     g_strlcat(label, " (silenciado)", sizeof(label));
                 bool selected = index == ui->highlighted && conversation_list_selectable(ui, index);
                 size_t mentions =
                     inbox_unread_mentions(history_inbox(ui->model), conversation_str(c, "id"));
-                bool notified = unread || mentions;
-                int badge_width = notified ? notification_badge(ui, NULL, 0, 0, mentions, 0) : 0;
+                /* A DM shows how many messages are unread, in the mention badge; a
+                 * channel shows its mentions there and only a "novo" tag otherwise,
+                 * since the server does not count a channel's unread messages. */
+                size_t count = mentions;
+                if (ui->list_dms && unread) {
+                    json_int_t messages = json_integer_value(json_object_get(c, "unread_count"));
+                    count = messages > 0 ? (size_t)messages : mentions;
+                }
+                const char *tag = C_("etiqueta de não lida", "novo");
+                int tag_width = text_label(NULL, 0, 0, 16, tag);
+                /* The tag gives way to the badge's dot when it would hide the name. */
+                bool tagged = !ui->list_dms && unread && !mentions &&
+                              ui->side - 2 - tag_width - 1 >= text_label(NULL, 0, 0, 12, label);
+                bool notified = !tagged && (unread || mentions);
+                int badge_width = tagged     ? tag_width + 1
+                                  : notified ? notification_badge(ui, NULL, 0, 0, count, 0)
+                                             : 0;
                 int pair = selected && focused
                                ? (ui->list_dms ? THEME_PROFILE_FOCUS : THEME_PROFILE_BUTTON_FOCUS)
                            : selected ? THEME_PANEL_ACTIVE
@@ -648,19 +656,30 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                                              conversation_str(json_object_get(c, "user"), "id")),
                         pair);
                 attr_t attributes = COLOR_PAIR(pair);
+                /* Bold marks the selected DM, whose badge already shows new
+                 * messages; a channel with new messages turns bold. */
                 if (ui->list_dms && selected)
                     attributes |= A_BOLD | (has_colors() ? 0 : A_REVERSE);
+                else if (!ui->list_dms && (unread || mentions))
+                    attributes |= A_BOLD;
                 wattrset(ui->list, attributes);
                 /* The highlight spans the row, including the gap before a badge. */
                 if (selected)
                     mvwhline(ui->list, row + 1, 1, ' ', ui->side - 2);
                 text_label(ui->list, row + 1, 1, ui->side - 2 - badge_width, label);
-                if (notified)
-                    notification_badge(ui, ui->list, row + 1, ui->side - 1 - badge_width, mentions,
+                if (tagged) {
+                    wattrset(ui->list, COLOR_PAIR(selected && focused ? THEME_UNREAD_BUTTON_FOCUS
+                                                  : focused           ? THEME_UNREAD_FOCUS
+                                                  : selected          ? THEME_UNREAD_SELECTED
+                                                                      : THEME_UNREAD) |
+                                           A_BOLD);
+                    text_label(ui->list, row + 1, ui->side - 1 - tag_width, tag_width, tag);
+                } else if (notified)
+                    notification_badge(ui, ui->list, row + 1, ui->side - 1 - badge_width, count,
                                        selected && focused ? THEME_NOTIFICATION_BUTTON_FOCUS
-                                       : focused  ? THEME_NOTIFICATION_FOCUS
-                                       : selected ? THEME_NOTIFICATION_SELECTED
-                                                  : THEME_NOTIFICATION);
+                                       : focused           ? THEME_NOTIFICATION_FOCUS
+                                       : selected          ? THEME_NOTIFICATION_SELECTED
+                                                           : THEME_NOTIFICATION);
             }
     }
     if (ui->list && paint_navigation) {

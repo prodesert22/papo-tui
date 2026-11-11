@@ -541,6 +541,17 @@ bool inbox_event(inbox *b, const json_t *event)
         for (size_t i = 0; i < json_array_size(b->dms); ++i) {
             json_t *dm = json_array_get(b->dms, i);
             if (!strcmp(s(dm, "id"), s(event, "channel_id"))) {
+                /* The server counts unread messages only when it lists DMs again,
+                 * which a read requests. Until then each newer message from the
+                 * other person adds one; replays and delayed copies add none. */
+                json_t *previous = json_object_get(dm, "last_message");
+                json_t *count = json_object_get(dm, "unread_count");
+                if (strcmp(s(event, "author_id"), auth_user_id(b->auth)) &&
+                    strcmp(s(previous, "id"), s(event, "id")) && json_is_integer(count) &&
+                    (!*s(previous, "created_at") ||
+                     compare_time(s(event, "created_at"), s(previous, "created_at")) > 0))
+                    json_object_set_new(dm, "unread_count",
+                                        json_integer(json_integer_value(count) + 1));
                 json_t *last = json_pack(
                     "{s:O,s:O,s:O,s:O}", "id", json_object_get(event, "id"), "created_at",
                     json_object_get(event, "created_at"), "author_id",

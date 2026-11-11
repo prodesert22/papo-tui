@@ -149,7 +149,7 @@ class MemberMedia(unittest.TestCase):
                     terminal.send("\x1b\x15")
                     self.wait(terminal, "Conversar em #geral")
                     interactions.MessageInteractions.click(self, terminal, "[DMs]")
-                    self.wait(terminal, "Bia ·")
+                    self.wait(terminal, "Bia")
                     frames = len(terminal.stream.frame_positions)
                     reads = sum("/messages" in path for _, path, *_ in server.requests)
                     terminal.send("m")

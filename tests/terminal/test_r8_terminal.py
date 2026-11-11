@@ -831,7 +831,7 @@ class R8Terminal(support.R8Terminal):
             server.emit(dict(message, type="message"))
 
             def outro():
-                # An unread channel reads "# * outro".
+                # An unread channel reads "# outro" with a "novo" tag at the right.
                 return next(
                     (i for i, line in enumerate(t.screen.display) if "outro" in line[:25]), 0
                 )
@@ -842,13 +842,13 @@ class R8Terminal(support.R8Terminal):
                     t.read(0.03)
                 self.assertTrue(condition(), "\n".join(t.screen.display))
 
-            until(lambda: "●" in t.screen.display[outro()][:26])
+            until(lambda: "novo" in t.screen.display[outro()][:26])
             t.click(0, t.screen.display[0].index("[Comunidade") + 2)
             self.wait(t, "Foco: Servidores")
             t.send("\x1bOB\x1bOB")  # tabs -> list (# geral) -> # outro
             row = outro()
             line = t.screen.display[row]
-            start, badge = line.index("#", 0, 26), line.index("●", 0, 26)
+            start, badge = line.index("#", 0, 26), line.index("novo", 0, 26)
             name_end = line.index("outro", 0, 26) + len("outro")
             until(lambda: t.screen.buffer[row][start].bg not in ("default", "000000"))
             label = t.screen.buffer[row][start]
@@ -1059,10 +1059,14 @@ class R8Terminal(support.R8Terminal):
             t = self.login(server)
 
             def badge(present):
+                # An unread channel without mentions shows the "novo" tag.
+                def lit():
+                    return "novo" in t.screen.display[4][:26]
+
                 end = time.monotonic() + 4
-                while (t.screen.buffer[4][23].data == "●") != present and time.monotonic() < end:
+                while lit() != present and time.monotonic() < end:
                     t.read(0.03)
-                self.assertEqual(t.screen.buffer[4][23].data == "●", present)
+                self.assertEqual(lit(), present)
 
             self.wait(t, "Mensagem 0003")
             badge(False)
@@ -1119,9 +1123,9 @@ class R8Terminal(support.R8Terminal):
                     t.read(0.03)
                     if case == "denied" and "permissão" in "\n".join(t.screen.display):
                         break
-                    if case != "denied" and t.screen.buffer[4][23].data != "●":
+                    if case != "denied" and "novo" not in t.screen.display[4][:26]:
                         break
-                self.assertEqual(t.screen.buffer[4][23].data == "●", case == "denied")
+                self.assertEqual("novo" in t.screen.display[4][:26], case == "denied")
                 self.assertEqual(server.marked, [])
                 reads = [r for r in server.channel_reads if r[0] == CHANNEL]
                 if case in ("header-only", "cursor-write-failed"):
@@ -1156,22 +1160,37 @@ class R8Terminal(support.R8Terminal):
             server.dms[0]["user"]["nickname"] = "Destinatário com nome muito longo 界"
             t = self.login(server, environment={"KITTY_WINDOW_ID": "r8-theme-fixture"})
 
+            # A group's dot, or a DM's badge: the dot, or its unread count.
+            badges = "●❶❷❸❹❺❻❼❽❾❿"
+
             def dot(row, column, present=True):
                 end = time.monotonic() + 4
                 while (
-                    t.screen.buffer[row][column].data == "●"
+                    t.screen.buffer[row][column].data in badges
                 ) != present and time.monotonic() < end:
                     t.read(0.03)
                 cell = t.screen.buffer[row][column]
-                self.assertEqual(cell.data == "●", present)
+                self.assertEqual(cell.data in badges, present)
                 if present:
                     self.assertEqual(cell.fg, "ff0000")
+                return cell
+
+            def tag(row):
+                """An unread channel without mentions: the green "novo" tag, no red dot."""
+                end = time.monotonic() + 4
+                while "novo" not in t.screen.display[row][:26] and time.monotonic() < end:
+                    t.read(0.03)
+                line = t.screen.display[row][:26]
+                self.assertIn("novo", line)
+                self.assertNotIn("●", line)
+                cell = t.screen.buffer[row][line.index("novo")]
+                self.assertNotEqual(cell.fg, "ff0000")
                 return cell
 
             # The backend cursor lights both the channel and its group without
             # fetching any inactive histories.
             dot(2, 10)
-            dot(5, 23)
+            tag(5)
             dot(2, 19, False)
             self.assert_initial_history_only(server, OTHER)
             t.click(2, 4)
@@ -1179,7 +1198,7 @@ class R8Terminal(support.R8Terminal):
             self.assertEqual(group.bg, t.screen.buffer[2][3].bg)
             t.send("\x1bOB\x1bOB")
             self.wait(t, "Foco: Canais")
-            cell = dot(5, 23)
+            cell = tag(5)
             self.assertEqual(cell.bg, t.screen.buffer[5][4].bg)
             # While the channel is still unread, add a notification in the DM.
             message = dict(server.message(50), channel_id=DM, author_id=AUTHOR)
@@ -1232,7 +1251,7 @@ class R8Terminal(support.R8Terminal):
             t.click(4, 4)
             self.wait(t, "Mensagem 0003")
             t.click(2, 13)
-            self.wait(t, "Bia ·")
+            self.wait(t, "Bia")
             t.send("\x1bOB\n")
             self.wait(t, "Mensagem direta")
             t.read(0.5)
@@ -1243,7 +1262,7 @@ class R8Terminal(support.R8Terminal):
             for row, column in ((5, 10), (5, 19), (7, 23)):
                 self.assertNotEqual(restarted.screen.buffer[row][column].data, "●")
             restarted.click(2, 13)
-            self.wait(restarted, "Bia ·")
+            self.wait(restarted, "Bia")
             self.assertNotEqual(restarted.screen.buffer[3][23].data, "●")
             self.assertEqual(sum("/messages" in r[1] for r in server.requests), before + 1)
 
@@ -1293,6 +1312,7 @@ class R8Terminal(support.R8Terminal):
             for name in ("geral", "apagado"):
                 line = next(line for line in t.screen.display if name in line)
                 self.assertNotIn("●", line, name)
+                self.assertNotIn("novo", line, name)
             self.assert_initial_history_only(server, OTHER)
 
     def test_restart_reopens_the_last_direct_message(self):
@@ -1300,7 +1320,7 @@ class R8Terminal(support.R8Terminal):
             environment = {"XDG_STATE_HOME": state}
             t = self.login(server, environment=environment)
             t.click(2, 13)
-            self.wait(t, "Bia ·")
+            self.wait(t, "Bia")
             t.send("\x1bOB\n")
             self.wait(t, "DM com Bia · Histórico")
             self.wait(t, "Mensagem direta")
@@ -1320,7 +1340,7 @@ class R8Terminal(support.R8Terminal):
             t.click(4, 4)
             self.wait(t, "Mensagem 0003")
             t.click(2, 13)
-            self.wait(t, "Bia ·")
+            self.wait(t, "Bia")
             t.send("\x1bOB\n")
             self.wait(t, "Mensagem direta")
             until = time.monotonic() + 5
@@ -1341,7 +1361,7 @@ class R8Terminal(support.R8Terminal):
             self.assertNotEqual(restarted.screen.buffer[2][19].data, "●")
             self.assertNotEqual(restarted.screen.buffer[4][23].data, "●")
             restarted.click(2, 13)
-            self.wait(restarted, "Bia ·")
+            self.wait(restarted, "Bia")
             self.assertNotEqual(restarted.screen.buffer[3][23].data, "●")
             self.assertEqual(sum("/messages" in r[1] for r in server.requests), before + 1)
 
@@ -1360,13 +1380,13 @@ class R8Terminal(support.R8Terminal):
             t.send("\x1bOA")
             self.wait(t, "Foco: Servidores")
             t.send("\t\x1bOC\n")
-            self.wait(t, "Bia ·")
+            self.wait(t, "Bia")
             self.assert_initial_history_only(server)
             t.click(2, 4)
             t.read(0.2)
             self.assertIn("Categoria", "\n".join(t.screen.display))
             t.click(2, 13)
-            self.wait(t, "Bia ·")
+            self.wait(t, "Bia")
             self.assert_initial_history_only(server)
             t.send("\x1bOB\x1bOD")
             self.wait(t, "Foco: DMs")
@@ -1540,7 +1560,7 @@ class R8Terminal(support.R8Terminal):
         with R8Mock(count=0) as server:
             t = self.login(server)
             t.click(2, 13)
-            self.wait(t, "Bia ·")
+            self.wait(t, "Bia")
             t.click(3, 4)
             self.wait(t, "Mensagem direta")
             server.emit(dict(type="presence_sync", members=[dict(user_id=AUTHOR, status="online")]))
@@ -1563,7 +1583,7 @@ class R8Terminal(support.R8Terminal):
                 row = next(i for i, line in enumerate(display) if "DM com Bia" in line)
                 return display[row + 1][26:]
 
-            # The DM list already says offline; wait for the header, which
+            # Wait for the header, which
             # shows the live presence that also ends the typing indicator.
             end = time.monotonic() + 7
             while "offline" not in header_status() and time.monotonic() < end:
@@ -1575,6 +1595,55 @@ class R8Terminal(support.R8Terminal):
             while "está digitando" in "\n".join(t.screen.display) and time.monotonic() < end:
                 t.read(0.03)
             self.assertNotIn("está digitando", "\n".join(t.screen.display))
+
+    def test_dm_badge_counts_unread_messages_and_ignores_own_and_repeated_ones(self):
+        with R8Mock(count=0) as server:
+            t = self.login(server)
+            t.click(2, 13)
+            self.wait(t, "Bia")
+
+            def entry():
+                return next(line[:26] for line in t.screen.display if "Bia" in line[:26])
+
+            def shows(text):
+                end = time.monotonic() + 5
+                while text not in entry() and time.monotonic() < end:
+                    t.read(0.03)
+                self.assertIn(text, entry())
+
+            # The server counts two; the row is only the name and that badge.
+            shows("❷")
+            self.assertNotIn("·", entry())
+            self.assertNotIn("(2)", entry())
+            self.assertNotIn("online", entry())
+            later = dict(
+                server.message(60),
+                id=uuid(6060),
+                channel_id=DM,
+                author_id=AUTHOR,
+                content="Outra",
+                created_at="2026-10-12T12:00:05.000000Z",
+            )
+            server.emit(dict(later, type="message"))
+            shows("❸")
+            # A repeated delivery of the same message counts once.
+            server.emit(dict(later, type="message"))
+            t.read(0.5)
+            self.assertIn("❸", entry())
+            # Your own message ends the unread state, as reading would.
+            own = dict(
+                later,
+                id=uuid(6061),
+                author_id=uuid(1),
+                content="Resposta",
+                created_at="2026-10-12T12:00:06.000000Z",
+            )
+            server.emit(dict(own, type="message"))
+            end = time.monotonic() + 5
+            while any(c in entry() for c in "●❶❷❸❹") and time.monotonic() < end:
+                t.read(0.03)
+            self.assertFalse(any(c in entry() for c in "●❶❷❸❹"), entry())
+            self.assertEqual(server.read_calls, 0)
 
 
 if __name__ == "__main__":

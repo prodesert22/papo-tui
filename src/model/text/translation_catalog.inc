@@ -12,4 +12,5 @@ static const translation_entry translation_entries[] = {
     {"", "Nenhuma conversa encontrada.", NULL, {"No conversations found.", NULL}},
     {"", "Sistema", NULL, {"System", NULL}},
     {"", "nome do canal, DM ou servidor", NULL, {"channel, DM or server name", NULL}},
+    {"etiqueta de não lida", "novo", NULL, {"new", NULL}},
 };

@@ -64,7 +64,7 @@ class TerminalTitle(unittest.TestCase):
             )
             self.title(terminal, "novidades 🐧 | Comunidade (2)")
             self.click(terminal, "[DMs]")
-            self.click(terminal, "Bia ·")
+            self.click(terminal, "Bia")
             self.title(terminal, "DM com Bia | Comunidade (2)")
             terminal.send("\x04\n")
             self.wait(terminal, "Detalhes da notificação")

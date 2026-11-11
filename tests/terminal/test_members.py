@@ -584,8 +584,8 @@ class Members(unittest.TestCase):
             terminal = self.open(server)
             self.click(terminal, "[DMs]")
             self.wait(terminal, "Foco: DMs")
-            self.wait(terminal, "Carol ·")
-            self.click(terminal, "Bia ·")
+            self.wait(terminal, "Carol")
+            self.click(terminal, "Bia")
             self.wait(terminal, "Mensagem direta")
             self.wait(terminal, "Foco: DMs")
             terminal.read(0.2)
@@ -593,8 +593,8 @@ class Members(unittest.TestCase):
             terminal.send("m\n")
             self.settled(terminal, lambda: server.dm_closes == [uuid(3001)])
             self.wait(terminal, "Mensagem direta")
-            self.settled(terminal, lambda: "Carol ·" not in self.screen(terminal))
-            self.assertNotIn("Carol ·", self.screen(terminal))
+            self.settled(terminal, lambda: "Carol" not in self.screen(terminal))
+            self.assertNotIn("Carol", self.screen(terminal))
             self.assertEqual(len(server.dms), 1)
 
     def test_dm_arrows_visibly_move_selection_without_changing_role_colors(self):
@@ -606,15 +606,13 @@ class Members(unittest.TestCase):
                 self.drawer(terminal)
                 terminal.send("\x15")
                 self.click(terminal, "[DMs]")
-                self.wait(terminal, "Carol ·")
+                self.wait(terminal, "Carol")
                 terminal.send("\x1bOH")
                 terminal.read(0.1)
 
                 def style(name):
                     row = next(
-                        i
-                        for i, line in enumerate(terminal.screen.display)
-                        if name + " ·" in line[:24]
+                        i for i, line in enumerate(terminal.screen.display) if name in line[:24]
                     )
                     cell = terminal.screen.buffer[row][2]
                     return cell.fg, cell.bg, cell.bold, cell.reverse
@@ -666,13 +664,13 @@ class Members(unittest.TestCase):
             with self.subTest(columns=columns, mouse=mouse), self.dm_fixture() as server:
                 terminal = self.open(server)
                 self.click(terminal, "[DMs]")
-                self.wait(terminal, "Carol ·")
+                self.wait(terminal, "Carol")
                 self.resize(terminal, 36, columns)
-                self.wait(terminal, "Carol ·")
-                row = next(i for i, line in enumerate(terminal.screen.display) if "Carol ·" in line)
+                self.wait(terminal, "Carol")
+                row = next(i for i, line in enumerate(terminal.screen.display) if "Carol" in line)
                 column = terminal.screen.display[row].index("Carol")
                 if mouse:
-                    self.right_click(terminal, "Carol ·")
+                    self.right_click(terminal, "Carol")
                 else:
                     terminal.send("\x1bOHm")
                 self.wait(terminal, "Fechar DM")
@@ -684,10 +682,10 @@ class Members(unittest.TestCase):
             with self.subTest(mouse=mouse), self.dm_fixture() as server:
                 terminal = self.open(server)
                 self.click(terminal, "[DMs]")
-                self.wait(terminal, "Carol ·")
+                self.wait(terminal, "Carol")
                 before = sum("/messages" in path for _, path, *_ in server.requests)
                 if mouse:
-                    self.right_click(terminal, "Carol ·")
+                    self.right_click(terminal, "Carol")
                 else:
                     terminal.send("\x1bOHm")
                 self.wait(terminal, "Fechar DM")
@@ -703,7 +701,7 @@ class Members(unittest.TestCase):
                 else:
                     terminal.send("\n")
                 self.settled(terminal, lambda: server.dm_closes == [uuid(3001)])
-                self.settled(terminal, lambda: "Carol ·" not in self.screen(terminal))
+                self.settled(terminal, lambda: "Carol" not in self.screen(terminal))
                 self.assertEqual(
                     sum("/messages" in path for _, path, *_ in server.requests), before
                 )
@@ -716,13 +714,13 @@ class Members(unittest.TestCase):
                 server.dm_close_status = status
                 terminal = self.open(server)
                 self.click(terminal, "[DMs]")
-                self.wait(terminal, "Carol ·")
-                self.right_click(terminal, "Carol ·")
+                self.wait(terminal, "Carol")
+                self.right_click(terminal, "Carol")
                 self.wait(terminal, "Fechar DM")
                 terminal.send("\n")
                 self.settled(terminal, lambda: len(server.dm_closes) == 1)
                 terminal.read(0.3)
-                self.assertIn("Carol ·", self.screen(terminal))
+                self.assertIn("Carol", self.screen(terminal))
                 self.assertEqual(len(server.dm_closes), 1)
                 self.doCleanups()
 
