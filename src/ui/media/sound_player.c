@@ -64,9 +64,13 @@ static bool play(sound_player *p, const char *uri, int volume)
     if (!p || !uri)
         return false;
     drain(p->handle);
-    char level[16];
-    snprintf(level, sizeof(level), "%d", volume < 0 ? 0 : volume > 100 ? 100 : volume);
-    mpv_set_property_string(p->handle, "volume", level);
+    /* Only asynchronous requests: a synchronous one waits for mpv's core, which
+     * can be busy opening an audio output that never answers (no PipeWire or
+     * PulseAudio in the session), and would freeze the interface meanwhile.
+     * Requests of one handle run in order, so the volume applies first. */
+    double level = volume < 0 ? 0 : volume > 100 ? 100 : volume;
+    if (mpv_set_property_async(p->handle, 0, "volume", MPV_FORMAT_DOUBLE, &level) < 0)
+        return false;
     const char *command[] = {"loadfile", uri, "replace", NULL};
     return mpv_command_async(p->handle, 0, command) >= 0;
 }

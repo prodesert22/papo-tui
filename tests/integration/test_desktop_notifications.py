@@ -53,10 +53,15 @@ class DesktopTests(unittest.TestCase):
         runtime = tempfile.TemporaryDirectory(prefix="papo-test-runtime-")
         self.addCleanup(runtime.cleanup)
         os.chmod(runtime.name, 0o700)
+        # That runtime directory has no PipeWire or PulseAudio socket, and an
+        # audio output that never opens holds mpv's core: alert sounds go to its
+        # null output instead, recorded in this log.
+        sounds = os.path.join(runtime.name, "sounds.log")
         t = Terminal(
             environment={
                 "DBUS_SESSION_BUS_ADDRESS": os.environ["DBUS_SESSION_BUS_ADDRESS"],
                 "XDG_RUNTIME_DIR": runtime.name,
+                "PAPO_SOUND_LOG": sounds,
                 **environment,
             }
         )
