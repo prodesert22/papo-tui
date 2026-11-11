@@ -6,22 +6,22 @@ static bool graphical_badge(void)
     graphics_protocol protocol = graphics_terminal_get().protocol;
     return protocol != GRAPHICS_TEXT && protocol != GRAPHICS_CHAFA;
 }
+/* The unread dot: a small bullet one cell wide, or its small red circle. */
+#define NOTIFICATION_DOT "•"
 void conversation_notification_dot(view *ui, WINDOW *window, int row, int column, int pair)
 {
     attr_t previous = getattrs(window);
     wattrset(window, (has_colors() ? COLOR_PAIR(pair) : 0) | A_BOLD);
-    mvwaddstr(window, row, column, "●");
-    if (graphical_badge()) {
-        mvwaddch(window, row, column + 1, ' ');
-        icons_notification(ui->icons, window, row, column, 2, 0, pair);
-    }
+    mvwaddstr(window, row, column, NOTIFICATION_DOT);
+    if (graphical_badge())
+        icons_notification(ui->icons, window, row, column, 1, 0, pair);
     wattrset(window, previous);
 }
 static int notification_badge(view *ui, WINDOW *window, int row, int column, size_t count, int pair)
 {
     char label[32];
     if (!count)
-        snprintf(label, sizeof(label), "●");
+        snprintf(label, sizeof(label), NOTIFICATION_DOT);
     else if (count <= 10) {
         int bytes = g_unichar_to_utf8((gunichar)(0x2775 + count), label);
         label[bytes] = 0;
@@ -32,7 +32,7 @@ static int notification_badge(view *ui, WINDOW *window, int row, int column, siz
         wattrset(window, (has_colors() ? COLOR_PAIR(pair) : 0) | A_BOLD);
     int width = text_label(window, row, column, 24, label);
     if (graphical_badge()) {
-        int columns = MAX(2, width);
+        int columns = count ? MAX(2, width) : width; /* The dot stays one cell. */
         if (window) {
             if (columns > width)
                 mvwaddch(window, row, column + width, ' ');
@@ -67,7 +67,7 @@ void conversation_list_button(view *ui, int button, int column, int width, const
                                                                                 : BUTTON_NORMAL;
     button_draw(ui->list, 0, column, width, label, state, BUTTON_PANEL);
     if (conversation_list_notified(ui, button != 0))
-        conversation_notification_dot(ui, ui->list, 0, column + width - (graphical_badge() ? 2 : 1),
+        conversation_notification_dot(ui, ui->list, 0, column + width - 1,
                                       state == BUTTON_FOCUSED    ? THEME_NOTIFICATION_BUTTON_FOCUS
                                       : state == BUTTON_SELECTED ? THEME_NOTIFICATION_SELECTED
                                                                  : THEME_NOTIFICATION);
@@ -644,22 +644,15 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                 size_t mentions =
                     inbox_unread_mentions(history_inbox(ui->model), conversation_str(c, "id"));
                 /* A DM shows how many messages are unread, in the mention badge; a
-                 * channel shows its mentions there and only a "novo" tag otherwise,
+                 * channel shows its mentions there and only the red dot otherwise,
                  * since the server does not count a channel's unread messages. */
                 size_t count = mentions;
                 if (ui->list_dms && unread) {
                     json_int_t messages = json_integer_value(json_object_get(c, "unread_count"));
                     count = messages > 0 ? (size_t)messages : mentions;
                 }
-                const char *tag = C_("etiqueta de não lida", "novo");
-                int tag_width = text_label(NULL, 0, 0, 16, tag);
-                /* The tag gives way to the badge's dot when it would hide the name. */
-                bool tagged = !ui->list_dms && unread && !mentions &&
-                              ui->side - 2 - tag_width - 1 >= text_label(NULL, 0, 0, 12, label);
-                bool notified = !tagged && (unread || mentions);
-                int badge_width = tagged     ? tag_width + 1
-                                  : notified ? notification_badge(ui, NULL, 0, 0, count, 0)
-                                             : 0;
+                bool notified = unread || mentions;
+                int badge_width = notified ? notification_badge(ui, NULL, 0, 0, count, 0) : 0;
                 int pair = selected && focused
                                ? (ui->list_dms ? THEME_PROFILE_FOCUS : THEME_PROFILE_BUTTON_FOCUS)
                            : selected ? THEME_PANEL_ACTIVE
@@ -682,14 +675,7 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                 if (selected)
                     mvwhline(ui->list, row + 1, 1, ' ', ui->side - 2);
                 text_label(ui->list, row + 1, 1, ui->side - 2 - badge_width, label);
-                if (tagged) {
-                    wattrset(ui->list, COLOR_PAIR(selected && focused ? THEME_UNREAD_BUTTON_FOCUS
-                                                  : focused           ? THEME_UNREAD_FOCUS
-                                                  : selected          ? THEME_UNREAD_SELECTED
-                                                                      : THEME_UNREAD) |
-                                           A_BOLD);
-                    text_label(ui->list, row + 1, ui->side - 1 - tag_width, tag_width, tag);
-                } else if (notified)
+                if (notified)
                     notification_badge(ui, ui->list, row + 1, ui->side - 1 - badge_width, count,
                                        selected && focused ? THEME_NOTIFICATION_BUTTON_FOCUS
                                        : focused           ? THEME_NOTIFICATION_FOCUS

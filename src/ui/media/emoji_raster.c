@@ -23,13 +23,22 @@ static bool render_unicode(PangoFontMap *map, const char *text, int width, int h
     pango_layout_set_text(layout, text, -1);
     PangoRectangle ink;
     pango_layout_get_pixel_extents(layout, &ink, NULL);
-    if (cairo_status(cr) == CAIRO_STATUS_SUCCESS && ink.width > 0 && ink.height > 0 &&
-        !pango_layout_get_unknown_glyphs_count(layout)) {
+    /* The unread dot is drawn as a circle, so it needs no glyph from the font. */
+    bool dot = badge && !strcmp(text, "●");
+    if (cairo_status(cr) == CAIRO_STATUS_SUCCESS &&
+        (dot ||
+         (ink.width > 0 && ink.height > 0 && !pango_layout_get_unknown_glyphs_count(layout)))) {
         cairo_set_source_rgb(cr, ((bg >> 16) & 255) / 255., ((bg >> 8) & 255) / 255.,
                              (bg & 255) / 255.);
         cairo_paint(cr);
-        double sx = (double)width / ink.width, sy = (double)height / ink.height;
-        if (badge) {
+        double sx = ink.width ? (double)width / ink.width : 1,
+               sy = ink.height ? (double)height / ink.height : 1;
+        if (dot) {
+            /* The unread dot: a small circle centered in its cell. */
+            cairo_set_source_rgb(cr, 1, 0, 0);
+            cairo_arc(cr, width / 2., height / 2., MIN(width, height) * .3, 0, 2 * G_PI);
+            cairo_fill(cr);
+        } else if (badge) {
             double radius = (MIN(width, height) - 2) / 2.;
             cairo_set_source_rgb(cr, 1, 0, 0);
             cairo_arc(cr, width - 1 - radius, height / 2., radius, -G_PI / 2, G_PI / 2);

@@ -418,6 +418,51 @@ class MediaTerminal(support.MediaTerminal):
             finally:
                 self.assertTrue(t.close())
 
+    def test_graphical_unread_dot_is_a_small_circle_one_cell_wide(self):
+        self.include_icons = True
+        with self.serve(self.images["png"], "image/png") as server:
+            server.channels.append(
+                {
+                    "id": uuid(78),
+                    "name": "zebra",
+                    "position": 6,
+                    "topic": None,
+                    "type": "text",
+                    "last_message": {"id": uuid(7000), "author_id": uuid(21), "created_at": STAMP},
+                    "last_read_message": None,
+                }
+            )
+            t = self.open(server, protocol="kitty")
+            try:
+                self.wait_frames(t)
+                self.wait(t, "zebra")
+
+                def red(pixels):
+                    return [
+                        i // 4
+                        for i in range(0, len(pixels), 4)
+                        if pixels[i] > 240 and pixels[i + 1] < 16 and pixels[i + 2] < 16
+                    ]
+
+                def dots():
+                    return [
+                        (header, pixels)
+                        for header, pixels in t.stream.kitty_frames
+                        if header[b"s"] == b"8" and header[b"v"] == b"16" and red(pixels)
+                    ]
+
+                wait_for_screen(t, lambda: dots(), "unread dot raster")
+                header, pixels = dots()[-1]
+                points = [(i % 8, i // 8) for i in red(pixels)]
+                for axis, size in ((0, 8), (1, 16)):
+                    low = min(p[axis] for p in points)
+                    high = max(p[axis] for p in points)
+                    # A small circle, centered in its single cell.
+                    self.assertLessEqual(high - low + 1, 6, (axis, low, high))
+                    self.assertLessEqual(abs(low - (size - 1 - high)), 1, (axis, low, high))
+            finally:
+                self.assertTrue(t.close())
+
     def test_graphical_server_badge_is_inside_tab_delimiters(self):
         from history_mock import CHANNEL
 
@@ -695,11 +740,13 @@ class MediaTerminal(support.MediaTerminal):
                             # crops are checked against the profile below.
                             t.send(send[:-1])
                             self.wait(t, "Ver perfil")
+                            # The list's unread dots share the raster queue, so
+                            # the menu's crop can follow them by half a second.
                             frames = -1
                             deadline = time.monotonic() + 5
                             while frames != len(t.stream.frames) and time.monotonic() < deadline:
                                 frames = len(t.stream.frames)
-                                t.read(0.3)
+                                t.read(1.0)
                             send = send[-1]
                         first_frame = len(t.stream.frames)
                         first_placement = len(t.stream.placements)

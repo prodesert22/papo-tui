@@ -7254,8 +7254,3 @@ msgstr "🔊 / 🎤 / ♪ / ●"
 #: src/ui/components/help.c
 msgid "🔍 / 🖈 / 👤"
 msgstr "🔍 / 🖈 / 👤"
-
-#: src/ui/screens/conversation/drawing.c
-msgctxt "etiqueta de não lida"
-msgid "novo"
-msgstr "new"

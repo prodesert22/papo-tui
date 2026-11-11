@@ -800,10 +800,11 @@ or selecting another message releases this centering. Esc leaves message navigat
 A missing message or a failed lookup is shown inside the modal. Enter or Ctrl+R
 retries explicitly; failures are never retried automatically.
 
-A channel with new messages shows its name in bold and a green **novo** (new)
-tag at the right of its row. A red badge takes the tag's place when the channel
-has unread mentions of you or `@everyone`, with their count. When the side
-panel is too narrow for the name and the tag, a red dot replaces the tag.
+A channel with new messages shows its name in bold and a small red dot at the
+right of its row. A red badge with a count takes the dot's place when the
+channel has unread mentions of you or `@everyone`. The **[Canais]** and
+**[DMs]** switches show the same dot when one of their conversations has new
+messages.
 
 The **DMs** list shows only each person's name. A conversation with new
 messages shows the red badge with how many messages are unread;

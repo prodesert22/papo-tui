@@ -1790,5 +1790,4 @@ static const translation_entry translation_entries[] = {
     {"", "▾ Filtros (%d ativo)", "▾ Filtros (%d ativos)", {"▾ Filters (%d active)", "▾ Filters (%d active)"}},
     {"", "🔊 / 🎤 / ♪ / ●", NULL, {"🔊 / 🎤 / ♪ / ●", NULL}},
     {"", "🔍 / 🖈 / 👤", NULL, {"🔍 / 🖈 / 👤", NULL}},
-    {"etiqueta de não lida", "novo", NULL, {"new", NULL}},
 };

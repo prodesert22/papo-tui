@@ -112,8 +112,8 @@ class QuickSwitcher(unittest.TestCase):
             self.wait(t, "Ir para conversa")
             rows = self.rows(t)
             self.assertIn("# zebra", rows[0])
-            self.assertIn("●", rows[0])
-            self.assertNotIn("●", "\n".join(rows[1:]))
+            self.assertIn("•", rows[0])
+            self.assertNotIn("•", "\n".join(rows[1:]))
             # Empty search: Enter opens the first one, the unread conversation.
             t.send("\n")
             self.gone(t, "Ir para conversa")

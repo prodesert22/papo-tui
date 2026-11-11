@@ -213,7 +213,7 @@ static int badge(WINDOW *w, int y, int right, const switcher_entry *entry)
     if (entry->mentions)
         snprintf(label, sizeof(label), "@%zu", entry->mentions);
     else if (entry->unread)
-        snprintf(label, sizeof(label), "●");
+        snprintf(label, sizeof(label), "•"); /* The list's unread dot. */
     if (!*label)
         return 0;
     int width = text_label(NULL, 0, 0, 16, label);
