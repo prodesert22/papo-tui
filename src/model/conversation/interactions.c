@@ -1065,9 +1065,10 @@ void history_internal_actions_users(history *h, json_t *ids, json_t *seen)
     {
         (void)key;
         const char *id = s(m, "author_id");
-        if (history_uuid(id) && !json_object_get(h->users, id) &&
+        if (history_uuid(id) && !history_internal_user_resolved(h, id) &&
             !json_object_get(h->queried, id) && !json_object_get(seen, id) &&
-            json_array_size(ids) < 1000) {
+            json_array_size(ids) < 1000 &&
+            json_object_size(h->queried) + json_array_size(ids) < 10000) {
             json_array_append_new(ids, json_string(id));
             json_object_set_new(seen, id, json_true());
         }
@@ -1076,13 +1077,36 @@ void history_internal_actions_users(history *h, json_t *ids, json_t *seen)
     json_array_foreach(h->actions->users, i, m)
     {
         const char *id = s(m, "user_id");
-        if (history_uuid(id) && !json_object_get(h->users, id) &&
+        if (history_uuid(id) && !history_internal_user_resolved(h, id) &&
             !json_object_get(h->queried, id) && !json_object_get(seen, id) &&
-            json_array_size(ids) < 1000) {
+            json_array_size(ids) < 1000 &&
+            json_object_size(h->queried) + json_array_size(ids) < 10000) {
             json_array_append_new(ids, json_string(id));
             json_object_set_new(seen, id, json_true());
         }
     }
+}
+bool history_internal_actions_protect(const history *h, json_t *ids)
+{
+    if (!h->actions)
+        return true;
+    const char *key;
+    json_t *m;
+    json_object_foreach(h->actions->references, key, m)
+    {
+        (void)key;
+        const char *id = s(m, "author_id");
+        if (history_uuid(id) && json_object_set_new(ids, id, json_true()))
+            return false;
+    }
+    size_t i;
+    json_array_foreach(h->actions->users, i, m)
+    {
+        const char *id = s(m, "user_id");
+        if (history_uuid(id) && json_object_set_new(ids, id, json_true()))
+            return false;
+    }
+    return true;
 }
 void history_internal_reference_event(history *h, const json_t *event)
 {

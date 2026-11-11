@@ -158,6 +158,10 @@ static bool user_resolved(const history *h, const char *id)
     const char *name = history_internal_str(json_object_get(h->users, id), "username");
     return name && *name;
 }
+bool history_internal_user_resolved(const history *h, const char *id)
+{
+    return user_resolved(h, id);
+}
 
 static json_t *user_roles(const json_t *source)
 {
@@ -729,6 +733,10 @@ bool history_maintain(history *h, uint64_t now)
     for (size_t i = 0; i < h->typing_count; ++i)
         if (json_object_set_new(protected, h->typing[i].id, json_true()))
             pins.ok = false;
+    /* Replied-to messages outside the loaded window and the people of an
+     * open reactions list keep their names too. */
+    if (!history_internal_actions_protect(h, protected))
+        pins.ok = false;
     if (h->r8) {
         size_t persisted = inbox_notification_count(h->inbox);
         for (size_t i = 0; i < persisted + inbox_event_count(h->inbox); ++i) {

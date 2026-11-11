@@ -250,11 +250,13 @@ class MessageInteractions(support.MessageInteractions):
     def test_old_original_is_resolved_automatically_without_scrolling(self):
         with InteractionMock(count=320) as server:
             server.messages[0]["content"] = "Original muito antiga"
+            # Written by someone with no message in the loaded window.
+            server.messages[0]["author_id"] = uuid(29)
             server.messages[-1]["reply_to"] = server.messages[0]["id"]
             terminal = self.open(server)
             try:
                 self.wait(terminal, "Mensagem 0320")
-                self.wait(terminal, "Original muito antiga")
+                self.wait(terminal, f"↰ Autor {uuid(29)[-1]}: Original muito antiga")
                 self.assertIn("Mensagem 0320", self.screen(terminal))
                 pages = [r for r in server.requests if r[0] == "GET" and "last_id=" in r[1]]
                 self.assertGreaterEqual(len(pages), 3)
