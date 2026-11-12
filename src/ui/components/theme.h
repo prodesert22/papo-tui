@@ -86,5 +86,8 @@ int theme_member_pair(unsigned rgb, int background);
 uint32_t theme_background_rgb(int pair);
 /* Fixed palette colors: green through 60%, yellow through 85%, then red. */
 int theme_volume_pair(int percent);
+/* The unread dot glyph, one cell wide: ⦁, or • on the Linux console, whose
+ * fonts lack the former. */
+const char *theme_unread_dot(void);
 
 #endif

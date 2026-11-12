@@ -6,8 +6,9 @@ static bool graphical_badge(void)
     graphics_protocol protocol = graphics_terminal_get().protocol;
     return protocol != GRAPHICS_TEXT && protocol != GRAPHICS_CHAFA;
 }
-/* The unread dot: a small bullet one cell wide, or its small red circle. */
-#define NOTIFICATION_DOT "•"
+/* The unread dot: a spot one cell wide, between • and ● in size, or its
+ * small red circle in graphics terminals. */
+#define NOTIFICATION_DOT theme_unread_dot()
 void conversation_notification_dot(view *ui, WINDOW *window, int row, int column, int pair)
 {
     attr_t previous = getattrs(window);
@@ -21,7 +22,7 @@ static int notification_badge(view *ui, WINDOW *window, int row, int column, siz
 {
     char label[32];
     if (!count)
-        snprintf(label, sizeof(label), NOTIFICATION_DOT);
+        snprintf(label, sizeof(label), "%s", NOTIFICATION_DOT);
     else if (count <= 10) {
         int bytes = g_unichar_to_utf8((gunichar)(0x2775 + count), label);
         label[bytes] = 0;

@@ -327,6 +327,11 @@ theme_palette theme_get_palette(void)
 static int reported = -1;
 static bool queried;
 
+const char *theme_unread_dot(void)
+{
+    const char *term = getenv("TERM");
+    return term && !strcmp(term, "linux") ? "•" : "⦁";
+}
 void theme_probe_background(void)
 {
     if (queried)
