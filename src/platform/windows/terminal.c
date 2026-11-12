@@ -72,6 +72,10 @@ bool terminal_recovery_begin(void)
     SetConsoleOutputCP(CP_UTF8);
     _setmode(_fileno(stdout), _O_BINARY);
     _setmode(_fileno(stdin), _O_BINARY);
+    /* The CRT writes a console stdout on every call, and each write crosses
+     * ConPTY: erasing a picture cell by cell took ~50 ms per frame. Buffer it
+     * like a POSIX terminal; drawing code flushes at the end of each update. */
+    setvbuf(stdout, NULL, _IOFBF, 1 << 16);
     if (!g_getenv("TERM"))
         g_setenv("TERM", "xterm-256color", FALSE);
     active = true;

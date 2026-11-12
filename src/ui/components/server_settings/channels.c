@@ -3,7 +3,7 @@
 
 /* Canais: create, edit, reorder and delete channels, and each role's access
  * to a channel (manage_channels). */
-enum { NAME, TYPE, TOPIC, SAVE, UP, DOWN, DELETE, PERMISSION, UNLINK, ADD_ROLE, LINK };
+enum { NAME, TYPE, TOPIC, SAVE, UP, DOWN, DELETE_ITEM, PERMISSION, UNLINK, ADD_ROLE, LINK };
 static const char *const types[3] = {"text", "voice", "category"};
 static const char *const type_labels[3] = {N_("Texto"), N_("Voz"), N_("Categoria")};
 static const char *const flag_keys[PERMISSION_CHANNEL_COUNT] = {"read_channel", "send_messages",
@@ -129,7 +129,7 @@ static void fields(server_settings *s, GArray *out)
         admin_field_add(out, FIELD_BUTTON, UP, _("Mover para cima"));
     if (below)
         admin_field_add(out, FIELD_BUTTON, DOWN, _("Mover para baixo"));
-    f = admin_field_add(out, FIELD_BUTTON, DELETE, _("Excluir canal"));
+    f = admin_field_add(out, FIELD_BUTTON, DELETE_ITEM, _("Excluir canal"));
     f->destructive = true;
     snprintf(f->key, sizeof(f->key), "%s", s->selected);
     admin_field_add(out, FIELD_HEADING, 0, _("Permissões por cargo"));
@@ -232,7 +232,7 @@ static void activate(server_settings *s, const admin_field *f, int direction)
         save(s);
     else if (f->id == UP || f->id == DOWN)
         reorder(s, f->id == UP);
-    else if (f->id == DELETE && admin_confirmed(s, f)) {
+    else if (f->id == DELETE_ITEM && admin_confirmed(s, f)) {
         if (server_admin_channel_delete(s->model, f->key))
             admin_select(s, ROW_NEW);
     } else if (f->id == PERMISSION && f->arg >= 0 && f->arg < PERMISSION_CHANNEL_COUNT)

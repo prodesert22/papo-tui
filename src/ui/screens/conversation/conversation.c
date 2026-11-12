@@ -538,7 +538,10 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             (!text_terminal_focused() && !text_terminal_focus_unknown()))
             history_read_visible(ui->model, NULL);
         auth_state before = auth_get_state(auth);
-        if (session_store_poll(connections->sessions, auth) | instances_resume(connections)) {
+        /* Poll every source on each pass; || would skip the later ones. */
+        bool sessions_changed = session_store_poll(connections->sessions, auth);
+        bool instances_resumed = instances_resume(connections);
+        if (sessions_changed || instances_resumed) {
             redraw = true;
             scope = DRAW_ALL;
         }
@@ -554,8 +557,11 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             redraw = true;
             scope = DRAW_ALL;
         }
-        if (conversation_profile_poll(ui) | settings_poll(&ui->settings) |
-            server_settings_poll(&ui->server_settings) | apply_account_view(ui)) {
+        bool panels_changed = conversation_profile_poll(ui);
+        panels_changed |= settings_poll(&ui->settings);
+        panels_changed |= server_settings_poll(&ui->server_settings);
+        panels_changed |= apply_account_view(ui);
+        if (panels_changed) {
             redraw = true;
             scope = DRAW_ALL;
         }
@@ -850,7 +856,16 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 !media_view_modal(ui->media) && !emoji_picker_open(ui->emojis) &&
                 !ui->context_open && !ui->reactors_open && ui->focus == MESSAGE_INPUT &&
                 conversation_input(ui)) {
-                if (!text_paste_commit(&ui->paste_data, conversation_input(ui)))
+                if (!ui->paste_data.text.length && !ui->paste_data.truncated) {
+                    /* Terminals that own Ctrl+V, such as Windows Terminal, send
+                     * an empty paste when the clipboard holds only an image or
+                     * files. Read the clipboard as Ctrl+V does. */
+                    text_paste_cancel(&ui->paste_data);
+                    if (*ui->edit_message)
+                        ui->feedback = _("Conclua a edição antes de anexar arquivos.");
+                    else
+                        conversation_attachments_open(ui, true);
+                } else if (!text_paste_commit(&ui->paste_data, conversation_input(ui)))
                     ui->feedback = _("Colagem excede o limite; rascunho preservado.");
                 else {
                     ui->feedback = send_editor_changed(ui->editor)

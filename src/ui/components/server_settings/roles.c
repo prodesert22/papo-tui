@@ -2,7 +2,7 @@
 #include "ui/components/server_settings/private.h"
 
 /* Cargos: create, edit and delete roles (manage_roles). */
-enum { NAME, COLOR, FLAG, SAVE, DELETE };
+enum { NAME, COLOR, FLAG, SAVE, DELETE_ITEM };
 static const char *const flag_keys[PERMISSION_ROLE_COUNT] = {
     "manage_server", "manage_channels",  "manage_roles",   "ban_members",
     "pin_message",   "everyone_message", "send_attachment", "manage_webhooks"};
@@ -60,7 +60,7 @@ static void fields(server_settings *s, GArray *out)
     }
     admin_field_add(out, FIELD_BUTTON, SAVE, creating ? _("Criar cargo") : _("Salvar cargo"));
     if (!creating) {
-        f = admin_field_add(out, FIELD_BUTTON, DELETE, _("Excluir cargo"));
+        f = admin_field_add(out, FIELD_BUTTON, DELETE_ITEM, _("Excluir cargo"));
         f->destructive = true;
         snprintf(f->key, sizeof(f->key), "%s", s->selected);
     }
@@ -91,7 +91,7 @@ static void activate(server_settings *s, const admin_field *f, int direction)
         s->dirty = true;
     } else if (f->id == SAVE)
         save(s);
-    else if (f->id == DELETE && admin_confirmed(s, f)) {
+    else if (f->id == DELETE_ITEM && admin_confirmed(s, f)) {
         if (server_admin_role_delete(s->model, f->key))
             admin_select(s, ROW_NEW);
     }

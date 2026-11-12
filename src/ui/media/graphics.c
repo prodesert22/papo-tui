@@ -137,6 +137,7 @@ typedef struct {
     int y, x, rows, columns, top, bottom;
     bool scaled;
     const graphics_image *image; /* Borrowed only until this frame is flushed. */
+    bool repaint;                /* Stationary, but curses will write over its cells. */
 } displayed_image;
 static displayed_image *displayed, *desired;
 static size_t displayed_capacity, desired_capacity;
@@ -474,9 +475,9 @@ static void place_image(const graphics_image *image, uint32_t placement_id, int 
                    : (image->height - top - bottom + image->cell_height - 1) / image->cell_height;
     if (y + rows > LINES || x + image->columns > COLS)
         return;
-    desired[desired_count++] =
-        (displayed_image){image->protocol, image->id, placement_id, image->revision, y,    x, rows,
-                          image->columns,  top,       bottom,       scaled,          image};
+    desired[desired_count++] = (displayed_image){
+        image->protocol, image->id, placement_id, image->revision, y,     x,    rows,
+        image->columns,  top,       bottom,       scaled,          image, false};
 }
 void graphics_image_place_id(const graphics_image *image, uint32_t placement_id, int y, int x,
                              int top, int bottom)
@@ -489,6 +490,113 @@ void graphics_image_place_scaled(const graphics_image *image, int y, int x)
         place_image(image, image->id, y, x, 0, 0, true);
 }
 
+static bool same_cell(const cchar_t *a, const cchar_t *b)
+{
+    return a->attr == b->attr &&
+#if NCURSES_EXT_COLORS
+           a->ext_color == b->ext_color &&
+#endif
+           !memcmp(a->chars, b->chars, sizeof(a->chars));
+}
+static bool blank_cell(const cchar_t *c)
+{
+    return !c->chars[0] || (c->chars[0] == L' ' && !c->chars[1]);
+}
+/* Columns curses would rather rewrite than skip with a cursor movement. It
+ * computes the same minimum in mvcur from these capabilities at column 23. */
+static int inline_cost(void)
+{
+    static int cost = -1;
+    if (cost >= 0)
+        return cost;
+    cost = 8;
+    char *address = tigetstr("cup"), *column = tigetstr("hpa"), *right = tigetstr("cuf");
+    const char *moves[] = {
+        address && address != (char *)-1 ? tiparm(address, 23, 23) : NULL,
+        column && column != (char *)-1 ? tiparm(column, 23) : NULL,
+        right && right != (char *)-1 ? tiparm(right, 23) : NULL,
+    };
+    for (size_t i = 0; i < G_N_ELEMENTS(moves); ++i)
+        if (moves[i] && (int)strlen(moves[i]) < cost)
+            cost = (int)strlen(moves[i]);
+    return cost;
+}
+/* One screen row as curses knows it (curscr) and as it will write it (newscr). */
+typedef struct {
+    cchar_t *physical, *wanted;
+} screen_row;
+static bool load_row(screen_row *rows, int y, int columns)
+{
+    if (rows[y].physical)
+        return true;
+    rows[y].physical = calloc((size_t)columns + 1, sizeof(cchar_t));
+    rows[y].wanted = calloc((size_t)columns + 1, sizeof(cchar_t));
+    if (!rows[y].physical || !rows[y].wanted ||
+        mvwin_wchnstr(curscr, y, 0, rows[y].physical, columns) == ERR ||
+        mvwin_wchnstr(newscr, y, 0, rows[y].wanted, columns) == ERR) {
+        free(rows[y].physical);
+        free(rows[y].wanted);
+        rows[y].physical = rows[y].wanted = NULL;
+        return false;
+    }
+    return true;
+}
+/* Sixel and iTerm2 pixels disappear when text is written over their cells.
+ * Curses rewrites a short run of unchanged cells between two changes rather
+ * than moving the cursor, and may clear a blank line tail. Such stationary
+ * images are sent again after doupdate; longer unchanged runs are skipped. */
+static bool covered_row(const displayed_image *d, const screen_row *row, int columns)
+{
+    int right = d->x + d->columns - 1;
+    if (right >= columns)
+        right = columns - 1;
+#define CHANGES(x) (!same_cell(&row->physical[x], &row->wanted[x]))
+    for (int x = d->x; x <= right; ++x)
+        if (CHANGES(x))
+            return true;
+    int before = d->x - 1, after = right + 1;
+    while (before >= 0 && !CHANGES(before))
+        --before;
+    while (after < columns && !CHANGES(after))
+        ++after;
+#undef CHANGES
+    if (after >= columns)
+        return false; /* Nothing changes to the right: curses stops earlier. */
+    /* Clearing to the end of line needs identical blanks from the image on. */
+    const cchar_t *tail = &row->wanted[columns - 1];
+    bool blank_tail = blank_cell(tail);
+    for (int x = d->x; x < columns - 1 && blank_tail; ++x)
+        blank_tail = same_cell(&row->wanted[x], tail);
+    return blank_tail || (before >= 0 && after - before - 1 <= inline_cost());
+}
+/* Only stationary images: moved or changed ones are sent again anyway. */
+static void mark_covered_images(void)
+{
+    int lines = getmaxy(curscr), columns = getmaxx(curscr), cursor_y, cursor_x, next_y, next_x;
+    if (lines <= 0 || columns <= 0)
+        return;
+    screen_row *rows = calloc((size_t)lines, sizeof(*rows));
+    getyx(curscr, cursor_y, cursor_x);
+    getyx(newscr, next_y, next_x);
+    for (size_t i = 0; i < desired_count; ++i) {
+        displayed_image *d = &desired[i];
+        const displayed_image *old = find_image(displayed, displayed_count, d->placement_id);
+        if (d->protocol == GRAPHICS_CHAFA || d->protocol == GRAPHICS_KITTY || !old ||
+            !same_placement(old, d) || old->revision != d->revision)
+            continue;
+        for (int y = d->y; y < d->y + d->rows && y < lines && !d->repaint; ++y)
+            /* Without the comparison, keeping pictures visible is the safe choice. */
+            d->repaint = !rows || !load_row(rows, y, columns) || covered_row(d, &rows[y], columns);
+    }
+    /* Reading rows moved the curses cursors; restore their bookkeeping. */
+    wmove(curscr, cursor_y, cursor_x);
+    wmove(newscr, next_y, next_x);
+    for (int y = 0; rows && y < lines; ++y) {
+        free(rows[y].physical);
+        free(rows[y].wanted);
+    }
+    free(rows);
+}
 void graphics_frame_prepare(void)
 {
     if (!displayed_count && !desired_count)
@@ -498,6 +606,9 @@ void graphics_frame_prepare(void)
     bool pixels = has_pixel_images(displayed, displayed_count);
     if (pixels)
         fputs("\0337", stdout);
+    /* Rows whose physical text this frame overwrites while erasing pixels. */
+    int screen_rows = physical_snapshot ? getmaxy(physical_snapshot) : 0;
+    bool *erased = screen_rows > 0 ? calloc((size_t)screen_rows, sizeof(*erased)) : NULL;
     for (size_t i = 0; i < displayed_count; ++i) {
         displayed_image *old = &displayed[i],
                         *next = find_image(desired, desired_count, old->placement_id);
@@ -505,8 +616,11 @@ void graphics_frame_prepare(void)
          * variant needs an explicit deletion even when the occurrence ID stays
          * the same. The old image may still be used elsewhere in the history. */
         if (!next || old->id != next->id ||
-            (old->protocol != GRAPHICS_KITTY && !same_placement(old, next)))
+            (old->protocol != GRAPHICS_KITTY && !same_placement(old, next))) {
             erase_image(old);
+            for (int y = old->y; erased && y < old->y + old->rows && y < screen_rows; ++y)
+                erased[y] = old->protocol != GRAPHICS_KITTY && old->protocol != GRAPHICS_CHAFA;
+        }
         if (old->protocol == GRAPHICS_KITTY) {
             bool retained = false;
             for (size_t j = 0; j < desired_count; ++j)
@@ -535,7 +649,18 @@ void graphics_frame_prepare(void)
                     false);
             copywin(physical_snapshot, newscr, next->y, next->x, next->y, next->x, bottom, right,
                     false);
+            /* A forced history redraw (wredrawln) forgets whole rows, so curses
+             * would rewrite the unchanged text around the picture, and with it
+             * the pixels. Restore the known physical rows; their stale hashes
+             * still keep curses from scrolling them. Erased rows stay forgotten. */
+            for (int y = next->y; erased && y <= bottom; ++y)
+                if (!erased[y])
+                    copywin(physical_snapshot, curscr, y, 0, y, 0, y,
+                            getmaxx(physical_snapshot) - 1, false);
         }
+    free(erased);
+    if (physical_snapshot)
+        mark_covered_images();
     if (physical_snapshot) {
         delwin(physical_snapshot);
         physical_snapshot = NULL;
@@ -623,7 +748,7 @@ void graphics_frame_flush(void)
                         *old = find_image(displayed, displayed_count, next->placement_id);
         bool pixels_changed = !old || old->revision != next->revision;
         bool moved = !old || !same_placement(old, next);
-        if (!pixels_changed && !moved)
+        if (!pixels_changed && !moved && !next->repaint)
             continue;
         if (next->protocol == GRAPHICS_CHAFA)
             continue;

@@ -4,7 +4,7 @@
 #include <time.h>
 
 /* Emojis: add custom emojis and delete them (author or manage_server). */
-enum { NAME, PICK, DELETE, RETRY };
+enum { NAME, PICK, DELETE_ITEM, RETRY };
 
 static const json_t *selected_emoji(server_settings *s)
 {
@@ -95,7 +95,7 @@ static void fields(server_settings *s, GArray *out)
     snprintf(f->value, sizeof(f->value), "%s",
              admin_user_name(s, admin_str(emoji, "created_by"), "—"));
     if (server_admin_emoji_deletable(s->model, emoji)) {
-        f = admin_field_add(out, FIELD_BUTTON, DELETE, _("Excluir emoji"));
+        f = admin_field_add(out, FIELD_BUTTON, DELETE_ITEM, _("Excluir emoji"));
         f->destructive = true;
         snprintf(f->key, sizeof(f->key), "%s", s->selected);
     } else
@@ -129,7 +129,7 @@ static void activate(server_settings *s, const admin_field *f, int direction)
         pick(s);
     else if (f->id == RETRY)
         server_admin_load(s->model, ADMIN_LIST_EMOJIS, false);
-    else if (f->id == DELETE && admin_confirmed(s, f)) {
+    else if (f->id == DELETE_ITEM && admin_confirmed(s, f)) {
         if (server_admin_emoji_delete(s->model, f->key))
             admin_select(s, ROW_NEW);
     }

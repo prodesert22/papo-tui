@@ -1,0 +1,77 @@
+--- a/include/nc_win32.h.in
++++ b/include/nc_win32.h.in
+@@ -145,7 +145,9 @@
+ 
+ #endif /* defined(CURSES_PRIV_H) || defined(TEST_PRIV_H) */
+ 
+-#if !HAVE_WCWIDTH
++/* Always use the bundled width table: libintl, linked for GLib, also
++ * exports a wcwidth that disagrees with the application's widths. */
++#if 1
+ #undef wcwidth
+ #define wcwidth(ucs) _nc_wcwidth((wchar_t)(ucs))
+ extern NCURSES_EXPORT(int) _nc_wcwidth(uint32_t);
+--- a/ncurses/wcwidth.h
++++ b/ncurses/wcwidth.h
+@@ -226,6 +226,12 @@
+      * treats text-presentation symbols such as U+2600 as double width. */
+     if (!ucs)
+         return 0;
++    /* A UTF-16 surrogate pair fills one cell: the high half carries the
++     * width. The application sends pairs only for double-width characters. */
++    if (ucs >= 0xD800 && ucs <= 0xDBFF)
++        return 2;
++    if (ucs >= 0xDC00 && ucs <= 0xDFFF)
++        return 0;
+     if (!g_unichar_validate(ucs))
+         return -1;
+     if (g_unichar_iszerowidth(ucs))
+--- a/ncurses/curses.priv.h
++++ b/ncurses/curses.priv.h
+@@ -1506,8 +1506,8 @@
+ 				if (PUTC_ch == L'\0')				    \
+ 				    break;					    \
+ 				PUTC_INIT;					    \
+-				PUTC_n = (int) wcrtomb(PUTC_buf,		    \
+-						       (ch).chars[PUTC_i], &PUT_st); \
++				PUTC_n = PUTC_WCRTOMB(PUTC_buf, (ch).chars,	    \
++						      PUTC_i, &PUT_st);	    \
+ 				if (PUTC_n <= 0) {				    \
+ 				    if (PUTC_ch && is8bits(PUTC_ch) && PUTC_i == 0) { \
+ 					TR_PUTC(CharOf(ch));			    \
+@@ -2307,8 +2307,35 @@
+ extern int __MINGW_NOTHROW _nc_mblen(const char *, size_t);
+ #define mblen(s,n) _nc_mblen(s, n)
+ 
++/* A 16-bit wchar_t holds characters outside the BMP as surrogate pairs,
++ * which _nc_wctomb cannot convert one half at a time. Emit the pair as one
++ * UTF-8 sequence and step over its low half. */
++static NCURSES_INLINE int
++_nc_putc_wcrtomb(char *buffer, const wchar_t *chars, int *index)
++{
++    unsigned long high = (unsigned long) chars[*index];
++    unsigned long low = *index + 1 < CCHARW_MAX ? (unsigned long) chars[*index + 1] : 0;
++    if (high >= 0xD800 && high <= 0xDBFF && low >= 0xDC00 && low <= 0xDFFF) {
++	unsigned long value = 0x10000 + ((high - 0xD800) << 10) + (low - 0xDC00);
++	buffer[0] = (char) (0xF0 | (value >> 18));
++	buffer[1] = (char) (0x80 | ((value >> 12) & 0x3F));
++	buffer[2] = (char) (0x80 | ((value >> 6) & 0x3F));
++	buffer[3] = (char) (0x80 | (value & 0x3F));
++	++*index;
++	return 4;
++    }
++    return _nc_wctomb(buffer, chars[*index]);
++}
++#define PUTC_WCRTOMB(buffer, chars, index, state) \
++	_nc_putc_wcrtomb(buffer, chars, &(index))
++
+ #endif /* _NC_WINDOWS_NATIVE && !_NC_MSC */
+ 
++#ifndef PUTC_WCRTOMB
++#define PUTC_WCRTOMB(buffer, chars, index, state) \
++	(int) wcrtomb(buffer, (chars)[index], state)
++#endif
++
+ #if HAVE_MBTOWC && HAVE_MBLEN
+ #define reset_mbytes(state) IGNORE_RC(mblen(NULL, (size_t) 0)), IGNORE_RC(mbtowc(NULL, NULL, (size_t) 0))
+ #define count_mbytes(buffer,length,state) mblen(buffer,length)

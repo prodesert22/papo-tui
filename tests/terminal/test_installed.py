@@ -17,7 +17,9 @@ class InstalledApplication(unittest.TestCase):
 
     def test_installed_login_conversation_and_unicode_send(self):
         with HistoryMock() as server:
-            terminal = Terminal()
+            # Use the terminal database shipped with the package, as users do,
+            # instead of one exported by the build shell.
+            terminal = Terminal(unset_environment=("TERMINFO", "TERMINFO_DIRS"))
             try:
                 terminal.send(server.url + "\tjosé\tSynthetic!123\n")
                 self.wait(terminal, "geral")

@@ -90,7 +90,14 @@ def ncurses_options(prefix, windows=False):
         "--with-pkg-config-libdir=" + prefix + "/lib/pkgconfig",
     ]
     if windows:
-        options += ["--enable-term-driver", "--enable-interop", "--disable-home-terminfo"]
+        # The bundled MSYS2 terminfo uses hex directories (78/xterm-256color).
+        # Without this, a build on a case-sensitive disk looks in x/ instead.
+        options += [
+            "--enable-term-driver",
+            "--enable-interop",
+            "--disable-home-terminfo",
+            "--disable-mixed-case",
+        ]
     else:
         # Use the distro's terminal database while keeping the library private.
         options += [
@@ -199,6 +206,15 @@ def build(entry, source, work, prefix, jobs, env):
             "--input",
             unix_path(ROOT / "dist/patches/webrtc-audio-processing-cstdint.patch"),
         )
+    if name == "abseil-cpp" and os.name == "nt":
+        # MinGW's roapi.h does not include the HSTRING functions abseil calls.
+        run(
+            "patch",
+            "-p1",
+            "--forward",
+            "--input",
+            unix_path(ROOT / "dist/patches/abseil-cpp-mingw-winstring.patch"),
+        )
     if entry["buildsystem"] == "cmake":
         options = [
             "-DBUILD_SHARED_LIBS=ON",
@@ -254,13 +270,15 @@ def build(entry, source, work, prefix, jobs, env):
                         ["pkg-config", option, "glib-2.0"], env=env, text=True
                     ).strip()
                     env[variable] = (flags + " " + env.get(variable, "")).strip()
-                run(
-                    "patch",
-                    "-p1",
-                    "--forward",
-                    "--input",
-                    unix_path(ROOT / "dist/patches/ncurses-win32-wide-input.patch"),
-                )
+                # Wide input first; then UTF-16 surrogate pairs for emoji output.
+                for patch in ("ncurses-win32-wide-input.patch", "ncurses-win32-surrogates.patch"):
+                    run(
+                        "patch",
+                        "-p1",
+                        "--forward",
+                        "--input",
+                        unix_path(ROOT / "dist/patches" / patch),
+                    )
             options = ncurses_options(unix_path(prefix), windows=os.name == "nt")
         run("sh", unix_path(source / "configure"), *options, cwd=binary)
         run("make", "-j", jobs, cwd=binary)
@@ -405,9 +423,13 @@ def main():
                 if os.name == "nt" and entry["name"] == "libsixel"
                 else "windows-wide-input-v1-"
                 + sha256(ROOT / "dist/patches/ncurses-win32-wide-input.patch")
+                + sha256(ROOT / "dist/patches/ncurses-win32-surrogates.patch")
                 if os.name == "nt" and entry["name"] == "ncurses"
                 else "windows-native-threads-posix-prefix-v1"
                 if os.name == "nt" and entry["name"] == "mpv"
+                else "mingw-winstring-v1-"
+                + sha256(ROOT / "dist/patches/abseil-cpp-mingw-winstring.patch")
+                if os.name == "nt" and entry["name"] == "abseil-cpp"
                 else "cstdint-v1-"
                 + sha256(ROOT / "dist/patches/webrtc-audio-processing-cstdint.patch")
                 if entry["name"] == "webrtc-audio-processing"

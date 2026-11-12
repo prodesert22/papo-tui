@@ -239,6 +239,8 @@ class Attachments(unittest.TestCase):
             ("files", "\x16"),
             ("image", "\x16"),
             ("image", "\x1b[118;5u"),
+            # Terminals that own Ctrl+V (Windows Terminal) send an empty paste.
+            ("image", "\x1b[200~\x1b[201~"),
             ("text", "\x16"),
         ):
             with (

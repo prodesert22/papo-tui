@@ -355,7 +355,8 @@ static const char *text(WINDOW *window, int y, int x, int width, const char *val
         int character_width = papo_unicode_width(character);
         if (character_width < 0 || cells + character_width > width)
             break;
-        wchar_t output[] = {character <= WCHAR_MAX ? (wchar_t)character : L'?', 0};
+        wchar_t output[3] = {L'?', 0, 0};
+        papo_wchar_encode(character, output);
         mvwaddwstr(window, y, x + cells, output);
         cells += character_width;
         value += bytes;

@@ -39,6 +39,20 @@ def raster_dimensions(protocol, frame):
     return tags[256], tags[257]
 
 
+def picture_frame_count(stream):
+    """Frames of pictures taller than two 16-pixel cell rows.
+
+    Sixel and iTerm2 pixels belong to text cells, so the client sends small
+    stationary images (avatars, emoji, icons) again when curses rewrites their
+    cells, as when a row's background changes. Kitty placements never need
+    that, so every Kitty frame counts.
+    """
+    return sum(
+        protocol == "kitty" or raster_dimensions(protocol, frame)[1] > 2 * 16
+        for frame, protocol in zip(stream.frames, stream.protocols)
+    )
+
+
 class GraphicsStream:
     def __init__(self, screen, *, include_icons=True):
         self.include_icons = include_icons

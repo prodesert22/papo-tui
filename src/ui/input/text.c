@@ -1494,20 +1494,21 @@ static text_cell cell(const text_buffer *buffer, size_t start, size_t end)
      * cell. Unsupported clusters use one ASCII placeholder, without changing
      * the underlying draft; this keeps cursor positions and wrapping exact. */
     bool supported = end - start < CCHARW_MAX;
+    size_t used = 0; /* A 16-bit wchar_t needs two units outside the BMP. */
     for (size_t i = start; i < end && supported; ++i) {
-        if (buffer->data[i] > WCHAR_MAX) {
-            supported = false;
-            break;
-        }
         uint32_t character = buffer->data[i];
         int width = papo_unicode_width(character);
+        wchar_t units[2];
+        size_t count = 0;
         if (!g_unichar_isprint(character) || character == 0x200c || character == 0x200d ||
             (character >= 0xfe00 && character <= 0xfe0f) ||
             (character >= 0xe0100 && character <= 0xe01ef) ||
-            (i == start ? width <= 0 : width != 0))
+            (i == start ? width <= 0 : width != 0) ||
+            !(count = papo_wchar_encode(character, units)) || used + count >= CCHARW_MAX)
             supported = false;
         else {
-            result.glyph[i - start] = (wchar_t)character;
+            memcpy(result.glyph + used, units, count * sizeof(*units));
+            used += count;
             if (i == start)
                 result.width = width;
         }

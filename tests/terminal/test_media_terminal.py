@@ -7,7 +7,7 @@ actual emulator's pixel composition. Actual terminal evidence is separate.
 from test_context import protocols, panels
 
 from test_context import main as test_main
-from terminal_media import FFMPEG
+from terminal_media import FFMPEG, picture_frame_count
 
 
 import base64
@@ -1207,9 +1207,11 @@ class MediaTerminal(support.MediaTerminal):
                     self.assertNotIn("Anexo:", display)
                     self.assertNotIn("Tipo:", display)
                     self.assertNotIn("Reproduzindo", display)
-                    count = len(t.stream.frames)
+                    count = picture_frame_count(t.stream)
                     t.read(0.3)
-                    self.assertEqual(len(t.stream.frames), count, "Poster must remain static")
+                    self.assertEqual(
+                        picture_frame_count(t.stream), count, "Poster must remain static"
+                    )
                     poster_ids = t.stream.live_ids.copy()
                     for key, title in (
                         ("@", "Menções"),
@@ -1222,7 +1224,7 @@ class MediaTerminal(support.MediaTerminal):
                         self.wait(t, title)
                         if protocol == "kitty":
                             self.assertTrue(poster_ids <= t.stream.live_ids)
-                        self.assertEqual(len(t.stream.frames), count)
+                        self.assertEqual(picture_frame_count(t.stream), count)
                         t.send("\x1b")
                         wait_for_screen(
                             t,
@@ -1742,14 +1744,16 @@ class MediaTerminal(support.MediaTerminal):
                 try:
                     self.wait_frames(t)
                     t.read(0.2)
-                    frames = len(t.stream.frames)
+                    frames = picture_frame_count(t.stream)
                     deletes = len(t.stream.deleted_ids)
                     placements = len(t.stream.placements)
                     for key in ("draft", "\x1b", "\n", "\x1b", "\x1b", "\n"):
                         t.send(key)
                         t.read(0.08)
                         self.assertEqual(
-                            len(t.stream.frames), frames, "Stationary picture was retransmitted"
+                            picture_frame_count(t.stream),
+                            frames,
+                            "Stationary picture was retransmitted",
                         )
                         self.assertEqual(
                             len(t.stream.deleted_ids), deletes, "Stationary picture was deleted"
@@ -2235,14 +2239,17 @@ class MediaTerminal(support.MediaTerminal):
                 t.click(4, 4)
                 t.read(0.2)
                 conversation = [row[26:] for row in t.screen.display[5:-3]]
-                frames = len(t.stream.frames)
+                pictures = picture_frame_count(t.stream)
                 requests = [
                     r for r in server.requests if "/messages" in r[1] or "/attachments/" in r[1]
                 ]
                 for key in ("\x1bOB", "\x1bOA", "\x1bOH", "\x1bOF", "\x1b[5~", "\x1b[6~"):
                     t.send(key)
                     self.assertEqual([row[26:] for row in t.screen.display[5:-3]], conversation)
-                    self.assertEqual(len(t.stream.frames), frames, "Navigation redrew the image")
+                    self.assertEqual(
+                        picture_frame_count(t.stream), pictures, "Navigation redrew the image"
+                    )
+                frames = len(t.stream.frames)
                 t.send("\x1bOH\x1bOB\n")
                 self.wait(t, "Rascunho com imagem")
                 t.send("\ue00a\n")

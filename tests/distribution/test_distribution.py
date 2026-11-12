@@ -135,6 +135,8 @@ class DistributionTests(unittest.TestCase):
         self.assertIn("--with-shared", module["config-opts"])
         self.assertNotIn("--enable-term-driver", module["config-opts"])
         self.assertNotIn("--disable-home-terminfo", module["config-opts"])
+        # Windows packages ship terminfo in hex directories (78/xterm-256color).
+        self.assertIn("--disable-mixed-case", bootstrap.ncurses_options("C:/deps", windows=True))
 
     def test_flatpak_uses_locked_sources_and_restricted_permissions(self):
         manifest = flatpak.manifest({"path": "/tmp/source.tar.gz"}, "a" * 64)

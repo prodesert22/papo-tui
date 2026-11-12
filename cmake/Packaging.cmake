@@ -84,6 +84,10 @@ if(PAPO_BUNDLE_RUNTIME AND PAPO_VOICE)
             NO_DEFAULT_PATH REQUIRED)
         list(APPEND PAPO_VOICE_PLUGINS "${voice_plugin_${plugin}}")
     endforeach()
+    if(WIN32)
+        # Native C:\ paths would be read as escapes in the generated install script.
+        file(TO_CMAKE_PATH "${PAPO_RUNTIME_SEARCH_DIRS}" PAPO_RUNTIME_SEARCH_DIRS)
+    endif()
     configure_file(${PROJECT_SOURCE_DIR}/cmake/BundleRuntime.cmake.in
                    ${PROJECT_BINARY_DIR}/BundleRuntime.in @ONLY)
     file(
