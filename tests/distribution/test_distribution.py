@@ -353,16 +353,19 @@ class DistributionTests(unittest.TestCase):
             self.assertIn("dist/flatpak/build-dependencies.json", args)
 
     def test_semver_and_incomplete_assets_fail_closed(self):
-        match = re.search(
-            r"project\(\s*papo_tui\s+VERSION\s+([^\s)]+)",
-            (ROOT / "CMakeLists.txt").read_text(encoding="utf-8"),
-        )
-        self.assertIsNotNone(match)
-        version = match.group(1)
+        version = release.project_version()
         self.assertEqual(release.validate_tag("v" + version), version)
-        major, minor, patch = (int(part) for part in version.split("."))
+        major, minor, patch = (int(part) for part in version.partition("-")[0].split("."))
         wrong_version = f"v{major + 1}.{minor}.{patch}"
-        for tag in ("0.1.2", "v01.1.0", "v0.1", "v0.1.0-beta", wrong_version):
+        for tag in (
+            "0.1.2",
+            "v01.1.0",
+            "v0.1",
+            "v0.1.0-beta",
+            "v0.1.0-beta.0",
+            "v0.1.0-preview.1",
+            wrong_version,
+        ):
             with self.subTest(tag=tag), self.assertRaises(ValueError):
                 release.validate_tag(tag)
         with tempfile.TemporaryDirectory() as directory:

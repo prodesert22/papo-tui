@@ -1,8 +1,10 @@
 name: Release
-run-name: Release from main
+run-name: Release ${{ github.ref_name }}
 on:
   push:
     branches: [main]
+    # Pre-releases (v0.6.0-beta.1) are published from a tag pushed by hand.
+    tags: ['v*.*.*-*']
     paths: [CMakeLists.txt]
 permissions:
   contents: read
@@ -11,7 +13,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   identity:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push'
     permissions:
       contents: write
     runs-on: ubuntu-24.04
@@ -19,6 +21,7 @@ jobs:
       enabled: ${{ steps.identity.outputs.enabled }}
       tag: ${{ steps.identity.outputs.tag }}
       version: ${{ steps.identity.outputs.version }}
+      prerelease: ${{ steps.identity.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -31,26 +34,47 @@ jobs:
           PREVIOUS_SHA: ${{ github.event.before }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "$RELEASE_EVENT" != push ] || [ "$RELEASE_REF" != refs/heads/main ]; then
+          if [ "$RELEASE_EVENT" != push ]; then
             echo 'enabled=false' >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          version="$(python3 dist/release.py --changed-since "$PREVIOUS_SHA")"
-          if [ -z "$version" ]; then
-            echo 'enabled=false' >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          RELEASE_TAG="v$version"
-          git fetch --no-tags origin main
-          python3 dist/release.py "$RELEASE_TAG" --require-main
+          case "$RELEASE_REF" in
+            refs/heads/main)
+              version="$(python3 dist/release.py --changed-since "$PREVIOUS_SHA")"
+              if [ -z "$version" ]; then
+                echo 'enabled=false' >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              RELEASE_TAG="v$version"
+              prerelease=false
+              git fetch --no-tags origin main
+              python3 dist/release.py "$RELEASE_TAG" --require-main
+              ;;
+            refs/tags/v*.*.*-*)
+              # The tag exists already: it must name a pre-release of the
+              # checked-out version, with its notes. Final tags never publish.
+              RELEASE_TAG="${RELEASE_REF#refs/tags/}"
+              prerelease=true
+              python3 dist/release.py "$RELEASE_TAG" --require-head >/dev/null
+              ;;
+            *)
+              echo 'enabled=false' >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+          esac
           if state="$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft 2>/dev/null)"; then
             test "$state" = true || { echo 'Refusing to replace a published release'; exit 1; }
           fi
-          version="$(python3 dist/release.py "$RELEASE_TAG" --ensure-tag --require-head --require-main)"
+          if [ "$prerelease" = true ]; then
+            version="$(python3 dist/release.py "$RELEASE_TAG" --require-head)"
+          else
+            version="$(python3 dist/release.py "$RELEASE_TAG" --ensure-tag --require-head --require-main)"
+          fi
           {
             echo 'enabled=true'
             echo "tag=$RELEASE_TAG"
             echo "version=$version"
+            echo "prerelease=$prerelease"
           } >> "$GITHUB_OUTPUT"
   checks:
     needs: identity
@@ -82,12 +106,21 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.identity.outputs.tag }}
+          PRERELEASE: ${{ needs.identity.outputs.prerelease }}
         run: |
+          # A pre-release is marked as such and never becomes the latest release.
+          if [ "$PRERELEASE" = true ]; then
+            kind=(--prerelease)
+            latest=(--prerelease --latest=false)
+          else
+            kind=()
+            latest=(--latest)
+          fi
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             state="$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)"
             test "$state" = true || { echo 'Refusing to replace a published release'; exit 1; }
           else
-            gh release create "$RELEASE_TAG" --draft --verify-tag --title "$RELEASE_TAG" --notes-file "releases/$RELEASE_TAG.md"
+            gh release create "$RELEASE_TAG" --draft "${kind[@]}" --verify-tag --title "$RELEASE_TAG" --notes-file "releases/$RELEASE_TAG.md"
           fi
           gh release upload "$RELEASE_TAG" build/artifacts/* --clobber
-          gh release edit "$RELEASE_TAG" --title "$RELEASE_TAG" --notes-file "releases/$RELEASE_TAG.md" --draft=false --latest
+          gh release edit "$RELEASE_TAG" --title "$RELEASE_TAG" --notes-file "releases/$RELEASE_TAG.md" --draft=false "${latest[@]}"

@@ -783,3 +783,24 @@ Update CMakeLists.txt, CHANGELOG.md and the complete versioned release notes,
 consolidating Unreleased and leaving it empty in the same commit. Release
 automation requires a push to main that increases the CMake version; published
 releases and existing tags are never replaced or moved.
+
+A pre-release such as **0.6.0-beta.1** is published from its tag instead of
+`main`. In CMakeLists.txt, keep the next version in `project(... VERSION 0.6.0)`
+and set `PAPO_VERSION_PRERELEASE` to `alpha.N`, `beta.N` or `rc.N`; leave it
+empty for the final release. Add `releases/v0.6.0-beta.1.md`, without a
+CHANGELOG.md entry and without emptying Unreleased, which the final release
+consolidates. Commit, push the branch, then push an annotated tag at that
+commit:
+
+```sh
+git tag --annotate v0.6.0-beta.1 --message v0.6.0-beta.1
+git push origin v0.6.0-beta.1
+```
+
+The tag runs the same builds, tests and packages as a final release and
+publishes them as a GitHub pre-release that never becomes the latest release.
+Package versions keep the label where each format orders it before the final
+version: `0.6.0~beta.1` in DEB and RPM, `0.6.0beta1` in the Arch package and
+`0.6.0-beta.1` in file names and `papo-tui --version`. A tag that does not
+match the CMake version, or has no notes, publishes nothing. Merging a
+pre-release version into `main` creates no tag.

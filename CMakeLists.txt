@@ -1,8 +1,18 @@
 cmake_minimum_required(VERSION 3.21)
 project(
     papo_tui
-    VERSION 0.5.0
+    VERSION 0.6.0
     LANGUAGES C)
+# Pre-release label of this version (alpha.N, beta.N or rc.N); empty for a final release. The
+# version reads 0.6.0-beta.1 and package managers order it before 0.6.0.
+set(PAPO_VERSION_PRERELEASE "beta.1")
+set(PAPO_PACKAGE_VERSION "${PROJECT_VERSION}")
+if(PAPO_VERSION_PRERELEASE)
+    string(APPEND PAPO_PACKAGE_VERSION "-${PAPO_VERSION_PRERELEASE}")
+endif()
+set(PAPO_PACKAGE_VERSION
+    "${PAPO_PACKAGE_VERSION}"
+    CACHE INTERNAL "Version in package names and --version")
 include(GNUInstallDirs)
 if(UNIX)
     set(CMAKE_INSTALL_RPATH
@@ -19,9 +29,9 @@ option(PAPO_RELEASE_BUILD "Build an official version without a development suffi
 option(PAPO_COVERAGE "Instrument application and tests for gcovr" OFF)
 option(PAPO_NATIVE_FILE_DIALOGS "Try native system dialogs before the terminal file picker" ON)
 if(PAPO_RELEASE_BUILD)
-    set(PAPO_DISPLAY_VERSION "${PROJECT_VERSION}")
+    set(PAPO_DISPLAY_VERSION "${PAPO_PACKAGE_VERSION}")
 else()
-    set(PAPO_DISPLAY_VERSION "${PROJECT_VERSION}-dev")
+    set(PAPO_DISPLAY_VERSION "${PAPO_PACKAGE_VERSION}-dev")
 endif()
 add_compile_definitions(PAPO_VERSION="${PAPO_DISPLAY_VERSION}")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)

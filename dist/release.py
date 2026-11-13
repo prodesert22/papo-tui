@@ -9,6 +9,12 @@ from checksums import MANIFEST, write_manifest
 
 ROOT = Path(__file__).resolve().parents[1]
 SEMVER = re.compile(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\Z")
+# Pre-releases add a SemVer label: v0.6.0-beta.1. They are published from their
+# tag, never from main, and order before the final version.
+PRERELEASE = re.compile(
+    r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-(alpha|beta|rc)\.([1-9][0-9]*)\Z"
+)
+STAGES = {"alpha": 0, "beta": 1, "rc": 2}
 
 
 def git(*arguments):
@@ -20,16 +26,37 @@ def project_version(ref=None):
     match = re.search(r"project\(\s*papo_tui\s+VERSION\s+([^\s)]+)", text)
     if not match or not SEMVER.fullmatch("v" + match[1]):
         raise ValueError("CMake must declare a stable SemVer version")
-    return match[1]
+    label = re.search(r'set\(\s*PAPO_VERSION_PRERELEASE\s+"([^"]*)"\s*\)', text)
+    if not label or not label[1]:
+        return match[1]
+    version = match[1] + "-" + label[1]
+    if not PRERELEASE.fullmatch("v" + version):
+        raise ValueError("The pre-release label must be alpha.N, beta.N or rc.N")
+    return version
+
+
+def prerelease(version):
+    return "-" in version
+
+
+def precedence(version):
+    """SemVer order: 0.6.0-alpha.1 < 0.6.0-beta.1 < 0.6.0-rc.1 < 0.6.0."""
+    release, _, label = version.partition("-")
+    numbers = tuple(map(int, release.split(".")))
+    if not label:
+        return numbers, (3, 0)
+    stage, number = label.split(".")
+    return numbers, (STAGES[stage], int(number))
 
 
 def validate_tag(tag):
-    if not SEMVER.fullmatch(tag):
-        raise ValueError("Use a stable SemVer tag: vMAJOR.MINOR.PATCH")
+    if not SEMVER.fullmatch(tag) and not PRERELEASE.fullmatch(tag):
+        raise ValueError("Use a SemVer tag: vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-beta.N")
     version = tag[1:]
     if project_version() != version:
         raise ValueError("Tag differs from the CMake version")
-    if f"## [{version}]" not in (ROOT / "CHANGELOG.md").read_text():
+    # The changelog lists final releases; a pre-release has its own notes.
+    if not prerelease(version) and f"## [{version}]" not in (ROOT / "CHANGELOG.md").read_text():
         raise ValueError("Missing changelog entry")
     if not (ROOT / "releases" / f"{tag}.md").is_file():
         raise ValueError("Missing full release notes")
@@ -40,9 +67,11 @@ def version_change(base):
     previous, current = project_version(base), project_version()
     if previous == current:
         return None
-    if tuple(map(int, current.split("."))) <= tuple(map(int, previous.split("."))):
+    if precedence(current) <= precedence(previous):
         raise ValueError("The release version must increase")
-    return validate_tag("v" + current)
+    version = validate_tag("v" + current)
+    # Main publishes final releases only; a pre-release is published from its tag.
+    return None if prerelease(version) else version
 
 
 def require_main():
@@ -54,7 +83,8 @@ def require_main():
 
 
 def ensure_tag(tag):
-    validate_tag(tag)
+    if prerelease(validate_tag(tag)):
+        raise ValueError("Pre-release tags are pushed by hand, never created from main")
     require_main()
     subprocess.run(
         [

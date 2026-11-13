@@ -29,7 +29,7 @@ concurrency:
   cancel-in-progress: ${{ !inputs.release }}
 jobs:
   quality:
-    if: ${{ !inputs.release || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+    if: ${{ !inputs.release || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))) }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -60,7 +60,7 @@ jobs:
           done
           exit "$status"
   build:
-    if: ${{ !inputs.release || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+    if: ${{ !inputs.release || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))) }}
     name: Build (${{ matrix.platform }}, ${{ matrix.arch }})
     strategy:
       fail-fast: false

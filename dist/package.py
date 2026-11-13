@@ -266,6 +266,12 @@ def appimage(stage, output, version, architecture, cache):
     return result
 
 
+def arch_version(version):
+    """pkgver for version: pacman forbids '-', and orders 0.6.0beta1 before 0.6.0."""
+    release, _, label = version.partition("-")
+    return release + label.replace(".", "")
+
+
 def arch_package(stage, output, version, architecture):
     work = stage.parent / "arch"
     work.mkdir()
@@ -274,7 +280,8 @@ def arch_package(stage, output, version, architecture):
         archive.add(stage, arcname="usr")
     digest = hashlib.sha256(payload.read_bytes()).hexdigest()
     recipe = (ROOT / "dist/arch/PKGBUILD.in").read_text()
-    for key, value in {"VERSION": version, "ARCH": architecture, "SHA256": digest}.items():
+    pkgver = arch_version(version)
+    for key, value in {"VERSION": pkgver, "ARCH": architecture, "SHA256": digest}.items():
         recipe = recipe.replace("@" + key + "@", value)
     (work / "PKGBUILD").write_text(recipe)
     configuration = work / "makepkg.conf"
@@ -293,7 +300,7 @@ def arch_package(stage, output, version, architecture):
         cwd=work,
         env=env,
     )
-    candidates = list(output.glob(f"papo-tui-{version}-1-{architecture}.pkg.tar.zst"))
+    candidates = list(output.glob(f"papo-tui-{pkgver}-1-{architecture}.pkg.tar.zst"))
     if len(candidates) != 1 or candidates[0].suffix != ".zst":
         raise RuntimeError("Expected one zstd Arch package")
     candidates[0].rename(output / f"papo-tui-{version}-arch-{architecture}.pkg.tar.zst")
@@ -336,7 +343,7 @@ def main():
     values = cmake_cache(build / "CMakeCache.txt")
     if values.get("PAPO_RELEASE_BUILD") != "ON":
         parser.error("Configure with PAPO_RELEASE_BUILD=ON")
-    version = values["CMAKE_PROJECT_VERSION"]
+    version = values.get("PAPO_PACKAGE_VERSION") or values["CMAKE_PROJECT_VERSION"]
     selected = set(args.formats.split(","))
     if selected - {"deb", "rpm", "arch", "appimage", "zip", "installer"}:
         parser.error("Unknown package format")

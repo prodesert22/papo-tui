@@ -59,12 +59,23 @@ class ReleaseFlow(unittest.TestCase):
             ["git", *args], cwd=self.source, text=True, stderr=subprocess.PIPE
         ).strip()
 
-    def write_version(self, version):
+    def write_version(self, version, label=""):
         (self.source / "CMakeLists.txt").write_text(
             f"project(papo_tui VERSION {version} LANGUAGES C)\n"
+            f'set(PAPO_VERSION_PRERELEASE "{label}")\n'
         )
-        (self.source / "CHANGELOG.md").write_text(f"## [{version}]\n")
-        (self.source / "releases" / f"v{version}.md").write_text(f"# Version {version}\n")
+        full = version + ("-" + label if label else "")
+        if not label:
+            (self.source / "CHANGELOG.md").write_text(f"## [{version}]\n")
+        (self.source / "releases" / f"v{full}.md").write_text(f"# Version {full}\n")
+
+    def beta(self, tag="v0.4.0-beta.1"):
+        """A pre-release prepared on dev and tagged by hand, never merged."""
+        self.git("switch", "-c", "dev")
+        self.write_version("0.4.0", "beta.1")
+        self.commit("Prepare 0.4.0-beta.1")
+        self.git("tag", "-a", tag, "-m", tag)
+        self.git("push", "origin", "dev", "refs/tags/" + tag)
 
     def commit(self, title):
         self.git("add", ".")
@@ -105,7 +116,14 @@ class ReleaseFlow(unittest.TestCase):
 
     def test_release_trigger_only_watches_version_file_pushes_to_main(self):
         self.assertEqual(
-            WORKFLOW["on"], {"push": {"branches": ["main"], "paths": ["CMakeLists.txt"]}}
+            WORKFLOW["on"],
+            {
+                "push": {
+                    "branches": ["main"],
+                    "tags": ["v*.*.*-*"],
+                    "paths": ["CMakeLists.txt"],
+                }
+            },
         )
 
     def test_pull_requests_other_branches_and_manual_runs_cannot_create_tags(self):
@@ -143,7 +161,10 @@ class ReleaseFlow(unittest.TestCase):
         merged = self.git("rev-parse", "HEAD")
         result, output = self.identity()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(output, {"enabled": "true", "tag": "v0.3.1", "version": "0.3.1"})
+        self.assertEqual(
+            output,
+            {"enabled": "true", "tag": "v0.3.1", "version": "0.3.1", "prerelease": "false"},
+        )
         self.assertEqual(self.git("cat-file", "-t", "v0.3.1"), "tag")
         self.assertEqual(self.git("rev-parse", "v0.3.1^{commit}"), merged)
         self.assertEqual(self.git("rev-parse", "origin/main"), merged)
@@ -181,6 +202,52 @@ class ReleaseFlow(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertNotIn("enabled", output)
                 self.assertEqual(self.remote_tag(), original)
+
+    def test_pushed_prerelease_tag_publishes_its_version_without_main(self):
+        self.beta()
+        result, output = self.identity(ref="refs/tags/v0.4.0-beta.1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            output,
+            {
+                "enabled": "true",
+                "tag": "v0.4.0-beta.1",
+                "version": "0.4.0-beta.1",
+                "prerelease": "true",
+            },
+        )
+        self.assertEqual(self.git("rev-parse", "origin/main"), self.base)
+
+    def test_prerelease_tag_must_match_the_version_and_its_notes(self):
+        self.beta()
+        for tag, prepare in (
+            ("v0.4.0-beta.2", lambda: None),
+            ("v0.4.0-rc.1", lambda: None),
+            ("v0.4.0-beta.1", lambda: (self.source / "releases/v0.4.0-beta.1.md").unlink()),
+        ):
+            with self.subTest(tag=tag):
+                prepare()
+                if tag != "v0.4.0-beta.1":
+                    self.git("tag", "-a", tag, "-m", tag)
+                result, output = self.identity(ref="refs/tags/" + tag)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn("enabled", output)
+
+    def test_prerelease_reaching_main_never_creates_a_tag(self):
+        self.write_version("0.4.0", "beta.1")
+        self.commit("Prepare 0.4.0-beta.1 on main")
+        self.git("push", "origin", "main")
+        result, output = self.identity()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(output, {"enabled": "false"})
+        self.assertEqual(self.git("ls-remote", "origin", "refs/tags/v0.4.0*"), "")
+
+    def test_published_prerelease_is_never_replaced(self):
+        self.beta()
+        result, output = self.identity(ref="refs/tags/v0.4.0-beta.1", state="false")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Refusing to replace a published release", result.stdout)
+        self.assertNotIn("enabled", output)
 
     def test_published_release_stops_before_tag_creation_or_builds(self):
         self.candidate()
