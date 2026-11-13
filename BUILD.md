@@ -81,7 +81,7 @@ sudo apt install build-essential cmake ninja-build pkg-config autoconf automake 
     python3 python3-venv python3-dev curl git ca-certificates libssl-dev zlib1g-dev \
     libncurses-dev ncurses-term libglib2.0-dev libpango1.0-dev libcairo2-dev librsvg2-dev \
     libfontconfig-dev libfreetype-dev libfribidi-dev libharfbuzz-dev libpulse-dev \
-    libasound2-dev libgcrypt20-dev libsecret-1-dev libva-dev libdrm-dev fonts-noto-color-emoji
+    libasound2-dev libgcrypt20-dev libsecret-1-dev libva-dev libdrm-dev hwdata fonts-noto-color-emoji
 ```
 
 ### Fedora
@@ -93,7 +93,7 @@ sudo dnf install gcc gcc-c++ make cmake ninja-build pkgconf-pkg-config autoconf 
     libtool nasm python3 python3-pip python3-devel curl git ca-certificates \
     openssl-devel zlib-devel ncurses-devel glib2-devel pango-devel cairo-devel librsvg2-devel \
     fontconfig-devel freetype-devel fribidi-devel harfbuzz-devel pulseaudio-libs-devel \
-    alsa-lib-devel libgcrypt-devel libsecret-devel libva-devel libdrm-devel google-noto-color-emoji-fonts
+    alsa-lib-devel libgcrypt-devel libsecret-devel libva-devel libdrm-devel hwdata google-noto-color-emoji-fonts
 ```
 
 ### RHEL 10
@@ -107,7 +107,7 @@ sudo dnf install gcc gcc-c++ make cmake ninja-build pkgconf-pkg-config autoconf 
     libtool nasm python3 python3-pip python3-devel curl git ca-certificates \
     openssl-devel zlib-ng-compat-devel ncurses-devel glib2-devel pango-devel cairo-devel librsvg2-devel \
     fontconfig-devel freetype-devel fribidi-devel harfbuzz-devel pulseaudio-libs-devel \
-    alsa-lib-devel libgcrypt-devel libsecret-devel libva-devel libdrm-devel
+    alsa-lib-devel libgcrypt-devel libsecret-devel libva-devel libdrm-devel hwdata
 ```
 
 Package availability follows the [RHEL 10 package manifest](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/10/html-single/package_manifest/index).
@@ -121,7 +121,7 @@ build Pango/GLib. Use the [Flatpak installation](docs/installation.md#rhel) ther
 ```sh
 sudo pacman -Syu --needed base-devel cmake ninja pkgconf autoconf automake libtool nasm \
     python python-pip curl git ca-certificates openssl zlib ncurses glib2 pango cairo librsvg \
-    fontconfig freetype2 fribidi harfbuzz libpulse alsa-lib libgcrypt libsecret libva libdrm noto-fonts-emoji
+    fontconfig freetype2 fribidi harfbuzz libpulse alsa-lib libgcrypt libsecret libva libdrm hwdata noto-fonts-emoji
 ```
 
 Arch development headers are included in the library packages. On Arch Linux

@@ -18,14 +18,6 @@
       "buildsystem": "python-package",
       "archive": "jinja2-3.1.6.tar.gz",
       "package": "jinja2"
-    },
-    {
-      "name": "libdisplay-info",
-      "version": "0.3.0",
-      "url": "https://gitlab.freedesktop.org/emersion/libdisplay-info/-/releases/0.3.0/downloads/libdisplay-info-0.3.0.tar.xz",
-      "sha256": "6ae77cd937f9cf7d1321d35c116062c4911e8447010a6a713ac4286f7a9d5987",
-      "buildsystem": "meson",
-      "archive": "libdisplay-info-0.3.0.tar.xz"
     }
   ]
 }

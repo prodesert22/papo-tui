@@ -18,7 +18,7 @@ data/emoji/LICENSE.
 | FFmpeg | Image decoding and video pixel conversion | LGPL-2.1-or-later in distributed configurations |
 | libmpv | Video and audio playback | LGPL-2.1-or-later in distributed configurations |
 | libplacebo / libass | libmpv dependencies | LGPL-2.1-or-later / ISC |
-| libva / libdrm | Linux hardware video decoding | MIT/X11 |
+| libva / libdrm / libdisplay-info | Linux hardware video decoding | MIT/X11 / MIT |
 | Noto Emoji | Emoji font | OFL-1.1 |
 | GStreamer core and base/good/bad plugins | WebRTC, audio devices, meters and DSP | LGPL-2.1-or-later in distributed configurations |
 | libnice | ICE/STUN/TURN | MPL-1.1 OR LGPL-2.1-only |
