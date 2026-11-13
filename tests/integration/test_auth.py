@@ -325,7 +325,6 @@ class AuthTests(unittest.TestCase):
     def test_url_validation(self):
         invalid = [
             "",
-            "chat.example",
             "ftp://example.com",
             "http://example.com",
             "https://u:p@example.com",
@@ -335,8 +334,21 @@ class AuthTests(unittest.TestCase):
         for url in invalid:
             with self.subTest(url=url):
                 self.assertEqual(self.run_probe(url, "normalize").returncode, 2)
-        result = self.run_probe("https://example.com/papo///", "normalize")
-        self.assertEqual(result.stdout.strip(), "https://example.com/papo")
+        for url, expected in (
+            ("https://example.com/papo///", "https://example.com/papo"),
+            ("chat.example", "https://chat.example"),
+            ("chat.example:8443/papo/", "https://chat.example:8443/papo"),
+            ("http://localhost:8080", "http://localhost:8080"),
+            # A scheme already present, even loosely written, is never doubled.
+            ("https//chat.example", "https://chat.example"),
+            ("HTTPS:/chat.example/papo", "https://chat.example/papo"),
+            ("http//localhost:8080", "http://localhost:8080"),
+            (" https://chat.example \n", "https://chat.example"),
+            ("httpbin.example", "https://httpbin.example"),
+        ):
+            with self.subTest(url=url):
+                result = self.run_probe(url, "normalize")
+                self.assertEqual(result.stdout.strip(), expected)
 
 
 if __name__ == "__main__":

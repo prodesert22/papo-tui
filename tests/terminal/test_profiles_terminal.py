@@ -278,7 +278,7 @@ class ProfileTerminalTests(unittest.TestCase):
             terminal = self.terminal()
             self.wait(terminal, "não inicializada")
             before = self.path.read_bytes()
-            terminal.send("\x05\t\x15bad\n\n")
+            terminal.send("\x05\t\x15ftp://bad\n\n")
             self.wait(terminal, "URL válida")
             self.assertEqual(self.path.read_bytes(), before)
             terminal.send("\x1b")

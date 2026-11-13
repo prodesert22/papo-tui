@@ -181,7 +181,6 @@ class ProfilesTests(unittest.TestCase):
         previous = self.path.read_bytes()
         urls = (
             "",
-            "example.com",
             "ftp://example.com",
             "http://example.com",
             "https://u:p@example.com",
@@ -212,6 +211,20 @@ class ProfilesTests(unittest.TestCase):
         self.assertTrue(self.probe("select", first, "allow")["ok"])
         self.assertFalse(self.probe("edit", first, "Local", url, "deny")["ok"])
         self.add("IPv6", "http://[::1]:8080/papo", "allow")
+
+    def test_url_without_scheme_defaults_to_https(self):
+        for typed, saved in (
+            ("example.com", "https://example.com"),
+            ("example.com:8443/papo/", "https://example.com:8443/papo"),
+            ("localhost:8080", "https://localhost:8080"),
+        ):
+            with self.subTest(url=typed):
+                profile = self.add("Sem esquema", typed, "deny")
+                stored = {item["id"]: item["url"] for item in self.probe("list")["profiles"]}
+                self.assertEqual(stored[profile], saved)
+        for url in ("u:p@example.com", "example.com?q=x", "example.com:65536"):
+            with self.subTest(url=url):
+                self.assertFalse(self.probe("add", "Invalid", url, "deny")["ok"])
 
     def test_rate_preferences_validation_restart_and_v1_migration(self):
         first = self.add()

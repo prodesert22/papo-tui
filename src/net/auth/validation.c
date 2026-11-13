@@ -224,13 +224,41 @@ bool auth_internal_registration_valid(auth_client *client, const char *username,
     return auth_internal_input_fail(client, field, message);
 }
 
+/* The address as typed or pasted, without surrounding blanks. A scheme
+ * written loosely ("https//", "https:/", "HTTP:") is the one the user meant,
+ * so it is repaired rather than prefixed; hosts such as httpbin.org stay
+ * untouched. Owned by the caller. */
+static char *typed_url(const char *url)
+{
+    while (*url == ' ' || *url == '\t' || *url == '\r' || *url == '\n')
+        ++url;
+    size_t length = strlen(url);
+    while (length && strchr(" \t\r\n", url[length - 1]))
+        --length;
+    static const char *const schemes[] = {"https", "http"};
+    for (size_t i = 0; i < sizeof(schemes) / sizeof(schemes[0]); ++i) {
+        size_t name = strlen(schemes[i]), rest = name;
+        if (length <= name || g_ascii_strncasecmp(url, schemes[i], name) ||
+            (url[name] != ':' && url[name] != '/'))
+            continue;
+        if (url[rest] == ':')
+            ++rest;
+        while (rest < length && url[rest] == '/')
+            ++rest;
+        return g_strdup_printf("%s://%.*s", schemes[i], (int)(length - rest), url + rest);
+    }
+    return g_strndup(url, length);
+}
+
 char *auth_normalize_url(const char *url, char *error, size_t error_size)
 {
     CURLU *parsed = curl_url();
     char *scheme = NULL, *host = NULL, *path = NULL, *part = NULL, *result = NULL;
-    const char *reason = _("Informe uma URL válida com https:// ou http://.");
-    if (!parsed || !url || !*url || strlen(url) > 2048 ||
-        curl_url_set(parsed, CURLUPART_URL, url, 0) != CURLUE_OK)
+    char *typed = url ? typed_url(url) : NULL;
+    const char *reason = _("Informe uma URL válida, como chat.exemplo.com.");
+    /* Only an address typed without any scheme gets HTTPS. */
+    if (!parsed || !typed || !*typed || strlen(typed) > 2048 ||
+        curl_url_set(parsed, CURLUPART_URL, typed, CURLU_DEFAULT_SCHEME) != CURLUE_OK)
         goto done;
     if (curl_url_get(parsed, CURLUPART_SCHEME, &scheme, 0) != CURLUE_OK ||
         curl_url_get(parsed, CURLUPART_HOST, &host, 0) != CURLUE_OK)
@@ -267,6 +295,7 @@ char *auth_normalize_url(const char *url, char *error, size_t error_size)
 done:
     if (!result && error && error_size)
         snprintf(error, error_size, "%s", reason);
+    g_free(typed);
     curl_free(scheme);
     curl_free(host);
     curl_free(path);

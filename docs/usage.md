@@ -74,8 +74,9 @@ to check the installed version.
 
 ## Connect and chat
 
-Enter the full instance URL, such as `https://chat.example.com`, your username
-and your password. Enter a server password only for private instances.
+Enter the instance URL, such as `chat.example.com`, your username and your
+password. An address without `https://` or `http://` uses HTTPS. Enter a
+server password only for private instances.
 Select **Entrar** (Sign in). To create an account, select **Cadastro** (Register)
 and then sign in.
 

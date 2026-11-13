@@ -825,7 +825,7 @@ static const translation_entry translation_entries[] = {
     {"", "Informe texto ou filtros e selecione Buscar.", NULL, {"Enter text or filters and select Search.", NULL}},
     {"", "Informe um nome sem controles, com até 128 bytes UTF-8.", NULL, {"Enter a name without control characters, up to 128 UTF-8 bytes.", NULL}},
     {"", "Informe um usuário válido, sem controles de terminal.", NULL, {"Enter a valid username, without terminal control characters.", NULL}},
-    {"", "Informe uma URL válida com https:// ou http://.", NULL, {"Enter a valid URL with https:// or http://.", NULL}},
+    {"", "Informe uma URL válida, como chat.exemplo.com.", NULL, {"Enter a valid URL, such as chat.example.com.", NULL}},
     {"", "Informe uma senha válida, sem controles de terminal.", NULL, {"Enter a valid password, without terminal control characters.", NULL}},
     {"", "Iniciar", NULL, {"Start", NULL}},
     {"", "Inserir texto sem enviar o formulário", NULL, {"Insert text without submitting the form", NULL}},

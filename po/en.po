@@ -3382,8 +3382,8 @@ msgid "Informe um usuário válido, sem controles de terminal."
 msgstr "Enter a valid username, without terminal control characters."
 
 #: src/net/auth/validation.c
-msgid "Informe uma URL válida com https:// ou http://."
-msgstr "Enter a valid URL with https:// or http://."
+msgid "Informe uma URL válida, como chat.exemplo.com."
+msgstr "Enter a valid URL, such as chat.example.com."
 
 #: src/net/auth/validation.c
 msgid "Informe uma senha válida, sem controles de terminal."
