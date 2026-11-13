@@ -82,9 +82,9 @@ static void save(server_settings *s)
     }
     /* Whether a refusal is about the password, to point at its field. */
     bool password_problem =
-        !s->choice && ((json_is_true(json_object_get(server_admin_server(s->model), "public")) &&
-                        !*password) ||
-                       (*password && server_admin_check_text(password, 0, true)));
+        !s->choice &&
+        ((json_is_true(json_object_get(server_admin_server(s->model), "public")) && !*password) ||
+         (*password && server_admin_check_text(password, 0, true)));
     const char *problem = NULL;
     json_t *body = server_admin_patch_body(server_admin_server(s->model), name, s->choice,
                                            s->choice ? NULL : password, &problem);

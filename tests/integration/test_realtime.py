@@ -167,7 +167,10 @@ class RealtimeTests(unittest.TestCase):
             server.messages[-1]["attachments"] = self.attachments("pending")
             client = self.observer(server)
             initial = client.ready()
-            states = lambda r: [a["moderation_status"] for a in r["messages"][-1]["attachments"]]
+
+            def states(r):
+                return [a["moderation_status"] for a in r["messages"][-1]["attachments"]]
+
             self.assertEqual(states(initial), ["pending", "pending"])
             result = client.command("event " + json.dumps(self.moderation(uuid(910))))
             self.assertEqual(states(result), ["sensitive", "pending"])

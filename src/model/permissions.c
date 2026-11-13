@@ -21,8 +21,8 @@ static bool uuid_value(const json_t *v)
     const char *s = json_string_value(v);
     return s && json_string_length(v) == 36 && strlen(s) == 36 && g_uuid_string_is_valid(s);
 }
-static const char *const role_keys[] = {"manage_server",  "manage_channels", "manage_roles",
-                                        "ban_members",    "pin_message",     "everyone_message",
+static const char *const role_keys[] = {"manage_server",   "manage_channels", "manage_roles",
+                                        "ban_members",     "pin_message",     "everyone_message",
                                         "send_attachment", "manage_webhooks"};
 static const char *const channel_keys[] = {"read_channel", "send_messages", "delete_messages",
                                            "connect_voice"};

@@ -21,7 +21,7 @@ enum {
 };
 #define ROW_FILTERS "filters"
 #define MATCHES 6
-static const char *const entities[] = {"",     "user",      "server", "channel", "message",
+static const char *const entities[] = {"",           "user", "server",    "channel", "message",
                                        "attachment", "role", "user_role", "emoji",   "webhook"};
 static const char *const entity_labels[] = {
     N_("Todas"),  N_("Usuários"), N_("Servidor"),          N_("Canais"), N_("Mensagens"),

@@ -577,7 +577,9 @@ class DiscoveryTerminal(unittest.TestCase):
             # Closing the search forgets its fields, but not the recent filter.
             t.send("\x1b")
             wait_for_screen(
-                t, lambda: "Buscar mensagens no servidor" not in "\n".join(t.screen.display), "search closed"
+                t,
+                lambda: "Buscar mensagens no servidor" not in "\n".join(t.screen.display),
+                "search closed",
             )
             t.send("\x06")
             self.wait(t, "Buscar mensagens no servidor")

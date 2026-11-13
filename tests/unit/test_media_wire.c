@@ -32,8 +32,8 @@ int main(void)
            received.image_id == 123);
     assert(received.width == 32 && received.terminal.protocol == GRAPHICS_CHAFA);
     assert(received.region && received.video_poster && received.video_clip &&
-           received.notification_badge &&
-           received.top == 1 && received.bottom == 2 && received.left == 3 && received.right == 4);
+           received.notification_badge && received.top == 1 && received.bottom == 2 &&
+           received.left == 3 && received.right == 4);
     g_free(path);
     g_variant_unref(value);
     request.left = -1;

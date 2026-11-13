@@ -4,7 +4,7 @@
 /* Cargos: create, edit and delete roles (manage_roles). */
 enum { NAME, COLOR, FLAG, SAVE, DELETE_ITEM };
 static const char *const flag_keys[PERMISSION_ROLE_COUNT] = {
-    "manage_server", "manage_channels",  "manage_roles",   "ban_members",
+    "manage_server", "manage_channels",  "manage_roles",    "ban_members",
     "pin_message",   "everyone_message", "send_attachment", "manage_webhooks"};
 static const char *const flag_labels[PERMISSION_ROLE_COUNT] = {
     N_("Gerenciar servidor"), N_("Gerenciar canais"),  N_("Gerenciar cargos"),

@@ -22,7 +22,7 @@ typedef struct {
      * none is scheduled. Failures grow the wait until the server answers. */
     uint64_t retry_at;
     unsigned retry_failures;
-    bool retrying; /* An automatic read is validating; the tab still shows offline. */
+    bool retrying;      /* An automatic read is validating; the tab still shows offline. */
     bool offline_shown; /* Last offline state reported, to redraw when it changes. */
     char name[129], url[2049];
     /* Set when the user clicks one of this server's desktop notifications. */

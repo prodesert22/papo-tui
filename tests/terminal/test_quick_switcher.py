@@ -171,8 +171,9 @@ class QuickSwitcher(unittest.TestCase):
             self.wait(t, "Conteúdo do outro canal")
             wait_for_screen(
                 t,
-                lambda: sum(f"/channels/{OTHER}/messages" in r[1] for r in second.requests)
-                > before,
+                lambda: (
+                    sum(f"/channels/{OTHER}/messages" in r[1] for r in second.requests) > before
+                ),
                 "The second server did not load planos",
             )
             self.assertNotIn("Mensagem não disponível", self.screen(t))

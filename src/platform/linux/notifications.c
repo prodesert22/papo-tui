@@ -297,8 +297,7 @@ static void sent(GObject *source, GAsyncResult *result, gpointer context)
             entry->terminal = false;
             snprintf(entry->key, sizeof(entry->key), "%s", d->key);
             snprintf(entry->target, sizeof(entry->target), "%s", d->target);
-        }
-        else if (!n->dying && n->epoch == d->epoch)
+        } else if (!n->dying && n->epoch == d->epoch)
             close_notification(n, id);
         g_variant_unref(reply);
     } else if (!n->dying && n->epoch == d->epoch) {

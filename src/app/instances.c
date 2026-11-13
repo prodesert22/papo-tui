@@ -181,8 +181,8 @@ static bool alert_message_body(const instance_connection *item, inbox *box, cons
     if (target) {
         const char *author =
             json_string_value(json_object_get(inbox_message_preview(box, target), "author_id"));
-        const char *name = author && *author ? history_mention_name((void *)item->model, author)
-                                             : NULL;
+        const char *name =
+            author && *author ? history_mention_name((void *)item->model, author) : NULL;
         char safe[TEXT_UTF8_BYTES];
         if (author && !strcmp(author, auth_user_id(item->auth)))
             snprintf(reply, sizeof(reply), _("Respondeu a você"));
@@ -550,10 +550,10 @@ bool instances_poll(instance_connections *connections, auth_client *active)
                 if (!text_decode(&buffer, title) || !text_encode(&buffer, safe_title))
                     continue;
                 if (device->notification_preview && account->preview) {
-                    if (!alert_message_body(item, box, preview,
-                                            json_string_value(
-                                                json_object_get(event, "message_content")),
-                                            safe_body))
+                    if (!alert_message_body(
+                            item, box, preview,
+                            json_string_value(json_object_get(event, "message_content")),
+                            safe_body))
                         continue;
                 } else if (!alert_plain(_("Nova notificação"), safe_body))
                     continue;

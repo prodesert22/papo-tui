@@ -712,12 +712,10 @@ void emoji_picker_draw(emoji_picker *p)
     wattrset(w, COLOR_PAIR(!p->server && !p->gif ? chosen : THEME_PANEL_MUTED) |
                     (p->focus == 1 ? A_BOLD : 0));
     text_label(w, 2, 2, 10, _("[Unicode]"));
-    wattrset(w, COLOR_PAIR(p->server ? chosen : THEME_PANEL_MUTED) |
-                    (p->focus == 1 ? A_BOLD : 0));
+    wattrset(w, COLOR_PAIR(p->server ? chosen : THEME_PANEL_MUTED) | (p->focus == 1 ? A_BOLD : 0));
     text_label(w, 2, 13, 11, _("[Servidor]"));
     if (p->gif_auth && !p->reaction) {
-        wattrset(w, COLOR_PAIR(p->gif ? chosen : THEME_PANEL_MUTED) |
-                        (p->focus == 1 ? A_BOLD : 0));
+        wattrset(w, COLOR_PAIR(p->gif ? chosen : THEME_PANEL_MUTED) | (p->focus == 1 ? A_BOLD : 0));
         text_label(w, 2, 25, 5, _("[GIF]"));
     }
     for (size_t i = p->first; p->gif && i < p->count && i < p->first + page; ++i) {

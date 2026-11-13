@@ -5,7 +5,6 @@ from test_context import main as test_main
 from pathlib import Path
 import tempfile
 import time
-import unittest
 from wcwidth import wcswidth
 from history_mock import CHANNEL, HistoryMock, uuid
 from realtime_mock import RealtimeMock
@@ -61,9 +60,10 @@ class Downloads(support.MessageInteractions):
                 row, column = self.button(terminal)
                 terminal.click(row, column)
                 self.wait(terminal, "Salvar em")
-                path_row = next(
-                    i for i, line in enumerate(terminal.screen.display) if "Salvar em" in line
-                ) + 1
+                path_row = (
+                    next(i for i, line in enumerate(terminal.screen.display) if "Salvar em" in line)
+                    + 1
+                )
                 # From the Salvar button, with nothing typed.
                 terminal.send("\x03\t\t\t\n")
                 self.wait(terminal, "Informe o caminho do arquivo.")
@@ -204,7 +204,7 @@ class Downloads(support.MessageInteractions):
 
     def test_chooser_cancel_and_select_all_and_two_attachments_skip_it(self):
         files = [("one.bin", b"1"), ("two.bin", b"2"), ("three.bin", b"3")]
-        with tempfile.TemporaryDirectory() as folder, self.serve(attachments=files) as server:
+        with tempfile.TemporaryDirectory(), self.serve(attachments=files) as server:
             terminal = self.open(server)
             try:
                 self.resize(terminal, 40, 100)
@@ -223,7 +223,7 @@ class Downloads(support.MessageInteractions):
             finally:
                 self.assertTrue(terminal.close())
         files = [("one.bin", b"1"), ("two.bin", b"2")]
-        with tempfile.TemporaryDirectory() as folder, self.serve(attachments=files) as server:
+        with tempfile.TemporaryDirectory(), self.serve(attachments=files) as server:
             terminal = self.open(server)
             try:
                 self.resize(terminal, 40, 100)
@@ -276,7 +276,7 @@ class Downloads(support.MessageInteractions):
     def test_dialog_suggests_a_safe_name_in_the_chosen_folder(self):
         hostile = "../evil\x1b[2J:name.txt"
         with (
-            tempfile.TemporaryDirectory() as folder,
+            tempfile.TemporaryDirectory(),
             self.serve(attachments=[(hostile, b"x")]) as server,
         ):
             terminal = self.open(server)

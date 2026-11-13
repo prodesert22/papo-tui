@@ -808,13 +808,14 @@ class Members(unittest.TestCase):
                 sum("/users?" in path for method, path, *_ in server.requests if method == "GET"), 3
             )
 
-
     def test_reopening_reuses_the_directory_and_refresh_keeps_it_listed(self):
         with MemberMock(total=205) as server:
             terminal = self.open(server)
 
             def pages():
-                return sum("/users?" in path for method, path, *_ in server.requests if method == "GET")
+                return sum(
+                    "/users?" in path for method, path, *_ in server.requests if method == "GET"
+                )
 
             self.drawer(terminal)
             self.wait(terminal, "Membros (205)")

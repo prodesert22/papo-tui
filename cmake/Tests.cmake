@@ -670,9 +670,15 @@ if(BUILD_TESTING)
         auth
         ui)
     add_executable(
-        text-test tests/unit/test_text.c src/ui/input/text.c src/ui/input/mouse.c
-                  src/model/text/mentions.c src/config/key_binding.c src/model/text/translation.c
-                  src/ui/components/theme.c src/model/text/emoji_catalog.c)
+        text-test
+        tests/unit/test_text.c
+        src/ui/input/text.c
+        src/ui/input/mouse.c
+        src/model/text/mentions.c
+        src/config/key_binding.c
+        src/model/text/translation.c
+        src/ui/components/theme.c
+        src/model/text/emoji_catalog.c)
     target_include_directories(text-test PRIVATE src)
     target_link_libraries(text-test PRIVATE PkgConfig::GLIB PkgConfig::NCURSES PkgConfig::UNIBREAK
                                             PkgConfig::JANSSON)

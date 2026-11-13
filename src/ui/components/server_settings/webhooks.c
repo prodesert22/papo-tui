@@ -7,7 +7,19 @@
 /* Webhooks: create, rename (nickname), change the avatar of and revoke the
  * webhooks of the server (manage_webhooks). The access token of a new webhook
  * is shown here once and only while its form stays open. */
-enum { CHANNEL, NAME, CREATE, NICKNAME, SAVE, AVATAR, AVATAR_REMOVE, REVOKE, COPY_URL, COPY_TOKEN, RETRY };
+enum {
+    CHANNEL,
+    NAME,
+    CREATE,
+    NICKNAME,
+    SAVE,
+    AVATAR,
+    AVATAR_REMOVE,
+    REVOKE,
+    COPY_URL,
+    COPY_TOKEN,
+    RETRY
+};
 #define CHANNEL_CHOICES 4096
 
 static const json_t *selected_webhook(server_settings *s)
@@ -61,8 +73,7 @@ static void rows(server_settings *s, GArray *out)
     {
         const char *nickname = admin_str(webhook, "display_name");
         char detail[160];
-        snprintf(detail, sizeof(detail), "#%s",
-                 channel_name(s, admin_str(webhook, "channel_id")));
+        snprintf(detail, sizeof(detail), "#%s", channel_name(s, admin_str(webhook, "channel_id")));
         admin_row_add(out, admin_str(webhook, "id"),
                       *nickname ? nickname : admin_str(webhook, "name"), detail, 0, false);
     }
@@ -80,8 +91,8 @@ static void fill(server_settings *s)
     if (*created && !*s->selected) {
         size_t i;
         json_t *webhook;
-        json_array_foreach(server_admin_items(s->model, ADMIN_LIST_WEBHOOKS), i, webhook) if (
-            !strcmp(admin_str(webhook, "id"), created))
+        json_array_foreach(server_admin_items(s->model, ADMIN_LIST_WEBHOOKS), i,
+                           webhook) if (!strcmp(admin_str(webhook, "id"), created))
         {
             snprintf(s->selected, sizeof(s->selected), "%s", created);
             server_admin_webhook_created_clear(s->model);

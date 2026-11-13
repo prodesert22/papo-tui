@@ -17,7 +17,7 @@ typedef struct {
     /* video marks every item played by the media player; audio refines it to
      * sound-only attachments, which have no history preview or download. */
     bool video, audio, size_known, full_width;
-    bool svg; /* An SVG attachment, rasterized by the image pipeline. */
+    bool svg;       /* An SVG attachment, rasterized by the image pipeline. */
     bool clip;      /* Silent looping video drawn in place, like a GIF. */
     char url[1024]; /* Public https address of a GIF linked in the text, else empty. */
     int64_t size_bytes;

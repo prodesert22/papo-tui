@@ -133,14 +133,19 @@ add_library(
     src/ui/media/sound.c
     src/app/instances.c)
 target_link_libraries(
-    papo_send_editor PUBLIC papo_outbox papo_sessions papo_desktop PkgConfig::NCURSES
-                            PkgConfig::UNIBREAK PkgConfig::GLIB PkgConfig::GMODULE)
+    papo_send_editor
+    PUBLIC papo_outbox
+           papo_sessions
+           papo_desktop
+           PkgConfig::NCURSES
+           PkgConfig::UNIBREAK
+           PkgConfig::GLIB
+           PkgConfig::GMODULE)
 target_compile_options(papo_send_editor PRIVATE -Wall -Wextra -Wpedantic -Werror)
 # Sounds load their module lazily; the module is built alongside the client.
 target_compile_definitions(
-    papo_send_editor
-    PRIVATE PAPO_SOUND_MODULE="$<TARGET_FILE_NAME:papo_sound_player>"
-            PAPO_BACKEND_INSTALL_DIR="${CMAKE_INSTALL_FULL_BINDIR}/papo-backends")
+    papo_send_editor PRIVATE PAPO_SOUND_MODULE="$<TARGET_FILE_NAME:papo_sound_player>"
+                             PAPO_BACKEND_INSTALL_DIR="${CMAKE_INSTALL_FULL_BINDIR}/papo-backends")
 if(WIN32)
     target_link_libraries(papo_send_editor PRIVATE ole32 shell32 uuid windowscodecs)
 endif()
@@ -161,8 +166,7 @@ add_library(papo_video_player MODULE src/ui/media/video_player.c)
 target_include_directories(papo_video_player PRIVATE src)
 target_link_libraries(papo_video_player PRIVATE PkgConfig::NCURSES PkgConfig::GMODULE
                                                 PkgConfig::MPV PkgConfig::SWSCALE PkgConfig::AVUTIL)
-# Plays the client's own notification and call sounds without linking libmpv
-# into the main binary.
+# Plays the client's own notification and call sounds without linking libmpv into the main binary.
 add_library(papo_sound_player MODULE src/ui/media/sound_player.c)
 target_include_directories(papo_sound_player PRIVATE src)
 target_link_libraries(papo_sound_player PRIVATE PkgConfig::GMODULE PkgConfig::MPV)

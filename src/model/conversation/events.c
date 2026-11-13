@@ -288,8 +288,9 @@ bool history_event(history *h, const json_t *event, uint64_t generation)
     bool known_state = false;
     for (size_t i = 0; moderation && state && i < G_N_ELEMENTS(moderation_states); ++i)
         known_state |= !strcmp(state, moderation_states[i]);
-    if (moderation && (!history_internal_string_field((json_t *)event, "attachment_id", 36, false) ||
-                       !history_uuid(attachment) || !known_state))
+    if (moderation &&
+        (!history_internal_string_field((json_t *)event, "attachment_id", 36, false) ||
+         !history_uuid(attachment) || !known_state))
         goto invalid;
     if (embeds) {
         json_t *list = json_object_get(event, "embeds");

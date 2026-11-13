@@ -72,15 +72,15 @@ static const unsigned char light_rgb[THEME_COLOR_COUNT][3] = {
 /* xterm-256 approximations, used when the palette cannot be redefined. */
 static const int dark_indexed[THEME_COLOR_COUNT] = {16,  16,  234, 254, 247, 215, 210,
                                                     150, 238, 235, 233, 231, 94,  196};
-static const int light_indexed[THEME_COLOR_COUNT] = {254, 254, 252, 234, 239, 94, 124,
+static const int light_indexed[THEME_COLOR_COUNT] = {254, 254, 252, 234, 239, 94,  124,
                                                      22,  249, 223, 253, 16,  179, 160};
 static const int dark_basic[THEME_COLOR_COUNT] = {
-    COLOR_BLACK, COLOR_BLACK, COLOR_BLACK, COLOR_WHITE, COLOR_WHITE,  COLOR_YELLOW, COLOR_RED,
-    COLOR_GREEN, COLOR_WHITE, COLOR_BLACK, COLOR_BLACK, COLOR_WHITE,  COLOR_YELLOW, COLOR_RED};
+    COLOR_BLACK, COLOR_BLACK, COLOR_BLACK, COLOR_WHITE, COLOR_WHITE, COLOR_YELLOW, COLOR_RED,
+    COLOR_GREEN, COLOR_WHITE, COLOR_BLACK, COLOR_BLACK, COLOR_WHITE, COLOR_YELLOW, COLOR_RED};
 /* Yellow is unreadable on white: the accent is blue with 8 or 16 colors. */
 static const int light_basic[THEME_COLOR_COUNT] = {
-    COLOR_WHITE, COLOR_WHITE, COLOR_WHITE, COLOR_BLACK, COLOR_BLACK,  COLOR_BLUE, COLOR_RED,
-    COLOR_GREEN, COLOR_BLACK, COLOR_WHITE, COLOR_WHITE, COLOR_BLACK,  COLOR_CYAN, COLOR_RED};
+    COLOR_WHITE, COLOR_WHITE, COLOR_WHITE, COLOR_BLACK, COLOR_BLACK, COLOR_BLUE, COLOR_RED,
+    COLOR_GREEN, COLOR_BLACK, COLOR_WHITE, COLOR_WHITE, COLOR_BLACK, COLOR_CYAN, COLOR_RED};
 static theme_palette palette = THEME_PALETTE_DARK;
 static const unsigned char (*rgb)[3] = dark_rgb;
 /* The theme given to theme_init, so a palette change can redefine colors and

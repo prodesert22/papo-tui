@@ -193,8 +193,7 @@ bool quick_switcher_key(quick_switcher *s, int type, uint32_t key)
         else if ((event.bstate & (BUTTON1_CLICKED | BUTTON1_PRESSED)) && y >= LIST_ROW &&
                  y < LIST_ROW + s->rows && s->first + (size_t)(y - LIST_ROW) < s->visible_count)
             choose(s, s->first + (size_t)(y - LIST_ROW));
-        else if ((event.bstate & (BUTTON1_CLICKED | BUTTON1_PRESSED)) && y == SEARCH_ROW &&
-                 x >= 10)
+        else if ((event.bstate & (BUTTON1_CLICKED | BUTTON1_PRESSED)) && y == SEARCH_ROW && x >= 10)
             text_click(&s->search, TEXT_LIMIT * 2 + 1, 0, s->search_first + x - 10);
         return true;
     }

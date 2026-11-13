@@ -4,7 +4,6 @@ from test_context import protocols
 
 from test_context import main as test_main
 
-import json
 from urllib.parse import parse_qs, urlsplit
 import unittest
 
@@ -116,7 +115,11 @@ class GifPicker(unittest.TestCase):
                     t.send("\n")
                     wait_for_screen(
                         t,
-                        lambda: "[GIF]" not in self.screen(t) and "/g/ful" in self.screen(t) and "l-1.gif" in self.screen(t),
+                        lambda: (
+                            "[GIF]" not in self.screen(t)
+                            and "/g/ful" in self.screen(t)
+                            and "l-1.gif" in self.screen(t)
+                        ),
                         "The chosen GIF address must land in the draft and close the picker",
                     )
                 finally:
@@ -128,14 +131,20 @@ class GifPicker(unittest.TestCase):
                 t = self.open_gifs(server, "kitty")
                 try:
                     t.send(DOWN + RIGHT + RIGHT + UP + "nothing")
-                    self.helper.wait(t, "A busca de GIFs falhou" if fail else "Nenhum GIF encontrado")
+                    self.helper.wait(
+                        t, "A busca de GIFs falhou" if fail else "Nenhum GIF encontrado"
+                    )
                     t.send("\x1b")
                     self.helper.wait(t, "Conversar em #geral")
                 finally:
                     self.assertTrue(t.close())
 
     def test_gif_link_in_a_message_plays_in_place(self):
-        cases = [(p, e) for p in protocols("kitty", "sixel", "iterm2", "chafa", "light") for e in ("gif", "apng", "webp")]
+        cases = [
+            (p, e)
+            for p in protocols("kitty", "sixel", "iterm2", "chafa", "light")
+            for e in ("gif", "apng", "webp")
+        ]
         for protocol, extension in cases:
             with self.subTest(protocol=protocol, extension=extension), self.serve() as server:
                 link = server.url + "/g/loop." + extension

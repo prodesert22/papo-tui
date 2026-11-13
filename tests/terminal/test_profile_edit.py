@@ -193,9 +193,7 @@ class ProfileEdit(unittest.TestCase):
             self.wait(t, "Uso: /status online, ausente ou ocupado")
             self.assertIn("/status talvez", self.screen(t))
             # The composer shows the refusal in red until the text changes.
-            row = next(
-                i for i, line in enumerate(t.screen.display) if "> /status talvez" in line
-            )
+            row = next(i for i, line in enumerate(t.screen.display) if "> /status talvez" in line)
             prompt = t.screen.display[row].index("> /status talvez")
             red = t.screen.buffer[row][prompt].fg
             t.send("x")

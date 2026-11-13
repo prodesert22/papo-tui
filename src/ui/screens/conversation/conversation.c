@@ -1181,8 +1181,13 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             continue;
         }
         if (type == KEY_CODE_YES && key >= TEXT_ALT_LEFT && key <= TEXT_ALT_DOWN) {
-            conversation_focus_toward(ui, key == TEXT_ALT_LEFT ? -1 : key == TEXT_ALT_RIGHT ? 1 : 0,
-                                      key == TEXT_ALT_UP ? -1 : key == TEXT_ALT_DOWN ? 1 : 0);
+            conversation_focus_toward(ui,
+                                      key == TEXT_ALT_LEFT    ? -1
+                                      : key == TEXT_ALT_RIGHT ? 1
+                                                              : 0,
+                                      key == TEXT_ALT_UP     ? -1
+                                      : key == TEXT_ALT_DOWN ? 1
+                                                             : 0);
             continue;
         }
         if ((type == OK && key == '\t') || (type == KEY_CODE_YES && key == KEY_BTAB)) {

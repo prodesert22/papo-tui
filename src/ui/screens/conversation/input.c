@@ -563,8 +563,7 @@ static bool component_rect(view *ui, int focus, focus_rect *r)
                           getmaxx(list)};
         return true;
     case SETTINGS_BUTTON:
-        return list && window_row(list, getmaxy(list) - 2,
-                                  (click_range){getmaxx(list) - 6, 5}, r);
+        return list && window_row(list, getmaxy(list) - 2, (click_range){getmaxx(list) - 6, 5}, r);
     case VOICE_OUTPUT_BUTTON:
         return list && window_row(list, getmaxy(list) - 2, ui->voice_output_hit, r);
     case VOICE_MICROPHONE_BUTTON:
@@ -590,8 +589,8 @@ static bool component_rect(view *ui, int focus, focus_rect *r)
     case ATTACHMENT_ROW:
         if (!body || !ui->attachment_rows)
             return false;
-        *r = (focus_rect){getbegy(body) + ui->attachment_top, getbegx(body),
-                          ui->attachment_rows, getmaxx(body)};
+        *r = (focus_rect){getbegy(body) + ui->attachment_top, getbegx(body), ui->attachment_rows,
+                          getmaxx(body)};
         return true;
     case MESSAGE_INPUT:
         if (!body)

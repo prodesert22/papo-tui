@@ -74,9 +74,7 @@ class GifAttachments(unittest.TestCase):
                 t.send("\n")
                 self.helper.wait(t, "GIF animado")
                 mark = len(t.stream.frames)
-                self.helper.settled(
-                    t, lambda: len(set(t.stream.frames[mark:])) >= 6, seconds=10
-                )
+                self.helper.settled(t, lambda: len(set(t.stream.frames[mark:])) >= 6, seconds=10)
                 self.assertNotIn("Carregando mídia", "\n".join(t.screen.display))
             finally:
                 self.assertTrue(t.close())
@@ -91,7 +89,9 @@ class GifAttachments(unittest.TestCase):
                 with (
                     self.subTest(term=term, gif=name, terminal=terminal),
                     tempfile.TemporaryDirectory(prefix="papo-light-") as home,
-                    self.helper.serve(animation(name, size, frames), "image/gif", name=name) as server,
+                    self.helper.serve(
+                        animation(name, size, frames), "image/gif", name=name
+                    ) as server,
                 ):
                     config = Path(home) / "papo-tui/config.json"
                     config.parent.mkdir()

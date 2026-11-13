@@ -129,7 +129,9 @@ class DesktopTests(unittest.TestCase):
             t.send("\x1bOB\n")
             t.wait_text("Mensagem 0003")
             t.send("\x1b[O")
-            message = dict(server.message(1), id=uuid(777), channel_id=OTHER, content="Chegou agora")
+            message = dict(
+                server.message(1), id=uuid(777), channel_id=OTHER, content="Chegou agora"
+            )
             server.emit(dict(message, type="message"))
             event = self.event()
             event["message_id"] = message["id"]
@@ -479,9 +481,7 @@ class DesktopTests(unittest.TestCase):
         with R8Mock(count=0) as server:
             t = self.login(server)
             t.send("\x1b[O")
-            body = self.alert_body(
-                server, t, "Veja isto", [self.attachment("image/jpeg", "b.jpg")]
-            )
+            body = self.alert_body(server, t, "Veja isto", [self.attachment("image/jpeg", "b.jpg")])
             self.assertEqual(body, "Veja isto [Imagem]")
 
     def test_replies_are_marked_and_name_who_they_answer_when_known(self):

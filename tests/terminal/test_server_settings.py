@@ -364,11 +364,11 @@ class ServerSettings(unittest.TestCase):
 
     def border_gone(self, terminal, label):
         """The field called label no longer has its border, once the text there changed."""
+
         def gone():
             rows = [i for i, line in enumerate(terminal.screen.display) if label + ":" in line]
             return rows and all(
-                "qqqq" not in terminal.screen.display[edge]
-                for edge in (rows[0] - 1, rows[0] + 1)
+                "qqqq" not in terminal.screen.display[edge] for edge in (rows[0] - 1, rows[0] + 1)
             )
 
         self.settled(terminal, gone)
@@ -400,7 +400,9 @@ class ServerSettings(unittest.TestCase):
                     t.send("Z")
                     self.settled(
                         t,
-                        lambda: any(f"{label}:" in l and "Z" in l for l in t.screen.display),
+                        lambda: any(
+                            f"{label}:" in line and "Z" in line for line in t.screen.display
+                        ),
                     )
                     self.border_gone(t, label)
                     self.assertEqual(self.screen(t).count("Preencha o campo"), 0)
@@ -492,7 +494,9 @@ class ServerSettings(unittest.TestCase):
             t.send("\n")
             self.wait(t, "Apelido do webhook salvo")
             ((_, path, body),) = self.calls(server, "PATCH", "/webhooks/", 1)
-            self.assertEqual((path, body), (f"/webhooks/{WEBHOOK}", {"display_name": "Bot do deploy"}))
+            self.assertEqual(
+                (path, body), (f"/webhooks/{WEBHOOK}", {"display_name": "Bot do deploy"})
+            )
             # The form keeps its place while the list is read again.
             self.wait(t, "Salvar apelido")
             self.wait(t, "Bot do deploy")

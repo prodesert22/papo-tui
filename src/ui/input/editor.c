@@ -38,8 +38,7 @@ static gint64 confirmed_notice_duration(void)
     const char *text = g_getenv("PAPO_CONFIRMED_NOTICE_MS");
     char *end = NULL;
     gint64 ms = text ? g_ascii_strtoll(text, &end, 10) : 0;
-    return text && end != text && !*end && ms > 0 && ms <= 3600000 ? ms * 1000
-                                                                    : 2 * G_USEC_PER_SEC;
+    return text && end != text && !*end && ms > 0 && ms <= 3600000 ? ms * 1000 : 2 * G_USEC_PER_SEC;
 }
 
 static cursor_state *find_cursor(send_editor *editor, const char *channel)

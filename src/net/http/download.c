@@ -259,8 +259,8 @@ static void finish(media_download *m, CURLcode result)
     }
     bool written = m->file && fflush(m->file) == 0 && !ferror(m->file);
     release_transfer(m);
-    bool type = m->raw                        ? true
-                : m->svg                      ? svg_type(m)
+    bool type = m->raw                                   ? true
+                : m->svg                                 ? svg_type(m)
                 : m->json || m->kind == AUTH_MEDIA_EMBED ? !strcmp(m->mime, "application/json")
                 : m->video ? video_type(m)
                            : (!strcmp(m->mime, "image/png") || !strcmp(m->mime, "image/jpeg") ||

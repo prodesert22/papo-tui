@@ -696,7 +696,10 @@ class Persistence(unittest.TestCase):
             self.wait(t, "geral")
             t.send("\x1b\x1b\x1bOA")  # Esc to the channel list, then up to the tabs.
             deadline = time.monotonic() + 8
-            while "Foco: Servidores" not in "\n".join(t.screen.display) and time.monotonic() < deadline:
+            while (
+                "Foco: Servidores" not in "\n".join(t.screen.display)
+                and time.monotonic() < deadline
+            ):
                 t.send("\x1bOA")
                 t.read(0.1)
             self.wait(t, "Foco: Servidores")

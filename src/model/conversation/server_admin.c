@@ -500,7 +500,7 @@ bool server_admin_remove_icon(history *h)
     return body && enqueue(h, OP_ICON_REMOVE, "PATCH", "/server", body, NULL, NULL);
 }
 static const char *const role_keys[PERMISSION_ROLE_COUNT] = {
-    "manage_server", "manage_channels",  "manage_roles",   "ban_members",
+    "manage_server", "manage_channels",  "manage_roles",    "ban_members",
     "pin_message",   "everyone_message", "send_attachment", "manage_webhooks"};
 static const char *const channel_keys[PERMISSION_CHANNEL_COUNT] = {
     "read_channel", "send_messages", "delete_messages", "connect_voice"};
@@ -1110,8 +1110,7 @@ static void reset_response(struct history_server_admin *a, const struct admin_op
  * webhook: the form says so and offers revoking it. */
 static void webhook_created(struct history_server_admin *a, json_t *body)
 {
-    const char *id = history_internal_str(body, "id"),
-               *token = history_internal_str(body, "token");
+    const char *id = history_internal_str(body, "id"), *token = history_internal_str(body, "token");
     wipe(a->webhook_token, sizeof(a->webhook_token));
     a->webhook_for[0] = a->webhook_created[0] = 0;
     a->token_lost = false;

@@ -63,8 +63,7 @@ void conversation_server_image_pick(view *ui, server_settings_pick kind, const c
         return;
     }
     /* The emoji's name or the webhook's ID the image is for. */
-    g_strlcpy(ui->pick_emoji, kind != SERVER_PICK_ICON && name ? name : "",
-              sizeof(ui->pick_emoji));
+    g_strlcpy(ui->pick_emoji, kind != SERVER_PICK_ICON && name ? name : "", sizeof(ui->pick_emoji));
     ui->profile_pick = kind == SERVER_PICK_WEBHOOK ? 5 : kind == SERVER_PICK_EMOJI ? 4 : 3;
     file_picker_show_image(ui->files);
 }

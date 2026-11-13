@@ -316,10 +316,9 @@ bool conversation_collect_notices(view *ui, auth_client *auth)
         snprintf(notifications, sizeof(notifications), "%zu %s%s", inbox_unread(box),
                  inbox_unread(box) == 1 ? _("notificação") : _("notificações"),
                  inbox_has_more(box) ? "+" : "");
-    changed |= status_bar_set(&ui->status, STATUS_NOTIFICATIONS,
-                              *inbox_notice(box) && !auth_server_unreachable(auth)
-                                  ? inbox_notice(box)
-                                  : notifications);
+    changed |= status_bar_set(
+        &ui->status, STATUS_NOTIFICATIONS,
+        *inbox_notice(box) && !auth_server_unreachable(auth) ? inbox_notice(box) : notifications);
     changed |= status_bar_set_compact(&ui->status, STATUS_DESKTOP,
                                       ui->connections->config &&
                                               ui->connections->config->desktop_notifications
@@ -854,7 +853,9 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         bool editing = ui->focus == MESSAGE_INPUT && !ui->duplicate_modal &&
                        !file_picker_open(ui->files) && !ui->remove_confirm;
         bool refused = editor && *ui->editor_channel && send_editor_refused(ui->editor);
-        wattrset(ui->body, COLOR_PAIR(refused ? THEME_ERROR : editing ? THEME_FOCUS_BORDER : THEME_BORDER));
+        wattrset(ui->body, COLOR_PAIR(refused   ? THEME_ERROR
+                                      : editing ? THEME_FOCUS_BORDER
+                                                : THEME_BORDER));
         mvwhline(ui->body, ui->editor_border, 0, ACS_HLINE, getmaxx(ui->body));
         wattrset(ui->body, COLOR_PAIR(editing ? THEME_FOCUS_MUTED : THEME_PANEL_MUTED));
 
@@ -879,7 +880,9 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                     wattrset(ui->body, COLOR_PAIR(THEME_FOCUS_AREA));
                     mvwhline(ui->body, ui->editor_border + 1 + row, 0, ' ', getmaxx(ui->body));
                 }
-            wattrset(ui->body, COLOR_PAIR(refused ? THEME_ERROR : editing ? THEME_FOCUS_AREA : THEME_PANEL) |
+            wattrset(ui->body, COLOR_PAIR(refused   ? THEME_ERROR
+                                          : editing ? THEME_FOCUS_AREA
+                                                    : THEME_PANEL) |
                                    (refused ? A_BOLD : 0));
             text_label(ui->body, conversation_input_top(ui), 1, 1, ">");
             text_layout *measured = &ui->measured;
@@ -895,7 +898,7 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                              json_is_true(json_object_get(c, "_dm")) ? _("Conversar com %s")
                                                                      : _("Conversar em #%s"),
                              conversation_str(c, "name"));
-                wattrset(ui->body, COLOR_PAIR(refused ? THEME_ERROR
+                wattrset(ui->body, COLOR_PAIR(refused   ? THEME_ERROR
                                               : editing ? THEME_FOCUS_MUTED
                                                         : THEME_PANEL_MUTED));
                 text_label(ui->body, conversation_input_top(ui), conversation_input_left(ui), width,

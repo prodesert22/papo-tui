@@ -12,8 +12,8 @@ static const char *const tab_names[ADMIN_TABS] = {N_("Visão geral"), N_("Cargos
 static const admin_tab_ops *ops_of(admin_tab tab)
 {
     static const admin_tab_ops *const all[ADMIN_TABS] = {
-        &tab_overview, &tab_roles, &tab_channels, &tab_emojis, &tab_webhooks, &tab_members,
-        &tab_audit};
+        &tab_overview, &tab_roles,   &tab_channels, &tab_emojis,
+        &tab_webhooks, &tab_members, &tab_audit};
     return all[tab < ADMIN_TABS ? tab : 0];
 }
 
@@ -546,7 +546,9 @@ static void draw_field(server_settings *s, WINDOW *w, const admin_field *f, int 
         /* A refused input sits inside a red border: the rows above and below are its own. */
         if (refused)
             ++y;
-        wattrset(w, COLOR_PAIR(refused ? THEME_NOTIFICATION : focused ? THEME_PANEL_ACCENT : THEME_PANEL) |
+        wattrset(w, COLOR_PAIR(refused   ? THEME_NOTIFICATION
+                               : focused ? THEME_PANEL_ACCENT
+                                         : THEME_PANEL) |
                         (focused || refused ? A_BOLD : 0));
         snprintf(line, sizeof(line), "%s:", f->label);
         text_label(w, y, x, label_width - 1, line);

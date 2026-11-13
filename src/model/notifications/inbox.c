@@ -410,11 +410,13 @@ void inbox_observe_message(inbox *b, const json_t *message)
     json_t *attachments = json_object_get(message, "attachments");
     if (preview && json_is_array(attachments) && json_array_size(attachments)) {
         const json_t *first = json_array_get(attachments, 0);
-        json_object_set_new(preview, "attachment_count", json_integer(json_array_size(attachments)));
+        json_object_set_new(preview, "attachment_count",
+                            json_integer(json_array_size(attachments)));
         if (text_field(first, "mime_type", 127, false))
             json_object_set(preview, "attachment_mime", json_object_get(first, "mime_type"));
         if (text_field(first, "original_file_name", 255, false))
-            json_object_set(preview, "attachment_name", json_object_get(first, "original_file_name"));
+            json_object_set(preview, "attachment_name",
+                            json_object_get(first, "original_file_name"));
     }
     /* REST can include attribution omitted by a later WS payload for the same
      * message. Keep that name until richer metadata replaces it. */
@@ -451,8 +453,8 @@ static void local_alert(inbox *b, const json_t *event)
                *author = s(event, "author_id");
     const char *mode = inbox_local_notifications(b, channel);
     if (!mode || strcmp(mode, "all") || (*author && !strcmp(author, auth_user_id(b->auth))) ||
-        (!*author && !uuid_field(event, "webhook_id")) ||
-        json_object_get(b->viewed, id) || !alert_claim(b, id))
+        (!*author && !uuid_field(event, "webhook_id")) || json_object_get(b->viewed, id) ||
+        !alert_claim(b, id))
         return;
     char content[513];
     const char *source = s(event, "content");
@@ -1055,8 +1057,8 @@ bool inbox_unread_before(const inbox *b, const char *channel, const char *id, co
 {
     size_t i;
     json_t *n;
-    json_array_foreach(b->notifications, i, n) if (unread_at_or_before(b, n, channel, id, time))
-        return true;
+    json_array_foreach(b->notifications, i,
+                       n) if (unread_at_or_before(b, n, channel, id, time)) return true;
     return false;
 }
 void inbox_server_read(inbox *b, const char *channel, const char *id, const char *time)

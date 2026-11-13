@@ -869,11 +869,7 @@ class R8Terminal(support.R8Terminal):
             t.read(0.3)
             name = next(i for i, line in enumerate(t.screen.display) if "josé" in line[:26])
             # An empty row of the focused list shows its focus background.
-            empty = next(
-                i
-                for i in range(4, name - 2)
-                if not t.screen.display[i][2:24].strip()
-            )
+            empty = next(i for i in range(4, name - 2) if not t.screen.display[i][2:24].strip())
             focus = t.screen.buffer[empty][5].bg
             self.assertNotIn(focus, ("default", "000000"))
             # Inside the account box, between its side borders, nothing takes it.
@@ -1645,8 +1641,14 @@ class R8Terminal(support.R8Terminal):
             self.assertEqual(server.read_calls, 0)
 
     def open_other_with_new_message(self, server, t):
-        fresh = dict(server.message(9), id=uuid(7777), channel_id=OTHER, author_id=AUTHOR,
-                     content="Nova no outro", created_at="2026-10-12T12:00:09.000000Z")
+        fresh = dict(
+            server.message(9),
+            id=uuid(7777),
+            channel_id=OTHER,
+            author_id=AUTHOR,
+            content="Nova no outro",
+            created_at="2026-10-12T12:00:09.000000Z",
+        )
         rows = server.other_rows
         server.other_rows = lambda: rows() + [fresh]
         server.emit(dict(fresh, type="message"))
@@ -1666,15 +1668,34 @@ class R8Terminal(support.R8Terminal):
             self.open_other_with_new_message(server, t)
             # A channel missing from the list cannot be opened, so its messages
             # must not light the server tab.
-            server.emit(dict(server.message(10), type="message", id=uuid(7778),
-                             channel_id=uuid(9999), author_id=AUTHOR, content="Canal oculto",
-                             created_at="2026-10-12T12:00:10.000000Z"))
-            server.emit(dict(server.message(11), type="message", id=uuid(7779),
-                             channel_id=OTHER, author_id=AUTHOR, content="Depois do oculto",
-                             created_at="2026-10-12T12:00:11.000000Z"))
+            server.emit(
+                dict(
+                    server.message(10),
+                    type="message",
+                    id=uuid(7778),
+                    channel_id=uuid(9999),
+                    author_id=AUTHOR,
+                    content="Canal oculto",
+                    created_at="2026-10-12T12:00:10.000000Z",
+                )
+            )
+            server.emit(
+                dict(
+                    server.message(11),
+                    type="message",
+                    id=uuid(7779),
+                    channel_id=OTHER,
+                    author_id=AUTHOR,
+                    content="Depois do oculto",
+                    created_at="2026-10-12T12:00:11.000000Z",
+                )
+            )
             self.wait(t, "Depois do oculto")
-            wait_for_screen(t, lambda: (OTHER, uuid(7779)) in server.channel_reads,
-                            "read of the message shown in the open channel")
+            wait_for_screen(
+                t,
+                lambda: (OTHER, uuid(7779)) in server.channel_reads,
+                "read of the message shown in the open channel",
+            )
             self.wait(t, "[Comunidade]")
             self.assertNotIn("⦁", "\n".join(line[:25] for line in t.screen.display))
 
@@ -1687,14 +1708,25 @@ class R8Terminal(support.R8Terminal):
             self.wait(t, "Mensagem")
             clicked = time.monotonic()
             self.open_other_with_new_message(server, t)
-            server.emit(dict(server.message(11), type="message", id=uuid(7779),
-                             channel_id=OTHER, author_id=AUTHOR, content="Visto a tempo",
-                             created_at="2026-10-12T12:00:11.000000Z"))
+            server.emit(
+                dict(
+                    server.message(11),
+                    type="message",
+                    id=uuid(7779),
+                    channel_id=OTHER,
+                    author_id=AUTHOR,
+                    content="Visto a tempo",
+                    created_at="2026-10-12T12:00:11.000000Z",
+                )
+            )
             self.wait(t, "Visto a tempo")
             if time.monotonic() - clicked > 1.5:
                 self.skipTest("the message arrived after the input window")
-            wait_for_screen(t, lambda: (OTHER, uuid(7779)) in server.channel_reads,
-                            "read of the message seen inside the input window")
+            wait_for_screen(
+                t,
+                lambda: (OTHER, uuid(7779)) in server.channel_reads,
+                "read of the message seen inside the input window",
+            )
             self.wait(t, "[Comunidade]")
 
 
