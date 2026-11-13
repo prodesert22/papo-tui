@@ -24,7 +24,7 @@ CMake checks these library requirements, even in Light or Ultralight mode:
 | libcurl | 7.86, with WS/WSS, TLS and asynchronous DNS |
 | Jansson | 2.14 |
 | libunibreak | 6.1 |
-| GLib, GModule and GIO | 2.66; GIO 2.88 on Windows |
+| GLib, GModule and GIO | 2.66; GIO 2.90 on Windows, which reports notification clicks |
 | zlib, to write reduced profile images as PNG | 1.2.11 |
 | libsixel | 1.8 |
 | Chafa | 1.16 |

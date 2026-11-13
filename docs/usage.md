@@ -869,6 +869,13 @@ terminal running Papo TUI to the front:
   you were using.
 - The Flatpak package cannot find the terminal window from its sandbox: there,
   only terminals that show the notification themselves come to the front.
+- On Windows, the notification comes from an icon that Papo TUI adds to the
+  notification area, shown as the generic application icon. Clicking the
+  notification, or that icon later, opens the conversation of the latest
+  notification and brings the console or Windows Terminal window to the front,
+  on the tab you were using. Once you have read that conversation, a click only
+  brings the window to the front. If Windows does not allow the switch, the
+  terminal's taskbar button flashes instead.
 
 System notification previews show user mentions as **@username**, rather than
 the stored `@mention(<@uuid>)` token. They use the username, even when the person
