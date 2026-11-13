@@ -116,9 +116,15 @@ class ReleaseCLI(unittest.TestCase):
                 self.assertNotIn(b"NeverPrintThis", result.stdout + result.stderr)
 
     def test_release_notes_and_changelog_are_present_and_linked(self):
-        notes = ROOT / "releases" / f"v{VERSION.removesuffix('-dev')}.md"
+        version = VERSION.removesuffix("-dev")
+        notes = ROOT / "releases" / f"v{version}.md"
         self.assertTrue(notes.is_file())
-        self.assertIn(f"releases/{notes.name}", (ROOT / "CHANGELOG.md").read_text(encoding="utf-8"))
+        # The changelog lists final releases; a pre-release such as
+        # 0.6.0-beta.1 has only its own notes until the final version.
+        if "-" not in version:
+            self.assertIn(
+                f"releases/{notes.name}", (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+            )
 
 
 if __name__ == "__main__":
