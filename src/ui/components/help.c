@@ -11,6 +11,7 @@
 
 enum { FOCUS_SWITCH, FOCUS_CLOSE, FOCUS_SEARCH, FOCUS_TABLE };
 
+#define ALT_ARROWS N_("Alt+← / → / ↑ / ↓")
 typedef struct {
     help_context contexts;
     const char *keys, *function;
@@ -23,7 +24,7 @@ static const help_row rows[] = {
     {HELP_COMMON, N_("Ctrl+Q"), N_("Sair do aplicativo")},
     {HELP_CONVERSATION | HELP_LOGIN | HELP_ACCOUNT | HELP_PROFILES, N_("Tab / Shift+Tab"),
      N_("Percorrer as áreas e os botões")},
-    {HELP_CONVERSATION, N_("Alt+← / → / ↑ / ↓"), N_("Ir à área ou ao botão naquela direção")},
+    {HELP_CONVERSATION, ALT_ARROWS, N_("Ir à área ou ao botão naquela direção")},
     {HELP_CONVERSATION, N_("Ctrl+S"), N_("Abrir configurações do aplicativo")},
     {HELP_CONVERSATION, N_("Ctrl+F"), N_("Buscar mensagens no servidor")},
     {HELP_CONVERSATION, N_("Ctrl+K"),
@@ -273,6 +274,32 @@ static const help_row rows[] = {
     {HELP_FIELDS, N_("Colar texto"), N_("Inserir texto sem enviar o formulário")},
 };
 
+/* The Linux console has no glyph for the emoji buttons; they show these
+ * labels instead, as in the interface itself. */
+static const struct {
+    const char *keys, *console;
+} console_keys[] = {
+    {N_("[⚙] / [*]"), "[*]"},
+    {N_("🔍 / 🖈 / 👤"), N_("[/] / [Fix] / [@]")},
+    {N_("🔊 / 🎤 / ♪ / ●"), "[◀)] / [Mic]"},
+    {N_("Ctrl+O / 📎"), "Ctrl+O / [+]"},
+};
+static const char *row_keys(const help_row *row)
+{
+    if (theme_linux_console())
+        for (size_t i = 0; i < G_N_ELEMENTS(console_keys); ++i)
+            if (!strcmp(row->keys, console_keys[i].keys))
+                return _(console_keys[i].console);
+    return _(row->keys);
+}
+/* Alt+arrows switch virtual consoles on the Linux console, never reaching
+ * the application; Tab and Shift+Tab move the focus there. */
+static bool row_available(const help_row *row)
+{
+    return (!(row->contexts & HELP_VOICE) || voice_available()) &&
+           !(theme_linux_console() && !strcmp(row->keys, ALT_ARROWS));
+}
+
 static const char *row_scope(help_context context)
 {
     static const struct {
@@ -333,13 +360,13 @@ static void filter_rows(help_modal *h)
         query[0] = 0;
     char *needle = g_utf8_casefold(query, -1);
     for (size_t i = 0; i < G_N_ELEMENTS(rows); ++i) {
-        bool visible = !(rows[i].contexts & HELP_VOICE) || voice_available();
+        bool visible = row_available(&rows[i]);
         if (!needle || !*needle) {
             h->matches[i] = visible;
             continue;
         }
         char entry[768];
-        snprintf(entry, sizeof(entry), "%s %s %s", _(rows[i].keys), row_scope(rows[i].contexts),
+        snprintf(entry, sizeof(entry), "%s %s %s", row_keys(&rows[i]), row_scope(rows[i].contexts),
                  _(rows[i].function));
         char *fold = g_utf8_casefold(entry, -1);
         h->matches[i] = visible && fold && strstr(fold, needle);
@@ -563,7 +590,7 @@ WINDOW *help_draw(help_modal *h)
     int heights[sizeof(rows) / sizeof(*rows)] = {0};
     int total = 0;
     for (size_t i = 0; i < sizeof(rows) / sizeof(*rows); ++i) {
-        if ((rows[i].contexts & HELP_VOICE) && !voice_available())
+        if (!row_available(&rows[i]))
             continue;
         if (!h->matches[i] || (!h->global && !(rows[i].contexts & h->context)))
             continue;
@@ -572,7 +599,7 @@ WINDOW *help_draw(help_modal *h)
             continue;
         text_measure(&text, width - column - 3, h->layout);
         int count = h->layout->rows > 0 ? h->layout->rows : 1;
-        text_decode(&text, _(rows[i].keys));
+        text_decode(&text, row_keys(&rows[i]));
         text_measure(&text, column - 3, h->layout);
         if (h->layout->rows > count)
             count = h->layout->rows;
@@ -602,7 +629,7 @@ WINDOW *help_draw(help_modal *h)
             int y = first_row + total + first - scroll;
             wattrset(w, COLOR_PAIR(THEME_PANEL));
             text_draw(w, &text, h->layout, first, h->rows - (y - first_row), y, column + 1);
-            text_decode(&text, _(rows[i].keys));
+            text_decode(&text, row_keys(&rows[i]));
             text_measure(&text, column - 3, h->layout);
             text_draw(w, &text, h->layout, first, h->rows - (y - first_row), y, 2);
         }

@@ -501,10 +501,11 @@ static void draw_tabs(login_ui *ui, auth_client *client)
             break;
         }
         bool selected = i == current, active = focused && i == cursor;
-        wattrset(w, COLOR_PAIR(active     ? THEME_PROFILE_BUTTON_FOCUS
-                               : selected ? THEME_PANEL_ACTIVE
-                                          : THEME_PANEL_MUTED) |
-                        (selected || active ? A_BOLD : A_NORMAL));
+        int pair = active     ? THEME_PROFILE_BUTTON_FOCUS
+                   : selected ? THEME_PANEL_ACTIVE
+                              : THEME_PANEL_MUTED;
+        wattrset(w, COLOR_PAIR(pair) |
+                        theme_text_attributes(selected || active ? A_BOLD : A_NORMAL, pair));
         char label[192];
         tab_label(ui, client, i, label, sizeof(label));
         mvwaddch(w, 0, x, selected ? '[' : active ? '>' : ' ');

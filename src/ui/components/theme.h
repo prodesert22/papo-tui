@@ -1,6 +1,7 @@
 #ifndef PAPO_THEME_H
 #define PAPO_THEME_H
 
+#include <ncurses.h>
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -84,10 +85,21 @@ int theme_member_pair(unsigned rgb, int background);
  * redefined palette, else its 256-color or basic approximation. Media blends
  * transparent pixels into it, so they match the cells around them. */
 uint32_t theme_background_rgb(int pair);
+/* Text attributes for pair: with 8 or 16 colors terminals such as the Linux
+ * console show bold as the bright variant of the foreground, which turns
+ * black text into dark gray; bold is dropped there for black text. */
+attr_t theme_text_attributes(attr_t attributes, int pair);
 /* Fixed palette colors: green through 60%, yellow through 85%, then red. */
 int theme_volume_pair(int percent);
+/* TERM names the Linux console (linux or a linux-* variant). Its fonts lack
+ * emoji and most symbols, so the interface uses labels drawn from the glyphs
+ * it has. */
+bool theme_linux_console(void);
 /* The unread dot glyph, one cell wide: ⦁, or • on the Linux console, whose
  * fonts lack the former. */
 const char *theme_unread_dot(void);
+/* Frame step of the loading indicator: a turning braille dot, or a turning
+ * bar on the Linux console, whose fonts have no braille. */
+const char *theme_spinner_frame(uint64_t step);
 
 #endif

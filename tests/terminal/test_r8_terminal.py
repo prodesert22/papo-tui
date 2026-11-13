@@ -818,11 +818,12 @@ class R8Terminal(support.R8Terminal):
             self.wait(t, "Foco: Histórico")
             self.assertNotEqual(first_cell(t, 0, "[Comunidade").fg, white)
         with R8Mock(count=1) as server:
-            # The Linux console cannot show focus backgrounds; the focused tab
-            # keeps the accent there so it stays visible.
+            # The Linux console shows the focused tab on the orange fill with
+            # black text, without bold, which it would draw as gray.
             t = self.login(server, terminal_type="linux")
             self.wait(t, "Mensagem 0001")
-            self.assertEqual(first_cell(t, 0, "[Comunidade").fg, "brown")
+            cell = first_cell(t, 0, "[Comunidade")
+            self.assertEqual((cell.fg, cell.bg, cell.bold), ("black", "brown", False))
 
     def test_selected_channel_highlight_spans_the_gap_before_its_badge(self):
         with R8Mock(count=1) as server:

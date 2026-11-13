@@ -1,3 +1,4 @@
+#include "platform/terminal.h"
 #include "ui/media/graphics.h"
 #include "ui/media/sixel.h"
 #include <chafa.h>
@@ -105,7 +106,14 @@ static bool encode_channels(const unsigned char *pixels, int channels, int width
         chafa_canvas_config_set_geometry(config, out->columns, out->rows);
         chafa_canvas_config_set_cell_geometry(config, t.cell_width, t.cell_height);
         ChafaSymbolMap *symbols = chafa_symbol_map_new();
-        chafa_symbol_map_add_by_tags(symbols, CHAFA_SYMBOL_TAG_BLOCK | CHAFA_SYMBOL_TAG_ASCII);
+        if (terminal_linux_console()) {
+            /* Console fonts lack the half and quarter blocks Chafa would pick:
+             * only the full block and the light and medium shades remain. */
+            chafa_symbol_map_add_by_tags(symbols, CHAFA_SYMBOL_TAG_SPACE | CHAFA_SYMBOL_TAG_ASCII);
+            chafa_symbol_map_add_by_range(symbols, 0x2588, 0x2588);
+            chafa_symbol_map_add_by_range(symbols, 0x2591, 0x2592);
+        } else
+            chafa_symbol_map_add_by_tags(symbols, CHAFA_SYMBOL_TAG_BLOCK | CHAFA_SYMBOL_TAG_ASCII);
         chafa_canvas_config_set_symbol_map(config, symbols);
         chafa_symbol_map_unref(symbols);
         ChafaCanvas *canvas = chafa_canvas_new(config);

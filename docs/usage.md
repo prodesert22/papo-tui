@@ -701,7 +701,7 @@ that do not report Ctrl+/ can reach global help through contextual help's
 | Ctrl+G / F1 | Open contextual help for the focused area or panel |
 | Ctrl+/ | Open global help with every keyboard and mouse control |
 | Tab / Shift+Tab | Move focus |
-| Alt+← / → / ↑ / ↓ in a conversation | Move focus to the area or button in that direction, such as from the channel list to the history, from the history to the message box or from the channels up to the server tabs. The footer shows where each arrow leads, for example **Foco: Histórico  ●  Alt + 🡱 Buscar  ●  Alt + 🡳 Mensagem  ●  Alt + 🡰 Canais  ●  Ctrl+G: ajuda**, when there is room beside the connection and notification notices |
+| Alt+← / → / ↑ / ↓ in a conversation | Move focus to the area or button in that direction, such as from the channel list to the history, from the history to the message box or from the channels up to the server tabs. The footer shows where each arrow leads, for example **Foco: Histórico  ●  Alt + 🡱 Buscar  ●  Alt + 🡳 Mensagem  ●  Alt + 🡰 Canais  ●  Ctrl+G: ajuda**, when there is room beside the connection and notification notices. On the Linux console, use Tab / Shift+Tab instead; see [The Linux console (TTY)](#the-linux-console-tty) |
 | Esc | Close a modal, go back or cancel a connection |
 | Ctrl+Q | Quit |
 | Ctrl+C | Clear the field; quit when outside a field |
@@ -1558,6 +1558,34 @@ before and reuses the download already made for the cover. Videos served by the
 embed relay also play while they download, under the same limits described
 above.
 
+## The Linux console (TTY)
+
+The application runs on the Linux virtual console (`TERM=linux`), in Light or
+Ultralight mode. The console's fonts have no emoji and only a few symbols, so
+the interface uses symbols those fonts can draw:
+
+| Button or mark | Elsewhere | On the console |
+| --- | --- | --- |
+| Search, pinned messages, members | 🔍 📌 👤 | **[/]** **[Fix]** (**[Pin]** in English) **[@]** |
+| Attach files, emoji picker | 📎 😄 | **[+]** **[:)]** |
+| Settings | **[⚙]** | **[*]** |
+| Call audio, muted | 🔊 🔇 | **[◀)]** **[◀x]** |
+| Microphone, muted | 🎤 | **[Mic]** **[M x]** |
+| Voice channel | **♪ voz** | **◀ voz** |
+| Pause, close | ⏸ ✕ | **\|** **x** |
+| Loading | turning dots | turning bar `\| / - \` |
+
+Emojis in messages, reactions and the editor appear as their names between
+colons, such as **:rosto chorando de rir:** (in English, **:face with tears of
+joy:**). The message keeps the emoji itself: what you send is unchanged. The
+emoji picker (Ctrl+E or **[:)]**) lists emojis by name, one per row; search and
+choose them as usual.
+
+The focused button, tab or row has an orange fill with black text. Alt+← and
+Alt+→ switch virtual consoles there, so they never reach the application: move
+the focus with Tab and Shift+Tab, as the footer shows (**Tab / Shift+Tab: mudar
+foco**, Tab / Shift+Tab: move focus).
+
 ## Troubleshooting
 
 - **A field got a red border:** the program refused what you typed in that field,
@@ -1605,6 +1633,9 @@ above.
   has no supported graphics protocol; Light always uses Chafa.
 - **Emoji pictures are missing:** install the Noto Color Emoji font and restart
   the application.
+- **Alt+arrows switch to another console:** on the Linux console these keys
+  belong to the system. Use Tab and Shift+Tab to move the focus; press Alt+→
+  or Alt+← to return to the console the application runs on.
 - **Video is still loading:** the player status line shows the transfer
   progress. Videos prepared for streaming start before the download ends;
   files whose index is at the end start only when it finishes. If progress

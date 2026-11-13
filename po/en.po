@@ -129,6 +129,10 @@ msgstr " Download attachments "
 msgid " Comandos "
 msgstr " Commands "
 
+#: src/ui/screens/conversation/layout.c
+msgid " Editando "
+msgstr " Editing "
+
 #: src/ui/screens/profiles.c
 msgid " Editar perfil "
 msgstr " Edit profile "
@@ -4346,6 +4350,10 @@ msgid "Não foi possível carregar os webhooks."
 msgstr "Could not load the webhooks."
 
 #: src/ui/screens/conversation/attachments.c
+msgid "Não foi possível colar. Use [+]/Ctrl+O ou a colagem do terminal."
+msgstr "Could not paste. Use [+]/Ctrl+O or the terminal's paste."
+
+#: src/ui/screens/conversation/attachments.c
 msgid "Não foi possível colar. Use 📎/Ctrl+O ou a colagem do terminal."
 msgstr "Could not paste. Use 📎/Ctrl+O or the terminal's paste."
 
@@ -6097,6 +6105,10 @@ msgstr "Tab / Shift+Tab"
 msgid "Tab / Shift+Tab na ajuda"
 msgstr "Tab / Shift+Tab in help"
 
+#: src/ui/screens/conversation/drawing.c
+msgid "Tab / Shift+Tab: mudar foco"
+msgstr "Tab / Shift+Tab: move focus"
+
 #: src/ui/components/help.c
 msgid "Tab / ←→ / Enter"
 msgstr "Tab / ←→ / Enter"
@@ -6589,6 +6601,10 @@ msgstr "[%s microphone test]"
 msgid "[+ Adicionar]"
 msgstr "[+ Add]"
 
+#: src/ui/components/help.c
+msgid "[/] / [Fix] / [@]"
+msgstr "[/] / [Pin] / [@]"
+
 #: src/ui/components/help.c src/ui/screens/inbox.c
 msgid "[Abrir conversa]"
 msgstr "[Open conversation]"
@@ -6668,6 +6684,10 @@ msgstr "[Close]"
 #: src/ui/screens/message_browser.c
 msgid "[Filtros]"
 msgstr "[Filters]"
+
+#: src/ui/screens/conversation/drawing.c
+msgid "[Fix]"
+msgstr "[Pin]"
 
 #: src/ui/components/emoji_picker.c
 msgid "[GIF]"

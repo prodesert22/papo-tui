@@ -465,9 +465,10 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
                 if (border_start >= first && border_start < first + ui->visible &&
                     (editing || replying || (selected && blocks->media_count))) {
                     char label[96];
-                    const char *action = editing    ? _(" ✎ Editando ")
-                                         : replying ? _(" ↰ Respondendo ")
-                                                    : " ";
+                    const char *action =
+                        editing    ? theme_linux_console() ? _(" Editando ") : _(" ✎ Editando ")
+                        : replying ? _(" ↰ Respondendo ")
+                                   : " ";
                     if (selected && blocks->media_count)
                         snprintf(label, sizeof(label), _("%s%sMídia %zu/%zu "), action,
                                  editing || replying ? "· " : "", ui->selected_media + 1,

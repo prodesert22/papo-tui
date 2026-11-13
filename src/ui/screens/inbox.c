@@ -883,9 +883,8 @@ WINDOW *r8_modal_draw(r8_modal *m)
     box(w, 0, 0);
     if (m->locating) {
         char loading[192];
-        static const char *frames[] = {"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"};
         snprintf(loading, sizeof(loading), _("%s Localizando mensagem…"),
-                 frames[m->location_frame % G_N_ELEMENTS(frames)]);
+                 theme_spinner_frame(m->location_frame));
         wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
         text_label(w, 1, 2, width - 4, _("Ir para mensagem"));
         text_label(w, height / 2 - 1, 2, width - 4,

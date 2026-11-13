@@ -1,4 +1,5 @@
 #include "ui/components/theme.h"
+#include "platform/terminal.h"
 
 #include <glib.h>
 #include <ncurses.h>
@@ -201,6 +202,9 @@ int theme_rgb_pair(unsigned rgb, int fallback)
     int oldfg, background;
     if (extended_pair_content(fallback, &oldfg, &background) == ERR)
         return fallback;
+    /* Names on the focused item's fill stay black, like the rest of its text. */
+    if (COLORS < 256 && shown_ready && background == color_numbers[PROFILE_HIGHLIGHT])
+        fg = COLOR_BLACK;
     for (int i = 0; i < rgb_pair_count; ++i)
         if (rgb_pairs[i].fg == fg && rgb_pairs[i].bg == background)
             return THEME_PAIR_END + i;
@@ -213,6 +217,15 @@ int theme_rgb_pair(unsigned rgb, int fallback)
     rgb_pairs[rgb_pair_count].fg = fg;
     rgb_pairs[rgb_pair_count++].bg = background;
     return pair;
+}
+attr_t theme_text_attributes(attr_t attributes, int pair)
+{
+    if (!(attributes & A_BOLD) || !has_colors() || COLORS >= 256)
+        return attributes;
+    int foreground, background;
+    if (extended_pair_content(pair, &foreground, &background) == ERR || foreground != COLOR_BLACK)
+        return attributes;
+    return attributes & ~A_BOLD;
 }
 int theme_member_pair(unsigned rgb, int background)
 {
@@ -261,12 +274,17 @@ static void apply(ui_theme *theme)
      * are black like the rest, so focused borders take the accent instead. */
     int focus_rule = COLORS < 256 ? colors[ORANGE] : colors[RULE];
     int selected_text = COLORS < 256 ? colors[ORANGE] : colors[PROFILE_WHITE];
-    for (size_t i = 0; i < sizeof(pair_colors) / sizeof(pair_colors[0]); ++i)
-        init_extended_pair(pair_colors[i].pair,
-                           pair_colors[i].foreground == FOCUS_RULE      ? focus_rule
-                           : pair_colors[i].foreground == SELECTED_TEXT ? selected_text
-                                                                        : colors[pair_colors[i].foreground],
-                           colors[pair_colors[i].background]);
+    for (size_t i = 0; i < sizeof(pair_colors) / sizeof(pair_colors[0]); ++i) {
+        int foreground = pair_colors[i].foreground == FOCUS_RULE ? focus_rule
+                         : pair_colors[i].foreground == SELECTED_TEXT
+                             ? selected_text
+                             : colors[pair_colors[i].foreground];
+        /* With 8 or 16 colors the highlight fill is the accent's own hue:
+         * accent, white or red text fades on it, so focused items take black. */
+        if (COLORS < 256 && pair_colors[i].background == PROFILE_HIGHLIGHT)
+            foreground = COLOR_BLACK;
+        init_extended_pair(pair_colors[i].pair, foreground, colors[pair_colors[i].background]);
+    }
     for (int i = 0; i < THEME_COLOR_COUNT; ++i) {
         color_numbers[i] = colors[i];
         shown_rgb[i] = COLORS >= 0x1000000 || theme->colors[i].changed ? packed(i)
@@ -327,10 +345,20 @@ theme_palette theme_get_palette(void)
 static int reported = -1;
 static bool queried;
 
+bool theme_linux_console(void)
+{
+    return terminal_linux_console();
+}
 const char *theme_unread_dot(void)
 {
-    const char *term = getenv("TERM");
-    return term && !strcmp(term, "linux") ? "•" : "⦁";
+    return theme_linux_console() ? "•" : "⦁";
+}
+const char *theme_spinner_frame(uint64_t step)
+{
+    static const char *braille[] = {"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"};
+    static const char *ascii[] = {"|", "/", "-", "\\"};
+    return theme_linux_console() ? ascii[step % G_N_ELEMENTS(ascii)]
+                                 : braille[step % G_N_ELEMENTS(braille)];
 }
 void theme_probe_background(void)
 {

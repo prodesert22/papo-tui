@@ -232,8 +232,9 @@ static bool refresh_pending(view *ui, auth_client *auth)
             g_date_time_unref(time);
         char *content =
             operation->file_count
-                ? g_strdup_printf("%s%s📎 %zu %s", operation->content,
-                                  *operation->content ? "\n" : "", operation->file_count,
+                ? g_strdup_printf("%s%s%s %zu %s", operation->content,
+                                  *operation->content ? "\n" : "",
+                                  theme_linux_console() ? "[+]" : "📎", operation->file_count,
                                   P_("anexo", "anexos", operation->file_count))
                 : g_strdup(operation->content);
         const char *status = operation->state == OUTBOX_FAILED      ? _("falhou")

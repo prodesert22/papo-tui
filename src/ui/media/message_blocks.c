@@ -1346,7 +1346,7 @@ void message_row_draw(WINDOW *w, const message_row *row, int y, int x, int width
         wattrset(w, COLOR_PAIR(pair));
         mvwhline(w, y, x, ' ', width);
         wattrset(w, COLOR_PAIR(accent));
-        mvwaddstr(w, y, x, "▎");
+        mvwaddstr(w, y, x, theme_linux_console() ? "│" : "▎");
     }
     for (int i = 0; i < row->count; ++i) {
         const message_segment *s = &row->segments[i];

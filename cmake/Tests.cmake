@@ -41,6 +41,17 @@ if(BUILD_TESTING)
     papo_set_tests_properties(app-modes-terminal PROPERTIES TIMEOUT 150)
     papo_add_test(
         NAME
+        linux-console-terminal
+        COMMAND
+        ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_linux_console.py
+        $<TARGET_FILE:papo-tui>
+        LABELS
+        ui
+        emoji)
+    papo_set_tests_properties(linux-console-terminal PROPERTIES TIMEOUT 90)
+    papo_add_test(
+        NAME
         members-media-terminal
         COMMAND
         ${Python3_EXECUTABLE}
@@ -660,7 +671,8 @@ if(BUILD_TESTING)
         ui)
     add_executable(
         text-test tests/unit/test_text.c src/ui/input/text.c src/ui/input/mouse.c
-                  src/model/text/mentions.c src/config/key_binding.c src/model/text/translation.c)
+                  src/model/text/mentions.c src/config/key_binding.c src/model/text/translation.c
+                  src/ui/components/theme.c src/model/text/emoji_catalog.c)
     target_include_directories(text-test PRIVATE src)
     target_link_libraries(text-test PRIVATE PkgConfig::GLIB PkgConfig::NCURSES PkgConfig::UNIBREAK
                                             PkgConfig::JANSSON)

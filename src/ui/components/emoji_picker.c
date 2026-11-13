@@ -666,6 +666,14 @@ void emoji_picker_draw(emoji_picker *p)
         p->image_rows = 4;
         p->tile_height = p->image_rows + 2;
     }
+    /* The Linux console has no emoji glyphs: emojis are listed by name, one
+     * per row, and the chosen row takes the focus fill. */
+    bool list = theme_linux_console() && !p->gif;
+    if (list) {
+        p->columns = 1;
+        p->image_rows = 0;
+        p->tile_height = 1;
+    }
     if (p->columns < 1)
         p->columns = 1;
     p->tile_width = (width - 4) / p->columns;
@@ -732,10 +740,16 @@ void emoji_picker_draw(emoji_picker *p)
         int x = 2 + (int)((i - p->first) % (size_t)p->columns) * p->tile_width;
         int image_x = x + (p->tile_width - image_columns) / 2;
         uint32_t id = p->matches[i].id;
-        int pair = i == p->selected ? THEME_FOCUS_AREA : THEME_PANEL;
+        int pair = i != p->selected ? THEME_PANEL : list ? THEME_PROFILE_FOCUS : THEME_FOCUS_AREA;
         wattrset(w, COLOR_PAIR(pair));
         for (int row = 0; row <= p->image_rows; ++row)
             mvwhline(w, y + row, x, ' ', p->tile_width - 1);
+        if (list) {
+            char name[160];
+            snprintf(name, sizeof(name), id & ICON_CUSTOM ? ":%s:" : "%s", item_name(p, id));
+            text_label(w, y, x + 1, p->tile_width - 2, name);
+            continue;
+        }
         icons_scope(p->icons, "emoji-picker", 0);
         if (!icons_paint_size(p->icons, w, id, y, image_x, pair, id, 32)) {
             if (id & ICON_CUSTOM)
@@ -778,7 +792,8 @@ void emoji_picker_draw_suggestions(emoji_picker *p, int cy, int cx, int left, in
     graphics_terminal terminal = graphics_terminal_get();
     int cw = terminal.cell_width > 0 ? terminal.cell_width : 8;
     int ch = terminal.cell_height > 0 ? terminal.cell_height : 16;
-    int image_columns = (32 + cw - 1) / cw;
+    bool console = theme_linux_console();
+    int image_columns = console ? -1 : (32 + cw - 1) / cw;
     p->tile_height = (32 + ch - 1) / ch;
     if (p->tile_height < 2)
         p->tile_height = 2;
@@ -823,16 +838,20 @@ void emoji_picker_draw_suggestions(emoji_picker *p, int cy, int cx, int left, in
         if (i >= p->count)
             break;
         uint32_t id = p->matches[i].id;
-        int pair = i == p->selected ? THEME_FOCUS_AREA : THEME_PANEL;
+        int pair = i != p->selected ? THEME_PANEL
+                   : console        ? THEME_PROFILE_FOCUS
+                                    : THEME_FOCUS_AREA;
         int y = 1 + row * p->tile_height;
         wattrset(w, COLOR_PAIR(pair));
         for (int line = 0; line < p->tile_height; ++line)
             mvwhline(w, y + line, 1, ' ', p->width - 2);
-        if (!icons_paint_size(p->icons, w, id, y, 2, pair, id, 32) && !(id & ICON_CUSTOM))
+        /* The console shows names alone: it has no glyph for the emoji. */
+        if (!console && !icons_paint_size(p->icons, w, id, y, 2, pair, id, 32) &&
+            !(id & ICON_CUSTOM))
             text_label(w, y, 2, 2, item_key(p, id));
         int x = image_columns + 3;
         text_label(w, y, x, p->width - x - 2, item_name(p, id));
-        wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
+        wattrset(w, COLOR_PAIR(console && i == p->selected ? pair : THEME_PANEL_MUTED));
         text_label(w, y + 1, x, p->width - x - 2, id & ICON_CUSTOM ? _("Servidor") : _("Unicode"));
     }
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));

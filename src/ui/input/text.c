@@ -2,6 +2,7 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 #include "ui/input/text.h"
+#include "model/text/emoji_catalog.h"
 #include "model/text/translation.h"
 #ifdef _WIN32
 #include "platform/runtime.h"
@@ -1231,12 +1232,129 @@ void text_unselect(text_buffer *buffer)
     buffer->anchor = buffer->cursor;
 }
 
-/* Build a bounded projection and source-offset map. Labels cannot be longer
- * than their canonical token; this preserves the existing layout capacity. */
+/* Masked fields measure the typed scalars themselves, never their names. */
+static bool console_suppressed;
+
+/* Linux console fonts hold a few hundred glyphs: Latin, Greek and Cyrillic
+ * letters, punctuation, box drawing, blocks, arrows and a few shapes, but no
+ * emoji and almost no dingbats. These symbols have no glyph there and are
+ * shown as substitutes from that set; sorted for bsearch. */
+typedef struct {
+    uint32_t from;
+    const char *to;
+} console_symbol;
+static const console_symbol console_symbols[] = {
+    {0x2194, "<>"},   /* ↔ */
+    {0x21b0, "┌─"},   /* ↰ reply */
+    {0x23f8, "|"},    /* ⏸ pause: one cell, as in its fixed-width slots */
+    {0x258e, "│"},    /* ▎ quote bar */
+    {0x258f, "_"},    /* ▏ search cursor */
+    {0x25a4, "■"},    /* ▤ file */
+    {0x25be, "▼"},    /* ▾ */
+    {0x266a, "◀"},    /* ♪ sound */
+    {0x2691, "!"},    /* ⚑ */
+    {0x2699, "*"},    /* ⚙ */
+    {0x270e, "*"},    /* ✎ */
+    {0x2715, "x"},    /* ✕ */
+    {0x2776, "(1)"},  /* ❶ notification counts */
+    {0x2777, "(2)"},  /* ❷ */
+    {0x2778, "(3)"},  /* ❸ */
+    {0x2779, "(4)"},  /* ❹ */
+    {0x277a, "(5)"},  /* ❺ */
+    {0x277b, "(6)"},  /* ❻ */
+    {0x277c, "(7)"},  /* ❼ */
+    {0x277d, "(8)"},  /* ❽ */
+    {0x277e, "(9)"},  /* ❾ */
+    {0x277f, "(10)"}, /* ❿ */
+    {0x2981, "•"},    /* ⦁ */
+    {0x1f5d9, "x"},   /* 🗙 */
+    {0x1f870, "←"},   /* 🡰 */
+    {0x1f871, "↑"},   /* 🡱 */
+    {0x1f872, "→"},   /* 🡲 */
+    {0x1f873, "↓"},   /* 🡳 */
+};
+
+static int symbol_order(const void *key, const void *entry)
+{
+    uint32_t a = *(const uint32_t *)key, b = *(const uint32_t *)entry;
+    return a < b ? -1 : a > b;
+}
+
+/* Scalars the console fonts draw; they are kept unless an emoji
+ * presentation selector follows. */
+static bool console_drawable(uint32_t c)
+{
+    return c <= 0x206f || (c >= 0x20a0 && c <= 0x20cf) || (c >= 0x2190 && c <= 0x2193) ||
+           (c >= 0x2500 && c <= 0x259f) || c == 0x2122 || c == 0x2212 || c == 0x2219 ||
+           c == 0x221a || c == 0x221e || c == 0x2248 || c == 0x2260 || c == 0x2264 || c == 0x2265 ||
+           c == 0x25a0 || c == 0x25b2 || c == 0x25b6 || c == 0x25bc || c == 0x25c0 || c == 0x25cf ||
+           c == 0x25c6 || c == 0x2666;
+}
+
+static size_t utf8_scalars(const char *utf8, uint32_t *out, size_t room)
+{
+    size_t count = 0;
+    while (*utf8 && count < room) {
+        uint32_t value;
+        size_t bytes = papo_utf8_next(utf8, &value);
+        if (!bytes)
+            break;
+        out[count++] = value;
+        utf8 += bytes;
+    }
+    return count;
+}
+
+#define CONSOLE_LABEL 50
+/* On the Linux console, the source scalars at i that need a substitute: the
+ * label goes to out (at most CONSOLE_LABEL scalars). An emoji shows as its
+ * name between colons, like :rosto sorridente:, so it stays recognizable. */
+static size_t console_label(const text_buffer *source, size_t i, uint32_t *out, size_t *count)
+{
+    *count = 0;
+    uint32_t c = source->data[i];
+    bool presentation = i + 1 < source->length && source->data[i + 1] == 0xfe0f;
+    if (c < 0x80 || (console_drawable(c) && !presentation))
+        return 0;
+    const console_symbol *symbol =
+        bsearch(&c, console_symbols, sizeof(console_symbols) / sizeof(*console_symbols),
+                sizeof(*console_symbols), symbol_order);
+    if (symbol) {
+        *count = utf8_scalars(symbol->to, out, CONSOLE_LABEL);
+        return presentation ? 2 : 1;
+    }
+    size_t consumed = 0;
+    const unicode_emoji *emoji =
+        emoji_catalog_match(source->data + i, source->length - i, &consumed);
+    if (!emoji || !consumed)
+        return 0;
+    out[(*count)++] = ':';
+    /* One scalar more than fits tells a long name apart from one that fits
+     * exactly; a long name ends in an ellipsis. */
+    size_t name =
+        utf8_scalars(language_english() ? emoji->english : emoji->name, out + 1, CONSOLE_LABEL - 2);
+    if (name > CONSOLE_LABEL - 3) {
+        name = CONSOLE_LABEL - 3;
+        out[name] = 0x2026;
+    }
+    *count += name;
+    out[(*count)++] = ':';
+    return consumed;
+}
+
+static bool console_projection(void)
+{
+    return !console_suppressed && theme_linux_console();
+}
+
+/* Build a bounded projection and source-offset map. Mention labels cannot be
+ * longer than their canonical token; console labels can, and shrink to one
+ * cell once the rest of the text would not fit the layout capacity. */
 static void project(const text_buffer *source, text_buffer *display, size_t *starts, size_t *ends,
                     unsigned char *styles, uint32_t *icons)
 {
-    if (!source->mentions && !source->icon_resolver) {
+    bool console = console_projection();
+    if (!source->mentions && !source->icon_resolver && !console) {
         *display = *source;
         return;
     }
@@ -1274,6 +1392,36 @@ static void project(const text_buffer *source, text_buffer *display, size_t *sta
             else if (source->cursor > i && source->cursor <= i + icon_length)
                 display->cursor = at + 1;
             i += icon_length;
+            continue;
+        }
+        uint32_t substitute[CONSOLE_LABEL];
+        size_t substitute_length = 0;
+        size_t replaced =
+            console && !atom ? console_label(source, i, substitute, &substitute_length) : 0;
+        if (replaced) {
+            /* Every remaining scalar still needs a cell: past the capacity a
+             * label shrinks to one placeholder. */
+            if (display->length + substitute_length + (source->length - i - replaced) >
+                TEXT_LIMIT) {
+                substitute[0] = '?';
+                substitute_length = 1;
+            }
+            size_t begin = display->length;
+            for (size_t k = 0; k < substitute_length; ++k) {
+                size_t at = display->length++;
+                display->data[at] = substitute[k];
+                if (starts)
+                    starts[at] = i;
+                if (ends)
+                    ends[at] = i + replaced;
+                if (styles)
+                    styles[at] = 0;
+            }
+            if (source->cursor == i)
+                display->cursor = begin;
+            else if (source->cursor > i && source->cursor <= i + replaced)
+                display->cursor = display->length;
+            i += replaced;
             continue;
         }
         if (!atom) {
@@ -1575,7 +1723,7 @@ static void measure_plain(const text_buffer *buffer, int width, text_layout *lay
 
 void text_measure(const text_buffer *buffer, int width, text_layout *layout)
 {
-    if (!buffer->mentions && !buffer->icon_resolver) {
+    if (!buffer->mentions && !buffer->icon_resolver && !console_projection()) {
         measure_plain(buffer, width, layout);
         for (size_t i = 0; i < layout->count; ++i) {
             layout->cells[i].display_start = layout->cells[i].start;
@@ -1967,11 +2115,24 @@ bool text_paste_commit(text_paste *paste, text_buffer *buffer)
     return ok;
 }
 
+/* curses adds the window's attributes to each character it writes, so bold
+ * that theme_text_attributes drops from black text must leave the window too
+ * while the text is drawn. Returns the attributes to restore afterwards. */
+static attr_t unbold_window(WINDOW *window)
+{
+    attr_t attributes = getattrs(window);
+    if ((attributes & A_BOLD) && has_colors() && COLORS < 256)
+        wattr_off(window, A_BOLD, NULL);
+    return attributes;
+}
+
 void text_draw_field(WINDOW *window, const text_buffer *buffer, int *first, int y, int x, int width,
                      bool masked)
 {
     text_layout layout;
+    console_suppressed = masked;
     text_measure(buffer, TEXT_LIMIT * 2 + 1, &layout);
+    console_suppressed = false;
     if (layout.cursor_column < *first)
         *first = layout.cursor_column;
     if (layout.cursor_column >= *first + width)
@@ -1981,7 +2142,7 @@ void text_draw_field(WINDOW *window, const text_buffer *buffer, int *first, int 
         if (c->column < *first && c->column + c->width > *first)
             *first = c->column + c->width;
     }
-    attr_t attributes = getattrs(window);
+    attr_t attributes = unbold_window(window);
     size_t lo = 0, hi = 0;
     bool selection = text_selection(buffer, &lo, &hi);
     for (size_t i = 0; i + 1 < layout.count; ++i) {
@@ -1992,17 +2153,19 @@ void text_draw_field(WINDOW *window, const text_buffer *buffer, int *first, int 
         attr_t style = selected ? A_BOLD | (has_colors() ? 0 : A_REVERSE) : attributes & ~A_COLOR;
         short pair = selected ? (has_colors() ? THEME_TEXT_SELECTION : 0) : PAIR_NUMBER(attributes);
         cchar_t glyph;
-        if (setcchar(&glyph, masked ? L"*" : c->glyph, style, pair, NULL) == OK)
+        if (setcchar(&glyph, masked ? L"*" : c->glyph, theme_text_attributes(style, pair), pair,
+                     NULL) == OK)
             for (int n = 0; n < (masked ? c->width : 1); ++n)
                 mvwadd_wch(window, y, x + c->column - *first + n, &glyph);
     }
+    wattrset(window, attributes);
     wmove(window, y, x + layout.cursor_column - *first);
 }
 
 void text_draw(WINDOW *window, const text_buffer *buffer, const text_layout *layout, int first,
                int height, int y, int x)
 {
-    attr_t attributes = getattrs(window);
+    attr_t attributes = unbold_window(window);
     size_t lo = 0, hi = 0;
     bool selection = text_selection(buffer, &lo, &hi);
     for (size_t i = 0; i + 1 < layout->count; ++i) {
@@ -2025,7 +2188,8 @@ void text_draw(WINDOW *window, const text_buffer *buffer, const text_layout *lay
                 mvwaddstr(window, y + point->row - first, x + point->column, "· ");
             continue;
         }
-        if (setcchar(&glyph, point->newline ? L" " : point->glyph, style, pair, NULL) == OK)
+        if (setcchar(&glyph, point->newline ? L" " : point->glyph,
+                     theme_text_attributes(style, pair), pair, NULL) == OK)
             mvwadd_wch(window, y + point->row - first, x + point->column, &glyph);
     }
     wattrset(window, attributes);
@@ -2036,16 +2200,19 @@ void text_draw_styled(WINDOW *w, const text_buffer *b, const text_layout *l,
                       int normal, int accent)
 {
     (void)b;
+    attr_t attributes = unbold_window(w);
     for (size_t i = 0; i + 1 < l->count; ++i) {
         const text_cell *c = &l->cells[i];
         if (c->newline || c->row < first || c->row >= first + height)
             continue;
         bool marked = mask && c->start < length && mask[c->start];
         cchar_t glyph;
-        if (setcchar(&glyph, c->glyph, marked ? A_BOLD : A_NORMAL, marked ? accent : normal,
-                     NULL) == OK)
+        if (setcchar(&glyph, c->glyph,
+                     theme_text_attributes(marked ? A_BOLD : A_NORMAL, marked ? accent : normal),
+                     marked ? accent : normal, NULL) == OK)
             mvwadd_wch(w, y + c->row - first, x + c->column, &glyph);
     }
+    wattrset(w, attributes);
 }
 
 void text_clear(text_buffer *buffer)
@@ -2145,18 +2312,21 @@ int text_label(WINDOW *window, int y, int x, int width, const char *utf8)
         return 0;
     text_measure(&buffer, width + 1, &layout);
     int used = 0;
+    attr_t attributes = window ? unbold_window(window) : 0;
     for (size_t i = 0; i + 1 < layout.count; ++i) {
         text_cell *point = &layout.cells[i];
         if (point->row || point->newline || used + point->width > width)
             break;
         if (window) {
             cchar_t glyph;
-            attr_t attributes = getattrs(window);
-            if (setcchar(&glyph, point->glyph, attributes & ~A_COLOR, PAIR_NUMBER(attributes),
-                         NULL) == OK)
+            if (setcchar(&glyph, point->glyph,
+                         theme_text_attributes(attributes & ~A_COLOR, PAIR_NUMBER(attributes)),
+                         PAIR_NUMBER(attributes), NULL) == OK)
                 mvwadd_wch(window, y, x + used, &glyph);
         }
         used += point->width;
     }
+    if (window)
+        wattrset(window, attributes);
     return used;
 }

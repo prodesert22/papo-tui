@@ -113,8 +113,9 @@ static void conversation_focus_label(view *ui, char *label, size_t size)
 {
     snprintf(label, size, _("Foco: %s"), ui->navigating ? _("Seleção") : focus_name(ui, ui->focus));
 }
-/* Footer hint items are a key and its action, apart like "↑/↓ move  ●  Tab". */
-#define HINT_SEPARATOR "  ●  "
+/* Footer hint items are a key and its action, apart like "↑/↓ move  ●  Tab";
+ * the Linux console's fonts lack ●, so they are apart by • there. */
+#define HINT_SEPARATOR (theme_linux_console() ? "  •  " : "  ●  ")
 /* Where each Alt+arrow leads from the focused component, one item per arrow,
  * such as "Alt + 🡱 Servidores  ●  Alt + 🡳 Áudio". Very heavy wide-headed arrows stay
  * legible at text size, where plain arrows are small. Empty when nothing is
@@ -129,6 +130,12 @@ static void alt_hint(view *ui, char *hint, size_t size)
     hint[0] = 0;
     if (ui->navigating)
         return;
+    /* The Linux console keeps Alt+← and Alt+→ to switch virtual consoles:
+     * the focus moves with Tab and Shift+Tab there. */
+    if (theme_linux_console()) {
+        g_strlcpy(hint, _("Tab / Shift+Tab: mudar foco"), size);
+        return;
+    }
     for (size_t i = 0; i < sizeof(arrows) / sizeof(arrows[0]); ++i) {
         int target = conversation_focus_target(ui, arrows[i].dx, arrows[i].dy);
         if (target < 0 || used >= size)
@@ -177,10 +184,12 @@ void conversation_draw_tabs(view *ui)
             break;
         }
         bool selected = i == ui->active_tab, active = focused && i == ui->tab_cursor;
-        wattrset(ui->tabs, COLOR_PAIR(active     ? THEME_PROFILE_BUTTON_FOCUS
-                                      : selected ? THEME_PANEL_ACTIVE
-                                                 : THEME_PANEL_MUTED) |
-                               (selected || active ? A_BOLD : A_NORMAL));
+        int tab_pair = active     ? THEME_PROFILE_BUTTON_FOCUS
+                       : selected ? THEME_PANEL_ACTIVE
+                                  : THEME_PANEL_MUTED;
+        wattrset(ui->tabs,
+                 COLOR_PAIR(tab_pair) |
+                     theme_text_attributes(selected || active ? A_BOLD : A_NORMAL, tab_pair));
         char label[192];
         inbox *box = history_inbox(ui->connections->items[i].model);
         size_t mentions = inbox_unread_mentions(box, NULL);
@@ -370,12 +379,11 @@ bool conversation_collect_notices(view *ui, auth_client *auth)
     }
     int paging = history_paging_direction(ui->model);
     if (paging && paging == ui->waiting_page && !ui->at_end && ui->body) {
-        static const char *frames[] = {"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"};
         uint64_t now = 0;
         net_now_ms(&now);
         char loading[128];
         snprintf(loading, sizeof(loading), _("%s Carregando próximas mensagens"),
-                 frames[(now / 100) % 10]);
+                 theme_spinner_frame(now / 100));
         changed |= status_bar_set(&ui->status, STATUS_HISTORY, loading);
         ui->paging_notice = true;
     } else if (ui->paging_notice) {
@@ -482,7 +490,8 @@ static void composer_button(view *ui, int focus, const char *label, click_range 
         text_icons(&icon, icons_resolve, icons_paint, ui->icons);
         icons_scope(ui->icons, icon_scope, 0);
     }
-    text_measure(&icon, width - 2, &ui->measured);
+    /* One cell is the cursor's: a four-cell console label such as [:)] fits. */
+    text_measure(&icon, width - 1, &ui->measured);
     int cells = ui->measured.cursor_column;
     text_draw(ui->body, &icon, &ui->measured, 0, 1, row, left + (width - cells) / 2);
     wattrset(ui->body, previous);
@@ -607,7 +616,9 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                     const char *microphone = NULL;
                     int microphone_width = 0;
                     if (muted >= 0 && ui->side >= 14) {
-                        microphone = simple ? (muted ? "[●×]" : "[●]") : (muted ? "[🎤×]" : "[🎤]");
+                        microphone = theme_linux_console() ? (muted ? "[M x]" : "[Mic]")
+                                     : simple              ? (muted ? "[●×]" : "[●]")
+                                                           : (muted ? "[🎤×]" : "[🎤]");
                         microphone_width = text_label(NULL, 0, 0, 32, microphone);
                     }
                     int background = focused ? THEME_FOCUS_AREA : THEME_PANEL;
@@ -709,21 +720,26 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         text_label(ui->list, y + 1, 2, MAX(1, w - 3), auth_username(auth));
         bool voice = voice_available();
         /* Settings keeps the rightmost slot; the call controls sit to its left. */
-        button_draw(ui->list, y + 2, w - 6, 5, papo_unicode_width(0x2699) == 1 ? "[⚙]" : "[*]",
+        button_draw(ui->list, y + 2, w - 6, 5,
+                    papo_unicode_width(0x2699) == 1 && !theme_linux_console() ? "[⚙]" : "[*]",
                     ui->focus == SETTINGS_BUTTON ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
         ui->voice_output_hit = (click_range){0, 0};
         ui->voice_microphone_hit = (click_range){0, 0};
         if (voice) {
-            ui->voice_output_hit = (click_range){w - 16, 5};
-            ui->voice_microphone_hit = (click_range){w - 11, 5};
-            button_draw(ui->list, y + 2, w - 16, 5,
-                        simple ? (voice_output_enabled() ? "[♪]" : "[♪×]")
-                               : (voice_output_enabled() ? "[🔊]" : "[🔇]"),
+            /* The console's [Mic] fills its slot: keep a space before [*]. */
+            int shift = theme_linux_console() ? 1 : 0;
+            ui->voice_output_hit = (click_range){w - 16 - shift, 5};
+            ui->voice_microphone_hit = (click_range){w - 11 - shift, 5};
+            button_draw(ui->list, y + 2, ui->voice_output_hit.x, 5,
+                        theme_linux_console() ? (voice_output_enabled() ? "[◀)]" : "[◀x]")
+                        : simple              ? (voice_output_enabled() ? "[♪]" : "[♪×]")
+                                              : (voice_output_enabled() ? "[🔊]" : "[🔇]"),
                         ui->focus == VOICE_OUTPUT_BUTTON ? BUTTON_FOCUSED : BUTTON_NORMAL,
                         BUTTON_PANEL);
-            button_draw(ui->list, y + 2, w - 11, 5,
-                        simple ? (voice_microphone_enabled() ? "[●]" : "[●×]")
-                               : (voice_microphone_enabled() ? "[🎤]" : "[🎤×]"),
+            button_draw(ui->list, y + 2, ui->voice_microphone_hit.x, 5,
+                        theme_linux_console() ? (voice_microphone_enabled() ? "[Mic]" : "[M x]")
+                        : simple              ? (voice_microphone_enabled() ? "[●]" : "[●×]")
+                                              : (voice_microphone_enabled() ? "[🎤]" : "[🎤×]"),
                         ui->focus == VOICE_MICROPHONE_BUTTON ? BUTTON_FOCUSED : BUTTON_NORMAL,
                         BUTTON_PANEL);
         }
@@ -787,12 +803,16 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
             ui->pins_hit = (click_range){body_width - 13, 5};
             ui->members_hit = (click_range){body_width - 7, 5};
             text_label(ui->body, 0, 2, MAX(0, body_width - 23), title);
-            button_draw(ui->body, 0, ui->search_hit.x, ui->search_hit.width, "🔍",
+            bool console = theme_linux_console();
+            button_draw(ui->body, 0, ui->search_hit.x, ui->search_hit.width, console ? "[/]" : "🔍",
                         ui->focus == SEARCH_BUTTON ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
             button_draw(ui->body, 0, ui->pins_hit.x, ui->pins_hit.width,
-                        graphical_badge() ? "📌" : "🖈",
+                        console             ? _("[Fix]")
+                        : graphical_badge() ? "📌"
+                                            : "🖈",
                         ui->focus == PINS_BUTTON ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
-            button_draw(ui->body, 0, ui->members_hit.x, ui->members_hit.width, "👤",
+            button_draw(ui->body, 0, ui->members_hit.x, ui->members_hit.width,
+                        console ? "[@]" : "👤",
                         ui->focus == MEMBERS_BUTTON ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
             wattrset(ui->body, COLOR_PAIR(ui->focus == HISTORY_PANEL ? THEME_HISTORY_MUTED
                                                                      : THEME_PANEL_MUTED));
@@ -901,8 +921,10 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
             }
             wattrset(ui->body, COLOR_PAIR(editing ? THEME_FOCUS_MUTED : THEME_PANEL_MUTED));
             if (!*ui->edit_message)
-                composer_button(ui, ATTACH_BUTTON, "📎", &ui->attach_button_hit, NULL);
-            composer_button(ui, EMOJI_BUTTON, "😄", &ui->emoji_button_hit, "emoji-button");
+                composer_button(ui, ATTACH_BUTTON, theme_linux_console() ? "[+]" : "📎",
+                                &ui->attach_button_hit, NULL);
+            composer_button(ui, EMOJI_BUTTON, theme_linux_console() ? "[:)]" : "😄",
+                            &ui->emoji_button_hit, "emoji-button");
             wattrset(ui->body, COLOR_PAIR(editing ? THEME_FOCUS_MUTED : THEME_PANEL_MUTED));
         } else {
             wattrset(ui->body, COLOR_PAIR(THEME_PANEL_MUTED));

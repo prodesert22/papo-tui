@@ -1,8 +1,12 @@
 #define _POSIX_C_SOURCE 200809L
+#include "model/text/emoji_catalog.h"
+#include "model/text/translation.h"
 #include "ui/input/text.h"
 
+#include <glib.h>
 #include <locale.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <wordbreak.h>
 
@@ -17,6 +21,8 @@
 int main(void)
 {
     CHECK(setlocale(LC_ALL, "C.UTF-8"));
+    /* The Linux console projects emoji and symbols; it has its own checks. */
+    CHECK(setenv("TERM", "xterm-256color", 1) == 0);
     init_graphemebreak();
     init_wordbreak();
     text_buffer buffer;
@@ -209,6 +215,45 @@ int main(void)
     buffer.cursor = buffer.length;
     CHECK(text_edit(&buffer, OK, 23, 20, true));
     CHECK(text_encode(&buffer, output) && !strcmp(output, "outra "));
-    puts("Unicode, selection, words, atomic insertion, wrapping, controls and limits passed");
+
+    /* Linux console: symbols without a glyph show as substitutes and emoji as
+     * their names, while the text and its cursor offsets stay unchanged. */
+    CHECK(setenv("TERM", "linux", 1) == 0);
+    CHECK(text_decode(&buffer, "a😄b"));
+    text_measure(&buffer, 200, &layout);
+    size_t consumed = 0;
+    const unicode_emoji *grin = emoji_catalog_match(buffer.data + 1, 1, &consumed);
+    CHECK(grin && consumed == 1);
+    const char *name = language_english() ? grin->english : grin->name;
+    /* Names longer than 47 scalars end in an ellipsis. */
+    size_t label = MIN((size_t)g_utf8_strlen(name, -1), 47) + 2;
+    CHECK(layout.count == 2 + label + 1);
+    CHECK(layout.cells[0].glyph[0] == 'a' && layout.cells[1].glyph[0] == ':');
+    CHECK(layout.cells[label].glyph[0] == ':' && layout.cells[label + 1].glyph[0] == 'b');
+    for (size_t i = 1; i <= label; ++i)
+        CHECK(layout.cells[i].start == 1 && layout.cells[i].end == 2);
+    CHECK(layout.cells[label + 1].start == 2);
+    CHECK(text_encode(&buffer, output) && !strcmp(output, "a😄b"));
+    CHECK(text_label(NULL, 0, 0, 200, "😄") == (int)label);
+    CHECK(text_label(NULL, 0, 0, 200, "♪⏸❸🡳↔") == 1 + 1 + 3 + 1 + 2);
+    CHECK(text_decode(&buffer, "♪ ❸ ↔ 🡳"));
+    text_measure(&buffer, 200, &layout);
+    CHECK(layout.cells[0].glyph[0] == L'◀' && layout.cells[2].glyph[0] == '(' &&
+          layout.cells[3].glyph[0] == '3' && layout.cells[6].glyph[0] == '<' &&
+          layout.cells[9].glyph[0] == L'↓');
+    /* Glyphs the console fonts have, and plain text, are kept. */
+    CHECK(text_decode(&buffer, "ção─→•…▶●"));
+    text_measure(&buffer, 200, &layout);
+    CHECK(layout.count == buffer.length + 1);
+    /* Names never overflow the layout: past its capacity they become '?'. */
+    text_clear(&buffer);
+    for (size_t i = 0; i < TEXT_LIMIT; ++i)
+        buffer.data[buffer.length++] = 0x1f604;
+    text_measure(&buffer, TEXT_LIMIT * 2 + 1, &layout);
+    CHECK(layout.count <= TEXT_LIMIT + 1 && layout.cells[layout.count - 2].glyph[0] == '?');
+    CHECK(layout.cells[layout.count - 2].start == TEXT_LIMIT - 1);
+    CHECK(setenv("TERM", "xterm-256color", 1) == 0);
+    puts("Unicode, selection, words, atomic insertion, wrapping, controls, limits and Linux "
+         "console glyphs passed");
     return 0;
 }
