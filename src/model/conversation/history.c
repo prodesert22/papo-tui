@@ -622,7 +622,8 @@ bool history_opening(const history *h, const char **read_id, const char **read_t
 {
     json_t *channel = !h || h->selected == SIZE_MAX ? NULL : history_channel(h, h->selected);
     const char *id = history_internal_str(channel, "id");
-    if (!id || strcmp(h->opened_channel, id) || !*h->opened_read_time || !*h->opened_last_time)
+    if (!h || !id || strcmp(h->opened_channel, id) || !*h->opened_read_time ||
+        !*h->opened_last_time)
         return false;
     *read_id = h->opened_read_id;
     *read_time = h->opened_read_time;

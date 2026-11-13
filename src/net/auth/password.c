@@ -6,8 +6,10 @@ static void set_notice(auth_client *client, auth_password_outcome outcome, const
                        const char *detail)
 {
     client->password_outcome = outcome;
+    /* A long server detail is cut on purpose; the loop below trims it to UTF-8. */
     if (detail && *detail)
-        snprintf(client->password_notice, sizeof(client->password_notice), "%s: %s", text, detail);
+        g_snprintf(client->password_notice, sizeof(client->password_notice), "%s: %s", text,
+                   detail);
     else
         snprintf(client->password_notice, sizeof(client->password_notice), "%s", text);
     /* Never end inside a UTF-8 sequence after truncation. */

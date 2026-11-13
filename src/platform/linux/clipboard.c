@@ -102,8 +102,9 @@ static bool start(char *data, size_t length)
     copy.sent = 0;
     char *wayland[] = {"wl-copy", "--type", "text/plain;charset=utf-8", NULL};
     char *x11[] = {"xclip", "-selection", "clipboard", "-in", NULL};
-    if ((getenv("WAYLAND_DISPLAY") && *getenv("WAYLAND_DISPLAY") && native_copy(wayland)) ||
-        (getenv("DISPLAY") && *getenv("DISPLAY") && native_copy(x11)))
+    const char *wayland_display = getenv("WAYLAND_DISPLAY"), *x11_display = getenv("DISPLAY");
+    if ((wayland_display && *wayland_display && native_copy(wayland)) ||
+        (x11_display && *x11_display && native_copy(x11)))
         return true;
     return terminal_copy();
 }

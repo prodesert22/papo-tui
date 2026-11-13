@@ -288,8 +288,9 @@ bool history_jump_near(history *h, const char *id, const char *hint)
         return history_jump_at(h, id, NULL);
     if (!history_jump_at(h, id, NULL))
         return false;
-    if (*h->actions->jump)
-        snprintf(h->actions->jump_hint, sizeof(h->actions->jump_hint), "%s", hint);
+    struct history_actions *a = h->actions;
+    if (a && *a->jump)
+        snprintf(a->jump_hint, sizeof(a->jump_hint), "%s", hint);
     return true;
 }
 const char *history_jump_error(history *h)

@@ -548,7 +548,8 @@ void terminal_focus_request(GDBusConnection *bus, const char *title)
         return;
     r->bus = bus ? g_object_ref(bus) : NULL;
     snprintf(r->title, sizeof(r->title), "%s", title ? title : "");
-    r->tmux = getenv("TMUX") && *getenv("TMUX");
+    const char *tmux = getenv("TMUX");
+    r->tmux = tmux && *tmux;
     copy_env(r->tmux_pane, sizeof(r->tmux_pane), "TMUX_PANE");
     copy_env(r->konsole_service, sizeof(r->konsole_service), "KONSOLE_DBUS_SERVICE");
     copy_env(r->konsole_window, sizeof(r->konsole_window), "KONSOLE_DBUS_WINDOW");

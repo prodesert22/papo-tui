@@ -434,7 +434,9 @@ static gpointer accept_thread(gpointer data)
             g_ptr_array_remove(server->connections, entry);
             g_mutex_unlock(&server->lock);
             g_object_unref(connection);
-            server_unref(server);
+            /* Undo the connection's reference. The owner's reference lasts
+             * until destroy joins this thread, so this never frees server. */
+            g_atomic_int_add(&server->refs, -1);
             g_free(entry);
             continue;
         }

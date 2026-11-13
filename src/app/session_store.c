@@ -152,9 +152,9 @@ const char *session_store_open_url(const session_store *s)
     if (!s)
         return "";
     /* The saved server used last opens first, then the newest one. */
-    const char *urls[SESSION_SLOT_LIMIT];
+    const char *urls[SESSION_SLOT_LIMIT] = {0};
     size_t count = 0;
-    for (size_t i = 0; i < s->count; ++i) {
+    for (size_t i = 0; i < s->count && count < SESSION_SLOT_LIMIT; ++i) {
         const session_slot *slot = s->entries[i].slot;
         if (*session_slot_url(slot) && session_slot_saved(slot))
             urls[count++] = session_slot_url(slot);

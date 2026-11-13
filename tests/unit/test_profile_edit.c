@@ -1,6 +1,7 @@
 #include "ui/input/profile_commands.h"
 #include "ui/media/profile_image.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <zlib.h>

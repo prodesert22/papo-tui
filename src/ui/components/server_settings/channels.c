@@ -140,10 +140,10 @@ static void fields(server_settings *s, GArray *out)
     {
         const char *role = admin_str(entry, "role_id");
         const json_t *info = json_object_get(server_admin_roles(s->model), role);
-        f = admin_field_add(out, FIELD_HEADING, 0,
-                            *admin_str(info, "name")         ? admin_str(info, "name")
-                            : *admin_str(entry, "role_name") ? admin_str(entry, "role_name")
-                                                             : _("Cargo"));
+        admin_field_add(out, FIELD_HEADING, 0,
+                        *admin_str(info, "name")         ? admin_str(info, "name")
+                        : *admin_str(entry, "role_name") ? admin_str(entry, "role_name")
+                                                         : _("Cargo"));
         const json_t *flags = json_object_get(entry, "permissions");
         for (int k = 0; k < PERMISSION_CHANNEL_COUNT; ++k) {
             f = admin_field_add(out, FIELD_CHECK, PERMISSION, _(flag_labels[k]));

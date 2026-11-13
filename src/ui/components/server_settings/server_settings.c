@@ -629,6 +629,9 @@ static void draw_form(server_settings *s, WINDOW *w, GArray *fields)
     int count = (int)fields->len, available = s->bottom - s->top;
     if (!count || available < 1)
         return;
+    /* Forms beyond the height table are cut there rather than overrunning it. */
+    if (count > SERVER_SETTINGS_FIELDS)
+        count = SERVER_SETTINGS_FIELDS;
     int heights[SERVER_SETTINGS_FIELDS];
     for (int i = 0; i < count; ++i)
         heights[i] = field_height(s, &g_array_index(fields, admin_field, i), s->form_w);

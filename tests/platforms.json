@@ -62,6 +62,12 @@
   "tests/terminal/test_footer_terminal.py": {
     "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
   },
+  "tests/terminal/test_language_terminal.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/terminal/test_quick_switcher.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
   "tests/terminal/test_history_terminal.py": {
     "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
   },
