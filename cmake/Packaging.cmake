@@ -89,10 +89,10 @@ if(PAPO_BUNDLE_RUNTIME AND PAPO_VOICE)
         file(TO_CMAKE_PATH "${PAPO_RUNTIME_SEARCH_DIRS}" PAPO_RUNTIME_SEARCH_DIRS)
     endif()
     if(UNIX)
-        # A soname shipped by the private prefix must not also be taken from the
-        # host: resolving one dependency to two paths aborts the installation.
-        # Keep this a ready-to-paste argument list: the generated install script
-        # must see quoted patterns separated by spaces, not a list expansion.
+        # A soname shipped by the private prefix must not also be taken from the host: resolving one
+        # dependency to two paths aborts the installation. Keep this a ready-to-paste argument list:
+        # the generated install script must see quoted patterns separated by spaces, not a list
+        # expansion.
         set(PAPO_RUNTIME_EXCLUDE_REGEXES "")
         set(PAPO_RUNTIME_EXCLUDED_NAMES "")
         foreach(directory IN LISTS CMAKE_PREFIX_PATH)
@@ -105,7 +105,9 @@ if(PAPO_BUNDLE_RUNTIME AND PAPO_VOICE)
                 list(APPEND PAPO_RUNTIME_EXCLUDED_NAMES "${name}")
                 string(REPLACE "." "\\." pattern "${name}")
                 string(REPLACE "+" "\\+" pattern "${pattern}")
-                string(APPEND PAPO_RUNTIME_EXCLUDE_REGEXES " \"^/(usr/)?lib[^/]*/${pattern}$\"")
+                # Also match Debian multiarch directories (/lib/x86_64-linux-gnu).
+                string(APPEND PAPO_RUNTIME_EXCLUDE_REGEXES
+                       " \"^/(usr/)?lib[^/]*/([^/]+-linux-[^/]+/)?${pattern}$\"")
             endforeach()
         endforeach()
     endif()

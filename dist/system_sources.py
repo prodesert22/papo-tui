@@ -131,6 +131,33 @@ def owner(path):
     return capture("rpm", "-qf", "--qf", "%{NAME}", path)
 
 
+def rpm_licenses(package):
+    def licenses(name):
+        return [
+            Path(p)
+            for p in capture("rpm", "-ql", name).splitlines()
+            if "/share/licenses/" in p and Path(p).is_file()
+        ]
+
+    paths = licenses(package)
+    if paths:
+        return paths
+    # Subpackages such as cairo-gobject leave the license to the installed
+    # package built from the same source RPM (cairo).
+    origin = capture("rpm", "-q", "--qf", "%{SOURCERPM}", package)
+    siblings = sorted(
+        {
+            name
+            for name, source in (
+                line.split(" ", 1)
+                for line in capture("rpm", "-qa", "--qf", "%{NAME} %{SOURCERPM}\\n").splitlines()
+            )
+            if source == origin and name != package
+        }
+    )
+    return [path for name in siblings for path in licenses(name)]
+
+
 def collect_licenses(stage, prefix):
     private_licenses = prefix / "share/licenses/papo-dependencies"
     if not private_licenses.is_dir():
@@ -160,11 +187,7 @@ def collect_licenses(stage, prefix):
         elif shutil.which("dpkg-query"):
             paths = [Path("/usr/share/doc") / package.split(":")[0] / "copyright"]
         else:
-            paths = [
-                Path(p)
-                for p in capture("rpm", "-ql", package).splitlines()
-                if "/share/licenses/" in p
-            ]
+            paths = rpm_licenses(package)
         paths = [p for p in paths if p.is_file()]
         if not paths:
             raise RuntimeError(f"No installed license for {package}")
