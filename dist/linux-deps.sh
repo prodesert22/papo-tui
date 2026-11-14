@@ -4,7 +4,7 @@ set -eu
 if [ "$(id -u)" = 0 ]; then elevate=''; else elevate='sudo'; fi
 if command -v apt-get >/dev/null 2>&1; then
     $elevate apt-get update
-    $elevate apt-get install -y build-essential cmake ninja-build pkg-config autoconf automake libtool \
+    $elevate apt-get install -y build-essential cmake ninja-build pkg-config autoconf automake libtool flex bison \
         nasm python3 python3-venv python3-dev curl git libssl-dev zlib1g-dev libncurses-dev \
         libglib2.0-dev libpango1.0-dev libcairo2-dev librsvg2-dev libfontconfig-dev libpulse-dev libasound2-dev \
         libgcrypt20-dev libass-dev libplacebo-dev libva-dev libdrm-dev hwdata ffmpeg openssl dbus-daemon libsecret-1-dev \
@@ -15,7 +15,7 @@ if command -v apt-get >/dev/null 2>&1; then
     done
     $elevate apt-get update
 elif command -v dnf >/dev/null 2>&1; then
-    $elevate dnf install -y gcc gcc-c++ make cmake ninja-build pkgconf-pkg-config autoconf automake libtool \
+    $elevate dnf install -y gcc gcc-c++ make cmake ninja-build pkgconf-pkg-config autoconf automake libtool flex bison \
         nasm python3 python3-pip python3-devel curl git openssl-devel zlib-devel ncurses-devel \
         glib2-devel pango-devel cairo-devel librsvg2-devel fontconfig-devel pulseaudio-libs-devel alsa-lib-devel \
         libgcrypt-devel libass-devel libplacebo-devel libva-devel libdrm-devel hwdata ffmpeg-free openssl dbus-daemon libsecret-devel \

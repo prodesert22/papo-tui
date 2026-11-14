@@ -77,7 +77,7 @@ The package targets are **Ubuntu 24.04** and **Debian 13**.
 
 ```sh
 sudo apt update
-sudo apt install build-essential cmake ninja-build pkg-config autoconf automake libtool nasm \
+sudo apt install build-essential cmake ninja-build pkg-config autoconf automake libtool flex bison nasm \
     python3 python3-venv python3-dev curl git ca-certificates libssl-dev zlib1g-dev \
     libncurses-dev ncurses-term libglib2.0-dev libpango1.0-dev libcairo2-dev librsvg2-dev \
     libfontconfig-dev libfreetype-dev libfribidi-dev libharfbuzz-dev libpulse-dev \
@@ -90,7 +90,7 @@ The release RPM is built on **Fedora 44**.
 
 ```sh
 sudo dnf install gcc gcc-c++ make cmake ninja-build pkgconf-pkg-config autoconf automake \
-    libtool nasm python3 python3-pip python3-devel curl git ca-certificates \
+    libtool flex bison nasm python3 python3-pip python3-devel curl git ca-certificates \
     openssl-devel zlib-devel ncurses-devel glib2-devel pango-devel cairo-devel librsvg2-devel \
     fontconfig-devel freetype-devel fribidi-devel harfbuzz-devel pulseaudio-libs-devel \
     alsa-lib-devel libgcrypt-devel libsecret-devel libva-devel libdrm-devel hwdata google-noto-color-emoji-fonts
@@ -104,7 +104,7 @@ minimum above. Enable CodeReady Linux Builder for the development packages:
 ```sh
 sudo subscription-manager repos --enable "codeready-builder-for-rhel-10-$(arch)-rpms"
 sudo dnf install gcc gcc-c++ make cmake ninja-build pkgconf-pkg-config autoconf automake \
-    libtool nasm python3 python3-pip python3-devel curl git ca-certificates \
+    libtool flex bison nasm python3 python3-pip python3-devel curl git ca-certificates \
     openssl-devel zlib-ng-compat-devel ncurses-devel glib2-devel pango-devel cairo-devel librsvg2-devel \
     fontconfig-devel freetype-devel fribidi-devel harfbuzz-devel pulseaudio-libs-devel \
     alsa-lib-devel libgcrypt-devel libsecret-devel libva-devel libdrm-devel hwdata
