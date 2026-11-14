@@ -1,10 +1,10 @@
 cmake_minimum_required(VERSION 3.21)
 project(
     papo_tui
-    VERSION 0.6.0
+    VERSION 1.0.0
     LANGUAGES C)
 # Pre-release label of this version (alpha.N, beta.N or rc.N); empty for a final release. The
-# version reads 0.6.0-beta.1 and package managers order it before 0.6.0.
+# version reads 1.0.0-beta.1 and package managers order it before 1.0.0.
 set(PAPO_VERSION_PRERELEASE "beta.1")
 set(PAPO_PACKAGE_VERSION "${PROJECT_VERSION}")
 if(PAPO_VERSION_PRERELEASE)
