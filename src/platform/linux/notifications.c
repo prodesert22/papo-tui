@@ -488,6 +488,7 @@ void desktop_queue(desktop_notifier *n, const char *key, const char *title, cons
     (void)key;
     (void)title;
     (void)body;
+    (void)target;
 }
 void desktop_cancel(desktop_notifier *n, const char *key)
 {

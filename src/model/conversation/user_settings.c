@@ -47,7 +47,7 @@ static void set_notice(struct history_user_settings *s, const char *prefix, cons
     g_string_free(text, TRUE);
 }
 /* Adopts a newer whoami copy unless a save would be overtaken by it. */
-static void sync(history *h, struct history_user_settings *s)
+static void sync_settings(history *h, struct history_user_settings *s)
 {
     uint64_t revision = auth_user_settings_revision(h->auth);
     if (s->queued || s->sending || (s->synced && s->seen == revision))
@@ -76,7 +76,7 @@ const user_config *history_user_config(history *h)
     static bool ready;
     struct history_user_settings *s = h ? settings(h) : NULL;
     if (s) {
-        sync(h, s);
+        sync_settings(h, s);
         return &s->config;
     }
     if (!ready) {
@@ -94,7 +94,7 @@ bool history_user_settings_save(history *h, const user_config *config)
     struct history_user_settings *s = h ? settings(h) : NULL;
     if (!s || !config || !auth_has_session(h->auth) || s->queued || s->sending)
         return false;
-    sync(h, s);
+    sync_settings(h, s);
     if (user_config_equal(config, &s->config))
         return false;
     s->wanted = *config;
@@ -117,7 +117,7 @@ uint64_t history_user_settings_revision(history *h)
     struct history_user_settings *s = h ? settings(h) : NULL;
     if (!s)
         return 0;
-    sync(h, s);
+    sync_settings(h, s);
     return s->revision;
 }
 
