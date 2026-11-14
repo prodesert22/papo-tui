@@ -12,7 +12,7 @@ file(GET_RUNTIME_DEPENDENCIES
     DIRECTORIES @PAPO_RUNTIME_SEARCH_DIRS@
     RESOLVED_DEPENDENCIES_VAR resolved UNRESOLVED_DEPENDENCIES_VAR unresolved
     PRE_EXCLUDE_REGEXES "^lib(c|m|dl|pthread|rt|resolv)\\.so" "^ld-linux" "^[Aa][Pp][Ii]-[Mm][Ss]-" "^[Ee][Xx][Tt]-[Mm][Ss]-"
-    POST_EXCLUDE_REGEXES ".*[Ww][Ii][Nn][Dd][Oo][Ww][Ss][/\\\\].*" "/lib[^/]*/ld-linux.*" "/lib[^/]*/lib(c|m|dl|pthread|rt|resolv)\\.so.*")
+    POST_EXCLUDE_REGEXES ".*[Ww][Ii][Nn][Dd][Oo][Ww][Ss][/\\\\].*" "/lib[^/]*/ld-linux.*" "/lib[^/]*/lib(c|m|dl|pthread|rt|resolv)\\.so.*"@PAPO_RUNTIME_EXCLUDE_REGEXES@)
 if(unresolved)
     message(FATAL_ERROR "Unresolved runtime dependencies: ${unresolved}")
 endif()
