@@ -133,10 +133,16 @@ def owner(path):
 
 def rpm_licenses(package):
     def licenses(name):
+        # Some packages, such as libX11-common, mark their license as documentation.
         return [
-            Path(p)
-            for p in capture("rpm", "-ql", name).splitlines()
-            if "/share/licenses/" in p and Path(p).is_file()
+            path
+            for path in map(Path, capture("rpm", "-ql", name).splitlines())
+            if path.is_file()
+            and (
+                "/share/licenses/" in str(path)
+                or "/share/doc/" in str(path)
+                and path.name.upper().startswith(("COPYING", "LICENSE", "LICENCE"))
+            )
         ]
 
     paths = licenses(package)

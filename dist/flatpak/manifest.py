@@ -148,8 +148,10 @@ def module(entry):
             }
         )
     if name == "gst-plugins-bad":
+        # Meson post-install commands run in the build directory, not the source.
         result["post-install"] = [
-            "install -Dm644 ext/sctp/usrsctp/LICENSE.md /app/share/licenses/usrsctp/LICENSE.md"
+            "install -Dm644 /run/build/gst-plugins-bad/ext/sctp/usrsctp/LICENSE.md "
+            "/app/share/licenses/usrsctp/LICENSE.md"
         ]
     return result
 

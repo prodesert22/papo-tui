@@ -15,7 +15,8 @@ if command -v apt-get >/dev/null 2>&1; then
     done
     $elevate apt-get update
 elif command -v dnf >/dev/null 2>&1; then
-    $elevate dnf install -y gcc gcc-c++ make cmake ninja-build pkgconf-pkg-config autoconf automake libtool flex bison \
+    # Container images set tsflags=nodocs, which drops licenses packaged as documentation.
+    $elevate dnf install -y --setopt=tsflags= gcc gcc-c++ make cmake ninja-build pkgconf-pkg-config autoconf automake libtool flex bison \
         nasm python3 python3-pip python3-devel curl git openssl-devel zlib-devel ncurses-devel \
         glib2-devel pango-devel cairo-devel librsvg2-devel fontconfig-devel pulseaudio-libs-devel alsa-lib-devel \
         libgcrypt-devel libass-devel libplacebo-devel libva-devel libdrm-devel hwdata ffmpeg-free openssl dbus-daemon libsecret-devel \
