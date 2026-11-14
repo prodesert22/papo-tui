@@ -3,9 +3,11 @@ TERMUX_PKG_HOMEPAGE=https://github.com/prodesert22/papo-tui
 TERMUX_PKG_DESCRIPTION="Terminal chat client for independent Papo instances"
 TERMUX_PKG_LICENSE=MIT
 TERMUX_PKG_MAINTAINER="Papo TUI contributors"
-TERMUX_PKG_VERSION=0.5.0
-TERMUX_PKG_SRCURL="https://codeload.github.com/prodesert22/papo-tui/tar.gz/refs/tags/v${TERMUX_PKG_VERSION}"
-TERMUX_PKG_SHA256=09dcaf03311db7d10e387c1fb39991260f9c1fb0c3ccf792383dce2ca8a38ad0
+# A pre-release uses "~" so that apt orders it before the final version; its
+# tag keeps the SemVer hyphen (v1.0.0-beta.1).
+TERMUX_PKG_VERSION="1.0.0~beta.1"
+TERMUX_PKG_SRCURL="https://codeload.github.com/prodesert22/papo-tui/tar.gz/refs/tags/v${TERMUX_PKG_VERSION//\~/-}"
+TERMUX_PKG_SHA256=6a531c729036949a1a14a1c637a0328cebb4abdc47637a6682aa02255873dbae
 # libunibreak is deliberately absent: the Unicode segmentation library is built
 # from the locked source and linked statically, so the package installs from
 # every Termux repository instead of requiring an unpublished package.

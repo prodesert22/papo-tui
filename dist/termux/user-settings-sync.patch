@@ -1,0 +1,44 @@
+Android's <unistd.h> declares sync(), so the static sync() of the user
+settings model fails to compile on Termux. The fix is on dev after
+v1.0.0-beta.1; remove this patch when the recipe moves to a later tag.
+
+diff --git a/src/model/conversation/user_settings.c b/src/model/conversation/user_settings.c
+index 5aa45a9..1363672 100644
+--- a/src/model/conversation/user_settings.c
++++ b/src/model/conversation/user_settings.c
+@@ -47,7 +47,7 @@ static void set_notice(struct history_user_settings *s, const char *prefix, cons
+     g_string_free(text, TRUE);
+ }
+ /* Adopts a newer whoami copy unless a save would be overtaken by it. */
+-static void sync(history *h, struct history_user_settings *s)
++static void sync_settings(history *h, struct history_user_settings *s)
+ {
+     uint64_t revision = auth_user_settings_revision(h->auth);
+     if (s->queued || s->sending || (s->synced && s->seen == revision))
+@@ -76,7 +76,7 @@ const user_config *history_user_config(history *h)
+     static bool ready;
+     struct history_user_settings *s = h ? settings(h) : NULL;
+     if (s) {
+-        sync(h, s);
++        sync_settings(h, s);
+         return &s->config;
+     }
+     if (!ready) {
+@@ -94,7 +94,7 @@ bool history_user_settings_save(history *h, const user_config *config)
+     struct history_user_settings *s = h ? settings(h) : NULL;
+     if (!s || !config || !auth_has_session(h->auth) || s->queued || s->sending)
+         return false;
+-    sync(h, s);
++    sync_settings(h, s);
+     if (user_config_equal(config, &s->config))
+         return false;
+     s->wanted = *config;
+@@ -117,7 +117,7 @@ uint64_t history_user_settings_revision(history *h)
+     struct history_user_settings *s = h ? settings(h) : NULL;
+     if (!s)
+         return 0;
+-    sync(h, s);
++    sync_settings(h, s);
+     return s->revision;
+ }
+ 
