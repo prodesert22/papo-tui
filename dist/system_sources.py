@@ -132,22 +132,18 @@ def owner(path):
 
 
 def rpm_licenses(package):
-    def licenses(name):
+    """Installed license files of package, or of the packages built from its source RPM."""
+
+    def declared(name):
         # Some packages, such as libX11-common, mark their license as documentation.
         return [
             path
             for path in map(Path, capture("rpm", "-ql", name).splitlines())
-            if path.is_file()
-            and (
-                "/share/licenses/" in str(path)
-                or "/share/doc/" in str(path)
-                and path.name.upper().startswith(("COPYING", "LICENSE", "LICENCE"))
-            )
+            if "/share/licenses/" in str(path)
+            or "/share/doc/" in str(path)
+            and path.name.upper().startswith(("COPYING", "LICENSE", "LICENCE"))
         ]
 
-    paths = licenses(package)
-    if paths:
-        return paths
     # Subpackages such as cairo-gobject leave the license to the installed
     # package built from the same source RPM (cairo).
     origin = capture("rpm", "-q", "--qf", "%{SOURCERPM}", package)
@@ -161,7 +157,27 @@ def rpm_licenses(package):
             if source == origin and name != package
         }
     )
-    return [path for name in siblings for path in licenses(name)]
+    files = {name: declared(name) for name in [package, *siblings]}
+    for paths in files.values():
+        if installed := [path for path in paths if path.is_file()]:
+            return installed
+    if any(files.values()):
+        raise RuntimeError(f"License files of {package} are not installed")
+    return []
+
+
+def rpm_notice(package, target):
+    """Record the license of a package whose RPMs install no license file, such as libdrm."""
+    fields = "%{NAME}-%{VERSION}-%{RELEASE}\\t%{LICENSE}\\t%{SOURCERPM}\\t%{URL}"
+    name, license, source, url = capture("rpm", "-q", "--qf", fields, package).split("\t")
+    notice = target / "NOTICE"
+    notice.write_text(
+        f"{name} is distributed under {license}; its packages install no license file.\n"
+        f"Its license and copyright notices are in the source files of {source},\n"
+        "included in the dependency source archive of this package.\n"
+        f"Upstream: {url}\n"
+    )
+    return notice
 
 
 def collect_licenses(stage, prefix):
@@ -194,6 +210,9 @@ def collect_licenses(stage, prefix):
             paths = [Path("/usr/share/doc") / package.split(":")[0] / "copyright"]
         else:
             paths = rpm_licenses(package)
+            if not paths:
+                rpm_notice(package, target)
+                continue
         paths = [p for p in paths if p.is_file()]
         if not paths:
             raise RuntimeError(f"No installed license for {package}")
