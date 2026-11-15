@@ -21,6 +21,9 @@ class InstalledApplication(unittest.TestCase):
             # instead of one exported by the build shell.
             terminal = Terminal(unset_environment=("TERMINFO", "TERMINFO_DIRS"))
             try:
+                # Input typed before the program turns off echo is repeated by
+                # the terminal itself, so wait for the sign-in form first.
+                self.wait(terminal, "papo")
                 terminal.send(server.url + "\tjosé\tSynthetic!123\n")
                 self.wait(terminal, "geral")
                 terminal.send("\x1bOB\n")
