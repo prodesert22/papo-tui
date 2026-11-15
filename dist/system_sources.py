@@ -4,7 +4,9 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
+import tempfile
 import urllib.request
 
 
@@ -70,6 +72,16 @@ def collect(stage, prefix, destination):
     (destination / "packages.json").write_text(json.dumps(sorted(packages), indent=2) + "\n")
 
 
+def remove_tree(path):
+    """Remove a tree, including read-only files such as git objects on Windows."""
+
+    def writable(function, name, _):
+        os.chmod(name, stat.S_IWRITE)
+        function(name)
+
+    shutil.rmtree(path, onexc=writable)
+
+
 def collect_msys(package, destination):
     cache = destination / "binary-package-cache"
     cache.mkdir(exist_ok=True)
@@ -96,6 +108,26 @@ def collect_msys(package, destination):
     if len(recipes) != 1:
         raise RuntimeError("Expected one source recipe")
     recipe = capture("cygpath", "-u", recipes[0].parent)
+    # makepkg verifies upstream signatures against the keys the recipe trusts;
+    # read them from .SRCINFO instead of executing the PKGBUILD.
+    srcinfo = recipes[0].parent / ".SRCINFO"
+    keys = (
+        [
+            line.split("=", 1)[1].strip()
+            for line in srcinfo.read_text(encoding="utf-8").splitlines()
+            if line.strip().startswith("validpgpkeys =")
+        ]
+        if srcinfo.is_file()
+        else []
+    )
+    if keys:
+        run(
+            "bash",
+            "-lc",
+            'gpg --batch --keyserver hkps://keyserver.ubuntu.com --recv-keys "$@"',
+            "papo-keys",
+            *keys,
+        )
     run(
         "bash",
         "-lc",
@@ -109,8 +141,8 @@ def collect_msys(package, destination):
         raise RuntimeError("MSYS2 did not produce a complete source archive")
     for source in complete:
         shutil.copy2(source, destination / source.name)
-    shutil.rmtree(work)
-    shutil.rmtree(cache)
+    remove_tree(work)
+    remove_tree(cache)
 
 
 def owner(path):
@@ -180,6 +212,49 @@ def rpm_notice(package, target):
     return notice
 
 
+def msys_source_licenses(package, target):
+    """Copy the upstream license files of an MSYS2 package that installs none, such as libidn2."""
+    names = ("COPYING", "LICENSE", "LICENCE")
+    with tempfile.TemporaryDirectory() as directory:
+        work = Path(directory)
+        run(
+            "pacman",
+            "-Sw",
+            "--noconfirm",
+            "--nodeps",
+            "--cachedir",
+            capture("cygpath", "-u", work),
+            package,
+        )
+        binaries = [p for p in work.glob(package + "-*.pkg.tar.*") if not p.name.endswith(".sig")]
+        if len(binaries) != 1:
+            raise RuntimeError("Expected one exact MSYS2 binary package")
+        info = capture("bsdtar", "-xOf", binaries[0], ".PKGINFO")
+        metadata = dict(line.split(" = ", 1) for line in info.splitlines() if " = " in line)
+        if metadata["pkgver"] != capture("pacman", "-Q", package).split()[1]:
+            raise RuntimeError(f"Repository no longer has the installed source version: {package}")
+        archive = work / f"{metadata['pkgbase']}-{metadata['pkgver']}.src.tar.zst"
+        url = f"https://repo.msys2.org/mingw/sources/{archive.name}"
+        with urllib.request.urlopen(url, timeout=120) as source, archive.open("wb") as output:
+            shutil.copyfileobj(source, output)
+        recipe = work / "recipe"
+        recipe.mkdir()
+        run("bsdtar", "-xf", archive, "-C", recipe)
+        upstream = work / "upstream"
+        upstream.mkdir()
+        for inner in sorted(recipe.glob("*/*.tar.*")):
+            if not inner.name.endswith(".sig"):
+                run("bsdtar", "-xf", inner, "-C", upstream)
+        licenses = sorted(
+            path
+            for path in [*upstream.glob("*/*"), *recipe.glob("*/*")]
+            if path.is_file() and path.name.upper().startswith(names)
+        )
+        for i, path in enumerate(licenses):
+            shutil.copy2(path, target / f"{i}-{path.name}")
+        return len(licenses)
+
+
 def collect_licenses(stage, prefix):
     private_licenses = prefix / "share/licenses/papo-dependencies"
     if not private_licenses.is_dir():
@@ -206,6 +281,10 @@ def collect_licenses(stage, prefix):
                 for line in lines
                 if "/share/licenses/" in line and not line.endswith("/")
             ]
+            if not any(p.is_file() for p in paths):
+                if not msys_source_licenses(package, target):
+                    raise RuntimeError(f"No license for {package} in its source package")
+                continue
         elif shutil.which("dpkg-query"):
             paths = [Path("/usr/share/doc") / package.split(":")[0] / "copyright"]
         else:
