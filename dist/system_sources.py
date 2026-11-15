@@ -206,7 +206,7 @@ def rpm_notice(package, target):
     notice.write_text(
         f"{name} is distributed under {license}; its packages install no license file.\n"
         f"Its license and copyright notices are in the source files of {source},\n"
-        "included in the dependency source archive of this package.\n"
+        "available from the distribution's source package repositories.\n"
         f"Upstream: {url}\n"
     )
     return notice
