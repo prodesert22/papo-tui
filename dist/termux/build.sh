@@ -4,10 +4,10 @@ TERMUX_PKG_DESCRIPTION="Terminal chat client for independent Papo instances"
 TERMUX_PKG_LICENSE=MIT
 TERMUX_PKG_MAINTAINER="Papo TUI contributors"
 # A pre-release uses "~" so that apt orders it before the final version; its
-# tag keeps the SemVer hyphen (v1.0.0-beta.1).
-TERMUX_PKG_VERSION="1.0.0~beta.1"
+# tag keeps the SemVer hyphen (v1.0.0-beta.2).
+TERMUX_PKG_VERSION="1.0.0~beta.2"
 TERMUX_PKG_SRCURL="https://codeload.github.com/prodesert22/papo-tui/tar.gz/refs/tags/v${TERMUX_PKG_VERSION//\~/-}"
-TERMUX_PKG_SHA256=6a531c729036949a1a14a1c637a0328cebb4abdc47637a6682aa02255873dbae
+TERMUX_PKG_SHA256=151667c98d2714b414135e1b7d6bbf3414d4a37e5da07aef555414a6cc96dc14
 # libunibreak is deliberately absent: the Unicode segmentation library is built
 # from the locked source and linked statically, so the package installs from
 # every Termux repository instead of requiring an unpublished package.

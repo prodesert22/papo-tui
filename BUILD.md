@@ -531,12 +531,11 @@ From a checkout of that build system, copy this repository's recipe and run:
 
 ```sh
 mkdir -p packages/papo-tui
-cp /path/to/papo-tui/dist/termux/build.sh /path/to/papo-tui/dist/termux/*.patch packages/papo-tui/
+cp /path/to/papo-tui/dist/termux/build.sh packages/papo-tui/build.sh
 ./scripts/run-docker.sh ./build-package.sh -I -a aarch64 papo-tui
 ```
 
-The recipe pins the v1.0.0-beta.1 source archive and its SHA-256; the build
-system applies the `.patch` files next to it to that source. It targets Android 9
+The recipe pins the v1.0.0-beta.2 source archive and its SHA-256. It targets Android 9
 (API 28), uses published Termux dependencies and disables desktop credential
 storage, desktop notifications and native desktop file dialogs. The Termux
 ncurses package contains a patched 6.5 snapshot; the recipe permits that version
