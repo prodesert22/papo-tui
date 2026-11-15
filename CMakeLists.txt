@@ -4,8 +4,8 @@ project(
     VERSION 1.0.0
     LANGUAGES C)
 # Pre-release label of this version (alpha.N, beta.N or rc.N); empty for a final release. The
-# version reads 1.0.0-beta.1 and package managers order it before 1.0.0.
-set(PAPO_VERSION_PRERELEASE "beta.1")
+# version reads 1.0.0-beta.2 and package managers order it before 1.0.0.
+set(PAPO_VERSION_PRERELEASE "beta.2")
 set(PAPO_PACKAGE_VERSION "${PROJECT_VERSION}")
 if(PAPO_VERSION_PRERELEASE)
     string(APPEND PAPO_PACKAGE_VERSION "-${PAPO_VERSION_PRERELEASE}")
