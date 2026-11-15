@@ -1632,6 +1632,13 @@ foco**, Tab / Shift+Tab: move focus).
 - **Forgot your password:** ask the server administration for a reset link and
   use **[Redefinir senha]** on the sign-in screen. A link works only once and
   only on the server that created it.
+- **The status bar shows Sessão reutilizada · troque a senha** (Session reused ·
+  change the password): the server saw an old session of your account being
+  used again, so it ended your other sessions. This can happen when another
+  device or a copy of your saved session (for example a synced or restored
+  folder) uses it, or when someone else has it. You stay signed in. If it was
+  not you, change the password in **Ctrl+S → Conta** (Account); the warning
+  disappears after the change, when you sign in with the new password.
 - **A Server settings tab is missing:** your account lacks the permission that
   tab needs; ask the server owner. If the panel shows **Atualizando
   permissões…**, wait a moment or press Ctrl+R in the conversation to refresh

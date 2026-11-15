@@ -54,6 +54,9 @@ struct auth_client {
     uint64_t ws_retry_at, ws_stable_at, ws_epoch, expires_at;
     unsigned ws_failures;
     bool restoring, session_rejected, gate_passed;
+    /* The server detected reuse of a session token of this account and ended
+     * its other sessions; it keeps reporting so until the password changes. */
+    bool connection_violation;
     auth_session_gate session_gate;
     void *gate_context;
     uint64_t recheck_at;

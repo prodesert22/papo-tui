@@ -96,6 +96,11 @@ bool auth_session_rejected(const auth_client *client)
     return client->session_rejected;
 }
 
+bool auth_connection_violation(const auth_client *client)
+{
+    return client && client->connection_violation;
+}
+
 char *auth_session_export(auth_client *client)
 {
     if (!auth_has_session(client) || auth_busy(client))

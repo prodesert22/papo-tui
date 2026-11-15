@@ -284,8 +284,10 @@ def main():
                         "UPDATE users SET connection_violation=true WHERE id='" + identity_a + "';"
                     ),
                 )
-                checks["real_connection_violation_returns_login"] = (
-                    result["initial"] and not result["session"]
+                # The flag persists until a password change and the backend
+                # still authorises the session, so the client keeps it and warns.
+                checks["real_connection_violation_warns"] = (
+                    result["initial"] and result["session"] and result.get("violation") is True
                 )
                 sql("UPDATE users SET connection_violation=false WHERE id='" + identity_a + "';")
                 result = controlled(

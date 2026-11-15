@@ -83,6 +83,9 @@ void auth_session_free(char **snapshot);
 bool auth_session_restore(auth_client *client, const char *snapshot, const char *expected_url,
                           bool allow_local_http);
 bool auth_session_rejected(const auth_client *client);
+/* True while the server reports that a session token of this account was
+ * reused and its other sessions were ended. The session itself stays valid. */
+bool auth_connection_violation(const auth_client *client);
 
 /* Owns a per-instance cookie share, REST request buffers and WS transport.
  * All calls run on one thread. Only one REST transfer is active per client. */

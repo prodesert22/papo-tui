@@ -485,10 +485,6 @@ msgstr "The password needs an uppercase letter."
 msgid "A senha precisa ter pelo menos 8 caracteres."
 msgstr "The password needs at least 8 characters."
 
-#: src/net/auth/responses.c
-msgid "A sessão foi revogada pelo servidor. Entre novamente."
-msgstr "The server revoked the session. Sign in again."
-
 #: src/ui/components/settings.c
 msgid "A sessão não está disponível."
 msgstr "The session is not available."
@@ -4809,6 +4805,10 @@ msgstr "The server blocked this IP. Contact the instance's administrators."
 msgid "O servidor demorou para responder. Tente novamente."
 msgstr "The server took too long to answer. Try again."
 
+#: src/ui/screens/conversation/drawing.c
+msgid "O servidor detectou o reuso de uma sessão desta conta e encerrou as outras. Se não foi você, troque a senha em Ctrl+S → Conta."
+msgstr "The server detected reuse of a session of this account and ended the others. If it was not you, change the password in Ctrl+S → Account."
+
 #: src/net/realtime/websocket.c
 msgid "O servidor enviou um encerramento de tempo real inválido."
 msgstr "The server sent an invalid real-time close."
@@ -5968,6 +5968,10 @@ msgstr "Local session ended; remote revocation not confirmed."
 #: src/net/http/download.c
 msgid "Sessão rejeitada. Aguarde a revalidação e tente novamente."
 msgstr "Session rejected. Wait for revalidation and try again."
+
+#: src/ui/screens/conversation/drawing.c
+msgid "Sessão reutilizada · troque a senha"
+msgstr "Session reused · change the password"
 
 #: src/net/auth/session.c
 msgid "Sessão salva indisponível. Entre novamente."

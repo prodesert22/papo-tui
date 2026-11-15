@@ -81,7 +81,8 @@ int main(int argc, char **argv)
         printf("cancelled=%d\n", auth_get_state(client) == AUTH_IDLE);
     } else {
         finish(client);
-        printf("ready=%d\n%s\n", auth_get_state(client) == AUTH_READY, auth_message(client));
+        printf("ready=%d\n%s\nviolation=%d\n", auth_get_state(client) == AUTH_READY,
+               auth_message(client), auth_connection_violation(client));
         if (strcmp(mode, "change") == 0 && auth_get_state(client) == AUTH_READY) {
             bool started = auth_change_password(client, new_password);
             finish(client);

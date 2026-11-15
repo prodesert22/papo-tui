@@ -103,7 +103,6 @@ class Sessions(unittest.TestCase):
             "refresh-no-cookie",
             "refresh-expiry",
             "refresh-identity",
-            "refresh-violation",
             "refresh-unconfirmed",
         ):
             with self.subTest(scenario=scenario), MockServer(scenario) as server:
@@ -138,13 +137,23 @@ class Sessions(unittest.TestCase):
                 self.assertEqual(server.refresh_count, 0)
                 self.assertEqual(server.api_count, 1)
 
-    def test_api_ban_and_violation_clear_identity(self):
-        for scenario in ("api-ban", "api-violation"):
+    def test_api_ban_clears_identity(self):
+        with MockServer("api-ban") as server:
+            result = self.probe(server, "api")
+            self.assertFalse(result["session"])
+            self.assertEqual(result["identity"], "")
+            self.assertEqual(server.refresh_count, 0)
+
+    def test_session_reuse_flag_warns_without_ending_the_session(self):
+        # connection_violation reports reuse detected earlier on the account;
+        # the backend keeps it until the password changes and still authorises.
+        for scenario, mode in (("refresh-violation", "refresh"), ("api-violation", "api")):
             with self.subTest(scenario=scenario), MockServer(scenario) as server:
-                result = self.probe(server, "api")
-                self.assertFalse(result["session"])
-                self.assertEqual(result["identity"], "")
-                self.assertEqual(server.refresh_count, 0)
+                result = self.probe(server, mode)
+                self.assertTrue(result["initial"])
+                self.assertTrue(result["session"])
+                self.assertTrue(result["violation"])
+                self.assertEqual(result["identity"], "00000000-0000-4000-8000-000000000001")
 
     def test_logout_uses_rotated_cookie_and_handles_remote_failure(self):
         with MockServer("refresh-slow") as server:

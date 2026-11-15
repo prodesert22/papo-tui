@@ -156,6 +156,21 @@ class TerminalTests(unittest.TestCase):
             self.assertTrue(restored)
             self.assertEqual(terminal.process.returncode, 0)
 
+    def test_session_reuse_flag_signs_in_with_a_warning(self):
+        # The server keeps connection_violation set until the password changes
+        # and still signs in; the conversation opens and warns about it.
+        with MockServer("violation") as server:
+            terminal = Terminal()
+            try:
+                terminal.resize(30, 140)
+                terminal.wait_text("URL do servidor")
+                terminal.send(server.url + "\tjosé\tSynthetic!123\n")
+                terminal.wait_text("Sessão reutilizada")
+                self.assertNotIn("revogada", "\n".join(terminal.screen.display))
+                self.assertNotIn(b"Synthetic!123", terminal.output)
+            finally:
+                self.assertTrue(terminal.close())
+
     def test_paste_newline_does_not_submit(self):
         with MockServer() as server:
             terminal = Terminal()

@@ -133,6 +133,7 @@ int main(int argc, char **argv)
                   auth_user_id(client), "message", auth_message(client));
     json_object_set_new(result, "final_generation",
                         json_integer((json_int_t)auth_context_generation(client)));
+    json_object_set_new(result, "violation", json_boolean(auth_connection_violation(client)));
     json_dumpf(result, stdout, JSON_COMPACT);
     putchar('\n');
     json_decref(result);

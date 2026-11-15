@@ -101,12 +101,29 @@ class AuthTests(unittest.TestCase):
             self.assertIsNone(server.requests[4][2])
 
     def test_invalid_response_rejected_credentials_and_session(self):
-        for scenario in ("invalid", "rejected", "violation", "no-cookie", "oversized", "redirect"):
+        for scenario in ("invalid", "rejected", "no-cookie", "oversized", "redirect"):
             with self.subTest(scenario=scenario), MockServer(scenario) as server:
                 result = self.run_probe(server.url)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn("ready=0", result.stdout)
                 self.assertNotIn("Synthetic!123", result.stdout)
+
+    def test_session_reuse_flag_signs_in_and_keeps_the_warning(self):
+        # The backend keeps connection_violation set until the password changes
+        # and still signs in, so the client must not refuse the new session.
+        with MockServer("violation") as server:
+            result = self.run_probe(server.url)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("ready=1", result.stdout)
+            self.assertIn("violation=1", result.stdout)
+            self.assertTrue(any(r[1].endswith("/auth/whoami") for r in server.requests))
+            self.assertNotIn("Synthetic!123", result.stdout)
+
+    def test_login_without_reuse_flag_has_no_warning(self):
+        with MockServer() as server:
+            result = self.run_probe(server.url)
+            self.assertIn("ready=1", result.stdout)
+            self.assertIn("violation=0", result.stdout)
 
     def test_cancel_pending_transfer(self):
         with MockServer("slow") as server:

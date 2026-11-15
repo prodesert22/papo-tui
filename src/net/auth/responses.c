@@ -67,11 +67,14 @@ static void complete_api(auth_client *client, CURLcode result, long status, bool
                                                    client->response_length,
                                                    JSON_REJECT_DUPLICATES | JSON_DECODE_ANY, &error)
                                       : NULL;
-    if (status == 200 && (json_is_true(json_object_get(body, "connection_violation")) ||
-                          (strcmp(client->api_path, "/auth/whoami") == 0 &&
-                           (!auth_internal_json_text(body, "id", sizeof(client->user_id)) ||
-                            strcmp(auth_internal_json_text(body, "id", sizeof(client->user_id)),
-                                   client->user_id) != 0)))) {
+    /* connection_violation only reports reuse detected earlier on this account;
+     * the request was authorised, so it warns instead of ending the session. */
+    if (status == 200 && json_is_true(json_object_get(body, "connection_violation")))
+        client->connection_violation = true;
+    if (status == 200 && strcmp(client->api_path, "/auth/whoami") == 0 &&
+        (!auth_internal_json_text(body, "id", sizeof(client->user_id)) ||
+         strcmp(auth_internal_json_text(body, "id", sizeof(client->user_id)), client->user_id) !=
+             0)) {
         json_decref(body);
         auth_internal_fail(client,
                            _("A identidade da sessão não pôde ser confirmada. Entre novamente."));
@@ -165,15 +168,15 @@ static void complete_server(auth_client *client, json_t *body, auth_state previo
 
 static void complete_login(auth_client *client, json_t *body)
 {
-    if (json_is_true(json_object_get(body, "connection_violation")))
-        auth_internal_fail(client, _("A sessão foi revogada pelo servidor. Entre novamente."));
-    else {
-        const char *expected_id =
-            auth_internal_json_text(json_object_get(body, "user"), "id", sizeof(client->user_id));
-        if (expected_id)
-            snprintf(client->user_id, sizeof(client->user_id), "%s", expected_id);
-        auth_internal_request(client, AUTH_WHOAMI, "/auth/whoami", NULL, false);
-    }
+    /* The server signs in even after it detected reuse of a session token of
+     * this account: the flag stays set until the password changes, so it only
+     * warns. Refusing it would block every sign-in of the account. */
+    client->connection_violation = json_is_true(json_object_get(body, "connection_violation"));
+    const char *expected_id =
+        auth_internal_json_text(json_object_get(body, "user"), "id", sizeof(client->user_id));
+    if (expected_id)
+        snprintf(client->user_id, sizeof(client->user_id), "%s", expected_id);
+    auth_internal_request(client, AUTH_WHOAMI, "/auth/whoami", NULL, false);
 }
 
 static void complete_register(auth_client *client, json_t *body)
@@ -209,11 +212,12 @@ static void complete_whoami(auth_client *client, json_t *body)
 {
     const char *username = auth_internal_json_text(body, "username", sizeof(client->user));
     const char *id = auth_internal_json_text(body, "id", sizeof(client->user_id));
-    if (!username || !id || (*client->user_id && strcmp(id, client->user_id) != 0) ||
-        json_is_true(json_object_get(body, "connection_violation"))) {
+    if (!username || !id || (*client->user_id && strcmp(id, client->user_id) != 0)) {
         client->session_rejected = true;
         auth_internal_fail(client, _("Não foi possível confirmar a sessão. Entre novamente."));
     } else {
+        /* Follows the server: cleared once a password change resolves it. */
+        client->connection_violation = json_is_true(json_object_get(body, "connection_violation"));
         permissions_identity(client->permissions, body, client->permission_serial);
         if (!client->authenticated)
             auth_permissions_refresh(client);

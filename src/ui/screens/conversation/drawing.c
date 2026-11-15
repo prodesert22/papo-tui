@@ -338,6 +338,14 @@ bool conversation_collect_notices(view *ui, auth_client *auth)
                                        : "");
     changed |= status_bar_set_compact(&ui->status, STATUS_VOICE, voice_status,
                                       call ? _("Chamada de voz") : _("Falha de voz"));
+    /* Shown until a password change clears the server's reuse flag. */
+    changed |= status_bar_set_compact(
+        &ui->status, STATUS_SECURITY,
+        auth_connection_violation(auth)
+            ? _("O servidor detectou o reuso de uma sessão desta conta e encerrou as outras. "
+                "Se não foi você, troque a senha em Ctrl+S → Conta.")
+            : "",
+        _("Sessão reutilizada · troque a senha"));
     changed |= status_bar_set_compact(
         &ui->status, STATUS_SEND, *ui->editor_channel ? send_editor_feedback(ui->editor) : NULL,
         *ui->editor_channel ? send_editor_compact_notice(ui->editor) : NULL);

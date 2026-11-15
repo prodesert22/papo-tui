@@ -71,6 +71,7 @@ void auth_internal_clear_identity(auth_client *client)
     client->user[0] = client->user_id[0] = '\0';
     client->password_outcome = AUTH_PASSWORD_NONE;
     client->password_notice[0] = '\0';
+    client->connection_violation = false;
     json_decref(client->user_settings);
     client->user_settings = NULL;
     ++client->user_settings_revision;

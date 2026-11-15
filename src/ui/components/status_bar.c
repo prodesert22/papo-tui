@@ -231,7 +231,8 @@ void status_bar_draw(status_bar *bar, WINDOW *window, int row, const char *full,
         }
         notice->x = x;
         notice->width = widths[i];
-        wattrset(window, COLOR_PAIR(ordered[i] == STATUS_EVENT || ordered[i] == STATUS_EDITOR
+        wattrset(window, COLOR_PAIR(ordered[i] == STATUS_EVENT || ordered[i] == STATUS_EDITOR ||
+                                            ordered[i] == STATUS_SECURITY
                                         ? THEME_PANEL_ACCENT
                                         : THEME_PANEL));
         label(window, row, x, widths[i], labels[i]);

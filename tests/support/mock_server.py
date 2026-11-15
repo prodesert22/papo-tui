@@ -269,8 +269,9 @@ class MockServer:
                             else "00000000-0000-4000-8000-000000000001",
                             "username": outer.username,
                             "roles": outer.user_roles,
-                            "connection_violation": outer.scenario == "refresh-violation"
-                            and outer.refresh_count > 0,
+                            # The backend keeps reporting reuse until the password changes.
+                            "connection_violation": outer.scenario == "violation"
+                            or (outer.scenario == "refresh-violation" and outer.refresh_count > 0),
                         }
                         if outer.user_settings is not None:
                             identity["settings"] = outer.user_settings
