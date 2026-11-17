@@ -232,10 +232,11 @@ class MemberMedia(unittest.TestCase):
                         at = display[title_row].index(title)
                         left = display[top].rindex("l", 0, at)
                         right = display[top].index("k", at) + 1
+                        # Cells, not the display text: wide emoji shift its indices.
                         bottom = next(
                             y
                             for y in range(top + 1, terminal.screen.lines)
-                            if display[y][left] == "m"
+                            if terminal.screen.buffer[y][left].data == "m"
                         )
                         return top, left, bottom + 1, right
 
@@ -260,6 +261,109 @@ class MemberMedia(unittest.TestCase):
                         terminal.send("\x1b")
                         self.settled(terminal, lambda: title not in self.screen(terminal))
                     self.settled(terminal, lambda: bool(drawer_avatars()), seconds=10)
+                finally:
+                    self.assertTrue(terminal.close())
+                    helper.doCleanups()
+                    helper.tearDown()
+
+    def test_settings_perfil_previews_the_avatar_and_banner_inside_the_window(self):
+        for protocol in protocols("kitty", "sixel", "iterm2"):
+            with self.subTest(protocol=protocol), self.fixture() as server:
+                helper = media.MediaTerminal()
+                helper.include_icons = True
+                terminal = helper.open(server, protocol=protocol, size=(44, 180))
+                try:
+                    helper.wait_frames(terminal)
+                    frames = len(terminal.stream.frame_positions)
+                    terminal.send("\x13")
+                    self.wait(terminal, "Seu perfil em")
+                    self.wait(terminal, "Apelido:")
+
+                    def window():
+                        display = terminal.screen.display
+                        title_row = next(
+                            i for i, line in enumerate(display) if "Configurações" in line
+                        )
+                        at = display[title_row].index("Configurações")
+                        left = display[title_row - 1].rindex("l", 0, at)
+                        right = display[title_row - 1].index("k", at) + 1
+                        fields = next(i for i, line in enumerate(display) if "Apelido:" in line)
+                        return title_row - 1, left, right, fields
+
+                    def live():
+                        current = {}
+                        stream = terminal.stream
+                        for header, (y, x) in zip(stream.placements, stream.placement_positions):
+                            current[(int(header[b"i"]), int(header[b"p"]))] = (header, y, x)
+                        return [
+                            (header, y, x)
+                            for key, (header, y, x) in current.items()
+                            if key in stream.live_placements
+                        ]
+
+                    def preview():
+                        top, left, right, fields = window()
+                        return [
+                            (self.placement_dimensions(header), y, x)
+                            for header, y, x in live()
+                            if top < y < fields and left < x < right
+                        ]
+
+                    def covered():
+                        top, left, right, fields = window()
+                        return [
+                            (y, x)
+                            for y, x in terminal.stream.frame_positions[frames:]
+                            if top < y < fields and left < x < right
+                        ]
+
+                    if protocol == "kitty":
+                        self.settled(terminal, lambda: len(preview()) >= 2, seconds=10)
+                        pictures = sorted(preview(), key=lambda p: p[0][0])
+                        (avatar, ay, _), (banner, by, bx) = pictures[0], pictures[-1]
+                        top, left, right, fields = window()
+                        # The wide banner sits above the square avatar, both inside the
+                        # window and above the first field.
+                        # The banner takes the whole width between the window's margins.
+                        self.assertGreaterEqual(banner[0], right - left - 6, pictures)
+                        self.assertLessEqual(avatar[0], 8, pictures)
+                        self.assertLessEqual(avatar[1], 3, pictures)
+                        self.assertLess(by + banner[1], ay + 1, pictures)
+                        self.assertLessEqual(ay + avatar[1], fields, pictures)
+                        self.assertLessEqual(bx + banner[0], right - 1, pictures)
+                        # History imagery beside the window stays drawn.
+                        self.assertTrue(
+                            [
+                                1
+                                for header, y, x in live()
+                                if x + self.placement_dimensions(header)[0] <= left or x >= right
+                            ],
+                            "\n".join(terminal.screen.display),
+                        )
+                    else:
+                        self.settled(terminal, lambda: len(covered()) >= 2, seconds=10)
+                    # Resizing with the window open places the previews again.
+                    frames = len(terminal.stream.frame_positions)
+                    terminal.resize(40, 150)
+                    self.wait(terminal, "Seu perfil em")
+                    if protocol == "kitty":
+                        self.settled(terminal, lambda: len(preview()) >= 2, seconds=10)
+                    else:
+                        self.settled(terminal, lambda: len(covered()) >= 1, seconds=10)
+                    # Closing the window removes the previews.
+                    terminal.send("\x1b")
+                    self.settled(terminal, lambda: "Configurações" not in self.screen(terminal))
+                    if protocol == "kitty":
+                        self.settled(
+                            terminal,
+                            lambda: (
+                                not any(
+                                    y > 8 and 38 <= x < 112 and self.placement_dimensions(h)[0] > 40
+                                    for h, y, x in live()
+                                )
+                            ),
+                            seconds=10,
+                        )
                 finally:
                     self.assertTrue(terminal.close())
                     helper.doCleanups()

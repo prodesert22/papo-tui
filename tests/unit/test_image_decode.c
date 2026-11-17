@@ -40,7 +40,7 @@ static bool iterm2_tiff_has_alpha(const graphics_image *image)
 }
 int main(int argc, char **argv)
 {
-    assert(argc == 13);
+    assert(argc == 14);
     image_decode_request request = {
         .width = 640,
         .height = 360,
@@ -261,6 +261,27 @@ int main(int argc, char **argv)
     assert(frames && frames->count == 150 && frames->duration == 10000);
     assert(frames->width < 480 && frames->source_width == 480 && frames->bytes <= ANIMATION_BYTES);
     animation_free(frames);
+    /* Enlarging eight times spreads a one-pixel edge over a ramp whatever the filter; bicubic
+     * makes the ramp steeper than bilinear does (largest step between neighbours: 39 against
+     * 32 of 255 with the bundled FFmpeg), so enlarged pictures look sharper on dense displays. */
+    image_decode_request edge = {
+        .path = argv[13],
+        .width = 128,
+        .height = 128,
+        .decode_only = true,
+        .retain_static = true,
+        .terminal = {.protocol = GRAPHICS_KITTY, .cell_width = 8, .cell_height = 16}};
+    animation *enlarged = NULL;
+    assert(image_decode_file(&edge, &cover, &enlarged, NULL, NULL));
+    assert(enlarged && enlarged->width == 128 && enlarged->height == 128);
+    int channels = enlarged->rgba[0] ? 4 : 3, steepest = 0;
+    for (int x = 1; x < 128; ++x) {
+        const unsigned char *row = enlarged->pixels[0] + (size_t)64 * 128 * channels;
+        int step = row[x * channels] - row[(x - 1) * channels];
+        steepest = step > steepest ? step : steepest;
+    }
+    assert(steepest >= 36);
+    animation_free(enlarged);
     puts("GIF frame pixels/delays, native dimensions, proportional limits, crops and cancellation "
          "verified");
     return 0;

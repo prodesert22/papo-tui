@@ -1105,16 +1105,16 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
     WINDOW *panel = settings_shown && ui->settings.window ? ui->settings.window
                     : server_shown                        ? ui->server_settings.window
                                                           : NULL;
-    /* The server panel cuts the pictures behind it itself, before painting
-     * its emoji preview. */
-    if (panel && !server_shown)
+    /* The server and settings panels cut the pictures behind them
+     * themselves, before painting their own previews. */
+    if (panel && !server_shown && !settings_shown)
         icons_overlay(ui->icons, getbegy(panel), getbegx(panel), getmaxy(panel), getmaxx(panel));
     if (paint_media) {
         if (!ui->duplicate_modal)
             media_view_prepare(ui->media);
         /* History media under the server panel goes before its own preview
          * is added; cached icons behind it are already cut by its overlay. */
-        if (server_shown && panel)
+        if ((server_shown || settings_shown) && panel)
             graphics_frame_occlude(getbegy(panel), getbegx(panel), getmaxy(panel), getmaxx(panel));
         icons_prepare(ui->icons);
         /* The player owns a direct raster rather than a cached preview. Keep
@@ -1125,7 +1125,7 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         if (switcher_window)
             graphics_frame_occlude(getbegy(switcher_window), getbegx(switcher_window),
                                    getmaxy(switcher_window), getmaxx(switcher_window));
-        if (panel && !server_shown)
+        if (panel && !server_shown && !settings_shown)
             graphics_frame_occlude(getbegy(panel), getbegx(panel), getmaxy(panel), getmaxx(panel));
         graphics_frame_prepare();
     }

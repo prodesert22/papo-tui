@@ -14,6 +14,16 @@ static image_codec_host host;
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* Enlarging with bilinear filtering softens a picture, which shows on dense
+ * displays where the target is many times the source; bicubic keeps the edges
+ * sharp. Reducing averages the source area, which avoids the jagged edges
+ * bilinear leaves when a large picture shrinks. */
+static int scale_flags(int source_width, int source_height, int width, int height)
+{
+    int filter = width > source_width || height > source_height ? SWS_BICUBIC : SWS_AREA;
+    return filter | SWS_ACCURATE_RND | SWS_FULL_CHR_H_INT | SWS_FULL_CHR_H_INP;
+}
 #define IMAGE_PIXELS GRAPHICS_IMAGE_PIXELS
 _Static_assert(IMAGE_PIXEL_PADDING >= AV_INPUT_BUFFER_PADDING_SIZE,
                "insufficient SIMD pixel padding");
@@ -443,8 +453,9 @@ static bool decode_attempt(const image_decode_request *j, graphics_image *out, a
             frames->source_height = frame->height;
             size_t rgba_bytes = (size_t)sw * (size_t)sh * 4;
             rgba = host.allocate_zero(1, rgba_bytes + IMAGE_PIXEL_PADDING);
-            scale = sws_getContext(frame->width, frame->height, frame->format, sw, sh,
-                                   AV_PIX_FMT_RGBA, SWS_BILINEAR, NULL, NULL, NULL);
+            scale =
+                sws_getContext(frame->width, frame->height, frame->format, sw, sh, AV_PIX_FMT_RGBA,
+                               scale_flags(frame->width, frame->height, sw, sh), NULL, NULL, NULL);
             if (!rgba || !scale)
                 goto done;
         }
@@ -580,9 +591,9 @@ static bool encode_frame(const image_decode_request *request, graphics_image *ou
         return false;
     }
     int channels = a->rgba[request->frame] ? 4 : 3;
-    struct SwsContext *scale =
-        sws_getContext(a->width, a->height, channels == 4 ? AV_PIX_FMT_RGBA : AV_PIX_FMT_RGB24, sw,
-                       sh, AV_PIX_FMT_RGBA, SWS_BILINEAR, NULL, NULL, NULL);
+    struct SwsContext *scale = sws_getContext(
+        a->width, a->height, channels == 4 ? AV_PIX_FMT_RGBA : AV_PIX_FMT_RGB24, sw, sh,
+        AV_PIX_FMT_RGBA, scale_flags(a->width, a->height, sw, sh), NULL, NULL, NULL);
     const uint8_t *src[] = {a->pixels[request->frame], NULL, NULL, NULL};
     uint8_t *dst[] = {scaled, NULL, NULL, NULL};
     int strides[] = {a->width * channels, 0, 0, 0}, dest_strides[] = {sw * 4, 0, 0, 0};

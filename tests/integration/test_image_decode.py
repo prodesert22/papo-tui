@@ -90,6 +90,10 @@ with tempfile.TemporaryDirectory(prefix="papo-image-decode-") as directory:
         "-an",
         clip,
     )
+    # A hard vertical edge, black on the left and white on the right.
+    edge_ppm, edge = root / "edge.ppm", root / "edge.png"
+    edge_ppm.write_bytes(b"P6\n16 16\n255\n" + (bytes(3 * 8) + b"\xff" * 3 * 8) * 16)
+    ffmpeg("-i", edge_ppm, "-frames:v", "1", edge)
     many = root / "many.gif"
     ffmpeg("-f", "lavfi", "-i", "testsrc2=size=480x426:rate=15", "-t", "10", many)
     subprocess.run(
@@ -107,6 +111,7 @@ with tempfile.TemporaryDirectory(prefix="papo-image-decode-") as directory:
             str(video),
             str(clip),
             str(many),
+            str(edge),
         ],
         check=True,
     )

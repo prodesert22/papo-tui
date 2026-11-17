@@ -37,6 +37,10 @@ bool icons_avatar(icon_view *v, const char *id, const char *message, int y, int 
  * `slot` tells apart several pictures drawn under one scope. */
 bool icons_url_picture(icon_view *v, WINDOW *w, const char *url, const char *scope, size_t slot,
                        int y, int x, int columns, int rows, int pair);
+/* Profile banners follow Discord's 17:6 shape (680x240, the recommended size).
+ * Rows a band `columns` wide needs to show one uncropped, at least 2 and at
+ * most `limit`; a banner of another shape is cropped at the center to fill it. */
+int icons_banner_rows(int columns, int limit);
 bool icons_member_picture(icon_view *v, const char *id, bool banner, const char *scope, int y,
                           int x, int columns, int rows, int pair);
 bool icons_message_avatar(icon_view *v, const json_t *message, int y, int x, int top, int bottom,

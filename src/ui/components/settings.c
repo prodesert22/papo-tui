@@ -65,12 +65,13 @@ void settings_close(app_settings *s)
     }
 }
 void settings_open(app_settings *s, const profile_config *config, voice_client *voice,
-                   history *profile, auth_client *auth, const char *server)
+                   history *profile, auth_client *auth, icon_view *icons, const char *server)
 {
     settings_close(s);
     memset(s, 0, sizeof(*s));
     s->profile = profile;
     s->auth = auth;
+    s->icons = icons;
     snprintf(s->server, sizeof(s->server), "%s", server ? server : "");
     s->open = true;
     s->draft = config->mode;
@@ -572,6 +573,83 @@ static void profile_notice_draw(app_settings *s, WINDOW *w, int height, int widt
                                                     : THEME_PANEL_MUTED));
     text_label(w, height - 3, 2, width - 4, notice);
 }
+/* The Perfil tab previews the saved avatar and banner as the member's profile
+ * card shows them, above the fields. It needs a window taller than the usual
+ * 20 rows: the avatar and a spacer take 4 more, and the banner takes the rest,
+ * up to the rows its Discord-shaped band needs at the window's width. */
+#define SETTINGS_BASE_HEIGHT 20
+#define PREVIEW_MIN_HEIGHT 26
+#define PREVIEW_AVATAR_ROWS 3
+static int window_height(int section, int width)
+{
+    int base = LINES > SETTINGS_BASE_HEIGHT ? SETTINGS_BASE_HEIGHT : LINES - 2;
+    int wanted = SETTINGS_BASE_HEIGHT + PREVIEW_AVATAR_ROWS + 1 + icons_banner_rows(width - 4, 99);
+    int tall = MIN(wanted, LINES - 2);
+    if (section != SETTINGS_PROFILE || app_mode_get() == APP_MODE_ULTRALIGHT ||
+        tall < PREVIEW_MIN_HEIGHT)
+        return base;
+    return tall;
+}
+/* First letter of the name, standing in for an avatar that is not loaded. */
+static void preview_initial(WINDOW *w, int y, int x, int width, int rows, const char *name)
+{
+    text_buffer text;
+    if (!text_decode(&text, name) || !text.length)
+        return;
+    size_t first = 0;
+    while (first < text.length && text.data[first] <= ' ')
+        ++first;
+    if (first == text.length)
+        return;
+    text.data[0] = text.data[first];
+    text.length = 1;
+    text.data[1] = 0;
+    char initial[TEXT_UTF8_BYTES];
+    if (text_encode(&text, initial)) {
+        int columns = text_label(NULL, 0, 0, width, initial);
+        text_label(w, y + (rows - 1) / 2, x + MAX(0, width - columns) / 2, columns, initial);
+    }
+}
+/* Draws the preview in rows [y, y + rows). The pictures are placed by the
+ * icons over the cells blanked here, so the letter and the "sem banner" label
+ * show while an image is missing, loading or unavailable. */
+static void preview_draw(app_settings *s, WINDOW *w, int y, int rows, int width,
+                         const json_t *profile)
+{
+    int banner_rows = rows - PREVIEW_AVATAR_ROWS - 1;
+    const char *banner = profile_text(profile, "banner_media");
+    wattrset(w, COLOR_PAIR(THEME_INPUT));
+    for (int r = 0; r < banner_rows; ++r)
+        mvwhline(w, y + r, 2, ' ', width - 4);
+    if (*banner)
+        icons_member_picture(s->icons, banner, true, "settings:banner", getbegy(w) + y,
+                             getbegx(w) + 2, width - 4, banner_rows, THEME_INPUT);
+    else {
+        wattrset(w, COLOR_PAIR(THEME_INPUT));
+        text_label(w, y + (banner_rows - 1) / 2, 4, width - 8, _("sem banner"));
+    }
+    int ay = y + banner_rows;
+    const char *nickname = profile_text(profile, "nickname"),
+               *username = profile_text(profile, "username");
+    const char *name = *nickname ? nickname : username;
+    wattrset(w, COLOR_PAIR(THEME_PANEL));
+    for (int r = 0; r < PREVIEW_AVATAR_ROWS; ++r)
+        mvwhline(w, ay + r, 2, ' ', 8);
+    preview_initial(w, ay, 2, 8, PREVIEW_AVATAR_ROWS, name);
+    const char *id = s->auth ? auth_user_id(s->auth) : NULL;
+    if (id && *id)
+        icons_member_picture(s->icons, id, false, "settings:avatar", getbegy(w) + ay,
+                             getbegx(w) + 2, 8, PREVIEW_AVATAR_ROWS, THEME_PANEL);
+    wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
+    text_label(w, ay, 12, width - 14, name);
+    char line[1100];
+    wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
+    if (*username) {
+        snprintf(line, sizeof(line), "@%s", username);
+        text_label(w, ay + 1, 12, width - 14, line);
+    }
+    text_label(w, ay + 2, 12, width - 14, _(status_labels[profile_status(profile)]));
+}
 static void profile_draw(app_settings *s, WINDOW *w, int height, int width)
 {
     s->cursor = false;
@@ -590,7 +668,10 @@ static void profile_draw(app_settings *s, WINDOW *w, int height, int width)
                        : _("Carregando perfil…"));
         return;
     }
-    int top = 6, bottom = height - 3, available = bottom - top;
+    int preview = height > SETTINGS_BASE_HEIGHT ? height - SETTINGS_BASE_HEIGHT : 0;
+    if (preview)
+        preview_draw(s, w, 6, preview, width, profile);
+    int top = 6 + preview, bottom = height - 3, available = bottom - top;
     int rows[PROFILE_ITEMS] = {1, 1, available >= 10 ? 3 : available >= 9 ? 2 : 1, 1, 1, 1, 1};
     if (s->profile_item < s->profile_first)
         s->profile_first = s->profile_item;
@@ -1003,7 +1084,7 @@ void settings_draw(app_settings *s)
 {
     if (!s->open)
         return;
-    int width = COLS > 76 ? 76 : COLS - 2, height = LINES > 20 ? 20 : LINES - 2;
+    int width = COLS > 76 ? 76 : COLS - 2, height = window_height(s->section, width);
     if (width < 40 || height < 12)
         return;
     if (s->window) {
@@ -1015,6 +1096,8 @@ void settings_draw(app_settings *s)
         return;
     WINDOW *w = s->window;
     s->cursor = false;
+    /* Pictures behind the panel are cut here; the preview drawn inside stays. */
+    icons_overlay(s->icons, getbegy(w), getbegx(w), height, width);
     wbkgd(w, COLOR_PAIR(THEME_PANEL));
     werase(w);
     wattrset(w, COLOR_PAIR(THEME_BORDER));

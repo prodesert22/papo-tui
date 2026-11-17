@@ -120,6 +120,52 @@ class ProfileEdit(unittest.TestCase):
             t.read(0.5)
             self.assertEqual(len(server.profile_puts), 2)
 
+    def settings_rows(self, terminal):
+        """Rows of the settings window: from its top border to its bottom one."""
+        lines = terminal.screen.display
+        top = next(i for i, line in enumerate(lines) if "Configurações" in line) - 1
+        bottom = next(i for i, line in enumerate(lines) if "Fechar" in line and i > top) + 1
+        return lines[top : bottom + 1]
+
+    def test_perfil_previews_the_avatar_and_banner_like_the_profile_card(self):
+        with ProfileMock() as server:
+            t = self.open(server, mode="light")
+            self.perfil(t)
+            self.wait(t, "@josé")
+            window = self.settings_rows(t)
+            text = "\n".join(window)
+            # The preview shows the saved name, @username and status, a letter
+            # for the avatar that is not loaded and the empty banner band.
+            self.assertIn("Você", text)
+            self.assertIn("Online", text)
+            self.assertEqual(text.count("sem banner"), 2, text)
+            # The fields stay reachable below it.
+            for label in ("Apelido:", "Frase de status:", "Status:", "Avatar:", "Banner:"):
+                self.assertIn(label, text)
+            preview = next(i for i, row in enumerate(window) if "@josé" in row)
+            field = next(i for i, row in enumerate(window) if "Apelido:" in row)
+            self.assertLess(preview, field)
+            # The window is taller than the usual 20 rows to make room for it.
+            self.assertGreater(len(window), 20)
+            t.send("\x1b")
+            self.settled(t, lambda: "Configurações" not in self.screen(t))
+
+    def test_perfil_has_no_preview_in_ultralight_or_when_the_terminal_is_short(self):
+        with ProfileMock() as server:
+            t = self.open(server)
+            self.perfil(t)
+            self.assertEqual(len(self.settings_rows(t)), 20)
+            self.assertNotIn("@josé", "\n".join(self.settings_rows(t)))
+            t.send("\x1b")
+            self.settled(t, lambda: "Configurações" not in self.screen(t))
+        with ProfileMock() as server:
+            t = self.open(server, mode="light")
+            t.resize(24, 100)
+            self.perfil(t)
+            self.assertLessEqual(len(self.settings_rows(t)), 20)
+            self.assertNotIn("@josé", "\n".join(self.settings_rows(t)))
+            self.assertIn("Apelido:", self.screen(t))
+
     def test_a_refused_perfil_field_takes_the_cursor_back_and_turns_red(self):
         with ProfileMock() as server:
             t = self.open(server)

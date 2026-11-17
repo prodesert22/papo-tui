@@ -734,7 +734,7 @@ static void draw_card(view *ui, WINDOW *w)
         return;
     }
     bool pictures = app_mode_get() != APP_MODE_ULTRALIGHT;
-    int banner_rows = pictures ? MIN(4, MAX(2, height / 6)) : 0;
+    int banner_rows = pictures ? icons_banner_rows(width - 4, MAX(2, height / 3)) : 0;
     if (banner_rows) {
         for (int y = 2; y < 2 + banner_rows; ++y)
             mvwhline(w, y, 2, ' ', width - 4);

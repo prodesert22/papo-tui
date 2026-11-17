@@ -333,7 +333,8 @@ static bool offer(icon_view *v, media_resource *resource, image_decode_request r
         .editor = !strncmp(v->scope, "editor:", 7) || !strcmp(v->scope, "emoji-button"),
         .overlay = !strcmp(v->scope, "emoji-picker") || !strcmp(v->scope, "emoji-popup") ||
                    !strcmp(v->scope, "reaction-users") || !strcmp(v->scope, "server-settings")};
-    p->overlay |= !strncmp(v->scope, "member:", 7);
+    /* The profile card and the Perfil preview lie over the cut they make. */
+    p->overlay |= !strncmp(v->scope, "member:", 7) || !strncmp(v->scope, "settings:", 9);
     p->layer = p->overlay ? media_cache_overlay_count(v->store) : 0;
     memcpy(p->fragments, slot->fragments, sizeof(p->fragments));
     uint64_t now = 0;
@@ -503,6 +504,16 @@ void icons_prepare(icon_view *v)
     }
 }
 
+int icons_banner_rows(int columns, int limit)
+{
+    graphics_terminal terminal = graphics_terminal_get();
+    int cell_width = terminal.cell_width > 0 ? terminal.cell_width : 8;
+    int cell_height = terminal.cell_height > 0 ? terminal.cell_height : 16;
+    /* Height of the band in pixels is its width times 6/17, rounded to rows. */
+    long height = (long)MAX(columns, 0) * cell_width * 6 / 17;
+    long rows = (height + cell_height / 2) / cell_height;
+    return (int)CLAMP(rows, 2, MAX(2, limit));
+}
 bool icons_member_picture(icon_view *v, const char *id, bool banner, const char *scope, int y,
                           int x, int columns, int rows, int pair)
 {
@@ -529,6 +540,8 @@ bool icons_member_picture(icon_view *v, const char *id, bool banner, const char 
                                     .terminal = terminal,
                                     .center = true,
                                     .matte = true,
+                                    /* A banner fills its band, cropped at the center. */
+                                    .cover = banner,
                                     .background = background(pair),
                                     .max_side = 2048};
     icons_scope(v, scope, 0);

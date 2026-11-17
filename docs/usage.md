@@ -566,6 +566,18 @@ and the server name, then:
 - **Avatar** and **Banner**: **Alterar…** (Change…) opens the file choice;
   **Remover** (Remove) deletes the banner.
 
+Above the fields, a preview shows your saved banner, avatar, name, @username and
+status as they appear in **Ver perfil** (View profile); the banner fills its
+whole band, which has the shape of a Discord banner (17:6, 680x240 pixels), so a
+banner of another shape is cropped at the center; **sem banner** (no
+banner) shows while you have none, and your initial stands in for an avatar that
+has not loaded. It follows the server, so a new image replaces it as soon as the
+server accepts it, and text you have not saved is not shown in it. The preview
+needs a terminal of at least 28 rows, where the window grows from 20 to up to 37
+rows (the taller the terminal, the less the banner is cropped), and is not shown in Ultralight mode; on shorter terminals the window keeps
+its usual size and only the fields are shown. In Light mode it is drawn with colored
+characters.
+
 Each text field shows how many characters it uses. Use ↑/↓ to move between the
 fields. Enter in a text field, or **Salvar perfil** (Save profile), saves the
 text fields and the status together; **Fechar** (Close) or Esc closes the window,

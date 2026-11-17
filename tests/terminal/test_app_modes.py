@@ -4,6 +4,8 @@ from test_context import main as test_main, panels
 
 from test_context import argument
 
+import base64
+import hashlib
 import json
 import re
 import os
@@ -20,6 +22,7 @@ import terminal_media as media  # noqa: E402 - prepare test arguments before imp
 import terminal_support as test_terminal  # noqa: E402
 import terminal_emojis as emoji_tests  # noqa: E402
 from history_mock import uuid  # noqa: E402
+from member_mock import MemberMock  # noqa: E402
 from interaction_mock import InteractionMock  # noqa: E402
 
 
@@ -533,6 +536,64 @@ class AppModes(unittest.TestCase):
                             self.wait(t, lambda: not self.children(t))
                     finally:
                         self.assertTrue(t.close())
+
+    def test_light_perfil_paints_the_avatar_and_banner_preview_in_characters(self):
+        def solid(color, size):
+            return subprocess.run(
+                [str(FFMPEG), "-v", "error", "-f", "lavfi", "-i", f"color={color}:s={size}"]
+                + ["-frames:v", "1", "-threads", "1", "-f", "image2pipe", "-vcodec", "png"]
+                + ["pipe:1"],
+                check=True,
+                capture_output=True,
+            ).stdout
+
+        # A square red banner still fills the whole band, cropped at the center, and
+        # a square blue avatar fills its box.
+        banner, avatar = solid("red", "512x512"), solid("blue", "256x256")
+        with MemberMock() as server:
+            server.avatar = base64.b64encode(avatar).decode()
+            server.banner = hashlib.sha256(banner).hexdigest()
+            parent = server.api_handler
+
+            def route(method, path, body):
+                if path.split("?")[0].endswith("/media/" + server.banner):
+                    return 200, banner, None, None, "image/png"
+                return parent(method, path, body)
+
+            server.api_handler = route
+            self.seed("light")
+            t = self.open(server, size=(48, 160))
+            try:
+                t.send("\x13")
+                self.helper.wait(t, "Seu perfil em")
+                self.helper.wait(t, "Apelido:")
+                display = t.screen.display
+                title = next(i for i, line in enumerate(display) if "Configurações" in line)
+                left = display[title].index("Configurações") - 2
+                fields = next(i for i, line in enumerate(display) if "Apelido:" in line)
+
+                def cells(color, rows, columns):
+                    return sum(
+                        color in (t.screen.buffer[y][x].fg, t.screen.buffer[y][x].bg)
+                        for y in rows
+                        for x in columns
+                    )
+
+                # Rows: the banner band, then the avatar beside its name, then a gap.
+                bands = range(title + 5, fields - 4), range(fields - 4, fields - 1)
+                inside = range(left + 2, left + 74)
+                full = len(bands[0]) * len(inside)
+                self.wait(t, lambda: cells("ff0000", bands[0], inside) >= full * 0.95)
+                self.wait(t, lambda: cells("0000ff", bands[1], range(left + 2, left + 10)) > 15)
+                self.assertEqual(cells("0000ff", bands[1], range(left + 12, left + 74)), 0)
+                self.assertEqual(cells("ff0000", bands[1], inside), 0)
+                self.assertIn("@josé", "\n".join(t.screen.display[fields - 4 : fields - 1]))
+                t.send("\x1b")
+                self.wait(t, lambda: "Configurações" not in "\n".join(t.screen.display))
+                # Nothing of the preview stays behind.
+                self.wait(t, lambda: cells("ff0000", range(title, fields), range(0, 160)) == 0)
+            finally:
+                t.close()
 
     def test_chafa_keeps_uncovered_chat_pixels_behind_floating_panels(self):
         image = subprocess.run(

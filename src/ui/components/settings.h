@@ -6,6 +6,7 @@
 #include "net/voice/client.h"
 #include "ui/components/tabs.h"
 #include "ui/input/text.h"
+#include "ui/media/icons.h"
 #include <ncurses.h>
 /* Settings open on the first tab, Perfil. Aparência holds the app modes (this
  * device) and the theme and display of the account on the active server;
@@ -44,6 +45,7 @@ typedef struct {
     char error[192];
     /* Perfil: the active server's own profile, borrowed while open. */
     history *profile;
+    icon_view *icons; /* Borrowed from the screen; paints the avatar and banner preview. */
     char server[129];
     text_buffer fields[PROFILE_FIELDS];
     int field_first[PROFILE_FIELDS], description_first;
@@ -70,7 +72,7 @@ typedef struct {
     int appearance_first, notify_selection;
 } app_settings;
 void settings_open(app_settings *settings, const profile_config *config, voice_client *voice,
-                   history *profile, auth_client *auth, const char *server);
+                   history *profile, auth_client *auth, icon_view *icons, const char *server);
 void settings_close(app_settings *settings);
 void settings_draw(app_settings *settings);
 void settings_key(app_settings *settings, profile_config *config, int type, uint32_t key);
