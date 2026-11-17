@@ -766,6 +766,25 @@ belong to this device: they apply to every server and are saved in
   emoji as **:name:**, instead of pictures.
 - **Bordas** (Borders): **Linhas** (Lines) or **ASCII**. ASCII draws boxes and
   lines with +, - and |.
+- **Alerta visual** (Visual alert): **Desligado** (Off), **Destaque**
+  (Highlight) or **Piscar** (Flash). Highlight shows each new notification in the
+  footer, such as **Nova mensagem de Ana · Comunidade** (New message from Ana ·
+  Comunidade) or **Nova menção de …** (New mention from …), even when sounds and
+  system notifications are off. It follows the same rules as the sounds: channels
+  set to none or muted and the conversation you are reading do not alert. Flash
+  also flashes the screen once, at most every three seconds.
+- **Duração dos avisos** (Notice duration): **2 segundos** (2 seconds),
+  **6 segundos** (6 seconds) or **Até uma tecla** (Until a key), for the notices
+  that go away by themselves: the visual alert and the message that confirms a
+  sent message.
+- **Mouse**: **Ativado** (On) or **Desativado** (Off). Off leaves the mouse to
+  the terminal, so you can select and copy text as in any other program; every
+  control stays reachable from the keyboard.
+- **Confirmar ações que encerram** (Confirm actions that end things): quitting
+  (Ctrl+Q, or Ctrl+C outside a field), signing out (Ctrl+L) and closing a DM
+  (Ctrl+W) show **Ctrl+Q de novo sai** (Ctrl+Q again quits) or a similar notice
+  and wait for the same key again, with no time limit. Any other key cancels and
+  does nothing else.
 
 Use ↑/↓ to select an item and ←/→, Space or Enter to change it, or click it;
 the selected item explains itself below the list. **Salvar e aplicar** (Save

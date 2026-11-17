@@ -13,6 +13,8 @@ typedef enum {
     ACCESS_CONTRAST_NONE
 } access_contrast;
 typedef enum { ACCESS_ROLES_ORIGINAL, ACCESS_ROLES_ADJUSTED, ACCESS_ROLES_OFF } access_roles;
+typedef enum { ACCESS_ALERT_OFF, ACCESS_ALERT_HIGHLIGHT, ACCESS_ALERT_FLASH } access_alert;
+typedef enum { ACCESS_NOTICE_SHORT, ACCESS_NOTICE_LONG, ACCESS_NOTICE_KEYPRESS } access_notice;
 typedef struct {
     access_contrast contrast;
     /* Error, success, speaking and unread colors that stay apart with red-green
@@ -31,6 +33,16 @@ typedef struct {
     bool emoji_names;
     /* Borders and lines drawn with + - | instead of line-drawing characters. */
     bool ascii_borders;
+    /* What a new notification shows besides its sound: nothing, a notice in
+     * the footer, or the notice and one flash of the screen. */
+    access_alert visual_alert;
+    /* How long notices that go away by themselves stay: 2 s, 6 s, or until
+     * the next key. */
+    access_notice notices;
+    /* The application ignores the mouse, leaving it to the terminal. */
+    bool mouse_off;
+    /* Quitting, signing out and closing a DM ask for the same key again. */
+    bool confirm_exit;
 } accessibility_config;
 
 void accessibility_default(accessibility_config *config);
@@ -40,6 +52,9 @@ bool accessibility_valid(const accessibility_config *config);
  * also "screen_reader": bool, "symbols": "icons|text", "message_emoji":
  * "images|names" and "borders": "lines|ascii". */
 bool accessibility_decode(accessibility_config *config, const json_t *value, int version);
+/* From version 13 also "visual_alert": "off|highlight|flash",
+ * "notice_duration": "short|long|keypress", "mouse": bool and
+ * "confirm_exit": bool. */
 json_t *accessibility_encode(const accessibility_config *config);
 const char *accessibility_contrast_name(access_contrast contrast);
 const char *accessibility_roles_name(access_roles roles);
@@ -49,5 +64,8 @@ const char *accessibility_roles_name(access_roles roles);
 void accessibility_set(const accessibility_config *config);
 accessibility_config accessibility_get(void);
 access_contrast accessibility_contrast(void);
+/* Microseconds a notice that goes away by itself stays; 0 when it stays
+ * until the next key. */
+long long accessibility_notice_us(void);
 
 #endif

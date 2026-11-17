@@ -125,6 +125,9 @@ void text_capture_cancel(void);
 bool text_capture_take(key_binding *binding);
 int text_read_raw(uint32_t *key);
 int text_input_read(uint32_t *key);
+/* Whether an input event is a key the person pressed, rather than a mouse,
+ * focus, resize or terminal report. */
+bool text_key_event(int type, uint32_t key);
 /* Focus reporting and negotiated keyboard mode; restore the mode on shutdown. */
 void text_input_terminal_active(bool active);
 bool text_terminal_focused(void);

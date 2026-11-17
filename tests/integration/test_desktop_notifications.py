@@ -518,6 +518,71 @@ class DesktopTests(unittest.TestCase):
             server.emit(self.event(content=""))
             self.assertEqual(self.receive(t)["body"], "Nova mensagem")
 
+    def test_visual_alert_shows_notifications_without_desktop_or_sound(self):
+        # Acessibilidade → Alerta visual: Destaque, with this device's system
+        # notifications and sounds off.
+        home = tempfile.TemporaryDirectory(prefix="papo-visual-alert-")
+        self.addCleanup(home.cleanup)
+        config = os.path.join(home.name, "papo-tui", "config.json")
+        os.makedirs(os.path.dirname(config), mode=0o700)
+        with open(config, "w", encoding="utf-8") as file:
+            json.dump(
+                {
+                    "version": 13,
+                    "profiles": [],
+                    "selected_profile": None,
+                    "requests_per_second": 10,
+                    "request_burst": 25,
+                    "desktop_notifications": False,
+                    "notification_preview": False,
+                    "notification_sounds": False,
+                    "app_mode": "normal",
+                    "language": "pt",
+                    "members_by_status": False,
+                    "player_volume": 100,
+                    "audio": {
+                        "input": "",
+                        "output": "",
+                        "microphone_volume": 100,
+                        "output_volume": 100,
+                        "push_to_talk": {"enabled": False, "key": "ctrl+y"},
+                        "server_slots": {},
+                    },
+                    "shortcuts": {},
+                    "accessibility": {
+                        "contrast": "default",
+                        "colorblind": False,
+                        "cues": False,
+                        "role_colors": "original",
+                        "screen_reader": False,
+                        "symbols": "icons",
+                        "message_emoji": "images",
+                        "borders": "lines",
+                        "visual_alert": "highlight",
+                        "notice_duration": "keypress",
+                        "mouse": True,
+                        "confirm_exit": False,
+                    },
+                },
+                file,
+            )
+        os.chmod(config, 0o600)
+        with R8Mock(count=0) as server:
+            t = self.login(server, XDG_CONFIG_HOME=home.name)
+            t.send("\x1b[O")
+            server.emit(self.event())
+            t.wait_text("Nova mensagem de")
+            # Nothing reached the desktop, and the notice stays until a key.
+            self.assertFalse(select.select([self.daemon.stdout], [], [], 0)[0])
+            t.read(2.5)
+            self.assertIn("Nova mensagem de", "\n".join(t.screen.display))
+            t.send("\x1b[I\x1b")
+            wait_for_screen(
+                t,
+                lambda: "Nova mensagem de" not in "\n".join(t.screen.display),
+                "The alert did not go with the key",
+            )
+
     def test_disabled_and_hidden_preview_preferences(self):
         with R8Mock(count=0) as server:
             t = self.login(server)

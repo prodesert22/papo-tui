@@ -4,6 +4,7 @@
 #include "app/instances.h"
 #include "app/desktop.h"
 #include "app/session_store.h"
+#include "config/accessibility.h"
 #include "config/profiles.h"
 #include "model/conversation/history.h"
 #include "model/conversation/user_settings.h"
@@ -111,6 +112,30 @@ static void voice_sounds(instance_connections *connections)
     if (sound != SOUND_COUNT && connections->config && connections->config->notification_sounds &&
         account_sound && voice_output_enabled())
         sound_play(sound);
+}
+static bool alert_plain(const char *utf8, char output[TEXT_UTF8_BYTES]);
+/* The footer text of a visual alert, sanitized like the desktop's: the
+ * author's and server's names never carry terminal controls. */
+static void visual_alert(instance_connections *connections, const instance_connection *item,
+                         inbox *box, const char *message, const char *author, bool mention)
+{
+    const json_t *preview = inbox_message_preview(box, message);
+    const char *name = preview && history_message_webhook(preview)
+                           ? history_message_author(item->model, preview)
+                           : history_author(item->model, author ? author : "");
+    char text[1024], safe[TEXT_UTF8_BYTES];
+    snprintf(text, sizeof(text),
+             mention ? _("Nova menção de %s · %s") : _("Nova mensagem de %s · %s"), name,
+             item->name);
+    if (!alert_plain(text, safe))
+        return;
+    /* A long name is cut whole: the copy never ends inside a character. */
+    g_strlcpy(connections->visual_alert, safe, sizeof(connections->visual_alert));
+    const char *valid_end;
+    if (!g_utf8_validate(connections->visual_alert, -1, &valid_end))
+        connections->visual_alert[valid_end - connections->visual_alert] = 0;
+    connections->visual_mention = mention;
+    ++connections->visual_alerts;
 }
 /* Sanitized plain text of one alert part: controls never reach the desktop. */
 static bool alert_plain(const char *utf8, char output[TEXT_UTF8_BYTES])
@@ -502,9 +527,11 @@ bool instances_poll(instance_connections *connections, auth_client *active)
         const profile_config *device = connections->config;
         bool desktop = device && device->desktop_notifications && account->notifications,
              sounds =
-                 device && device->notification_sounds && account->notifications && account->sound;
+                 device && device->notification_sounds && account->notifications && account->sound,
+             visual =
+                 accessibility_get().visual_alert != ACCESS_ALERT_OFF && account->notifications;
         while ((event = inbox_take_alert(box))) {
-            if ((desktop || sounds) && auth_has_session(auth)) {
+            if ((desktop || sounds || visual) && auth_has_session(auth)) {
                 if (!json_array_size(item->alerts))
                     item->alert_due = now + 2000;
                 if (json_array_size(item->alerts) < 256)
@@ -513,12 +540,13 @@ bool instances_poll(instance_connections *connections, auth_client *active)
             json_decref(event);
         }
         if (!desktop) {
-            if (!sounds)
+            if (!sounds && !visual)
                 json_array_clear(item->alerts);
             desktop_cancel(connections->desktop, key);
         }
         if (json_array_size(item->alerts) && now >= item->alert_due) {
             int sound = -1;
+            connections->visual_mention = false;
             for (size_t j = 0; j < json_array_size(item->alerts); ++j) {
                 event = json_array_get(item->alerts, j);
                 const char *message = json_string_value(json_object_get(event, "message_id"));
@@ -535,9 +563,11 @@ bool instances_poll(instance_connections *connections, auth_client *active)
                     continue;
                 if (sounds && sound != SOUND_MENTION)
                     sound = mention ? SOUND_MENTION : SOUND_MESSAGE;
+                const char *author = json_string_value(json_object_get(event, "user_id"));
+                if (visual && (!connections->visual_mention || mention))
+                    visual_alert(connections, item, box, message, author, mention);
                 if (!desktop)
                     continue;
-                const char *author = json_string_value(json_object_get(event, "user_id"));
                 char title[2200], safe_title[TEXT_UTF8_BYTES], safe_body[TEXT_UTF8_BYTES];
                 text_buffer buffer;
                 /* A webhook has no author account: its name travels in the

@@ -201,6 +201,13 @@ typedef struct {
     json_t *pending;
     uint64_t pending_signature;
     const char *feedback;
+    /* Acessibilidade: the visual alerts already shown, when the last one
+     * appeared and the last flash, and a quit, sign-out or DM close waiting
+     * for its key again. */
+    uint64_t visual_seen;
+    gint64 visual_since, last_flash;
+    bool visual_shown;
+    keymap_action exit_pending;
     status_bar status;
     uint64_t notice_revisions[HISTORY_NOTICE_COUNT];
     uint64_t voice_revision;

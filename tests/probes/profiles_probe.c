@@ -161,7 +161,7 @@ int main(int argc, char **argv)
         json_error_t error;
         json_t *object = json_loads(argv[2], 0, &error);
         accessibility_config chosen;
-        ok = accessibility_decode(&chosen, object, 12) &&
+        ok = accessibility_decode(&chosen, object, 13) &&
              profiles_set_settings(config, config->mode, config->language, &config->audio, NULL,
                                    &chosen);
         json_decref(object);

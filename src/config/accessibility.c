@@ -9,6 +9,8 @@ static const char *const roles[] = {"original", "adjusted", "off"};
 static const char *const symbols[] = {"icons", "text"};
 static const char *const emoji[] = {"images", "names"};
 static const char *const borders[] = {"lines", "ascii"};
+static const char *const alerts[] = {"off", "highlight", "flash"};
+static const char *const durations[] = {"short", "long", "keypress"};
 
 void accessibility_default(accessibility_config *config)
 {
@@ -21,7 +23,9 @@ bool accessibility_valid(const accessibility_config *config)
 {
     return config && config->contrast >= ACCESS_CONTRAST_DEFAULT &&
            config->contrast <= ACCESS_CONTRAST_NONE && config->roles >= ACCESS_ROLES_ORIGINAL &&
-           config->roles <= ACCESS_ROLES_OFF;
+           config->roles <= ACCESS_ROLES_OFF && config->visual_alert >= ACCESS_ALERT_OFF &&
+           config->visual_alert <= ACCESS_ALERT_FLASH && config->notices >= ACCESS_NOTICE_SHORT &&
+           config->notices <= ACCESS_NOTICE_KEYPRESS;
 }
 
 const char *accessibility_contrast_name(access_contrast contrast)
@@ -54,7 +58,10 @@ bool accessibility_decode(accessibility_config *config, const json_t *value, int
     int contrast, role;
     json_t *colorblind = json_object_get(value, "colorblind"),
            *cues = json_object_get(value, "cues");
-    if (!json_is_object(value) || json_object_size(value) != (version >= 12 ? 8U : 4U) ||
+    if (!json_is_object(value) ||
+        json_object_size(value) != (version >= 13   ? 12U
+                                    : version >= 12 ? 8U
+                                                    : 4U) ||
         !choice(json_object_get(value, "contrast"), contrasts, 3, &contrast) ||
         !choice(json_object_get(value, "role_colors"), roles, 3, &role) ||
         !json_is_boolean(colorblind) || !json_is_boolean(cues))
@@ -76,6 +83,19 @@ bool accessibility_decode(accessibility_config *config, const json_t *value, int
         next.emoji_names = names == 1;
         next.ascii_borders = border == 1;
     }
+    if (version >= 13) {
+        json_t *mouse = json_object_get(value, "mouse"),
+               *confirm = json_object_get(value, "confirm_exit");
+        int alert, duration;
+        if (!json_is_boolean(mouse) || !json_is_boolean(confirm) ||
+            !choice(json_object_get(value, "visual_alert"), alerts, 3, &alert) ||
+            !choice(json_object_get(value, "notice_duration"), durations, 3, &duration))
+            return false;
+        next.visual_alert = (access_alert)alert;
+        next.notices = (access_notice)duration;
+        next.mouse_off = !json_is_true(mouse);
+        next.confirm_exit = json_is_true(confirm);
+    }
     *config = next;
     return true;
 }
@@ -85,11 +105,13 @@ json_t *accessibility_encode(const accessibility_config *config)
     if (!accessibility_valid(config))
         return NULL;
     return json_pack(
-        "{s:s,s:b,s:b,s:s,s:b,s:s,s:s,s:s}", "contrast",
+        "{s:s,s:b,s:b,s:s,s:b,s:s,s:s,s:s,s:s,s:s,s:b,s:b}", "contrast",
         accessibility_contrast_name(config->contrast), "colorblind", config->colorblind, "cues",
         config->cues, "role_colors", accessibility_roles_name(config->roles), "screen_reader",
         config->screen_reader, "symbols", symbols[config->text_symbols ? 1 : 0], "message_emoji",
-        emoji[config->emoji_names ? 1 : 0], "borders", borders[config->ascii_borders ? 1 : 0]);
+        emoji[config->emoji_names ? 1 : 0], "borders", borders[config->ascii_borders ? 1 : 0],
+        "visual_alert", alerts[config->visual_alert], "notice_duration", durations[config->notices],
+        "mouse", !config->mouse_off, "confirm_exit", config->confirm_exit);
 }
 
 static GMutex lock;
@@ -118,4 +140,12 @@ accessibility_config accessibility_get(void)
 access_contrast accessibility_contrast(void)
 {
     return accessibility_get().contrast;
+}
+
+long long accessibility_notice_us(void)
+{
+    access_notice notices = accessibility_get().notices;
+    return notices == ACCESS_NOTICE_KEYPRESS ? 0
+           : notices == ACCESS_NOTICE_LONG   ? 6000000LL
+                                             : 2000000LL;
 }

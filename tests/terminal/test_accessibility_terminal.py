@@ -89,6 +89,10 @@ class AccessibilityTerminal(unittest.TestCase):
                     "symbols": "icons",
                     "message_emoji": "images",
                     "borders": "lines",
+                    "visual_alert": "off",
+                    "notice_duration": "short",
+                    "mouse": True,
+                    "confirm_exit": False,
                 },
             )
             wait_for_screen(
@@ -198,6 +202,39 @@ class AccessibilityTerminal(unittest.TestCase):
             t.send("oi 😀")
             self.wait(t, "oi :grinning:")
             self.assertNotIn("😀", self.screen(t))
+
+    def test_quit_asks_for_its_key_again_and_mouse_can_be_off(self):
+        with HistoryMock() as server:
+            t = self.open(server)
+            self.choose(t, 11)
+            self.assertTrue(self.stored()["confirm_exit"])
+            # Another key only cancels; the same key twice quits.
+            t.send("\x11")
+            self.wait(t, "Ctrl+Q de novo sai")
+            t.send("\x1b")
+            self.gone(t, "Ctrl+Q de novo sai")
+            self.assertIsNone(t.process.poll())
+            t.send("\x0c")
+            self.wait(t, "Ctrl+L de novo sai da conta")
+            t.send("\x1b")
+            self.gone(t, "de novo sai da conta")
+            # The mouse goes back to the terminal once it is off.
+            start = len(t.output)
+            self.choose(t, 10)
+            self.assertEqual(self.stored()["mouse"], False)
+            wait_for_screen(
+                t,
+                # ncurses may turn the SGR encoding off in the same sequence.
+                lambda: re.search(rb"\x1b\[\?[0-9;]*1000l", bytes(t.output[start:])),
+                "Mouse reporting stayed on",
+            )
+            t.send("\x11")
+            self.wait(t, "Ctrl+Q de novo sai")
+            t.send("\x11")
+            deadline = time.monotonic() + 5
+            while t.process.poll() is None and time.monotonic() < deadline:
+                t.read(0.05)
+            self.assertIsNotNone(t.process.poll())
 
 
 if __name__ == "__main__":

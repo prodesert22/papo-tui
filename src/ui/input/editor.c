@@ -2,6 +2,7 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 #include "ui/input/editor.h"
+#include "config/accessibility.h"
 #include "config/keymap.h"
 #include "model/text/translation.h"
 
@@ -30,16 +31,20 @@ struct send_editor {
      * poll that sees that operation confirmed, then the hint returns. */
     uint64_t confirmed_id;
     gint64 confirmed_since, confirmed_notice_us;
+    /* With notices that stay until a key, a key pressed after it dismisses it. */
+    bool confirmed_dismissed;
 };
 
-/* Two seconds; PAPO_CONFIRMED_NOTICE_MS lets tests that inspect the notice
- * over a long sequence of steps keep it visible. */
+/* Acessibilidade → Duração dos avisos: 2 s, 6 s or until a key (0);
+ * PAPO_CONFIRMED_NOTICE_MS lets tests that inspect the notice over a long
+ * sequence of steps keep it visible. */
 static gint64 confirmed_notice_duration(void)
 {
     const char *text = g_getenv("PAPO_CONFIRMED_NOTICE_MS");
     char *end = NULL;
     gint64 ms = text ? g_ascii_strtoll(text, &end, 10) : 0;
-    return text && end != text && !*end && ms > 0 && ms <= 3600000 ? ms * 1000 : 2 * G_USEC_PER_SEC;
+    return text && end != text && !*end && ms > 0 && ms <= 3600000 ? ms * 1000
+                                                                   : accessibility_notice_us();
 }
 
 static cursor_state *find_cursor(send_editor *editor, const char *channel)
@@ -88,7 +93,6 @@ send_editor *send_editor_create(auth_client *session)
     if (!editor)
         return NULL;
     editor->session = session;
-    editor->confirmed_notice_us = confirmed_notice_duration();
     editor->box = outbox_create(session);
     if (!editor->box) {
         free(editor);
@@ -343,8 +347,12 @@ void send_editor_poll(send_editor *editor)
             if (latest.id != editor->confirmed_id) {
                 editor->confirmed_id = latest.id;
                 editor->confirmed_since = now;
+                editor->confirmed_dismissed = false;
             }
-            if (now - editor->confirmed_since >= editor->confirmed_notice_us) {
+            editor->confirmed_notice_us = confirmed_notice_duration();
+            if (editor->confirmed_notice_us
+                    ? now - editor->confirmed_since >= editor->confirmed_notice_us
+                    : editor->confirmed_dismissed) {
                 editor->notice = _("Escreva uma mensagem; Enter envia.");
                 editor->feedback = false;
                 return;
@@ -371,4 +379,10 @@ const char *send_editor_compact_notice(const send_editor *editor)
 outbox *send_editor_outbox(send_editor *editor)
 {
     return editor ? editor->box : NULL;
+}
+
+void send_editor_key_seen(send_editor *editor)
+{
+    if (editor)
+        editor->confirmed_dismissed = true;
 }

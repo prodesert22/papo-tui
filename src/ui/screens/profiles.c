@@ -716,6 +716,7 @@ static int profiles_run(profile_config *config, bool allow_local_http,
         ui->focus = LIST_AREA;
     text_input_init();
     int result = layout(ui) ? 0 : -1;
+    bool quit_pending = false;
     bool done = result < 0;
     bool redraw = true;
 
@@ -776,7 +777,24 @@ static int profiles_run(profile_config *config, bool allow_local_http,
                 text_paste_cancel(&ui->paste_data);
             continue;
         }
+        /* Acessibilidade → Confirmar ações que encerram: the quit key again
+         * confirms, any other key only cancels. */
+        bool quit_confirmed = false;
+        if (quit_pending && !ui->paste && text_key_event(type, key)) {
+            quit_pending = false;
+            quit_confirmed = shortcut_is(type, key, KEYMAP_QUIT) || (type == OK && key == 3);
+            if (!quit_confirmed) {
+                ui->config->message[0] = 0;
+                continue;
+            }
+        }
         if (!ui->paste && shortcut_is(type, key, KEYMAP_QUIT)) {
+            if (!quit_confirmed && accessibility_get().confirm_exit) {
+                quit_pending = true;
+                snprintf(ui->config->message, sizeof(ui->config->message), "%s",
+                         K_("{k1:app.quit} de novo sai"));
+                continue;
+            }
             result = 2;
             break;
         }
@@ -810,6 +828,12 @@ static int profiles_run(profile_config *config, bool allow_local_http,
         if (shortcut_is(type, key, KEYMAP_QUIT) ||
             (type == OK && key == 3 &&
              !(ui->dialog && ui->dialog_type != REMOVE_DIALOG && ui->field < 2))) {
+            if (!quit_confirmed && accessibility_get().confirm_exit) {
+                quit_pending = true;
+                snprintf(ui->config->message, sizeof(ui->config->message), "%s",
+                         K_("{k1:app.quit} de novo sai"));
+                continue;
+            }
             result = 2;
             break;
         }

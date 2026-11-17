@@ -1237,6 +1237,15 @@ int text_read_raw(uint32_t *key)
     return type;
 }
 
+bool text_key_event(int type, uint32_t key)
+{
+    if (type == OK)
+        return true;
+    return type == KEY_CODE_YES && key != KEY_MOUSE && key != KEY_RESIZE && key != TEXT_FOCUS_IN &&
+           key != TEXT_FOCUS_OUT && key != TEXT_IGNORED && key != TEXT_KEYBOARD_SUPPORTED &&
+           key != TEXT_PASTE_START && key != TEXT_PASTE_END;
+}
+
 int text_input_read(uint32_t *key)
 {
     if (capture.active)

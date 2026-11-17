@@ -1741,6 +1741,11 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
     ui_mouse_initialize(BUTTON1_PRESSED | BUTTON1_RELEASED | BUTTON1_CLICKED | BUTTON3_PRESSED |
                         BUTTON3_CLICKED | REPORT_MOUSE_POSITION);
     ui_mouse_drag_tracking(true);
+    /* Acessibilidade → Mouse: Desativado leaves the mouse to the terminal. */
+    if (accessibility_get().mouse_off) {
+        mousemask(0, NULL);
+        ui_mouse_drag_tracking(false);
+    }
     text_input_init();
     timeout(30);
     set_escdelay(25);
@@ -1767,7 +1772,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
     snprintf(main_url, sizeof(main_url), "%s", session_store_open_url(connections->sessions));
     if (!result && !open_profiles && *main_url && !instance_form(&ui, client, main_url))
         result = 1;
-    bool quit = false;
+    bool quit = false, quit_pending = false;
     if (!result && open_profiles) {
         int selected = manage_profiles(&ui, &client, &config, allow_local_http, false);
         if (selected < 0)
@@ -1979,8 +1984,25 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
                 text_paste_cancel(&ui.paste_data);
             continue;
         }
-        if (!ui.paste && shortcut_is(type, key, KEYMAP_QUIT))
+        /* Acessibilidade → Confirmar ações que encerram: the quit key again
+         * confirms, any other key only cancels. */
+        bool quit_confirmed = false;
+        if (quit_pending && !ui.paste && text_key_event(type, key)) {
+            quit_pending = false;
+            ui.validation_message[0] = 0;
+            quit_confirmed = shortcut_is(type, key, KEYMAP_QUIT) || (type == OK && key == 3);
+            if (!quit_confirmed)
+                continue;
+        }
+        if (!ui.paste && shortcut_is(type, key, KEYMAP_QUIT)) {
+            if (!quit_confirmed && accessibility_get().confirm_exit) {
+                quit_pending = true;
+                snprintf(ui.validation_message, sizeof(ui.validation_message), "%s",
+                         K_("{k1:app.quit} de novo sai"));
+                continue;
+            }
             break;
+        }
         if (!ui.paste && help_key(&ui.help, type, key))
             continue;
         if (!ui.paste && ui.menu_open) {
@@ -2029,8 +2051,15 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         if (!ui.paste &&
             (shortcut_is(type, key, KEYMAP_QUIT) ||
              (type == OK && key == 3 &&
-              (ui.focus >= FIELD_COUNT || auth_has_session(client) || auth_busy(client)))))
+              (ui.focus >= FIELD_COUNT || auth_has_session(client) || auth_busy(client))))) {
+            if (!quit_confirmed && accessibility_get().confirm_exit) {
+                quit_pending = true;
+                snprintf(ui.validation_message, sizeof(ui.validation_message), "%s",
+                         K_("{k1:app.quit} de novo sai"));
+                continue;
+            }
             break;
+        }
         if (!ui.paste && ((shortcut_is(type, key, KEYMAP_REGISTER) && !auth_has_session(client)) ||
                           (shortcut_is(type, key, KEYMAP_REFRESH) && auth_has_session(client)))) {
             extra_action(&ui, client);

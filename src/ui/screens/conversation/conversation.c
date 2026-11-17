@@ -142,6 +142,57 @@ static bool apply_account_view(view *ui)
     }
     return changed;
 }
+/* Acessibilidade → Mouse: without it the terminal keeps the mouse for its own
+ * selection, and every control stays reachable from the keyboard. */
+#define CONVERSATION_MOUSE                                                                         \
+    (BUTTON1_PRESSED | BUTTON1_RELEASED | BUTTON1_CLICKED | BUTTON3_PRESSED | BUTTON3_CLICKED |    \
+     REPORT_MOUSE_POSITION | BUTTON4_PRESSED | BUTTON5_PRESSED)
+static void apply_mouse(void)
+{
+    bool off = accessibility_get().mouse_off;
+    mousemask(off ? 0 : CONVERSATION_MOUSE, NULL);
+    ui_mouse_drag_tracking(!off);
+}
+/* Acessibilidade → Confirmar ações que encerram: true when the action must
+ * wait for its key a second time; the notice says which key. */
+static bool exit_waits(view *ui, keymap_action action, bool confirmed)
+{
+    if (confirmed || !accessibility_get().confirm_exit)
+        return false;
+    ui->exit_pending = action;
+    ui->feedback = action == KEYMAP_QUIT     ? K_("{k1:app.quit} de novo sai")
+                   : action == KEYMAP_LOGOUT ? K_("{k1:conversation.logout} de novo sai da conta")
+                                             : K_("{k1:conversation.close_dm} de novo fecha a DM");
+    return true;
+}
+/* Shows a new visual alert in the footer, flashing at most every 3 s, and
+ * takes it away once its time has passed. */
+static bool visual_alert_poll(view *ui, instance_connections *connections)
+{
+    gint64 now = g_get_monotonic_time();
+    accessibility_config access = accessibility_get();
+    bool changed = false;
+    if (connections->visual_alerts != ui->visual_seen) {
+        ui->visual_seen = connections->visual_alerts;
+        if (access.visual_alert != ACCESS_ALERT_OFF) {
+            status_bar_set(&ui->status, STATUS_ALERT, connections->visual_alert);
+            ui->visual_since = now;
+            ui->visual_shown = changed = true;
+            if (access.visual_alert == ACCESS_ALERT_FLASH &&
+                (!ui->last_flash || now - ui->last_flash >= 3 * G_USEC_PER_SEC)) {
+                flash();
+                ui->last_flash = now;
+            }
+        }
+    }
+    long long stay = accessibility_notice_us();
+    if (ui->visual_shown && stay && now - ui->visual_since >= stay) {
+        status_bar_set(&ui->status, STATUS_ALERT, NULL);
+        ui->visual_shown = false;
+        changed = true;
+    }
+    return changed;
+}
 static void open_settings(view *ui, const profile_config *config)
 {
     mention_popup_close(ui->mentions);
@@ -492,10 +543,10 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
     /* A separately delivered release must reach getmouse(). If it is filtered
      * out, ncurses can wait for another gesture inside text_read_raw(), stalling HTTP
      * and media updates even with timeout(30) and mouseinterval(0). */
-    mousemask(BUTTON1_PRESSED | BUTTON1_RELEASED | BUTTON1_CLICKED | BUTTON3_PRESSED |
-                  BUTTON3_CLICKED | REPORT_MOUSE_POSITION | BUTTON4_PRESSED | BUTTON5_PRESSED,
-              &previous_mouse);
-    ui_mouse_drag_tracking(true);
+    mousemask(CONVERSATION_MOUSE, &previous_mouse);
+    apply_mouse();
+    ui->visual_seen = connections->visual_alerts;
+    ui->exit_pending = KEYMAP_NONE;
     bool redraw = true;
     draw_scope scope = DRAW_ALL;
     int result = HISTORY_ACCOUNT;
@@ -573,6 +624,10 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             scope = DRAW_ALL;
         }
         if (instances_poll(connections, auth)) {
+            redraw = true;
+            scope = DRAW_ALL;
+        }
+        if (visual_alert_poll(ui, connections)) {
             redraw = true;
             scope = DRAW_ALL;
         }
@@ -899,7 +954,31 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         if (ui->paste)
             continue;
         redraw = true;
+        bool keypress = text_key_event(type, key);
+        /* Notices that stay until a key go with this one. */
+        if (keypress) {
+            send_editor_key_seen(ui->editor);
+            if (ui->visual_shown && !accessibility_notice_us()) {
+                status_bar_set(&ui->status, STATUS_ALERT, NULL);
+                ui->visual_shown = false;
+            }
+        }
+        /* An action waiting for its key again: that key confirms, any other
+         * key only cancels. */
+        keymap_action confirmed = KEYMAP_NONE;
+        if (ui->exit_pending != KEYMAP_NONE && keypress) {
+            keymap_action pending = ui->exit_pending;
+            ui->exit_pending = KEYMAP_NONE;
+            ui->feedback = NULL;
+            if (shortcut_is(type, key, pending) ||
+                (pending == KEYMAP_QUIT && type == OK && key == 3))
+                confirmed = pending;
+            else
+                continue;
+        }
         if (shortcut_is(type, key, KEYMAP_QUIT)) {
+            if (exit_waits(ui, KEYMAP_QUIT, confirmed == KEYMAP_QUIT))
+                continue;
             result = HISTORY_EXIT;
             break;
         }
@@ -962,6 +1041,8 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             (type == OK && key == 3 && !conversation_members_input(ui) &&
              !(r8_modal_is_open(ui->r8) || conversation_panel_open(ui)) &&
              (ui->focus != MESSAGE_INPUT || ui->duplicate_modal || media_view_modal(ui->media)))) {
+            if (exit_waits(ui, KEYMAP_QUIT, confirmed == KEYMAP_QUIT))
+                continue;
             result = HISTORY_EXIT;
             break;
         }
@@ -979,6 +1060,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 language_set(connections->config->language);
                 keymap_apply_overrides(&connections->config->shortcuts);
                 accessibility_set(&connections->config->accessibility);
+                apply_mouse();
                 apply_mode(ui);
             }
             scope = DRAW_ALL;
@@ -1069,6 +1151,8 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             break;
         }
         if (shortcut_is(type, key, KEYMAP_LOGOUT)) {
+            if (exit_waits(ui, KEYMAP_LOGOUT, confirmed == KEYMAP_LOGOUT))
+                continue;
             auth_logout(auth);
             break;
         }
@@ -1102,6 +1186,8 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             continue;
         }
         if (shortcut_is(type, key, KEYMAP_CLOSE_DM) && ui->focus == CHANNEL_LIST && ui->list_dms) {
+            if (exit_waits(ui, KEYMAP_CLOSE_DM, confirmed == KEYMAP_CLOSE_DM))
+                continue;
             json_t *dm = conversation_list_channel(ui, ui->highlighted);
             conversation_close_dm(ui, conversation_str(dm, "id"));
             continue;
@@ -1722,7 +1808,7 @@ finished:
     file_picker_destroy(ui->files);
     instances_visible(connections, NULL, NULL);
     text_paste_cancel(&ui->paste_data);
-    mousemask(previous_mouse, NULL);
+    mousemask(accessibility_get().mouse_off ? 0 : previous_mouse, NULL);
     ui_mouse_drag_tracking((previous_mouse & REPORT_MOUSE_POSITION) != 0);
     conversation_interactions_close(ui);
     emoji_picker_destroy(ui->emojis);

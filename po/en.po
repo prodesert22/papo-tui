@@ -389,6 +389,10 @@ msgstr "10 minutes"
 msgid "12 horas"
 msgstr "12 hours"
 
+#: src/ui/components/settings.c
+msgid "2 segundos"
+msgstr "2 seconds"
+
 #: src/ui/screens/conversation/interactions.c
 msgid "24 horas"
 msgstr "24 hours"
@@ -400,6 +404,10 @@ msgstr "30 minutes"
 #: src/ui/screens/conversation/interactions.c
 msgid "4 horas"
 msgstr "4 hours"
+
+#: src/ui/components/settings.c
+msgid "6 segundos"
+msgstr "6 seconds"
 
 #: src/ui/components/emoji_picker.c
 msgid ":emoji:"
@@ -785,6 +793,10 @@ msgstr "Global help"
 msgid "Ajustado clareia ou escurece a cor de cada cargo até ler bem sobre o fundo; desativadas mostra todos os nomes na cor do texto."
 msgstr "Adjusted lightens or darkens each role's color until it reads well on the background; off shows every name in the text color."
 
+#: src/ui/components/settings.c
+msgid "Alerta visual: < %s >"
+msgstr "Visual alert: < %s >"
+
 #: src/config/key_binding.c
 msgid "Alt+"
 msgstr "Alt+"
@@ -1088,6 +1100,10 @@ msgstr "Up to 80 characters. It is the name shown as the author of messages sent
 #: src/ui/screens/conversation/interactions.c
 msgid "Até eu reativar"
 msgstr "Until I turn it back on"
+
+#: src/ui/components/settings.c
+msgid "Até uma tecla"
+msgstr "Until a key"
 
 #: src/ui/components/server_settings/server_settings.c
 msgid "Auditoria"
@@ -1849,6 +1865,10 @@ msgstr "Confirming your session…"
 msgid "Confirmar"
 msgstr "Confirm"
 
+#: src/ui/components/settings.c
+msgid "Confirmar ações que encerram"
+msgstr "Confirm actions that end things"
+
 #: src/ui/screens/login.c
 msgid "Confirmar nova senha"
 msgstr "Confirm new password"
@@ -2209,6 +2229,10 @@ msgstr "Off"
 msgid "Desativado"
 msgstr "Off"
 
+#: src/ui/components/settings.c
+msgid "Desativado deixa o mouse com o terminal, para selecionar texto como em qualquer programa; tudo continua acessível pelo teclado."
+msgstr "Off leaves the mouse to the terminal, to select text as in any program; everything stays reachable from the keyboard."
+
 #: src/ui/components/server_settings/members.c src/ui/screens/conversation/members.c
 msgid "Desbanir"
 msgstr "Unban"
@@ -2252,6 +2276,18 @@ msgstr "Desktop alerts disabled in this build; the center is available."
 #: src/ui/screens/conversation/drawing.c
 msgid "Desktop indisponível"
 msgstr "Desktop unavailable"
+
+#: src/ui/components/settings.c
+msgid "Desligado"
+msgstr "Off"
+
+#: src/ui/components/settings.c
+msgid "Destaque"
+msgstr "Highlight"
+
+#: src/ui/components/settings.c
+msgid "Destaque mostra cada nova notificação no rodapé, mesmo sem som; Piscar também pisca a tela uma vez, no máximo a cada 3 segundos."
+msgstr "Highlight shows each new notification in the footer, even without sound; Flash also flashes the screen once, at most every 3 seconds."
 
 #: src/ui/screens/inbox.c
 msgid "Destino ainda indisponível. {k1:app.refresh}: atualizar."
@@ -2328,6 +2364,10 @@ msgstr "During calls, %s transmits your voice instead of \"%s\"."
 #: src/ui/media/media.c
 msgid "Duração"
 msgstr "Duration"
+
+#: src/ui/components/settings.c
+msgid "Duração dos avisos: < %s >"
+msgstr "Notice duration: < %s >"
 
 #: src/ui/screens/conversation/drawing.c
 msgid "Editando mensagem · Enter editar · Esc cancelar"
@@ -3965,6 +4005,10 @@ msgstr "Show preview: includes the message's text in the system alert."
 msgid "Mouse %u"
 msgstr "Mouse %u"
 
+#: src/ui/components/settings.c
+msgid "Mouse: < %s >"
+msgstr "Mouse: < %s >"
+
 #: src/ui/components/help.c
 msgid "Mover a posição ou o volume nas barras do player"
 msgstr "Move the position or the volume on the player's bars"
@@ -4296,6 +4340,14 @@ msgstr "New description; empty clears it"
 #: src/app/instances.c
 msgid "Nova mensagem"
 msgstr "New message"
+
+#: src/app/instances.c
+msgid "Nova mensagem de %s · %s"
+msgstr "New message from %s · %s"
+
+#: src/app/instances.c
+msgid "Nova menção de %s · %s"
+msgstr "New mention from %s · %s"
 
 #: src/app/instances.c
 msgid "Nova notificação"
@@ -5349,6 +5401,10 @@ msgstr "PgUp/PgDn other media · Space pause · ←→ 5s · ↑↓ volume"
 msgid "PgUp/PgDn: rolar"
 msgstr "PgUp/PgDn: scroll"
 
+#: src/ui/components/settings.c
+msgid "Piscar"
+msgstr "Flash"
+
 #: src/ui/components/help.c
 msgid "Player"
 msgstr "Player"
@@ -5484,6 +5540,10 @@ msgstr "Any"
 #: src/ui/components/server_settings/audit.c
 msgid "Qualquer pessoa"
 msgstr "Anyone"
+
+#: src/ui/components/settings.c
+msgid "Quanto tempo ficam os avisos que somem sozinhos, como o de envio confirmado e o do alerta visual."
+msgstr "How long notices that go away by themselves stay, such as the sent confirmation and the visual alert."
 
 #: src/ui/components/help.c
 msgid "Quebrar linha na descrição"
@@ -5796,6 +5856,10 @@ msgstr "Leave selection and return to the previous focus or the next area"
 #: src/config/keymap.c src/ui/components/help.c
 msgid "Sair do aplicativo"
 msgstr "Quit the application"
+
+#: src/ui/components/settings.c
+msgid "Sair do aplicativo, sair da conta e fechar uma DM pedem a mesma tecla de novo, sem limite de tempo; outra tecla cancela."
+msgstr "Quitting, signing out and closing a DM ask for the same key again, with no time limit; any other key cancels."
 
 #: src/ui/screens/conversation/downloads.c
 msgid "Salvando %s…"
@@ -7204,6 +7268,18 @@ msgstr "user unavailable"
 #: src/ui/input/shortcuts.h
 msgid "{k1:app.help}: ajuda"
 msgstr "{k1:app.help}: help"
+
+#: src/ui/screens/conversation/conversation.c src/ui/screens/login.c src/ui/screens/profiles.c
+msgid "{k1:app.quit} de novo sai"
+msgstr "{k1:app.quit} again quits"
+
+#: src/ui/screens/conversation/conversation.c
+msgid "{k1:conversation.close_dm} de novo fecha a DM"
+msgstr "{k1:conversation.close_dm} again closes the DM"
+
+#: src/ui/screens/conversation/conversation.c
+msgid "{k1:conversation.logout} de novo sai da conta"
+msgstr "{k1:conversation.logout} again signs out"
 
 #: src/ui/screens/conversation/drawing.c
 msgid "{k1:conversation.reconnect}: reconectar agora"

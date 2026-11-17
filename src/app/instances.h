@@ -38,6 +38,11 @@ typedef struct {
     char visible_channel[37];
     bool allow_local_http; /* Policy for restoring saved sessions of offline tabs. */
     uint64_t next_serial;
+    /* Acessibilidade → Alerta visual: the text of the last alert and how many
+     * were raised, so the conversation shows each one once. */
+    char visual_alert[512];
+    uint64_t visual_alerts;
+    bool visual_mention;
     size_t poll_cursor;
 } instance_connections;
 /* Owns attached clients, each with its own cookies/identity. Public labels and

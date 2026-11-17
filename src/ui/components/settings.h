@@ -83,7 +83,7 @@ typedef struct {
     key_binding keys_pending;
     /* Acessibilidade: the draft of this device's choices and the item selected. */
     accessibility_config access;
-    int access_selection;
+    int access_selection, access_first;
 } app_settings;
 void settings_open(app_settings *settings, const profile_config *config, voice_client *voice,
                    history *profile, auth_client *auth, icon_view *icons, const char *server);

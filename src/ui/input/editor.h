@@ -20,6 +20,8 @@ outbox_submit_result send_editor_retry(send_editor *editor, uint64_t operation_i
                                        bool accept_possible_duplicate);
 /* Call after auth_poll(). Updates drafts after confirmed prefix removal. */
 void send_editor_poll(send_editor *editor);
+/* A key was pressed: notices that stay until a key may go. */
+void send_editor_key_seen(send_editor *editor);
 const char *send_editor_notice(const send_editor *editor);
 /* NULL for ordinary editing instructions; otherwise a send-context notice. */
 const char *send_editor_feedback(const send_editor *editor);

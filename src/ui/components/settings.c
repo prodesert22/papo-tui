@@ -961,11 +961,13 @@ static void appearance_click(app_settings *s, int y, int x)
     appearance_adjust(s, x < getmaxx(s->window) / 2 ? -1 : 1, true);
 }
 /* Acessibilidade: contrast and colors of this device. */
-#define ACCESS_ITEMS 8
+#define ACCESS_ITEMS 12
 static void access_label(const app_settings *s, int item, char *label, size_t size)
 {
     static const char *contrasts[] = {N_("Padrão"), N_("Alto"), N_("Sem cores")};
     static const char *roles[] = {N_("Originais"), N_("Contraste ajustado"), N_("Desativadas")};
+    static const char *alerts[] = {N_("Desligado"), N_("Destaque"), N_("Piscar")};
+    static const char *notices[] = {N_("2 segundos"), N_("6 segundos"), N_("Até uma tecla")};
     switch (item) {
     case 0:
         snprintf(label, size, _("Contraste: < %s >"), _(contrasts[s->access.contrast]));
@@ -992,9 +994,23 @@ static void access_label(const app_settings *s, int item, char *label, size_t si
         snprintf(label, size, _("Emojis nas mensagens: < %s >"),
                  s->access.emoji_names ? _("Nomes") : _("Imagens"));
         break;
-    default:
+    case 7:
         snprintf(label, size, _("Bordas: < %s >"),
                  s->access.ascii_borders ? _("ASCII") : _("Linhas"));
+        break;
+    case 8:
+        snprintf(label, size, _("Alerta visual: < %s >"), _(alerts[s->access.visual_alert]));
+        break;
+    case 9:
+        snprintf(label, size, _("Duração dos avisos: < %s >"), _(notices[s->access.notices]));
+        break;
+    case 10:
+        snprintf(label, size, _("Mouse: < %s >"),
+                 s->access.mouse_off ? _("Desativado") : _("Ativado"));
+        break;
+    default:
+        snprintf(label, size, "[%c] %s", s->access.confirm_exit ? 'x' : ' ',
+                 _("Confirmar ações que encerram"));
         break;
     }
 }
@@ -1015,28 +1031,49 @@ static const char *access_description(const app_settings *s)
            "[+]."),
         N_("Nomes mostra cada emoji como :nome:, inclusive os do servidor, em vez de imagens."),
         N_("ASCII desenha bordas e linhas com + - |, que leitores de tela e fontes limitadas leem "
-           "melhor.")};
+           "melhor."),
+        N_("Destaque mostra cada nova notificação no rodapé, mesmo sem som; Piscar também pisca a "
+           "tela uma vez, no máximo a cada 3 segundos."),
+        N_("Quanto tempo ficam os avisos que somem sozinhos, como o de envio confirmado e o do "
+           "alerta visual."),
+        N_("Desativado deixa o mouse com o terminal, para selecionar texto como em qualquer "
+           "programa; tudo continua acessível pelo teclado."),
+        N_("Sair do aplicativo, sair da conta e fechar uma DM pedem a mesma tecla de novo, sem "
+           "limite de tempo; outra tecla cancela.")};
     return _(
         items[s->access_selection >= 0 && s->access_selection < ACCESS_ITEMS ? s->access_selection
                                                                              : 0]);
 }
+/* Items shown at once: three rows stay for the explanation of the selected
+ * item and one for the note about font and density. */
+static int access_rows(int height)
+{
+    int rows = height - 13;
+    return rows < 1 ? 1 : rows > ACCESS_ITEMS ? ACCESS_ITEMS : rows;
+}
 static void access_draw(app_settings *s, WINDOW *w, int height, int width)
 {
-    for (int item = 0; item < ACCESS_ITEMS; ++item) {
+    int visible = access_rows(height);
+    if (s->access_selection < s->access_first)
+        s->access_first = s->access_selection;
+    if (s->access_selection >= s->access_first + visible)
+        s->access_first = s->access_selection - visible + 1;
+    for (int row = 0; row < visible && s->access_first + row < ACCESS_ITEMS; ++row) {
+        int item = s->access_first + row;
         char label[256];
         bool focused = s->focus == 1 && s->access_selection == item;
         wattrset(w, COLOR_PAIR(focused ? THEME_FOCUSED : THEME_PANEL) |
                         (focused ? theme_focus_attributes() : 0));
         access_label(s, item, label, sizeof(label));
-        text_label(w, 5 + item, 2, width - 4, label);
+        text_label(w, 5 + row, 2, width - 4, label);
     }
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     text_buffer description;
     text_layout measured;
-    int rows = height - 4 - (5 + ACCESS_ITEMS);
+    int rows = height - 5 - (5 + visible);
     if (rows > 0 && text_decode(&description, access_description(s))) {
         text_measure_words(&description, width - 6, &measured);
-        text_draw(w, &description, &measured, 0, rows, 5 + ACCESS_ITEMS, 3);
+        text_draw(w, &description, &measured, 0, rows, 5 + visible, 3);
     }
     text_label(w, height - 4, 2, width - 4,
                _("A fonte é a do terminal; a densidade do histórico fica em Aparência."));
@@ -1072,8 +1109,26 @@ static void access_adjust(app_settings *s, int direction)
     case 6:
         s->access.emoji_names = !s->access.emoji_names;
         break;
-    default:
+    case 7:
         s->access.ascii_borders = !s->access.ascii_borders;
+        break;
+    case 8: {
+        int alert = (int)s->access.visual_alert;
+        cycle(&alert, 3, direction);
+        s->access.visual_alert = (access_alert)alert;
+        break;
+    }
+    case 9: {
+        int notices = (int)s->access.notices;
+        cycle(&notices, 3, direction);
+        s->access.notices = (access_notice)notices;
+        break;
+    }
+    case 10:
+        s->access.mouse_off = !s->access.mouse_off;
+        break;
+    default:
+        s->access.confirm_exit = !s->access.confirm_exit;
         break;
     }
 }
@@ -1098,8 +1153,8 @@ static void access_key(app_settings *s, int type, uint32_t key)
 }
 static void access_click(app_settings *s, int y, int x)
 {
-    int item = y - 5;
-    if (item < 0 || item >= ACCESS_ITEMS)
+    int item = s->access_first + y - 5;
+    if (y < 5 || y >= 5 + access_rows(getmaxy(s->window)) || item >= ACCESS_ITEMS)
         return;
     s->access_selection = item;
     s->focus = 1;
@@ -1993,7 +2048,7 @@ void settings_key(app_settings *s, profile_config *config, int type, uint32_t ke
             s->section =
                 tab_strip_hit(&s->tabs, SETTINGS_SECTIONS, s->section, x, getmaxx(s->window));
             s->focus = 0;
-        } else if (s->section == SETTINGS_ACCESSIBILITY && y >= 5 && y < 5 + ACCESS_ITEMS) {
+        } else if (s->section == SETTINGS_ACCESSIBILITY && y >= 5 && y < getmaxy(s->window) - 4) {
             access_click(s, y, x);
         } else if (s->section == SETTINGS_SHORTCUTS && y >= 5 && y < getmaxy(s->window) - 3) {
             keys_click(s, y, x);
