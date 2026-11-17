@@ -1,6 +1,7 @@
 #ifndef PAPO_THEME_H
 #define PAPO_THEME_H
 
+#include "config/accessibility.h"
 #include <ncurses.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -78,13 +79,30 @@ bool theme_background_reply(const char *reply);
 int theme_terminal_light(void);
 /* Components 0..255: whether that color reads as a light background. */
 bool theme_luminance_light(unsigned red, unsigned green, unsigned blue);
+/* Applies the accessibility choices: high contrast or the terminal's own colors,
+ * color-blind safe states, how member role colors show and whether focus also
+ * gets bold and underline. Redefines every pair like theme_set_palette; true
+ * when anything changed. Before theme_init it only records the choices. */
+bool theme_set_access(const accessibility_config *config);
+/* False without terminal colors or with Contraste: Sem cores; components then
+ * show focus and state with reverse and bold. */
+bool theme_colors(void);
+/* Attributes the focused or selected item adds to its pair: reverse without
+ * colors, plus bold and underline when focus must not depend on color. */
+attr_t theme_focus_attributes(void);
 /* Tagged RGB foreground, preserving the existing background and palette. */
 int theme_rgb_pair(unsigned rgb, int fallback);
+/* A member name in its role color, as the accessibility choice shows it:
+ * original, with contrast raised to 4.5:1 against the background, or white. */
 int theme_member_pair(unsigned rgb, int background);
 /* pair with its foreground percent (0..100) of the way to its own background,
  * for text that dissolves into the fill. pair itself when the terminal has
  * fewer than 256 colors, pair is not a themed one or no tagged pair is left. */
 int theme_faded_pair(int pair, int percent);
+/* A state color (presence, speaking) that keeps its meaning: never replaced
+ * by the role choice, and moved away from red and green for color-blind safe
+ * colors. */
+int theme_status_pair(unsigned rgb, int background);
 /* RGB the terminal shows behind pair (0xRRGGBB): exact with direct color or a
  * redefined palette, else its 256-color or basic approximation. Media blends
  * transparent pixels into it, so they match the cells around them. */

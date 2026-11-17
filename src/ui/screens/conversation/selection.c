@@ -152,8 +152,8 @@ static void paint_cell(void *context, int column, int width, const char *text, b
         column >= getmaxx(p->ui->body))
         return;
     /* The same colors as a selection in the editor. */
-    mvwchgat(p->ui->body, p->y, column, MAX(width, 1), A_BOLD | (has_colors() ? 0 : A_REVERSE),
-             has_colors() ? THEME_TEXT_SELECTION : 0, NULL);
+    mvwchgat(p->ui->body, p->y, column, MAX(width, 1), A_BOLD | (theme_colors() ? 0 : A_REVERSE),
+             theme_colors() ? THEME_TEXT_SELECTION : 0, NULL);
 }
 
 static void collect(void *context, int column, int width, const char *text, bool image)

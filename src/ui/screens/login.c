@@ -1708,6 +1708,9 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
     app_mode_set(config->mode);
     language_set(config->language);
     keymap_apply_overrides(&config->shortcuts);
+    accessibility_set(&config->accessibility);
+    accessibility_config access = accessibility_get();
+    theme_set_access(&access);
     connections->sessions = session_store_create(config, !open_profiles);
     connections->config = config;
     interrupted = 0;

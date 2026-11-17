@@ -1,6 +1,7 @@
 #ifndef PAPO_PROFILES_H
 #define PAPO_PROFILES_H
 
+#include "config/accessibility.h"
 #include "config/app_mode.h"
 #include "config/audio.h"
 #include "config/keymap.h"
@@ -38,6 +39,7 @@ typedef struct profile_config {
     audio_config audio;
     /* Command keys that differ from the defaults (config/keymap.h). */
     keymap_overrides shortcuts;
+    accessibility_config accessibility;
     int directory;
     bool writable, existed;
     struct stat revision;
@@ -51,9 +53,11 @@ typedef struct profile_config {
 } profile_config;
 
 bool profiles_set_mode(profile_config *config, app_mode mode);
-/* Saves this device's settings in one write; shortcuts may be NULL to keep them. */
+/* Saves this device's settings in one write; shortcuts and accessibility may
+ * be NULL to keep them. */
 bool profiles_set_settings(profile_config *config, app_mode mode, language_choice language,
-                           const audio_config *audio, const keymap_overrides *shortcuts);
+                           const audio_config *audio, const keymap_overrides *shortcuts,
+                           const accessibility_config *accessibility);
 /* Saves the command keys that differ from the defaults; ids this build does
  * not know are the caller's to keep (keymap_table_to_overrides). */
 bool profiles_set_shortcuts(profile_config *config, const keymap_overrides *shortcuts);

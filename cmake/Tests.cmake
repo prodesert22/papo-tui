@@ -231,6 +231,16 @@ if(BUILD_TESTING)
         servers)
     papo_add_test(
         NAME
+        accessibility-terminal
+        COMMAND
+        ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_accessibility_terminal.py
+        $<TARGET_FILE:papo-tui>
+        LABELS
+        settings
+        ui)
+    papo_add_test(
+        NAME
         shortcuts-terminal
         COMMAND
         ${Python3_EXECUTABLE}
@@ -688,12 +698,13 @@ if(BUILD_TESTING)
         src/model/text/mentions.c
         src/config/key_binding.c
         src/config/keymap.c
+        src/config/accessibility.c
         src/model/text/translation.c
         src/ui/components/theme.c
         src/model/text/emoji_catalog.c)
     target_include_directories(text-test PRIVATE src)
     target_link_libraries(text-test PRIVATE PkgConfig::GLIB PkgConfig::NCURSES PkgConfig::UNIBREAK
-                                            PkgConfig::JANSSON)
+                                            PkgConfig::JANSSON m)
     target_compile_options(text-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
     if(PAPO_SANITIZERS)
         target_compile_options(text-test PRIVATE -fsanitize=address,undefined

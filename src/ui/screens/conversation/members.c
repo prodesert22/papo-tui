@@ -692,7 +692,7 @@ static void member_overlay(view *ui, WINDOW *w)
 static void status_label(view *ui, WINDOW *w, const char *id, int y, int x, int width)
 {
     unsigned status = status_index(ui, id);
-    wattrset(w, COLOR_PAIR(theme_member_pair(status_colors[status], THEME_PANEL)));
+    wattrset(w, COLOR_PAIR(theme_status_pair(status_colors[status], THEME_PANEL)));
     text_label(w, y, x, width, "●");
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     text_label(w, y, x + 2, width - 2, _(statuses[status]));
@@ -887,7 +887,7 @@ static void draw_list(view *ui)
         wattrset(w, COLOR_PAIR(theme_member_pair(history_member_color(ui->model, s(r->user, "id")),
                                                  pair)));
         text_label(w, y, image_columns + 3, width - image_columns - 7, display_name(r->user));
-        wattrset(w, COLOR_PAIR(theme_member_pair(status_colors[r->status], pair)));
+        wattrset(w, COLOR_PAIR(theme_status_pair(status_colors[r->status], pair)));
         text_label(w, y, width - 3, 2, "●");
         wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
         text_label(w, y + 1, image_columns + 3, width - image_columns - 5,

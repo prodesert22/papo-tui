@@ -120,24 +120,26 @@ static bool decode(profile_config *config, json_t *root)
     config->language = LANGUAGE_SYSTEM;
     config->player_volume = PLAYER_VOLUME_DEFAULT;
     audio_config_default(&config->audio);
+    accessibility_default(&config->accessibility);
     if (!json_is_object(root) || !json_is_integer(json_object_get(root, "version")))
         return false;
     json_int_t version = json_integer_value(json_object_get(root, "version"));
     if (version == 1) {
         if (json_object_size(root) != 3)
             return false;
-    } else if (version >= 2 && version <= 10) {
+    } else if (version >= 2 && version <= 11) {
         json_t *rate = json_object_get(root, "requests_per_second");
         json_t *burst = json_object_get(root, "request_burst");
-        if (json_object_size(root) != (version == 2   ? 5U
-                                       : version == 3 ? 7U
-                                       : version == 4 ? 8U
-                                       : version == 5 ? 9U
-                                       : version == 6 ? 10U
-                                       : version == 7 ? 11U
-                                       : version == 8 ? 12U
-                                       : version == 9 ? 13U
-                                                      : 14U) ||
+        if (json_object_size(root) != (version == 2    ? 5U
+                                       : version == 3  ? 7U
+                                       : version == 4  ? 8U
+                                       : version == 5  ? 9U
+                                       : version == 6  ? 10U
+                                       : version == 7  ? 11U
+                                       : version == 8  ? 12U
+                                       : version == 9  ? 13U
+                                       : version == 10 ? 14U
+                                                       : 15U) ||
             !json_is_number(rate) || !json_is_integer(burst) || json_integer_value(burst) <= 0 ||
             json_integer_value(burst) > UINT_MAX ||
             !net_rate_parameters_valid(json_number_value(rate),
@@ -185,6 +187,9 @@ static bool decode(profile_config *config, json_t *root)
     if (version >= 10 &&
         !keymap_overrides_decode(&config->shortcuts, json_object_get(root, "shortcuts")))
         return false;
+    if (version >= 11 &&
+        !accessibility_decode(&config->accessibility, json_object_get(root, "accessibility")))
+        return false;
     json_t *array = json_object_get(root, "profiles");
     json_t *selected = json_object_get(root, "selected_profile");
     if (!json_is_array(array) || json_array_size(array) > PROFILE_LIMIT)
@@ -222,6 +227,7 @@ bool profiles_reload(profile_config *config)
     config->desktop_notifications = config->notification_preview = config->notification_sounds =
         true;
     audio_config_default(&config->audio);
+    accessibility_default(&config->accessibility);
     config->player_volume = PLAYER_VOLUME_DEFAULT;
     player_volume_set(PLAYER_VOLUME_DEFAULT);
     if (!profiles_storage_open(config))
@@ -254,6 +260,7 @@ bool profiles_reload(profile_config *config)
             true;
         audio_config_default(&config->audio);
         memset(&config->shortcuts, 0, sizeof(config->shortcuts));
+        accessibility_default(&config->accessibility);
         config->player_volume = PLAYER_VOLUME_DEFAULT;
         player_volume_set(PLAYER_VOLUME_DEFAULT);
         return error(config, K_("Configuração inválida ou incompatível; arquivo preservado. "
@@ -304,7 +311,7 @@ static bool save_locked(profile_config *config)
     }
     json_t *selection = *config->selected ? json_string(config->selected) : json_null();
     json_t *root =
-        selection ? json_pack("{s:i,s:O,s:O,s:f,s:I,s:b,s:b,s:b,s:s,s:s,s:b,s:i}", "version", 10,
+        selection ? json_pack("{s:i,s:O,s:O,s:f,s:I,s:b,s:b,s:b,s:s,s:s,s:b,s:i}", "version", 11,
                               "profiles", array, "selected_profile", selection,
                               "requests_per_second", config->requests_per_second, "request_burst",
                               (json_int_t)config->request_burst, "desktop_notifications",
@@ -319,13 +326,17 @@ static bool save_locked(profile_config *config)
     json_decref(array);
     json_t *audio = audio_config_encode(&config->audio);
     json_t *shortcuts = keymap_overrides_encode(&config->shortcuts);
-    if (!root || !audio || !shortcuts || json_object_set(root, "audio", audio) < 0 ||
-        json_object_set(root, "shortcuts", shortcuts) < 0) {
+    json_t *accessibility = accessibility_encode(&config->accessibility);
+    if (!root || !audio || !shortcuts || !accessibility ||
+        json_object_set(root, "audio", audio) < 0 ||
+        json_object_set(root, "shortcuts", shortcuts) < 0 ||
+        json_object_set(root, "accessibility", accessibility) < 0) {
         json_decref(root);
         root = NULL;
     }
     json_decref(audio);
     json_decref(shortcuts);
+    json_decref(accessibility);
     char *serialized = root ? json_dumps(root, JSON_INDENT(2) | JSON_SORT_KEYS) : NULL;
     json_decref(root);
     if (!serialized)
@@ -501,13 +512,16 @@ bool profiles_set_mode(profile_config *config, app_mode mode)
 }
 
 bool profiles_set_settings(profile_config *config, app_mode mode, language_choice language,
-                           const audio_config *audio, const keymap_overrides *shortcuts)
+                           const audio_config *audio, const keymap_overrides *shortcuts,
+                           const accessibility_config *accessibility)
 {
     if (mode < APP_MODE_NORMAL || mode > APP_MODE_ULTRALIGHT || language < LANGUAGE_SYSTEM ||
         language > LANGUAGE_ENGLISH || !audio_config_valid(audio))
         return error(config, _("Configuração de áudio inválida."));
     if (shortcuts && shortcuts->count > KEYMAP_OVERRIDES)
         return error(config, _("Atalhos inválidos."));
+    if (accessibility && !accessibility_valid(accessibility))
+        return error(config, _("Configuração de acessibilidade inválida."));
     profile_config *copy = candidate(config);
     if (!copy)
         return false;
@@ -516,6 +530,8 @@ bool profiles_set_settings(profile_config *config, app_mode mode, language_choic
     copy->audio = *audio;
     if (shortcuts)
         copy->shortcuts = *shortcuts;
+    if (accessibility)
+        copy->accessibility = *accessibility;
     return commit(config, copy);
 }
 

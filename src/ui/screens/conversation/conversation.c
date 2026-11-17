@@ -132,7 +132,9 @@ static bool apply_account_view(view *ui)
     /* "System" follows the terminal background once it answers; dark until then. */
     bool light = account->theme == USER_THEME_LIGHT ||
                  (account->theme == USER_THEME_SYSTEM && theme_terminal_light() == 1);
-    if (theme_set_palette(light ? THEME_PALETTE_LIGHT : THEME_PALETTE_DARK)) {
+    accessibility_config access = accessibility_get();
+    bool access_changed = theme_set_access(&access);
+    if (theme_set_palette(light ? THEME_PALETTE_LIGHT : THEME_PALETTE_DARK) || access_changed) {
         /* Media blends transparent pixels into the old background. */
         apply_mode(ui);
         clearok(curscr, TRUE);
@@ -976,6 +978,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 app_mode_set(connections->config->mode);
                 language_set(connections->config->language);
                 keymap_apply_overrides(&connections->config->shortcuts);
+                accessibility_set(&connections->config->accessibility);
                 apply_mode(ui);
             }
             scope = DRAW_ALL;

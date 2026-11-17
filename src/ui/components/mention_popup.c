@@ -569,13 +569,13 @@ static WINDOW *command_draw(mention_popup *p, int cy, int cx, int left, int avai
             selected = false;
         }
         wattrset(w, COLOR_PAIR(selected ? THEME_FOCUSED : THEME_PANEL) |
-                        (selected && !has_colors() ? A_REVERSE : 0));
+                        (selected ? theme_focus_attributes() : 0));
         mvwhline(w, top + row, 1, ' ', width - 2);
         wattrset(w, COLOR_PAIR(selected ? THEME_FOCUSED : THEME_PANEL) | A_BOLD |
-                        (selected && !has_colors() ? A_REVERSE : 0));
+                        (selected ? theme_focus_attributes() : 0));
         text_label(w, top + row, 2, column - 3, label);
         wattrset(w, COLOR_PAIR(selected ? THEME_FOCUSED : THEME_PANEL_MUTED) |
-                        (selected && !has_colors() ? A_REVERSE : 0));
+                        (selected ? theme_focus_attributes() : 0));
         text_label(w, top + row, *label ? column : 2, width - (*label ? column : 2) - 2, detail);
     }
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));

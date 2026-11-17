@@ -135,7 +135,7 @@ int main(int argc, char **argv)
     } else if (strcmp(mode, "language") == 0 && argc == 3) {
         language_choice selected;
         ok = language_choice_parse(argv[2], &selected) &&
-             profiles_set_settings(config, config->mode, selected, &config->audio, NULL);
+             profiles_set_settings(config, config->mode, selected, &config->audio, NULL, NULL);
     } else if (strcmp(mode, "member-grouping") == 0 && argc == 3) {
         ok = (!strcmp(argv[2], "role") || !strcmp(argv[2], "status")) &&
              profiles_set_member_grouping(config, !strcmp(argv[2], "status"));
@@ -157,7 +157,15 @@ int main(int argc, char **argv)
                                         strcmp(argv[3], "true") == 0);
     else if (strcmp(mode, "sounds") == 0 && argc == 3)
         ok = profiles_set_sounds(config, strcmp(argv[2], "true") == 0);
-    else if (strcmp(mode, "shortcuts") == 0 && argc == 3) {
+    else if (strcmp(mode, "accessibility") == 0 && argc == 3) {
+        json_error_t error;
+        json_t *object = json_loads(argv[2], 0, &error);
+        accessibility_config chosen;
+        ok = accessibility_decode(&chosen, object) &&
+             profiles_set_settings(config, config->mode, config->language, &config->audio, NULL,
+                                   &chosen);
+        json_decref(object);
+    } else if (strcmp(mode, "shortcuts") == 0 && argc == 3) {
         json_error_t error;
         json_t *object = json_loads(argv[2], 0, &error);
         keymap_overrides shortcuts;
@@ -232,6 +240,8 @@ int main(int argc, char **argv)
                             json_boolean(config->notification_sounds));
     if (result)
         json_object_set_new(result, "shortcuts", keymap_overrides_encode(&config->shortcuts));
+    if (result)
+        json_object_set_new(result, "accessibility", accessibility_encode(&config->accessibility));
     json_decref(items);
     profiles_destroy(config);
     int status = emit(result);

@@ -2216,7 +2216,7 @@ bool text_paste_commit(text_paste *paste, text_buffer *buffer)
 static attr_t unbold_window(WINDOW *window)
 {
     attr_t attributes = getattrs(window);
-    if ((attributes & A_BOLD) && has_colors() && COLORS < 256)
+    if ((attributes & A_BOLD) && theme_colors() && COLORS < 256)
         wattr_off(window, A_BOLD, NULL);
     return attributes;
 }
@@ -2245,8 +2245,9 @@ void text_draw_field(WINDOW *window, const text_buffer *buffer, int *first, int 
         if (c->newline || c->column < *first || c->column + c->width > *first + width)
             continue;
         bool selected = selection && c->start < hi && c->end > lo;
-        attr_t style = selected ? A_BOLD | (has_colors() ? 0 : A_REVERSE) : attributes & ~A_COLOR;
-        short pair = selected ? (has_colors() ? THEME_TEXT_SELECTION : 0) : PAIR_NUMBER(attributes);
+        attr_t style = selected ? A_BOLD | (theme_colors() ? 0 : A_REVERSE) : attributes & ~A_COLOR;
+        short pair =
+            selected ? (theme_colors() ? THEME_TEXT_SELECTION : 0) : PAIR_NUMBER(attributes);
         cchar_t glyph;
         if (setcchar(&glyph, masked ? L"*" : c->glyph, theme_text_attributes(style, pair), pair,
                      NULL) == OK)
@@ -2269,10 +2270,10 @@ void text_draw(WINDOW *window, const text_buffer *buffer, const text_layout *lay
         if ((point->newline && !selected) || point->row < first || point->row >= first + height)
             continue;
         cchar_t glyph;
-        short pair = selected         ? (has_colors() ? THEME_TEXT_SELECTION : 0)
+        short pair = selected         ? (theme_colors() ? THEME_TEXT_SELECTION : 0)
                      : point->mention ? THEME_PANEL_ACCENT
                                       : PAIR_NUMBER(attributes);
-        attr_t style = selected ? A_BOLD | (has_colors() ? 0 : A_REVERSE)
+        attr_t style = selected ? A_BOLD | (theme_colors() ? 0 : A_REVERSE)
                                 : (attributes & ~A_COLOR) | (point->mention ? A_BOLD : 0);
         if (point->icon && buffer->icon_painter) {
             wattrset(window, style | COLOR_PAIR(pair));

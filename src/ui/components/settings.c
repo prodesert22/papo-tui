@@ -28,7 +28,8 @@ static bool has_content(int section)
 {
     return section == SETTINGS_APPEARANCE || section == SETTINGS_PROFILE ||
            section == SETTINGS_NOTIFICATIONS || section == SETTINGS_AUDIO ||
-           section == SETTINGS_SHORTCUTS || section == SETTINGS_ACCOUNT;
+           section == SETTINGS_SHORTCUTS || section == SETTINGS_ACCESSIBILITY ||
+           section == SETTINGS_ACCOUNT;
 }
 /* Password text never outlives the window. */
 static void account_erase(app_settings *s)
@@ -79,6 +80,7 @@ void settings_open(app_settings *s, const profile_config *config, voice_client *
     s->selection = config->mode;
     s->audio = s->original_audio = config->audio;
     s->voice = voice;
+    s->access = config->accessibility;
     keymap_table_from_overrides(&s->keys, &config->shortcuts);
     s->keys_action = s->keys_conflict = KEYMAP_NONE;
     s->user = s->user_base = *history_user_config(profile);
@@ -169,7 +171,7 @@ static void audio_draw(app_settings *s, WINDOW *w, int height, int width)
         }
         bool focused = s->focus == 1 && s->audio_selection == item;
         wattrset(w, COLOR_PAIR(focused ? THEME_FOCUSED : THEME_PANEL) |
-                        (focused && !has_colors() ? A_REVERSE : 0));
+                        (focused ? theme_focus_attributes() : 0));
         text_label(w, row + 5, 2, width - 4, label);
     }
     double rms = voice_testing() ? voice_level(s->voice, false) : -120;
@@ -487,7 +489,7 @@ static void keys_menu_draw(app_settings *s, WINDOW *w, int width, int row_y)
     for (int i = 0; i < KEYS_MENU_ITEMS; ++i) {
         bool focused = s->keys_menu_item == i;
         wattrset(menu, COLOR_PAIR(focused ? THEME_FOCUSED : THEME_PANEL) |
-                           (focused && !has_colors() ? A_REVERSE : 0));
+                           (focused ? theme_focus_attributes() : 0));
         mvwhline(menu, i + 1, 1, ' ', menu_width - 2);
         text_label(menu, i + 1, 2, menu_width - 4, _(keys_menu_labels[i]));
     }
@@ -539,7 +541,7 @@ static void keys_draw(app_settings *s, WINDOW *w, int height, int width)
             continue;
         }
         int base = focused ? THEME_FOCUSED : THEME_PANEL;
-        wattrset(w, COLOR_PAIR(base) | (focused && !has_colors() ? A_REVERSE : 0));
+        wattrset(w, COLOR_PAIR(base) | (focused ? theme_focus_attributes() : 0));
         mvwhline(w, y, 2, ' ', width - 4);
         char keys[256] = "", label[512] = "";
         bool fixed = row->kind == KEYS_FIXED, changed = false;
@@ -878,7 +880,7 @@ static void appearance_draw(app_settings *s, WINDOW *w, int height, int width)
     for (int item = s->appearance_first; item <= last && row < rows; ++item, ++row) {
         bool focused = s->focus == 1 && s->selection == item;
         wattrset(w, COLOR_PAIR(focused ? THEME_FOCUSED : THEME_PANEL) |
-                        (focused && !has_colors() ? A_REVERSE : 0));
+                        (focused ? theme_focus_attributes() : 0));
         appearance_label(s, item, label, sizeof(label));
         text_label(w, 5 + row, 2, width - 4, label);
     }
@@ -958,6 +960,115 @@ static void appearance_click(app_settings *s, int y, int x)
     s->focus = 1;
     appearance_adjust(s, x < getmaxx(s->window) / 2 ? -1 : 1, true);
 }
+/* Acessibilidade: contrast and colors of this device. */
+#define ACCESS_ITEMS 4
+static void access_label(const app_settings *s, int item, char *label, size_t size)
+{
+    static const char *contrasts[] = {N_("Padrão"), N_("Alto"), N_("Sem cores")};
+    static const char *roles[] = {N_("Originais"), N_("Contraste ajustado"), N_("Desativadas")};
+    switch (item) {
+    case 0:
+        snprintf(label, size, _("Contraste: < %s >"), _(contrasts[s->access.contrast]));
+        break;
+    case 1:
+        snprintf(label, size, "[%c] %s", s->access.colorblind ? 'x' : ' ',
+                 _("Cores para daltonismo"));
+        break;
+    case 2:
+        snprintf(label, size, "[%c] %s", s->access.cues ? 'x' : ' ', _("Indicadores além da cor"));
+        break;
+    default:
+        snprintf(label, size, _("Cores dos cargos: < %s >"), _(roles[s->access.roles]));
+        break;
+    }
+}
+static const char *access_description(const app_settings *s)
+{
+    static const char *items[ACCESS_ITEMS] = {
+        N_("Alto usa fundo preto ou branco puro, textos e bordas mais fortes. Sem cores usa só as "
+           "cores do terminal e marca o foco em vídeo reverso; NO_COLOR também desliga as cores."),
+        N_("Erros e o ponto de não lidas ficam laranja; sucesso, presença e quem fala ficam azuis, "
+           "em vez de vermelho e verde."),
+        N_("O item com foco também fica em negrito e sublinhado, para que o foco não dependa só da "
+           "cor."),
+        N_("Ajustado clareia ou escurece a cor de cada cargo até ler bem sobre o fundo; "
+           "desativadas mostra todos os nomes na cor do texto.")};
+    return _(
+        items[s->access_selection >= 0 && s->access_selection < ACCESS_ITEMS ? s->access_selection
+                                                                             : 0]);
+}
+static void access_draw(app_settings *s, WINDOW *w, int height, int width)
+{
+    for (int item = 0; item < ACCESS_ITEMS; ++item) {
+        char label[256];
+        bool focused = s->focus == 1 && s->access_selection == item;
+        wattrset(w, COLOR_PAIR(focused ? THEME_FOCUSED : THEME_PANEL) |
+                        (focused ? theme_focus_attributes() : 0));
+        access_label(s, item, label, sizeof(label));
+        text_label(w, 5 + item, 2, width - 4, label);
+    }
+    wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
+    text_buffer description;
+    text_layout measured;
+    if (height >= 16 && text_decode(&description, access_description(s))) {
+        text_measure_words(&description, width - 6, &measured);
+        text_draw(w, &description, &measured, 0, 3, 6 + ACCESS_ITEMS, 3);
+    }
+    text_label(w, height - 4, 2, width - 4,
+               _("A fonte é a do terminal; a densidade do histórico fica em Aparência."));
+}
+static void access_adjust(app_settings *s, int direction)
+{
+    s->error[0] = 0;
+    switch (s->access_selection) {
+    case 0: {
+        int contrast = (int)s->access.contrast;
+        cycle(&contrast, 3, direction);
+        s->access.contrast = (access_contrast)contrast;
+        break;
+    }
+    case 1:
+        s->access.colorblind = !s->access.colorblind;
+        break;
+    case 2:
+        s->access.cues = !s->access.cues;
+        break;
+    default: {
+        int roles = (int)s->access.roles;
+        cycle(&roles, 3, direction);
+        s->access.roles = (access_roles)roles;
+        break;
+    }
+    }
+}
+static void access_key(app_settings *s, int type, uint32_t key)
+{
+    bool enter =
+        (type == OK && (key == '\r' || key == '\n')) || (type == KEY_CODE_YES && key == KEY_ENTER);
+    if (type == KEY_CODE_YES && key == KEY_UP) {
+        if (!s->access_selection)
+            s->focus = 0;
+        else
+            --s->access_selection;
+    } else if (type == KEY_CODE_YES && key == KEY_DOWN) {
+        if (s->access_selection == ACCESS_ITEMS - 1)
+            s->focus = 2;
+        else
+            ++s->access_selection;
+    } else if (type == KEY_CODE_YES && (key == KEY_LEFT || key == KEY_RIGHT))
+        access_adjust(s, key == KEY_LEFT ? -1 : 1);
+    else if (enter || (type == OK && key == ' '))
+        access_adjust(s, 1);
+}
+static void access_click(app_settings *s, int y, int x)
+{
+    int item = y - 5;
+    if (item < 0 || item >= ACCESS_ITEMS)
+        return;
+    s->access_selection = item;
+    s->focus = 1;
+    access_adjust(s, x < getmaxx(s->window) / 2 ? -1 : 1);
+}
 /* Notificações: the account's switches; this device keeps its own in Ctrl+D. */
 #define NOTIFY_ITEMS 4
 static bool *notify_value(app_settings *s, int item)
@@ -984,7 +1095,7 @@ static void notifications_draw(app_settings *s, WINDOW *w, int height, int width
     for (int i = 0; i < NOTIFY_ITEMS && 7 + i < height - 4; ++i) {
         bool focused = s->focus == 1 && s->notify_selection == i;
         wattrset(w, COLOR_PAIR(focused ? THEME_FOCUSED : THEME_PANEL) |
-                        (focused && !has_colors() ? A_REVERSE : 0));
+                        (focused ? theme_focus_attributes() : 0));
         snprintf(label, sizeof(label), "[%c] %s", *notify_value(s, i) ? 'x' : ' ', _(labels[i]));
         text_label(w, 7 + i, 2, width - 4, label);
     }
@@ -1211,7 +1322,7 @@ static void profile_draw(app_settings *s, WINDOW *w, int height, int width)
             for (int r = 0; refused && r < rows[i]; ++r)
                 input_border_draw(w, y + r, fx, fw, THEME_NOTIFICATION, false, false);
             wattrset(w, COLOR_PAIR(focused ? THEME_FOCUSED : THEME_INPUT) |
-                            (focused && !has_colors() ? A_REVERSE : 0));
+                            (focused ? theme_focus_attributes() : 0));
             for (int r = 0; r < rows[i]; ++r)
                 mvwhline(w, y + r, fx, ' ', fw);
             int cy, cx;
@@ -1459,7 +1570,7 @@ static void account_draw(app_settings *s, WINDOW *w, int height, int width)
         if (refused)
             input_border_draw(w, y, fx, fw, THEME_NOTIFICATION, roomy, roomy);
         wattrset(w, COLOR_PAIR(focused ? THEME_FOCUSED : THEME_INPUT) |
-                        (focused && !has_colors() ? A_REVERSE : 0));
+                        (focused ? theme_focus_attributes() : 0));
         mvwhline(w, y, fx, ' ', fw);
         text_draw_field(w, &s->account[i], &s->account_first[i], y, fx, fw, true);
         int cy, cx;
@@ -1624,9 +1735,8 @@ void settings_draw(app_settings *s)
         account_draw(s, w, height, width);
     } else if (s->section == SETTINGS_SHORTCUTS) {
         keys_draw(s, w, height, width);
-    } else {
-        wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
-        text_label(w, 6, 3, width - 6, _("Em breve. Esta seção ainda não altera configurações."));
+    } else if (s->section == SETTINGS_ACCESSIBILITY) {
+        access_draw(s, w, height, width);
     }
     wattrset(w, COLOR_PAIR(THEME_ERROR));
     if (*s->error)
@@ -1672,7 +1782,7 @@ static void save(app_settings *s, profile_config *config)
     }
     keymap_overrides shortcuts;
     keymap_table_to_overrides(&s->keys, &config->shortcuts, &shortcuts);
-    if (profiles_set_settings(config, s->draft, s->language, &s->audio, &shortcuts)) {
+    if (profiles_set_settings(config, s->draft, s->language, &s->audio, &shortcuts, &s->access)) {
         s->applied = true;
         s->original_audio = s->audio;
         voice_configure(&s->audio);
@@ -1847,6 +1957,8 @@ void settings_key(app_settings *s, profile_config *config, int type, uint32_t ke
             s->section =
                 tab_strip_hit(&s->tabs, SETTINGS_SECTIONS, s->section, x, getmaxx(s->window));
             s->focus = 0;
+        } else if (s->section == SETTINGS_ACCESSIBILITY && y >= 5 && y < 5 + ACCESS_ITEMS) {
+            access_click(s, y, x);
         } else if (s->section == SETTINGS_SHORTCUTS && y >= 5 && y < getmaxy(s->window) - 3) {
             keys_click(s, y, x);
         } else if (s->section == SETTINGS_PROFILE && y >= 5 && y < getmaxy(s->window) - 3) {
@@ -1899,6 +2011,10 @@ void settings_key(app_settings *s, profile_config *config, int type, uint32_t ke
         }
         if (s->section == SETTINGS_SHORTCUTS) {
             keys_key(s, type, key);
+            return;
+        }
+        if (s->section == SETTINGS_ACCESSIBILITY) {
+            access_key(s, type, key);
             return;
         }
         if (s->section == SETTINGS_AUDIO) {

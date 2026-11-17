@@ -2,6 +2,7 @@
 #include "platform/terminal.h"
 
 #include <glib.h>
+#include <math.h>
 #include <ncurses.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -81,8 +82,58 @@ static const int dark_basic[THEME_COLOR_COUNT] = {
 static const int light_basic[THEME_COLOR_COUNT] = {
     COLOR_WHITE, COLOR_WHITE, COLOR_WHITE, COLOR_BLACK, COLOR_BLACK, COLOR_BLUE, COLOR_RED,
     COLOR_GREEN, COLOR_BLACK, COLOR_WHITE, COLOR_WHITE, COLOR_BLACK, COLOR_CYAN, COLOR_RED};
+/* Contraste: Alto. Pure canvases, text and secondary text above 7:1, strong
+ * separators and a focus fill that stands apart from the canvas. */
+static const unsigned char dark_high_rgb[THEME_COLOR_COUNT][3] = {
+    {0x00, 0x00, 0x00}, {0x00, 0x00, 0x00}, {0x3a, 0x3a, 0x3a}, {0xff, 0xff, 0xff},
+    {0xd8, 0xd8, 0xd8}, {0xff, 0xc8, 0x57}, {0xff, 0x8a, 0x80}, {0x8d, 0xf0, 0x8d},
+    {0xb0, 0xb0, 0xb0}, {0x4a, 0x33, 0x00}, {0x00, 0x00, 0x00}, {0xff, 0xff, 0xff},
+    {0x6b, 0x48, 0x00}, {0xff, 0x55, 0x55}};
+static const unsigned char light_high_rgb[THEME_COLOR_COUNT][3] = {
+    {0xff, 0xff, 0xff}, {0xff, 0xff, 0xff}, {0xcc, 0xcc, 0xcc}, {0x00, 0x00, 0x00},
+    {0x26, 0x26, 0x26}, {0x6b, 0x33, 0x00}, {0x9a, 0x00, 0x00}, {0x00, 0x4d, 0x1a},
+    {0x4d, 0x4d, 0x4d}, {0xf2, 0xd7, 0xa6}, {0xff, 0xff, 0xff}, {0x00, 0x00, 0x00},
+    {0xe8, 0xb4, 0x5a}, {0xa8, 0x00, 0x00}};
+static const int dark_high_indexed[THEME_COLOR_COUNT] = {16,  16,  237, 231, 253, 221, 210,
+                                                         120, 249, 58,  16,  231, 94,  203};
+static const int light_high_indexed[THEME_COLOR_COUNT] = {231, 231, 252, 16,  235, 94,  124,
+                                                          22,  239, 223, 231, 16,  179, 124};
+/* Color-blind safe states (Okabe-Ito): success and speaking turn blue, errors
+ * and the unread dot vermilion, which stay apart without red-green vision. */
+static const unsigned char colorblind_dark[3][3] = {
+    {0xff, 0x8c, 0x42}, {0x56, 0xb4, 0xe9}, {0xff, 0x7a, 0x33}};
+static const unsigned char colorblind_light[3][3] = {
+    {0xa8, 0x40, 0x00}, {0x00, 0x5f, 0xa3}, {0xb0, 0x44, 0x00}};
 static theme_palette palette = THEME_PALETTE_DARK;
-static const unsigned char (*rgb)[3] = dark_rgb;
+static accessibility_config accessible;
+/* The tables in effect: palette, contrast and color-blind choices combined. */
+static unsigned char effective_rgb[THEME_COLOR_COUNT][3];
+static int effective_indexed[THEME_COLOR_COUNT], effective_basic[THEME_COLOR_COUNT];
+static const unsigned char (*rgb)[3] = (const unsigned char (*)[3])effective_rgb;
+static bool tables_ready;
+
+static void build_tables(void)
+{
+    bool light = palette == THEME_PALETTE_LIGHT, high = accessible.contrast == ACCESS_CONTRAST_HIGH;
+    memcpy(effective_rgb,
+           high ? (light ? light_high_rgb : dark_high_rgb) : (light ? light_rgb : dark_rgb),
+           sizeof(effective_rgb));
+    memcpy(effective_indexed,
+           high ? (light ? light_high_indexed : dark_high_indexed)
+                : (light ? light_indexed : dark_indexed),
+           sizeof(effective_indexed));
+    memcpy(effective_basic, light ? light_basic : dark_basic, sizeof(effective_basic));
+    if (accessible.colorblind) {
+        const unsigned char (*safe)[3] = light ? colorblind_light : colorblind_dark;
+        memcpy(effective_rgb[RED], safe[0], 3);
+        memcpy(effective_rgb[GREEN], safe[1], 3);
+        memcpy(effective_rgb[NOTIFICATION_RED], safe[2], 3);
+        effective_indexed[RED] = effective_indexed[NOTIFICATION_RED] = light ? 130 : 209;
+        effective_indexed[GREEN] = light ? 25 : 74;
+        effective_basic[GREEN] = light ? COLOR_BLUE : COLOR_CYAN;
+    }
+    tables_ready = true;
+}
 /* The theme given to theme_init, so a palette change can redefine colors and
  * still restore the terminal's own values at exit. */
 static ui_theme *active;
@@ -141,6 +192,8 @@ static bool shown_ready;
 
 static uint32_t packed(int index)
 {
+    if (!tables_ready)
+        build_tables();
     return (uint32_t)rgb[index][0] << 16 | (uint32_t)rgb[index][1] << 8 | rgb[index][2];
 }
 /* The xterm 256-color palette, which terminals keep for indices 16-255. */
@@ -175,7 +228,7 @@ static int rgb_pair_count;
 static int pair_with_foreground(int fg, int fallback);
 int theme_rgb_pair(unsigned rgb, int fallback)
 {
-    if (!(rgb & 0x1000000) || !has_colors() || COLORS < 8 || COLOR_PAIRS < 64)
+    if (!(rgb & 0x1000000) || !theme_colors() || COLORS < 8 || COLOR_PAIRS < 64)
         return fallback;
     /* Plain white is the default name color: the palette's bright label. */
     if (rgb == 0x1ffffff)
@@ -234,10 +287,77 @@ attr_t theme_text_attributes(attr_t attributes, int pair)
         return attributes;
     return attributes & ~A_BOLD;
 }
+/* WCAG relative luminance of an sRGB color, in 0..1. */
+static double luminance(uint32_t color)
+{
+    double total = 0;
+    static const double weights[] = {0.2126, 0.7152, 0.0722};
+    for (int i = 0; i < 3; ++i) {
+        double c = ((color >> (16 - 8 * i)) & 255) / 255.0;
+        c = c <= 0.03928 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4);
+        total += weights[i] * c;
+    }
+    return total;
+}
+static double contrast(uint32_t a, uint32_t b)
+{
+    double x = luminance(a), y = luminance(b);
+    return (x > y ? x + 0.05 : y + 0.05) / (x > y ? y + 0.05 : x + 0.05);
+}
+/* Moves the color toward white on dark backgrounds, or black on light ones,
+ * until it reads at 4.5:1. */
+static unsigned readable(unsigned color, uint32_t background)
+{
+    uint32_t value = color & 0xffffff, target = luminance(background) < 0.18 ? 0xffffff : 0;
+    for (int step = 0; step <= 20 && contrast(value, background) < 4.5; ++step) {
+        uint32_t mixed = 0;
+        for (int shift = 0; shift <= 16; shift += 8) {
+            int from = (int)((color >> shift) & 255), to = (int)((target >> shift) & 255);
+            mixed |= (uint32_t)(from + (to - from) * step / 20) << shift;
+        }
+        value = mixed;
+    }
+    return 0x1000000 | value;
+}
 int theme_member_pair(unsigned rgb, int background)
 {
     int white = theme_rgb_pair(0x1ffffff, background);
+    if (accessible.roles == ACCESS_ROLES_OFF)
+        return white;
+    if (accessible.roles == ACCESS_ROLES_ADJUSTED && (rgb & 0x1000000) && rgb != 0x1ffffff)
+        rgb = readable(rgb, theme_background_rgb(background));
     return theme_rgb_pair(rgb, white);
+}
+int theme_status_pair(unsigned rgb, int background)
+{
+    if (accessible.colorblind && (rgb & 0x1000000)) {
+        int r = (int)(rgb >> 16) & 255, g = (int)(rgb >> 8) & 255, b = (int)rgb & 255;
+        bool light = palette == THEME_PALETTE_LIGHT;
+        const unsigned char *safe = NULL;
+        if (g > r + 32 && g > b)
+            safe = (light ? colorblind_light : colorblind_dark)[1];
+        else if (r > g + 64 && r > b + 64)
+            safe = (light ? colorblind_light : colorblind_dark)[0];
+        if (safe)
+            rgb = 0x1000000 | (unsigned)safe[0] << 16 | (unsigned)safe[1] << 8 | safe[2];
+    }
+    int white = theme_rgb_pair(0x1ffffff, background);
+    return theme_rgb_pair(rgb, white);
+}
+
+/* Contraste: Sem cores. Every pair takes the terminal's own colors, so text
+ * and backgrounds are the user's; components show focus with reverse. */
+static void apply_without_colors(void)
+{
+    static bool defaults;
+    if (!defaults)
+        defaults = use_default_colors() == OK;
+    for (int pair = THEME_NORMAL; pair < THEME_PAIR_END; ++pair)
+        if (defaults)
+            init_extended_pair(pair, -1, -1);
+        else
+            init_extended_pair(pair, COLOR_WHITE, COLOR_BLACK);
+    wbkgd(stdscr, COLOR_PAIR(THEME_NORMAL));
 }
 
 /* The xterm-256 index closest to color, grays included. */
@@ -288,20 +408,25 @@ static void apply(ui_theme *theme)
 {
     rgb_pair_count = 0;
     shown_ready = false;
+    if (!tables_ready)
+        build_tables();
     if (!has_colors())
         return;
+    if (accessible.contrast == ACCESS_CONTRAST_NONE) {
+        apply_without_colors();
+        return;
+    }
     const char *term = getenv("TERM"), *kitty_window = getenv("KITTY_WINDOW_ID");
     bool kitty = (term && !strcmp(term, "xterm-kitty")) || (kitty_window && *kitty_window);
-    bool light = palette == THEME_PALETTE_LIGHT;
     /* Fixed xterm palette approximations. Never redefine the first 16 colors. */
     int colors[THEME_COLOR_COUNT];
-    memcpy(colors, light ? light_indexed : dark_indexed, sizeof(colors));
+    memcpy(colors, effective_indexed, sizeof(colors));
     if (COLORS >= 0x1000000) {
         /* Direct-color terminfo: color numbers are packed RGB values. */
         for (int i = 0; i < THEME_COLOR_COUNT; ++i)
             colors[i] = (int)rgb[i][0] * 0x10000 + (int)rgb[i][1] * 0x100 + rgb[i][2];
     } else if (COLORS < 256) {
-        memcpy(colors, light ? light_basic : dark_basic, sizeof(colors));
+        memcpy(colors, effective_basic, sizeof(colors));
     } else if (can_change_color() && !kitty && !getenv("KONSOLE_VERSION")) {
         /* Konsole may advertise ccc while ignoring terminfo's rgb: syntax.
          * Kitty resets overridden indices on configuration reload, turning
@@ -344,8 +469,12 @@ static void apply(ui_theme *theme)
     }
     shown_ready = true;
     /* Do not redefine palette entries: Kitty/Konsole can reload them at runtime. */
-    static const int ramp[] = {22,  28,  34,  40,  46,  46,  82,  82,  118, 118, 154,
-                               154, 154, 226, 226, 220, 220, 220, 203, 196, 196};
+    static const int green_ramp[] = {22,  28,  34,  40,  46,  46,  82,  82,  118, 118, 154,
+                                     154, 154, 226, 226, 220, 220, 220, 203, 196, 196};
+    /* Color-blind safe levels: blue, then yellow, then orange. */
+    static const int blue_ramp[] = {17, 18, 19,  20,  21,  21,  27,  27,  33,  33, 39,
+                                    39, 39, 226, 226, 220, 220, 220, 208, 202, 202};
+    const int *ramp = accessible.colorblind ? blue_ramp : green_ramp;
     static const int levels[] = {0, 95, 135, 175, 215, 255};
     for (int i = 0; i <= 20 && THEME_VOLUME_FIRST + i < COLOR_PAIRS; ++i) {
         int color = ramp[i];
@@ -353,13 +482,15 @@ static void apply(ui_theme *theme)
             int cube = color - 16;
             color = levels[cube / 36] * 0x10000 + levels[cube / 6 % 6] * 0x100 + levels[cube % 6];
         } else if (COLORS < 256)
-            color = i <= 12 ? COLOR_GREEN : i <= 17 ? COLOR_YELLOW : COLOR_RED;
+            color = i <= 12   ? (accessible.colorblind ? COLOR_CYAN : COLOR_GREEN)
+                    : i <= 17 ? COLOR_YELLOW
+                              : COLOR_RED;
         init_extended_pair(THEME_VOLUME_FIRST + i, color, colors[SURFACE]);
     }
     const int member_backgrounds[] = {THEME_PANEL, THEME_FOCUSED, THEME_PANEL_ACTIVE,
                                       THEME_HISTORY_AREA, THEME_PROFILE_FOCUS};
     for (size_t i = 0; i < sizeof(member_backgrounds) / sizeof(member_backgrounds[0]); ++i)
-        theme_member_pair(0x1ffffff, member_backgrounds[i]);
+        theme_rgb_pair(0x1ffffff, member_backgrounds[i]);
     wbkgd(stdscr, COLOR_PAIR(THEME_NORMAL));
 }
 
@@ -381,10 +512,31 @@ bool theme_set_palette(theme_palette next)
     if (next == palette)
         return false;
     palette = next;
-    rgb = palette == THEME_PALETTE_LIGHT ? light_rgb : dark_rgb;
+    build_tables();
     if (active)
         apply(active);
     return true;
+}
+
+bool theme_set_access(const accessibility_config *config)
+{
+    if (!accessibility_valid(config) || !memcmp(config, &accessible, sizeof(accessible)))
+        return false;
+    accessible = *config;
+    build_tables();
+    if (active)
+        apply(active);
+    return true;
+}
+
+bool theme_colors(void)
+{
+    return has_colors() && accessible.contrast != ACCESS_CONTRAST_NONE;
+}
+
+attr_t theme_focus_attributes(void)
+{
+    return (theme_colors() ? 0 : A_REVERSE) | (accessible.cues ? A_BOLD | A_UNDERLINE : 0);
 }
 
 theme_palette theme_get_palette(void)

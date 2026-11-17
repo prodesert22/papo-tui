@@ -80,8 +80,8 @@ msgid ""
 "  CURL_CA_BUNDLE=ARQ    Arquivo PEM com a autoridade certificadora de um\n"
 "                        servidor com certificado próprio. A verificação\n"
 "                        TLS continua ativa.\n"
-"  NO_COLOR=1            Mostra esta ajuda sem cores. Fora de um terminal\n"
-"                        ela já sai sem cores.\n"
+"  NO_COLOR=1            Mostra a interface e esta ajuda sem cores. Fora de\n"
+"                        um terminal a ajuda já sai sem cores.\n"
 msgstr ""
 "\n"
 "Environment:\n"
@@ -90,8 +90,8 @@ msgstr ""
 "  CURL_CA_BUNDLE=FILE   PEM file with the certificate authority of a server\n"
 "                        that uses its own certificate. TLS verification\n"
 "                        stays enabled.\n"
-"  NO_COLOR=1            Prints this help without colors. Outside a terminal\n"
-"                        it is already plain.\n"
+"  NO_COLOR=1            Shows the interface and this help without colors.\n"
+"                        Outside a terminal the help is already plain.\n"
 
 #: src/main.c
 msgid ""
@@ -461,6 +461,10 @@ msgstr "The real-time send queue exceeded its limit."
 msgid "A fila de eventos de tempo real excedeu o limite."
 msgstr "The real-time event queue exceeded its limit."
 
+#: src/ui/components/settings.c
+msgid "A fonte é a do terminal; a densidade do histórico fica em Aparência."
+msgstr "The font is the terminal's; history density is in Aparência."
+
 #: src/net/auth/responses.c
 msgid "A identidade da sessão não pôde ser confirmada. Entre novamente."
 msgstr "The session's identity could not be confirmed. Sign in again."
@@ -769,6 +773,10 @@ msgstr "Contextual help"
 msgid "Ajuda global"
 msgstr "Global help"
 
+#: src/ui/components/settings.c
+msgid "Ajustado clareia ou escurece a cor de cada cargo até ler bem sobre o fundo; desativadas mostra todos os nomes na cor do texto."
+msgstr "Adjusted lightens or darkens each role's color until it reads well on the background; off shows every name in the text color."
+
 #: src/config/key_binding.c
 msgid "Alt+"
 msgstr "Alt+"
@@ -856,6 +864,14 @@ msgstr "Move focus between audio, microphone and Settings"
 #: src/ui/components/help.c
 msgid "Alternar áudio e microfone nos botões ao lado de Configurações"
 msgstr "Toggle audio and microphone with the buttons beside Settings"
+
+#: src/ui/components/settings.c
+msgid "Alto"
+msgstr "High"
+
+#: src/ui/components/settings.c
+msgid "Alto usa fundo preto ou branco puro, textos e bordas mais fortes. Sem cores usa só as cores do terminal e marca o foco em vídeo reverso; NO_COLOR também desliga as cores."
+msgstr "High uses a pure black or white background and stronger text and borders. No colors uses only the terminal colors and shows focus in reverse video; NO_COLOR also turns colors off."
 
 #: src/ui/screens/profiles.c
 msgid "Amplie o terminal para 44 colunas e 14 linhas."
@@ -1770,6 +1786,10 @@ msgid "Configuração bloqueada; corrija o arquivo e use {k1:app.refresh}. Nenhu
 msgstr "Configuration locked; fix the file and use {k1:app.refresh}. No profile was changed."
 
 #: src/config/profiles.c
+msgid "Configuração de acessibilidade inválida."
+msgstr "Invalid accessibility settings."
+
+#: src/config/profiles.c
 msgid "Configuração de áudio inválida."
 msgstr "Invalid audio configuration."
 
@@ -1917,6 +1937,14 @@ msgstr "Account: Change password"
 msgid "Conteúdo do clipboard excede o limite local."
 msgstr "The clipboard content exceeds the local limit."
 
+#: src/ui/components/settings.c
+msgid "Contraste ajustado"
+msgstr "Adjusted contrast"
+
+#: src/ui/components/settings.c
+msgid "Contraste: < %s >"
+msgstr "Contrast: < %s >"
+
 #: src/ui/screens/message_browser.c
 msgid "Contém link"
 msgstr "Contains a link"
@@ -1992,6 +2020,14 @@ msgstr "Color as #RRGGBB. Empty sends no color."
 #: src/ui/components/settings.c
 msgid "Cores da tela. Sistema usa o tema claro quando o fundo do terminal é claro. Salvo na sua conta deste servidor."
 msgstr "Screen colors. System uses the light theme when the terminal's background is light. Saved in your account on this server."
+
+#: src/ui/components/settings.c
+msgid "Cores dos cargos: < %s >"
+msgstr "Role colors: < %s >"
+
+#: src/ui/components/settings.c
+msgid "Cores para daltonismo"
+msgstr "Color-blind safe colors"
 
 #: src/ui/components/server_settings/overview.c src/ui/components/server_settings/webhooks.c src/ui/media/media.c
 msgid "Criado em"
@@ -2152,6 +2188,10 @@ msgstr "Density: < %s >"
 #: src/ui/screens/conversation/interactions.c
 msgid "Desafixar mensagem"
 msgstr "Unpin message"
+
+#: src/ui/components/settings.c
+msgid "Desativadas"
+msgstr "Off"
 
 #: src/ui/components/settings.c
 msgid "Desativado"
@@ -2332,10 +2372,6 @@ msgstr "Edit not saved; editing the message again recovers the text."
 #: src/ui/screens/conversation/interactions.c
 msgid "Edição não salva; o texto voltou ao editor."
 msgstr "Edit not saved; the text went back to the editor."
-
-#: src/ui/components/settings.c
-msgid "Em breve. Esta seção ainda não altera configurações."
-msgstr "Coming soon. This section does not change settings yet."
 
 #: src/model/conversation/server_admin.c
 msgid "Emoji adicionado"
@@ -2592,6 +2628,10 @@ msgstr "Media error"
 #: src/model/conversation/events.c
 msgid "Erro remoto"
 msgstr "Remote error"
+
+#: src/ui/components/settings.c
+msgid "Erros e o ponto de não lidas ficam laranja; sucesso, presença e quem fala ficam azuis, em vez de vermelho e verde."
+msgstr "Errors and the unread dot turn orange; success, presence and who is speaking turn blue, instead of red and green."
 
 #: src/config/key_binding.c src/config/keymap.c src/ui/components/help.c
 msgid "Esc"
@@ -3332,6 +3372,10 @@ msgstr "Image: "
 #: src/config/app_mode.c
 msgid "Imagens, GIFs animados e vídeos em caracteres pela Chafa."
 msgstr "Images, animated GIFs and videos as characters through Chafa."
+
+#: src/ui/components/settings.c
+msgid "Indicadores além da cor"
+msgstr "Cues beyond color"
 
 #: src/ui/components/settings.c
 msgid "Indisponível"
@@ -4781,6 +4825,10 @@ msgstr "The real-time event exceeded the limit or arrived incomplete."
 msgid "O evento de tempo real não chegou completo no prazo."
 msgstr "The real-time event did not arrive complete in time."
 
+#: src/ui/components/settings.c
+msgid "O item com foco também fica em negrito e sublinhado, para que o foco não dependa só da cor."
+msgstr "The focused item is also bold and underlined, so focus never depends on color alone."
+
 #: src/ui/screens/login.c
 msgid "O link é de %.48s, não de %.48s. Confira a URL ou confirme em Redefinir."
 msgstr "The link is for %.48s, not %.48s. Check the URL or confirm with Reset."
@@ -4989,9 +5037,17 @@ msgstr "Options"
 msgid "Ordem: %s"
 msgstr "Order: %s"
 
+#: src/ui/components/settings.c
+msgid "Originais"
+msgstr "Original"
+
 #: src/app/session_slot.c
 msgid "Outra janela usa a sessão salva. Esta janela exige login e não salvará sessão."
 msgstr "Another window uses the saved session. This window needs a login and will not save its session."
+
+#: src/ui/components/settings.c
+msgid "Padrão"
+msgstr "Default"
 
 #: src/ui/components/settings.c
 msgid "Padrão do sistema"
@@ -5860,6 +5916,10 @@ msgstr "No role"
 #: src/ui/components/settings.c
 msgid "Sem conexão com o servidor; tente novamente."
 msgstr "No connection to the server; try again."
+
+#: src/ui/components/settings.c
+msgid "Sem cores"
+msgstr "No colors"
 
 #: src/platform/linux/file_transfer.c
 msgid "Sem desktop local."

@@ -13,7 +13,7 @@ static bool graphical_badge(void)
 void conversation_notification_dot(view *ui, WINDOW *window, int row, int column, int pair)
 {
     attr_t previous = getattrs(window);
-    wattrset(window, (has_colors() ? COLOR_PAIR(pair) : 0) | A_BOLD);
+    wattrset(window, (theme_colors() ? COLOR_PAIR(pair) : 0) | A_BOLD);
     mvwaddstr(window, row, column, NOTIFICATION_DOT);
     if (graphical_badge())
         icons_notification(ui->icons, window, row, column, 1, 0, pair);
@@ -31,7 +31,7 @@ static int notification_badge(view *ui, WINDOW *window, int row, int column, siz
         snprintf(label, sizeof(label), "(%zu)", count);
     attr_t previous = window ? getattrs(window) : 0;
     if (window)
-        wattrset(window, (has_colors() ? COLOR_PAIR(pair) : 0) | A_BOLD);
+        wattrset(window, (theme_colors() ? COLOR_PAIR(pair) : 0) | A_BOLD);
     int width = text_label(window, row, column, 24, label);
     if (graphical_badge()) {
         int columns = count ? MAX(2, width) : width; /* The dot stays one cell. */
@@ -55,7 +55,7 @@ static int server_badge(view *ui, WINDOW *window, int row, int column, size_t co
     snprintf(label, sizeof(label), "%zu", count);
     attr_t previous = window ? getattrs(window) : 0;
     if (window)
-        wattrset(window, (has_colors() ? COLOR_PAIR(pair) : 0) | A_BOLD);
+        wattrset(window, (theme_colors() ? COLOR_PAIR(pair) : 0) | A_BOLD);
     int width = text_label(window, row, column, 24, label);
     if (window)
         wattrset(window, previous);
@@ -548,7 +548,7 @@ static void composer_button(view *ui, int focus, const char *label, click_range 
     attr_t attributes = COLOR_PAIR(ui->focus == focus ? THEME_PROFILE_BUTTON_FOCUS
                                                       : THEME_PROFILE_BUTTON_SELECTED) |
                         A_BOLD;
-    if (!has_colors() && ui->focus == focus)
+    if (!theme_colors() && ui->focus == focus)
         attributes |= A_REVERSE;
     wattrset(ui->body, attributes);
     for (int y = row - ui->editor_padding; y <= row + ui->editor_padding; ++y)
@@ -698,7 +698,7 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                         microphone_width = text_label(NULL, 0, 0, 32, microphone);
                     }
                     int background = focused ? THEME_FOCUS_AREA : THEME_PANEL;
-                    wattrset(ui->list, COLOR_PAIR(theme_member_pair(
+                    wattrset(ui->list, COLOR_PAIR(theme_status_pair(
                                            speaking ? 0x100ff00 : 0x1ffffff, background)) |
                                            (speaking ? A_BOLD : 0));
                     char name[512];
@@ -755,7 +755,7 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
                 /* Bold marks the selected DM, whose badge already shows new
                  * messages; a channel with new messages turns bold. */
                 if (ui->list_dms && selected)
-                    attributes |= A_BOLD | (has_colors() ? 0 : A_REVERSE);
+                    attributes |= A_BOLD | theme_focus_attributes();
                 else if (!ui->list_dms && (unread || mentions))
                     attributes |= A_BOLD;
                 wattrset(ui->list, attributes);

@@ -9,7 +9,8 @@ static const int fade_percent[] = {20, 44, 68, 92};
 
 bool tab_blocks(void)
 {
-    return has_colors() && COLORS >= 256;
+    /* Without colors, as with Contraste: Sem cores, the brackets mark the tab. */
+    return theme_colors() && COLORS >= 256;
 }
 int tab_pair(tab_kind kind, bool cursor, bool strip_focused)
 {
@@ -108,7 +109,7 @@ void tab_strip_draw(tab_strip *strip, WINDOW *w, int row, int width, const char 
                                    ? (focused ? THEME_PROFILE_BUTTON_FOCUS : THEME_PANEL_ACCENT)
                                    : THEME_PANEL) |
                         (i == active ? A_BOLD : 0) |
-                        (i == active && !has_colors() && focused ? A_REVERSE : 0));
+                        (i == active && focused ? theme_focus_attributes() : 0));
         text_label(w, row, x, label_width, label);
         x += label_width;
     }

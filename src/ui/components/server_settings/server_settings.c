@@ -468,8 +468,7 @@ static void draw_list(server_settings *s, WINDOW *w, GArray *rows)
         int pair = selected      ? (s->focus == 1 ? THEME_FOCUSED : THEME_PANEL_ACTIVE)
                    : row->action ? THEME_PANEL_ACCENT
                                  : THEME_PANEL;
-        wattrset(w,
-                 COLOR_PAIR(pair) | (selected && s->focus == 1 && !has_colors() ? A_REVERSE : 0));
+        wattrset(w, COLOR_PAIR(pair) | (selected && s->focus == 1 ? theme_focus_attributes() : 0));
         mvwhline(w, y, x, ' ', width);
         int used = 1;
         if (row->rgb) {
@@ -561,7 +560,7 @@ static void draw_field(server_settings *s, WINDOW *w, const admin_field *f, int 
             input_border_draw(w, y, fx, fw, THEME_NOTIFICATION, true, true);
         }
         wattrset(w, COLOR_PAIR(focused ? THEME_FOCUSED : THEME_INPUT) |
-                        (focused && !has_colors() ? A_REVERSE : 0));
+                        (focused ? theme_focus_attributes() : 0));
         mvwhline(w, y, fx, ' ', fw);
         if (f->text)
             text_draw_field(w, f->text, f->first, y, fx, fw, f->kind == FIELD_SECRET);
@@ -586,7 +585,7 @@ static void draw_field(server_settings *s, WINDOW *w, const admin_field *f, int 
     }
     case FIELD_CHECK:
         wattrset(w, COLOR_PAIR(focused ? THEME_FOCUSED : THEME_PANEL) |
-                        (focused && !has_colors() ? A_REVERSE : 0));
+                        (focused ? theme_focus_attributes() : 0));
         snprintf(line, sizeof(line), "[%s] %s", f->checked ? "x" : " ", f->label);
         mvwhline(w, y, x, ' ', width);
         text_label(w, y, x, width, line);

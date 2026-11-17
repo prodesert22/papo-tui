@@ -23,7 +23,8 @@ variables the application reads and where it keeps its files, in the system
 language or the one set with `PAPO_LANGUAGE`; `papo-tui --version` prints the
 version. In a terminal the help uses colors for its headings, options and
 links; it is plain text when redirected to a file or another program, when
-`NO_COLOR` is set or when `TERM` is `dumb`. Keyboard controls are listed in
+`NO_COLOR` is set or when `TERM` is `dumb`. `NO_COLOR` also starts the
+interface without colors (see [Accessibility](#accessibility)). Keyboard controls are listed in
 the in-app help and in [Keyboard and mouse](#keyboard-and-mouse).
 
 When the system credential store is available, the application restores the
@@ -723,6 +724,38 @@ commands. Ctrl+H is reserved for Backspace; Ctrl+I and Ctrl+M remain Tab and
 Enter. Ctrl+N still inserts a new line in the conversation editor. Terminals
 that do not report Ctrl+/ can reach global help through contextual help's
 **Todos os atalhos** button.
+
+## Accessibility
+
+Press **Ctrl+S** and go to **Acessibilidade** (Accessibility). Its choices
+belong to this device: they apply to every server and are saved in
+`config.json`, never on a server.
+
+- **Contraste** (Contrast): **Padrão** (Default), **Alto** (High) or **Sem
+  cores** (No colors). High keeps the account's dark or light theme with a pure
+  black or white background, brighter text and secondary text, stronger
+  separators and a focus fill that stands apart from the background. No colors
+  draws the interface in the terminal's own foreground and background and shows
+  the focused item in reverse video; images, avatars and videos keep their
+  colors. When the `NO_COLOR` environment variable is set and not empty, the
+  application starts without colors for that run, whatever this choice says.
+- **Cores para daltonismo** (Color-blind safe colors): errors and the unread
+  dot turn orange, and success, online presence, the speaking member and the
+  microphone level bars turn blue, instead of red and green.
+- **Indicadores além da cor** (Cues beyond color): the focused item of lists,
+  menus, tabs and buttons is also bold and underlined, so focus never depends on
+  color alone.
+- **Cores dos cargos** (Role colors): **Originais** (Original),
+  **Contraste ajustado** (Adjusted contrast), which lightens or darkens each
+  role color until it reads at 4.5:1 on the background behind it, or
+  **Desativadas** (Off), which shows every name in the text color. Presence and
+  speaking colors keep their meaning in every option.
+
+Use ↑/↓ to select an item and ←/→, Space or Enter to change it, or click it;
+the selected item explains itself below the list. **Salvar e aplicar** (Save
+and apply) applies the choices at once. The font size is the terminal's: change
+it in the terminal's own settings, usually with Ctrl and + or −. History
+density stays in [Theme and history display](#theme-and-history-display).
 
 ## Customize shortcuts
 
@@ -1498,9 +1531,9 @@ selector to browse the other sections. **Perfil**, **Notificações** and
 [Edit your own profile](#edit-your-own-profile),
 [Account notifications](#account-notifications) and
 [Voice calls and audio settings](#voice-calls-and-audio-settings));
-**Atalhos** changes the keys of commands (see
-[Customize shortcuts](#customize-shortcuts)); **Acessibilidade** is a
-placeholder for future settings and currently changes nothing.
+**Acessibilidade** changes contrast and colors (see
+[Accessibility](#accessibility)) and **Atalhos** the keys of commands (see
+[Customize shortcuts](#customize-shortcuts)).
 
 | Mode | Behavior |
 | --- | --- |

@@ -81,6 +81,9 @@ typedef struct {
     bool keys_list, keys_menu, keys_capture, keys_add, keys_reset_confirm;
     keymap_action keys_action, keys_conflict;
     key_binding keys_pending;
+    /* Acessibilidade: the draft of this device's choices and the item selected. */
+    accessibility_config access;
+    int access_selection;
 } app_settings;
 void settings_open(app_settings *settings, const profile_config *config, voice_client *voice,
                    history *profile, auth_client *auth, icon_view *icons, const char *server);

@@ -38,6 +38,7 @@ add_library(
     src/config/audio.c
     src/config/key_binding.c
     src/config/keymap.c
+    src/config/accessibility.c
     src/config/profiles.c
     src/platform/${PAPO_PLATFORM}/profiles_storage.c
     src/config/read_state.c

@@ -134,7 +134,7 @@ static bool layout(profile_ui *ui)
 static chtype attributes(int color)
 {
     chtype result = COLOR_PAIR(color);
-    if (!has_colors()) {
+    if (!theme_colors()) {
         if (color == THEME_PROFILE_FOCUS || color == THEME_PROFILE_BUTTON_FOCUS)
             result |= A_REVERSE;
         else if (color == THEME_PROFILE_SELECTED || color == THEME_PROFILE_BUTTON_SELECTED)

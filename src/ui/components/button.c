@@ -11,8 +11,8 @@ int button_draw(WINDOW *window, int row, int column, int width, const char *labe
                                            : THEME_PROFILE_TEXT;
     attr_t previous = getattrs(window);
     attr_t attributes = COLOR_PAIR(color) | A_BOLD;
-    if (!has_colors() && state == BUTTON_FOCUSED)
-        attributes |= A_REVERSE;
+    if (state == BUTTON_FOCUSED)
+        attributes |= theme_focus_attributes();
     wattrset(window, attributes);
     int painted = text_label(window, row, column, width, label);
     wattrset(window, previous);

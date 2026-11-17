@@ -101,8 +101,8 @@ static void print_help(void)
                       "  CURL_CA_BUNDLE=ARQ    Arquivo PEM com a autoridade certificadora de um\n"
                       "                        servidor com certificado próprio. A verificação\n"
                       "                        TLS continua ativa.\n"
-                      "  NO_COLOR=1            Mostra esta ajuda sem cores. Fora de um terminal\n"
-                      "                        ela já sai sem cores.\n"));
+                      "  NO_COLOR=1            Mostra a interface e esta ajuda sem cores. Fora de\n"
+                      "                        um terminal a ajuda já sai sem cores.\n"));
 #ifdef _WIN32
     g_string_append(help,
                     _("\nArquivos:\n"

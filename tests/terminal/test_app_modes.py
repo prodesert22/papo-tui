@@ -448,9 +448,9 @@ class AppModes(unittest.TestCase):
                         json.loads(self.config.read_text(encoding="utf-8"))["app_mode"] == "normal"
                     ),
                 )
-                # Placeholder (Acessibilidade): Up from Cancel returns to the
-                # section selector, and Left goes back to Aparência.
-                t.send("\x13" + "\x1bOC" * 4 + "\n\x1bOC\x1bOA" + "\x1bOD" * 3)
+                # Acessibilidade: Up from its first item returns to the section
+                # selector, and Left goes back to Aparência.
+                t.send("\x13" + "\x1bOC" * 4 + "\n\x1bOA" + "\x1bOD" * 3)
                 self.helper.wait(t, "Ultralight")
                 t.send("\x1b")
             finally:
@@ -1226,14 +1226,14 @@ class AppModes(unittest.TestCase):
                 t.click(row, t.screen.display[row].index("⚙"))
                 self.helper.wait(t, "Configurações")
                 t.send("\x1bOC" * 4)
-                self.helper.wait(t, "Em breve")
+                self.helper.wait(t, "Contraste: < Padrão >")
                 t.resize(22, 44)
                 self.helper.wait(t, "Configurações")
                 t.send("\x1b")
                 self.assertEqual(json.loads(self.config.read_text(encoding="utf-8"))["version"], 1)
                 t.resize(24, 80)
                 self.choose(t, "ultralight")
-                self.assertEqual(json.loads(self.config.read_text(encoding="utf-8"))["version"], 10)
+                self.assertEqual(json.loads(self.config.read_text(encoding="utf-8"))["version"], 11)
             finally:
                 self.assertTrue(t.close())
 

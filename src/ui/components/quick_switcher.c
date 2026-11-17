@@ -271,7 +271,7 @@ WINDOW *quick_switcher_draw(quick_switcher *s)
         bool selected = index == s->selected;
         int y = LIST_ROW + row;
         int pair = selected ? THEME_FOCUSED : THEME_PANEL;
-        wattrset(w, COLOR_PAIR(pair) | (selected && !has_colors() ? A_REVERSE : 0));
+        wattrset(w, COLOR_PAIR(pair) | (selected ? theme_focus_attributes() : 0));
         mvwhline(w, y, 1, ' ', width - 2);
         int right = width - 2;
         right -= badge(w, y, right, entry);
@@ -287,7 +287,7 @@ WINDOW *quick_switcher_draw(quick_switcher *s)
                                 : "# ",
                  entry->name, entry->muted ? _(" (silenciado)") : "");
         wattrset(w, COLOR_PAIR(pair) | (entry->unread || entry->mentions ? A_BOLD : 0) |
-                        (selected && !has_colors() ? A_REVERSE : 0));
+                        (selected ? theme_focus_attributes() : 0));
         text_label(w, y, 2, right - 2, label);
     }
     if (!s->visible_count) {
