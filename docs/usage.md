@@ -838,10 +838,12 @@ known unread mentions of you or `@everyone`. In graphics terminals, the
 badge is centered vertically in the row, with a white count inside the red
 circle; larger counts use a wider rounded badge. The number is centered inside
 the badge. Text channel indicators use circled digits or parentheses.
-Server badges sit inside the tab delimiters, separated from the name by one
-space, for example `[Server ❶]`. With text rendering (Chafa, Light or Ultralight),
-the badge is a plain red mention counter, such as `[Server 1]`; zero indicates
-unread activity without a confirmed mention.
+Server badges sit inside the tab, separated from the name by one
+space, for example `Server ❶`. With text rendering (Chafa, Light or Ultralight),
+the badge is a plain red mention counter, such as `Server 1`; zero indicates
+unread activity without a confirmed mention. On terminals with fewer than 256
+colors, the badge stays inside the brackets of the selected server, as in
+`[Server 1]`.
 Counts cover loaded previews, which can be truncated, rather than a server-wide
 total. Opening a notification clears its mention badge after confirmation.
 The server dot also covers notifications with missing mention metadata.
