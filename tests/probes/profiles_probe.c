@@ -135,7 +135,7 @@ int main(int argc, char **argv)
     } else if (strcmp(mode, "language") == 0 && argc == 3) {
         language_choice selected;
         ok = language_choice_parse(argv[2], &selected) &&
-             profiles_set_settings(config, config->mode, selected, &config->audio);
+             profiles_set_settings(config, config->mode, selected, &config->audio, NULL);
     } else if (strcmp(mode, "member-grouping") == 0 && argc == 3) {
         ok = (!strcmp(argv[2], "role") || !strcmp(argv[2], "status")) &&
              profiles_set_member_grouping(config, !strcmp(argv[2], "status"));
@@ -164,8 +164,7 @@ int main(int argc, char **argv)
         ok = keymap_overrides_decode(&shortcuts, object) &&
              profiles_set_shortcuts(config, &shortcuts);
         json_decref(object);
-    }
-    else if (strcmp(mode, "rate") == 0 && argc == 4) {
+    } else if (strcmp(mode, "rate") == 0 && argc == 4) {
         json_error_t error;
         json_t *rate = json_loads(argv[2], JSON_DECODE_ANY, &error);
         json_t *burst = json_loads(argv[3], JSON_DECODE_ANY, &error);

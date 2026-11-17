@@ -873,6 +873,14 @@ class MediaTerminal(support.MediaTerminal):
                             if title == "Configurações":
                                 t.send("\x1bOC" * 3)
                                 self.wait(t, "Entrada:")
+                                # Atalhos and its command menu stay inside the
+                                # same frame, like every other section.
+                                t.send("\x1bOC" * 2 + "\x1bOB" + "canal ou DM" + "\x1bOB\r")
+                                self.wait(t, "Definir tecla")
+                                if protocol == "kitty":
+                                    self.assertTrue(background_parts())
+                                t.send("\x1b")
+                                self.wait(t, "Enter altera a função selecionada")
                             if title == "Notificações":
                                 # Search, keyboard filter/date controls and clearing
                                 # the query must preserve the same exposed pixels.

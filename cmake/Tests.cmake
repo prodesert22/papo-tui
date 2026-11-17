@@ -231,6 +231,16 @@ if(BUILD_TESTING)
         servers)
     papo_add_test(
         NAME
+        shortcuts-terminal
+        COMMAND
+        ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_shortcuts_terminal.py
+        $<TARGET_FILE:papo-tui>
+        LABELS
+        input
+        settings)
+    papo_add_test(
+        NAME
         typing-terminal
         COMMAND
         ${Python3_EXECUTABLE}

@@ -148,6 +148,34 @@ void keymap_table_to_overrides(const keymap_table *table, const keymap_overrides
 bool keymap_overrides_decode(keymap_overrides *overrides, const json_t *object);
 json_t *keymap_overrides_encode(const keymap_overrides *overrides);
 
+/* Areas of the Atalhos list, in display order. */
+#define KEYMAP_GROUPS 7
+/* Translated name of the area a command is listed under; commands of one area
+ * are consecutive and share the same pointer. */
+const char *keymap_action_group(keymap_action action);
+/* Keys that are not commands, listed for reference: navigation, confirmation
+ * and text editing. Both strings are translated. */
+int keymap_fixed_count(void);
+void keymap_fixed(int index, const char **keys, const char **function);
+
+typedef enum {
+    KEYMAP_CONFLICT_NONE,
+    KEYMAP_CONFLICT_ACTION,
+    KEYMAP_CONFLICT_FIXED
+} keymap_conflict_kind;
+typedef struct {
+    keymap_conflict_kind kind;
+    keymap_action action; /* The other command, for KEYMAP_CONFLICT_ACTION. */
+    const char *label;    /* Translated function that already uses the key. */
+} keymap_conflict;
+/* Another use of the key where the command also listens: another command of
+ * the table, or an editing key of those areas (Ctrl+U, Ctrl+W, Ctrl+N). */
+keymap_conflict keymap_find_conflict(const keymap_table *table, keymap_action action,
+                                     const key_binding *key);
+/* Whether the command listens in the conversation, where push-to-talk takes
+ * its key during calls. */
+bool keymap_conversation_action(keymap_action action);
+
 /* Whether a key is acceptable for that command; NULL when it is, otherwise the
  * translated reason. */
 const char *keymap_binding_error(keymap_action action, const key_binding *binding);
@@ -157,6 +185,8 @@ void keymap_binding_normalize(key_binding *binding);
 
 /* Keys in effect. Starts with the defaults; safe to call from any thread. */
 void keymap_apply(const keymap_table *table);
+/* Applies the defaults with the stored overrides on top. */
+void keymap_apply_overrides(const keymap_overrides *overrides);
 void keymap_current(keymap_table *table);
 /* Changes whenever keymap_apply changes the keys in effect. */
 uint64_t keymap_revision(void);

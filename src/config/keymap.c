@@ -255,6 +255,11 @@ unsigned long keymap_action_scopes(keymap_action action)
     return valid_action(action) ? actions[action].scopes : 0;
 }
 
+static unsigned fold(unsigned code)
+{
+    return code >= 'A' && code <= 'Z' ? code - 'A' + 'a' : code;
+}
+
 /* US layout pairs, as the terminal protocols report a base key with Shift. */
 static const char shift_pairs[] = "1!2@3#4$5%6^7&8*9(0)-_=+[{]}\\|;:'\",<.>/?`~";
 
@@ -345,8 +350,7 @@ const char *keymap_binding_error(keymap_action action, const key_binding *bindin
         return _("Esta tecla é fixa: navega, confirma ou edita texto.");
     if (key.kind == KEY_BINDING_CHAR && !(key.modifiers & (KEY_BINDING_CTRL | KEY_BINDING_ALT))) {
         if (actions[action].flags & KEYMAP_TEXT_SAFE)
-            return _("Esta função também atua em campos de texto: use Ctrl, Alt ou uma tecla de "
-                     "função.");
+            return _("Esta função age em campos de texto: use Ctrl, Alt ou F1–F12.");
         if (key.code == ' ')
             return _("Espaço sozinho é fixo: marca, pausa ou ativa botões.");
     }
@@ -413,6 +417,163 @@ void keymap_table_to_overrides(const keymap_table *table, const keymap_overrides
         if (keymap_action_find(previous->items[i].id) == KEYMAP_NONE)
             result.items[result.count++] = previous->items[i];
     *overrides = result;
+}
+
+const char *keymap_action_group(keymap_action action)
+{
+    static const struct {
+        keymap_action last;
+        const char *name;
+    } groups[KEYMAP_GROUPS] = {
+        {KEYMAP_REFRESH, N_("Aplicativo")},
+        {KEYMAP_CLOSE_DM, N_("Conversas")},
+        {KEYMAP_REACTORS, N_("Listas e seleção")},
+        {KEYMAP_COPY_LINK, N_("Membros")},
+        {KEYMAP_STOP, N_("Mídia e player")},
+        {KEYMAP_MARK_ALL, N_("Arquivos")},
+        {KEYMAP_PROFILE_VERIFY, N_("Login e perfis")},
+    };
+    for (int i = 0; i < KEYMAP_GROUPS; ++i)
+        if (action <= groups[i].last)
+            return _(groups[i].name);
+    return "";
+}
+
+static const struct {
+    const char *keys, *function;
+} fixed_keys[] = {
+    {N_("↑↓←→ / PgUp / PgDn / Home / End"), N_("Navegar, rolar e escolher")},
+    {N_("Enter"), N_("Confirmar, enviar ou abrir")},
+    {N_("Esc"), N_("Fechar, cancelar ou voltar")},
+    {N_("Tab / Shift+Tab"), N_("Percorrer as áreas e os botões")},
+    {N_("Alt+← / → / ↑ / ↓"), N_("Ir à área ou ao botão naquela direção")},
+    {N_("Espaço"), N_("Marcar, pausar ou ativar o item selecionado")},
+    {N_("Delete"), N_("Remover o servidor ou o anexo selecionado")},
+    {N_("Shift+Enter / Ctrl+N"), N_("Inserir uma quebra de linha sem enviar")},
+    {N_("Ctrl+W / Ctrl+Backspace"), N_("Apagar a palavra anterior")},
+    {N_("Ctrl+A"), N_("Selecionar todo o texto da caixa")},
+    {N_("Ctrl+C"), N_("Limpar o campo; fora de um campo, sair")},
+    {N_("Ctrl+U"), N_("Limpar o campo de texto")},
+    {N_("Ctrl+V"), N_("Colar arquivos ou imagens do clipboard, quando disponível")},
+    {N_("Ctrl+Shift+C"), N_("Copiar a seleção; sem seleção, copiar o campo")},
+    {N_("Ctrl+← / Ctrl+→"), N_("Mover o cursor por palavras")},
+    {N_("Shift+setas"), N_("Selecionar texto por caracteres ou linhas")},
+};
+
+int keymap_fixed_count(void)
+{
+    return (int)(sizeof(fixed_keys) / sizeof(fixed_keys[0]));
+}
+
+void keymap_fixed(int index, const char **keys, const char **function)
+{
+    if (index < 0 || index >= keymap_fixed_count()) {
+        *keys = *function = "";
+        return;
+    }
+    *keys = _(fixed_keys[index].keys);
+    *function = _(fixed_keys[index].function);
+}
+
+/* Each area's parent: it hears the commands of every area above it. */
+static const keymap_scope parents[KEYMAP_SCOPES] = {
+    [KEYMAP_SCOPE_APP] = KEYMAP_SCOPE_APP,
+    [KEYMAP_SCOPE_CONVERSATION] = KEYMAP_SCOPE_APP,
+    [KEYMAP_SCOPE_EDITOR] = KEYMAP_SCOPE_CONVERSATION,
+    [KEYMAP_SCOPE_HISTORY] = KEYMAP_SCOPE_CONVERSATION,
+    [KEYMAP_SCOPE_SELECTION] = KEYMAP_SCOPE_HISTORY,
+    [KEYMAP_SCOPE_CHANNELS] = KEYMAP_SCOPE_CONVERSATION,
+    [KEYMAP_SCOPE_DM_LIST] = KEYMAP_SCOPE_CHANNELS,
+    [KEYMAP_SCOPE_SERVER_TABS] = KEYMAP_SCOPE_CONVERSATION,
+    [KEYMAP_SCOPE_MEMBERS] = KEYMAP_SCOPE_CONVERSATION,
+    [KEYMAP_SCOPE_MENU] = KEYMAP_SCOPE_APP,
+    [KEYMAP_SCOPE_REACTIONS] = KEYMAP_SCOPE_APP,
+    [KEYMAP_SCOPE_EMOJIS] = KEYMAP_SCOPE_APP,
+    [KEYMAP_SCOPE_MENTIONS] = KEYMAP_SCOPE_EDITOR,
+    [KEYMAP_SCOPE_NOTIFICATIONS] = KEYMAP_SCOPE_APP,
+    [KEYMAP_SCOPE_SEARCH] = KEYMAP_SCOPE_APP,
+    [KEYMAP_SCOPE_MEDIA] = KEYMAP_SCOPE_APP,
+    [KEYMAP_SCOPE_PLAYER] = KEYMAP_SCOPE_MEDIA,
+    [KEYMAP_SCOPE_AUDIO_PLAYER] = KEYMAP_SCOPE_PLAYER,
+    [KEYMAP_SCOPE_FILES] = KEYMAP_SCOPE_APP,
+    [KEYMAP_SCOPE_SWITCHER] = KEYMAP_SCOPE_APP,
+    [KEYMAP_SCOPE_HELP] = KEYMAP_SCOPE_APP,
+    [KEYMAP_SCOPE_SETTINGS] = KEYMAP_SCOPE_APP,
+    [KEYMAP_SCOPE_LOGIN] = KEYMAP_SCOPE_APP,
+    [KEYMAP_SCOPE_ACCOUNT] = KEYMAP_SCOPE_LOGIN,
+    [KEYMAP_SCOPE_PROFILES] = KEYMAP_SCOPE_APP,
+};
+
+/* The areas where a command listening in `scopes` acts: those areas and every
+ * area below them. */
+static unsigned long active_scopes(unsigned long scopes)
+{
+    unsigned long active = 0;
+    for (int scope = 0; scope < KEYMAP_SCOPES; ++scope)
+        for (int at = scope;; at = parents[at]) {
+            if (scopes & (1UL << at)) {
+                active |= 1UL << scope;
+                break;
+            }
+            if (at == KEYMAP_SCOPE_APP)
+                break;
+        }
+    return active;
+}
+
+/* Editing keys that only belong to some areas, so commands elsewhere may use
+ * them. */
+#define FIELDS                                                                                     \
+    (SCOPE(LOGIN) | SCOPE(PROFILES) | SCOPE(HELP) | SCOPE(SWITCHER) | SCOPE(EMOJIS) |              \
+     SCOPE(NOTIFICATIONS) | SCOPE(SEARCH) | SCOPE(SETTINGS))
+static const struct {
+    key_binding key;
+    unsigned long scopes;
+    const char *label;
+} scoped_keys[] = {
+    {CTRL('u'), FIELDS, N_("Limpar o campo de texto")},
+    {CTRL('w'), FIELDS | SCOPE(EDITOR) | SCOPE(MEMBERS), N_("Apagar a palavra anterior")},
+    {CTRL('n'), SCOPE(CONVERSATION), N_("Inserir uma quebra de linha sem enviar")},
+};
+
+keymap_conflict keymap_find_conflict(const keymap_table *table, keymap_action action,
+                                     const key_binding *key)
+{
+    keymap_conflict found = {KEYMAP_CONFLICT_NONE, KEYMAP_NONE, NULL};
+    if (!table || !valid_action(action) || !key)
+        return found;
+    key_binding wanted = *key;
+    keymap_binding_normalize(&wanted);
+    unsigned long active = active_scopes(actions[action].scopes);
+    for (size_t i = 0; i < sizeof(scoped_keys) / sizeof(scoped_keys[0]); ++i)
+        if (key_binding_equal(&scoped_keys[i].key, &wanted) &&
+            (active & active_scopes(scoped_keys[i].scopes))) {
+            found.kind = KEYMAP_CONFLICT_FIXED;
+            found.label = _(scoped_keys[i].label);
+            return found;
+        }
+    for (int other = 0; other < KEYMAP_ACTIONS; ++other) {
+        if (other == action || !(active & active_scopes(actions[other].scopes)))
+            continue;
+        for (unsigned i = 0; i < table->count[other]; ++i)
+            if (key_binding_equal(&table->keys[other][i], &wanted) ||
+                ((actions[other].flags & KEYMAP_CASELESS) && wanted.kind == KEY_BINDING_CHAR &&
+                 !wanted.modifiers && !table->keys[other][i].modifiers &&
+                 table->keys[other][i].kind == KEY_BINDING_CHAR &&
+                 fold(table->keys[other][i].code) == fold(wanted.code))) {
+                found.kind = KEYMAP_CONFLICT_ACTION;
+                found.action = (keymap_action)other;
+                found.label = keymap_action_label(found.action);
+                return found;
+            }
+    }
+    return found;
+}
+
+bool keymap_conversation_action(keymap_action action)
+{
+    return valid_action(action) &&
+           (active_scopes(actions[action].scopes) & active_scopes(SCOPE(CONVERSATION)));
 }
 
 static bool identifier(const char *id)
@@ -513,6 +674,13 @@ void keymap_apply(const keymap_table *table)
     g_mutex_unlock(&lock);
 }
 
+void keymap_apply_overrides(const keymap_overrides *overrides)
+{
+    keymap_table table;
+    keymap_table_from_overrides(&table, overrides);
+    keymap_apply(&table);
+}
+
 void keymap_current(keymap_table *table)
 {
     g_mutex_lock(&lock);
@@ -536,11 +704,6 @@ unsigned keymap_keys(keymap_action action, key_binding keys[KEYMAP_BINDINGS])
     memcpy(keys, current.keys[action], sizeof(current.keys[action]));
     g_mutex_unlock(&lock);
     return count;
-}
-
-static unsigned fold(unsigned code)
-{
-    return code >= 'A' && code <= 'Z' ? code - 'A' + 'a' : code;
 }
 
 bool keymap_matches(keymap_action action, const key_binding *key)

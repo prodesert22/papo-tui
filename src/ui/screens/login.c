@@ -1707,9 +1707,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
     }
     app_mode_set(config->mode);
     language_set(config->language);
-    keymap_table keys;
-    keymap_table_from_overrides(&keys, &config->shortcuts);
-    keymap_apply(&keys);
+    keymap_apply_overrides(&config->shortcuts);
     connections->sessions = session_store_create(config, !open_profiles);
     connections->config = config;
     interrupted = 0;

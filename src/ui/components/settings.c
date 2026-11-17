@@ -28,7 +28,7 @@ static bool has_content(int section)
 {
     return section == SETTINGS_APPEARANCE || section == SETTINGS_PROFILE ||
            section == SETTINGS_NOTIFICATIONS || section == SETTINGS_AUDIO ||
-           section == SETTINGS_ACCOUNT;
+           section == SETTINGS_SHORTCUTS || section == SETTINGS_ACCOUNT;
 }
 /* Password text never outlives the window. */
 static void account_erase(app_settings *s)
@@ -44,9 +44,9 @@ static void account_erase(app_settings *s)
 }
 void settings_close(app_settings *s)
 {
-    if (s->ptt_capture) {
+    if (s->ptt_capture || s->keys_capture) {
         text_capture_cancel();
-        s->ptt_capture = false;
+        s->ptt_capture = s->keys_capture = false;
     }
     if (s->open) {
         voice_test(s->voice, false);
@@ -79,6 +79,8 @@ void settings_open(app_settings *s, const profile_config *config, voice_client *
     s->selection = config->mode;
     s->audio = s->original_audio = config->audio;
     s->voice = voice;
+    keymap_table_from_overrides(&s->keys, &config->shortcuts);
+    s->keys_action = s->keys_conflict = KEYMAP_NONE;
     s->user = s->user_base = *history_user_config(profile);
     s->user_revision = history_user_settings_revision(profile);
     tab_strip_reset(&s->tabs);
@@ -207,6 +209,508 @@ static void audio_draw(app_settings *s, WINDOW *w, int height, int width)
                          : _("Tecla sem eventos neste terminal: use o botão Segure para falar.")
                    : _("O microfone e a saída podem ser silenciados ao lado de ⚙."));
 }
+/* Atalhos: every command grouped by area, push-to-talk and the fixed keys,
+ * filtered by the search; Enter on a command opens its menu. */
+typedef enum { KEYS_HEADER, KEYS_ACTION, KEYS_PTT, KEYS_FIXED, KEYS_RESET } keys_row_kind;
+typedef struct {
+    keys_row_kind kind;
+    int index; /* Action, fixed key, or the header's first action. */
+    const char *title;
+} keys_row;
+#define KEYS_ROWS 128
+enum { KEYS_MENU_SET, KEYS_MENU_ADD, KEYS_MENU_REMOVE, KEYS_MENU_DEFAULT, KEYS_MENU_ITEMS };
+static const char *const keys_menu_labels[KEYS_MENU_ITEMS] = {
+    N_("Definir tecla"), N_("Adicionar outra tecla"), N_("Remover as teclas"),
+    N_("Restaurar o padrão")};
+
+static void keys_text(const app_settings *s, keymap_action action, char *output, size_t size)
+{
+    output[0] = 0;
+    size_t used = 0;
+    if (!s->keys.count[action]) {
+        snprintf(output, size, "%s", _("sem tecla"));
+        return;
+    }
+    for (unsigned i = 0; i < s->keys.count[action]; ++i) {
+        char label[64];
+        if (!key_binding_label(&s->keys.keys[action][i], label, sizeof(label)))
+            continue;
+        int written = snprintf(output + used, size - used, "%s%s", used ? " / " : "", label);
+        if (written < 0 || (size_t)written >= size - used)
+            return;
+        used += (size_t)written;
+    }
+}
+
+static bool keys_match(const char *needle, const char *a, const char *b, const char *c)
+{
+    if (!needle || !*needle)
+        return true;
+    char text[1024];
+    snprintf(text, sizeof(text), "%s %s %s", a ? a : "", b ? b : "", c ? c : "");
+    char *fold = g_utf8_casefold(text, -1);
+    bool found = fold && strstr(fold, needle);
+    g_free(fold);
+    return found;
+}
+
+/* Rows matching the search, with a header above each group that has any. */
+static int keys_rows(const app_settings *s, keys_row *rows)
+{
+    char query[TEXT_UTF8_BYTES];
+    if (!text_encode(&s->keys_search, query))
+        query[0] = 0;
+    char *needle = g_utf8_casefold(query, -1);
+    int count = 0;
+    const char *group = NULL;
+    for (int i = 0; i < KEYMAP_ACTIONS; ++i) {
+        keymap_action action = (keymap_action)i;
+        char keys[256];
+        keys_text(s, action, keys, sizeof(keys));
+        const char *area = keymap_action_group(action);
+        if (!keys_match(needle, keymap_action_label(action), keys, area))
+            continue;
+        if (area != group) {
+            rows[count++] = (keys_row){KEYS_HEADER, i, area};
+            group = area;
+        }
+        rows[count++] = (keys_row){KEYS_ACTION, i, NULL};
+    }
+    if (voice_available()) {
+        char key[64] = "";
+        key_binding_label(&s->audio.ptt, key, sizeof(key));
+        if (keys_match(needle, _("Pressionar para falar"), key, _("Áudio"))) {
+            rows[count++] = (keys_row){KEYS_HEADER, -1, _("Áudio")};
+            rows[count++] = (keys_row){KEYS_PTT, -1, NULL};
+        }
+    }
+    bool fixed_header = false;
+    for (int i = 0; i < keymap_fixed_count(); ++i) {
+        const char *keys, *function;
+        keymap_fixed(i, &keys, &function);
+        if (!keys_match(needle, function, keys, _("Teclas fixas")))
+            continue;
+        if (!fixed_header) {
+            rows[count++] = (keys_row){KEYS_HEADER, -1, _("Teclas fixas")};
+            fixed_header = true;
+        }
+        rows[count++] = (keys_row){KEYS_FIXED, i, NULL};
+    }
+    if (!needle || !*needle)
+        rows[count++] = (keys_row){KEYS_RESET, -1, NULL};
+    g_free(needle);
+    return count;
+}
+
+static bool keys_selectable(const keys_row *row)
+{
+    return row->kind != KEYS_HEADER;
+}
+
+/* Keeps the selection on a row that can be chosen and inside the list. */
+static void keys_clamp(app_settings *s, const keys_row *rows, int count)
+{
+    if (s->keys_selection >= count)
+        s->keys_selection = count - 1;
+    if (s->keys_selection < 0)
+        s->keys_selection = 0;
+    while (s->keys_selection < count - 1 && !keys_selectable(&rows[s->keys_selection]))
+        ++s->keys_selection;
+}
+
+static void keys_move(app_settings *s, int step)
+{
+    keys_row rows[KEYS_ROWS];
+    int count = keys_rows(s, rows);
+    if (!count)
+        return;
+    int at = s->keys_selection + step;
+    while (at >= 0 && at < count && !keys_selectable(&rows[at]))
+        at += step > 0 ? 1 : -1;
+    if (at < 0 || at >= count) {
+        if (step < 0)
+            s->keys_list = false;
+        return;
+    }
+    s->keys_selection = at;
+}
+
+static void keys_capture_begin(app_settings *s, bool add)
+{
+    if (!text_capture_begin()) {
+        snprintf(s->error, sizeof(s->error), _("Não foi possível capturar a tecla."));
+        return;
+    }
+    s->keys_capture = true;
+    s->keys_add = add;
+    s->error[0] = 0;
+}
+
+static void keys_store(app_settings *s, keymap_action action, const key_binding *key)
+{
+    unsigned *count = &s->keys.count[action];
+    if (!s->keys_add)
+        *count = 0;
+    for (unsigned i = 0; i < *count; ++i)
+        if (key_binding_equal(&s->keys.keys[action][i], key))
+            return;
+    if (*count < KEYMAP_BINDINGS)
+        s->keys.keys[action][(*count)++] = *key;
+}
+
+/* Takes a key for the selected command: refused keys explain why, a key of
+ * another command waits for confirmation. */
+static void keys_captured(app_settings *s, key_binding key)
+{
+    keymap_action action = s->keys_action;
+    keymap_binding_normalize(&key);
+    const char *reason = keymap_binding_error(action, &key);
+    if (reason) {
+        keys_capture_begin(s, s->keys_add);
+        snprintf(s->error, sizeof(s->error), "%s", reason);
+        return;
+    }
+    keymap_conflict conflict = keymap_find_conflict(&s->keys, action, &key);
+    char label[64] = "";
+    key_binding_label(&key, label, sizeof(label));
+    if (conflict.kind == KEYMAP_CONFLICT_FIXED) {
+        keys_capture_begin(s, s->keys_add);
+        snprintf(s->error, sizeof(s->error), _("%s é fixa nesta área: %s."), label, conflict.label);
+        return;
+    }
+    if (conflict.kind == KEYMAP_CONFLICT_ACTION) {
+        s->keys_pending = key;
+        s->keys_conflict = conflict.action;
+        return;
+    }
+    keys_store(s, action, &key);
+    if (voice_available() && s->audio.push_to_talk && key_binding_equal(&s->audio.ptt, &key) &&
+        keymap_conversation_action(action))
+        snprintf(s->error, sizeof(s->error),
+                 _("Durante chamadas, %s transmite a voz em vez de \"%s\"."), label,
+                 keymap_action_label(action));
+}
+
+/* Moves the pending key from the command that had it to the selected one. */
+static void keys_replace(app_settings *s)
+{
+    keymap_action other = s->keys_conflict;
+    s->keys_conflict = KEYMAP_NONE;
+    unsigned kept = 0;
+    for (unsigned i = 0; i < s->keys.count[other]; ++i)
+        if (!key_binding_equal(&s->keys.keys[other][i], &s->keys_pending))
+            s->keys.keys[other][kept++] = s->keys.keys[other][i];
+    if (!kept && (keymap_action_flags(other) & KEYMAP_REQUIRED)) {
+        snprintf(s->error, sizeof(s->error), _("%s precisa de pelo menos uma tecla."),
+                 keymap_action_label(other));
+        return;
+    }
+    s->keys.count[other] = kept;
+    keys_store(s, s->keys_action, &s->keys_pending);
+}
+
+static void keys_menu_activate(app_settings *s)
+{
+    keymap_action action = s->keys_action;
+    s->keys_menu = false;
+    switch (s->keys_menu_item) {
+    case KEYS_MENU_SET:
+        keys_capture_begin(s, false);
+        break;
+    case KEYS_MENU_ADD:
+        if (s->keys.count[action] >= KEYMAP_BINDINGS)
+            snprintf(s->error, sizeof(s->error), _("Esta função já tem %d teclas."),
+                     KEYMAP_BINDINGS);
+        else
+            keys_capture_begin(s, true);
+        break;
+    case KEYS_MENU_REMOVE:
+        if (keymap_action_flags(action) & KEYMAP_REQUIRED)
+            snprintf(s->error, sizeof(s->error), _("%s precisa de pelo menos uma tecla."),
+                     keymap_action_label(action));
+        else
+            s->keys.count[action] = 0;
+        break;
+    default: {
+        keymap_table defaults;
+        keymap_table_defaults(&defaults);
+        s->keys.count[action] = defaults.count[action];
+        memcpy(s->keys.keys[action], defaults.keys[action], sizeof(defaults.keys[action]));
+        break;
+    }
+    }
+}
+
+static void keys_activate(app_settings *s)
+{
+    keys_row rows[KEYS_ROWS];
+    int count = keys_rows(s, rows);
+    if (s->keys_selection < 0 || s->keys_selection >= count)
+        return;
+    const keys_row *row = &rows[s->keys_selection];
+    s->error[0] = 0;
+    if (row->kind == KEYS_ACTION) {
+        s->keys_action = (keymap_action)row->index;
+        s->keys_menu = true;
+        s->keys_menu_item = KEYS_MENU_SET;
+    } else if (row->kind == KEYS_PTT)
+        begin_capture(s);
+    else if (row->kind == KEYS_FIXED)
+        snprintf(s->error, sizeof(s->error), _("Teclas fixas não podem ser alteradas."));
+    else if (row->kind == KEYS_RESET)
+        s->keys_reset_confirm = true;
+}
+
+static int keys_list_rows(int height)
+{
+    int rows = height - 9;
+    return rows < 1 ? 1 : rows;
+}
+
+static void keys_menu_draw(app_settings *s, WINDOW *w, int width, int row_y)
+{
+    int menu_width = 30, menu_height = KEYS_MENU_ITEMS + 2;
+    int x = width - menu_width - 3, y = row_y + 1;
+    if (y + menu_height > getmaxy(w) - 3)
+        y = row_y - menu_height;
+    if (y < 5)
+        y = 5;
+    s->keys_menu_y = y;
+    s->keys_menu_x = x;
+    WINDOW *menu = derwin(w, menu_height, menu_width, y, x);
+    if (!menu)
+        return;
+    wbkgd(menu, COLOR_PAIR(THEME_PANEL));
+    werase(menu);
+    wattrset(menu, COLOR_PAIR(THEME_BORDER));
+    box(menu, 0, 0);
+    for (int i = 0; i < KEYS_MENU_ITEMS; ++i) {
+        bool focused = s->keys_menu_item == i;
+        wattrset(menu, COLOR_PAIR(focused ? THEME_FOCUSED : THEME_PANEL) |
+                           (focused && !has_colors() ? A_REVERSE : 0));
+        mvwhline(menu, i + 1, 1, ' ', menu_width - 2);
+        text_label(menu, i + 1, 2, menu_width - 4, _(keys_menu_labels[i]));
+    }
+    delwin(menu);
+}
+
+static void keys_draw(app_settings *s, WINDOW *w, int height, int width)
+{
+    int pair = s->focus == 1 && !s->keys_list ? THEME_FOCUSED : THEME_INPUT;
+    wattrset(w, COLOR_PAIR(THEME_PANEL));
+    text_label(w, 5, 2, 8, _("Buscar:"));
+    wattrset(w, COLOR_PAIR(pair));
+    mvwhline(w, 5, 10, ' ', width - 12);
+    text_draw_field(w, &s->keys_search, &s->keys_search_first, 5, 10, width - 12, false);
+    int cursor = getcurx(w);
+    if (!s->keys_search.length) {
+        wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
+        text_label(w, 5, 10, width - 12, _("função, tecla ou área"));
+    }
+    if (s->focus == 1 && !s->keys_list && !s->keys_menu && !s->keys_capture)
+        mvwchgat(w, 5, cursor, 1, A_REVERSE, pair, NULL);
+    keys_row rows[KEYS_ROWS];
+    int count = keys_rows(s, rows), visible = keys_list_rows(height);
+    keys_clamp(s, rows, count);
+    if (s->keys_selection < s->keys_first)
+        s->keys_first = s->keys_selection;
+    /* Keep the group title visible above the first command of a group. */
+    if (s->keys_first == s->keys_selection && s->keys_first > 0 &&
+        rows[s->keys_first - 1].kind == KEYS_HEADER)
+        --s->keys_first;
+    if (s->keys_selection >= s->keys_first + visible)
+        s->keys_first = s->keys_selection - visible + 1;
+    if (s->keys_first > count - visible)
+        s->keys_first = count - visible > 0 ? count - visible : 0;
+    int keys_width = width >= 60 ? 26 : 18, menu_row = 6;
+    if (!count) {
+        wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
+        text_label(w, 6, 2, width - 4, _("Nenhum atalho encontrado."));
+    }
+    for (int line = 0; line < visible && s->keys_first + line < count; ++line) {
+        int index = s->keys_first + line, y = 6 + line;
+        const keys_row *row = &rows[index];
+        bool focused = s->focus == 1 && s->keys_list && index == s->keys_selection;
+        if (focused)
+            menu_row = y;
+        if (row->kind == KEYS_HEADER) {
+            wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
+            text_label(w, y, 2, width - 4, row->title);
+            continue;
+        }
+        int base = focused ? THEME_FOCUSED : THEME_PANEL;
+        wattrset(w, COLOR_PAIR(base) | (focused && !has_colors() ? A_REVERSE : 0));
+        mvwhline(w, y, 2, ' ', width - 4);
+        char keys[256] = "", label[512] = "";
+        bool fixed = row->kind == KEYS_FIXED, changed = false;
+        if (row->kind == KEYS_ACTION) {
+            keymap_action action = (keymap_action)row->index;
+            keys_text(s, action, keys, sizeof(keys));
+            keymap_table defaults;
+            keymap_table_defaults(&defaults);
+            changed = defaults.count[action] != s->keys.count[action] ||
+                      memcmp(defaults.keys[action], s->keys.keys[action],
+                             sizeof(key_binding) * s->keys.count[action]);
+            snprintf(label, sizeof(label), "%s", keymap_action_label(action));
+        } else if (row->kind == KEYS_PTT) {
+            if (s->ptt_capture)
+                snprintf(keys, sizeof(keys), "%s", _("pressione uma combinação"));
+            else
+                key_binding_label(&s->audio.ptt, keys, sizeof(keys));
+            snprintf(label, sizeof(label), "%s", _("Pressionar para falar"));
+        } else if (fixed) {
+            const char *fixed_keys, *function;
+            keymap_fixed(row->index, &fixed_keys, &function);
+            snprintf(keys, sizeof(keys), "%s", fixed_keys);
+            snprintf(label, sizeof(label), "%s", function);
+        } else
+            snprintf(label, sizeof(label), "%s",
+                     s->keys_reset_confirm ? _("[Confirmar: restaurar todos os atalhos]")
+                                           : _("[Restaurar todos os atalhos]"));
+        if (s->keys_capture && row->kind == KEYS_ACTION && row->index == (int)s->keys_action)
+            snprintf(keys, sizeof(keys), "%s", _("pressione uma combinação"));
+        if (changed)
+            text_label(w, y, 2, 2, "•");
+        text_label(w, y, 4, width - keys_width - 8, label);
+        if (!focused && fixed)
+            wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
+        int keys_x = width - keys_width - 2;
+        text_label(w, y, keys_x, keys_width, keys);
+    }
+    if (s->keys_menu)
+        keys_menu_draw(s, w, width, menu_row);
+}
+
+/* The hint below the list, unless an error takes the line. */
+static const char *keys_hint(app_settings *s, char *buffer, size_t size)
+{
+    if (s->keys_capture) {
+        snprintf(buffer, size, _("Pressione a nova tecla de \"%s\". Esc cancela."),
+                 keymap_action_label(s->keys_action));
+        return buffer;
+    }
+    if (s->ptt_capture)
+        return _("Pressione a combinação completa; Ctrl/Alt sozinhos não contam. Esc cancela. "
+                 "Mouse 4/5.");
+    if (s->keys_conflict != KEYMAP_NONE) {
+        char label[64] = "";
+        key_binding_label(&s->keys_pending, label, sizeof(label));
+        snprintf(buffer, size, _("%s já é usada por \"%s\". Enter substitui, Esc cancela."), label,
+                 keymap_action_label(s->keys_conflict));
+        return buffer;
+    }
+    if (s->keys_reset_confirm)
+        return _("Enter restaura as teclas padrão de todas as funções; Esc cancela.");
+    if (s->keys_menu)
+        return _("↑↓ escolhe · Enter confirma · Esc fecha o menu");
+    return _("Enter altera a função selecionada · digite para buscar");
+}
+
+/* Keys while the Atalhos content has focus. Esc first closes a menu, a
+ * confirmation or a pending replacement; true when the key was used. */
+static bool keys_key(app_settings *s, int type, uint32_t key)
+{
+    bool enter =
+        (type == OK && (key == '\r' || key == '\n')) || (type == KEY_CODE_YES && key == KEY_ENTER);
+    bool escape = type == OK && key == 27;
+    if (s->keys_conflict != KEYMAP_NONE) {
+        if (enter)
+            keys_replace(s);
+        else if (escape)
+            s->keys_conflict = KEYMAP_NONE;
+        return true;
+    }
+    if (s->keys_reset_confirm) {
+        if (enter) {
+            keymap_table_defaults(&s->keys);
+            s->error[0] = 0;
+        }
+        if (enter || escape || type == OK || type == KEY_CODE_YES)
+            s->keys_reset_confirm = false;
+        return true;
+    }
+    if (s->keys_menu) {
+        if (escape)
+            s->keys_menu = false;
+        else if (type == KEY_CODE_YES && key == KEY_UP && s->keys_menu_item)
+            --s->keys_menu_item;
+        else if (type == KEY_CODE_YES && key == KEY_DOWN && s->keys_menu_item + 1 < KEYS_MENU_ITEMS)
+            ++s->keys_menu_item;
+        else if (enter)
+            keys_menu_activate(s);
+        return true;
+    }
+    if (escape)
+        return false;
+    if (!s->keys_list) {
+        if (type == KEY_CODE_YES && key == KEY_UP) {
+            s->focus = 0;
+            return true;
+        }
+        if (enter || (type == KEY_CODE_YES && key == KEY_DOWN)) {
+            s->keys_list = true;
+            s->keys_selection = 0;
+            keys_move(s, 0);
+            return true;
+        }
+        text_buffer before = s->keys_search;
+        if (text_edit(&s->keys_search, type, key, 1024, false)) {
+            if (before.length != s->keys_search.length ||
+                memcmp(before.data, s->keys_search.data,
+                       s->keys_search.length * sizeof(*s->keys_search.data)))
+                s->keys_selection = s->keys_first = 0;
+            return true;
+        }
+        return false;
+    }
+    keys_row rows[KEYS_ROWS];
+    int count = keys_rows(s, rows);
+    if (type == KEY_CODE_YES && (key == KEY_UP || key == KEY_DOWN))
+        keys_move(s, key == KEY_UP ? -1 : 1);
+    else if (type == KEY_CODE_YES && (key == KEY_PPAGE || key == KEY_NPAGE)) {
+        int step = key == KEY_PPAGE ? -8 : 8, target = s->keys_selection + step;
+        s->keys_selection = target < 0 ? 0 : target >= count ? count - 1 : target;
+        keys_clamp(s, rows, count);
+    } else if (type == KEY_CODE_YES && (key == KEY_HOME || key == KEY_END)) {
+        s->keys_selection = key == KEY_HOME ? 0 : count - 1;
+        keys_clamp(s, rows, count);
+    } else if (enter || (type == OK && key == ' '))
+        keys_activate(s);
+    else if ((type == OK && (key >= 32 || key == 8 || key == 21)) ||
+             (type == KEY_CODE_YES && key == KEY_BACKSPACE)) {
+        /* Typing, erasing and Ctrl+U search from the list as well. */
+        s->keys_list = false;
+        return keys_key(s, type, key);
+    } else
+        return false;
+    return true;
+}
+
+static void keys_click(app_settings *s, int y, int x)
+{
+    s->focus = 1;
+    if (s->keys_menu) {
+        int item = y - s->keys_menu_y - 1;
+        if (x >= s->keys_menu_x && x < s->keys_menu_x + 30 && item >= 0 && item < KEYS_MENU_ITEMS) {
+            s->keys_menu_item = item;
+            keys_menu_activate(s);
+        } else
+            s->keys_menu = false;
+        return;
+    }
+    if (y == 5) {
+        s->keys_list = false;
+        return;
+    }
+    keys_row rows[KEYS_ROWS];
+    int count = keys_rows(s, rows), index = s->keys_first + y - 6;
+    if (index < 0 || index >= count || !keys_selectable(&rows[index]))
+        return;
+    s->keys_list = true;
+    s->keys_selection = index;
+    keys_activate(s);
+}
+
 static void tabs_draw(app_settings *s, WINDOW *w, int width)
 {
     const char *names[SETTINGS_SECTIONS];
@@ -1118,6 +1622,8 @@ void settings_draw(app_settings *s)
         profile_draw(s, w, height, width);
     } else if (s->section == SETTINGS_ACCOUNT) {
         account_draw(s, w, height, width);
+    } else if (s->section == SETTINGS_SHORTCUTS) {
+        keys_draw(s, w, height, width);
     } else {
         wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
         text_label(w, 6, 3, width - 6, _("Em breve. Esta seção ainda não altera configurações."));
@@ -1129,8 +1635,12 @@ void settings_draw(app_settings *s)
         profile_notice_draw(s, w, height, width);
     else if (s->section == SETTINGS_ACCOUNT)
         account_notice_draw(s, w, height, width);
-    else if (s->profile &&
-             (s->section == SETTINGS_APPEARANCE || s->section == SETTINGS_NOTIFICATIONS))
+    else if (s->section == SETTINGS_SHORTCUTS) {
+        char hint[512];
+        wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
+        text_label(w, height - 3, 2, width - 4, keys_hint(s, hint, sizeof(hint)));
+    } else if (s->profile &&
+               (s->section == SETTINGS_APPEARANCE || s->section == SETTINGS_NOTIFICATIONS))
         user_notice_draw(s, w, height, width);
     bool profile = s->section == SETTINGS_PROFILE, account = s->section == SETTINGS_ACCOUNT,
          notifications = s->section == SETTINGS_NOTIFICATIONS;
@@ -1160,7 +1670,9 @@ static void save(app_settings *s, profile_config *config)
             snprintf(s->error, sizeof(s->error), _("Nenhuma alteração para salvar."));
         return;
     }
-    if (profiles_set_settings(config, s->draft, s->language, &s->audio)) {
+    keymap_overrides shortcuts;
+    keymap_table_to_overrides(&s->keys, &config->shortcuts, &shortcuts);
+    if (profiles_set_settings(config, s->draft, s->language, &s->audio, &shortcuts)) {
         s->applied = true;
         s->original_audio = s->audio;
         voice_configure(&s->audio);
@@ -1224,6 +1736,38 @@ static void audio_adjust(app_settings *s, int direction)
     }
     voice_configure(&s->audio);
 }
+/* Push-to-talk takes its key during calls: never from quitting, help or the
+ * settings, while another command of the conversation only gets a warning.
+ * Either way the outcome is left in s->error. */
+static bool ptt_allowed(app_settings *s, const key_binding *key)
+{
+    s->error[0] = 0;
+    if (key->kind == KEY_BINDING_MOUSE)
+        return true;
+    key_binding wanted = *key;
+    keymap_binding_normalize(&wanted);
+    for (int i = 0; i < KEYMAP_ACTIONS; ++i) {
+        keymap_action action = (keymap_action)i;
+        if (!keymap_conversation_action(action))
+            continue;
+        for (unsigned j = 0; j < s->keys.count[i]; ++j) {
+            if (!key_binding_equal(&s->keys.keys[i][j], &wanted))
+                continue;
+            char label[64] = "";
+            key_binding_label(key, label, sizeof(label));
+            if (keymap_action_flags(action) & KEYMAP_REQUIRED) {
+                snprintf(s->error, sizeof(s->error), _("%s já é usada por \"%s\"; escolha outra."),
+                         label, keymap_action_label(action));
+                return false;
+            }
+            snprintf(s->error, sizeof(s->error),
+                     _("Durante chamadas, %s transmite a voz em vez de \"%s\"."), label,
+                     keymap_action_label(action));
+            return true;
+        }
+    }
+    return true;
+}
 void settings_key(app_settings *s, profile_config *config, int type, uint32_t key)
 {
     if (!s->open)
@@ -1233,10 +1777,16 @@ void settings_key(app_settings *s, profile_config *config, int type, uint32_t ke
             key_binding captured;
             if (text_capture_take(&captured)) {
                 s->ptt_capture = false;
-                if (key_binding_valid(&captured)) {
+                if (key_binding_valid(&captured) && ptt_allowed(s, &captured)) {
                     s->audio.ptt = captured;
-                    s->error[0] = 0;
                     voice_configure(&s->audio);
+                } else if (key_binding_valid(&captured)) {
+                    /* ptt_allowed explained the refusal; capture again. */
+                    char reason[192];
+                    snprintf(reason, sizeof(reason), "%s", s->error);
+                    begin_capture(s);
+                    if (s->ptt_capture)
+                        snprintf(s->error, sizeof(s->error), "%s", reason);
                 } else {
                     char reason[192];
                     snprintf(reason, sizeof(reason), "%s", key_binding_error(&captured));
@@ -1249,6 +1799,24 @@ void settings_key(app_settings *s, profile_config *config, int type, uint32_t ke
             s->ptt_capture = false;
         else if (!text_capture_active())
             s->ptt_capture = false;
+        return;
+    }
+    if (s->keys_capture) {
+        key_binding captured;
+        if (type == KEY_CODE_YES && key == TEXT_CAPTURED && text_capture_take(&captured)) {
+            s->keys_capture = false;
+            keys_captured(s, captured);
+        } else if ((type == KEY_CODE_YES && key == TEXT_CAPTURE_CANCELLED) ||
+                   !text_capture_active()) {
+            s->keys_capture = false;
+            s->error[0] = 0;
+        }
+        return;
+    }
+    /* Esc first closes the Atalhos menu, a confirmation or a pending key. */
+    if (s->section == SETTINGS_SHORTCUTS && s->focus == 1 &&
+        (s->keys_menu || s->keys_reset_confirm || s->keys_conflict != KEYMAP_NONE)) {
+        keys_key(s, type, key);
         return;
     }
     bool enter =
@@ -1279,6 +1847,8 @@ void settings_key(app_settings *s, profile_config *config, int type, uint32_t ke
             s->section =
                 tab_strip_hit(&s->tabs, SETTINGS_SECTIONS, s->section, x, getmaxx(s->window));
             s->focus = 0;
+        } else if (s->section == SETTINGS_SHORTCUTS && y >= 5 && y < getmaxy(s->window) - 3) {
+            keys_click(s, y, x);
         } else if (s->section == SETTINGS_PROFILE && y >= 5 && y < getmaxy(s->window) - 3) {
             profile_click(s, y, x);
         } else if (s->section == SETTINGS_ACCOUNT &&
@@ -1325,6 +1895,10 @@ void settings_key(app_settings *s, profile_config *config, int type, uint32_t ke
         }
         if (s->section == SETTINGS_ACCOUNT) {
             account_key(s, type, key);
+            return;
+        }
+        if (s->section == SETTINGS_SHORTCUTS) {
+            keys_key(s, type, key);
             return;
         }
         if (s->section == SETTINGS_AUDIO) {

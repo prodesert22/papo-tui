@@ -273,9 +273,21 @@ msgstr "%s Locating message…"
 msgid "%s a %s"
 msgstr "%s to %s"
 
+#: src/ui/components/settings.c
+msgid "%s já é usada por \"%s\". Enter substitui, Esc cancela."
+msgstr "%s is already used by \"%s\". Enter replaces it, Esc cancels."
+
+#: src/ui/components/settings.c
+msgid "%s já é usada por \"%s\"; escolha outra."
+msgstr "%s is already used by \"%s\"; choose another one."
+
 #: src/ui/screens/conversation/drawing.c
 msgid "%s não está respondendo."
 msgstr "%s is not responding."
+
+#: src/ui/components/settings.c
+msgid "%s precisa de pelo menos uma tecla."
+msgstr "%s needs at least one key."
 
 #: src/ui/screens/conversation/drawing.c
 msgid "%s · %s · microfone %s · áudio %s%s"
@@ -284,6 +296,10 @@ msgstr "%s · %s · microphone %s · audio %s%s"
 #: src/ui/media/message_blocks.c
 msgid "%s · Moderação: %s"
 msgstr "%s · Moderation: %s"
+
+#: src/ui/components/settings.c
+msgid "%s é fixa nesta área: %s."
+msgstr "%s is fixed in this area: %s."
 
 #: src/ui/screens/conversation/drawing.c
 msgid "%s%s · Histórico"
@@ -661,6 +677,10 @@ msgstr "Add emoji"
 msgid "Adicionar ou editar um perfil fora dos campos de edição"
 msgstr "Add or edit a profile outside the edit fields"
 
+#: src/ui/components/settings.c
+msgid "Adicionar outra tecla"
+msgstr "Add another key"
+
 #: src/ui/screens/conversation/interactions.c
 msgid "Adicionar reação"
 msgstr "Add reaction"
@@ -753,7 +773,7 @@ msgstr "Global help"
 msgid "Alt+"
 msgstr "Alt+"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Alt+← / → / ↑ / ↓"
 msgstr "Alt+← / → / ↑ / ↓"
 
@@ -881,7 +901,7 @@ msgstr "Animation over the limit (%s); make the file smaller."
 msgid "Antigas ↑"
 msgstr "Older ↑"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Apagar a palavra anterior"
 msgstr "Delete the previous word"
 
@@ -917,7 +937,7 @@ msgstr "Apply filters"
 msgid "Aplicar ou cancelar as configurações"
 msgstr "Apply or cancel the settings"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Aplicativo"
 msgstr "Application"
 
@@ -945,7 +965,7 @@ msgstr "File saved to %s"
 msgid "Arquivo: %.512s"
 msgstr "File: %.512s"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Arquivos"
 msgstr "Files"
 
@@ -968,6 +988,14 @@ msgstr "Shortcuts"
 #: src/config/profiles.c
 msgid "Atalhos inválidos."
 msgstr "Invalid shortcuts."
+
+#: src/ui/components/help.c
+msgid "Atalhos: Enter"
+msgstr "Atalhos: Enter"
+
+#: src/ui/components/help.c
+msgid "Atalhos: digitar / ↑↓"
+msgstr "Atalhos: type / ↑↓"
 
 #: src/ui/components/settings.c
 msgid "Ativado"
@@ -1298,10 +1326,14 @@ msgid "Buscar no conteúdo ou percorrer filtros e ações"
 msgstr "Search the content or move through filters and actions"
 
 #: src/ui/components/help.c
+msgid "Buscar por função, tecla ou área e escolher uma função ou tecla fixa"
+msgstr "Search by action, key or area and choose an action or fixed key"
+
+#: src/ui/components/help.c
 msgid "Buscar, abrir detalhes, localizar mensagem ou executar a ação selecionada"
 msgstr "Search, open details, locate the message or run the selected action"
 
-#: src/ui/components/emoji_picker.c src/ui/components/help.c src/ui/components/quick_switcher.c
+#: src/ui/components/emoji_picker.c src/ui/components/help.c src/ui/components/quick_switcher.c src/ui/components/settings.c
 msgid "Buscar:"
 msgstr "Search:"
 
@@ -1637,7 +1669,7 @@ msgstr "The paste exceeds the field's limit; text kept."
 msgid "Colagem excede o limite; rascunho preservado."
 msgstr "The paste exceeds the limit; draft kept."
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Colar arquivos ou imagens do clipboard, quando disponível"
 msgstr "Paste files or images from the clipboard, when available"
 
@@ -1801,6 +1833,10 @@ msgstr "Confirm password"
 msgid "Confirmar senha:"
 msgstr "Confirm password:"
 
+#: src/config/keymap.c
+msgid "Confirmar, enviar ou abrir"
+msgstr "Confirm, send or open"
+
 #: src/ui/components/server_settings/server_settings.c
 msgid "Confirmar: %s"
 msgstr "Confirm: %s"
@@ -1917,7 +1953,7 @@ msgstr "Message %s"
 msgid "Conversar em #%s"
 msgstr "Message #%s"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Conversas"
 msgstr "Conversations"
 
@@ -1925,7 +1961,7 @@ msgstr "Conversations"
 msgid "Copiar URL"
 msgstr "Copy URL"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Copiar a seleção; sem seleção, copiar o campo"
 msgstr "Copy the selection; without a selection, copy the field"
 
@@ -1993,15 +2029,15 @@ msgstr "Create your account on this instance"
 msgid "Ctrl+"
 msgstr "Ctrl+"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Ctrl+A"
 msgstr "Ctrl+A"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Ctrl+C"
 msgstr "Ctrl+C"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Ctrl+Shift+C"
 msgstr "Ctrl+Shift+C"
 
@@ -2009,19 +2045,19 @@ msgstr "Ctrl+Shift+C"
 msgid "Ctrl+Shift+setas"
 msgstr "Ctrl+Shift+arrows"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Ctrl+U"
 msgstr "Ctrl+U"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Ctrl+V"
 msgstr "Ctrl+V"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Ctrl+W / Ctrl+Backspace"
 msgstr "Ctrl+W / Ctrl+Backspace"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Ctrl+← / Ctrl+→"
 msgstr "Ctrl+← / Ctrl+→"
 
@@ -2089,11 +2125,19 @@ msgstr "Inclusive dates: YYYY-MM-DD"
 msgid "Definido"
 msgstr "Set"
 
+#: src/ui/components/settings.c
+msgid "Definir tecla"
+msgstr "Set key"
+
+#: src/ui/components/help.c
+msgid "Definir, adicionar, remover ou restaurar as teclas da função; Esc cancela a captura"
+msgstr "Set, add, remove or restore the action's keys; Esc cancels the capture"
+
 #: src/ui/components/server_settings/overview.c
 msgid "Deixe vazia para manter a senha atual."
 msgstr "Leave empty to keep the current password."
 
-#: src/config/key_binding.c src/ui/components/help.c
+#: src/config/key_binding.c src/config/keymap.c src/ui/components/help.c
 msgid "Delete"
 msgstr "Delete"
 
@@ -2225,6 +2269,10 @@ msgstr "Download cancelled: the session or the tab changed."
 msgid "Download na fila: %u arquivo(s)."
 msgstr "Download queued: %u file(s)."
 
+#: src/ui/components/settings.c
+msgid "Durante chamadas, %s transmite a voz em vez de \"%s\"."
+msgstr "During calls, %s transmits your voice instead of \"%s\"."
+
 #: src/ui/media/media.c
 msgid "Duração"
 msgstr "Duration"
@@ -2325,7 +2373,7 @@ msgstr "End the session and turn off its recovery"
 msgid "End"
 msgstr "End"
 
-#: src/config/key_binding.c src/ui/components/help.c
+#: src/config/key_binding.c src/config/keymap.c src/ui/components/help.c
 msgid "Enter"
 msgstr "Enter"
 
@@ -2358,6 +2406,10 @@ msgid "Enter abre pasta ou usa o nome do arquivo · Tab ações"
 msgstr "Enter opens a folder or uses the file name · Tab actions"
 
 #: src/ui/components/settings.c
+msgid "Enter altera a função selecionada · digite para buscar"
+msgstr "Enter changes the selected action · type to search"
+
+#: src/ui/components/settings.c
 msgid "Enter captura qualquer combinação ou os botões 4/5 do mouse."
 msgstr "Enter captures any combination or mouse buttons 4/5."
 
@@ -2372,6 +2424,10 @@ msgstr "Enter sends · Esc closes"
 #: src/ui/components/help.c
 msgid "Enter ou clique preenche os filtros de uma busca anterior"
 msgstr "Enter or a click fills the filters of an earlier search"
+
+#: src/ui/components/settings.c
+msgid "Enter restaura as teclas padrão de todas as funções; Esc cancela."
+msgstr "Enter restores the default keys of every action; Esc cancels."
 
 #: src/ui/components/quick_switcher.c
 msgid "Enter: abrir · ↑↓: escolher · Esc: fechar"
@@ -2537,7 +2593,7 @@ msgstr "Media error"
 msgid "Erro remoto"
 msgstr "Remote error"
 
-#: src/config/key_binding.c src/ui/components/help.c
+#: src/config/key_binding.c src/config/keymap.c src/ui/components/help.c
 msgid "Esc"
 msgstr "Esc"
 
@@ -2717,7 +2773,7 @@ msgstr "Write a message; Enter sends."
 msgid "Escuro"
 msgstr "Dark"
 
-#: src/config/key_binding.c src/ui/components/help.c
+#: src/config/key_binding.c src/config/keymap.c src/ui/components/help.c
 msgid "Espaço"
 msgstr "Space"
 
@@ -2762,8 +2818,12 @@ msgid "Esta conversa já tem um envio em andamento."
 msgstr "This conversation already has a send in progress."
 
 #: src/config/keymap.c
-msgid "Esta função também atua em campos de texto: use Ctrl, Alt ou uma tecla de função."
-msgstr "This action also works in text fields: use Ctrl, Alt or a function key."
+msgid "Esta função age em campos de texto: use Ctrl, Alt ou F1–F12."
+msgstr "This action works in text fields: use Ctrl, Alt or F1–F12."
+
+#: src/ui/components/settings.c
+msgid "Esta função já tem %d teclas."
+msgstr "This action already has %d keys."
 
 #: src/net/auth/responses.c
 msgid "Esta instância é privada. Preencha a senha do servidor."
@@ -2968,6 +3028,10 @@ msgstr "Close suggestions, cancel the reply/edit or return to the history"
 #: src/ui/components/help.c
 msgid "Fechar um formulário ou voltar sem selecionar"
 msgstr "Close a form or go back without selecting"
+
+#: src/config/keymap.c
+msgid "Fechar, cancelar ou voltar"
+msgstr "Close, cancel or go back"
 
 #: src/ui/screens/conversation/downloads.c
 msgid "Feche o seletor de arquivos aberto antes de baixar."
@@ -3317,7 +3381,7 @@ msgstr "Start"
 msgid "Inserir texto sem enviar o formulário"
 msgstr "Insert text without submitting the form"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Inserir uma quebra de linha sem enviar"
 msgstr "Insert a line break without sending"
 
@@ -3369,7 +3433,7 @@ msgstr "Go to a channel or DM of any server by name"
 msgid "Ir para um canal ou DM de qualquer servidor pelo nome; mostra primeiro menções e não lidas"
 msgstr "Go to a channel or DM of any server by name; mentions and unread ones come first"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Ir à área ou ao botão naquela direção"
 msgstr "Go to the area or button in that direction"
 
@@ -3497,9 +3561,13 @@ msgstr "Clear the edit field"
 msgid "Limpar o campo de login ou perfil"
 msgstr "Clear the login or profile field"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Limpar o campo de texto"
 msgstr "Clear the text field"
+
+#: src/config/keymap.c
+msgid "Limpar o campo; fora de um campo, sair"
+msgstr "Clear the field; outside a field, quit"
 
 #: src/ui/screens/login.c
 msgid "Link de redefinição"
@@ -3549,6 +3617,10 @@ msgstr "Partial list: local limit reached. Refine the search."
 msgid "Listar os comandos; ↑↓ escolhe, Tab completa, Esc fecha"
 msgstr "List the commands; ↑↓ chooses, Tab completes, Esc closes"
 
+#: src/config/keymap.c
+msgid "Listas e seleção"
+msgstr "Lists and selection"
+
 #: src/model/conversation/interactions.c
 msgid "Localizando mensagem…"
 msgstr "Locating message…"
@@ -3556,6 +3628,10 @@ msgstr "Locating message…"
 #: src/ui/screens/login.c
 msgid "Login e cadastro"
 msgstr "Login and sign-up"
+
+#: src/config/keymap.c
+msgid "Login e perfis"
+msgstr "Sign-in and profiles"
 
 #: src/net/auth/client.c
 msgid "Login realizado. Conectando tempo real…"
@@ -3597,6 +3673,10 @@ msgstr "Mark or unmark every attachment in Baixar anexos"
 msgid "Marcar ou desmarcar um arquivo"
 msgstr "Mark or unmark a file"
 
+#: src/config/keymap.c
+msgid "Marcar, pausar ou ativar o item selecionado"
+msgstr "Mark, pause or activate the selected item"
+
 #: src/model/conversation/events.c
 msgid "Marcas excederam o limite. Recuperando…"
 msgstr "Marks exceeded the limit. Recovering…"
@@ -3625,7 +3705,7 @@ msgstr "Member unbanned"
 msgid "Membro não encontrado. Esc: voltar."
 msgstr "Member not found. Esc: back."
 
-#: src/ui/components/help.c src/ui/components/server_settings/server_settings.c src/ui/screens/conversation/drawing.c
+#: src/config/keymap.c src/ui/components/help.c src/ui/components/server_settings/server_settings.c src/ui/screens/conversation/drawing.c
 msgid "Membros"
 msgstr "Members"
 
@@ -3821,7 +3901,7 @@ msgstr "Move the position or the volume on the player's bars"
 msgid "Mover ao início ou ao fim da linha"
 msgstr "Move to the start or end of the line"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Mover o cursor por palavras"
 msgstr "Move the cursor by words"
 
@@ -3861,6 +3941,10 @@ msgstr "Too many attempts; wait and try again"
 msgid "Mídia"
 msgstr "Media"
 
+#: src/config/keymap.c
+msgid "Mídia e player"
+msgstr "Media and player"
+
 #: src/net/http/download.c
 msgid "Mídia excede o limite de tamanho."
 msgstr "The media exceeds the size limit."
@@ -3889,6 +3973,10 @@ msgstr "Nothing"
 msgid "Nada para mostrar."
 msgstr "Nothing to show."
 
+#: src/config/keymap.c
+msgid "Navegar, rolar e escolher"
+msgstr "Navigate, scroll and choose"
+
 #: src/ui/components/help.c
 msgid "Navegação"
 msgstr "Navigation"
@@ -3901,7 +3989,7 @@ msgstr "Negotiation refused. Check this instance's audio flows."
 msgid "Nenhum GIF encontrado"
 msgstr "No GIF found"
 
-#: src/ui/components/help.c
+#: src/ui/components/help.c src/ui/components/settings.c
 msgid "Nenhum atalho encontrado."
 msgstr "No shortcut found."
 
@@ -4957,7 +5045,7 @@ msgstr "Move through tabs, list, form and Close"
 msgid "Percorrer as configurações e os modos Normal, Light e Ultralight"
 msgstr "Move through the settings and the Normal, Light and Ultralight modes"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Percorrer as áreas e os botões"
 msgstr "Move through the areas and buttons"
 
@@ -5241,7 +5329,7 @@ msgstr "Preparing the icon…"
 msgid "Preparação cancelada; rascunho preservado."
 msgstr "Preparation cancelled; draft kept."
 
-#: src/ui/screens/conversation/drawing.c
+#: src/ui/components/settings.c src/ui/screens/conversation/drawing.c
 msgid "Pressionar para falar"
 msgstr "Push to talk"
 
@@ -5252,6 +5340,10 @@ msgstr "Push to talk: < %s >"
 #: src/ui/components/settings.c
 msgid "Pressione a combinação completa; Ctrl/Alt sozinhos não contam. Esc cancela. Mouse 4/5."
 msgstr "Press the whole combination; Ctrl/Alt alone do not count. Esc cancels. Mouse 4/5."
+
+#: src/ui/components/settings.c
+msgid "Pressione a nova tecla de \"%s\". Esc cancela."
+msgstr "Press the new key for \"%s\". Esc cancels."
 
 #: src/ui/components/server_settings/server_settings.c
 msgid "Pressione de novo para confirmar."
@@ -5409,6 +5501,10 @@ msgstr "Remove"
 msgid "Remover anexo?"
 msgstr "Remove attachment?"
 
+#: src/ui/components/settings.c
+msgid "Remover as teclas"
+msgstr "Remove the keys"
+
 #: src/ui/components/server_settings/webhooks.c
 msgid "Remover avatar"
 msgstr "Remove avatar"
@@ -5432,6 +5528,10 @@ msgstr "Remove the server from the list and delete its saved session on this com
 #: src/ui/components/help.c
 msgid "Remover o servidor da lista e apagar a sessão salva; um servidor offline tenta a sessão salva de novo ao ser aberto"
 msgstr "Remove the server from the list and delete its saved session; an offline server tries its saved session again when opened"
+
+#: src/config/keymap.c
+msgid "Remover o servidor ou o anexo selecionado"
+msgstr "Remove the selected server or attachment"
 
 #: src/ui/screens/conversation/interactions.c src/ui/screens/login.c
 msgid "Remover servidor"
@@ -5496,6 +5596,10 @@ msgstr "Replied to you"
 #: src/net/gif_search.c
 msgid "Resposta inválida da busca de GIFs."
 msgstr "Invalid GIF search response."
+
+#: src/ui/components/settings.c
+msgid "Restaurar o padrão"
+msgstr "Restore the default"
 
 #: src/model/notifications/inbox.c
 msgid "Resultado incerto. Atualize antes de tentar novamente."
@@ -5681,7 +5785,7 @@ msgstr "Select or manage server profiles"
 msgid "Selecionar texto do histórico e copiá-lo ao soltar"
 msgstr "Select history text and copy it on release"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Selecionar texto por caracteres ou linhas"
 msgstr "Select text by characters or lines"
 
@@ -5689,7 +5793,7 @@ msgstr "Select text by characters or lines"
 msgid "Selecionar texto por palavras"
 msgstr "Select text by words"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Selecionar todo o texto da caixa"
 msgstr "Select all the text in the box"
 
@@ -5937,7 +6041,7 @@ msgstr "Your profile on %s"
 msgid "Shift+"
 msgstr "Shift+"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Shift+Enter / Ctrl+N"
 msgstr "Shift+Enter / Ctrl+N"
 
@@ -5945,7 +6049,7 @@ msgstr "Shift+Enter / Ctrl+N"
 msgid "Shift+PgUp/PgDn"
 msgstr "Shift+PgUp/PgDn"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Shift+setas"
 msgstr "Shift+arrows"
 
@@ -6037,7 +6141,7 @@ msgstr "Tab"
 msgid "Tab / Enter / clique: mencionar"
 msgstr "Tab / Enter / click: mention"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Tab / Shift+Tab"
 msgstr "Tab / Shift+Tab"
 
@@ -6092,6 +6196,14 @@ msgstr "Key without events in this terminal: use the Hold to talk button."
 #: src/ui/components/help.c
 msgid "Teclas"
 msgstr "Keys"
+
+#: src/ui/components/settings.c
+msgid "Teclas fixas"
+msgstr "Fixed keys"
+
+#: src/ui/components/settings.c
+msgid "Teclas fixas não podem ser alteradas."
+msgstr "Fixed keys cannot be changed."
 
 #: src/ui/components/settings.c
 msgid "Tema: < %s >"
@@ -6601,6 +6713,10 @@ msgstr "[Cancel]"
 msgid "[Carregar mais]"
 msgstr "[Load more]"
 
+#: src/ui/components/settings.c
+msgid "[Confirmar: restaurar todos os atalhos]"
+msgstr "[Confirm: restore all shortcuts]"
+
 #: src/ui/screens/conversation/drawing.c
 msgid "[Conversa]"
 msgstr "[Conversation]"
@@ -6737,6 +6853,10 @@ msgstr "[Repeat: No]"
 msgid "[Repetir: Sim]"
 msgstr "[Repeat: Yes]"
 
+#: src/ui/components/settings.c
+msgid "[Restaurar todos os atalhos]"
+msgstr "[Restore all shortcuts]"
+
 #: src/ui/components/help.c src/ui/screens/conversation/drawing.c
 msgid "[Sair da chamada]"
 msgstr "[Leave call]"
@@ -6871,6 +6991,10 @@ msgstr "are typing…"
 msgid "falhou"
 msgstr "failed"
 
+#: src/ui/components/settings.c
+msgid "função, tecla ou área"
+msgstr "action, key or area"
+
 #: src/ui/media/message_time.c
 msgid "hora indisponível"
 msgstr "time unavailable"
@@ -6945,7 +7069,7 @@ msgstr "no banner"
 msgid "sem data"
 msgstr "no date"
 
-#: src/config/keymap.c
+#: src/config/keymap.c src/ui/components/settings.c
 msgid "sem tecla"
 msgstr "no key"
 
@@ -7329,6 +7453,10 @@ msgstr "↑↓ / wheel: scroll · {k1:app.refresh}: refresh · Esc: back"
 msgid "↑↓ / ←→ / Tab"
 msgstr "↑↓ / ←→ / Tab"
 
+#: src/ui/components/settings.c
+msgid "↑↓ escolhe · Enter confirma · Esc fecha o menu"
+msgstr "↑↓ choose · Enter confirms · Esc closes the menu"
+
 #: src/ui/components/mention_popup.c
 msgid "↑↓ escolhe · Tab completa · Enter envia · Esc fecha"
 msgstr "↑↓ chooses · Tab completes · Enter sends · Esc closes"
@@ -7360,6 +7488,10 @@ msgstr "↑↓: areas · ←→: buttons · Enter: open · Esc: back"
 #: src/ui/components/help.c
 msgid "↑↓←→ / Enter"
 msgstr "↑↓←→ / Enter"
+
+#: src/config/keymap.c
+msgid "↑↓←→ / PgUp / PgDn / Home / End"
+msgstr "↑↓←→ / PgUp / PgDn / Home / End"
 
 #: src/ui/components/emoji_picker.c
 msgid "↑↓←→ escolher · Enter inserir · {k1:app.refresh} atualizar"

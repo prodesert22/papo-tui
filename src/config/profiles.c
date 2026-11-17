@@ -501,17 +501,21 @@ bool profiles_set_mode(profile_config *config, app_mode mode)
 }
 
 bool profiles_set_settings(profile_config *config, app_mode mode, language_choice language,
-                           const audio_config *audio)
+                           const audio_config *audio, const keymap_overrides *shortcuts)
 {
     if (mode < APP_MODE_NORMAL || mode > APP_MODE_ULTRALIGHT || language < LANGUAGE_SYSTEM ||
         language > LANGUAGE_ENGLISH || !audio_config_valid(audio))
         return error(config, _("Configuração de áudio inválida."));
+    if (shortcuts && shortcuts->count > KEYMAP_OVERRIDES)
+        return error(config, _("Atalhos inválidos."));
     profile_config *copy = candidate(config);
     if (!copy)
         return false;
     copy->mode = mode;
     copy->language = language;
     copy->audio = *audio;
+    if (shortcuts)
+        copy->shortcuts = *shortcuts;
     return commit(config, copy);
 }
 

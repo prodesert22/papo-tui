@@ -1,5 +1,6 @@
 #ifndef PAPO_SETTINGS_H
 #define PAPO_SETTINGS_H
+#include "config/keymap.h"
 #include "config/profiles.h"
 #include "model/conversation/profile_edit.h"
 #include "model/conversation/user_settings.h"
@@ -10,7 +11,8 @@
 #include <ncurses.h>
 /* Settings open on the first tab, Perfil. Aparência holds the app modes (this
  * device) and the theme and display of the account on the active server;
- * Notificações holds that account's notification settings; Conta changes the
+ * Notificações holds that account's notification settings; Atalhos lists every
+ * key and changes the keys of commands on this device; Conta changes the
  * account's password on the active server. */
 enum {
     SETTINGS_PROFILE,
@@ -70,6 +72,15 @@ typedef struct {
     uint64_t user_revision;
     bool user_sent;
     int appearance_first, notify_selection;
+    /* Atalhos: the draft of every command's keys, its search and list, the
+     * menu of the selected command, a key being captured for it, a key of
+     * another command waiting to be moved and the reset confirmation. */
+    keymap_table keys;
+    text_buffer keys_search;
+    int keys_search_first, keys_selection, keys_first, keys_menu_item, keys_menu_y, keys_menu_x;
+    bool keys_list, keys_menu, keys_capture, keys_add, keys_reset_confirm;
+    keymap_action keys_action, keys_conflict;
+    key_binding keys_pending;
 } app_settings;
 void settings_open(app_settings *settings, const profile_config *config, voice_client *voice,
                    history *profile, auth_client *auth, icon_view *icons, const char *server);

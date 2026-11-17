@@ -23,7 +23,8 @@ The Termux package has no voice calls, because the WebRTC stack is not published
 for Android.
 
 Press **Ctrl+G** for a table of shortcuts and mouse controls for the focused
-area, or **Ctrl+/** for the global reference. The footer keeps only the help
+area, or **Ctrl+/** for the global reference. **Ctrl+S → Atalhos** lists every
+key and changes the keys of commands on this device. The footer keeps only the help
 hint alongside operational notices. Global help includes a search field for
 keys, actions and areas. F1 also opens contextual help.
 

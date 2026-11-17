@@ -51,8 +51,9 @@ typedef struct profile_config {
 } profile_config;
 
 bool profiles_set_mode(profile_config *config, app_mode mode);
+/* Saves this device's settings in one write; shortcuts may be NULL to keep them. */
 bool profiles_set_settings(profile_config *config, app_mode mode, language_choice language,
-                           const audio_config *audio);
+                           const audio_config *audio, const keymap_overrides *shortcuts);
 /* Saves the command keys that differ from the defaults; ids this build does
  * not know are the caller's to keep (keymap_table_to_overrides). */
 bool profiles_set_shortcuts(profile_config *config, const keymap_overrides *shortcuts);

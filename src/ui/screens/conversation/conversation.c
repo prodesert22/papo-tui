@@ -975,6 +975,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 ui->settings.applied = false;
                 app_mode_set(connections->config->mode);
                 language_set(connections->config->language);
+                keymap_apply_overrides(&connections->config->shortcuts);
                 apply_mode(ui);
             }
             scope = DRAW_ALL;

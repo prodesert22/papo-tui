@@ -1142,6 +1142,15 @@ static int capture_read(uint32_t *key)
         *key = TEXT_CAPTURE_CANCELLED;
         return KEY_CODE_YES;
     }
+    /* With the kitty protocol a lone Esc arrives as CSI 27 u: it cancels too. */
+    if (result == CAPTURE_PRESS && binding.kind == KEY_BINDING_KEY &&
+        binding.code == KEY_BINDING_ESCAPE && !binding.modifiers)
+        result = CAPTURE_CANCELLED;
+    if (result == CAPTURE_CANCELLED) {
+        capture_finish();
+        *key = TEXT_CAPTURE_CANCELLED;
+        return KEY_CODE_YES;
+    }
     if (result == CAPTURE_PRESS) {
         capture.binding = binding;
         capture.have = true;

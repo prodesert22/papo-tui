@@ -27,8 +27,9 @@ static void test_defaults_and_labels(void)
     assert(keymap_label(KEYMAP_MEDIA_INFO, false, label, sizeof(label)));
     assert(!strcmp(label, "Ctrl+B / i"));
     assert(!strcmp(keymap_text("{k1:app.help}: ajuda"), "Ctrl+G: ajuda"));
-    assert(!strcmp(keymap_text("{k:selection.reply} / {k:selection.react} / {k:selection.reactors}"),
-                   "r / e / E"));
+    assert(
+        !strcmp(keymap_text("{k:selection.reply} / {k:selection.react} / {k:selection.reactors}"),
+                "r / e / E"));
     /* Unknown ids stay visible instead of disappearing. */
     assert(!strcmp(keymap_text("{k:missing.action} x"), "{k:missing.action} x"));
     for (int i = 0; i < KEYMAP_ACTIONS; ++i) {
@@ -149,6 +150,49 @@ static void test_apply_and_text(void)
     keymap_apply(&table);
 }
 
+static void test_conflicts(void)
+{
+    keymap_table table;
+    keymap_table_defaults(&table);
+    /* The defaults never collide where both commands listen. */
+    for (int i = 0; i < KEYMAP_ACTIONS; ++i)
+        for (unsigned j = 0; j < table.count[i]; ++j)
+            assert(keymap_find_conflict(&table, (keymap_action)i, &table.keys[i][j]).kind ==
+                   KEYMAP_CONFLICT_NONE);
+    key_binding key = parse("ctrl+b");
+    keymap_conflict found = keymap_find_conflict(&table, KEYMAP_SWITCHER, &key);
+    assert(found.kind == KEYMAP_CONFLICT_ACTION && found.action == KEYMAP_PINNED && found.label);
+    /* Areas that never listen together may share a key. */
+    key = parse("ctrl+e");
+    assert(keymap_find_conflict(&table, KEYMAP_MUTE, &key).kind == KEYMAP_CONFLICT_NONE);
+    /* Application-wide keys reach every area. */
+    key = parse("ctrl+q");
+    found = keymap_find_conflict(&table, KEYMAP_MUTE, &key);
+    assert(found.kind == KEYMAP_CONFLICT_ACTION && found.action == KEYMAP_QUIT);
+    /* Editing keys of the areas where the command listens. */
+    key = parse("ctrl+w");
+    assert(keymap_find_conflict(&table, KEYMAP_SWITCHER, &key).kind == KEYMAP_CONFLICT_FIXED);
+    key = parse("ctrl+u");
+    assert(keymap_find_conflict(&table, KEYMAP_REGISTER, &key).kind == KEYMAP_CONFLICT_FIXED);
+    /* A caseless letter also takes the other case. */
+    key = parse("M");
+    found = keymap_find_conflict(&table, KEYMAP_REPLY, &key);
+    assert(found.kind == KEYMAP_CONFLICT_ACTION && found.action == KEYMAP_ITEM_MENU);
+    assert(keymap_conversation_action(KEYMAP_RETRY_SEND) &&
+           keymap_conversation_action(KEYMAP_QUIT));
+    assert(!keymap_conversation_action(KEYMAP_MUTE) &&
+           !keymap_conversation_action(KEYMAP_PROFILE_ADD));
+    /* Every command belongs to an area and the groups are consecutive. */
+    int groups = 1;
+    for (int i = 1; i < KEYMAP_ACTIONS; ++i) {
+        assert(*keymap_action_group((keymap_action)i));
+        groups +=
+            keymap_action_group((keymap_action)i) != keymap_action_group((keymap_action)(i - 1));
+    }
+    assert(groups == KEYMAP_GROUPS);
+    assert(keymap_fixed_count() > 0);
+}
+
 static void test_events(void)
 {
     key_binding key;
@@ -185,6 +229,7 @@ int main(void)
     test_normalize_and_errors();
     test_overrides();
     test_apply_and_text();
+    test_conflicts();
     test_events();
     keymap_shutdown();
     return 0;
