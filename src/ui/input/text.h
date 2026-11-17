@@ -165,5 +165,11 @@ bool text_decode(text_buffer *buffer, const char *utf8);
 bool text_decode_chunk(text_buffer *buffer, const char **utf8);
 bool text_encode(const text_buffer *buffer, char output[TEXT_UTF8_BYTES]);
 int text_label(WINDOW *window, int y, int x, int width, const char *utf8);
+/* Like text_label, but when the text is cut at width cells its last fade_count
+ * cells (the fade needs a label longer than that) use fade_pairs[0..] in turn,
+ * instead of the window's own pair, so it dissolves rather than ending hard.
+ * A wide glyph takes the pair of the cell where it starts. */
+int text_label_fade(WINDOW *window, int y, int x, int width, const char *utf8,
+                    const int *fade_pairs, int fade_count);
 
 #endif

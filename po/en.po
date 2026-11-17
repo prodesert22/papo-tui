@@ -309,6 +309,10 @@ msgstr "%zu server emojis · Ctrl+R refresh"
 msgid "%zu resultados · %zu não lidas conhecidas%s"
 msgstr "%zu results · %zu known unread%s"
 
+#: src/ui/components/help.c src/ui/screens/conversation/drawing.c
+msgid "+ Adicionar"
+msgstr "+ Add"
+
 #: src/ui/components/server_settings/emojis.c
 msgid "+ Adicionar emoji"
 msgstr "+ Add emoji"
@@ -6601,7 +6605,7 @@ msgstr "[%c] Sync with the server"
 msgid "[%s teste do microfone]"
 msgstr "[%s microphone test]"
 
-#: src/ui/components/help.c src/ui/screens/conversation/drawing.c src/ui/screens/profiles.c
+#: src/ui/screens/conversation/drawing.c src/ui/screens/profiles.c
 msgid "[+ Adicionar]"
 msgstr "[+ Add]"
 

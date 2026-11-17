@@ -122,7 +122,7 @@ class TerminalTitle(unittest.TestCase):
             second.notifications[0]["message_content"] = "Aviso @everyone"
             terminal = self.open(first)
             self.title(terminal, "geral | Comunidade")
-            self.click(terminal, "[+ Adicionar]")
+            self.click(terminal, "+ Adicionar")
             self.wait(terminal, "URL do servidor")
             self.title(terminal, "Papo TUI")
             terminal.send(second.url + "\tjosé\tSynthetic!123\n")

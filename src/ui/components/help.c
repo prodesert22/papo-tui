@@ -45,7 +45,7 @@ static const help_row rows[] = {
     {HELP_SERVER_TABS, N_("← / →"), N_("Selecionar um servidor ou Adicionar")},
     {HELP_SERVER_TABS, N_("Enter"), N_("Ativar o servidor ou abrir a conexão de outro servidor")},
     {HELP_SERVER_TABS, N_("↓"), N_("Entrar nos controles Canais/DMs")},
-    {HELP_SERVER_TABS, N_("[+ Adicionar]"), N_("Conectar outro servidor")},
+    {HELP_SERVER_TABS, N_("+ Adicionar"), N_("Conectar outro servidor")},
     {HELP_SERVER_TABS, N_("Ctrl+Espaço / m / clique direito"),
      N_("Abrir o menu do servidor, com Configurações do servidor e Remover servidor")},
     {HELP_SERVER_TABS, N_("Delete"),

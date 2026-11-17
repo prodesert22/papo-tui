@@ -151,7 +151,7 @@ class QuickSwitcher(unittest.TestCase):
                     channel["name"] = "planos"
             t = self.open(first)
             row = t.screen.display[0]
-            t.click(0, row.index("[+ Adicionar]") + 2)
+            t.click(0, row.index("+ Adicionar") + 2)
             self.wait(t, "URL do servidor")
             t.send(second.url + "\tjosé\tSynthetic!123\n")
             self.wait(t, "Trabalho")

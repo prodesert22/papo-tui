@@ -141,7 +141,7 @@ class Persistence(unittest.TestCase):
     def add_server(self, t, server):
         server.cookie_max_age = 30 * 86400
         row = t.screen.display[0]
-        t.click(0, row.index("[+ Adicionar]") + 2)
+        t.click(0, row.index("+ Adicionar") + 2)
         self.wait(t, "URL do servidor")
         t.send(server.url + "\tjosé\tSynthetic!123\n")
         self.wait(t, "[" + server.name + "]")

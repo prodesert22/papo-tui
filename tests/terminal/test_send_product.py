@@ -280,7 +280,7 @@ class SendProduct(support.SendProduct):
             terminal = self.open(first)
             try:
                 terminal.send("Rascunho primeiro")
-                self.click(terminal, "[+ Adicionar]")
+                self.click(terminal, "+ Adicionar")
                 self.wait(terminal, "URL do servidor")
                 terminal.send(second.url + "\tjosé\tSynthetic!123\n")
                 self.wait(terminal, "[Trabalho")

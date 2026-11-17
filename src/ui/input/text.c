@@ -2302,7 +2302,8 @@ bool text_decode_chunk(text_buffer *buffer, const char **utf8)
     return true;
 }
 
-int text_label(WINDOW *window, int y, int x, int width, const char *utf8)
+int text_label_fade(WINDOW *window, int y, int x, int width, const char *utf8,
+                    const int *fade_pairs, int fade_count)
 {
     if (width <= 0)
         return 0;
@@ -2311,22 +2312,39 @@ int text_label(WINDOW *window, int y, int x, int width, const char *utf8)
     if (!text_decode_chunk(&buffer, &utf8))
         return 0;
     text_measure(&buffer, width + 1, &layout);
+    /* The cells that fit, and whether the text goes on past them. */
+    size_t shown = 0;
     int used = 0;
-    attr_t attributes = window ? unbold_window(window) : 0;
-    for (size_t i = 0; i + 1 < layout.count; ++i) {
-        text_cell *point = &layout.cells[i];
-        if (point->row || point->newline || used + point->width > width)
+    bool cut = false;
+    for (; shown + 1 < layout.count; ++shown) {
+        text_cell *point = &layout.cells[shown];
+        if (point->newline)
             break;
-        if (window) {
-            cchar_t glyph;
-            if (setcchar(&glyph, point->glyph,
-                         theme_text_attributes(attributes & ~A_COLOR, PAIR_NUMBER(attributes)),
-                         PAIR_NUMBER(attributes), NULL) == OK)
-                mvwadd_wch(window, y, x + used, &glyph);
+        if (point->row || used + point->width > width) {
+            cut = true;
+            break;
         }
         used += point->width;
+    }
+    /* Only a cut label fades, and only when it is longer than the fade. */
+    int fade_start =
+        cut && fade_pairs && fade_count > 0 && used > fade_count ? used - fade_count : used;
+    attr_t attributes = window ? unbold_window(window) : 0;
+    int column = 0;
+    for (size_t i = 0; window && i < shown; ++i) {
+        text_cell *point = &layout.cells[i];
+        int pair = column >= fade_start ? fade_pairs[column - fade_start] : PAIR_NUMBER(attributes);
+        cchar_t glyph;
+        if (setcchar(&glyph, point->glyph, theme_text_attributes(attributes & ~A_COLOR, pair), pair,
+                     NULL) == OK)
+            mvwadd_wch(window, y, x + column, &glyph);
+        column += point->width;
     }
     if (window)
         wattrset(window, attributes);
     return used;
+}
+int text_label(WINDOW *window, int y, int x, int width, const char *utf8)
+{
+    return text_label_fade(window, y, x, width, utf8, NULL, 0);
 }

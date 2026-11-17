@@ -235,7 +235,7 @@ class RealtimeTerminal(unittest.TestCase):
             terminal = self.open(server)
             try:
                 self.wait(terminal, "Tempo real conectado")
-                terminal.click(0, terminal.screen.display[0].index("[+ Adicionar]") + 2)
+                terminal.click(0, terminal.screen.display[0].index("+ Adicionar") + 2)
                 self.wait(terminal, "URL do servidor")
                 terminal.read(0.5)
                 self.assertFalse(terminal.screen.cursor.hidden)

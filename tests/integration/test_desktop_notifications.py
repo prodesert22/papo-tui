@@ -148,7 +148,7 @@ class DesktopTests(unittest.TestCase):
         with R8Mock(count=3) as first, R8Mock(count=0) as second:
             second.name = "Trabalho"
             t = self.login(first)
-            t.click(0, t.screen.display[0].index("[+ Adicionar]") + 2)
+            t.click(0, t.screen.display[0].index("+ Adicionar") + 2)
             t.wait_text("URL do servidor")
             t.send(second.url + "\tjosé\tSynthetic!123\n")
             wait_for_screen(t, lambda: "[Trabalho" in t.screen.display[0], "second server")

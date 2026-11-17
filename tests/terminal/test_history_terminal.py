@@ -363,7 +363,7 @@ class HistoryTerminal(support.HistoryTerminal):
                 t.read(0.3)
                 self.assertEqual(server.refresh_count, 1)
                 self.assertIn("[Canais]", "\n".join(t.screen.display))
-                self.assertNotIn("[+ Adicionar]", "\n".join(t.screen.display))
+                self.assertNotIn("+ Adicionar", "\n".join(t.screen.display))
                 t.send("\n")
                 self.wait(t, "Você saiu da conta")
                 t.send("Synthetic!123\n")
@@ -710,14 +710,14 @@ class HistoryTerminal(support.HistoryTerminal):
             try:
                 self.wait(t, "Mensagem 0250")
                 self.assertIn("[Comunidade]", t.screen.display[0])
-                self.assertIn("[+ Adicionar]", t.screen.display[0])
+                self.assertIn("+ Adicionar", t.screen.display[0])
                 self.assertIn("Conversar em #", "\n".join(t.screen.display))
                 self.assertNotEqual(t.screen.display[0].strip(), "")  # outer frame
                 t.send("rascunho sem enviar")
                 self.assertFalse(
                     any(r[1].endswith("/messages") and r[0] == "POST" for r in first.requests)
                 )
-                self.click_text(t, "[+ Adicionar]")
+                self.click_text(t, "+ Adicionar")
                 self.wait(t, "URL do servidor")
                 self.assertNotIn(first.url, "\n".join(t.screen.display))
                 self.assertNotIn("josé", "\n".join(t.screen.display))
@@ -767,7 +767,7 @@ class HistoryTerminal(support.HistoryTerminal):
                 self.assertIn("Foco: Servidores", "\n".join(t.screen.display))
                 self.assertIn(">+ Adicionar<", t.screen.display[0])
                 t.send("\x1bOD")
-                self.assertIn("[+ Adicionar]", t.screen.display[0])
+                self.assertIn("+ Adicionar", t.screen.display[0])
                 t.send("\x1bOC")
                 self.assertIn(">+ Adicionar<", t.screen.display[0])
                 t.send("\n")
@@ -778,13 +778,13 @@ class HistoryTerminal(support.HistoryTerminal):
                 t.send("\x1b[C")  # CSI arrows emitted by some terminals
                 self.assertIn(">+ Adicionar<", t.screen.display[0])
                 t.send("\x1b[D")
-                self.assertIn("[+ Adicionar]", t.screen.display[0])
+                self.assertIn("+ Adicionar", t.screen.display[0])
                 t.resize(22, 44)
-                self.assertIn("[+ Adicionar]", t.screen.display[0])
+                self.assertIn("+ Adicionar", t.screen.display[0])
                 self.assertIn("[Canais]", "\n".join(t.screen.display))
                 t.send("\x1b[200~\x1bOC\n\x1b[201~")
                 self.assertNotIn("URL do servidor", "\n".join(t.screen.display))
-                self.click_text(t, "[+ Adicionar]")
+                self.click_text(t, "+ Adicionar")
                 self.wait(t, "URL do servidor")
                 # At the minimum height the tabs cover only the card's top border.
                 self.wait(t, "[Novo servidor]")
@@ -803,7 +803,7 @@ class HistoryTerminal(support.HistoryTerminal):
             rejected.scenario = "unauthorized"
             t = self.open(server)
             try:
-                self.click_text(t, "[+ Adicionar]")
+                self.click_text(t, "+ Adicionar")
                 self.wait(t, "URL do servidor")
                 t.send(rejected.url + "\tjosé\tWrong!123\n")
                 self.wait(t, "Usuário ou senha")
@@ -811,7 +811,7 @@ class HistoryTerminal(support.HistoryTerminal):
                 self.wait(t, "[Comunidade]")
                 self.assertEqual(t.screen.display[0].count("Comunidade"), 1)
                 self.assertFalse(any(r[1].endswith("/auth/logout") for r in server.requests))
-                self.click_text(t, "[+ Adicionar]")
+                self.click_text(t, "+ Adicionar")
                 self.wait(t, "URL do servidor")
                 t.send(server.url + "\tjosé\tSynthetic!123\n")
                 self.wait(t, "[Comunidade]")
@@ -820,7 +820,7 @@ class HistoryTerminal(support.HistoryTerminal):
                 self.assertEqual(sum(r[1].endswith("/auth/login") for r in server.requests), 2)
                 t.send("\x0c")
                 self.wait(t, "Você saiu da conta")
-                self.assertNotIn("[+ Adicionar]", "\n".join(t.screen.display))
+                self.assertNotIn("+ Adicionar", "\n".join(t.screen.display))
             finally:
                 self.assertTrue(t.close())
 
@@ -830,20 +830,31 @@ class HistoryTerminal(support.HistoryTerminal):
             second.name = "Segunda界" * 8
             t = self.open(first)
             try:
-                self.click_text(t, "[+ Adicionar]")
+                self.click_text(t, "+ Adicionar")
                 self.wait(t, "URL do servidor")
                 t.send(second.url + "\tjosé\tSynthetic!123\n")
                 self.wait(t, "Segunda界")
                 self.wait(t, "geral")
-                self.assertIn("[+ Adicionar]", t.screen.display[0])
-                self.assertIn("‹", t.screen.display[0])
-                self.click_text(t, "‹")
-                self.wait(t, "Primeira界")
+                self.assertIn("+ Adicionar", t.screen.display[0])
+                # Names show at most 28 cells, so both tabs still fit in 80 columns.
+                self.assertNotIn("‹", t.screen.display[0])
+                # The cut name dissolves into its tab instead of ending in an
+                # ellipsis: a padding cell, then 28 cells whose last four move
+                # toward the fill. The selected second tab has a fill of its own.
+                row = t.screen.buffer[0]
+                self.assertTrue(t.screen.display[0].startswith(" Primeira界Primeira界Primeira"))
+                self.assertNotIn("…", t.screen.display[0])
+                self.assertEqual(row[24].fg, row[1].fg, row[24])
+                fades = [row[column].fg for column in range(25, 29)]
+                self.assertNotIn(row[1].fg, fades, fades)
+                self.assertEqual({row[column].bg for column in range(0, 30)}, {row[1].bg})
+                selected = next(column for column in range(30, 79) if row[column].data == "S")
+                self.assertNotEqual(row[selected].bg, row[1].bg, row[selected])
                 self.click_text(t, "Primeira界")
                 self.wait(t, "[Primeira界")
                 t.resize(22, 44)
                 self.wait(t, "[Primeira界")
-                self.assertIn("[+ Adicionar]", t.screen.display[0])
+                self.assertIn("+ Adicionar", t.screen.display[0])
                 self.assertIn("›", t.screen.display[0])
                 self.click_text(t, "›")
                 self.wait(t, "Segunda界")

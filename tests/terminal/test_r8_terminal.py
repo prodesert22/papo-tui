@@ -798,12 +798,14 @@ class R8Terminal(support.R8Terminal):
             t = self.login(server)
             self.wait(t, "Mensagem 0001")
             # Colors are compared, not named, because the theme may redefine
-            # them: [+ Adicionar] is plain white text.
-            white = first_cell(t, 0, "[+ Adicionar]").fg
+            # them. The add tab has the theme's text color, not the white of
+            # the focused item, so the focused tab is told apart from it.
+            text = first_cell(t, 0, "+ Adicionar").fg
             t.click(0, t.screen.display[0].index("[Comunidade") + 1)
             self.wait(t, "Foco: Servidores")
             cell = first_cell(t, 0, "[Comunidade")
-            self.assertEqual(cell.fg, white, cell)
+            white = cell.fg
+            self.assertNotEqual(white, text, cell)
             self.assertNotEqual(cell.bg, "default", cell)
             focus = cell.bg
             # The selected channel with the focus uses the same colors.

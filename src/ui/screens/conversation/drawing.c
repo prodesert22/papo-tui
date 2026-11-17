@@ -1,4 +1,5 @@
 #include "model/text/translation.h"
+#include "ui/components/tabs.h"
 #include "ui/screens/conversation/private.h"
 
 static bool graphical_badge(void)
@@ -76,7 +77,10 @@ void conversation_list_button(view *ui, int button, int column, int width, const
 
 int conversation_tab_width(view *ui, size_t index, int available)
 {
-    int width = text_label(NULL, 0, 0, 128, ui->connections->items[index].name) + 4 +
+    const char *name = ui->connections->items[index].name;
+    /* A block is a space, the name, a space and a gap; the marked tab also has
+     * its [ ] or > < inside the name's cells. */
+    int width = (tab_blocks() ? tab_name_width(name) + 3 : text_label(NULL, 0, 0, 128, name) + 4) +
                 (instances_offline(ui->connections, index) ? 10 : 0);
     inbox *box = history_inbox(ui->connections->items[index].model);
     size_t mentions = inbox_unread_mentions(box, NULL);
@@ -184,39 +188,68 @@ void conversation_draw_tabs(view *ui)
             break;
         }
         bool selected = i == ui->active_tab, active = focused && i == ui->tab_cursor;
-        int tab_pair = active     ? THEME_PROFILE_BUTTON_FOCUS
-                       : selected ? THEME_PANEL_ACTIVE
-                                  : THEME_PANEL_MUTED;
-        wattrset(ui->tabs,
-                 COLOR_PAIR(tab_pair) |
-                     theme_text_attributes(selected || active ? A_BOLD : A_NORMAL, tab_pair));
+        bool blocks = tab_blocks();
+        int pair = blocks     ? tab_pair(selected ? TAB_SELECTED : TAB_IDLE, active, focused)
+                   : active   ? THEME_PROFILE_BUTTON_FOCUS
+                   : selected ? THEME_PANEL_ACTIVE
+                              : THEME_PANEL_MUTED;
+        wattrset(ui->tabs, COLOR_PAIR(pair) |
+                               theme_text_attributes(selected || active ? A_BOLD : A_NORMAL, pair));
         char label[192];
         inbox *box = history_inbox(ui->connections->items[i].model);
         size_t mentions = inbox_unread_mentions(box, NULL);
         bool notified = history_instance_unread(ui->connections->items[i].model);
         int badge_width = notified ? server_badge(ui, NULL, 0, 0, mentions, 0) : 0;
+        const char *suffix = instances_offline(ui->connections, i) ? " (offline)" : "";
+        int badge_pair = active              ? THEME_NOTIFICATION_BUTTON_FOCUS
+                         : selected          ? THEME_NOTIFICATION_SELECTED
+                         : blocks && focused ? THEME_NOTIFICATION_FOCUS
+                                             : THEME_NOTIFICATION;
+        int used;
+        if (blocks) {
+            /* Fill, space, name (fading when cut), the "(offline)" mark, the
+             * badge, space; the cell after the fill separates it from the next tab. */
+            for (int cell = 0; cell < size - 1; ++cell)
+                mvwaddch(ui->tabs, 0, x + cell, ' ');
+            int suffix_width = (int)strlen(suffix);
+            int room = size - 3 - suffix_width - badge_width - (notified ? 1 : 0);
+            used = 1 + tab_name_draw(ui->tabs, 0, x + 1, room > 0 ? room : 0,
+                                     ui->connections->items[i].name, pair);
+            used += text_label(ui->tabs, 0, x + used, suffix_width, suffix);
+            if (notified) {
+                mvwaddch(ui->tabs, 0, x + used++, ' ');
+                used += server_badge(ui, ui->tabs, 0, x + used, mentions, badge_pair);
+            }
+            ui->tab_hits[i] = (click_range){x, size};
+            x += size;
+            continue;
+        }
         snprintf(label, sizeof(label), "%c%s%s",
                  selected ? '['
                  : active ? '>'
                           : ' ',
-                 ui->connections->items[i].name,
-                 instances_offline(ui->connections, i) ? " (offline)" : "");
-        int used = text_label(ui->tabs, 0, x, size - 3 - badge_width - (notified ? 1 : 0), label);
+                 ui->connections->items[i].name, suffix);
+        used = text_label(ui->tabs, 0, x, size - 3 - badge_width - (notified ? 1 : 0), label);
         if (notified) {
             mvwaddch(ui->tabs, 0, x + used++, ' ');
-            used += server_badge(ui, ui->tabs, 0, x + used, mentions,
-                                 active     ? THEME_NOTIFICATION_BUTTON_FOCUS
-                                 : selected ? THEME_NOTIFICATION_SELECTED
-                                            : THEME_NOTIFICATION);
+            used += server_badge(ui, ui->tabs, 0, x + used, mentions, badge_pair);
         }
         mvwaddch(ui->tabs, 0, x + used, selected ? ']' : active ? '<' : ' ');
         ui->tab_hits[i] = (click_range){x, size};
         x += size;
     }
     bool adding = focused && ui->tab_cursor == ui->connections->count;
-    button_draw(ui->tabs, 0, ui->add_hit.x, ui->add_hit.width,
-                adding ? _(">+ Adicionar<") : _("[+ Adicionar]"),
-                adding ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
+    if (tab_blocks()) {
+        /* A tab of its own at the end of the strip, bold like the tab it opens. */
+        int pair = tab_pair(TAB_ADD, adding, focused);
+        wattrset(ui->tabs, COLOR_PAIR(pair) | theme_text_attributes(A_BOLD, pair));
+        for (int cell = 0; cell < ui->add_hit.width; ++cell)
+            mvwaddch(ui->tabs, 0, ui->add_hit.x + cell, ' ');
+        text_label(ui->tabs, 0, ui->add_hit.x + 1, ui->add_hit.width - 2, _("+ Adicionar"));
+    } else
+        button_draw(ui->tabs, 0, ui->add_hit.x, ui->add_hit.width,
+                    adding ? _(">+ Adicionar<") : _("[+ Adicionar]"),
+                    adding ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     ui->channels_hit = ui->conversation_hit = (click_range){0};
     if (TABS_ROWS < 2)
         return;

@@ -628,7 +628,7 @@ class Mentions(unittest.TestCase):
                 self.wait(t, "@alice")
                 t.send("\t")
                 self.wait(t, "@Álice")
-                click("[+ Adicionar]")
+                click("+ Adicionar")
                 self.wait(t, "URL do servidor")
                 t.send(second.url + "\tjosé\tSynthetic!123\n")
                 self.wait(t, "[Trabalho")

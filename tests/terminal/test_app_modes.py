@@ -1133,12 +1133,12 @@ class AppModes(unittest.TestCase):
                 self.wait(
                     t,
                     lambda: (
-                        any("[+ Adicionar]" in line for line in t.screen.display)
+                        any("+ Adicionar" in line for line in t.screen.display)
                         and any("josé" in line for line in t.screen.display)
                     ),
                 )
                 header = next(
-                    y for y, line in enumerate(t.screen.display) if "[+ Adicionar]" in line
+                    y for y, line in enumerate(t.screen.display) if "+ Adicionar" in line
                 )
                 self.assertNotIn(
                     "josé",

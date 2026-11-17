@@ -57,6 +57,7 @@ static const translation_entry translation_entries[] = {
     {"", "%u marcado(s) · Espaço marcar · Tab ações", NULL, {"%u marked · Space mark · Tab actions", NULL}},
     {"", "%zu emojis do servidor · Ctrl+R atualizar", NULL, {"%zu server emojis · Ctrl+R refresh", NULL}},
     {"", "%zu resultados · %zu não lidas conhecidas%s", NULL, {"%zu results · %zu known unread%s", NULL}},
+    {"", "+ Adicionar", NULL, {"+ Add", NULL}},
     {"", "+ Adicionar emoji", NULL, {"+ Add emoji", NULL}},
     {"", "+ Novo canal", NULL, {"+ New channel", NULL}},
     {"", "+ Novo cargo", NULL, {"+ New role", NULL}},

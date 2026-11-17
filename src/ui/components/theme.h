@@ -81,6 +81,10 @@ bool theme_luminance_light(unsigned red, unsigned green, unsigned blue);
 /* Tagged RGB foreground, preserving the existing background and palette. */
 int theme_rgb_pair(unsigned rgb, int fallback);
 int theme_member_pair(unsigned rgb, int background);
+/* pair with its foreground percent (0..100) of the way to its own background,
+ * for text that dissolves into the fill. pair itself when the terminal has
+ * fewer than 256 colors, pair is not a themed one or no tagged pair is left. */
+int theme_faded_pair(int pair, int percent);
 /* RGB the terminal shows behind pair (0xRRGGBB): exact with direct color or a
  * redefined palette, else its 256-color or basic approximation. Media blends
  * transparent pixels into it, so they match the cells around them. */

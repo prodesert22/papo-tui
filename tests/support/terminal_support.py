@@ -17,6 +17,7 @@ import time
 import tempfile
 
 import pyte
+from wcwidth import wcwidth
 
 from terminal_keys import CTRL_J, encode_keys  # noqa: F401
 
@@ -24,10 +25,67 @@ from terminal_keys import CTRL_J, encode_keys  # noqa: F401
 BINARY = argument(0)
 
 
+# What pyte reports for the fills of a server tab: the selected one (the
+# "selected conversation" fill) and the keyboard cursor on one (the focus
+# highlight). xterm-256color redefines colors 240 + role, in either palette;
+# Kitty keeps the indexed xterm ones, dark and light.
+TAB_SELECTED_BACKGROUNDS = {"b2b2b2", "262626", "ffd7af"}
+TAB_CURSOR_BACKGROUNDS = {"d0d0d0", "875f00", "d7af5f"}
+
+
 class ObservedScreen(pyte.Screen):
     def __init__(self, *args):
         self.visible_cursor_rows = []
         super().__init__(*args)
+
+    @property
+    def display(self):
+        """The screen text, with the server tab strip in row 0 written as markers.
+
+        Server tabs are blocks of fill, so the text alone cannot tell which one
+        is selected. Their padding cells keep the columns the old markers had:
+        the selected tab shows as [name] and a tab under the keyboard cursor as
+        >name<, as the application still draws them on terminals with fewer
+        than 256 colors. Tests that need the real colors read ``buffer``."""
+        lines = super().display
+        if self.lines:
+            lines[0] = self._tab_markers(lines[0])
+        return lines
+
+    def _tab_markers(self, text):
+        row = self.buffer[0]
+        runs, start = [], None
+        for x in range(self.columns + 1):
+            background = row[x].bg if x < self.columns else None
+            if background in TAB_SELECTED_BACKGROUNDS | TAB_CURSOR_BACKGROUNDS:
+                if start is None or row[start].bg != background:
+                    if start is not None:
+                        runs.append((start, x - 1))
+                    start = x
+            elif start is not None:
+                runs.append((start, x - 1))
+                start = None
+        selected = [run for run in runs if row[run[0]].bg in TAB_SELECTED_BACKGROUNDS]
+        cells = [row[x].data for x in range(self.columns)]
+        for first, last in runs:
+            label = "".join(cells[first + 1 : last]).strip()
+            if row[first].bg in TAB_SELECTED_BACKGROUNDS:
+                opening, closing = "[", "]"
+            elif label == "+ Adicionar":
+                opening, closing = ">", "<"
+            else:
+                # The cursor on the selected tab hides its own fill.
+                opening, closing = ("[", "]") if not selected else (">", "<")
+            if cells[first] == " " and cells[last] == " " and first != last:
+                cells[first], cells[last] = opening, closing
+        shown, skip = [], False
+        for x in range(self.columns):
+            if skip:
+                skip = False
+                continue
+            shown.append(cells[x])
+            skip = bool(cells[x]) and wcwidth(cells[x][0]) == 2
+        return "".join(shown) if shown else text
 
     def cursor_position(self, *args, **kwargs):
         super().cursor_position(*args, **kwargs)
@@ -310,7 +368,7 @@ class PosixTerminal:
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
             display = "\n".join(self.screen.display)
-            if "[+ Adicionar]" in display and ("Foco:" in display or "[Conversa]" in display):
+            if "+ Adicionar" in display and ("Foco:" in display or "[Conversa]" in display):
                 self.send("\x14")
                 deadline = time.monotonic() + 5
                 while (

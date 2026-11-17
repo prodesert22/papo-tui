@@ -3,6 +3,40 @@
 #include "ui/input/text.h"
 #include <stdio.h>
 
+/* Share of the background mixed into each of the last cells of a cut name,
+ * from the first faded cell to the last, which is nearly gone. */
+static const int fade_percent[] = {20, 44, 68, 92};
+
+bool tab_blocks(void)
+{
+    return has_colors() && COLORS >= 256;
+}
+int tab_pair(tab_kind kind, bool cursor, bool strip_focused)
+{
+    if (cursor)
+        return THEME_PROFILE_BUTTON_FOCUS;
+    switch (kind) {
+    case TAB_SELECTED:
+        return THEME_PANEL_ACTIVE;
+    case TAB_ADD:
+        return strip_focused ? THEME_PANEL : THEME_FOCUS_AREA;
+    default:
+        return strip_focused ? THEME_FOCUS_MUTED : THEME_PANEL_MUTED;
+    }
+}
+int tab_name_width(const char *name)
+{
+    return text_label(NULL, 0, 0, TAB_NAME_MAX, name);
+}
+int tab_name_draw(WINDOW *window, int row, int x, int width, const char *name, int pair)
+{
+    int pairs[sizeof(fade_percent) / sizeof(fade_percent[0])];
+    for (size_t i = 0; i < sizeof(pairs) / sizeof(pairs[0]); ++i)
+        pairs[i] = theme_faded_pair(pair, fade_percent[i]);
+    return text_label_fade(window, row, x, width > TAB_NAME_MAX ? TAB_NAME_MAX : width, name, pairs,
+                           (int)(sizeof(pairs) / sizeof(pairs[0])));
+}
+
 static int label_of(const char *const *labels, int index, int active, char *label, size_t size)
 {
     if (index == active)

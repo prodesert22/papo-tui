@@ -172,6 +172,7 @@ static struct {
     int fg, bg;
 } rgb_pairs[THEME_RGB_PAIR_COUNT];
 static int rgb_pair_count;
+static int pair_with_foreground(int fg, int fallback);
 int theme_rgb_pair(unsigned rgb, int fallback)
 {
     if (!(rgb & 0x1000000) || !has_colors() || COLORS < 8 || COLOR_PAIRS < 64)
@@ -199,6 +200,12 @@ int theme_rgb_pair(unsigned rgb, int fallback)
                 }
     } else
         fg = (r > 127 ? COLOR_RED : 0) | (g > 127 ? COLOR_GREEN : 0) | (b > 127 ? COLOR_BLUE : 0);
+    return pair_with_foreground(fg, fallback);
+}
+/* The pair showing color number fg over the background of pair fallback;
+ * fallback itself when no tagged pair is left. */
+static int pair_with_foreground(int fg, int fallback)
+{
     int oldfg, background;
     if (extended_pair_content(fallback, &oldfg, &background) == ERR)
         return fallback;
@@ -231,6 +238,50 @@ int theme_member_pair(unsigned rgb, int background)
 {
     int white = theme_rgb_pair(0x1ffffff, background);
     return theme_rgb_pair(rgb, white);
+}
+
+/* The xterm-256 index closest to color, grays included. */
+static int nearest_xterm(uint32_t color)
+{
+    int best = 16, best_distance = 0x7fffffff;
+    for (int index = 16; index < 256; ++index) {
+        uint32_t candidate = xterm_rgb(index);
+        int distance = 0;
+        for (int shift = 0; shift <= 16; shift += 8) {
+            int delta = (int)(color >> shift & 255) - (int)(candidate >> shift & 255);
+            distance += delta * delta;
+        }
+        if (distance < best_distance) {
+            best_distance = distance;
+            best = index;
+        }
+    }
+    return best;
+}
+int theme_faded_pair(int pair, int percent)
+{
+    if (!has_colors() || COLORS < 256 || !shown_ready || percent <= 0)
+        return pair;
+    int foreground = -1, background = -1;
+    for (size_t i = 0; i < sizeof(pair_colors) / sizeof(pair_colors[0]); ++i)
+        if (pair_colors[i].pair == pair) {
+            foreground = pair_colors[i].foreground;
+            background = pair_colors[i].background;
+        }
+    if (foreground < 0)
+        return pair;
+    if (foreground == FOCUS_RULE)
+        foreground = RULE;
+    else if (foreground == SELECTED_TEXT)
+        foreground = PROFILE_WHITE;
+    if (percent > 100)
+        percent = 100;
+    uint32_t from = shown_rgb[foreground], to = shown_rgb[background], mixed = 0;
+    for (int shift = 0; shift <= 16; shift += 8) {
+        int a = (int)(from >> shift & 255), b = (int)(to >> shift & 255);
+        mixed |= (uint32_t)(a + (b - a) * percent / 100) << shift;
+    }
+    return pair_with_foreground(COLORS >= 0x1000000 ? (int)mixed : nearest_xterm(mixed), pair);
 }
 
 static void apply(ui_theme *theme)

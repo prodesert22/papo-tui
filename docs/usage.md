@@ -31,8 +31,15 @@ session of every server you were signed in to. Each server opens as a tab in
 the top bar. The server you used last is selected, on the channel or direct
 message you had open there; each other tab also returns to its own last
 conversation. Without that record, for example on the first start after an
-update, the most recently added server is selected. Use **[+ Adicionar]** (Add)
-in that bar to sign in to another server.
+update, the most recently added server is selected. Use the **+ Adicionar** (Add)
+tab at the right end of that bar to sign in to another server.
+
+The selected server is the tab with a highlighted background. A server name too
+long for its tab is not cut with an ellipsis: its last characters fade into the
+tab. Terminals
+with fewer than 256 colors, such as the Linux console, cannot show the
+background, so the selected server is written as **[Name]** and the add tab as
+**[+ Adicionar]**.
 
 The sign-in screen keeps the server tabs at the top while another server is
 open, for example when the selected server is unreachable at startup or you are

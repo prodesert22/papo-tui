@@ -11,6 +11,7 @@
 #include "ui/components/button.h"
 #include "ui/components/help.h"
 #include "ui/components/input_border.h"
+#include "ui/components/tabs.h"
 #include "ui/components/terminal_title.h"
 #include "ui/components/theme.h"
 #include "ui/input/mouse.h"
@@ -413,13 +414,18 @@ static size_t tab_cursor(const login_ui *ui, auth_client *client)
                                                                          : tab_current(client);
 }
 
+/* The mark after the name of a server that does not answer. */
+static const char *tab_suffix(size_t index)
+{
+    return index < connections->count && instances_offline(connections, index) ? " (offline)" : "";
+}
+
 /* The form's own server is named by its profile, server or URL host. */
-static void tab_label(const login_ui *ui, auth_client *client, size_t index, char *label,
-                      size_t size)
+static void tab_name(const login_ui *ui, auth_client *client, size_t index, char *label,
+                     size_t size)
 {
     if (index < connections->count) {
-        snprintf(label, size, "%s%s", connections->items[index].name,
-                 instances_offline(connections, index) ? " (offline)" : "");
+        snprintf(label, size, "%s", connections->items[index].name);
         return;
     }
     const char *url = auth_instance_url(client), *host = strstr(url, "://");
@@ -434,11 +440,26 @@ static void tab_label(const login_ui *ui, auth_client *client, size_t index, cha
         snprintf(label, size, _("Novo servidor"));
 }
 
+static void tab_label(const login_ui *ui, auth_client *client, size_t index, char *label,
+                      size_t size)
+{
+    tab_name(ui, client, index, label, size);
+    size_t length = strlen(label);
+    snprintf(label + length, size - length, "%s", tab_suffix(index));
+}
+
 static int tab_width(const login_ui *ui, auth_client *client, size_t index, int available)
 {
     char label[192];
-    tab_label(ui, client, index, label, sizeof(label));
-    int width = text_cells(label, 128) + 3;
+    int width;
+    if (tab_blocks()) {
+        /* Space, name, space and the gap, with the mark outside the name's cap. */
+        tab_name(ui, client, index, label, sizeof(label));
+        width = tab_name_width(label) + 3 + (int)strlen(tab_suffix(index));
+    } else {
+        tab_label(ui, client, index, label, sizeof(label));
+        width = text_cells(label, 128) + 3;
+    }
     return width > available ? available : width;
 }
 
@@ -501,12 +522,27 @@ static void draw_tabs(login_ui *ui, auth_client *client)
             break;
         }
         bool selected = i == current, active = focused && i == cursor;
-        int pair = active     ? THEME_PROFILE_BUTTON_FOCUS
+        bool blocks = tab_blocks();
+        int pair = blocks     ? tab_pair(selected ? TAB_SELECTED : TAB_IDLE, active, false)
+                   : active   ? THEME_PROFILE_BUTTON_FOCUS
                    : selected ? THEME_PANEL_ACTIVE
                               : THEME_PANEL_MUTED;
         wattrset(w, COLOR_PAIR(pair) |
                         theme_text_attributes(selected || active ? A_BOLD : A_NORMAL, pair));
         char label[192];
+        if (blocks) {
+            /* Fill, space, name (fading when cut) and the "(offline)" mark. */
+            const char *suffix = tab_suffix(i);
+            for (int cell = 0; cell < size - 1; ++cell)
+                mvwaddch(w, 0, x + cell, ' ');
+            tab_name(ui, client, i, label, sizeof(label));
+            int room = size - 3 - (int)strlen(suffix);
+            int used = tab_name_draw(w, 0, x + 1, room > 0 ? room : 0, label, pair);
+            text(w, 0, x + 1 + used, (int)strlen(suffix), suffix);
+            ui->tab_hits[i] = (tab_hit){x, size};
+            x += size;
+            continue;
+        }
         tab_label(ui, client, i, label, sizeof(label));
         mvwaddch(w, 0, x, selected ? '[' : active ? '>' : ' ');
         int used = text_cells(label, size - 3);
