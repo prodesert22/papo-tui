@@ -673,9 +673,11 @@ if(BUILD_TESTING)
         text-test
         tests/unit/test_text.c
         src/ui/input/text.c
+        src/ui/input/shortcuts.c
         src/ui/input/mouse.c
         src/model/text/mentions.c
         src/config/key_binding.c
+        src/config/keymap.c
         src/model/text/translation.c
         src/ui/components/theme.c
         src/model/text/emoji_catalog.c)

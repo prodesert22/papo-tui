@@ -4,6 +4,7 @@
 #include "model/notifications/inbox.h"
 #include "config/channel_mutes.h"
 #include "config/channel_notifications.h"
+#include "config/keymap.h"
 #include "model/conversation/history.h"
 #include "model/text/translation.h"
 #include "net/auth/session_time.h"
@@ -769,7 +770,7 @@ bool inbox_dispatch(inbox *b)
     }
     json_decref(body);
     if (!ok) {
-        notice(b, _("Não foi possível preparar a operação. Ctrl+R: tentar novamente."));
+        notice(b, K_("Não foi possível preparar a operação. {k1:app.refresh}: tentar novamente."));
         return false;
     }
     b->pending = kind;
@@ -879,8 +880,8 @@ bool inbox_response(inbox *b, json_t *body, long code, bool uncertain)
               : code == 403  ? _("Acesso recusado ou DM bloqueada.")
               : code == 404  ? _("Conversa ou notificação indisponível.")
               : code == 429  ? _("Limite de requisições. Aguarde e tente novamente.")
-              : kind == READ ? _("Leitura não confirmada. Ctrl+R: tentar novamente.")
-                             : _("Falha ao carregar. Ctrl+R: tentar novamente."));
+              : kind == READ ? K_("Leitura não confirmada. {k1:app.refresh}: tentar novamente.")
+                             : K_("Falha ao carregar. {k1:app.refresh}: tentar novamente."));
     if (uncertain && (kind == OPEN || kind == CLOSE))
         b->want_dms = true;
     return ok;

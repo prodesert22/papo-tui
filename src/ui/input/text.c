@@ -10,6 +10,7 @@
 #include "platform/unicode.h"
 #include "ui/components/theme.h"
 #include "ui/input/mouse.h"
+#include "ui/input/shortcuts.h"
 #include <stdint.h>
 
 #include <glib.h>
@@ -227,15 +228,33 @@ static void define_event_keys(void)
 /* Push-to-talk mappings are temporary: while a call is active the chosen
  * combination must reach the conversation loop as press/release events, then
  * ordinary text editing has to regain the same sequences. Keep every
- * sequence defined here so changing the binding can remove and rebuild it. */
+ * sequence defined here so changing the binding can remove and rebuild it.
+ * Command keys the base decoder cannot tell apart (Alt+letter,
+ * Ctrl+Shift+letter, Ctrl+digit, modified function keys) are registered the
+ * same way, each to its own TEXT_BINDING_BASE code; push-to-talk is applied
+ * after them, so it keeps priority during calls. */
 #define PTT_SEQUENCE_LIMIT 96
+#define BINDING_SEQUENCE_LIMIT 1024
+#define BINDING_LIMIT (TEXT_BINDING_END - TEXT_BINDING_BASE)
 typedef struct {
     char text[64];
 } ptt_sequence;
+typedef struct {
+    ptt_sequence *items;
+    size_t count, limit;
+} sequence_table;
 static ptt_sequence ptt_sequences[PTT_SEQUENCE_LIMIT];
-static size_t ptt_sequence_count;
+static ptt_sequence binding_sequences[BINDING_SEQUENCE_LIMIT];
+static sequence_table ptt_table = {ptt_sequences, 0, PTT_SEQUENCE_LIMIT};
+static sequence_table binding_table = {binding_sequences, 0, BINDING_SEQUENCE_LIMIT};
+/* Where the generator below stores, and the codes it gives each event. */
+static sequence_table *store_table = &ptt_table;
+static int target_press = TEXT_PTT_PRESS, target_repeat = TEXT_IGNORED,
+           target_release = TEXT_PTT_RELEASE;
 static key_binding ptt_binding;
 static bool ptt_configured;
+static key_binding bindings[BINDING_LIMIT];
+static size_t binding_count;
 /* A legacy terminal repeats the control byte while the key is held. Suppress
  * those repeats so a held key performs one toggle instead of switching the
  * microphone on and off at the keyboard repeat rate. */
@@ -250,36 +269,48 @@ static capture_state capture;
 
 static void ptt_store(const char *sequence, int code)
 {
+    sequence_table *table = store_table;
     size_t length = sequence ? strlen(sequence) : 0;
-    if (!length || length >= sizeof(ptt_sequences[0].text) ||
-        ptt_sequence_count >= PTT_SEQUENCE_LIMIT)
+    if (!length || length >= sizeof(table->items[0].text) || table->count >= table->limit)
         return;
-    for (size_t i = 0; i < ptt_sequence_count; ++i)
-        if (!strcmp(ptt_sequences[i].text, sequence)) {
+    for (size_t i = 0; i < table->count; ++i)
+        if (!strcmp(table->items[i].text, sequence)) {
             /* Generic event definitions may have overwritten this sequence. */
             define_key(sequence, code);
             return;
         }
     define_key(sequence, code);
-    snprintf(ptt_sequences[ptt_sequence_count++].text, sizeof(ptt_sequences[0].text), "%s",
-             sequence);
+    snprintf(table->items[table->count++].text, sizeof(table->items[0].text), "%s", sequence);
 }
 
-static void ptt_clear(void)
+static void sequences_remove(sequence_table *table)
 {
-    for (size_t i = 0; i < ptt_sequence_count; ++i)
-        define_key(ptt_sequences[i].text, 0);
-    ptt_sequence_count = 0;
-    ptt_toggle_last = 0;
-    if (!ptt_configured)
-        return;
-    ptt_configured = false;
-    /* Recreate the sequences the binding replaced, including their event-type
-     * variants. The base definitions live in text_input_init(). */
+    for (size_t i = 0; i < table->count; ++i)
+        define_key(table->items[i].text, 0);
+    table->count = 0;
+}
+
+static void bindings_apply(void);
+/* Recreates the base definitions a registration replaced, including their
+ * event-type variants, then the command keys. text_input_init() holds the
+ * base definitions. */
+static void base_rebuild(void)
+{
     event_keys_defined = false;
     text_input_init();
     if (keyboard_events_requested)
         define_event_keys();
+    bindings_apply();
+}
+
+static void ptt_clear(void)
+{
+    sequences_remove(&ptt_table);
+    ptt_toggle_last = 0;
+    if (!ptt_configured)
+        return;
+    ptt_configured = false;
+    base_rebuild();
 }
 
 static void ptt_add_csi_u_events(unsigned code, unsigned modifiers)
@@ -287,13 +318,13 @@ static void ptt_add_csi_u_events(unsigned code, unsigned modifiers)
     unsigned modifier = modifiers + 1;
     char sequence[64];
     snprintf(sequence, sizeof(sequence), "\033[%u;%uu", code, modifier);
-    ptt_store(sequence, TEXT_PTT_PRESS);
+    ptt_store(sequence, target_press);
     snprintf(sequence, sizeof(sequence), "\033[%u;%u:1u", code, modifier);
-    ptt_store(sequence, TEXT_PTT_PRESS);
+    ptt_store(sequence, target_press);
     snprintf(sequence, sizeof(sequence), "\033[%u;%u:2u", code, modifier);
-    ptt_store(sequence, TEXT_IGNORED);
+    ptt_store(sequence, target_repeat);
     snprintf(sequence, sizeof(sequence), "\033[%u;%u:3u", code, modifier);
-    ptt_store(sequence, TEXT_PTT_RELEASE);
+    ptt_store(sequence, target_release);
 }
 
 static void ptt_add_tilde_events(unsigned number, unsigned modifiers)
@@ -304,12 +335,12 @@ static void ptt_add_tilde_events(unsigned number, unsigned modifiers)
         snprintf(sequence, sizeof(sequence), "\033[%u;%u~", number, modifier);
     else
         snprintf(sequence, sizeof(sequence), "\033[%u~", number);
-    ptt_store(sequence, TEXT_PTT_PRESS);
+    ptt_store(sequence, target_press);
     for (unsigned event = 1; event <= 3; ++event) {
         snprintf(sequence, sizeof(sequence), "\033[%u;%u:%u~", number, modifier, event);
-        ptt_store(sequence, event == 3   ? TEXT_PTT_RELEASE
-                            : event == 2 ? TEXT_IGNORED
-                                         : TEXT_PTT_PRESS);
+        ptt_store(sequence, event == 3   ? target_release
+                            : event == 2 ? target_repeat
+                                         : target_press);
     }
 }
 
@@ -321,12 +352,12 @@ static void ptt_add_final_events(unsigned number, unsigned modifiers, char final
         snprintf(sequence, sizeof(sequence), "\033[%c", final);
     else
         snprintf(sequence, sizeof(sequence), "\033[%u;%u%c", number, modifier, final);
-    ptt_store(sequence, TEXT_PTT_PRESS);
+    ptt_store(sequence, target_press);
     for (unsigned event = 1; event <= 3; ++event) {
         snprintf(sequence, sizeof(sequence), "\033[%u;%u:%u%c", number, modifier, event, final);
-        ptt_store(sequence, event == 3   ? TEXT_PTT_RELEASE
-                            : event == 2 ? TEXT_IGNORED
-                                         : TEXT_PTT_PRESS);
+        ptt_store(sequence, event == 3   ? target_release
+                            : event == 2 ? target_repeat
+                                         : target_press);
     }
 }
 
@@ -389,7 +420,7 @@ static void ptt_add_legacy_alt(unsigned code, unsigned modifiers)
         return;
     sequence[0] = 27;
     sequence[length + 1] = 0;
-    ptt_store(sequence, TEXT_PTT_PRESS);
+    ptt_store(sequence, target_press);
 }
 
 static unsigned kitty_code(key_binding_code code)
@@ -437,58 +468,58 @@ static void ptt_add_key(key_binding_code code, unsigned modifiers)
     if (code == KEY_BINDING_ENTER || code == KEY_BINDING_TAB || code == KEY_BINDING_BACKSPACE ||
         code == KEY_BINDING_ESCAPE) {
         snprintf(sequence, sizeof(sequence), "\033[27;%u;%uu", modifier, kitty_code(code));
-        ptt_store(sequence, TEXT_PTT_PRESS);
+        ptt_store(sequence, target_press);
         snprintf(sequence, sizeof(sequence), "\033[27;%u;%u~", modifier, kitty_code(code));
-        ptt_store(sequence, TEXT_PTT_PRESS);
+        ptt_store(sequence, target_press);
         if (!(modifiers & KEY_BINDING_CTRL) && (modifiers & KEY_BINDING_ALT)) {
             char legacy[3] = {27, 0, 0};
             legacy[1] = code == KEY_BINDING_ENTER    ? '\r'
                         : code == KEY_BINDING_TAB    ? '\t'
                         : code == KEY_BINDING_ESCAPE ? 27
                                                      : '\177';
-            ptt_store(legacy, TEXT_PTT_PRESS);
+            ptt_store(legacy, target_press);
         }
         if (code == KEY_BINDING_TAB && (modifiers & KEY_BINDING_SHIFT))
-            ptt_store("\033[Z", TEXT_PTT_PRESS);
+            ptt_store("\033[Z", target_press);
         return;
     }
     if (!modifiers) {
         switch (code) {
         case KEY_BINDING_UP:
-            ptt_store("\033[A", TEXT_PTT_PRESS);
-            ptt_store("\033OA", TEXT_PTT_PRESS);
+            ptt_store("\033[A", target_press);
+            ptt_store("\033OA", target_press);
             break;
         case KEY_BINDING_DOWN:
-            ptt_store("\033[B", TEXT_PTT_PRESS);
-            ptt_store("\033OB", TEXT_PTT_PRESS);
+            ptt_store("\033[B", target_press);
+            ptt_store("\033OB", target_press);
             break;
         case KEY_BINDING_RIGHT:
-            ptt_store("\033[C", TEXT_PTT_PRESS);
-            ptt_store("\033OC", TEXT_PTT_PRESS);
+            ptt_store("\033[C", target_press);
+            ptt_store("\033OC", target_press);
             break;
         case KEY_BINDING_LEFT:
-            ptt_store("\033[D", TEXT_PTT_PRESS);
-            ptt_store("\033OD", TEXT_PTT_PRESS);
+            ptt_store("\033[D", target_press);
+            ptt_store("\033OD", target_press);
             break;
         case KEY_BINDING_HOME:
-            ptt_store("\033[H", TEXT_PTT_PRESS);
-            ptt_store("\033OH", TEXT_PTT_PRESS);
+            ptt_store("\033[H", target_press);
+            ptt_store("\033OH", target_press);
             break;
         case KEY_BINDING_END:
-            ptt_store("\033[F", TEXT_PTT_PRESS);
-            ptt_store("\033OF", TEXT_PTT_PRESS);
+            ptt_store("\033[F", target_press);
+            ptt_store("\033OF", target_press);
             break;
         case KEY_BINDING_F1:
-            ptt_store("\033OP", TEXT_PTT_PRESS);
+            ptt_store("\033OP", target_press);
             break;
         case KEY_BINDING_F2:
-            ptt_store("\033OQ", TEXT_PTT_PRESS);
+            ptt_store("\033OQ", target_press);
             break;
         case KEY_BINDING_F3:
-            ptt_store("\033OR", TEXT_PTT_PRESS);
+            ptt_store("\033OR", target_press);
             break;
         case KEY_BINDING_F4:
-            ptt_store("\033OS", TEXT_PTT_PRESS);
+            ptt_store("\033OS", target_press);
             break;
         default:
             break;
@@ -505,7 +536,7 @@ static void ptt_add_key(key_binding_code code, unsigned modifiers)
         char final = finals[code - KEY_BINDING_UP];
         ptt_add_final_events(1, modifiers, final);
         snprintf(sequence, sizeof(sequence), "\033O1;%u%c", modifier, final);
-        ptt_store(sequence, TEXT_PTT_PRESS);
+        ptt_store(sequence, target_press);
         if (code == KEY_BINDING_HOME)
             ptt_add_tilde_events(7, modifiers);
         else if (code == KEY_BINDING_END)
@@ -558,13 +589,13 @@ static void ptt_add_char(unsigned code, unsigned modifiers)
     ptt_add_csi_u_events(code, modifiers);
     char sequence[64];
     snprintf(sequence, sizeof(sequence), "\033[27;%u;%u~", modifiers + 1, code);
-    ptt_store(sequence, TEXT_PTT_PRESS);
+    ptt_store(sequence, target_press);
     ptt_add_legacy_alt(code, modifiers);
     unsigned shifted = shifted_character(code);
     if (shifted != code && (modifiers & KEY_BINDING_SHIFT)) {
         ptt_add_csi_u_events(shifted, modifiers);
         snprintf(sequence, sizeof(sequence), "\033[27;%u;%u~", modifiers + 1, shifted);
-        ptt_store(sequence, TEXT_PTT_PRESS);
+        ptt_store(sequence, target_press);
         ptt_add_legacy_alt(shifted, modifiers);
     }
 }
@@ -573,11 +604,62 @@ static void ptt_apply(void)
 {
     if (!ptt_configured)
         return;
+    store_table = &ptt_table;
+    target_press = TEXT_PTT_PRESS;
+    target_repeat = TEXT_IGNORED;
+    target_release = TEXT_PTT_RELEASE;
     if (ptt_binding.kind == KEY_BINDING_CHAR) {
         ptt_add_char(ptt_binding.code, ptt_binding.modifiers);
         ptt_add_legacy_ctrl(&ptt_binding);
     } else if (ptt_binding.kind == KEY_BINDING_KEY)
         ptt_add_key((key_binding_code)ptt_binding.code, ptt_binding.modifiers);
+}
+
+static void bindings_apply(void)
+{
+    store_table = &binding_table;
+    for (size_t i = 0; i < binding_count; ++i) {
+        /* Repeats act again, as with ordinary keys; releases are consumed. */
+        target_press = target_repeat = TEXT_BINDING_BASE + (int)i;
+        target_release = TEXT_IGNORED;
+        if (bindings[i].kind == KEY_BINDING_CHAR)
+            ptt_add_char(bindings[i].code, bindings[i].modifiers);
+        else if (bindings[i].kind == KEY_BINDING_KEY)
+            ptt_add_key((key_binding_code)bindings[i].code, bindings[i].modifiers);
+    }
+    store_table = &ptt_table;
+    target_press = TEXT_PTT_PRESS;
+    target_repeat = TEXT_IGNORED;
+    target_release = TEXT_PTT_RELEASE;
+}
+
+void text_bindings_configure(const key_binding *keys, size_t count)
+{
+    if (count > BINDING_LIMIT)
+        count = BINDING_LIMIT;
+    if (count == binding_count && (!count || !memcmp(keys, bindings, count * sizeof(*keys))))
+        return;
+    bool registered = binding_count > 0;
+    sequences_remove(&binding_table);
+    if (count)
+        memcpy(bindings, keys, count * sizeof(*keys));
+    binding_count = count;
+    if (registered)
+        base_rebuild();
+    else
+        bindings_apply();
+    if (ptt_configured) {
+        sequences_remove(&ptt_table);
+        ptt_apply();
+    }
+}
+
+bool text_binding_key(uint32_t key, key_binding *binding)
+{
+    if (key < TEXT_BINDING_BASE || key >= TEXT_BINDING_BASE + binding_count)
+        return false;
+    *binding = bindings[key - TEXT_BINDING_BASE];
+    return true;
 }
 
 void text_push_to_talk_configure(const key_binding *binding)
@@ -1091,8 +1173,10 @@ void text_input_event_reporting(bool enabled)
         return; /* The support reply registers the keys before the mode starts. */
     bool refresh = !event_keys_defined;
     define_event_keys();
-    if (refresh)
+    if (refresh) {
+        bindings_apply();
         ptt_apply();
+    }
     if (!keyboard_events_active) {
         fputs("\033[=3u", stdout);
         fflush(stdout);
@@ -1148,6 +1232,8 @@ int text_input_read(uint32_t *key)
 {
     if (capture.active)
         return capture_read(key);
+    /* Command keys changed in Settings are registered before the next key. */
+    shortcut_refresh();
     /* The input loop polls often enough to close a pending keyboard request. */
     ui_mouse_keyboard_poll();
     int type = text_read_raw(key);
@@ -1157,6 +1243,7 @@ int text_input_read(uint32_t *key)
              * sending them, otherwise the release tail reaches the editor. */
             if (keyboard_events_requested)
                 define_event_keys();
+            bindings_apply();
             ptt_apply();
             /* Disambiguate and request press/repeat/release events. Text keys
              * remain ordinary UTF-8; registered releases are consumed. */

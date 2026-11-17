@@ -1,4 +1,5 @@
 #include "config/profiles_storage.h"
+#include "config/keymap.h"
 #include "model/text/translation.h"
 #include "platform/windows/files.h"
 #include <glib.h>
@@ -77,10 +78,9 @@ bool profiles_storage_save(profile_config *config, bool (*serialize)(profile_con
     g_free(path);
     if (lock == INVALID_HANDLE_VALUE)
         return error(config, _("Configuração ocupada por outro processo. Tente salvar novamente."));
-    bool ok = unchanged(config)
-                  ? serialize(config)
-                  : error(config,
-                          _("A configuração mudou em outro processo. Use Ctrl+R antes de salvar."));
+    bool ok = unchanged(config) ? serialize(config)
+                                : error(config, K_("A configuração mudou em outro processo. Use "
+                                                   "{k1:app.refresh} antes de salvar."));
     CloseHandle(lock);
     return ok;
 }

@@ -774,14 +774,14 @@ static int profiles_run(profile_config *config, bool allow_local_http,
                 text_paste_cancel(&ui->paste_data);
             continue;
         }
-        if (!ui->paste && type == OK && key == 17) {
+        if (!ui->paste && shortcut_is(type, key, KEYMAP_QUIT)) {
             result = 2;
             break;
         }
         if (!ui->paste && help_key(&ui->help, type, key))
             continue;
         if (!ui->paste &&
-            (shortcut_is(type, key, SHORTCUT_HELP) || shortcut_is(type, key, SHORTCUT_HELP_ALL))) {
+            (shortcut_is(type, key, KEYMAP_HELP) || shortcut_is(type, key, KEYMAP_HELP_ALL))) {
             help_context context =
                 ui->dialog ? HELP_CONFIRM | (ui->field < 2 && ui->dialog_type != REMOVE_DIALOG
                                                  ? HELP_FIELDS | HELP_FIELD_CLEAR
@@ -789,7 +789,7 @@ static int profiles_run(profile_config *config, bool allow_local_http,
                            : HELP_PROFILES;
             help_open(&ui->help, context,
                       ui->dialog ? _("Formulário de perfil") : _("Perfis de servidores"),
-                      shortcut_is(type, key, SHORTCUT_HELP_ALL));
+                      shortcut_is(type, key, KEYMAP_HELP_ALL));
             continue;
         }
         if (type == KEY_CODE_YES && key == KEY_MOUSE) {
@@ -805,9 +805,9 @@ static int profiles_run(profile_config *config, bool allow_local_http,
                 clipboard_copy(ui->field ? &ui->url : &ui->name);
             continue;
         }
-        if (type == OK &&
-            (key == 17 ||
-             (key == 3 && !(ui->dialog && ui->dialog_type != REMOVE_DIALOG && ui->field < 2)))) {
+        if (shortcut_is(type, key, KEYMAP_QUIT) ||
+            (type == OK && key == 3 &&
+             !(ui->dialog && ui->dialog_type != REMOVE_DIALOG && ui->field < 2))) {
             result = 2;
             break;
         }
@@ -825,7 +825,11 @@ static int profiles_run(profile_config *config, bool allow_local_http,
         int tab = type == OK && key == '\t' ? 1 : type == KEY_CODE_YES && key == KEY_BTAB ? -1 : 0;
         if (ui->chooser) {
             const int areas[] = {TAB_AREA, SELECT, MANAGE, CANCEL};
-            if (type == OK && (key == 16 || key == 14 || key == 5 || key == 4 || key == 12)) {
+            if (shortcut_is(type, key, KEYMAP_PROFILES) ||
+                shortcut_is(type, key, KEYMAP_PROFILE_ADD) ||
+                shortcut_is(type, key, KEYMAP_PROFILE_EDIT) ||
+                shortcut_is(type, key, KEYMAP_PROFILE_REMOVE) ||
+                shortcut_is(type, key, KEYMAP_PROFILE_LIMITS)) {
                 result = 3;
                 break;
             }
@@ -857,11 +861,11 @@ static int profiles_run(profile_config *config, bool allow_local_http,
                 else if (key == KEY_DOWN && ui->cursor + 1 < (int)config->count)
                     ++ui->cursor;
                 ui->selection_error = false;
-            } else if (type == OK && key == 18) {
+            } else if (shortcut_is(type, key, KEYMAP_REFRESH)) {
                 profiles_reload(config);
                 ui->cursor = ui->first_tab = 0;
                 ui->selection_error = false;
-            } else if (shortcut_is(type, key, SHORTCUT_RETRY_SEND)) {
+            } else if (shortcut_is(type, key, KEYMAP_PROFILE_VERIFY)) {
                 const server_profile *profile = selected(ui);
                 if (profile && !start_discovery(ui, profile)) {
                     result = -1;
@@ -948,23 +952,27 @@ static int profiles_run(profile_config *config, bool allow_local_http,
                 ui->cursor = 0;
             if (ui->cursor >= (int)config->count)
                 ui->cursor = (int)config->count - 1;
-        } else if (type == OK && key == 18) {
+        } else if (shortcut_is(type, key, KEYMAP_REFRESH)) {
             profiles_reload(config);
             ui->cursor = ui->first_tab = 0;
             ui->focus = selected(ui) ? LIST_AREA : TAB_AREA;
-        } else if (type == OK && key == 12) {
+        } else if (shortcut_is(type, key, KEYMAP_PROFILE_LIMITS)) {
             if (selected(ui) && !open_dialog(ui, LIMITS)) {
                 result = -1;
                 break;
             }
-        } else if (shortcut_is(type, key, SHORTCUT_RETRY_SEND)) {
+        } else if (shortcut_is(type, key, KEYMAP_PROFILE_VERIFY)) {
             const server_profile *profile = selected(ui);
             if (profile && !start_discovery(ui, profile)) {
                 result = -1;
                 break;
             }
-        } else if (type == OK && (key == 14 || key == 5 || key == 4)) {
-            if (!open_dialog(ui, key == 14 ? ADD : key == 5 ? EDIT : REMOVE)) {
+        } else if (shortcut_is(type, key, KEYMAP_PROFILE_ADD) ||
+                   shortcut_is(type, key, KEYMAP_PROFILE_EDIT) ||
+                   shortcut_is(type, key, KEYMAP_PROFILE_REMOVE)) {
+            if (!open_dialog(ui, shortcut_is(type, key, KEYMAP_PROFILE_ADD)    ? ADD
+                                 : shortcut_is(type, key, KEYMAP_PROFILE_EDIT) ? EDIT
+                                                                               : REMOVE)) {
                 result = -1;
                 break;
             }

@@ -448,7 +448,7 @@ bool conversation_members_key(view *ui, int type, uint32_t key)
 {
     if (r8_modal_is_open(ui->r8))
         return false;
-    if (shortcut_is(type, key, SHORTCUT_MEMBERS)) {
+    if (shortcut_is(type, key, KEYMAP_MEMBERS)) {
         conversation_members_toggle(ui);
         return true;
     }
@@ -458,18 +458,18 @@ bool conversation_members_key(view *ui, int type, uint32_t key)
         return true;
     }
     if (!conversation_members_modal(ui) &&
-        (shortcut_is(type, key, SHORTCUT_SEARCH) || shortcut_is(type, key, SHORTCUT_PINNED) ||
-         shortcut_is(type, key, SHORTCUT_NOTIFICATIONS)))
+        (shortcut_is(type, key, KEYMAP_SEARCH) || shortcut_is(type, key, KEYMAP_PINNED) ||
+         shortcut_is(type, key, KEYMAP_NOTIFICATIONS)))
         return false;
     bool modal = conversation_members_modal(ui);
     if ((!ui->members_open && !modal) || (ui->focus != MEMBERS_PANEL && !modal) ||
         (type == KEY_CODE_YES && key == KEY_MOUSE))
         return false;
     struct member_drawer *d = ui->members;
-    if (shortcut_is(type, key, SHORTCUT_MENU)) {
+    if (shortcut_is(type, key, KEYMAP_MENU)) {
         if (d->panel == MEMBER_MENU || (d->panel == MEMBER_NO_MODAL && d->focus == 2)) {
-            type = OK;
-            key = 'm';
+            type = KEY_CODE_YES;
+            key = shortcut_code(KEYMAP_ITEM_MENU);
         } else
             return true;
     }
@@ -481,7 +481,7 @@ bool conversation_members_key(view *ui, int type, uint32_t key)
             conversation_members_toggle(ui);
         return true;
     }
-    if (type == OK && key == 18) {
+    if (shortcut_is(type, key, KEYMAP_REFRESH)) {
         auth_permissions_refresh(ui->connections->items[ui->active_tab].auth);
         if (d->panel == MEMBER_CARD) {
             retry_profile_media(ui);
@@ -509,7 +509,7 @@ bool conversation_members_key(view *ui, int type, uint32_t key)
             d->menu = MIN(MAX(0, count - 1), d->menu + 1);
         else if (enter)
             activate_menu(ui);
-        else if (type == OK && key == 'm')
+        else if (shortcut_is(type, key, KEYMAP_ITEM_MENU))
             close_modal(ui);
         return true;
     }
@@ -526,7 +526,7 @@ bool conversation_members_key(view *ui, int type, uint32_t key)
         return true;
     }
     if (d->panel == MEMBER_LINK) {
-        if (enter || (type == OK && key == 'c')) {
+        if (enter || shortcut_is(type, key, KEYMAP_COPY_LINK)) {
             text_buffer link;
             bool copied = false;
             if (text_decode(&link, history_member_reset_url(ui->model))) {
@@ -567,7 +567,7 @@ bool conversation_members_key(view *ui, int type, uint32_t key)
             select_row(d, d->cursor + (key == KEY_DOWN ? 1 : -1));
         return true;
     }
-    if (type == OK && key == '/' && d->focus != 0) {
+    if (shortcut_is(type, key, KEYMAP_MEMBER_SEARCH) && d->focus != 0) {
         d->focus = 0;
         return true;
     }
@@ -592,9 +592,9 @@ bool conversation_members_key(view *ui, int type, uint32_t key)
             change_group(ui);
         return true;
     }
-    if (type == OK && key == '/')
+    if (shortcut_is(type, key, KEYMAP_MEMBER_SEARCH))
         d->focus = 0;
-    else if (type == OK && key == 'm')
+    else if (shortcut_is(type, key, KEYMAP_ITEM_MENU))
         open_menu(ui, -1);
     else if (enter && d->rows->len && *d->selected) {
         d->restore[0] = 0;
@@ -746,7 +746,8 @@ static void draw_card(view *ui, WINDOW *w)
                                                            AUTH_MEDIA_CONTENT, banner, 0, false);
             if (media_resource_error(resource, false)) {
                 wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
-                text_label(w, 2, 2, width - 4, _("Banner indisponível · Ctrl+R: tentar novamente"));
+                text_label(w, 2, 2, width - 4,
+                           K_("Banner indisponível · {k1:app.refresh}: tentar novamente"));
             }
             media_resource_release(resource);
         }
@@ -814,7 +815,7 @@ static void draw_card(view *ui, WINDOW *w)
     g_string_free(body, true);
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     text_label(w, height - 2, 2, width - 4,
-               _("↑↓ / roda: rolar · Ctrl+R: atualizar · Esc: voltar"));
+               K_("↑↓ / roda: rolar · {k1:app.refresh}: atualizar · Esc: voltar"));
 }
 static void draw_list(view *ui)
 {
@@ -827,7 +828,7 @@ static void draw_list(view *ui)
     member_overlay(ui, w);
     wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
     char title[80];
-    snprintf(title, sizeof(title), _("Membros (%u) · Ctrl+U"), d->rows->len);
+    snprintf(title, sizeof(title), K_("Membros (%u) · {k1:conversation.members}"), d->rows->len);
     text_label(w, 0, 2, width - 4, title);
     wattrset(w,
              COLOR_PAIR(d->focus == 0 && ui->focus == MEMBERS_PANEL ? THEME_FOCUSED : THEME_INPUT));

@@ -364,7 +364,7 @@ void conversation_interactions_sync(view *ui)
     if (ui->context_open && !*ui->dm_context_id && !*ui->channel_context_id &&
         !ui->server_context && !ui->delete_confirm && !menu_actions(ui, available)) {
         conversation_interactions_close(ui);
-        ui->feedback = _("Permissões ainda não confirmadas. Aguarde ou use Ctrl+R.");
+        ui->feedback = K_("Permissões ainda não confirmadas. Aguarde ou use {k1:app.refresh}.");
     }
     char edited[37];
     bool success;
@@ -425,7 +425,7 @@ static void open_context(view *ui, const MEVENT *event)
         return;
     int available[MESSAGE_ACTIONS];
     if (!menu_actions(ui, available)) {
-        ui->feedback = _("Permissões ainda não confirmadas. Aguarde ou use Ctrl+R.");
+        ui->feedback = K_("Permissões ainda não confirmadas. Aguarde ou use {k1:app.refresh}.");
         return;
     }
     ui->context_open = true;
@@ -690,12 +690,13 @@ bool conversation_interactions_key(view *ui, int type, uint32_t key)
             ui->channel_menu = 0;
             return true;
         }
-        if (type == OK && (key == 27 || ((key == 'm' || key == 'M') && ui->context_open))) {
+        if ((type == OK && key == 27) ||
+            (shortcut_is(type, key, KEYMAP_ITEM_MENU) && ui->context_open)) {
             conversation_interactions_close(ui);
             return true;
         }
         if (ui->context_open) {
-            if (type == OK && key == 18) {
+            if (shortcut_is(type, key, KEYMAP_REFRESH)) {
                 if (*ui->channel_context_id)
                     history_reload_channels(ui->model);
                 else if (*ui->dm_context_id)
@@ -714,11 +715,11 @@ bool conversation_interactions_key(view *ui, int type, uint32_t key)
             conversation_reactors_key(ui, type, key);
         return true;
     }
-    if (ui->focus == SERVER_TABS && type == OK && (key == 'm' || key == 'M')) {
+    if (ui->focus == SERVER_TABS && shortcut_is(type, key, KEYMAP_ITEM_MENU)) {
         conversation_open_server_menu(ui, ui->tab_cursor, true);
         return true;
     }
-    if (ui->focus == CHANNEL_LIST && type == OK && (key == 'm' || key == 'M')) {
+    if (ui->focus == CHANNEL_LIST && shortcut_is(type, key, KEYMAP_ITEM_MENU)) {
         if (ui->list_dms)
             open_dm_context(ui, NULL);
         else
@@ -744,7 +745,7 @@ bool conversation_interactions_key(view *ui, int type, uint32_t key)
         ui->feedback = _("Nenhuma mensagem própria no histórico carregado para editar.");
         return true;
     }
-    if (shortcut_is(type, key, SHORTCUT_MESSAGES)) {
+    if (shortcut_is(type, key, KEYMAP_SELECT)) {
         ui->centered_message[0] = 0;
         if (!ui->body)
             return true;
@@ -783,9 +784,13 @@ bool conversation_interactions_key(view *ui, int type, uint32_t key)
         conversation_set_focus(ui, ui->return_focus);
         return true;
     }
-    if (type == OK && (key == 'r' || key == 'R' || key == 'e' || key == 'E')) {
+    int action = shortcut_is(type, key, KEYMAP_REPLY)      ? 2
+                 : shortcut_is(type, key, KEYMAP_REACT)    ? 1
+                 : shortcut_is(type, key, KEYMAP_REACTORS) ? 0
+                                                           : -1;
+    if (action >= 0) {
         if (selected_index(ui) != SIZE_MAX)
-            message_action(ui, key == 'r' || key == 'R' ? 2 : key == 'e' ? 1 : 0);
+            message_action(ui, action);
         return true;
     }
     size_t index = selected_index(ui), count = history_message_count(ui->model);
@@ -804,7 +809,7 @@ bool conversation_interactions_key(view *ui, int type, uint32_t key)
         reveal(ui);
         return true;
     }
-    if (type == OK && key == 'm') {
+    if (shortcut_is(type, key, KEYMAP_ITEM_MENU)) {
         reveal(ui);
         open_context(ui, NULL);
         return true;
@@ -1045,7 +1050,7 @@ void conversation_interactions_draw(view *ui)
                 ? _("Baixar anexos")
                 : _("Baixar anexo"),
             history_pin_state(ui->model, ui->selected_message) < 0
-                ? _("Fixação indisponível (Ctrl+R)")
+                ? K_("Fixação indisponível ({k1:app.refresh})")
             : history_pin_state(ui->model, ui->selected_message) ? _("Desafixar mensagem")
                                                                  : _("Fixar mensagem"),
             _("Ver perfil"),

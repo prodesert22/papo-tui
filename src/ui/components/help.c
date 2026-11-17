@@ -17,36 +17,40 @@ typedef struct {
     const char *keys, *function;
 } help_row;
 static const help_row rows[] = {
-    {HELP_COMMON, N_("Ctrl+G / F1"), N_("Abrir ou fechar a ajuda do contexto atual")},
-    {HELP_COMMON, N_("Ctrl+/"), N_("Abrir ou fechar a ajuda global")},
-    {HELP_COMMON, N_("Ctrl+F na ajuda"), N_("Focar a busca por teclas, função ou área")},
+    {HELP_COMMON, N_("{k:app.help}"), N_("Abrir ou fechar a ajuda do contexto atual")},
+    {HELP_COMMON, N_("{k:app.help_all}"), N_("Abrir ou fechar a ajuda global")},
+    {HELP_COMMON, N_("{k:conversation.search} na ajuda"),
+     N_("Focar a busca por teclas, função ou área")},
     {HELP_COMMON, N_("Tab / Shift+Tab na ajuda"), N_("Percorrer busca, tabela e botões")},
-    {HELP_COMMON, N_("Ctrl+Q"), N_("Sair do aplicativo")},
+    {HELP_COMMON, N_("{k:app.quit}"), N_("Sair do aplicativo")},
     {HELP_CONVERSATION | HELP_LOGIN | HELP_ACCOUNT | HELP_PROFILES, N_("Tab / Shift+Tab"),
      N_("Percorrer as áreas e os botões")},
     {HELP_CONVERSATION, ALT_ARROWS, N_("Ir à área ou ao botão naquela direção")},
-    {HELP_CONVERSATION, N_("Ctrl+S"), N_("Abrir configurações do aplicativo")},
-    {HELP_CONVERSATION, N_("Ctrl+F"), N_("Buscar mensagens no servidor")},
-    {HELP_CONVERSATION, N_("Ctrl+K"),
+    {HELP_CONVERSATION, N_("{k:conversation.settings}"), N_("Abrir configurações do aplicativo")},
+    {HELP_CONVERSATION, N_("{k:conversation.search}"), N_("Buscar mensagens no servidor")},
+    {HELP_CONVERSATION, N_("{k:conversation.switcher}"),
      N_("Ir para um canal ou DM de qualquer servidor pelo nome; mostra primeiro menções e não "
         "lidas")},
-    {HELP_CONVERSATION, N_("Ctrl+B"), N_("Abrir mensagens fixadas")},
-    {HELP_CONVERSATION, N_("Ctrl+U"), N_("Abrir ou fechar a lista de membros")},
-    {HELP_CONVERSATION, N_("Ctrl+D"), N_("Abrir a central de notificações")},
-    {HELP_CONVERSATION | HELP_ACCOUNT, N_("Ctrl+T"),
+    {HELP_CONVERSATION, N_("{k:conversation.pinned}"), N_("Abrir mensagens fixadas")},
+    {HELP_CONVERSATION, N_("{k:conversation.members}"), N_("Abrir ou fechar a lista de membros")},
+    {HELP_CONVERSATION, N_("{k:conversation.notifications}"),
+     N_("Abrir a central de notificações")},
+    {HELP_CONVERSATION | HELP_ACCOUNT, N_("{k:conversation.account}"),
      N_("Abrir a conta; na conta, voltar às conversas")},
-    {HELP_CONVERSATION | HELP_LOGIN | HELP_ACCOUNT, N_("Ctrl+P"),
+    {HELP_CONVERSATION | HELP_LOGIN | HELP_ACCOUNT, N_("{k:conversation.profiles}"),
      N_("Selecionar ou gerenciar perfis de servidores")},
-    {HELP_CONVERSATION, N_("Ctrl+X"),
+    {HELP_CONVERSATION, N_("{k:conversation.player}"),
      N_("Voltar à mensagem do áudio em segundo plano e abrir o player")},
-    {HELP_CONVERSATION, N_("Ctrl+L"), N_("Sair da conta atual")},
-    {HELP_CONVERSATION, N_("Ctrl+R"), N_("Atualizar a conversa e permissões ou reconectar")},
-    {HELP_CONVERSATION, N_("F5"), N_("Reconectar agora quando a conexão cair")},
+    {HELP_CONVERSATION, N_("{k:conversation.logout}"), N_("Sair da conta atual")},
+    {HELP_CONVERSATION, N_("{k:app.refresh}"),
+     N_("Atualizar a conversa e permissões ou reconectar")},
+    {HELP_CONVERSATION, N_("{k:conversation.reconnect}"),
+     N_("Reconectar agora quando a conexão cair")},
     {HELP_SERVER_TABS, N_("← / →"), N_("Selecionar um servidor ou Adicionar")},
     {HELP_SERVER_TABS, N_("Enter"), N_("Ativar o servidor ou abrir a conexão de outro servidor")},
     {HELP_SERVER_TABS, N_("↓"), N_("Entrar nos controles Canais/DMs")},
     {HELP_SERVER_TABS, N_("+ Adicionar"), N_("Conectar outro servidor")},
-    {HELP_SERVER_TABS, N_("Ctrl+Espaço / m / clique direito"),
+    {HELP_SERVER_TABS, N_("{k:conversation.menu} / {k:lists.menu} / clique direito"),
      N_("Abrir o menu do servidor, com Configurações do servidor e Remover servidor")},
     {HELP_SERVER_TABS, N_("Delete"),
      N_("Remover o servidor da lista e apagar a sessão salva neste computador")},
@@ -71,13 +75,13 @@ static const help_row rows[] = {
     {HELP_CONVERSATION | HELP_VOICE, N_("Tecla configurada / segurar botão"),
      N_("Transmitir com pressionar para falar; a combinação ou o botão 4/5 do mouse é "
         "escolhido em Configurações > Áudio")},
-    {HELP_CHANNELS, N_("Ctrl+O / Shift+Enter"),
+    {HELP_CHANNELS, N_("{k:conversation.attach} / Shift+Enter"),
      N_("Abrir o histórico do canal selecionado, inclusive voz")},
-    {HELP_CHANNELS | HELP_MEMBERS, N_("Ctrl+Espaço / m"),
+    {HELP_CHANNELS | HELP_MEMBERS, N_("{k:conversation.menu} / {k:lists.menu}"),
      N_("Abrir o menu de contexto da seleção")},
     {HELP_CHANNELS | HELP_MEMBERS | HELP_HISTORY | HELP_SELECTION, N_("Clique direito"),
      N_("Abrir o menu do canal, DM, membro ou mensagem")},
-    {HELP_DM_LIST, N_("Ctrl+W"), N_("Fechar a DM selecionada")},
+    {HELP_DM_LIST, N_("{k:conversation.close_dm}"), N_("Fechar a DM selecionada")},
     {HELP_CHANNELS, N_("↑ no início / Esc"), N_("Voltar aos controles da lista ou ao histórico")},
     {HELP_HISTORY, N_("↑↓ / roda"), N_("Rolar o histórico sem mudar de conversa")},
     {HELP_HISTORY, N_("Arrastar o mouse"),
@@ -85,20 +89,22 @@ static const help_row rows[] = {
     {HELP_HISTORY, N_("PgUp / PgDn"),
      N_("Rolar uma página e carregar mensagens ao chegar às bordas")},
     {HELP_HISTORY, N_("Home / End"), N_("Ir ao início ou ao fim do histórico carregado")},
-    {HELP_HISTORY | HELP_EDITOR | HELP_SELECTION, N_("Ctrl+J"),
+    {HELP_HISTORY | HELP_EDITOR | HELP_SELECTION, N_("{k:conversation.select}"),
      N_("Entrar ou sair da seleção de mensagens")},
-    {HELP_HISTORY, N_("Ctrl+Espaço"), N_("Selecionar uma mensagem e abrir suas ações")},
+    {HELP_HISTORY, N_("{k:conversation.menu}"), N_("Selecionar uma mensagem e abrir suas ações")},
     {HELP_HISTORY, N_("Digite texto"), N_("Focar o editor e continuar o rascunho")},
     {HELP_HISTORY, N_("← / Esc"), N_("Voltar à lista de canais")},
     {HELP_HISTORY, N_("↑ no início"), N_("Focar os botões Busca, Fixadas e Membros")},
     {HELP_EDITOR, N_("Enter"), N_("Enviar ou confirmar a edição; sem texto, perguntar se exclui")},
     {HELP_EDITOR, N_("Shift+Enter / Ctrl+N"), N_("Inserir uma quebra de linha sem enviar")},
     {HELP_EDITOR, N_("Ctrl+A"), N_("Selecionar todo o texto da caixa")},
-    {HELP_EDITOR | HELP_HISTORY, N_("Ctrl+E"), N_("Abrir ou fechar o seletor de emojis")},
-    {HELP_EDITOR | HELP_HISTORY, N_("Ctrl+O / 📎"), N_("Escolher arquivos para anexar")},
+    {HELP_EDITOR | HELP_HISTORY, N_("{k:conversation.emojis}"),
+     N_("Abrir ou fechar o seletor de emojis")},
+    {HELP_EDITOR | HELP_HISTORY, N_("{k:conversation.attach} / 📎"),
+     N_("Escolher arquivos para anexar")},
     {HELP_EDITOR | HELP_HISTORY, N_("Ctrl+V"),
      N_("Colar arquivos ou imagens do clipboard, quando disponível")},
-    {HELP_EDITOR, N_("Ctrl+Y"),
+    {HELP_EDITOR, N_("{k:conversation.retry_send}"),
      N_("Tentar novamente o último envio com falha; envios incertos pedem confirmação")},
     {HELP_EDITOR, N_("Ctrl+C"), N_("Limpar o campo de edição")},
     {HELP_EDITOR | HELP_FIELDS, N_("Ctrl+W / Ctrl+Backspace"), N_("Apagar a palavra anterior")},
@@ -126,8 +132,9 @@ static const help_row rows[] = {
      N_("Fechar sugestões, cancelar resposta/edição ou voltar ao histórico")},
     {HELP_EDITOR, N_("←→ nos anexos"), N_("Escolher um anexo; Enter abre a remoção")},
     {HELP_SELECTION, N_("↑↓"), N_("Escolher a mensagem ou carregar a próxima página")},
-    {HELP_SELECTION, N_("Ctrl+Espaço / m"), N_("Abrir as ações da mensagem selecionada")},
-    {HELP_SELECTION, N_("r / e / E"),
+    {HELP_SELECTION, N_("{k:conversation.menu} / {k:lists.menu}"),
+     N_("Abrir as ações da mensagem selecionada")},
+    {HELP_SELECTION, N_("{k:selection.reply} / {k:selection.react} / {k:selection.reactors}"),
      N_("Responder, adicionar reação ou ver quem reagiu, se permitido")},
     {HELP_SELECTION, N_("←→ / Enter"), N_("Escolher e abrir a mídia da mensagem")},
     {HELP_SELECTION, N_("Esc / Tab"),
@@ -139,23 +146,23 @@ static const help_row rows[] = {
     {HELP_EDITOR_BUTTONS, N_("← / →"), N_("Escolher um anexo ou um dos botões Anexar e Emojis")},
     {HELP_EDITOR_BUTTONS, N_("Enter"),
      N_("Abrir o botão selecionado ou a confirmação de remover anexo")},
-    {HELP_EDITOR_BUTTONS, N_("Ctrl+O / Ctrl+E"),
+    {HELP_EDITOR_BUTTONS, N_("{k:conversation.attach} / {k:conversation.emojis}"),
      N_("Anexar arquivos ou abrir o seletor de emojis")},
     {HELP_EDITOR_BUTTONS | HELP_SETTINGS_BUTTON, N_("Esc"), N_("Voltar ao editor ou ao histórico")},
     {HELP_MENU, N_("↑↓ / Enter / clique"), N_("Escolher e executar uma opção disponível")},
     {HELP_MENU, N_("← / Esc"), N_("Voltar do submenu ou fechar o menu")},
-    {HELP_MENU, N_("Ctrl+Espaço / m"), N_("Fechar o menu")},
-    {HELP_MENU, N_("Ctrl+R"), N_("Atualizar os dados do menu")},
+    {HELP_MENU, N_("{k:conversation.menu} / {k:lists.menu}"), N_("Fechar o menu")},
+    {HELP_MENU, N_("{k:app.refresh}"), N_("Atualizar os dados do menu")},
     {HELP_MEMBERS, N_("↑↓ / Home / End"), N_("Escolher um membro")},
     {HELP_MEMBERS, N_("PgUp / PgDn"), N_("Percorrer páginas de membros")},
-    {HELP_MEMBERS, N_("/ / Buscar"), N_("Focar a busca por nome ou @username")},
+    {HELP_MEMBERS, N_("{k:members.search} / Buscar"), N_("Focar a busca por nome ou @username")},
     {HELP_MEMBERS, N_("Tab / Shift+Tab"), N_("Percorrer busca, agrupamento e membros")},
     {HELP_MEMBERS, N_("Enter / clique"), N_("Abrir o perfil ou alterar o agrupamento")},
-    {HELP_MEMBERS, N_("Ctrl+R"), N_("Atualizar a lista de membros")},
-    {HELP_MEMBERS, N_("Esc / Ctrl+U"), N_("Voltar do painel ou fechar a lista")},
+    {HELP_MEMBERS, N_("{k:app.refresh}"), N_("Atualizar a lista de membros")},
+    {HELP_MEMBERS, N_("Esc / {k:conversation.members}"), N_("Voltar do painel ou fechar a lista")},
     {HELP_MEMBER_SEARCH, N_("Enter / Tab"), N_("Voltar à lista de membros ou ao agrupamento")},
-    {HELP_MEMBER_SEARCH, N_("Esc / Ctrl+U"), N_("Fechar a lista de membros")},
-    {HELP_MEMBER_SEARCH, N_("Ctrl+R"), N_("Atualizar os membros")},
+    {HELP_MEMBER_SEARCH, N_("Esc / {k:conversation.members}"), N_("Fechar a lista de membros")},
+    {HELP_MEMBER_SEARCH, N_("{k:app.refresh}"), N_("Atualizar os membros")},
     {HELP_MEMBER_PROFILE, N_("↑↓ / roda"),
      N_("Rolar o perfil; botões iniciam DM ou ações permitidas")},
     {HELP_MEMBER_PROFILE | HELP_CONFIRM, N_("Tab / ←→ / Enter"),
@@ -163,8 +170,9 @@ static const help_row rows[] = {
     {HELP_MEMBER_PROFILE | HELP_CONFIRM, N_("Esc"), N_("Cancelar e voltar sem executar a ação")},
     {HELP_EMOJIS, N_("Tab / Shift+Tab"), N_("Percorrer busca, fontes e emojis")},
     {HELP_EMOJIS, N_("↑↓←→ / Enter"), N_("Escolher e inserir um emoji ou reação")},
-    {HELP_EMOJIS, N_("Ctrl+R"), N_("Atualizar os emojis do servidor")},
-    {HELP_EMOJIS, N_("Esc / Ctrl+E"), N_("Fechar o seletor sem alterar o rascunho")},
+    {HELP_EMOJIS, N_("{k:app.refresh}"), N_("Atualizar os emojis do servidor")},
+    {HELP_EMOJIS, N_("Esc / {k:conversation.emojis}"),
+     N_("Fechar o seletor sem alterar o rascunho")},
     {HELP_NOTIFICATIONS, N_("↑↓ / roda"), N_("Escolher uma notificação")},
     {HELP_NOTIFICATIONS, N_("Digite / Tab"), N_("Buscar no conteúdo ou percorrer filtros e ações")},
     {HELP_NOTIFICATIONS, N_("←→ / Enter"),
@@ -174,7 +182,7 @@ static const help_row rows[] = {
     {HELP_NOTIFICATIONS, N_("[Preferências]"), N_("Configurar avisos no desktop e a prévia")},
     {HELP_NOTIFICATIONS, N_("[Mais antigas]"), N_("Carregar mais notificações")},
     {HELP_NOTIFICATIONS, N_("[Nome] / filtros"), N_("Selecionar uma conversa ou ordenar por data")},
-    {HELP_NOTIFICATIONS | HELP_SEARCH, N_("Ctrl+R / Esc"),
+    {HELP_NOTIFICATIONS | HELP_SEARCH, N_("{k:app.refresh} / Esc"),
      N_("Atualizar/tentar novamente ou voltar ao painel anterior")},
     {HELP_SEARCH, N_("Tab / Shift+Tab"), N_("Percorrer consulta, filtros, busca e resultados")},
     {HELP_SEARCH, N_("↑↓ / PgUp / PgDn"), N_("Percorrer resultados ou rolar os detalhes")},
@@ -186,11 +194,12 @@ static const help_row rows[] = {
      N_("Buscar, abrir detalhes, localizar mensagem ou executar a ação selecionada")},
     {HELP_REACTIONS, N_("↑↓ / roda"), N_("Rolar as reações ou as pessoas")},
     {HELP_REACTIONS, N_("←→ / Tab"), N_("Alternar as colunas de reações e pessoas")},
-    {HELP_REACTIONS, N_("Ctrl+R / Esc"), N_("Atualizar a lista ou fechar o painel")},
+    {HELP_REACTIONS, N_("{k:app.refresh} / Esc"), N_("Atualizar a lista ou fechar o painel")},
     {HELP_FILES, N_("Tab / Shift+Tab"), N_("Percorrer caminho, locais, arquivos e botões")},
     {HELP_FILES, N_("↑↓ / Enter"), N_("Escolher um arquivo, abrir uma pasta ou confirmar")},
     {HELP_FILES, N_("Espaço"), N_("Marcar ou desmarcar um arquivo")},
-    {HELP_FILES, N_("Ctrl+V"), N_("Colar arquivos ou imagens quando o clipboard está disponível")},
+    {HELP_FILES, N_("{k:files.mark_all}"),
+     N_("Marcar ou desmarcar todos os anexos em Baixar anexos")},
     {HELP_FILES, N_("Esc"), N_("Cancelar a seleção de arquivos")},
     {HELP_SETTINGS, N_("Tab / ↑↓"),
      N_("Percorrer as configurações e os modos Normal, Light e Ultralight")},
@@ -209,7 +218,7 @@ static const help_row rows[] = {
      N_("Trocar a senha deste servidor após confirmar; encerra todas as sessões da conta, "
         "inclusive "
         "esta")},
-    {HELP_SETTINGS, N_("Esc / Ctrl+S"), N_("Fechar as configurações")},
+    {HELP_SETTINGS, N_("Esc / {k:conversation.settings}"), N_("Fechar as configurações")},
     {HELP_SERVER_SETTINGS, N_("←→ nas abas / clique"),
      N_("Trocar entre Visão geral, Cargos, Canais, Emojis, Membros e Auditoria; só aparecem as "
         "abas que suas permissões permitem")},
@@ -225,7 +234,7 @@ static const help_row rows[] = {
     {HELP_SERVER_SETTINGS, N_("Botões de exclusão"), N_("Pressione duas vezes para confirmar")},
     {HELP_SERVER_SETTINGS, N_("Esc / [Fechar]"), N_("Fechar as configurações do servidor")},
     {HELP_IMAGE, N_("← / →"), N_("Trocar a imagem na galeria")},
-    {HELP_MEDIA, N_("Ctrl+B / i / [Info]"), N_("Mostrar ou ocultar as propriedades da mídia")},
+    {HELP_MEDIA, N_("{k:media.info} / [Info]"), N_("Mostrar ou ocultar as propriedades da mídia")},
     {HELP_MEDIA, N_("PgUp / PgDn / roda"), N_("Rolar as propriedades quando abertas")},
     {HELP_MEDIA, N_("Esc"), N_("Fechar a mídia e voltar ao histórico")},
     {HELP_MEDIA_LIST, N_("↑↓ / Enter / Esc"),
@@ -233,41 +242,45 @@ static const help_row rows[] = {
     {HELP_MEDIA_ERROR, N_("Enter"), N_("Tentar carregar a mídia novamente")},
     {HELP_PLAYER, N_("Espaço"), N_("Pausar ou continuar a reprodução")},
     {HELP_PLAYER, N_("← / →"), N_("Retroceder ou avançar 5 segundos")},
-    {HELP_PLAYER, N_(", / . ou < / >"), N_("Retroceder ou avançar 1 segundo")},
+    {HELP_PLAYER, N_("{k:player.back}"), N_("Retroceder 1 segundo")},
+    {HELP_PLAYER, N_("{k:player.forward}"), N_("Avançar 1 segundo")},
     {HELP_PLAYER, N_("↑ / ↓"), N_("Aumentar ou diminuir o volume")},
-    {HELP_PLAYER, N_("m"), N_("Silenciar ou reativar o som")},
+    {HELP_PLAYER, N_("{k:player.mute}"), N_("Silenciar ou reativar o som")},
     {HELP_PLAYER, N_("Clique / arraste"), N_("Mover a posição ou o volume nas barras do player")},
-    {HELP_AUDIO, N_("[ / ] ou [−] / [+]"), N_("Diminuir ou aumentar a velocidade (0,5× a 2×)")},
-    {HELP_AUDIO, N_("l / [Repetir]"), N_("Repetir o áudio ao terminar")},
+    {HELP_AUDIO, N_("{k:audio.slower} / {k:audio.faster} ou [−] / [+]"),
+     N_("Diminuir ou aumentar a velocidade (0,5× a 2×)")},
+    {HELP_AUDIO, N_("{k:audio.loop} / [Repetir]"), N_("Repetir o áudio ao terminar")},
     {HELP_AUDIO, N_("Espaço no fim"), N_("Recomeçar o áudio do início")},
-    {HELP_AUDIO, N_("x / [Parar]"), N_("Parar o áudio e fechar o player")},
+    {HELP_AUDIO, N_("{k:audio.stop} / [Parar]"), N_("Parar o áudio e fechar o player")},
     {HELP_AUDIO, N_("Esc / clique fora"),
      N_("Fechar o player e continuar ouvindo em segundo plano")},
     {HELP_LOGIN, N_("Tab / ↑↓ / Enter"),
      N_("Percorrer os campos e botões; Entrar autentica, Cadastro cria uma conta")},
-    {HELP_LOGIN, N_("Ctrl+N"), N_("Alternar Login/Cadastro quando desconectado")},
+    {HELP_LOGIN, N_("{k:login.register}"), N_("Alternar Login/Cadastro quando desconectado")},
     {HELP_LOGIN, N_("[Redefinir senha]"),
      N_("Criar uma nova senha com o link de redefinição recebido da administração")},
     {HELP_LOGIN | HELP_ACCOUNT, N_("Abas no topo / ← → / Enter"),
      N_("Abrir outro servidor conectado; ↑ ou Shift+Tab a partir do primeiro campo chega às abas")},
-    {HELP_LOGIN | HELP_ACCOUNT, N_("Clique direito / m nas abas"),
+    {HELP_LOGIN | HELP_ACCOUNT, N_("Clique direito / {k:lists.menu} nas abas"),
      N_("Abrir o menu do servidor, com Remover servidor")},
     {HELP_LOGIN | HELP_ACCOUNT, N_("Delete nas abas"),
      N_("Remover o servidor da lista e apagar a sessão salva; um servidor offline tenta "
         "a sessão salva de novo ao ser aberto")},
-    {HELP_ACCOUNT, N_("Ctrl+R"), N_("Renovar ou reconectar uma sessão existente")},
+    {HELP_ACCOUNT, N_("{k:app.refresh}"), N_("Renovar ou reconectar uma sessão existente")},
     {HELP_ACCOUNT, N_("[Canais]"), N_("Voltar às conversas da sessão aberta")},
     {HELP_ACCOUNT, N_("[Sair da conta]"), N_("Encerrar a sessão e desativar sua recuperação")},
     {HELP_LOGIN | HELP_ACCOUNT, N_("Esc"), N_("Cancelar uma conexão ou voltar à sessão anterior")},
     {HELP_PROFILES, N_("↑↓ / ←→ / Tab"), N_("Percorrer perfis, abas e botões")},
     {HELP_PROFILES, N_("Enter / [Selecionar]"), N_("Usar o perfil e voltar ao login")},
-    {HELP_PROFILES, N_("Ctrl+P / [Gerenciar]"), N_("Abrir o gerenciador de perfis")},
-    {HELP_PROFILES, N_("Ctrl+N / Ctrl+E"),
+    {HELP_PROFILES, N_("{k:conversation.profiles} / [Gerenciar]"),
+     N_("Abrir o gerenciador de perfis")},
+    {HELP_PROFILES, N_("{k:profiles.add} / {k:profiles.edit}"),
      N_("Adicionar ou editar um perfil fora dos campos de edição")},
-    {HELP_PROFILES, N_("Ctrl+D"), N_("Abrir a confirmação de remoção do perfil")},
-    {HELP_PROFILES, N_("Ctrl+L"), N_("Configurar o orçamento de requisições")},
-    {HELP_PROFILES, N_("Ctrl+Y / [Verificar]"), N_("Identificar novamente o servidor selecionado")},
-    {HELP_PROFILES, N_("Ctrl+R"), N_("Recarregar os perfis salvos")},
+    {HELP_PROFILES, N_("{k:profiles.remove}"), N_("Abrir a confirmação de remoção do perfil")},
+    {HELP_PROFILES, N_("{k:profiles.limits}"), N_("Configurar o orçamento de requisições")},
+    {HELP_PROFILES, N_("{k:profiles.verify} / [Verificar]"),
+     N_("Identificar novamente o servidor selecionado")},
+    {HELP_PROFILES, N_("{k:app.refresh}"), N_("Recarregar os perfis salvos")},
     {HELP_PROFILES, N_("Esc / [Cancelar]"), N_("Fechar um formulário ou voltar sem selecionar")},
     {HELP_FIELDS, N_("Ctrl+C"), N_("Limpar o campo de texto")},
     {HELP_FIELD_CLEAR, N_("Ctrl+U"), N_("Limpar o campo de login ou perfil")},
@@ -282,15 +295,15 @@ static const struct {
     {N_("[⚙] / [*]"), "[*]"},
     {N_("🔍 / 🖈 / 👤"), N_("[/] / [Fix] / [@]")},
     {N_("🔊 / 🎤 / ♪ / ●"), "[◀)] / [Mic]"},
-    {N_("Ctrl+O / 📎"), "Ctrl+O / [+]"},
+    {N_("{k:conversation.attach} / 📎"), N_("{k:conversation.attach} / [+]")},
 };
 static const char *row_keys(const help_row *row)
 {
     if (theme_linux_console())
         for (size_t i = 0; i < G_N_ELEMENTS(console_keys); ++i)
             if (!strcmp(row->keys, console_keys[i].keys))
-                return _(console_keys[i].console);
-    return _(row->keys);
+                return K_(console_keys[i].console);
+    return K_(row->keys);
 }
 /* Alt+arrows switch virtual consoles on the Linux console, never reaching
  * the application; Tab and Shift+Tab move the focus there. */
@@ -440,8 +453,8 @@ bool help_key(help_modal *h, int type, uint32_t key)
 {
     if (!h->open)
         return false;
-    if (shortcut_is(type, key, SHORTCUT_HELP) || shortcut_is(type, key, SHORTCUT_HELP_ALL)) {
-        bool global = shortcut_is(type, key, SHORTCUT_HELP_ALL);
+    if (shortcut_is(type, key, KEYMAP_HELP) || shortcut_is(type, key, KEYMAP_HELP_ALL)) {
+        bool global = shortcut_is(type, key, KEYMAP_HELP_ALL);
         if (global == h->global)
             close_help(h);
         else
@@ -456,7 +469,7 @@ bool help_key(help_modal *h, int type, uint32_t key)
         h->focus = (h->focus + (type == KEY_CODE_YES ? 3 : 1)) % 4;
         return true;
     }
-    if (shortcut_is(type, key, SHORTCUT_SEARCH)) {
+    if (shortcut_is(type, key, KEYMAP_SEARCH)) {
         h->focus = FOCUS_SEARCH;
         return true;
     }
@@ -649,7 +662,8 @@ WINDOW *help_draw(help_modal *h)
     table_rule(w, table + 2, column, ACS_LTEE, ACS_PLUS, ACS_RTEE);
     table_rule(w, height - 4, column, ACS_LLCORNER, ACS_BTEE, ACS_LRCORNER);
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
-    text_label(w, height - 3, 2, width - 4, _("Ctrl+F: buscar · ↑↓: rolar · Esc: fechar"));
+    text_label(w, height - 3, 2, width - 4,
+               K_("{k:conversation.search}: buscar · ↑↓: rolar · Esc: fechar"));
     h->switch_x = 2;
     h->close_x = width - 11;
     button_draw(w, height - 2, h->switch_x, width - 15,

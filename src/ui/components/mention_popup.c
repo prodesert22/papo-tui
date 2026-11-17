@@ -5,6 +5,7 @@
 #include "model/text/translation.h"
 #include "ui/components/theme.h"
 #include "ui/input/profile_commands.h"
+#include "ui/input/shortcuts.h"
 #include <glib.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -450,7 +451,7 @@ bool mention_popup_key(mention_popup *p, text_buffer *b, int type, uint32_t key,
     }
     if (p->mode != MENTIONS)
         return command_key(p, b, type, key, accepted);
-    if (type == OK && key == 18) {
+    if (shortcut_is(type, key, KEYMAP_REFRESH)) {
         history_users_retry(p->h);
         return true;
     }

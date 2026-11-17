@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include "config/profiles_storage.h"
+#include "config/keymap.h"
 #include "model/text/translation.h"
 #include "platform/runtime.h"
 #include <errno.h>
@@ -186,11 +187,9 @@ bool profiles_storage_save(profile_config *config, bool (*serialize)(profile_con
 {
     if (flock(config->directory, LOCK_EX | LOCK_NB) < 0)
         return error(config, _("Configuração ocupada por outro processo. Tente salvar novamente."));
-    bool result =
-        unchanged(config)
-            ? serialize(config)
-            : error(config,
-                    _("A configuração mudou em outro processo. Use Ctrl+R antes de salvar."));
+    bool result = unchanged(config) ? serialize(config)
+                                    : error(config, K_("A configuração mudou em outro processo. "
+                                                       "Use {k1:app.refresh} antes de salvar."));
     flock(config->directory, LOCK_UN);
     return result;
 }

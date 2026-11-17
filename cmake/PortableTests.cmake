@@ -106,6 +106,17 @@ papo_add_test(NAME request-rate-limit COMMAND rate-limit-test LABELS network)
 add_executable(session-time-test tests/unit/test_session_time.c)
 target_link_libraries(session-time-test PRIVATE papo_auth)
 papo_add_test(NAME session-expiry COMMAND session-time-test LABELS auth)
+add_executable(keymap-test tests/unit/test_keymap.c)
+target_link_libraries(keymap-test PRIVATE papo_send_editor)
+target_compile_options(keymap-test PRIVATE -UNDEBUG -Wall -Wextra -Wpedantic -Werror)
+papo_add_test(
+    NAME
+    keymap-unit
+    COMMAND
+    keymap-test
+    LABELS
+    input
+    settings)
 add_executable(status-bar-test tests/unit/test_status_bar.c)
 target_link_libraries(status-bar-test PRIVATE papo_send_editor)
 papo_add_test(NAME status-bar-unit COMMAND status-bar-test LABELS ui)

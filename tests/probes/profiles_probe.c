@@ -157,6 +157,14 @@ int main(int argc, char **argv)
                                         strcmp(argv[3], "true") == 0);
     else if (strcmp(mode, "sounds") == 0 && argc == 3)
         ok = profiles_set_sounds(config, strcmp(argv[2], "true") == 0);
+    else if (strcmp(mode, "shortcuts") == 0 && argc == 3) {
+        json_error_t error;
+        json_t *object = json_loads(argv[2], 0, &error);
+        keymap_overrides shortcuts;
+        ok = keymap_overrides_decode(&shortcuts, object) &&
+             profiles_set_shortcuts(config, &shortcuts);
+        json_decref(object);
+    }
     else if (strcmp(mode, "rate") == 0 && argc == 4) {
         json_error_t error;
         json_t *rate = json_loads(argv[2], JSON_DECODE_ANY, &error);
@@ -223,6 +231,8 @@ int main(int argc, char **argv)
     if (result)
         json_object_set_new(result, "notification_sounds",
                             json_boolean(config->notification_sounds));
+    if (result)
+        json_object_set_new(result, "shortcuts", keymap_overrides_encode(&config->shortcuts));
     json_decref(items);
     profiles_destroy(config);
     int status = emit(result);

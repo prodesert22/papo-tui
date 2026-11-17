@@ -1,3 +1,4 @@
+#include "config/keymap.h"
 #include "model/conversation/private.h"
 #include "model/text/translation.h"
 
@@ -122,7 +123,8 @@ void history_recover(history *h)
             h->recovering = h->want_channels = false;
             h->failed = CHANNELS;
             history_internal_status(
-                h, _("Não foi possível preparar a recuperação. Ctrl+R: tentar novamente."));
+                h,
+                K_("Não foi possível preparar a recuperação. {k1:app.refresh}: tentar novamente."));
             return;
         }
         json_t *latest = history_message(h, count - 1);
@@ -515,7 +517,8 @@ invalid:
                                   _("Evento inválido"));
     return false;
 allocation:
-    history_internal_event_status(h, _("Não foi possível aplicar o evento. Ctrl+R: recuperar."),
-                                  _("Falha no evento"));
+    history_internal_event_status(
+        h, K_("Não foi possível aplicar o evento. {k1:app.refresh}: recuperar."),
+        _("Falha no evento"));
     return false;
 }

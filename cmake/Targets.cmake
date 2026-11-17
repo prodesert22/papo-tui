@@ -37,6 +37,7 @@ add_library(
     src/config/player_volume.c
     src/config/audio.c
     src/config/key_binding.c
+    src/config/keymap.c
     src/config/profiles.c
     src/platform/${PAPO_PLATFORM}/profiles_storage.c
     src/config/read_state.c
@@ -125,6 +126,7 @@ add_library(
     src/ui/components/status_bar.c
     src/ui/components/terminal_title.c
     src/ui/input/text.c
+    src/ui/input/shortcuts.c
     src/ui/input/mouse.c
     src/platform/file_transfer.c
     src/platform/${PAPO_PLATFORM}/file_transfer.c

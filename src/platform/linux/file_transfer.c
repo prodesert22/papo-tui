@@ -1,4 +1,5 @@
 #include "platform/file_transfer.h"
+#include "config/keymap.h"
 #include "model/text/translation.h"
 #include <string.h>
 
@@ -176,9 +177,9 @@ clipboard_content *platform_read_clipboard(GCancellable *cancel, GError **error)
 {
     bool wayland = g_getenv("WAYLAND_DISPLAY") && *g_getenv("WAYLAND_DISPLAY");
     if (!wayland && (!g_getenv("DISPLAY") || !*g_getenv("DISPLAY"))) {
-        g_set_error_literal(
-            error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
-            _("Clipboard indisponível; use Anexar/Ctrl+O ou a colagem do terminal."));
+        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
+                            K_("Clipboard indisponível; use Anexar/{k1:conversation.attach} ou a "
+                               "colagem do terminal."));
         return NULL;
     }
     const char *wl[] = {"wl-paste", "--list-types", NULL};

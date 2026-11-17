@@ -99,13 +99,24 @@ enum {
     TEXT_PTT_RELEASE,
     TEXT_PTT_TOGGLE,
     TEXT_CAPTURED,
-    TEXT_CAPTURE_CANCELLED
+    TEXT_CAPTURE_CANCELLED,
+    /* Synthetic command events (shortcut_code), one per keymap action, and the
+     * command keys registered by text_bindings_configure, one per key. */
+    TEXT_ACTION_BASE,
+    TEXT_BINDING_BASE = TEXT_ACTION_BASE + 64,
+    TEXT_BINDING_END = TEXT_BINDING_BASE + 64
 }; /* Followed by the encoded ASCII key value. */
 
 void text_input_init(void);
 /* Maps the configured push-to-talk combination to synthetic press/release
  * events while a call is active. Passing NULL restores ordinary handling. */
 void text_push_to_talk_configure(const key_binding *binding);
+/* Registers every terminal encoding of these command keys, which the base
+ * decoder cannot tell apart, as TEXT_BINDING_BASE + index; an empty list
+ * removes them. Push-to-talk keeps priority over them. */
+void text_bindings_configure(const key_binding *keys, size_t count);
+/* The command key a TEXT_BINDING_BASE code stands for. */
+bool text_binding_key(uint32_t key, key_binding *binding);
 /* Captures one raw key combination with curses key decoding disabled. The
  * caller keeps polling; take() reports the combination even when invalid. */
 bool text_capture_begin(void);

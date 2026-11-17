@@ -489,23 +489,26 @@ static void notifications_draw(app_settings *s, WINDOW *w, int height, int width
     /* What the selected switch does; the scope of all of them otherwise. */
     static const char *const help[NOTIFY_ITEMS] = {
         N_("Mostra avisos do sistema e toca sons para as notificações deste servidor. Desligado, "
-           "a central (Ctrl+D) e os indicadores de não lidas continuam funcionando."),
+           "a central ({k1:conversation.notifications}) e os indicadores de não lidas continuam "
+           "funcionando."),
         N_("Mostra o texto da mensagem no aviso do sistema. Desligado, o aviso diz só \"Nova "
            "notificação\"."),
         N_("Toca um som quando chega uma notificação e quando você ou outra pessoa entra ou sai "
            "de uma chamada de voz."),
         N_("Avisa quando alguém menciona você, responde sua mensagem ou usa @everyone. "
-           "Desligado, essas mensagens vão só para a central (Ctrl+D), sem aviso nem som."),
+           "Desligado, essas mensagens vão só para a central ({k1:conversation.notifications}), "
+           "sem aviso nem som."),
     };
     text_buffer description;
     text_layout measured;
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     if (text_decode(&description, s->focus == 1
-                                      ? _(help[s->notify_selection])
-                                      : _("Valem para todos os canais deste servidor, em qualquer "
-                                          "aparelho. Quais mensagens avisam se escolhe no canal "
-                                          "(Notificações…); Ctrl+D → Preferências silencia só este "
-                                          "computador."))) {
+                                      ? K_(help[s->notify_selection])
+                                      : K_("Valem para todos os canais deste servidor, em qualquer "
+                                           "aparelho. Quais mensagens avisam se escolhe no canal "
+                                           "(Notificações…); {k1:conversation.notifications} → "
+                                           "Preferências silencia só este "
+                                           "computador."))) {
         text_measure_words(&description, width - 6, &measured);
         text_draw(w, &description, &measured, 0, 3, 12, 3);
     }
@@ -1254,7 +1257,7 @@ void settings_key(app_settings *s, profile_config *config, int type, uint32_t ke
         settings_close(s);
         return;
     }
-    if (shortcut_is(type, key, SHORTCUT_SETTINGS)) {
+    if (shortcut_is(type, key, KEYMAP_SETTINGS)) {
         settings_close(s);
         return;
     }

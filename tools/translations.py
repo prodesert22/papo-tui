@@ -1,11 +1,11 @@
 """Keep po/en.po and the compiled-in English catalogue in step with the marked source text.
 
-Without options, extract the strings marked with _(), C_(), P_(), N_() and NC_() from
+Without options, extract the strings marked with _(), K_(), C_(), P_(), N_() and NC_() from
 src/, merge them into po/en.po (keeping existing translations, adding new entries with
 an empty translation and dropping entries no longer in the source) and regenerate
 src/model/text/translation_catalog.inc. --check changes nothing and fails when the
 catalogue is out of date, a translation is missing or marked fuzzy, or a translation's
-printf conversions differ from its source.
+printf conversions or {k:id} key placeholders differ from its source.
 
 The runtime catalogue is compiled in instead of loaded through libintl: the language
 then switches immediately from the settings panel, whatever the system locale (gettext
@@ -22,11 +22,19 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 CATALOGUE = ROOT / "po/en.po"
 GENERATED = ROOT / "src/model/text/translation_catalog.inc"
-MARKERS = {"_": (None, 1), "N_": (None, 1), "C_": ("context", 2), "NC_": ("context", 2)}
+MARKERS = {
+    "_": (None, 1),
+    "N_": (None, 1),
+    "K_": (None, 1),
+    "C_": ("context", 2),
+    "NC_": ("context", 2),
+}
 PLURAL = {"P_"}
 CONVERSION = re.compile(
     r"%(?:%|[-+ #0']*(?:\*|\d+)?(?:\.(?:\*|\d+))?(?:hh|h|ll|l|z|j|t|L)?[a-zA-Z])"
 )
+# Placeholders that K_() replaces with the keys of a command in effect.
+KEY_TOKEN = re.compile(r"\{k1?:[a-z0-9_.]+\}")
 HEADER = (
     'msgid ""\n'
     'msgstr ""\n'
@@ -294,6 +302,11 @@ def conversions(text):
     return [found for found in CONVERSION.findall(text) if found != "%%"]
 
 
+def key_tokens(text):
+    """{k:id} and {k1:id} key placeholders expanded by K_(), in any order."""
+    return sorted(KEY_TOKEN.findall(text))
+
+
 def problems(source, catalogue):
     found = []
     missing = sorted(set(source) - set(catalogue), key=key_order)
@@ -313,6 +326,8 @@ def problems(source, catalogue):
             original = originals[min(index, len(originals) - 1)]
             if conversions(original) != conversions(translation):
                 found.append(f"printf conversions differ: {key[1]!r} -> {translation!r}")
+            if key_tokens(original) != key_tokens(translation):
+                found.append(f"key placeholders differ: {key[1]!r} -> {translation!r}")
     return found
 
 

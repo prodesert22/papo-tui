@@ -158,7 +158,7 @@ bool quick_switcher_key(quick_switcher *s, int type, uint32_t key)
 {
     if (!s->open)
         return false;
-    if ((type == OK && key == 27) || shortcut_is(type, key, SHORTCUT_SWITCHER)) {
+    if ((type == OK && key == 27) || shortcut_is(type, key, KEYMAP_SWITCHER)) {
         quick_switcher_close(s);
         return true;
     }

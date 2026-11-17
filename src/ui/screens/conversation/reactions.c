@@ -1,4 +1,5 @@
 #include "model/text/translation.h"
+#include "ui/input/shortcuts.h"
 #include "ui/screens/conversation/private.h"
 
 /* All JSON below is borrowed from the active history for this event/frame. */
@@ -131,7 +132,7 @@ void conversation_reactors_key(view *ui, int type, uint32_t key)
 {
     reactor_page page;
     build_page(ui, &page);
-    if (type == OK && key == 18)
+    if (shortcut_is(type, key, KEYMAP_REFRESH))
         history_interactions_retry(ui->model);
     if (type == KEY_CODE_YES && key == KEY_LEFT)
         ui->reactor_users_focus = false;

@@ -642,11 +642,11 @@ bool emoji_picker_key(emoji_picker *p, text_buffer *editor, int type, uint32_t k
     }
     if (!emoji_picker_open(p))
         return false;
-    if ((type == OK && key == 27) || (shortcut_is(type, key, SHORTCUT_EMOJIS))) {
+    if ((type == OK && key == 27) || (shortcut_is(type, key, KEYMAP_EMOJIS))) {
         emoji_picker_close(p);
         return true;
     }
-    if (type == OK && key == 18) {
+    if (shortcut_is(type, key, KEYMAP_REFRESH)) {
         if (p->gif)
             gif_query(p);
         else
@@ -910,11 +910,12 @@ void emoji_picker_draw(emoji_picker *p)
                : p->gif
                    ? (p->selected < p->count ? gif_search_result(p->gifs, p->selected)->title : "")
                    : names);
-    text_label(w, height - 2, 2, width - 4,
-               p->gif      ? _("Busca no Wikimedia Commons · Enter inserir o link · Ctrl+R repetir")
-               : p->server ? chat_assets_notice(p->assets)
-               : p->reaction ? _("↑↓←→ escolher · Enter reagir · Ctrl+R atualizar")
-                             : _("↑↓←→ escolher · Enter inserir · Ctrl+R atualizar"));
+    text_label(
+        w, height - 2, 2, width - 4,
+        p->gif ? K_("Busca no Wikimedia Commons · Enter inserir o link · {k1:app.refresh} repetir")
+        : p->server   ? chat_assets_notice(p->assets)
+        : p->reaction ? K_("↑↓←→ escolher · Enter reagir · {k1:app.refresh} atualizar")
+                      : K_("↑↓←→ escolher · Enter inserir · {k1:app.refresh} atualizar"));
     wnoutrefresh(w);
     if (p->focus == 0) {
         curs_set(1);

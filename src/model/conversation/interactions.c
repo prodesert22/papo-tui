@@ -1,3 +1,4 @@
+#include "config/keymap.h"
 #include "model/conversation/discovery.h"
 #include "model/conversation/private.h"
 #include "model/text/translation.h"
@@ -208,7 +209,7 @@ void history_reference_request(history *h, const char *id)
 const char *history_reference_notice(history *h)
 {
     struct history_actions *a = h->actions;
-    return a && a->failed ? _("Falha ao buscar mensagem; Ctrl+R: tentar novamente")
+    return a && a->failed ? K_("Falha ao buscar mensagem; {k1:app.refresh}: tentar novamente")
            : a && a->end  ? _("mensagem não disponível")
                           : _("Carregando mensagem…");
 }
@@ -505,7 +506,8 @@ json_t *history_reactors(history *h)
 const char *history_reactors_notice(history *h)
 {
     struct history_actions *a = h->actions;
-    return !a || a->users_failed ? _("Falha ao listar reações. Ctrl+R: tentar novamente.")
+    return !a || a->users_failed
+               ? K_("Falha ao listar reações. {k1:app.refresh}: tentar novamente.")
            : json_array_size(a->users) >= HISTORY_MESSAGE_LIMIT
                ? _("Lista parcial: limite local atingido.")
            : a->want_users || a->request == ACTION_USERS ? _("Carregando reações…")
@@ -1049,10 +1051,11 @@ void history_internal_actions_response(history *h, json_t *body, long code, bool
     if (!ok) {
         a->failed = true;
         if (kind == ACTION_SCAN && *a->jump && !a->jump_silent)
-            history_internal_status(h, _("Falha ao localizar mensagem. Ctrl+R: tentar novamente."));
+            history_internal_status(
+                h, K_("Falha ao localizar mensagem. {k1:app.refresh}: tentar novamente."));
         else if (kind == ACTION_JUMP && !a->jump_silent)
             history_internal_status(
-                h, _("Falha ao carregar mensagem original. Ctrl+R: tentar novamente."));
+                h, K_("Falha ao carregar mensagem original. {k1:app.refresh}: tentar novamente."));
     }
     ++a->revision;
 }

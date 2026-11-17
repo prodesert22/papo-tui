@@ -45,6 +45,9 @@ typedef enum {
     KEY_BINDING_F12
 } key_binding_code;
 
+/* Longest canonical string, with its terminator. */
+#define KEY_BINDING_TEXT 64
+
 typedef struct {
     key_binding_kind kind;
     unsigned code;
@@ -58,6 +61,11 @@ bool key_binding_parse(const char *text, key_binding *binding);
 bool key_binding_format(const key_binding *binding, char *output, size_t size);
 /* Friendly label for the settings panel. */
 bool key_binding_label(const key_binding *binding, char *output, size_t size);
+/* A key that exists: modifiers, a printable character, a named key or mouse
+ * button 4 or 5. Format and label accept these. */
+bool key_binding_well_formed(const key_binding *binding);
+/* Acceptable for push-to-talk: also needs Ctrl or Alt with a character and a
+ * modifier with Esc, Enter, Tab or Backspace. */
 bool key_binding_valid(const key_binding *binding);
 /* Human-readable reason for a rejected binding; NULL when it is valid. */
 const char *key_binding_error(const key_binding *binding);

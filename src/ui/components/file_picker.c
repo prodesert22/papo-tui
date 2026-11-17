@@ -4,6 +4,7 @@
 #include "ui/components/button.h"
 #include "ui/components/input_border.h"
 #include "ui/components/theme.h"
+#include "ui/input/shortcuts.h"
 #include <string.h>
 
 typedef struct {
@@ -496,7 +497,7 @@ bool file_picker_key(file_picker *p, int type, uint32_t key)
     }
     bool enter =
         (type == OK && (key == '\n' || key == '\r')) || (type == KEY_CODE_YES && key == KEY_ENTER);
-    if (p->choice && p->focus == 1 && type == OK && (key == 'a' || key == 'A') && p->entries) {
+    if (p->choice && p->focus == 1 && shortcut_is(type, key, KEYMAP_MARK_ALL) && p->entries) {
         /* Everything marked becomes unmarked; otherwise mark everything. */
         bool all = p->selected->len == p->entries->len;
         g_ptr_array_set_size(p->selected, 0);

@@ -126,7 +126,7 @@ static bool decode(profile_config *config, json_t *root)
     if (version == 1) {
         if (json_object_size(root) != 3)
             return false;
-    } else if (version >= 2 && version <= 9) {
+    } else if (version >= 2 && version <= 10) {
         json_t *rate = json_object_get(root, "requests_per_second");
         json_t *burst = json_object_get(root, "request_burst");
         if (json_object_size(root) != (version == 2   ? 5U
@@ -136,7 +136,8 @@ static bool decode(profile_config *config, json_t *root)
                                        : version == 6 ? 10U
                                        : version == 7 ? 11U
                                        : version == 8 ? 12U
-                                                      : 13U) ||
+                                       : version == 9 ? 13U
+                                                      : 14U) ||
             !json_is_number(rate) || !json_is_integer(burst) || json_integer_value(burst) <= 0 ||
             json_integer_value(burst) > UINT_MAX ||
             !net_rate_parameters_valid(json_number_value(rate),
@@ -180,6 +181,9 @@ static bool decode(profile_config *config, json_t *root)
     }
     if (version >= 9 &&
         !language_choice_parse(json_text(json_object_get(root, "language"), 8), &config->language))
+        return false;
+    if (version >= 10 &&
+        !keymap_overrides_decode(&config->shortcuts, json_object_get(root, "shortcuts")))
         return false;
     json_t *array = json_object_get(root, "profiles");
     json_t *selected = json_object_get(root, "selected_profile");
@@ -226,9 +230,8 @@ bool profiles_reload(profile_config *config)
     size_t length = 0;
     int loaded = profiles_storage_read(config, &buffer, &length);
     if (loaded < 0)
-        return error(
-            config,
-            _("Configuração inacessível; o arquivo foi preservado. Corrija-o e use Ctrl+R."));
+        return error(config, K_("Configuração inacessível; o arquivo foi preservado. Corrija-o e "
+                                "use {k1:app.refresh}."));
     if (!loaded) {
         config->writable = true;
         net_rate_configure(config->requests_per_second, config->request_burst);
@@ -250,10 +253,11 @@ bool profiles_reload(profile_config *config)
         config->desktop_notifications = config->notification_preview = config->notification_sounds =
             true;
         audio_config_default(&config->audio);
+        memset(&config->shortcuts, 0, sizeof(config->shortcuts));
         config->player_volume = PLAYER_VOLUME_DEFAULT;
         player_volume_set(PLAYER_VOLUME_DEFAULT);
-        return error(config, _("Configuração inválida ou incompatível; arquivo preservado. "
-                               "Corrija-o e use Ctrl+R."));
+        return error(config, K_("Configuração inválida ou incompatível; arquivo preservado. "
+                                "Corrija-o e use {k1:app.refresh}."));
     }
     config->writable = config->existed = true;
     player_volume_set(config->player_volume);
@@ -300,7 +304,7 @@ static bool save_locked(profile_config *config)
     }
     json_t *selection = *config->selected ? json_string(config->selected) : json_null();
     json_t *root =
-        selection ? json_pack("{s:i,s:O,s:O,s:f,s:I,s:b,s:b,s:b,s:s,s:s,s:b,s:i}", "version", 9,
+        selection ? json_pack("{s:i,s:O,s:O,s:f,s:I,s:b,s:b,s:b,s:s,s:s,s:b,s:i}", "version", 10,
                               "profiles", array, "selected_profile", selection,
                               "requests_per_second", config->requests_per_second, "request_burst",
                               (json_int_t)config->request_burst, "desktop_notifications",
@@ -314,11 +318,14 @@ static bool save_locked(profile_config *config)
     json_decref(selection);
     json_decref(array);
     json_t *audio = audio_config_encode(&config->audio);
-    if (!root || !audio || json_object_set(root, "audio", audio) < 0) {
+    json_t *shortcuts = keymap_overrides_encode(&config->shortcuts);
+    if (!root || !audio || !shortcuts || json_object_set(root, "audio", audio) < 0 ||
+        json_object_set(root, "shortcuts", shortcuts) < 0) {
         json_decref(root);
         root = NULL;
     }
     json_decref(audio);
+    json_decref(shortcuts);
     char *serialized = root ? json_dumps(root, JSON_INDENT(2) | JSON_SORT_KEYS) : NULL;
     json_decref(root);
     if (!serialized)
@@ -340,8 +347,9 @@ static bool save(profile_config *config)
 static profile_config *candidate(profile_config *config)
 {
     if (!config->writable) {
-        error(config, _("Configuração bloqueada; corrija o arquivo e use Ctrl+R. Nenhum perfil foi "
-                        "alterado."));
+        error(config, K_("Configuração bloqueada; corrija o arquivo e use {k1:app.refresh}. Nenhum "
+                         "perfil foi "
+                         "alterado."));
         return NULL;
     }
     profile_config *copy = malloc(sizeof(*copy));
@@ -376,7 +384,7 @@ bool profiles_update(profile_config *config, const char *id, const char *name, c
         const server_profile *found = profiles_find(copy, id);
         if (!found) {
             free(copy);
-            return error(config, _("Perfil não encontrado. Use Ctrl+R."));
+            return error(config, K_("Perfil não encontrado. Use {k1:app.refresh}."));
         }
         index = (size_t)(found - copy->profiles);
     } else if (index >= PROFILE_LIMIT) {
@@ -504,6 +512,17 @@ bool profiles_set_settings(profile_config *config, app_mode mode, language_choic
     copy->mode = mode;
     copy->language = language;
     copy->audio = *audio;
+    return commit(config, copy);
+}
+
+bool profiles_set_shortcuts(profile_config *config, const keymap_overrides *shortcuts)
+{
+    if (!shortcuts || shortcuts->count > KEYMAP_OVERRIDES)
+        return error(config, _("Atalhos inválidos."));
+    profile_config *copy = candidate(config);
+    if (!copy)
+        return false;
+    copy->shortcuts = *shortcuts;
     return commit(config, copy);
 }
 

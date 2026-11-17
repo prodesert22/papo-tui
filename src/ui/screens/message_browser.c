@@ -5,6 +5,7 @@
 #include "ui/components/mention_popup.h"
 #include "ui/components/theme.h"
 #include "ui/input/mouse.h"
+#include "ui/input/shortcuts.h"
 #include <glib.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -423,7 +424,7 @@ static void activate(message_browser *m)
                 snprintf(m->unpin_id, sizeof(m->unpin_id), "%s", s(v, "id"));
             } else if (!m->unpin_pending)
                 snprintf(m->notice, sizeof(m->notice),
-                         _("Aguarde a consulta ou atualize com Ctrl+R."));
+                         K_("Aguarde a consulta ou atualize com {k1:app.refresh}."));
             return;
         }
         if (history_uuid(s(v, "channel_id")) && history_uuid(s(v, "id"))) {
@@ -585,7 +586,7 @@ void message_browser_key(message_browser *m, int type, uint32_t key)
             message_browser_close(m);
         return;
     }
-    if (type == OK && key == 18) {
+    if (shortcut_is(type, key, KEYMAP_REFRESH)) {
         m->notice[0] = 0;
         if (m->picker && m->picker != 2)
             history_users_refresh(m->h);

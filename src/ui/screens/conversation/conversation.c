@@ -272,7 +272,7 @@ bool conversation_poll_editor(view *ui, auth_client *auth)
         if (operation.generation == auth_context_generation(auth) &&
             !strcmp(operation.channel_id, ui->editor_channel)) {
             if (!history_confirm(ui->model, message, operation.generation))
-                ui->feedback = _("Envio confirmado; Ctrl+R para consultar o histórico.");
+                ui->feedback = K_("Envio confirmado; {k1:app.refresh} para consultar o histórico.");
         } else if (operation.generation == auth_context_generation(auth))
             history_conversation_changed(ui->model, operation.channel_id);
         json_decref(message);
@@ -897,7 +897,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         if (ui->paste)
             continue;
         redraw = true;
-        if (type == OK && key == 17) {
+        if (shortcut_is(type, key, KEYMAP_QUIT)) {
             result = HISTORY_EXIT;
             break;
         }
@@ -917,7 +917,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             scope = DRAW_ALL;
             continue;
         }
-        if (shortcut_is(type, key, SHORTCUT_SWITCHER) && !conversation_panel_open(ui) &&
+        if (shortcut_is(type, key, KEYMAP_SWITCHER) && !conversation_panel_open(ui) &&
             !r8_modal_is_open(ui->r8) && !media_view_modal(ui->media) &&
             !file_picker_open(ui->files) && !ui->remove_confirm && !ui->duplicate_modal &&
             !ui->context_open && !ui->reactors_open && !conversation_members_modal(ui) &&
@@ -928,10 +928,10 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             scope = DRAW_ALL;
             continue;
         }
-        if (shortcut_is(type, key, SHORTCUT_HELP) || shortcut_is(type, key, SHORTCUT_HELP_ALL)) {
+        if (shortcut_is(type, key, KEYMAP_HELP) || shortcut_is(type, key, KEYMAP_HELP_ALL)) {
             const char *area;
             help_context context = conversation_help_context(ui, &area);
-            if (!help_open(&ui->help, context, area, shortcut_is(type, key, SHORTCUT_HELP_ALL)))
+            if (!help_open(&ui->help, context, area, shortcut_is(type, key, KEYMAP_HELP_ALL)))
                 ui->feedback = _("Não foi possível abrir a ajuda.");
             scope = DRAW_ALL;
             continue;
@@ -956,11 +956,10 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 clipboard_copy(conversation_input(ui));
             continue;
         }
-        if (type == OK &&
-            (key == 17 || (key == 3 && !conversation_members_input(ui) &&
-                           !(r8_modal_is_open(ui->r8) || conversation_panel_open(ui)) &&
-                           (ui->focus != MESSAGE_INPUT || ui->duplicate_modal ||
-                            media_view_modal(ui->media))))) {
+        if (shortcut_is(type, key, KEYMAP_QUIT) ||
+            (type == OK && key == 3 && !conversation_members_input(ui) &&
+             !(r8_modal_is_open(ui->r8) || conversation_panel_open(ui)) &&
+             (ui->focus != MESSAGE_INPUT || ui->duplicate_modal || media_view_modal(ui->media)))) {
             result = HISTORY_EXIT;
             break;
         }
@@ -993,7 +992,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             scope = DRAW_ALL;
             continue;
         }
-        if (shortcut_is(type, key, SHORTCUT_SETTINGS) && !ui->duplicate_modal) {
+        if (shortcut_is(type, key, KEYMAP_SETTINGS) && !ui->duplicate_modal) {
             open_settings(ui, connections->config);
             scope = DRAW_ALL;
             continue;
@@ -1025,7 +1024,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             scope = DRAW_ALL;
             continue;
         }
-        if (shortcut_is(type, key, SHORTCUT_EMOJIS) &&
+        if (shortcut_is(type, key, KEYMAP_EMOJIS) &&
             (ui->focus == HISTORY_PANEL || ui->focus == MESSAGE_INPUT ||
              ui->focus == EMOJI_BUTTON) &&
             !ui->duplicate_modal && !(r8_modal_is_open(ui->r8) || conversation_panel_open(ui)) &&
@@ -1059,23 +1058,24 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             }
             continue;
         }
-        if (shortcut_is(type, key, SHORTCUT_ACCOUNT))
+        if (shortcut_is(type, key, KEYMAP_ACCOUNT))
             break;
-        if (type == OK && key == 16) {
+        if (shortcut_is(type, key, KEYMAP_PROFILES)) {
             result = HISTORY_PROFILES;
             break;
         }
-        if (type == OK && key == 12) {
+        if (shortcut_is(type, key, KEYMAP_LOGOUT)) {
             auth_logout(auth);
             break;
         }
-        if (shortcut_is(type, key, SHORTCUT_MENU) &&
+        if (shortcut_is(type, key, KEYMAP_MENU) &&
             (ui->context_open || ui->focus == CHANNEL_LIST || ui->focus == HISTORY_PANEL ||
              ui->focus == SERVER_TABS)) {
             if (ui->focus == HISTORY_PANEL && !ui->navigating && !ui->context_open)
-                conversation_interactions_key(ui, OK, SHORTCUT_MESSAGES);
-            key = 'm';
-            type = OK;
+                conversation_interactions_key(ui, KEY_CODE_YES, shortcut_code(KEYMAP_SELECT));
+            /* The handlers below open or close menus with the menu letter. */
+            key = shortcut_code(KEYMAP_ITEM_MENU);
+            type = KEY_CODE_YES;
         }
         if (!media_view_modal(ui->media) && conversation_members_key(ui, type, key)) {
             scope = DRAW_ALL;
@@ -1086,18 +1086,18 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             scope = DRAW_ALL;
             continue;
         }
-        if ((shortcut_is(type, key, SHORTCUT_NOTIFICATIONS) ||
-             shortcut_is(type, key, SHORTCUT_SEARCH) || shortcut_is(type, key, SHORTCUT_PINNED)) &&
+        if ((shortcut_is(type, key, KEYMAP_NOTIFICATIONS) ||
+             shortcut_is(type, key, KEYMAP_SEARCH) || shortcut_is(type, key, KEYMAP_PINNED)) &&
             !media_view_modal(ui->media)) {
             conversation_interactions_close(ui);
             mention_popup_close(ui->mentions);
-            r8_modal_open(ui->r8, shortcut_is(type, key, SHORTCUT_NOTIFICATIONS) ? R8_NOTIFICATIONS
-                                  : shortcut_is(type, key, SHORTCUT_SEARCH)      ? R8_SEARCH
-                                                                                 : R8_PINNED);
+            r8_modal_open(ui->r8, shortcut_is(type, key, KEYMAP_NOTIFICATIONS) ? R8_NOTIFICATIONS
+                                  : shortcut_is(type, key, KEYMAP_SEARCH)      ? R8_SEARCH
+                                                                               : R8_PINNED);
             scope = DRAW_ALL;
             continue;
         }
-        if (type == OK && key == 23 && ui->focus == CHANNEL_LIST && ui->list_dms) {
+        if (shortcut_is(type, key, KEYMAP_CLOSE_DM) && ui->focus == CHANNEL_LIST && ui->list_dms) {
             json_t *dm = conversation_list_channel(ui, ui->highlighted);
             conversation_close_dm(ui, conversation_str(dm, "id"));
             continue;
@@ -1114,7 +1114,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         }
         if (media_view_modal(ui->media) && media_view_key(ui->media, type, key))
             continue;
-        if (shortcut_is(type, key, SHORTCUT_PLAYER)) {
+        if (shortcut_is(type, key, KEYMAP_PLAYER)) {
             open_player(ui);
             scope = DRAW_ALL;
             continue;
@@ -1124,7 +1124,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             continue;
         }
         if (!media_view_modal(ui->media) &&
-            ((shortcut_is(type, key, SHORTCUT_ATTACH) && ui->focus != CHANNEL_LIST) ||
+            ((shortcut_is(type, key, KEYMAP_ATTACH) && ui->focus != CHANNEL_LIST) ||
              (type == OK && key == 22))) {
             if (*ui->edit_message)
                 ui->feedback = _("Conclua a edição antes de anexar arquivos.");
@@ -1143,7 +1143,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             scope = DRAW_ALL;
             continue;
         }
-        if (shortcut_is(type, key, SHORTCUT_RETRY_SEND) && conversation_input(ui)) {
+        if (shortcut_is(type, key, KEYMAP_RETRY_SEND) && conversation_input(ui)) {
             outbox_operation latest;
             if (outbox_latest(send_editor_outbox(ui->editor), ui->editor_channel, &latest) &&
                 (latest.state == OUTBOX_FAILED || latest.state == OUTBOX_UNCERTAIN))
@@ -1154,7 +1154,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         }
         /* F5 reconnects now instead of at the next automatic attempt. The
          * session is validated first and nothing already sent is repeated. */
-        if (type == KEY_CODE_YES && key == KEY_F(5)) {
+        if (shortcut_is(type, key, KEYMAP_RECONNECT)) {
             bool connected = auth_ws_state(auth) == WS_OPEN && !auth_ws_reconnecting(auth) &&
                              !auth_server_unreachable(auth);
             ui->feedback = connected               ? _("A conexão já está ativa.")
@@ -1162,7 +1162,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                                                    : _("Não é possível reconectar agora.");
             continue;
         }
-        if (type == OK && key == 18) {
+        if (shortcut_is(type, key, KEYMAP_REFRESH)) {
             chat_assets_profiles_retry(history_assets(ui->model));
             if (auth_ws_reconnecting(auth)) {
                 auth_connect_ws(auth);
@@ -1647,7 +1647,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             size_t count = conversation_list_count(ui);
             size_t row = SIZE_MAX;
             bool voice_history = (type == KEY_CODE_YES && key == TEXT_SHIFT_ENTER) ||
-                                 shortcut_is(type, key, SHORTCUT_ATTACH);
+                                 shortcut_is(type, key, KEYMAP_ATTACH);
             if (type == KEY_CODE_YES && key == KEY_UP) {
                 row = ui->highlighted ? conversation_list_find(ui, ui->highlighted - 1, -1)
                                       : SIZE_MAX;

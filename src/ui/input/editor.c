@@ -2,6 +2,7 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 #include "ui/input/editor.h"
+#include "config/keymap.h"
 #include "model/text/translation.h"
 
 #include <stdlib.h>
@@ -223,8 +224,8 @@ static void submit_notice(send_editor *editor, outbox_submit_result result)
         editor->notice = _("Sem permissão para enviar nesta conversa; rascunho preservado.");
         break;
     case OUTBOX_PERMISSIONS_PENDING:
-        editor->notice =
-            _("Permissões ainda não confirmadas. Aguarde ou use Ctrl+R; rascunho preservado.");
+        editor->notice = K_("Permissões ainda não confirmadas. Aguarde ou use {k1:app.refresh}; "
+                            "rascunho preservado.");
         break;
     case OUTBOX_FULL:
         editor->notice = _("Não há espaço para mais envios; revise os resultados pendentes.");

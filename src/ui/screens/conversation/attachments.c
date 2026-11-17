@@ -178,13 +178,15 @@ bool conversation_attachments_poll(view *ui, auth_client *auth)
                     ui->feedback = ui->attachment_notice;
                 }
             } else {
-                g_strlcpy(
-                    ui->attachment_notice,
-                    g_error_matches(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED) ? error->message
-                    : theme_linux_console()
-                        ? _("Não foi possível colar. Use [+]/Ctrl+O ou a colagem do terminal.")
-                        : _("Não foi possível colar. Use 📎/Ctrl+O ou a colagem do terminal."),
-                    sizeof(ui->attachment_notice));
+                g_strlcpy(ui->attachment_notice,
+                          g_error_matches(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED)
+                              ? error->message
+                          : theme_linux_console()
+                              ? K_("Não foi possível colar. Use [+]/{k1:conversation.attach} ou a "
+                                   "colagem do terminal.")
+                              : K_("Não foi possível colar. Use 📎/{k1:conversation.attach} ou a "
+                                   "colagem do terminal."),
+                          sizeof(ui->attachment_notice));
                 ui->feedback = ui->attachment_notice;
             }
             g_clear_error(&error);

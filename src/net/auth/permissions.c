@@ -1,3 +1,4 @@
+#include "config/keymap.h"
 #include "model/text/translation.h"
 #include "net/auth/private.h"
 
@@ -16,7 +17,8 @@ void auth_permissions_refresh(auth_client *client)
 }
 const char *auth_permissions_notice(const auth_client *client)
 {
-    return client->permission_failed   ? _("Permissões indisponíveis. Ctrl+R: tentar novamente.")
+    return client->permission_failed
+               ? K_("Permissões indisponíveis. {k1:app.refresh}: tentar novamente.")
            : client->permission_wanted ? _("Atualizando permissões…")
                                        : "";
 }

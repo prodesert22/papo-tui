@@ -1,3 +1,4 @@
+#include "config/keymap.h"
 #include "model/conversation/private.h"
 #include "model/text/translation.h"
 
@@ -1116,20 +1117,21 @@ static int process_response(history *h, uint64_t maintenance_now)
                     else
                         h->want_messages = true;
                 }
-                history_internal_status(
-                    h, _("Recuperação pendente. Nova tentativa automática; Ctrl+R: tentar agora."));
+                history_internal_status(h, K_("Recuperação pendente. Nova tentativa automática; "
+                                              "{k1:app.refresh}: tentar agora."));
             } else {
                 h->recovering = false;
                 if (kind == AUTHORS)
-                    history_internal_status(h,
-                                            _("Autores indisponíveis. Ctrl+R: tentar novamente."));
+                    history_internal_status(
+                        h, K_("Autores indisponíveis. {k1:app.refresh}: tentar novamente."));
                 else
                     history_internal_status(
-                        h, code == 403   ? _("Sem permissão para ler este canal.")
-                           : code == 404 ? _("Canal removido ou indisponível.")
-                           : code == 429
-                               ? _("Limite de requisições atingido. Aguarde e use Ctrl+R.")
-                               : _("Falha ao carregar. Ctrl+R: tentar novamente."));
+                        h,
+                        code == 403   ? _("Sem permissão para ler este canal.")
+                        : code == 404 ? _("Canal removido ou indisponível.")
+                        : code == 429
+                            ? K_("Limite de requisições atingido. Aguarde e use {k1:app.refresh}.")
+                            : K_("Falha ao carregar. {k1:app.refresh}: tentar novamente."));
             }
         } else if (h->failed == kind)
             h->failed = NONE;
@@ -1388,7 +1390,7 @@ bool history_poll(history *h)
             h->failed = kind;
             h->want_channels = h->want_messages = h->want_authors = false;
             history_internal_status(
-                h, _("Não foi possível preparar a consulta. Ctrl+R: tentar novamente."));
+                h, K_("Não foi possível preparar a consulta. {k1:app.refresh}: tentar novamente."));
             changed = true;
         }
     }

@@ -6,6 +6,7 @@
 #include "ui/components/mention_popup.h"
 #include "ui/components/theme.h"
 #include "ui/input/mouse.h"
+#include "ui/input/shortcuts.h"
 #include "ui/screens/message_browser.h"
 #include <glib.h>
 #include <stdint.h>
@@ -443,7 +444,7 @@ static void activate(r8_modal *m)
                 r8_modal_close(m);
         } else
             snprintf(m->notice, sizeof(m->notice),
-                     _("Destino ainda indisponível. Ctrl+R: atualizar."));
+                     K_("Destino ainda indisponível. {k1:app.refresh}: atualizar."));
     } else if (m->kind == R8_USERS) {
         json_t *u = m->count ? history_user(m->h, m->users[m->selected]) : NULL;
         if (u && inbox_open_dm(b, s(u, "id")))
@@ -577,9 +578,9 @@ bool r8_modal_key(r8_modal *m, int type, uint32_t key)
             inbox_cancel_open(history_inbox(m->h));
             m->locating = m->location_started = m->location_failed = false;
             r8_modal_destination_clear(m);
-        } else if (m->location_failed &&
-                   ((type == OK && (key == '\n' || key == '\r' || key == 18)) ||
-                    (type == KEY_CODE_YES && key == KEY_ENTER))) {
+        } else if (m->location_failed && ((type == OK && (key == '\n' || key == '\r')) ||
+                                          shortcut_is(type, key, KEYMAP_REFRESH) ||
+                                          (type == KEY_CODE_YES && key == KEY_ENTER))) {
             snprintf(m->destination, sizeof(m->destination), "%s", m->location_channel);
             snprintf(m->destination_message, sizeof(m->destination_message), "%s",
                      m->location_message);
@@ -627,7 +628,7 @@ bool r8_modal_key(r8_modal *m, int type, uint32_t key)
             r8_modal_close(m);
         return true;
     }
-    if (type == OK && key == 18) {
+    if (shortcut_is(type, key, KEYMAP_REFRESH)) {
         inbox_retry(history_inbox(m->h));
         if (m->kind == R8_USERS)
             history_users_refresh(m->h);
@@ -933,11 +934,13 @@ WINDOW *r8_modal_draw(r8_modal *m)
         text_buffer text;
         text_layout layout;
         char about[640];
-        snprintf(about, sizeof(about),
-                 _("%s Estas opções valem só neste computador, para todos os servidores. Como cada "
-                   "conta é avisada: Ctrl+S → Notificações. Quais mensagens avisam: menu do canal "
-                   "→ Notificações…"),
-                 _(help[m->focus >= 0 && m->focus < 3 ? m->focus : 0]));
+        snprintf(
+            about, sizeof(about),
+            K_("%s Estas opções valem só neste computador, para todos os servidores. Como cada "
+               "conta é avisada: {k1:conversation.settings} → Notificações. Quais mensagens "
+               "avisam: menu do canal "
+               "→ Notificações…"),
+            _(help[m->focus >= 0 && m->focus < 3 ? m->focus : 0]));
         if (rows > 0 && text_decode(&text, about)) {
             wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
             text_measure_words(&text, width - 4, &layout);
@@ -1070,7 +1073,7 @@ WINDOW *r8_modal_draw(r8_modal *m)
                : m->kind == R8_NOTIFICATIONS && !m->detail && !m->prefs
                    ? (m->focus == 4 ? _("←→ filtro · Enter buscar nome · ↑ busca · ↓ lista · Esc")
                                     : _("↑↓ lista · Digite buscar · Tab ações · ←→ filtro · Esc"))
-                   : _("↑↓ escolher · Enter abrir · Ctrl+R tentar · Esc voltar"));
+                   : K_("↑↓ escolher · Enter abrir · {k1:app.refresh} tentar · Esc voltar"));
     wnoutrefresh(w);
     return w;
 }

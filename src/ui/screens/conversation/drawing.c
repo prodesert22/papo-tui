@@ -326,7 +326,7 @@ static void draw_offline(view *ui, auth_client *auth)
     if (ui->visible > 3)
         draw_centered(ui->body, y + 3, _("Reconectando automaticamente…"));
     if (ui->visible > 5)
-        draw_centered(ui->body, y + 5, _("F5: reconectar agora"));
+        draw_centered(ui->body, y + 5, K_("{k1:conversation.reconnect}: reconectar agora"));
 }
 bool conversation_collect_notices(view *ui, auth_client *auth)
 {
@@ -337,10 +337,11 @@ bool conversation_collect_notices(view *ui, auth_client *auth)
                          ? _("Desconectado · Revalidando sessão…")
                          : _("Revalidando sessão…");
     else if (auth_server_unreachable(auth))
-        connection = _("Servidor offline · F5: reconectar");
+        connection = K_("Servidor offline · {k1:conversation.reconnect}: reconectar");
     else if (auth_ws_reconnecting(auth))
-        connection =
-            auth_ws_epoch(auth) ? _("Desconectado · F5: reconectar") : _("Conectando tempo real…");
+        connection = auth_ws_epoch(auth)
+                         ? K_("Desconectado · {k1:conversation.reconnect}: reconectar")
+                         : _("Conectando tempo real…");
     else
         switch (auth_ws_state(auth)) {
         case WS_OPEN:
@@ -352,7 +353,7 @@ bool conversation_collect_notices(view *ui, auth_client *auth)
             break;
         case WS_ERROR:
         case WS_CLOSED:
-            connection = _("Desconectado · F5: reconectar");
+            connection = K_("Desconectado · {k1:conversation.reconnect}: reconectar");
             break;
         case WS_CLOSING:
             connection = _("Desconectado");
@@ -403,8 +404,8 @@ bool conversation_collect_notices(view *ui, auth_client *auth)
     changed |= status_bar_set_compact(
         &ui->status, STATUS_SECURITY,
         auth_connection_violation(auth)
-            ? _("O servidor detectou o reuso de uma sessão desta conta e encerrou as outras. "
-                "Se não foi você, troque a senha em Ctrl+S → Conta.")
+            ? K_("O servidor detectou o reuso de uma sessão desta conta e encerrou as outras. "
+                 "Se não foi você, troque a senha em {k1:conversation.settings} → Conta.")
             : "",
         _("Sessão reutilizada · troque a senha"));
     changed |= status_bar_set_compact(

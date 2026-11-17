@@ -629,7 +629,8 @@ static void tab_menu_key(login_ui *ui, auth_client *client, int type, uint32_t k
 {
     bool enter =
         (type == OK && (key == '\n' || key == '\r')) || (type == KEY_CODE_YES && key == KEY_ENTER);
-    bool choose = enter, close = (type == OK && (key == 27 || key == 'm' || key == 'M'));
+    bool choose = enter,
+         close = (type == OK && key == 27) || shortcut_is(type, key, KEYMAP_ITEM_MENU);
     if (type == KEY_CODE_YES && key == KEY_MOUSE) {
         MEVENT events[64];
         size_t count = ui_mouse_events(events, 64);
@@ -1706,6 +1707,9 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
     }
     app_mode_set(config->mode);
     language_set(config->language);
+    keymap_table keys;
+    keymap_table_from_overrides(&keys, &config->shortcuts);
+    keymap_apply(&keys);
     connections->sessions = session_store_create(config, !open_profiles);
     connections->config = config;
     interrupted = 0;
@@ -1972,7 +1976,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
                 text_paste_cancel(&ui.paste_data);
             continue;
         }
-        if (!ui.paste && type == OK && key == 17)
+        if (!ui.paste && shortcut_is(type, key, KEYMAP_QUIT))
             break;
         if (!ui.paste && help_key(&ui.help, type, key))
             continue;
@@ -1986,14 +1990,14 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
             continue;
         }
         if (!ui.paste &&
-            (shortcut_is(type, key, SHORTCUT_HELP) || shortcut_is(type, key, SHORTCUT_HELP_ALL))) {
+            (shortcut_is(type, key, KEYMAP_HELP) || shortcut_is(type, key, KEYMAP_HELP_ALL))) {
             help_open(&ui.help,
                       (auth_has_session(client) ? HELP_ACCOUNT : HELP_LOGIN) |
                           (ui.focus < FIELD_COUNT && !auth_has_session(client)
                                ? HELP_FIELDS | HELP_FIELD_CLEAR
                                : 0),
                       auth_has_session(client) ? _("Conta e sessão") : _("Login e cadastro"),
-                      shortcut_is(type, key, SHORTCUT_HELP_ALL));
+                      shortcut_is(type, key, KEYMAP_HELP_ALL));
             continue;
         }
         if (!ui.paste && type == KEY_CODE_YES && key == TEXT_COPY) {
@@ -2010,7 +2014,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         bool chat_enter = (type == OK && (key == '\n' || key == '\r')) ||
                           (type == KEY_CODE_YES && key == KEY_ENTER);
         if (!ui.paste && auth_has_session(client) &&
-            (ui.open_chat || shortcut_is(type, key, SHORTCUT_ACCOUNT) ||
+            (ui.open_chat || shortcut_is(type, key, KEYMAP_ACCOUNT) ||
              (ui.focus == CHAT_FOCUS && chat_enter))) {
             int action = open_history(&ui, &client, &config);
             if (action < 0)
@@ -2019,18 +2023,19 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
                 quit = true;
             continue;
         }
-        if (type == OK && !ui.paste &&
-            (key == 17 || (key == 3 && (ui.focus >= FIELD_COUNT || auth_has_session(client) ||
-                                        auth_busy(client)))))
+        if (!ui.paste &&
+            (shortcut_is(type, key, KEYMAP_QUIT) ||
+             (type == OK && key == 3 &&
+              (ui.focus >= FIELD_COUNT || auth_has_session(client) || auth_busy(client)))))
             break;
-        if (type == OK && !ui.paste &&
-            ((key == 14 && !auth_has_session(client)) || (key == 18 && auth_has_session(client)))) {
+        if (!ui.paste && ((shortcut_is(type, key, KEYMAP_REGISTER) && !auth_has_session(client)) ||
+                          (shortcut_is(type, key, KEYMAP_REFRESH) && auth_has_session(client)))) {
             extra_action(&ui, client);
             continue;
         }
         bool enter = !ui.paste && ((type == OK && (key == '\n' || key == '\r')) ||
                                    (type == KEY_CODE_YES && key == KEY_ENTER));
-        if (choose_profile || (type == OK && !ui.paste && key == 16) ||
+        if (choose_profile || (!ui.paste && shortcut_is(type, key, KEYMAP_PROFILES)) ||
             (ui.form && ui.focus == THEME_PROFILE_FOCUS && enter)) {
             int selected = manage_profiles(&ui, &client, &config, allow_local_http, true);
             if (selected < 0)
@@ -2077,7 +2082,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
             continue;
         }
         if (!ui.paste && ui.focus == TABS_FOCUS &&
-            ((type == OK && (key == 'm' || key == 'M')) || shortcut_is(type, key, SHORTCUT_MENU))) {
+            (shortcut_is(type, key, KEYMAP_ITEM_MENU) || shortcut_is(type, key, KEYMAP_MENU))) {
             open_tab_menu(&ui, client, tab_cursor(&ui, client));
             continue;
         }
@@ -2148,6 +2153,8 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
     profiles_destroy(config);
     if (result)
         fputs(_("Não foi possível criar a tela de login.\n"), stderr);
+    /* Every worker that could borrow an expanded text has stopped. */
+    keymap_shutdown();
     return result;
 }
 

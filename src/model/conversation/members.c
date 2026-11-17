@@ -1,4 +1,5 @@
 #include "model/conversation/members.h"
+#include "config/keymap.h"
 #include "model/conversation/private.h"
 #include "model/text/translation.h"
 
@@ -66,7 +67,7 @@ void history_internal_members_recover(history *h)
     h->members->ready = false;
     history_member_refresh(h);
     snprintf(h->members->notice, sizeof(h->members->notice),
-             _("Conexão alterada. Ctrl+R: atualizar membro."));
+             K_("Conexão alterada. {k1:app.refresh}: atualizar membro."));
 }
 static bool select_member(history *h, const char *id, enum member_request request)
 {
@@ -328,14 +329,16 @@ void history_internal_members_response(history *h, json_t *body, long code, bool
         if (request == MEMBER_MUTATE) {
             m->ready = false;
             history_member_refresh(h);
-            snprintf(m->notice, sizeof(m->notice),
-                     (uncertain || (code >= 200 && code < 300))
-                         ? _("Resultado incerto. Ctrl+R: consultar estado antes de repetir.")
-                         : _("Ação recusada ou indisponível. Ctrl+R: atualizar estado."));
+            snprintf(
+                m->notice, sizeof(m->notice),
+                (uncertain || (code >= 200 && code < 300))
+                    ? K_("Resultado incerto. {k1:app.refresh}: consultar estado antes de repetir.")
+                    : K_("Ação recusada ou indisponível. {k1:app.refresh}: atualizar estado."));
         } else
             snprintf(m->notice, sizeof(m->notice),
-                     code == 404 ? _("Membro não encontrado. Esc: voltar.")
-                                 : _("Falha ao consultar membro. Ctrl+R: tentar novamente."));
+                     code == 404
+                         ? _("Membro não encontrado. Esc: voltar.")
+                         : K_("Falha ao consultar membro. {k1:app.refresh}: tentar novamente."));
     } else if (m->wanted == MEMBER_IDLE)
         snprintf(m->notice, sizeof(m->notice),
                  request == MEMBER_MUTATE ? _("Ação concluída.") : "");

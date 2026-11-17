@@ -2,6 +2,9 @@
 
 from test_context import main as test_main
 
+import json
+from pathlib import Path
+import tempfile
 import time
 import unittest
 from history_mock import OTHER, STAMP, HistoryMock, uuid
@@ -23,8 +26,8 @@ class QuickSwitcher(unittest.TestCase):
     def gone(self, terminal, text):
         wait_for_screen(terminal, lambda: text not in self.screen(terminal), f"{text!r} stayed")
 
-    def open(self, server):
-        terminal = Terminal()
+    def open(self, server, environment=None):
+        terminal = Terminal(environment=environment)
         self.addCleanup(lambda: terminal.close() if terminal.process.poll() is None else None)
         terminal.send(server.url + "\tjosé\tSynthetic!123\n")
         self.wait(terminal, "Mensagem 0250")
@@ -177,6 +180,62 @@ class QuickSwitcher(unittest.TestCase):
                 "The second server did not load planos",
             )
             self.assertNotIn("Mensagem não disponível", self.screen(t))
+
+    def test_configured_keys_replace_ctrl_k_and_appear_in_help(self):
+        """Keys set in config.json replace the default, in every terminal encoding."""
+        with HistoryMock() as server, tempfile.TemporaryDirectory(prefix="papo-keys-") as home:
+            config = Path(home, "papo-tui", "config.json")
+            config.parent.mkdir(mode=0o700)
+            config.write_text(
+                json.dumps(
+                    {
+                        "version": 10,
+                        "profiles": [],
+                        "selected_profile": None,
+                        "requests_per_second": 10,
+                        "request_burst": 25,
+                        "desktop_notifications": False,
+                        "notification_preview": False,
+                        "notification_sounds": False,
+                        "app_mode": "normal",
+                        "language": "pt",
+                        "members_by_status": False,
+                        "player_volume": 100,
+                        "audio": {
+                            "input": "",
+                            "output": "",
+                            "microphone_volume": 100,
+                            "output_volume": 100,
+                            "push_to_talk": {"enabled": False, "key": "ctrl+y"},
+                            "server_slots": {},
+                        },
+                        "shortcuts": {"conversation.switcher": ["alt+k", "f3"]},
+                    }
+                )
+            )
+            config.chmod(0o600)
+            t = self.open(server, environment={"XDG_CONFIG_HOME": home})
+            # Ctrl+K no longer opens the switcher: the global help that follows
+            # would be swallowed by it. Its search finds the new keys.
+            t.send("\x0b")
+            t.send("\x1f")
+            self.wait(t, "Ajuda global")
+            t.send("Alt+K")
+            self.wait(t, "Alt+K / F3")
+            self.assertNotIn("Ctrl+K", self.screen(t))
+            t.send("\x1b")
+            self.gone(t, "Ajuda global")
+            for name, sequence in (
+                ("legacy Alt", "\x1bk"),
+                ("CSI-u", "\x1b[107;3u"),
+                ("xterm modifyOtherKeys", "\x1b[27;3;107~"),
+                ("F3", "\x1bOR"),
+            ):
+                with self.subTest(encoding=name):
+                    t.send(sequence)
+                    self.wait(t, "Ir para conversa")
+                    t.send("\x1b")
+                    self.gone(t, "Ir para conversa")
 
 
 if __name__ == "__main__":

@@ -1,3 +1,4 @@
+#include "config/keymap.h"
 #include "model/conversation/discovery.h"
 #include "model/conversation/private.h"
 #include "model/text/translation.h"
@@ -112,7 +113,7 @@ json_t *history_user(const history *h, size_t i)
 const char *history_users_notice(const history *h)
 {
     if (h->users_failed)
-        return _("Falha ao listar usuários. Ctrl+R: tentar novamente.");
+        return K_("Falha ao listar usuários. {k1:app.refresh}: tentar novamente.");
     if (h->users_partial)
         return _("Lista parcial: limite local atingido.");
     /* A revalidation keeps the loaded list usable while it runs. */

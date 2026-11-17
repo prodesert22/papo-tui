@@ -75,7 +75,7 @@ class ProfilesTests(unittest.TestCase):
                 self.assertEqual(self.probe("list")["app_mode"], "normal")
                 self.assertTrue(self.probe("mode", "light")["ok"])
                 saved = json.loads(self.path.read_text(encoding="utf-8"))
-                self.assertEqual((saved["version"], saved["app_mode"]), (9, "light"))
+                self.assertEqual((saved["version"], saved["app_mode"]), (10, "light"))
                 self.assertEqual(saved["request_burst"], 7 if version >= 2 else 25)
                 self.assertEqual(saved["player_volume"], 50)
                 self.assertEqual(self.probe("list")["app_mode"], "light")
@@ -89,7 +89,7 @@ class ProfilesTests(unittest.TestCase):
         self.assertTrue(self.probe("volume", "80")["ok"])
         self.assertEqual(self.probe("list")["player_volume"], 80)
         saved = json.loads(self.path.read_text())
-        self.assertEqual((saved["version"], saved["player_volume"]), (9, 80))
+        self.assertEqual((saved["version"], saved["player_volume"]), (10, 80))
         self.assertTrue(self.probe("volume", "0")["ok"])
         self.assertTrue(self.probe("volume", "100")["ok"])
         self.assertEqual(self.probe("list")["player_volume"], 100)
@@ -167,6 +167,7 @@ class ProfilesTests(unittest.TestCase):
                 "members_by_status",
                 "player_volume",
                 "audio",
+                "shortcuts",
             },
         )
         self.assertTrue(all(set(item) == {"id", "name", "url"} for item in persisted["profiles"]))
@@ -236,7 +237,7 @@ class ProfilesTests(unittest.TestCase):
         self.assertEqual(self.probe("list")["requests_per_second"], 10)
         self.assertEqual(self.path.read_bytes(), before)
         self.assertTrue(self.probe("rate", "2.5", "3")["ok"])
-        self.assertEqual(json.loads(self.path.read_text(encoding="utf-8"))["version"], 9)
+        self.assertEqual(json.loads(self.path.read_text(encoding="utf-8"))["version"], 10)
         restored = self.probe("list")
         self.assertEqual(
             (restored["requests_per_second"], restored["request_burst"], restored["selected"]),
@@ -272,7 +273,7 @@ class ProfilesTests(unittest.TestCase):
         self.assertFalse(loaded["desktop_notifications"])
         self.assertFalse(loaded["notification_preview"])
         valid = json.loads(self.path.read_text(encoding="utf-8"))
-        self.assertEqual(valid["version"], 9)
+        self.assertEqual(valid["version"], 10)
         valid["notification_preview"] = "false"
         self.seed(valid)
         before = self.path.read_bytes()
@@ -286,7 +287,7 @@ class ProfilesTests(unittest.TestCase):
         self.assertTrue(self.probe("list")["notification_sounds"])
         self.assertTrue(self.probe("sounds", "false")["ok"])
         saved = json.loads(self.path.read_text(encoding="utf-8"))
-        self.assertEqual((saved["version"], saved["notification_sounds"]), (9, False))
+        self.assertEqual((saved["version"], saved["notification_sounds"]), (10, False))
         self.assertFalse(self.probe("list")["notification_sounds"])
         legacy = dict(saved, version=7)
         del legacy["notification_sounds"]
@@ -310,7 +311,7 @@ class ProfilesTests(unittest.TestCase):
         self.assertEqual(self.probe("list")["language"], "system")
         self.assertTrue(self.probe("language", "en")["ok"])
         saved = json.loads(self.path.read_text(encoding="utf-8"))
-        self.assertEqual((saved["version"], saved["language"]), (9, "en"))
+        self.assertEqual((saved["version"], saved["language"]), (10, "en"))
         self.assertEqual(self.probe("list")["language"], "en")
         self.assertTrue(self.probe("language", "pt")["ok"])
         self.assertEqual(self.probe("list")["language"], "pt")
@@ -326,6 +327,40 @@ class ProfilesTests(unittest.TestCase):
                 before = self.path.read_bytes()
                 self.assertFalse(self.probe("list")["writable"])
                 self.assertFalse(self.probe("language", "en")["ok"])
+                self.assertEqual(before, self.path.read_bytes())
+
+    def test_shortcuts_store_only_changes_migrate_and_reject_invalid_keys(self):
+        # Files before version 10 have no shortcuts: every command keeps its default keys.
+        self.seed(self.configuration())
+        self.assertEqual(self.probe("list")["shortcuts"], {})
+        changed = {
+            "conversation.switcher": ["alt+k", "f3"],
+            "selection.reply": [],
+            "future.action": ["ctrl+alt+z"],
+        }
+        self.assertTrue(self.probe("shortcuts", json.dumps(changed))["ok"])
+        saved = json.loads(self.path.read_text(encoding="utf-8"))
+        self.assertEqual((saved["version"], saved["shortcuts"]), (10, changed))
+        self.assertEqual(self.probe("list")["shortcuts"], changed)
+        # Another setting keeps them, including the id this version does not know.
+        self.assertTrue(self.probe("sounds", "false")["ok"])
+        self.assertEqual(json.loads(self.path.read_text(encoding="utf-8"))["shortcuts"], changed)
+        legacy = {k: v for k, v in saved.items() if k != "shortcuts"}
+        self.seed(dict(legacy, version=9))
+        self.assertEqual(self.probe("list")["shortcuts"], {})
+        for broken in (
+            legacy,
+            dict(saved, shortcuts=[]),
+            dict(saved, shortcuts={"app.quit": []}),
+            dict(saved, shortcuts={"conversation.switcher": ["k"]}),
+            dict(saved, shortcuts={"conversation.switcher": ["ctrl+h"]}),
+            dict(saved, shortcuts={"Bad Id": []}),
+        ):
+            with self.subTest(broken=broken.get("shortcuts")):
+                self.seed(broken)
+                before = self.path.read_bytes()
+                self.assertFalse(self.probe("list")["writable"])
+                self.assertFalse(self.probe("shortcuts", "{}")["ok"])
                 self.assertEqual(before, self.path.read_bytes())
 
     def test_invalid_configuration_is_preserved_and_partial_data_discarded(self):

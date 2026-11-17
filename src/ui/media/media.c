@@ -1241,7 +1241,7 @@ bool media_view_key(media_view *v, int type, uint32_t key)
     if (!v)
         return false;
     if (!media_view_modal(v)) {
-        if (!shortcut_is(type, key, SHORTCUT_MESSAGES))
+        if (!shortcut_is(type, key, KEYMAP_SELECT))
             return false;
         if (!v->visible_count) {
             v->modal = MODAL_ERROR;
@@ -1277,7 +1277,7 @@ bool media_view_key(media_view *v, int type, uint32_t key)
         return true;
     }
     if (v->modal != MODAL_LIST) {
-        bool toggle = (type == OK && key == 'i') || shortcut_is(type, key, SHORTCUT_PINNED);
+        bool toggle = shortcut_is(type, key, KEYMAP_MEDIA_INFO);
         if ((type == OK && key == '\t') || (type == KEY_CODE_YES && key == KEY_BTAB)) {
             v->info_focused = !v->info_focused;
             return true;
@@ -1288,7 +1288,7 @@ bool media_view_key(media_view *v, int type, uint32_t key)
         if (toggle) {
             v->info_open = !v->info_open;
             v->info_scroll = 0;
-            if (key == 'i' || shortcut_is(type, key, SHORTCUT_PINNED))
+            if (shortcut_is(type, key, KEYMAP_MEDIA_INFO))
                 v->info_focused = false;
             return true;
         }
@@ -1313,26 +1313,27 @@ bool media_view_key(media_view *v, int type, uint32_t key)
     /* Player controls never reach a background audio behind an image. */
     if (!v->selected_item.video)
         return true;
-    if (v->selected_item.audio && type == OK && key == 'x') {
+    if (v->selected_item.audio && shortcut_is(type, key, KEYMAP_STOP)) {
         close_modal(v);
         return true;
     }
     g_mutex_lock(&v->lock);
     if (type == OK && key == ' ')
         toggle_pause(v);
-    if (type == OK && key == 'm')
+    if (shortcut_is(type, key, KEYMAP_MUTE))
         ++v->mute_commands;
-    if (v->selected_item.audio && type == OK && (key == '[' || key == ']'))
-        step_speed(v, key == ']' ? 1 : -1);
-    if (v->selected_item.audio && type == OK && key == 'l')
+    if (v->selected_item.audio &&
+        (shortcut_is(type, key, KEYMAP_SLOWER) || shortcut_is(type, key, KEYMAP_FASTER)))
+        step_speed(v, shortcut_is(type, key, KEYMAP_FASTER) ? 1 : -1);
+    if (v->selected_item.audio && shortcut_is(type, key, KEYMAP_LOOP))
         ++v->loop_commands;
     if (type == KEY_CODE_YES && key == KEY_LEFT && v->seek_commands > -3600)
         v->seek_commands -= 5;
     if (type == KEY_CODE_YES && key == KEY_RIGHT && v->seek_commands < 3600)
         v->seek_commands += 5;
-    if (type == OK && (key == '<' || key == ',') && v->seek_commands > -3600)
+    if (shortcut_is(type, key, KEYMAP_SEEK_BACK) && v->seek_commands > -3600)
         --v->seek_commands;
-    if (type == OK && (key == '>' || key == '.') && v->seek_commands < 3600)
+    if (shortcut_is(type, key, KEYMAP_SEEK_FORWARD) && v->seek_commands < 3600)
         ++v->seek_commands;
     if (type == KEY_CODE_YES && (key == KEY_UP || key == KEY_DOWN)) {
         /* The level belongs to the client, so it survives the player and the
@@ -1968,7 +1969,8 @@ void media_view_draw_audio(media_view *v, WINDOW *w, int row)
     format_clock(position, now, sizeof(now));
     format_clock(duration > 0 ? duration : NAN, total, sizeof(total));
     snprintf(clock, sizeof(clock), " %s/%s", now, total);
-    const char *play = paused ? "[▶]" : "[⏸]", *stop = "[✕]", *hint = _(" · Ctrl+X ");
+    const char *play = paused ? "[▶]" : "[⏸]", *stop = "[✕]",
+               *hint = K_(" · {k1:conversation.player} ");
     const message_media *item = &v->audio.item;
     const char *name = *item->original_file_name ? item->original_file_name : item->label;
     int columns = getmaxx(w);

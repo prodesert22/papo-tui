@@ -3,6 +3,7 @@
 #endif
 #include "model/assets/catalog.h"
 #include "config/app_mode.h"
+#include "config/keymap.h"
 #include "model/conversation/history.h"
 #include "model/text/translation.h"
 #include "net/auth/session_time.h"
@@ -258,15 +259,15 @@ bool chat_assets_emojis_response(chat_assets *a, json_t *response, long status)
         a->wanted = a->refreshing = false;
         a->loaded = true;
         net_now_ms(&a->refreshed);
-        snprintf(a->notice, sizeof(a->notice), _("%zu emojis do servidor · Ctrl+R atualizar"),
-                 a->count);
+        snprintf(a->notice, sizeof(a->notice),
+                 K_("%zu emojis do servidor · {k1:app.refresh} atualizar"), a->count);
     }
     if (!ok) {
         a->wanted = false;
         a->failed = true;
         snprintf(a->notice, sizeof(a->notice),
-                 status == 429 ? _("Limite atingido · Aguarde e use Ctrl+R")
-                               : _("Falha nos emojis · Ctrl+R tentar novamente"));
+                 status == 429 ? K_("Limite atingido · Aguarde e use {k1:app.refresh}")
+                               : K_("Falha nos emojis · {k1:app.refresh} tentar novamente"));
     }
     ++a->revision;
     ++a->emoji_revision;

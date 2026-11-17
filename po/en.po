@@ -186,10 +186,6 @@ msgid " · Alterações pendentes: Buscar para aplicar"
 msgstr " · Pending changes: Search to apply"
 
 #: src/ui/media/media.c
-msgid " · Ctrl+X "
-msgstr " · Ctrl+X "
-
-#: src/ui/media/media.c
 msgid " · Mudo"
 msgstr " · Muted"
 
@@ -234,6 +230,10 @@ msgid " · você"
 msgstr " · you"
 
 #: src/ui/media/media.c
+msgid " · {k1:conversation.player} "
+msgstr " · {k1:conversation.player} "
+
+#: src/ui/media/media.c
 msgid " Áudio · Esc: segundo plano "
 msgstr " Audio · Esc: background "
 
@@ -262,8 +262,8 @@ msgid "%s Carregando próximas mensagens"
 msgstr "%s Loading next messages"
 
 #: src/ui/screens/inbox.c
-msgid "%s Estas opções valem só neste computador, para todos os servidores. Como cada conta é avisada: Ctrl+S → Notificações. Quais mensagens avisam: menu do canal → Notificações…"
-msgstr "%s These options apply only on this computer, for every server. How each account is alerted: Ctrl+S → Notifications. Which messages alert: channel menu → Notifications…"
+msgid "%s Estas opções valem só neste computador, para todos os servidores. Como cada conta é avisada: {k1:conversation.settings} → Notificações. Quais mensagens avisam: menu do canal → Notificações…"
+msgstr "%s These options apply only on this computer, for every server. How each account is alerted: {k1:conversation.settings} → Notifications. Which messages alert: channel menu → Notifications…"
 
 #: src/ui/screens/inbox.c
 msgid "%s Localizando mensagem…"
@@ -302,8 +302,8 @@ msgid "%u marcado(s) · Espaço marcar · Tab ações"
 msgstr "%u marked · Space mark · Tab actions"
 
 #: src/model/assets/catalog.c
-msgid "%zu emojis do servidor · Ctrl+R atualizar"
-msgstr "%zu server emojis · Ctrl+R refresh"
+msgid "%zu emojis do servidor · {k1:app.refresh} atualizar"
+msgstr "%zu server emojis · {k1:app.refresh} refresh"
 
 #: src/ui/screens/inbox.c
 msgid "%zu resultados · %zu não lidas conhecidas%s"
@@ -332,14 +332,6 @@ msgstr "+ New webhook"
 #: src/ui/components/mention_popup.c
 msgid "+1 opção"
 msgstr "+1 option"
-
-#: src/ui/components/help.c
-msgid ", / . ou < / >"
-msgstr ", / . or < / >"
-
-#: src/ui/components/help.c
-msgid "/ / Buscar"
-msgstr "/ / Search"
 
 #: src/ui/components/help.c
 msgid "/ no início"
@@ -426,8 +418,8 @@ msgid "A conexão já está ativa."
 msgstr "The connection is already active."
 
 #: src/platform/linux/profiles_storage.c src/platform/windows/profiles_storage.c
-msgid "A configuração mudou em outro processo. Use Ctrl+R antes de salvar."
-msgstr "The configuration changed in another process. Use Ctrl+R before saving."
+msgid "A configuração mudou em outro processo. Use {k1:app.refresh} antes de salvar."
+msgstr "The configuration changed in another process. Use {k1:app.refresh} before saving."
 
 #: src/config/profiles.c
 msgid "A configuração ultrapassou o limite de 256 KiB."
@@ -533,15 +525,15 @@ msgstr "Opening conversation…"
 msgid "Abrir"
 msgstr "Open"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Abrir a central de notificações"
 msgstr "Open the notification center"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Abrir a confirmação de remoção do perfil"
 msgstr "Open the profile removal confirmation"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Abrir a conta; na conta, voltar às conversas"
 msgstr "Open the account; from the account, return to the conversations"
 
@@ -561,7 +553,7 @@ msgstr "Open chat"
 msgid "Abrir configurações do aplicativo"
 msgstr "Open application settings"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Abrir mensagens fixadas"
 msgstr "Open pinned messages"
 
@@ -581,13 +573,17 @@ msgstr "Open the profile manager"
 msgid "Abrir o histórico do canal selecionado, inclusive voz"
 msgstr "Open the selected channel's history, voice channels included"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Abrir o menu de contexto da seleção"
 msgstr "Open the selection's context menu"
 
 #: src/ui/components/help.c
 msgid "Abrir o menu do canal, DM, membro ou mensagem"
 msgstr "Open the channel, DM, member or message menu"
+
+#: src/config/keymap.c
+msgid "Abrir o menu do canal, DM, servidor, membro ou mensagem selecionado"
+msgstr "Open the menu of the selected channel, DM, server, member or message"
 
 #: src/ui/components/help.c
 msgid "Abrir o menu do servidor, com Configurações do servidor e Remover servidor"
@@ -601,19 +597,23 @@ msgstr "Open the server menu, with Remove server"
 msgid "Abrir o perfil ou alterar o agrupamento"
 msgstr "Open the profile or change the grouping"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Abrir ou fechar a ajuda do contexto atual"
 msgstr "Open or close help for the current context"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Abrir ou fechar a ajuda global"
 msgstr "Open or close global help"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Abrir ou fechar a lista de membros"
 msgstr "Open or close the member list"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c
+msgid "Abrir ou fechar as configurações do aplicativo"
+msgstr "Open or close the application settings"
+
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Abrir ou fechar o seletor de emojis"
 msgstr "Open or close the emoji picker"
 
@@ -665,6 +665,14 @@ msgstr "Add or edit a profile outside the edit fields"
 msgid "Adicionar reação"
 msgstr "Add reaction"
 
+#: src/config/keymap.c
+msgid "Adicionar reação à mensagem selecionada"
+msgstr "Add a reaction to the selected message"
+
+#: src/config/keymap.c
+msgid "Adicionar um perfil"
+msgstr "Add a profile"
+
 #: src/ui/screens/profiles.c
 msgid "Adicionar uma instância"
 msgstr "Add an instance"
@@ -706,8 +714,8 @@ msgid "Aguarde a configuração pendente ou atualize os canais e tente novamente
 msgstr "Wait for the pending setting or refresh the channels and try again."
 
 #: src/ui/screens/message_browser.c
-msgid "Aguarde a consulta ou atualize com Ctrl+R."
-msgstr "Wait for the lookup or refresh with Ctrl+R."
+msgid "Aguarde a consulta ou atualize com {k1:app.refresh}."
+msgstr "Wait for the lookup or refresh with {k1:app.refresh}."
 
 #: src/ui/screens/conversation/profile.c
 msgid "Aguarde a imagem ou os anexos em preparação."
@@ -809,7 +817,7 @@ msgstr "Change not confirmed. Check the history before trying again."
 msgid "Alterações não recarregam tokens nem limpam Retry-After."
 msgstr "Changes neither refill tokens nor clear Retry-After."
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Alternar Login/Cadastro quando desconectado"
 msgstr "Switch between Login and Sign up when signed out"
 
@@ -957,6 +965,10 @@ msgstr "The passwords do not match."
 msgid "Atalhos"
 msgstr "Shortcuts"
 
+#: src/config/profiles.c
+msgid "Atalhos inválidos."
+msgstr "Invalid shortcuts."
+
 #: src/ui/components/settings.c
 msgid "Ativado"
 msgstr "On"
@@ -1001,6 +1013,10 @@ msgstr "Refresh the server's emojis"
 msgid "Atualizar os membros"
 msgstr "Refresh the members"
 
+#: src/config/keymap.c
+msgid "Atualizar, tentar novamente ou reconectar"
+msgstr "Refresh, retry or reconnect"
+
 #: src/ui/components/help.c
 msgid "Atualizar/tentar novamente ou voltar ao painel anterior"
 msgstr "Refresh/retry or return to the previous panel"
@@ -1029,6 +1045,10 @@ msgstr "Audit log"
 msgid "Auditoria: ▾ Filtros"
 msgstr "Audit log: ▾ Filters"
 
+#: src/config/keymap.c
+msgid "Aumentar a velocidade do áudio"
+msgstr "Speed up the audio"
+
 #: src/ui/components/help.c
 msgid "Aumentar ou diminuir o volume"
 msgstr "Raise or lower the volume"
@@ -1054,8 +1074,8 @@ msgid "Autor: %s"
 msgstr "Author: %s"
 
 #: src/model/conversation/history.c
-msgid "Autores indisponíveis. Ctrl+R: tentar novamente."
-msgstr "Authors unavailable. Ctrl+R: try again."
+msgid "Autores indisponíveis. {k1:app.refresh}: tentar novamente."
+msgstr "Authors unavailable. {k1:app.refresh}: try again."
 
 #: src/net/auth/client.c
 msgid "Autorizando acesso ao servidor…"
@@ -1068,6 +1088,10 @@ msgstr "The private authorization expired. Enter the server password and confirm
 #: src/ui/media/media_service.c
 msgid "Auxiliar de mídia ausente ou indisponível. Reinstale o aplicativo."
 msgstr "Media helper missing or unavailable. Reinstall the application."
+
+#: src/config/keymap.c src/ui/components/help.c
+msgid "Avançar 1 segundo"
+msgstr "Skip forward 1 second"
 
 #: src/ui/components/settings.c
 msgid "Avatar"
@@ -1090,8 +1114,8 @@ msgid "Avatar do webhook removido"
 msgstr "Webhook avatar removed"
 
 #: src/ui/components/settings.c
-msgid "Avisa quando alguém menciona você, responde sua mensagem ou usa @everyone. Desligado, essas mensagens vão só para a central (Ctrl+D), sem aviso nem som."
-msgstr "Alerts you when someone mentions you, replies to your message or uses @everyone. Off, those messages only go to the center (Ctrl+D), with no alert or sound."
+msgid "Avisa quando alguém menciona você, responde sua mensagem ou usa @everyone. Desligado, essas mensagens vão só para a central ({k1:conversation.notifications}), sem aviso nem som."
+msgstr "Alerts you when someone mentions you, replies to your message or uses @everyone. Off, those messages only go to the center ({k1:conversation.notifications}), with no alert or sound."
 
 #: src/ui/components/settings.c
 msgid "Avisar quando mencionarem você"
@@ -1118,8 +1142,8 @@ msgid "Ação concluída."
 msgstr "Action completed."
 
 #: src/model/conversation/members.c
-msgid "Ação recusada ou indisponível. Ctrl+R: atualizar estado."
-msgstr "Action refused or unavailable. Ctrl+R: refresh the state."
+msgid "Ação recusada ou indisponível. {k1:app.refresh}: atualizar estado."
+msgstr "Action refused or unavailable. {k1:app.refresh}: refresh the state."
 
 #: src/net/auth/responses.c
 msgid "Backend incompatível: /health não está disponível nessa URL."
@@ -1182,8 +1206,8 @@ msgid "Banner atualizado"
 msgstr "Banner updated"
 
 #: src/ui/screens/conversation/members.c
-msgid "Banner indisponível · Ctrl+R: tentar novamente"
-msgstr "Banner unavailable · Ctrl+R: try again"
+msgid "Banner indisponível · {k1:app.refresh}: tentar novamente"
+msgstr "Banner unavailable · {k1:app.refresh}: try again"
 
 #: src/model/conversation/profile_edit.c
 msgid "Banner removido"
@@ -1225,17 +1249,17 @@ msgstr "Member search"
 msgid "Busca e mensagens fixadas"
 msgstr "Search and pinned messages"
 
-#: src/model/conversation/discovery.c
-msgid "Busca interrompida. Ctrl+R: tentar novamente."
-msgstr "Search interrupted. Ctrl+R: try again."
-
 #: src/model/conversation/interactions.c
 msgid "Busca interrompida. Enter: tentar novamente."
 msgstr "Search interrupted. Enter: try again."
 
+#: src/model/conversation/discovery.c
+msgid "Busca interrompida. {k1:app.refresh}: tentar novamente."
+msgstr "Search interrupted. {k1:app.refresh}: try again."
+
 #: src/ui/components/emoji_picker.c
-msgid "Busca no Wikimedia Commons · Enter inserir o link · Ctrl+R repetir"
-msgstr "Wikimedia Commons search · Enter insert the link · Ctrl+R repeat"
+msgid "Busca no Wikimedia Commons · Enter inserir o link · {k1:app.refresh} repetir"
+msgstr "Wikimedia Commons search · Enter insert the link · {k1:app.refresh} repeat"
 
 #: src/ui/components/help.c
 msgid "Busca/Fixadas"
@@ -1260,6 +1284,10 @@ msgstr "Search"
 #: src/ui/components/help.c src/ui/screens/message_browser.c
 msgid "Buscar mensagens no servidor"
 msgstr "Search messages on the server"
+
+#: src/config/keymap.c
+msgid "Buscar mensagens no servidor; na ajuda, focar a busca"
+msgstr "Search messages on the server; in help, focus the search"
 
 #: src/ui/screens/conversation/members.c
 msgid "Buscar nickname / @username"
@@ -1570,8 +1598,8 @@ msgid "Clipboard indisponível"
 msgstr "Clipboard unavailable"
 
 #: src/platform/linux/file_transfer.c
-msgid "Clipboard indisponível; use Anexar/Ctrl+O ou a colagem do terminal."
-msgstr "Clipboard unavailable; use Attach/Ctrl+O or the terminal's paste."
+msgid "Clipboard indisponível; use Anexar/{k1:conversation.attach} ou a colagem do terminal."
+msgstr "Clipboard unavailable; use Attach/{k1:conversation.attach} or the terminal's paste."
 
 #: src/platform/linux/file_transfer.c
 msgid "Clipboard sem arquivos, imagem ou texto compatível."
@@ -1586,8 +1614,8 @@ msgid "Clique direito"
 msgstr "Right-click"
 
 #: src/ui/components/help.c
-msgid "Clique direito / m nas abas"
-msgstr "Right-click / m on the tabs"
+msgid "Clique direito / {k:lists.menu} nas abas"
+msgstr "Right-click / {k:lists.menu} on tabs"
 
 #: src/platform/windows/session_slot.c
 msgid "Cofre indisponível ou em uso por outra janela. Sessão somente nesta execução."
@@ -1614,10 +1642,6 @@ msgid "Colar arquivos ou imagens do clipboard, quando disponível"
 msgstr "Paste files or images from the clipboard, when available"
 
 #: src/ui/components/help.c
-msgid "Colar arquivos ou imagens quando o clipboard está disponível"
-msgstr "Paste files or images when the clipboard is available"
-
-#: src/ui/components/help.c
 msgid "Colar texto"
 msgstr "Paste text"
 
@@ -1641,7 +1665,7 @@ msgstr "With attachments"
 msgid "Combinação de teclas"
 msgstr "Key combination"
 
-#: src/config/key_binding.c
+#: src/config/key_binding.c src/config/keymap.c
 msgid "Combinação de teclas inválida."
 msgstr "Invalid key combination."
 
@@ -1682,8 +1706,8 @@ msgid "Conectar à chamada do canal de voz"
 msgstr "Join the voice channel's call"
 
 #: src/model/conversation/members.c
-msgid "Conexão alterada. Ctrl+R: atualizar membro."
-msgstr "Connection changed. Ctrl+R: refresh the member."
+msgid "Conexão alterada. {k1:app.refresh}: atualizar membro."
+msgstr "Connection changed. {k1:app.refresh}: refresh the member."
 
 #: src/net/auth/client.c
 msgid "Conexão cancelada."
@@ -1705,25 +1729,25 @@ msgstr "Configure desktop alerts and the preview"
 msgid "Configurar canal…"
 msgstr "Configure channel…"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Configurar o orçamento de requisições"
 msgstr "Configure the request budget"
 
 #: src/config/profiles.c
-msgid "Configuração bloqueada; corrija o arquivo e use Ctrl+R. Nenhum perfil foi alterado."
-msgstr "Configuration locked; fix the file and use Ctrl+R. No profile was changed."
+msgid "Configuração bloqueada; corrija o arquivo e use {k1:app.refresh}. Nenhum perfil foi alterado."
+msgstr "Configuration locked; fix the file and use {k1:app.refresh}. No profile was changed."
 
 #: src/config/profiles.c
 msgid "Configuração de áudio inválida."
 msgstr "Invalid audio configuration."
 
 #: src/config/profiles.c
-msgid "Configuração inacessível; o arquivo foi preservado. Corrija-o e use Ctrl+R."
-msgstr "Configuration inaccessible; the file was kept. Fix it and use Ctrl+R."
+msgid "Configuração inacessível; o arquivo foi preservado. Corrija-o e use {k1:app.refresh}."
+msgstr "Configuration inaccessible; the file was kept. Fix it and use {k1:app.refresh}."
 
 #: src/config/profiles.c
-msgid "Configuração inválida ou incompatível; arquivo preservado. Corrija-o e use Ctrl+R."
-msgstr "Invalid or incompatible configuration; file kept. Fix it and use Ctrl+R."
+msgid "Configuração inválida ou incompatível; arquivo preservado. Corrija-o e use {k1:app.refresh}."
+msgstr "Invalid or incompatible configuration; file kept. Fix it and use {k1:app.refresh}."
 
 #: src/platform/linux/profiles_storage.c src/platform/windows/profiles_storage.c
 msgid "Configuração ocupada por outro processo. Tente salvar novamente."
@@ -1905,6 +1929,10 @@ msgstr "Copy URL"
 msgid "Copiar a seleção; sem seleção, copiar o campo"
 msgstr "Copy the selection; without a selection, copy the field"
 
+#: src/config/keymap.c
+msgid "Copiar o link de redefinição de senha"
+msgstr "Copy the password reset link"
+
 #: src/ui/screens/conversation/interactions.c
 msgid "Copiar texto"
 msgstr "Copy text"
@@ -1966,120 +1994,12 @@ msgid "Ctrl+"
 msgstr "Ctrl+"
 
 #: src/ui/components/help.c
-msgid "Ctrl+/"
-msgstr "Ctrl+/"
-
-#: src/ui/components/help.c
 msgid "Ctrl+A"
 msgstr "Ctrl+A"
 
 #: src/ui/components/help.c
-msgid "Ctrl+B"
-msgstr "Ctrl+B"
-
-#: src/ui/components/help.c
-msgid "Ctrl+B / i / [Info]"
-msgstr "Ctrl+B / i / [Info]"
-
-#: src/ui/components/help.c
 msgid "Ctrl+C"
 msgstr "Ctrl+C"
-
-#: src/ui/components/help.c
-msgid "Ctrl+D"
-msgstr "Ctrl+D"
-
-#: src/ui/components/help.c
-msgid "Ctrl+E"
-msgstr "Ctrl+E"
-
-#: src/ui/components/help.c
-msgid "Ctrl+Espaço"
-msgstr "Ctrl+Space"
-
-#: src/ui/components/help.c
-msgid "Ctrl+Espaço / m"
-msgstr "Ctrl+Space / m"
-
-#: src/ui/components/help.c
-msgid "Ctrl+Espaço / m / clique direito"
-msgstr "Ctrl+Space / m / right-click"
-
-#: src/ui/components/help.c
-msgid "Ctrl+F"
-msgstr "Ctrl+F"
-
-#: src/ui/components/help.c
-msgid "Ctrl+F na ajuda"
-msgstr "Ctrl+F in help"
-
-#: src/ui/components/help.c
-msgid "Ctrl+F: buscar · ↑↓: rolar · Esc: fechar"
-msgstr "Ctrl+F: search · ↑↓: scroll · Esc: close"
-
-#: src/ui/components/help.c
-msgid "Ctrl+G / F1"
-msgstr "Ctrl+G / F1"
-
-#: src/ui/input/shortcuts.h
-msgid "Ctrl+G: ajuda"
-msgstr "Ctrl+G: help"
-
-#: src/ui/components/help.c
-msgid "Ctrl+J"
-msgstr "Ctrl+J"
-
-#: src/ui/components/help.c
-msgid "Ctrl+K"
-msgstr "Ctrl+K"
-
-#: src/ui/components/help.c
-msgid "Ctrl+L"
-msgstr "Ctrl+L"
-
-#: src/ui/components/help.c
-msgid "Ctrl+N"
-msgstr "Ctrl+N"
-
-#: src/ui/components/help.c
-msgid "Ctrl+N / Ctrl+E"
-msgstr "Ctrl+N / Ctrl+E"
-
-#: src/ui/components/help.c
-msgid "Ctrl+O / Ctrl+E"
-msgstr "Ctrl+O / Ctrl+E"
-
-#: src/ui/components/help.c
-msgid "Ctrl+O / Shift+Enter"
-msgstr "Ctrl+O / Shift+Enter"
-
-#: src/ui/components/help.c
-msgid "Ctrl+O / 📎"
-msgstr "Ctrl+O / 📎"
-
-#: src/ui/components/help.c
-msgid "Ctrl+P"
-msgstr "Ctrl+P"
-
-#: src/ui/components/help.c
-msgid "Ctrl+P / [Gerenciar]"
-msgstr "Ctrl+P / [Manage]"
-
-#: src/ui/components/help.c
-msgid "Ctrl+Q"
-msgstr "Ctrl+Q"
-
-#: src/ui/components/help.c
-msgid "Ctrl+R"
-msgstr "Ctrl+R"
-
-#: src/ui/components/help.c
-msgid "Ctrl+R / Esc"
-msgstr "Ctrl+R / Esc"
-
-#: src/ui/components/help.c
-msgid "Ctrl+S"
-msgstr "Ctrl+S"
 
 #: src/ui/components/help.c
 msgid "Ctrl+Shift+C"
@@ -2090,10 +2010,6 @@ msgid "Ctrl+Shift+setas"
 msgstr "Ctrl+Shift+arrows"
 
 #: src/ui/components/help.c
-msgid "Ctrl+T"
-msgstr "Ctrl+T"
-
-#: src/ui/components/help.c
 msgid "Ctrl+U"
 msgstr "Ctrl+U"
 
@@ -2102,24 +2018,8 @@ msgid "Ctrl+V"
 msgstr "Ctrl+V"
 
 #: src/ui/components/help.c
-msgid "Ctrl+W"
-msgstr "Ctrl+W"
-
-#: src/ui/components/help.c
 msgid "Ctrl+W / Ctrl+Backspace"
 msgstr "Ctrl+W / Ctrl+Backspace"
-
-#: src/ui/components/help.c
-msgid "Ctrl+X"
-msgstr "Ctrl+X"
-
-#: src/ui/components/help.c
-msgid "Ctrl+Y"
-msgstr "Ctrl+Y"
-
-#: src/ui/components/help.c
-msgid "Ctrl+Y / [Verificar]"
-msgstr "Ctrl+Y / [Check]"
 
 #: src/ui/components/help.c
 msgid "Ctrl+← / Ctrl+→"
@@ -2230,12 +2130,12 @@ msgid "Desconectado"
 msgstr "Disconnected"
 
 #: src/ui/screens/conversation/drawing.c
-msgid "Desconectado · F5: reconectar"
-msgstr "Disconnected · F5: reconnect"
-
-#: src/ui/screens/conversation/drawing.c
 msgid "Desconectado · Revalidando sessão…"
 msgstr "Disconnected · Revalidating session…"
+
+#: src/ui/screens/conversation/drawing.c
+msgid "Desconectado · {k1:conversation.reconnect}: reconectar"
+msgstr "Disconnected · {k1:conversation.reconnect}: reconnect"
 
 #: src/ui/screens/conversation/members.c
 msgid "Desconhecido"
@@ -2258,8 +2158,8 @@ msgid "Desktop indisponível"
 msgstr "Desktop unavailable"
 
 #: src/ui/screens/inbox.c
-msgid "Destino ainda indisponível. Ctrl+R: atualizar."
-msgstr "Destination still unavailable. Ctrl+R: refresh."
+msgid "Destino ainda indisponível. {k1:app.refresh}: atualizar."
+msgstr "Destination still unavailable. {k1:app.refresh}: refresh."
 
 #: src/ui/components/server_settings/audit.c
 msgid "Detalhes"
@@ -2292,6 +2192,10 @@ msgstr "Type text"
 #: src/ui/media/media.c
 msgid "Dimensões originais"
 msgstr "Original dimensions"
+
+#: src/config/keymap.c
+msgid "Diminuir a velocidade do áudio"
+msgstr "Slow down the audio"
 
 #: src/ui/components/help.c
 msgid "Diminuir ou aumentar a velocidade (0,5× a 2×)"
@@ -2352,6 +2256,10 @@ msgstr "Edit role"
 #: src/ui/screens/conversation/interactions.c
 msgid "Editar mensagem"
 msgstr "Edit message"
+
+#: src/config/keymap.c
+msgid "Editar o perfil selecionado"
+msgstr "Edit the selected profile"
 
 #: src/ui/components/help.c
 msgid "Editor"
@@ -2497,7 +2405,7 @@ msgstr "Join calls"
 msgid "Entrar nos controles Canais/DMs"
 msgstr "Go to the Channels/DMs controls"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Entrar ou sair da seleção de mensagens"
 msgstr "Enter or leave message selection"
 
@@ -2590,8 +2498,8 @@ msgid "Envio cancelado; rascunho preservado."
 msgstr "Send cancelled; draft kept."
 
 #: src/ui/screens/conversation/conversation.c
-msgid "Envio confirmado; Ctrl+R para consultar o histórico."
-msgstr "Send confirmed; Ctrl+R to check the history."
+msgid "Envio confirmado; {k1:app.refresh} para consultar o histórico."
+msgstr "Send confirmed; {k1:app.refresh} to check the history."
 
 #: src/ui/media/profile_image.c
 msgid "Envio da imagem cancelado."
@@ -2634,18 +2542,6 @@ msgid "Esc"
 msgstr "Esc"
 
 #: src/ui/components/help.c
-msgid "Esc / Ctrl+E"
-msgstr "Esc / Ctrl+E"
-
-#: src/ui/components/help.c
-msgid "Esc / Ctrl+S"
-msgstr "Esc / Ctrl+S"
-
-#: src/ui/components/help.c
-msgid "Esc / Ctrl+U"
-msgstr "Esc / Ctrl+U"
-
-#: src/ui/components/help.c
 msgid "Esc / Tab"
 msgstr "Esc / Tab"
 
@@ -2660,6 +2556,18 @@ msgstr "Esc / [Close]"
 #: src/ui/components/help.c
 msgid "Esc / clique fora"
 msgstr "Esc / click outside"
+
+#: src/ui/components/help.c
+msgid "Esc / {k:conversation.emojis}"
+msgstr "Esc / {k:conversation.emojis}"
+
+#: src/ui/components/help.c
+msgid "Esc / {k:conversation.members}"
+msgstr "Esc / {k:conversation.members}"
+
+#: src/ui/components/help.c
+msgid "Esc / {k:conversation.settings}"
+msgstr "Esc / {k:conversation.settings}"
 
 #: src/config/key_binding.c
 msgid "Esc sozinho fecha painéis; use Ctrl, Alt ou Shift com Esc."
@@ -2724,6 +2632,10 @@ msgstr "Choose the message or load the next page"
 #: src/ui/components/help.c
 msgid "Escolher arquivos para anexar"
 msgstr "Choose files to attach"
+
+#: src/config/keymap.c
+msgid "Escolher arquivos para anexar; na lista de canais, abrir o histórico do canal selecionado"
+msgstr "Choose files to attach; in the channel list, open the selected channel's history"
 
 #: src/ui/components/server_settings/webhooks.c
 msgid "Escolher avatar e enviar…"
@@ -2841,13 +2753,25 @@ msgstr "Space pause · ←→ 5s · x stop · Esc background"
 msgid "Espaço pausar · ←→ 5s · ↑↓ volume"
 msgstr "Space pause · ←→ 5s · ↑↓ volume"
 
+#: src/config/keymap.c
+msgid "Espaço sozinho é fixo: marca, pausa ou ativa botões."
+msgstr "Space alone is fixed: it marks, pauses or activates buttons."
+
 #: src/ui/input/editor.c
 msgid "Esta conversa já tem um envio em andamento."
 msgstr "This conversation already has a send in progress."
 
+#: src/config/keymap.c
+msgid "Esta função também atua em campos de texto: use Ctrl, Alt ou uma tecla de função."
+msgstr "This action also works in text fields: use Ctrl, Alt or a function key."
+
 #: src/net/auth/responses.c
 msgid "Esta instância é privada. Preencha a senha do servidor."
 msgstr "This instance is private. Fill in the server password."
+
+#: src/config/keymap.c
+msgid "Esta tecla é fixa: navega, confirma ou edita texto."
+msgstr "This key is fixed: it navigates, confirms or edits text."
 
 #: src/app/session_slot.c
 msgid "Estado de sessão inválido. Recuperação desativada."
@@ -2913,33 +2837,25 @@ msgstr "Deletion waiting to send…"
 msgid "Execute Buscar para aplicar as alterações."
 msgstr "Run Search to apply the changes."
 
-#: src/ui/components/help.c
-msgid "F5"
-msgstr "F5"
-
-#: src/ui/screens/conversation/drawing.c
-msgid "F5: reconectar agora"
-msgstr "F5: reconnect now"
-
 #: src/ui/screens/conversation/downloads.c
 msgid "Falha ao baixar %s: %s"
 msgstr "Failed to download %s: %s"
 
 #: src/model/conversation/interactions.c
-msgid "Falha ao buscar mensagem; Ctrl+R: tentar novamente"
-msgstr "Failed to fetch the message; Ctrl+R: try again"
+msgid "Falha ao buscar mensagem; {k1:app.refresh}: tentar novamente"
+msgstr "Failed to fetch the message; {k1:app.refresh}: try again"
 
 #: src/model/conversation/interactions.c
-msgid "Falha ao carregar mensagem original. Ctrl+R: tentar novamente."
-msgstr "Failed to load the original message. Ctrl+R: try again."
+msgid "Falha ao carregar mensagem original. {k1:app.refresh}: tentar novamente."
+msgstr "Failed to load the original message. {k1:app.refresh}: try again."
 
 #: src/model/conversation/history.c src/model/notifications/inbox.c
-msgid "Falha ao carregar. Ctrl+R: tentar novamente."
-msgstr "Failed to load. Ctrl+R: try again."
+msgid "Falha ao carregar. {k1:app.refresh}: tentar novamente."
+msgstr "Failed to load. {k1:app.refresh}: try again."
 
 #: src/model/conversation/members.c
-msgid "Falha ao consultar membro. Ctrl+R: tentar novamente."
-msgstr "Failed to look up the member. Ctrl+R: try again."
+msgid "Falha ao consultar membro. {k1:app.refresh}: tentar novamente."
+msgstr "Failed to look up the member. {k1:app.refresh}: try again."
 
 #: src/platform/linux/clipboard.c src/platform/windows/clipboard.c
 msgid "Falha ao copiar texto"
@@ -2950,20 +2866,20 @@ msgid "Falha ao enviar o evento de tempo real."
 msgstr "Failed to send the real-time event."
 
 #: src/model/conversation/interactions.c
-msgid "Falha ao listar reações. Ctrl+R: tentar novamente."
-msgstr "Failed to list reactions. Ctrl+R: try again."
+msgid "Falha ao listar reações. {k1:app.refresh}: tentar novamente."
+msgstr "Failed to list reactions. {k1:app.refresh}: try again."
 
 #: src/model/conversation/directory.c
-msgid "Falha ao listar usuários. Ctrl+R: tentar novamente."
-msgstr "Failed to list users. Ctrl+R: try again."
-
-#: src/model/conversation/interactions.c
-msgid "Falha ao localizar mensagem. Ctrl+R: tentar novamente."
-msgstr "Failed to locate the message. Ctrl+R: try again."
+msgid "Falha ao listar usuários. {k1:app.refresh}: tentar novamente."
+msgstr "Failed to list users. {k1:app.refresh}: try again."
 
 #: src/model/conversation/interactions.c
 msgid "Falha ao localizar mensagem. Enter: tentar novamente."
 msgstr "Failed to locate the message. Enter: try again."
+
+#: src/model/conversation/interactions.c
+msgid "Falha ao localizar mensagem. {k1:app.refresh}: tentar novamente."
+msgstr "Failed to locate the message. {k1:app.refresh}: try again."
 
 #: src/model/conversation/channel_settings.c
 msgid "Falha ao salvar notificações. Escolha novamente para tentar."
@@ -2982,8 +2898,8 @@ msgid "Falha de voz"
 msgstr "Voice failure"
 
 #: src/model/conversation/discovery.c
-msgid "Falha na consulta. Ctrl+R: tentar novamente."
-msgstr "Lookup failed. Ctrl+R: try again."
+msgid "Falha na consulta. {k1:app.refresh}: tentar novamente."
+msgstr "Lookup failed. {k1:app.refresh}: try again."
 
 #: src/ui/input/editor.c
 msgid "Falha no envio"
@@ -2998,8 +2914,8 @@ msgid "Falha no áudio. Confira dispositivos, permissões e plugins GStreamer."
 msgstr "Audio failure. Check devices, permissions and GStreamer plugins."
 
 #: src/model/assets/catalog.c
-msgid "Falha nos emojis · Ctrl+R tentar novamente"
-msgstr "Emojis failed · Ctrl+R try again"
+msgid "Falha nos emojis · {k1:app.refresh} tentar novamente"
+msgstr "Emojis failed · {k1:app.refresh} try again"
 
 #: src/model/notifications/inbox.c
 msgid "Fechando DM…"
@@ -3013,7 +2929,7 @@ msgstr "Close"
 msgid "Fechar DM"
 msgstr "Close DM"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Fechar a DM selecionada"
 msgstr "Close the selected DM"
 
@@ -3130,8 +3046,8 @@ msgid "Fixação aguardando envio…"
 msgstr "Pin waiting to send…"
 
 #: src/ui/screens/conversation/interactions.c
-msgid "Fixação indisponível (Ctrl+R)"
-msgstr "Pinning unavailable (Ctrl+R)"
+msgid "Fixação indisponível ({k1:app.refresh})"
+msgstr "Pinning unavailable ({k1:app.refresh})"
 
 #: src/model/conversation/interactions.c
 msgid "Fixação removida."
@@ -3145,7 +3061,7 @@ msgstr "Pin not confirmed. Refresh before trying again."
 msgid "Fluxos desta instância: < %u >"
 msgstr "Flows of this instance: < %u >"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Focar a busca por nome ou @username"
 msgstr "Focus the search by name or @username"
 
@@ -3301,7 +3217,7 @@ msgstr "Identity incompatible with the service."
 msgid "Identificando a instância…"
 msgstr "Identifying the instance…"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Identificar novamente o servidor selecionado"
 msgstr "Identify the selected server again"
 
@@ -3445,6 +3361,10 @@ msgstr "Go to message"
 msgid "Ir para mensagem original"
 msgstr "Go to original message"
 
+#: src/config/keymap.c
+msgid "Ir para um canal ou DM de qualquer servidor pelo nome"
+msgstr "Go to a channel or DM of any server by name"
+
 #: src/ui/components/help.c
 msgid "Ir para um canal ou DM de qualquer servidor pelo nome; mostra primeiro menções e não lidas"
 msgstr "Go to a channel or DM of any server by name; mentions and unread ones come first"
@@ -3470,8 +3390,8 @@ msgid "Leitura local não salva"
 msgstr "Local read not saved"
 
 #: src/model/notifications/inbox.c
-msgid "Leitura não confirmada. Ctrl+R: tentar novamente."
-msgstr "Read not confirmed. Ctrl+R: try again."
+msgid "Leitura não confirmada. {k1:app.refresh}: tentar novamente."
+msgstr "Read not confirmed. {k1:app.refresh}: try again."
 
 #: src/ui/screens/conversation/attachments.c
 msgid "Lendo clipboard…"
@@ -3490,8 +3410,8 @@ msgid "Light"
 msgstr "Light"
 
 #: src/model/assets/catalog.c
-msgid "Limite atingido · Aguarde e use Ctrl+R"
-msgstr "Limit reached · Wait and use Ctrl+R"
+msgid "Limite atingido · Aguarde e use {k1:app.refresh}"
+msgstr "Limit reached · Wait and use {k1:app.refresh}"
 
 #: src/model/conversation/interactions.c
 msgid "Limite de 100 mensagens fixadas atingido."
@@ -3530,8 +3450,8 @@ msgid "Limite de requisições atingido. Aguarde antes de tentar novamente."
 msgstr "Request limit reached. Wait before trying again."
 
 #: src/model/conversation/history.c
-msgid "Limite de requisições atingido. Aguarde e use Ctrl+R."
-msgstr "Request limit reached. Wait and use Ctrl+R."
+msgid "Limite de requisições atingido. Aguarde e use {k1:app.refresh}."
+msgstr "Request limit reached. Wait and use {k1:app.refresh}."
 
 #: src/model/conversation/interactions.c
 msgid "Limite de requisições. Aguarde antes de tentar novamente."
@@ -3546,8 +3466,8 @@ msgid "Limite de requisições. Aguarde e tente novamente."
 msgstr "Request limit. Wait and try again."
 
 #: src/model/conversation/discovery.c
-msgid "Limite de requisições. Aguarde e use Ctrl+R."
-msgstr "Request limit. Wait and use Ctrl+R."
+msgid "Limite de requisições. Aguarde e use {k1:app.refresh}."
+msgstr "Request limit. Wait and use {k1:app.refresh}."
 
 #: src/model/attachment.c
 msgid "Limite local de anexos: 512 MiB entre rascunhos e envios."
@@ -3669,6 +3589,10 @@ msgstr "More than 10,000 entries; enter a subfolder in the path."
 msgid "Mais recentes"
 msgstr "Newest first"
 
+#: src/config/keymap.c src/ui/components/help.c
+msgid "Marcar ou desmarcar todos os anexos em Baixar anexos"
+msgstr "Mark or unmark every attachment in Baixar anexos"
+
 #: src/ui/components/help.c
 msgid "Marcar ou desmarcar um arquivo"
 msgstr "Mark or unmark a file"
@@ -3706,8 +3630,8 @@ msgid "Membros"
 msgstr "Members"
 
 #: src/ui/screens/conversation/members.c
-msgid "Membros (%u) · Ctrl+U"
-msgstr "Members (%u) · Ctrl+U"
+msgid "Membros (%u) · {k1:conversation.members}"
+msgstr "Members (%u) · {k1:conversation.members}"
 
 #: src/ui/components/help.c
 msgid "Membros: digitar na lista"
@@ -3870,14 +3794,14 @@ msgid "Mostra a hora ao lado do nome de quem enviou cada mensagem. Salvo na sua 
 msgstr "Shows the time beside the name of whoever sent each message. Saved in your account on this server."
 
 #: src/ui/components/settings.c
-msgid "Mostra avisos do sistema e toca sons para as notificações deste servidor. Desligado, a central (Ctrl+D) e os indicadores de não lidas continuam funcionando."
-msgstr "Shows system alerts and plays sounds for this server's notifications. Off, the center (Ctrl+D) and the unread indicators keep working."
+msgid "Mostra avisos do sistema e toca sons para as notificações deste servidor. Desligado, a central ({k1:conversation.notifications}) e os indicadores de não lidas continuam funcionando."
+msgstr "Shows system alerts and plays sounds for this server's notifications. Off, the center ({k1:conversation.notifications}) and the unread indicators keep working."
 
 #: src/ui/components/settings.c
 msgid "Mostra o texto da mensagem no aviso do sistema. Desligado, o aviso diz só \"Nova notificação\"."
 msgstr "Shows the message's text in the system alert. Off, the alert only says \"New notification\"."
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Mostrar ou ocultar as propriedades da mídia"
 msgstr "Show or hide the media's properties"
 
@@ -4302,8 +4226,8 @@ msgid "Não foi possível alterar o perfil agora."
 msgstr "Could not change the profile now."
 
 #: src/model/conversation/events.c
-msgid "Não foi possível aplicar o evento. Ctrl+R: recuperar."
-msgstr "Could not apply the event. Ctrl+R: recover."
+msgid "Não foi possível aplicar o evento. {k1:app.refresh}: recuperar."
+msgstr "Could not apply the event. {k1:app.refresh}: recover."
 
 #: src/net/gif_search.c
 msgid "Não foi possível buscar GIFs. Verifique a conexão."
@@ -4354,12 +4278,12 @@ msgid "Não foi possível carregar os webhooks."
 msgstr "Could not load the webhooks."
 
 #: src/ui/screens/conversation/attachments.c
-msgid "Não foi possível colar. Use [+]/Ctrl+O ou a colagem do terminal."
-msgstr "Could not paste. Use [+]/Ctrl+O or the terminal's paste."
+msgid "Não foi possível colar. Use [+]/{k1:conversation.attach} ou a colagem do terminal."
+msgstr "Could not paste. Use [+]/{k1:conversation.attach} or the terminal's paste."
 
 #: src/ui/screens/conversation/attachments.c
-msgid "Não foi possível colar. Use 📎/Ctrl+O ou a colagem do terminal."
-msgstr "Could not paste. Use 📎/Ctrl+O or the terminal's paste."
+msgid "Não foi possível colar. Use 📎/{k1:conversation.attach} ou a colagem do terminal."
+msgstr "Could not paste. Use 📎/{k1:conversation.attach} or the terminal's paste."
 
 #: src/net/auth/responses.c
 msgid "Não foi possível concluir a consulta autenticada."
@@ -4538,8 +4462,8 @@ msgid "Não foi possível preparar a conexão."
 msgstr "Could not prepare the connection."
 
 #: src/model/conversation/discovery.c src/model/conversation/history.c
-msgid "Não foi possível preparar a consulta. Ctrl+R: tentar novamente."
-msgstr "Could not prepare the lookup. Ctrl+R: try again."
+msgid "Não foi possível preparar a consulta. {k1:app.refresh}: tentar novamente."
+msgstr "Could not prepare the lookup. {k1:app.refresh}: try again."
 
 #: src/ui/screens/conversation/input.c
 msgid "Não foi possível preparar a edição; aguarde ou tente novamente."
@@ -4566,16 +4490,16 @@ msgid "Não foi possível preparar a operação."
 msgstr "Could not prepare the operation."
 
 #: src/model/notifications/inbox.c
-msgid "Não foi possível preparar a operação. Ctrl+R: tentar novamente."
-msgstr "Could not prepare the operation. Ctrl+R: try again."
+msgid "Não foi possível preparar a operação. {k1:app.refresh}: tentar novamente."
+msgstr "Could not prepare the operation. {k1:app.refresh}: try again."
 
 #: src/ui/screens/conversation/interactions.c
 msgid "Não foi possível preparar a reação; aguarde ou tente novamente."
 msgstr "Could not prepare the reaction; wait or try again."
 
 #: src/model/conversation/events.c
-msgid "Não foi possível preparar a recuperação. Ctrl+R: tentar novamente."
-msgstr "Could not prepare the recovery. Ctrl+R: try again."
+msgid "Não foi possível preparar a recuperação. {k1:app.refresh}: tentar novamente."
+msgstr "Could not prepare the recovery. {k1:app.refresh}: try again."
 
 #: src/net/auth/password.c
 msgid "Não foi possível preparar a redefinição."
@@ -4814,8 +4738,8 @@ msgid "O servidor demorou para responder. Tente novamente."
 msgstr "The server took too long to answer. Try again."
 
 #: src/ui/screens/conversation/drawing.c
-msgid "O servidor detectou o reuso de uma sessão desta conta e encerrou as outras. Se não foi você, troque a senha em Ctrl+S → Conta."
-msgstr "The server detected reuse of a session of this account and ended the others. If it was not you, change the password in Ctrl+S → Account."
+msgid "O servidor detectou o reuso de uma sessão desta conta e encerrou as outras. Se não foi você, troque a senha em {k1:conversation.settings} → Conta."
+msgstr "The server detected reuse of a session of this account and ended the others. If it was not you, change the password in {k1:conversation.settings} → Account."
 
 #: src/net/realtime/websocket.c
 msgid "O servidor enviou um encerramento de tempo real inválido."
@@ -5005,7 +4929,7 @@ msgstr "Page Up"
 msgid "Parar"
 msgstr "Stop"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Parar o áudio e fechar o player"
 msgstr "Stop the audio and close the player"
 
@@ -5102,8 +5026,8 @@ msgid "Perfil não encontrado."
 msgstr "Profile not found."
 
 #: src/config/profiles.c
-msgid "Perfil não encontrado. Use Ctrl+R."
-msgstr "Profile not found. Use Ctrl+R."
+msgid "Perfil não encontrado. Use {k1:app.refresh}."
+msgstr "Profile not found. Use {k1:app.refresh}."
 
 #: src/model/conversation/profile_edit.c
 msgid "Perfil salvo"
@@ -5182,20 +5106,20 @@ msgid "Permissões"
 msgstr "Permissions"
 
 #: src/ui/screens/conversation/interactions.c
-msgid "Permissões ainda não confirmadas. Aguarde ou use Ctrl+R."
-msgstr "Permissions not confirmed yet. Wait or use Ctrl+R."
+msgid "Permissões ainda não confirmadas. Aguarde ou use {k1:app.refresh}."
+msgstr "Permissions not confirmed yet. Wait or use {k1:app.refresh}."
 
 #: src/ui/input/editor.c
-msgid "Permissões ainda não confirmadas. Aguarde ou use Ctrl+R; rascunho preservado."
-msgstr "Permissions not confirmed yet. Wait or use Ctrl+R; draft kept."
+msgid "Permissões ainda não confirmadas. Aguarde ou use {k1:app.refresh}; rascunho preservado."
+msgstr "Permissions not confirmed yet. Wait or use {k1:app.refresh}; draft kept."
 
 #: src/model/conversation/server_admin.c
 msgid "Permissões do canal salvas"
 msgstr "Channel permissions saved"
 
 #: src/net/auth/permissions.c
-msgid "Permissões indisponíveis. Ctrl+R: tentar novamente."
-msgstr "Permissions unavailable. Ctrl+R: try again."
+msgid "Permissões indisponíveis. {k1:app.refresh}: tentar novamente."
+msgstr "Permissions unavailable. {k1:app.refresh}: try again."
 
 #: src/ui/components/server_settings/channels.c
 msgid "Permissões por cargo"
@@ -5425,7 +5349,7 @@ msgstr "Reconnecting automatically…"
 msgid "Reconectando…"
 msgstr "Reconnecting…"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Reconectar agora quando a conexão cair"
 msgstr "Reconnect now when the connection drops"
 
@@ -5442,8 +5366,8 @@ msgid "Recuperando sessão… Esc: abrir login"
 msgstr "Recovering session… Esc: open login"
 
 #: src/model/conversation/history.c
-msgid "Recuperação pendente. Nova tentativa automática; Ctrl+R: tentar agora."
-msgstr "Recovery pending. Automatic retry; Ctrl+R: try now."
+msgid "Recuperação pendente. Nova tentativa automática; {k1:app.refresh}: tentar agora."
+msgstr "Recovery pending. Automatic retry; {k1:app.refresh}: try now."
 
 #: src/net/auth/responses.c
 msgid "Rede indisponível. Reconectando…"
@@ -5533,7 +5457,7 @@ msgstr "Renewing your session…"
 msgid "Renovar ou reconectar uma sessão existente"
 msgstr "Renew or reconnect an existing session"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Repetir o áudio ao terminar"
 msgstr "Repeat the audio when it ends"
 
@@ -5548,6 +5472,10 @@ msgstr "Requests per second (positive and finite)"
 #: src/ui/screens/conversation/interactions.c
 msgid "Responder"
 msgstr "Reply"
+
+#: src/config/keymap.c
+msgid "Responder à mensagem selecionada"
+msgstr "Reply to the selected message"
 
 #: src/ui/components/help.c
 msgid "Responder, adicionar reação ou ver quem reagiu, se permitido"
@@ -5574,8 +5502,8 @@ msgid "Resultado incerto. Atualize antes de tentar novamente."
 msgstr "Uncertain result. Refresh before trying again."
 
 #: src/model/conversation/members.c
-msgid "Resultado incerto. Ctrl+R: consultar estado antes de repetir."
-msgstr "Uncertain result. Ctrl+R: check the state before repeating."
+msgid "Resultado incerto. {k1:app.refresh}: consultar estado antes de repetir."
+msgstr "Uncertain result. {k1:app.refresh}: check the state before repeating."
 
 #: src/model/conversation/channel_settings.c
 msgid "Resultado não confirmado. Atualize os canais antes de tentar novamente."
@@ -5589,9 +5517,9 @@ msgstr "Result not confirmed. Check the settings before repeating."
 msgid "Retorno local ativo; sua voz não é enviada à chamada."
 msgstr "Local loopback on; your voice is not sent to the call."
 
-#: src/ui/components/help.c
-msgid "Retroceder ou avançar 1 segundo"
-msgstr "Go back or forward 1 second"
+#: src/config/keymap.c src/ui/components/help.c
+msgid "Retroceder 1 segundo"
+msgstr "Rewind 1 second"
 
 #: src/ui/components/help.c
 msgid "Retroceder ou avançar 5 segundos"
@@ -5657,7 +5585,7 @@ msgstr "Signing out…"
 msgid "Sair da chamada"
 msgstr "Leave call"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Sair da conta atual"
 msgstr "Sign out of the current account"
 
@@ -5665,7 +5593,7 @@ msgstr "Sign out of the current account"
 msgid "Sair da seleção e voltar ao foco anterior ou à próxima área"
 msgstr "Leave selection and return to the previous focus or the next area"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Sair do aplicativo"
 msgstr "Quit the application"
 
@@ -5745,7 +5673,7 @@ msgstr "Select conversation"
 msgid "Selecionar menção"
 msgstr "Select mention"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Selecionar ou gerenciar perfis de servidores"
 msgstr "Select or manage server profiles"
 
@@ -5946,8 +5874,8 @@ msgid "Servidor offline"
 msgstr "Server offline"
 
 #: src/ui/screens/conversation/drawing.c
-msgid "Servidor offline · F5: reconectar"
-msgstr "Server offline · F5: reconnect"
+msgid "Servidor offline · {k1:conversation.reconnect}: reconectar"
+msgstr "Server offline · {k1:conversation.reconnect}: reconnect"
 
 #: src/ui/components/help.c src/ui/screens/conversation/drawing.c
 msgid "Servidores"
@@ -6029,7 +5957,7 @@ msgstr "Mute channel"
 msgid "Silenciar canal…"
 msgstr "Mute channel…"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Silenciar ou reativar o som"
 msgstr "Mute or unmute the sound"
 
@@ -6196,6 +6124,10 @@ msgstr "Try loading the media again"
 #: src/ui/components/server_settings/audit.c src/ui/components/server_settings/emojis.c src/ui/components/server_settings/overview.c src/ui/components/server_settings/webhooks.c
 msgid "Tentar de novo"
 msgstr "Try again"
+
+#: src/config/keymap.c
+msgid "Tentar novamente o último envio com falha"
+msgstr "Retry the last failed send"
 
 #: src/ui/components/help.c
 msgid "Tentar novamente o último envio com falha; envios incertos pedem confirmação"
@@ -6381,6 +6313,10 @@ msgstr "Use a PNG, JPEG, GIF or WEBP image."
 msgid "Use uma taxa positiva e finita e um burst inteiro positivo."
 msgstr "Use a positive, finite rate and a positive integer burst."
 
+#: src/config/keymap.c
+msgid "Use uma tecla; os botões do mouse só servem para pressionar para falar."
+msgstr "Use a key; mouse buttons only work for push-to-talk."
+
 #: src/model/conversation/profile_edit.c src/model/conversation/server_admin.c
 msgid "Use uma única linha, sem caracteres de controle."
 msgstr "Use a single line, without control characters."
@@ -6418,8 +6354,8 @@ msgid "Usuários"
 msgstr "Users"
 
 #: src/ui/components/settings.c
-msgid "Valem para todos os canais deste servidor, em qualquer aparelho. Quais mensagens avisam se escolhe no canal (Notificações…); Ctrl+D → Preferências silencia só este computador."
-msgstr "They apply to every channel of this server, on any device. Which messages alert is chosen in the channel (Notifications…); Ctrl+D → Preferences silences only this computer."
+msgid "Valem para todos os canais deste servidor, em qualquer aparelho. Quais mensagens avisam se escolhe no canal (Notificações…); {k1:conversation.notifications} → Preferências silencia só este computador."
+msgstr "They apply to every channel of this server, on any device. Which messages alert is chosen in the channel (Notifications…); {k1:conversation.notifications} → Preferences silences only this computer."
 
 #: src/ui/screens/conversation/interactions.c src/ui/screens/conversation/members.c
 msgid "Ver perfil"
@@ -6428,6 +6364,10 @@ msgstr "View profile"
 #: src/ui/screens/conversation/interactions.c
 msgid "Ver quem reagiu"
 msgstr "See who reacted"
+
+#: src/config/keymap.c
+msgid "Ver quem reagiu à mensagem selecionada"
+msgstr "See who reacted to the selected message"
 
 #: src/ui/components/file_picker.c
 msgid "Verificando destino…"
@@ -6481,7 +6421,7 @@ msgstr "Return to the channel list"
 msgid "Voltar à lista de membros ou ao agrupamento"
 msgstr "Return to the member list or the grouping"
 
-#: src/ui/components/help.c
+#: src/config/keymap.c src/ui/components/help.c
 msgid "Voltar à mensagem do áudio em segundo plano e abrir o player"
 msgstr "Return to the background audio's message and open the player"
 
@@ -6560,10 +6500,6 @@ msgstr "Webhook revoked"
 #: src/ui/components/server_settings/audit.c src/ui/components/server_settings/server_settings.c
 msgid "Webhooks"
 msgstr "Webhooks"
-
-#: src/ui/components/help.c
-msgid "[ / ] ou [−] / [+]"
-msgstr "[ / ] or [−] / [+]"
 
 #: src/ui/screens/login.c
 msgid "[ Conectando… ]"
@@ -6947,14 +6883,6 @@ msgstr "i information · Esc back"
 msgid "indisponível"
 msgstr "unavailable"
 
-#: src/ui/components/help.c
-msgid "l / [Repetir]"
-msgstr "l / [Repeat]"
-
-#: src/ui/components/help.c
-msgid "m"
-msgstr "m"
-
 #: src/ui/screens/conversation/members.c
 msgid "m / botão direito: opções"
 msgstr "m / right button: options"
@@ -7005,10 +6933,6 @@ msgstr ""
 msgid "pressione uma combinação"
 msgstr "press a combination"
 
-#: src/ui/components/help.c
-msgid "r / e / E"
-msgstr "r / e / E"
-
 #: src/ui/media/message_blocks.c
 msgid "reply"
 msgstr "reply"
@@ -7020,6 +6944,10 @@ msgstr "no banner"
 #: src/ui/screens/inbox.c
 msgid "sem data"
 msgstr "no date"
+
+#: src/config/keymap.c
+msgid "sem tecla"
+msgstr "no key"
 
 #: src/ui/media/message_blocks.c
 msgid "tamanho desconhecido"
@@ -7041,9 +6969,193 @@ msgstr "user"
 msgid "usuário indisponível"
 msgstr "user unavailable"
 
+#: src/ui/input/shortcuts.h
+msgid "{k1:app.help}: ajuda"
+msgstr "{k1:app.help}: help"
+
+#: src/ui/screens/conversation/drawing.c
+msgid "{k1:conversation.reconnect}: reconectar agora"
+msgstr "{k1:conversation.reconnect}: reconnect now"
+
 #: src/ui/components/help.c
-msgid "x / [Parar]"
-msgstr "x / [Stop]"
+msgid "{k:app.help_all}"
+msgstr "{k:app.help_all}"
+
+#: src/ui/components/help.c
+msgid "{k:app.help}"
+msgstr "{k:app.help}"
+
+#: src/ui/components/help.c
+msgid "{k:app.quit}"
+msgstr "{k:app.quit}"
+
+#: src/ui/components/help.c
+msgid "{k:app.refresh}"
+msgstr "{k:app.refresh}"
+
+#: src/ui/components/help.c
+msgid "{k:app.refresh} / Esc"
+msgstr "{k:app.refresh} / Esc"
+
+#: src/ui/components/help.c
+msgid "{k:audio.loop} / [Repetir]"
+msgstr "{k:audio.loop} / [Repeat]"
+
+#: src/ui/components/help.c
+msgid "{k:audio.slower} / {k:audio.faster} ou [−] / [+]"
+msgstr "{k:audio.slower} / {k:audio.faster} or [−] / [+]"
+
+#: src/ui/components/help.c
+msgid "{k:audio.stop} / [Parar]"
+msgstr "{k:audio.stop} / [Stop]"
+
+#: src/ui/components/help.c
+msgid "{k:conversation.account}"
+msgstr "{k:conversation.account}"
+
+#: src/ui/components/help.c
+msgid "{k:conversation.attach} / Shift+Enter"
+msgstr "{k:conversation.attach} / Shift+Enter"
+
+#: src/ui/components/help.c
+msgid "{k:conversation.attach} / [+]"
+msgstr "{k:conversation.attach} / [+]"
+
+#: src/ui/components/help.c
+msgid "{k:conversation.attach} / {k:conversation.emojis}"
+msgstr "{k:conversation.attach} / {k:conversation.emojis}"
+
+#: src/ui/components/help.c
+msgid "{k:conversation.attach} / 📎"
+msgstr "{k:conversation.attach} / 📎"
+
+#: src/ui/components/help.c
+msgid "{k:conversation.close_dm}"
+msgstr "{k:conversation.close_dm}"
+
+#: src/ui/components/help.c
+msgid "{k:conversation.emojis}"
+msgstr "{k:conversation.emojis}"
+
+#: src/ui/components/help.c
+msgid "{k:conversation.logout}"
+msgstr "{k:conversation.logout}"
+
+#: src/ui/components/help.c
+msgid "{k:conversation.members}"
+msgstr "{k:conversation.members}"
+
+#: src/ui/components/help.c
+msgid "{k:conversation.menu}"
+msgstr "{k:conversation.menu}"
+
+#: src/ui/components/help.c
+msgid "{k:conversation.menu} / {k:lists.menu}"
+msgstr "{k:conversation.menu} / {k:lists.menu}"
+
+#: src/ui/components/help.c
+msgid "{k:conversation.menu} / {k:lists.menu} / clique direito"
+msgstr "{k:conversation.menu} / {k:lists.menu} / right-click"
+
+#: src/ui/components/help.c
+msgid "{k:conversation.notifications}"
+msgstr "{k:conversation.notifications}"
+
+#: src/ui/components/help.c
+msgid "{k:conversation.pinned}"
+msgstr "{k:conversation.pinned}"
+
+#: src/ui/components/help.c
+msgid "{k:conversation.player}"
+msgstr "{k:conversation.player}"
+
+#: src/ui/components/help.c
+msgid "{k:conversation.profiles}"
+msgstr "{k:conversation.profiles}"
+
+#: src/ui/components/help.c
+msgid "{k:conversation.profiles} / [Gerenciar]"
+msgstr "{k:conversation.profiles} / [Manage]"
+
+#: src/ui/components/help.c
+msgid "{k:conversation.reconnect}"
+msgstr "{k:conversation.reconnect}"
+
+#: src/ui/components/help.c
+msgid "{k:conversation.retry_send}"
+msgstr "{k:conversation.retry_send}"
+
+#: src/ui/components/help.c
+msgid "{k:conversation.search}"
+msgstr "{k:conversation.search}"
+
+#: src/ui/components/help.c
+msgid "{k:conversation.search} na ajuda"
+msgstr "{k:conversation.search} in help"
+
+#: src/ui/components/help.c
+msgid "{k:conversation.search}: buscar · ↑↓: rolar · Esc: fechar"
+msgstr "{k:conversation.search}: search · ↑↓: scroll · Esc: close"
+
+#: src/ui/components/help.c
+msgid "{k:conversation.select}"
+msgstr "{k:conversation.select}"
+
+#: src/ui/components/help.c
+msgid "{k:conversation.settings}"
+msgstr "{k:conversation.settings}"
+
+#: src/ui/components/help.c
+msgid "{k:conversation.switcher}"
+msgstr "{k:conversation.switcher}"
+
+#: src/ui/components/help.c
+msgid "{k:files.mark_all}"
+msgstr "{k:files.mark_all}"
+
+#: src/ui/components/help.c
+msgid "{k:login.register}"
+msgstr "{k:login.register}"
+
+#: src/ui/components/help.c
+msgid "{k:media.info} / [Info]"
+msgstr "{k:media.info} / [Info]"
+
+#: src/ui/components/help.c
+msgid "{k:members.search} / Buscar"
+msgstr "{k:members.search} / Search"
+
+#: src/ui/components/help.c
+msgid "{k:player.back}"
+msgstr "{k:player.back}"
+
+#: src/ui/components/help.c
+msgid "{k:player.forward}"
+msgstr "{k:player.forward}"
+
+#: src/ui/components/help.c
+msgid "{k:player.mute}"
+msgstr "{k:player.mute}"
+
+#: src/ui/components/help.c
+msgid "{k:profiles.add} / {k:profiles.edit}"
+msgstr "{k:profiles.add} / {k:profiles.edit}"
+
+#: src/ui/components/help.c
+msgid "{k:profiles.limits}"
+msgstr "{k:profiles.limits}"
+
+#: src/ui/components/help.c
+msgid "{k:profiles.remove}"
+msgstr "{k:profiles.remove}"
+
+#: src/ui/components/help.c
+msgid "{k:profiles.verify} / [Verificar]"
+msgstr "{k:profiles.verify} / [Verify]"
+
+#: src/ui/components/help.c
+msgid "{k:selection.reply} / {k:selection.react} / {k:selection.reactors}"
+msgstr "{k:selection.reply} / {k:selection.react} / {k:selection.reactors}"
 
 #: src/app/instances.c src/ui/components/help.c src/ui/components/settings.c src/ui/media/media.c src/ui/media/message_blocks.c src/ui/screens/conversation/drawing.c
 msgid "Áudio"
@@ -7210,8 +7322,8 @@ msgid "↑↓ / roda"
 msgstr "↑↓ / wheel"
 
 #: src/ui/screens/conversation/members.c
-msgid "↑↓ / roda: rolar · Ctrl+R: atualizar · Esc: voltar"
-msgstr "↑↓ / wheel: scroll · Ctrl+R: refresh · Esc: back"
+msgid "↑↓ / roda: rolar · {k1:app.refresh}: atualizar · Esc: voltar"
+msgstr "↑↓ / wheel: scroll · {k1:app.refresh}: refresh · Esc: back"
 
 #: src/ui/components/help.c
 msgid "↑↓ / ←→ / Tab"
@@ -7226,8 +7338,8 @@ msgid "↑↓ escolhe · Tab completa · Esc fecha"
 msgstr "↑↓ chooses · Tab completes · Esc closes"
 
 #: src/ui/screens/inbox.c
-msgid "↑↓ escolher · Enter abrir · Ctrl+R tentar · Esc voltar"
-msgstr "↑↓ choose · Enter open · Ctrl+R retry · Esc back"
+msgid "↑↓ escolher · Enter abrir · {k1:app.refresh} tentar · Esc voltar"
+msgstr "↑↓ choose · Enter open · {k1:app.refresh} retry · Esc back"
 
 #: src/ui/components/emoji_picker.c
 msgid "↑↓ escolher · Tab/Enter inserir · Esc fechar"
@@ -7250,12 +7362,12 @@ msgid "↑↓←→ / Enter"
 msgstr "↑↓←→ / Enter"
 
 #: src/ui/components/emoji_picker.c
-msgid "↑↓←→ escolher · Enter inserir · Ctrl+R atualizar"
-msgstr "↑↓←→ choose · Enter insert · Ctrl+R refresh"
+msgid "↑↓←→ escolher · Enter inserir · {k1:app.refresh} atualizar"
+msgstr "↑↓←→ choose · Enter insert · {k1:app.refresh} refresh"
 
 #: src/ui/components/emoji_picker.c
-msgid "↑↓←→ escolher · Enter reagir · Ctrl+R atualizar"
-msgstr "↑↓←→ choose · Enter react · Ctrl+R refresh"
+msgid "↑↓←→ escolher · Enter reagir · {k1:app.refresh} atualizar"
+msgstr "↑↓←→ choose · Enter react · {k1:app.refresh} refresh"
 
 #: src/ui/components/help.c
 msgid "↓"

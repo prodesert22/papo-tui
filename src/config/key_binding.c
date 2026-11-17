@@ -5,8 +5,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#define KEY_BINDING_TEXT 64
-
 typedef struct {
     const char *name;
     key_binding_code code;
@@ -330,7 +328,7 @@ static bool format_prefix(unsigned modifiers, char *output, size_t size, size_t 
 
 bool key_binding_format(const key_binding *binding, char *output, size_t size)
 {
-    if (!binding || !output || !size || !key_binding_valid(binding))
+    if (!binding || !output || !size || !key_binding_well_formed(binding))
         return false;
     size_t used = 0;
     output[0] = 0;
@@ -355,7 +353,7 @@ bool key_binding_format(const key_binding *binding, char *output, size_t size)
 
 bool key_binding_label(const key_binding *binding, char *output, size_t size)
 {
-    if (!binding || !output || !size || !key_binding_valid(binding))
+    if (!binding || !output || !size || !key_binding_well_formed(binding))
         return false;
     size_t used = 0;
     output[0] = 0;
@@ -397,18 +395,32 @@ bool key_binding_label(const key_binding *binding, char *output, size_t size)
     }
 }
 
-bool key_binding_valid(const key_binding *binding)
+bool key_binding_well_formed(const key_binding *binding)
 {
     if (!binding || binding->modifiers & ~(KEY_BINDING_SHIFT | KEY_BINDING_ALT | KEY_BINDING_CTRL))
         return false;
     switch (binding->kind) {
     case KEY_BINDING_CHAR:
         /* Terminal protocols report functional keys as private-use characters. */
-        if (!scalar_valid(binding->code) || !g_unichar_isprint((gunichar)binding->code) ||
-            binding->code < 0x20 || binding->code == 0x7f ||
-            (binding->code >= 0x80 && binding->code <= 0x9f) ||
-            (binding->code >= 0xe000 && binding->code <= 0xf8ff))
-            return false;
+        return scalar_valid(binding->code) && g_unichar_isprint((gunichar)binding->code) &&
+               binding->code >= 0x20 && binding->code != 0x7f &&
+               !(binding->code >= 0x80 && binding->code <= 0x9f) &&
+               !(binding->code >= 0xe000 && binding->code <= 0xf8ff);
+    case KEY_BINDING_KEY:
+        return binding->code >= KEY_BINDING_UP && binding->code <= KEY_BINDING_F12;
+    case KEY_BINDING_MOUSE:
+        return (binding->code == 4 || binding->code == 5) && !binding->modifiers;
+    default:
+        return false;
+    }
+}
+
+bool key_binding_valid(const key_binding *binding)
+{
+    if (!key_binding_well_formed(binding))
+        return false;
+    switch (binding->kind) {
+    case KEY_BINDING_CHAR:
         /* Printable keys always need Ctrl or Alt. Shift alone cannot be
          * distinguished from ordinary shifted typing by the terminal. */
         return (binding->modifiers & (KEY_BINDING_CTRL | KEY_BINDING_ALT)) != 0;

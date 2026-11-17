@@ -1,4 +1,5 @@
 #include "model/conversation/discovery.h"
+#include "config/keymap.h"
 #include "model/conversation/private.h"
 #include "model/text/translation.h"
 
@@ -67,7 +68,7 @@ void history_internal_discovery_recover(history *h)
 {
     if (h->discovery && (h->discovery->request == DISCOVERY_SEARCH || h->discovery->want_search))
         snprintf(h->discovery->search_notice, sizeof(h->discovery->search_notice),
-                 _("Busca interrompida. Ctrl+R: tentar novamente."));
+                 K_("Busca interrompida. {k1:app.refresh}: tentar novamente."));
     cancel(h);
     if (h->discovery) {
         h->discovery->want_search = false;
@@ -305,8 +306,9 @@ bool history_internal_discovery_dispatch(history *h)
         if (request != DISCOVERY_IDLE && auth_get_state(h->auth) == AUTH_READY &&
             !auth_busy(h->auth) && !auth_response_ready(h->auth)) {
             char *notice = request == DISCOVERY_SEARCH ? d->search_notice : d->pin_notice;
-            snprintf(notice, 192,
-                     _("Não foi possível preparar a consulta. Ctrl+R: tentar novamente."));
+            snprintf(
+                notice, 192,
+                K_("Não foi possível preparar a consulta. {k1:app.refresh}: tentar novamente."));
             if (request == DISCOVERY_SEARCH)
                 d->want_search = false;
             else
@@ -447,10 +449,10 @@ void history_internal_discovery_response(history *h, json_t *body, long code)
     if (!ok) {
         char *notice = request == DISCOVERY_SEARCH ? d->search_notice : d->pin_notice;
         snprintf(notice, 192, "%s",
-                 code == 429   ? _("Limite de requisições. Aguarde e use Ctrl+R.")
+                 code == 429   ? K_("Limite de requisições. Aguarde e use {k1:app.refresh}.")
                  : code == 403 ? _("Sem permissão para consultar estas mensagens.")
                  : code == 404 ? _("Conversa não disponível.")
-                               : _("Falha na consulta. Ctrl+R: tentar novamente."));
+                               : K_("Falha na consulta. {k1:app.refresh}: tentar novamente."));
         /* A failed request needs explicit retry, including a refresh queued by WS. */
         if (request == DISCOVERY_PINS)
             d->want_pins = false;
