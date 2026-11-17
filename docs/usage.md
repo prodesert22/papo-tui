@@ -750,6 +750,22 @@ belong to this device: they apply to every server and are saved in
   role color until it reads at 4.5:1 on the background behind it, or
   **Desativadas** (Off), which shows every name in the text color. Presence and
   speaking colors keep their meaning in every option.
+- **Modo leitor de tela** (Screen reader mode): whenever no text field has
+  focus, the terminal cursor rests on the focused item: the server tab, the
+  channel or DM, the selected message, the menu item, the settings row, the tab
+  or the button. Screen readers that follow the terminal cursor, such as Orca or
+  NVDA, then read it. The loading animation stands still and interface icons are
+  shown as text.
+- **Símbolos da interface** (Interface symbols): **Ícones** (Icons) or
+  **Texto** (Text). Text replaces icons such as 🔍, 🖈, 👤, 📎, 😄, ⚙ and 🎤 with
+  labels such as **[/]**, **[Fix]**, **[@]**, **[+]**, **[:)]**, **[*]** and
+  **[Mic]**, as on the [Linux console](#the-linux-console-tty).
+- **Emojis nas mensagens** (Emoji in messages): **Imagens** (Images) or
+  **Nomes** (Names). Names shows each emoji, in messages and in the message box,
+  as its name between colons, such as **:grinning:** for 😀, and the server's own
+  emoji as **:name:**, instead of pictures.
+- **Bordas** (Borders): **Linhas** (Lines) or **ASCII**. ASCII draws boxes and
+  lines with +, - and |.
 
 Use ↑/↓ to select an item and ←/→, Space or Enter to change it, or click it;
 the selected item explains itself below the list. **Salvar e aplicar** (Save

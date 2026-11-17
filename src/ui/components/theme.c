@@ -111,6 +111,7 @@ static unsigned char effective_rgb[THEME_COLOR_COUNT][3];
 static int effective_indexed[THEME_COLOR_COUNT], effective_basic[THEME_COLOR_COUNT];
 static const unsigned char (*rgb)[3] = (const unsigned char (*)[3])effective_rgb;
 static bool tables_ready;
+static void apply_borders(void);
 
 static void build_tables(void)
 {
@@ -500,6 +501,7 @@ void theme_init(ui_theme *theme)
     active = theme;
     rgb_pair_count = 0;
     shown_ready = false;
+    apply_borders();
     if (!has_colors() || start_color() == ERR)
         return;
     apply(theme);
@@ -524,8 +526,10 @@ bool theme_set_access(const accessibility_config *config)
         return false;
     accessible = *config;
     build_tables();
-    if (active)
+    if (active) {
+        apply_borders();
         apply(active);
+    }
     return true;
 }
 
@@ -534,9 +538,91 @@ bool theme_colors(void)
     return has_colors() && accessible.contrast != ACCESS_CONTRAST_NONE;
 }
 
+static bool focus_pending, focus_known;
+static int focus_y, focus_x;
 attr_t theme_focus_attributes(void)
 {
+    focus_pending = true;
     return (theme_colors() ? 0 : A_REVERSE) | (accessible.cues ? A_BOLD | A_UNDERLINE : 0);
+}
+
+/* Pairs that only the focused item uses: a label drawn with one marks it. */
+static bool focus_pair(int pair)
+{
+    return pair == THEME_FOCUSED || pair == THEME_PROFILE_FOCUS ||
+           pair == THEME_PROFILE_BUTTON_FOCUS || pair == THEME_NOTIFICATION_BUTTON_FOCUS;
+}
+
+void theme_focus_take(WINDOW *window, int y, int x)
+{
+    if (!window || !accessible.screen_reader)
+        return;
+    if (!focus_pending && !focus_pair(PAIR_NUMBER(getattrs(window))))
+        return;
+    focus_pending = false;
+    focus_known = true;
+    focus_y = getbegy(window) + y;
+    focus_x = getbegx(window) + x;
+}
+
+void theme_focus_here(WINDOW *window, int y, int x)
+{
+    focus_pending = true;
+    theme_focus_take(window, y, x);
+}
+
+bool theme_focus_point(int *y, int *x)
+{
+    if (!focus_known || focus_y < 0 || focus_x < 0 || focus_y >= LINES || focus_x >= COLS)
+        return false;
+    *y = focus_y;
+    *x = focus_x;
+    return true;
+}
+
+bool theme_focus_cursor(void)
+{
+    int y, x;
+    if (!accessible.screen_reader || !theme_focus_point(&y, &x))
+        return false;
+    setsyx(y, x);
+    return true;
+}
+
+bool theme_screen_reader(void)
+{
+    return accessible.screen_reader;
+}
+
+bool theme_text_symbols(void)
+{
+    return theme_linux_console() || accessible.text_symbols || accessible.screen_reader;
+}
+
+bool theme_emoji_names(void)
+{
+    return theme_linux_console() || accessible.emoji_names;
+}
+
+/* Bordas: ASCII. Every box and line drawn from the ACS table becomes + - |;
+ * the terminal's own entries come back when lines return. */
+static void apply_borders(void)
+{
+    static const char lines[] = "lmkjtuvwnqx";
+    static chtype saved[sizeof(lines)];
+    static bool kept;
+    if (!stdscr)
+        return;
+    if (!kept) {
+        for (size_t i = 0; i < sizeof(lines) - 1; ++i)
+            saved[i] = acs_map[(unsigned char)lines[i]];
+        kept = true;
+    }
+    for (size_t i = 0; i < sizeof(lines) - 1; ++i)
+        acs_map[(unsigned char)lines[i]] = !accessible.ascii_borders ? saved[i]
+                                           : lines[i] == 'q'         ? (chtype)'-'
+                                           : lines[i] == 'x'         ? (chtype)'|'
+                                                                     : (chtype)'+';
 }
 
 theme_palette theme_get_palette(void)
@@ -554,12 +640,15 @@ bool theme_linux_console(void)
 }
 const char *theme_unread_dot(void)
 {
-    return theme_linux_console() ? "•" : "⦁";
+    return theme_text_symbols() ? "•" : "⦁";
 }
 const char *theme_spinner_frame(uint64_t step)
 {
     static const char *braille[] = {"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"};
     static const char *ascii[] = {"|", "/", "-", "\\"};
+    /* A screen reader would read every frame of an animated spinner. */
+    if (accessible.screen_reader)
+        return "…";
     return theme_linux_console() ? ascii[step % G_N_ELEMENTS(ascii)]
                                  : braille[step % G_N_ELEMENTS(braille)];
 }

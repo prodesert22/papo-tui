@@ -1198,9 +1198,7 @@ class AppModes(unittest.TestCase):
                         and any("josé" in line for line in t.screen.display)
                     ),
                 )
-                header = next(
-                    y for y, line in enumerate(t.screen.display) if "+ Adicionar" in line
-                )
+                header = next(y for y, line in enumerate(t.screen.display) if "+ Adicionar" in line)
                 self.assertNotIn(
                     "josé",
                     t.screen.display[header],
@@ -1233,7 +1231,7 @@ class AppModes(unittest.TestCase):
                 self.assertEqual(json.loads(self.config.read_text(encoding="utf-8"))["version"], 1)
                 t.resize(24, 80)
                 self.choose(t, "ultralight")
-                self.assertEqual(json.loads(self.config.read_text(encoding="utf-8"))["version"], 11)
+                self.assertEqual(json.loads(self.config.read_text(encoding="utf-8"))["version"], 12)
             finally:
                 self.assertTrue(t.close())
 

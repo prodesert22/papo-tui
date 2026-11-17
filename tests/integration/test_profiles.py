@@ -75,7 +75,7 @@ class ProfilesTests(unittest.TestCase):
                 self.assertEqual(self.probe("list")["app_mode"], "normal")
                 self.assertTrue(self.probe("mode", "light")["ok"])
                 saved = json.loads(self.path.read_text(encoding="utf-8"))
-                self.assertEqual((saved["version"], saved["app_mode"]), (11, "light"))
+                self.assertEqual((saved["version"], saved["app_mode"]), (12, "light"))
                 self.assertEqual(saved["request_burst"], 7 if version >= 2 else 25)
                 self.assertEqual(saved["player_volume"], 50)
                 self.assertEqual(self.probe("list")["app_mode"], "light")
@@ -89,7 +89,7 @@ class ProfilesTests(unittest.TestCase):
         self.assertTrue(self.probe("volume", "80")["ok"])
         self.assertEqual(self.probe("list")["player_volume"], 80)
         saved = json.loads(self.path.read_text())
-        self.assertEqual((saved["version"], saved["player_volume"]), (11, 80))
+        self.assertEqual((saved["version"], saved["player_volume"]), (12, 80))
         self.assertTrue(self.probe("volume", "0")["ok"])
         self.assertTrue(self.probe("volume", "100")["ok"])
         self.assertEqual(self.probe("list")["player_volume"], 100)
@@ -238,7 +238,7 @@ class ProfilesTests(unittest.TestCase):
         self.assertEqual(self.probe("list")["requests_per_second"], 10)
         self.assertEqual(self.path.read_bytes(), before)
         self.assertTrue(self.probe("rate", "2.5", "3")["ok"])
-        self.assertEqual(json.loads(self.path.read_text(encoding="utf-8"))["version"], 11)
+        self.assertEqual(json.loads(self.path.read_text(encoding="utf-8"))["version"], 12)
         restored = self.probe("list")
         self.assertEqual(
             (restored["requests_per_second"], restored["request_burst"], restored["selected"]),
@@ -274,7 +274,7 @@ class ProfilesTests(unittest.TestCase):
         self.assertFalse(loaded["desktop_notifications"])
         self.assertFalse(loaded["notification_preview"])
         valid = json.loads(self.path.read_text(encoding="utf-8"))
-        self.assertEqual(valid["version"], 11)
+        self.assertEqual(valid["version"], 12)
         valid["notification_preview"] = "false"
         self.seed(valid)
         before = self.path.read_bytes()
@@ -288,7 +288,7 @@ class ProfilesTests(unittest.TestCase):
         self.assertTrue(self.probe("list")["notification_sounds"])
         self.assertTrue(self.probe("sounds", "false")["ok"])
         saved = json.loads(self.path.read_text(encoding="utf-8"))
-        self.assertEqual((saved["version"], saved["notification_sounds"]), (11, False))
+        self.assertEqual((saved["version"], saved["notification_sounds"]), (12, False))
         self.assertFalse(self.probe("list")["notification_sounds"])
         legacy = dict(saved, version=7)
         del legacy["notification_sounds"]
@@ -312,7 +312,7 @@ class ProfilesTests(unittest.TestCase):
         self.assertEqual(self.probe("list")["language"], "system")
         self.assertTrue(self.probe("language", "en")["ok"])
         saved = json.loads(self.path.read_text(encoding="utf-8"))
-        self.assertEqual((saved["version"], saved["language"]), (11, "en"))
+        self.assertEqual((saved["version"], saved["language"]), (12, "en"))
         self.assertEqual(self.probe("list")["language"], "en")
         self.assertTrue(self.probe("language", "pt")["ok"])
         self.assertEqual(self.probe("list")["language"], "pt")
@@ -341,7 +341,7 @@ class ProfilesTests(unittest.TestCase):
         }
         self.assertTrue(self.probe("shortcuts", json.dumps(changed))["ok"])
         saved = json.loads(self.path.read_text(encoding="utf-8"))
-        self.assertEqual((saved["version"], saved["shortcuts"]), (11, changed))
+        self.assertEqual((saved["version"], saved["shortcuts"]), (12, changed))
         self.assertEqual(self.probe("list")["shortcuts"], changed)
         # Another setting keeps them, including the id this version does not know.
         self.assertTrue(self.probe("sounds", "false")["ok"])
@@ -371,23 +371,43 @@ class ProfilesTests(unittest.TestCase):
             "colorblind": False,
             "cues": False,
             "role_colors": "original",
+            "screen_reader": False,
+            "symbols": "icons",
+            "message_emoji": "images",
+            "borders": "lines",
         }
         self.seed(self.configuration())
         self.assertEqual(self.probe("list")["accessibility"], defaults)
-        chosen = {"contrast": "high", "colorblind": True, "cues": True, "role_colors": "adjusted"}
+        chosen = {
+            "contrast": "high",
+            "colorblind": True,
+            "cues": True,
+            "role_colors": "adjusted",
+            "screen_reader": True,
+            "symbols": "text",
+            "message_emoji": "names",
+            "borders": "ascii",
+        }
         self.assertTrue(self.probe("accessibility", json.dumps(chosen))["ok"])
         saved = json.loads(self.path.read_text(encoding="utf-8"))
-        self.assertEqual((saved["version"], saved["accessibility"]), (11, chosen))
+        self.assertEqual((saved["version"], saved["accessibility"]), (12, chosen))
         self.assertEqual(self.probe("list")["accessibility"], chosen)
         legacy = {k: v for k, v in saved.items() if k != "accessibility"}
         self.seed(dict(legacy, version=10))
         self.assertEqual(self.probe("list")["accessibility"], defaults)
+        # Version 11 files carry the first four choices only.
+        first = {k: chosen[k] for k in ("contrast", "colorblind", "cues", "role_colors")}
+        self.seed(dict(saved, version=11, accessibility=first))
+        self.assertEqual(self.probe("list")["accessibility"], {**defaults, **first})
         for broken in (
             legacy,
             dict(saved, accessibility=dict(chosen, contrast="max")),
             dict(saved, accessibility=dict(chosen, cues="yes")),
             dict(saved, accessibility={k: v for k, v in chosen.items() if k != "cues"}),
             dict(saved, accessibility=dict(chosen, extra=True)),
+            dict(saved, accessibility=dict(chosen, borders="double")),
+            dict(saved, accessibility=dict(chosen, screen_reader="on")),
+            dict(saved, version=11),
         ):
             with self.subTest(broken=broken.get("accessibility")):
                 self.seed(broken)

@@ -1330,6 +1330,9 @@ void text_unselect(text_buffer *buffer)
 
 /* Masked fields measure the typed scalars themselves, never their names. */
 static bool console_suppressed;
+/* What the projection replaces: symbols without a console glyph (Linux
+ * console, Símbolos: Texto) and emoji names (console, Emojis: Nomes). */
+static bool project_symbols, project_emoji;
 
 /* Linux console fonts hold a few hundred glyphs: Latin, Greek and Cyrillic
  * letters, punctuation, box drawing, blocks, arrows and a few shapes, but no
@@ -1413,13 +1416,17 @@ static size_t console_label(const text_buffer *source, size_t i, uint32_t *out, 
     if (c < 0x80 || (console_drawable(c) && !presentation))
         return 0;
     const console_symbol *symbol =
-        bsearch(&c, console_symbols, sizeof(console_symbols) / sizeof(*console_symbols),
-                sizeof(*console_symbols), symbol_order);
+        project_symbols
+            ? bsearch(&c, console_symbols, sizeof(console_symbols) / sizeof(*console_symbols),
+                      sizeof(*console_symbols), symbol_order)
+            : NULL;
     if (symbol) {
         *count = utf8_scalars(symbol->to, out, CONSOLE_LABEL);
         return presentation ? 2 : 1;
     }
     size_t consumed = 0;
+    if (!project_emoji)
+        return 0;
     const unicode_emoji *emoji =
         emoji_catalog_match(source->data + i, source->length - i, &consumed);
     if (!emoji || !consumed)
@@ -1439,7 +1446,9 @@ static size_t console_label(const text_buffer *source, size_t i, uint32_t *out, 
 
 static bool console_projection(void)
 {
-    return !console_suppressed && theme_linux_console();
+    project_symbols = !console_suppressed && theme_text_symbols();
+    project_emoji = !console_suppressed && theme_emoji_names();
+    return project_symbols || project_emoji;
 }
 
 /* Build a bounded projection and source-offset map. Mention labels cannot be
@@ -2403,6 +2412,8 @@ int text_label_fade(WINDOW *window, int y, int x, int width, const char *utf8,
 {
     if (width <= 0)
         return 0;
+    /* The label of the focused item, for the screen reader mode's cursor. */
+    theme_focus_take(window, y, x);
     text_buffer buffer;
     text_layout layout;
     if (!text_decode_chunk(&buffer, &utf8))

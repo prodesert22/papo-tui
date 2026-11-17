@@ -236,7 +236,7 @@ static bool refresh_pending(view *ui, auth_client *auth)
             operation->file_count
                 ? g_strdup_printf("%s%s%s %zu %s", operation->content,
                                   *operation->content ? "\n" : "",
-                                  theme_linux_console() ? "[+]" : "📎", operation->file_count,
+                                  theme_text_symbols() ? "[+]" : "📎", operation->file_count,
                                   P_("anexo", "anexos", operation->file_count))
                 : g_strdup(operation->content);
         const char *status = operation->state == OUTBOX_FAILED      ? _("falhou")

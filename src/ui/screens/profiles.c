@@ -422,12 +422,14 @@ static void draw(profile_ui *ui)
     wnoutrefresh(ui->window);
     draw_dialog(ui);
     help_draw(&ui->help);
+    bool caret = !ui->help.open && ui->dialog &&
+                 (ui->dialog_type == EDIT_DIALOG || ui->dialog_type == RATE_DIALOG) &&
+                 ui->field < 2;
+    /* Without a text caret, the screen reader mode shows the focused item. */
+    if (!caret && theme_focus_cursor())
+        caret = true;
     doupdate();
-    curs_set(!ui->help.open && ui->dialog &&
-                     (ui->dialog_type == EDIT_DIALOG || ui->dialog_type == RATE_DIALOG) &&
-                     ui->field < 2
-                 ? 1
-                 : 0);
+    curs_set(caret ? 1 : 0);
 }
 
 static bool open_dialog(profile_ui *ui, int kind)

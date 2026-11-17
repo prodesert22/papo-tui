@@ -938,11 +938,13 @@ static void draw(login_ui *ui, auth_client *client)
     draw_tab_menu(ui, client);
     draw_remove(ui, client);
     help_draw(&ui->help);
+    bool caret = !ui->help.open && !ui->remove_open && !ui->menu_open && ui->focus < FIELD_COUNT &&
+                 !busy && !ready;
+    /* Without a text caret, the screen reader mode shows the focused item. */
+    if (!caret && theme_focus_cursor())
+        caret = true;
     doupdate();
-    curs_set(!ui->help.open && !ui->remove_open && !ui->menu_open && ui->focus < FIELD_COUNT &&
-                     !busy && !ready
-                 ? 1
-                 : 0);
+    curs_set(caret ? 1 : 0);
 }
 
 static void select_focus(login_ui *ui, int selected)

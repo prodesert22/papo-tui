@@ -26,7 +26,8 @@ Press **Ctrl+G** for a table of shortcuts and mouse controls for the focused
 area, or **Ctrl+/** for the global reference. **Ctrl+S → Atalhos** lists every
 key and changes the keys of commands on this device, and
 **Ctrl+S → Acessibilidade** offers high contrast, no colors, color-blind safe
-colors, focus cues beyond color and readable role colors. The footer keeps only the help
+colors, focus cues beyond color, readable role colors, a screen reader mode,
+text symbols, emoji names and ASCII borders. The footer keeps only the help
 hint alongside operational notices. Global help includes a search field for
 keys, actions and areas. F1 also opens contextual help.
 

@@ -181,7 +181,7 @@ bool conversation_attachments_poll(view *ui, auth_client *auth)
                 g_strlcpy(ui->attachment_notice,
                           g_error_matches(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED)
                               ? error->message
-                          : theme_linux_console()
+                          : theme_text_symbols()
                               ? K_("Não foi possível colar. Use [+]/{k1:conversation.attach} ou a "
                                    "colagem do terminal.")
                               : K_("Não foi possível colar. Use 📎/{k1:conversation.attach} ou a "

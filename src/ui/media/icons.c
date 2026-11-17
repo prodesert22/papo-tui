@@ -201,6 +201,9 @@ size_t icons_resolve(void *context, const uint32_t *text, size_t length, size_t 
         v->font = app_mode_get() == APP_MODE_NORMAL;
     if (app_mode_get() == APP_MODE_ULTRALIGHT)
         return 0;
+    /* Emojis nas mensagens: Nomes keeps :name: and Unicode emoji as text. */
+    if (theme_emoji_names() && !theme_linux_console())
+        return 0;
     if (!v || at >= length)
         return 0;
     if (text[at] == ':' && !icons_literal(text, at)) {

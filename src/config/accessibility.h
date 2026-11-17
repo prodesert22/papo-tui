@@ -22,13 +22,24 @@ typedef struct {
      * depends on color alone. */
     bool cues;
     access_roles roles;
+    /* The terminal cursor follows the focused item, spinners stand still and
+     * interface symbols are shown as text. */
+    bool screen_reader;
+    /* Interface icons and symbols as text, as on the Linux console. */
+    bool text_symbols;
+    /* Emoji in messages as their names between colons, custom ones included. */
+    bool emoji_names;
+    /* Borders and lines drawn with + - | instead of line-drawing characters. */
+    bool ascii_borders;
 } accessibility_config;
 
 void accessibility_default(accessibility_config *config);
 bool accessibility_valid(const accessibility_config *config);
 /* config.json "accessibility": {"contrast": "default|high|none", "colorblind":
- * bool, "cues": bool, "role_colors": "original|adjusted|off"}. */
-bool accessibility_decode(accessibility_config *config, const json_t *value);
+ * bool, "cues": bool, "role_colors": "original|adjusted|off"}; from version 12
+ * also "screen_reader": bool, "symbols": "icons|text", "message_emoji":
+ * "images|names" and "borders": "lines|ascii". */
+bool accessibility_decode(accessibility_config *config, const json_t *value, int version);
 json_t *accessibility_encode(const accessibility_config *config);
 const char *accessibility_contrast_name(access_contrast contrast);
 const char *accessibility_roles_name(access_roles roles);

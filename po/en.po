@@ -517,6 +517,14 @@ msgstr "The session has no valid cookie. Sign in again."
 msgid "A sessão precisou ser confirmada de novo. Tente trocar a senha outra vez"
 msgstr "The session had to be confirmed again. Try changing the password once more"
 
+#: src/ui/components/settings.c
+msgid "ASCII"
+msgstr "ASCII"
+
+#: src/ui/components/settings.c
+msgid "ASCII desenha bordas e linhas com + - |, que leitores de tela e fontes limitadas leem melhor."
+msgstr "ASCII draws borders and lines with + - |, which screen readers and limited fonts read better."
+
 #: src/ui/components/help.c
 msgid "Abas no topo / ← → / Enter"
 msgstr "Tabs at the top / ← → / Enter"
@@ -1260,6 +1268,10 @@ msgstr "Banner removed"
 #: src/ui/screens/conversation/members.c
 msgid "Bloquear"
 msgstr "Block"
+
+#: src/ui/components/settings.c
+msgid "Bordas: < %s >"
+msgstr "Borders: < %s >"
 
 #: src/ui/components/help.c src/ui/screens/conversation/conversation.c
 msgid "Botão Configurações"
@@ -2393,6 +2405,10 @@ msgstr "Graphical emojis are off in Ultralight mode."
 msgid "Emojis indisponíveis"
 msgstr "Emojis unavailable"
 
+#: src/ui/components/settings.c
+msgid "Emojis nas mensagens: < %s >"
+msgstr "Emoji in messages: < %s >"
+
 #: src/net/realtime/websocket.c
 msgid "Encerrando tempo real…"
 msgstr "Closing real time…"
@@ -3369,6 +3385,10 @@ msgstr "Invalid, too large or unsupported image."
 msgid "Imagem: "
 msgstr "Image: "
 
+#: src/ui/components/settings.c
+msgid "Imagens"
+msgstr "Images"
+
 #: src/config/app_mode.c
 msgid "Imagens, GIFs animados e vídeos em caracteres pela Chafa."
 msgstr "Images, animated GIFs and videos as characters through Chafa."
@@ -3612,6 +3632,10 @@ msgstr "Clear the text field"
 #: src/config/keymap.c
 msgid "Limpar o campo; fora de um campo, sair"
 msgstr "Clear the field; outside a field, quit"
+
+#: src/ui/components/settings.c
+msgid "Linhas"
+msgstr "Lines"
 
 #: src/ui/screens/login.c
 msgid "Link de redefinição"
@@ -3908,6 +3932,10 @@ msgstr "Moderation"
 #: src/config/profiles.c
 msgid "Modo inválido."
 msgstr "Invalid mode."
+
+#: src/ui/components/settings.c
+msgid "Modo leitor de tela"
+msgstr "Screen reader mode"
 
 #: src/ui/components/settings.c
 msgid "Mostra a foto, ou as iniciais, à esquerda das mensagens; sem ela, o texto começa na borda. Salvo na sua conta deste servidor."
@@ -4208,6 +4236,14 @@ msgstr "Name not given"
 #: src/ui/screens/inbox.c src/ui/screens/message_browser.c
 msgid "Nome: "
 msgstr "Name: "
+
+#: src/ui/components/settings.c
+msgid "Nomes"
+msgstr "Names"
+
+#: src/ui/components/settings.c
+msgid "Nomes mostra cada emoji como :nome:, inclusive os do servidor, em vez de imagens."
+msgstr "Names shows each emoji as :name:, the server's included, instead of images."
 
 #: src/ui/components/settings.c
 msgid "Normal"
@@ -4796,6 +4832,10 @@ msgstr "The file changed while being prepared; select it again."
 #: src/ui/components/mention_popup.c
 msgid "O comando excede o limite de texto."
 msgstr "The command exceeds the text limit."
+
+#: src/ui/components/settings.c
+msgid "O cursor do terminal acompanha o item com foco, para leitores de tela como Orca e NVDA; a animação de carregamento para e os ícones viram texto."
+msgstr "The terminal cursor follows the focused item, for screen readers such as Orca and NVDA; the loading animation stops and icons become text."
 
 #: src/ui/components/file_picker.c
 msgid "O destino não é um arquivo comum."
@@ -6181,6 +6221,10 @@ msgstr "Your session expired or was revoked. Sign in again."
 msgid "Sua sessão expirou sem renovação. Entre novamente."
 msgstr "Your session expired without renewal. Sign in again."
 
+#: src/ui/components/settings.c
+msgid "Símbolos da interface: < %s >"
+msgstr "Interface symbols: < %s >"
+
 #: src/ui/components/server_settings/audit.c
 msgid "Só a ação %s"
 msgstr "Only the %s action"
@@ -6309,7 +6353,7 @@ msgstr "Retry the last failed send; uncertain sends ask for confirmation"
 msgid "Terminal sem soltura: a tecla alterna o microfone."
 msgstr "Terminal without key release: the key toggles the microphone."
 
-#: src/ui/components/server_settings/channels.c
+#: src/ui/components/server_settings/channels.c src/ui/components/settings.c
 msgid "Texto"
 msgstr "Text"
 
@@ -6328,6 +6372,10 @@ msgstr "Invalid text."
 #: src/model/conversation/server_admin.c
 msgid "Texto longo demais."
 msgstr "Text too long."
+
+#: src/ui/components/settings.c
+msgid "Texto troca os ícones da interface, como 🔍, ⚙ e 📎, por rótulos como [/], [*] e [+]."
+msgstr "Text replaces interface icons such as 🔍, ⚙ and 📎 with labels such as [/], [*] and [+]."
 
 #: src/ui/components/server_settings/channels.c
 msgid "Tipo"
@@ -7376,6 +7424,10 @@ msgstr "Icon updated"
 #: src/model/conversation/server_admin.c
 msgid "Ícone removido"
 msgstr "Icon removed"
+
+#: src/ui/components/settings.c
+msgid "Ícones"
+msgstr "Icons"
 
 #: src/ui/media/media.c
 msgid "áudio"

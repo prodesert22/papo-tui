@@ -85,6 +85,10 @@ class AccessibilityTerminal(unittest.TestCase):
                     "colorblind": False,
                     "cues": True,
                     "role_colors": "original",
+                    "screen_reader": False,
+                    "symbols": "icons",
+                    "message_emoji": "images",
+                    "borders": "lines",
                 },
             )
             wait_for_screen(
@@ -135,6 +139,65 @@ class AccessibilityTerminal(unittest.TestCase):
             # The saved choice is still Padrão.
             self.accessibility(t)
             self.wait(t, "Contraste: < Padrão >")
+
+    def choose(self, terminal, downs):
+        """Opens Acessibilidade, toggles the item that many rows below Contraste, saves."""
+        self.accessibility(terminal)
+        terminal.send(DOWN * downs + " ")
+        self.save(terminal)
+
+    def test_screen_reader_cursor_follows_the_focused_item(self):
+        with HistoryMock() as server:
+            t = self.open(server)
+            self.choose(t, 4)
+            self.assertTrue(self.stored()["screen_reader"])
+            # Settings: the cursor rests on the focused row, visible.
+            self.accessibility(t)
+            row = next(y for y, line in enumerate(t.screen.display) if "Contraste:" in line)
+            wait_for_screen(
+                t,
+                lambda: not t.screen.cursor.hidden and t.screen.cursor.y == row,
+                "The cursor is not on the focused settings row",
+            )
+            t.send(DOWN * 4)
+            row = next(y for y, line in enumerate(t.screen.display) if "Modo leitor" in line)
+            wait_for_screen(
+                t,
+                lambda: not t.screen.cursor.hidden and t.screen.cursor.y == row,
+                "The cursor did not follow the focus",
+            )
+            t.send("\x1b")
+            self.gone(t, "Configurações")
+            # Icons became text, and loading spinners stand still.
+            self.wait(t, "[+]")
+            self.assertNotIn("📎", self.screen(t))
+
+    def test_text_symbols_emoji_names_and_ascii_borders(self):
+        with HistoryMock() as server:
+            t = self.open(server)
+            self.assertIn("📎", self.screen(t))
+            self.choose(t, 5)
+            self.wait(t, "[+]")
+            self.assertNotIn("📎", self.screen(t))
+            self.choose(t, 6)
+            self.choose(t, 7)
+            stored = self.stored()
+            self.assertEqual(
+                (stored["symbols"], stored["message_emoji"], stored["borders"]),
+                ("text", "names", "ascii"),
+            )
+            # Boxes use + - | instead of line drawing.
+            wait_for_screen(
+                t,
+                lambda: t.screen.display[1].startswith("+-"),
+                "Borders still use line drawing",
+            )
+            # The draft shows an emoji by its name.
+            t.send("\x1bOB\n\t")
+            self.wait(t, "Foco: Mensagem")
+            t.send("oi 😀")
+            self.wait(t, "oi :grinning:")
+            self.assertNotIn("😀", self.screen(t))
 
 
 if __name__ == "__main__":

@@ -806,7 +806,7 @@ void emoji_picker_draw(emoji_picker *p)
     }
     /* The Linux console has no emoji glyphs: emojis are listed by name, one
      * per row, and the chosen row takes the focus fill. */
-    bool list = theme_linux_console() && !p->gif;
+    bool list = theme_text_symbols() && !p->gif;
     if (list) {
         p->columns = 1;
         p->image_rows = 0;
@@ -931,7 +931,7 @@ void emoji_picker_draw_suggestions(emoji_picker *p, int cy, int cx, int left, in
     graphics_terminal terminal = graphics_terminal_get();
     int cw = terminal.cell_width > 0 ? terminal.cell_width : 8;
     int ch = terminal.cell_height > 0 ? terminal.cell_height : 16;
-    bool console = theme_linux_console();
+    bool console = theme_text_symbols();
     int image_columns = console ? -1 : (32 + cw - 1) / cw;
     p->tile_height = (32 + ch - 1) / ch;
     if (p->tile_height < 2)

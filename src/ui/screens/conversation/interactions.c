@@ -1000,6 +1000,8 @@ void conversation_interactions_draw(view *ui)
         for (int i = 0; i < menu_count(ui); ++i) {
             wattrset(w, COLOR_PAIR(i == ui->menu_selected ? THEME_PANEL_ACTIVE : THEME_PANEL));
             mvwhline(w, i + 1, 1, ' ', width - 2);
+            if (i == ui->menu_selected)
+                theme_focus_here(w, i + 1, 2);
             char label[96];
             if (ui->channel_menu == 1)
                 snprintf(label, sizeof(label), "%s", mute_labels[i]);

@@ -448,6 +448,10 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
             if (bordered) {
                 if (selected && ui->selected_media >= blocks->media_count)
                     ui->selected_media = 0;
+                /* The screen reader mode puts the cursor on the selected message. */
+                if (selected)
+                    theme_focus_here(ui->body,
+                                     ui->history_top + top - first + (top == border_start), 2);
                 wattrset(ui->body, COLOR_PAIR(border_pair) | A_BOLD);
                 for (int line = top; line < bottom; ++line) {
                     int y = ui->history_top + line - first;
@@ -466,7 +470,7 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
                     (editing || replying || (selected && blocks->media_count))) {
                     char label[96];
                     const char *action =
-                        editing    ? theme_linux_console() ? _(" Editando ") : _(" ✎ Editando ")
+                        editing    ? theme_text_symbols() ? _(" Editando ") : _(" ✎ Editando ")
                         : replying ? _(" ↰ Respondendo ")
                                    : " ";
                     if (selected && blocks->media_count)

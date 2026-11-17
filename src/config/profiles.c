@@ -127,7 +127,7 @@ static bool decode(profile_config *config, json_t *root)
     if (version == 1) {
         if (json_object_size(root) != 3)
             return false;
-    } else if (version >= 2 && version <= 11) {
+    } else if (version >= 2 && version <= 12) {
         json_t *rate = json_object_get(root, "requests_per_second");
         json_t *burst = json_object_get(root, "request_burst");
         if (json_object_size(root) != (version == 2    ? 5U
@@ -188,7 +188,8 @@ static bool decode(profile_config *config, json_t *root)
         !keymap_overrides_decode(&config->shortcuts, json_object_get(root, "shortcuts")))
         return false;
     if (version >= 11 &&
-        !accessibility_decode(&config->accessibility, json_object_get(root, "accessibility")))
+        !accessibility_decode(&config->accessibility, json_object_get(root, "accessibility"),
+                              (int)version))
         return false;
     json_t *array = json_object_get(root, "profiles");
     json_t *selected = json_object_get(root, "selected_profile");
@@ -311,7 +312,7 @@ static bool save_locked(profile_config *config)
     }
     json_t *selection = *config->selected ? json_string(config->selected) : json_null();
     json_t *root =
-        selection ? json_pack("{s:i,s:O,s:O,s:f,s:I,s:b,s:b,s:b,s:s,s:s,s:b,s:i}", "version", 11,
+        selection ? json_pack("{s:i,s:O,s:O,s:f,s:I,s:b,s:b,s:b,s:s,s:s,s:b,s:i}", "version", 12,
                               "profiles", array, "selected_profile", selection,
                               "requests_per_second", config->requests_per_second, "request_burst",
                               (json_int_t)config->request_burst, "desktop_notifications",

@@ -6,6 +6,9 @@
 
 static const char *const contrasts[] = {"default", "high", "none"};
 static const char *const roles[] = {"original", "adjusted", "off"};
+static const char *const symbols[] = {"icons", "text"};
+static const char *const emoji[] = {"images", "names"};
+static const char *const borders[] = {"lines", "ascii"};
 
 void accessibility_default(accessibility_config *config)
 {
@@ -44,14 +47,14 @@ static bool choice(const json_t *value, const char *const *names, int count, int
     return false;
 }
 
-bool accessibility_decode(accessibility_config *config, const json_t *value)
+bool accessibility_decode(accessibility_config *config, const json_t *value, int version)
 {
     accessibility_config next;
     accessibility_default(&next);
     int contrast, role;
     json_t *colorblind = json_object_get(value, "colorblind"),
            *cues = json_object_get(value, "cues");
-    if (!json_is_object(value) || json_object_size(value) != 4 ||
+    if (!json_is_object(value) || json_object_size(value) != (version >= 12 ? 8U : 4U) ||
         !choice(json_object_get(value, "contrast"), contrasts, 3, &contrast) ||
         !choice(json_object_get(value, "role_colors"), roles, 3, &role) ||
         !json_is_boolean(colorblind) || !json_is_boolean(cues))
@@ -60,6 +63,19 @@ bool accessibility_decode(accessibility_config *config, const json_t *value)
     next.roles = (access_roles)role;
     next.colorblind = json_is_true(colorblind);
     next.cues = json_is_true(cues);
+    if (version >= 12) {
+        json_t *reader = json_object_get(value, "screen_reader");
+        int symbol, names, border;
+        if (!json_is_boolean(reader) ||
+            !choice(json_object_get(value, "symbols"), symbols, 2, &symbol) ||
+            !choice(json_object_get(value, "message_emoji"), emoji, 2, &names) ||
+            !choice(json_object_get(value, "borders"), borders, 2, &border))
+            return false;
+        next.screen_reader = json_is_true(reader);
+        next.text_symbols = symbol == 1;
+        next.emoji_names = names == 1;
+        next.ascii_borders = border == 1;
+    }
     *config = next;
     return true;
 }
@@ -68,9 +84,12 @@ json_t *accessibility_encode(const accessibility_config *config)
 {
     if (!accessibility_valid(config))
         return NULL;
-    return json_pack("{s:s,s:b,s:b,s:s}", "contrast", accessibility_contrast_name(config->contrast),
-                     "colorblind", config->colorblind, "cues", config->cues, "role_colors",
-                     accessibility_roles_name(config->roles));
+    return json_pack(
+        "{s:s,s:b,s:b,s:s,s:b,s:s,s:s,s:s}", "contrast",
+        accessibility_contrast_name(config->contrast), "colorblind", config->colorblind, "cues",
+        config->cues, "role_colors", accessibility_roles_name(config->roles), "screen_reader",
+        config->screen_reader, "symbols", symbols[config->text_symbols ? 1 : 0], "message_emoji",
+        emoji[config->emoji_names ? 1 : 0], "borders", borders[config->ascii_borders ? 1 : 0]);
 }
 
 static GMutex lock;

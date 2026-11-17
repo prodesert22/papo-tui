@@ -961,7 +961,7 @@ static void appearance_click(app_settings *s, int y, int x)
     appearance_adjust(s, x < getmaxx(s->window) / 2 ? -1 : 1, true);
 }
 /* Acessibilidade: contrast and colors of this device. */
-#define ACCESS_ITEMS 4
+#define ACCESS_ITEMS 8
 static void access_label(const app_settings *s, int item, char *label, size_t size)
 {
     static const char *contrasts[] = {N_("Padrão"), N_("Alto"), N_("Sem cores")};
@@ -977,8 +977,24 @@ static void access_label(const app_settings *s, int item, char *label, size_t si
     case 2:
         snprintf(label, size, "[%c] %s", s->access.cues ? 'x' : ' ', _("Indicadores além da cor"));
         break;
-    default:
+    case 3:
         snprintf(label, size, _("Cores dos cargos: < %s >"), _(roles[s->access.roles]));
+        break;
+    case 4:
+        snprintf(label, size, "[%c] %s", s->access.screen_reader ? 'x' : ' ',
+                 _("Modo leitor de tela"));
+        break;
+    case 5:
+        snprintf(label, size, _("Símbolos da interface: < %s >"),
+                 s->access.text_symbols ? _("Texto") : _("Ícones"));
+        break;
+    case 6:
+        snprintf(label, size, _("Emojis nas mensagens: < %s >"),
+                 s->access.emoji_names ? _("Nomes") : _("Imagens"));
+        break;
+    default:
+        snprintf(label, size, _("Bordas: < %s >"),
+                 s->access.ascii_borders ? _("ASCII") : _("Linhas"));
         break;
     }
 }
@@ -992,7 +1008,14 @@ static const char *access_description(const app_settings *s)
         N_("O item com foco também fica em negrito e sublinhado, para que o foco não dependa só da "
            "cor."),
         N_("Ajustado clareia ou escurece a cor de cada cargo até ler bem sobre o fundo; "
-           "desativadas mostra todos os nomes na cor do texto.")};
+           "desativadas mostra todos os nomes na cor do texto."),
+        N_("O cursor do terminal acompanha o item com foco, para leitores de tela como Orca e "
+           "NVDA; a animação de carregamento para e os ícones viram texto."),
+        N_("Texto troca os ícones da interface, como 🔍, ⚙ e 📎, por rótulos como [/], [*] e "
+           "[+]."),
+        N_("Nomes mostra cada emoji como :nome:, inclusive os do servidor, em vez de imagens."),
+        N_("ASCII desenha bordas e linhas com + - |, que leitores de tela e fontes limitadas leem "
+           "melhor.")};
     return _(
         items[s->access_selection >= 0 && s->access_selection < ACCESS_ITEMS ? s->access_selection
                                                                              : 0]);
@@ -1010,9 +1033,10 @@ static void access_draw(app_settings *s, WINDOW *w, int height, int width)
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     text_buffer description;
     text_layout measured;
-    if (height >= 16 && text_decode(&description, access_description(s))) {
+    int rows = height - 4 - (5 + ACCESS_ITEMS);
+    if (rows > 0 && text_decode(&description, access_description(s))) {
         text_measure_words(&description, width - 6, &measured);
-        text_draw(w, &description, &measured, 0, 3, 6 + ACCESS_ITEMS, 3);
+        text_draw(w, &description, &measured, 0, rows, 5 + ACCESS_ITEMS, 3);
     }
     text_label(w, height - 4, 2, width - 4,
                _("A fonte é a do terminal; a densidade do histórico fica em Aparência."));
@@ -1033,12 +1057,24 @@ static void access_adjust(app_settings *s, int direction)
     case 2:
         s->access.cues = !s->access.cues;
         break;
-    default: {
+    case 3: {
         int roles = (int)s->access.roles;
         cycle(&roles, 3, direction);
         s->access.roles = (access_roles)roles;
         break;
     }
+    case 4:
+        s->access.screen_reader = !s->access.screen_reader;
+        break;
+    case 5:
+        s->access.text_symbols = !s->access.text_symbols;
+        break;
+    case 6:
+        s->access.emoji_names = !s->access.emoji_names;
+        break;
+    default:
+        s->access.ascii_borders = !s->access.ascii_borders;
+        break;
     }
 }
 static void access_key(app_settings *s, int type, uint32_t key)

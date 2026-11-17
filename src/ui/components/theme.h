@@ -88,8 +88,26 @@ bool theme_set_access(const accessibility_config *config);
  * show focus and state with reverse and bold. */
 bool theme_colors(void);
 /* Attributes the focused or selected item adds to its pair: reverse without
- * colors, plus bold and underline when focus must not depend on color. */
+ * colors, plus bold and underline when focus must not depend on color. The
+ * next text_label after it marks where the focused item is drawn. */
 attr_t theme_focus_attributes(void);
+/* Marks the focused item at y, x of window, for items drawn without
+ * theme_focus_attributes. */
+void theme_focus_here(WINDOW *window, int y, int x);
+/* Called by text_label: takes the mark left by theme_focus_attributes. */
+void theme_focus_take(WINDOW *window, int y, int x);
+/* Screen position of the last focused item drawn; false before any. */
+bool theme_focus_point(int *y, int *x);
+/* With the screen reader mode, moves the terminal cursor to the focused item
+ * before doupdate; true when it did, and the caller then shows the cursor. */
+bool theme_focus_cursor(void);
+/* Modo leitor de tela: the terminal cursor follows the focused item. */
+bool theme_screen_reader(void);
+/* Interface icons as text: on the Linux console, with Símbolos: Texto or with
+ * the screen reader mode. */
+bool theme_text_symbols(void);
+/* Emoji in messages as :name:, on the Linux console or by choice. */
+bool theme_emoji_names(void);
 /* Tagged RGB foreground, preserving the existing background and palette. */
 int theme_rgb_pair(unsigned rgb, int fallback);
 /* A member name in its role color, as the accessibility choice shows it:

@@ -303,7 +303,7 @@ static const struct {
 };
 static const char *row_keys(const help_row *row)
 {
-    if (theme_linux_console())
+    if (theme_text_symbols())
         for (size_t i = 0; i < G_N_ELEMENTS(console_keys); ++i)
             if (!strcmp(row->keys, console_keys[i].keys))
                 return K_(console_keys[i].console);
