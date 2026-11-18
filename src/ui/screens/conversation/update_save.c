@@ -6,7 +6,7 @@
 /* Saves the package of a newer version where the user chooses. The destination
  * is asked first; the program then downloads the package into its private
  * temporary folder, checks its size and SHA-256 and only then moves it there.
- * Sobre (Settings) starts this and shows its progress; the flow itself belongs
+ * Atualizações (Settings) starts this and shows its progress; the flow itself belongs
  * to the screen, which owns the file picker. */
 typedef struct {
     gint done;
@@ -126,7 +126,7 @@ bool conversation_update_save_poll(view *ui)
             return true;
         }
         if (state == UPDATE_TRANSFER_FAILED) {
-            /* Sobre says why; the failure stays there until another attempt. */
+            /* Atualizações says why; the failure stays there until another attempt. */
             reset(s);
             report(ui, "%s", _("Não foi possível baixar a atualização."));
             return true;

@@ -7,16 +7,18 @@
 #include "net/voice/client.h"
 #include "ui/components/about.h"
 #include "ui/components/tabs.h"
+#include "ui/components/updates.h"
 #include "ui/input/text.h"
 #include "ui/media/icons.h"
 #include <ncurses.h>
 /* Settings open on the first tab, Perfil. Aparência holds the app modes (this
  * device) and the theme and display of the account on the active server;
  * Notificações holds that account's notification settings; Atalhos lists every
- * key and changes the keys of commands on this device; Sistema shows where
- * this device's settings are kept and whether they can be saved; Conta changes
- * the account's password on the active server; Sobre shows the program's
- * version, license and source link. */
+ * key and changes the keys of commands on this device; Atualizações holds the
+ * update check and the newer version's download; Sistema shows where this
+ * device's settings are kept and whether they can be saved; Conta changes the
+ * account's password on the active server; Sobre shows the program's version,
+ * license and source link. */
 enum {
     SETTINGS_PROFILE,
     SETTINGS_APPEARANCE,
@@ -24,6 +26,7 @@ enum {
     SETTINGS_AUDIO,
     SETTINGS_ACCESSIBILITY,
     SETTINGS_SHORTCUTS,
+    SETTINGS_UPDATES,
     SETTINGS_SYSTEM,
     SETTINGS_ACCOUNT,
     SETTINGS_ABOUT,
@@ -42,7 +45,7 @@ typedef enum {
     SETTINGS_PICK_NONE,
     SETTINGS_PICK_AVATAR,
     SETTINGS_PICK_BANNER,
-    /* Sobre: where to save the package of the newer version. */
+    /* Atualizações: where to save the package of the newer version. */
     SETTINGS_PICK_UPDATE
 } settings_pick;
 typedef struct {
@@ -102,10 +105,13 @@ typedef struct {
     /* Acessibilidade: the draft of this device's choices and the item selected. */
     accessibility_config access;
     int access_selection, access_first;
-    /* Sobre: the lines drawn, whether a link copy was just requested and this
-     * device's switch of the daily update check. */
+    /* Sobre: the facts drawn and whether the link copy was just requested. */
     about_view about;
-    bool about_copied, update_check, update_prereleases;
+    bool about_copied;
+    /* Atualizações: the lines drawn, whether a copy was just requested and
+     * this device's switches of the daily check and of pre-releases. */
+    updates_view updates;
+    bool updates_copied, update_check, update_prereleases;
     bool quit; /* Taken by the view: leave the program to put the newer version in place. */
 } app_settings;
 void settings_open(app_settings *settings, const profile_config *config, voice_client *voice,

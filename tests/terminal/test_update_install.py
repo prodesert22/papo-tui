@@ -56,12 +56,12 @@ class UpdateInstall(UpdateSuite):
         os.mkdir(self.place)
 
     def start(self, server, hub, channel, target):
-        """Signs in as that kind of installation at target and opens Sobre."""
+        """Signs in as that kind of installation at target and opens Atualizações."""
         environment = dict(hub.environment, PAPO_UPDATE_CHANNEL=channel, PAPO_UPDATE_TARGET=target)
         t = self.login(server, environment=environment)
         self.wait(t, "Mensagem 0001")
         self.calls(hub, 1)
-        self.open_sobre(t)
+        self.open_updates(t)
         self.wait(t, "Versão 99.0.0 disponível. Baixe com o botão ou manualmente em:")
         return t
 

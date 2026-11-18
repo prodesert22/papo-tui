@@ -23,15 +23,15 @@ static int first_mode(app_settings *s)
     return APP_MODE_LIGHT;
 }
 static const char *sections[SETTINGS_SECTIONS] = {
-    N_("Perfil"),  N_("Aparência"), N_("Notificações"), N_("Áudio"), N_("Acessibilidade"),
-    N_("Atalhos"), N_("Sistema"),   N_("Conta"),        N_("Sobre")};
+    N_("Perfil"),  N_("Aparência"),    N_("Notificações"), N_("Áudio"), N_("Acessibilidade"),
+    N_("Atalhos"), N_("Atualizações"), N_("Sistema"),      N_("Conta"), N_("Sobre")};
 /* Sections that have controls between the tabs and the buttons. */
 static bool has_content(int section)
 {
     return section == SETTINGS_APPEARANCE || section == SETTINGS_PROFILE ||
            section == SETTINGS_NOTIFICATIONS || section == SETTINGS_AUDIO ||
            section == SETTINGS_SHORTCUTS || section == SETTINGS_ACCESSIBILITY ||
-           section == SETTINGS_ACCOUNT || section == SETTINGS_ABOUT;
+           section == SETTINGS_ACCOUNT || section == SETTINGS_ABOUT || section == SETTINGS_UPDATES;
 }
 /* Password text never outlives the window. */
 static void account_erase(app_settings *s)
@@ -1876,18 +1876,18 @@ static void account_key(app_settings *s, int type, uint32_t key)
             s->account_bad = 0;
     }
 }
-static const char *about_button_label(void)
+static const char *updates_button_label(void)
 {
-    switch (about_button_now()) {
-    case ABOUT_BUTTON_DOWNLOAD:
+    switch (updates_button_now()) {
+    case UPDATES_BUTTON_DOWNLOAD:
         return _("Baixar atualização");
-    case ABOUT_BUTTON_CANCEL:
+    case UPDATES_BUTTON_CANCEL:
         return _("Cancelar download");
-    case ABOUT_BUTTON_COPY:
+    case UPDATES_BUTTON_COPY:
         return _("Copiar comando");
-    case ABOUT_BUTTON_INSTALL:
+    case UPDATES_BUTTON_INSTALL:
         return _("Baixar e instalar");
-    case ABOUT_BUTTON_APPLY:
+    case UPDATES_BUTTON_APPLY:
         return _("Instalar e sair");
     default:
         return _("Verificar agora");
@@ -1933,8 +1933,10 @@ void settings_draw(app_settings *s)
     } else if (s->section == SETTINGS_ACCESSIBILITY) {
         access_draw(s, w, height, width);
     } else if (s->section == SETTINGS_ABOUT) {
-        about_draw(&s->about, w, 5, 2, width - 4, height - 8, s->focus == 1, s->update_check,
-                   s->update_prereleases);
+        about_draw(&s->about, w, 5, 2, width - 4, height - 8, s->focus == 1);
+    } else if (s->section == SETTINGS_UPDATES) {
+        updates_draw(&s->updates, w, 5, 2, width - 4, height - 8, s->focus == 1, s->update_check,
+                     s->update_prereleases);
         /* The newer version is on screen: the footer need not repeat it. */
         update_acknowledge();
     } else if (s->section == SETTINGS_SYSTEM) {
@@ -1952,6 +1954,7 @@ void settings_draw(app_settings *s)
         wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
         text_label(w, height - 3, 2, width - 4, keys_hint(s, hint, sizeof(hint)));
     } else if ((s->section == SETTINGS_ABOUT && s->about_copied) ||
+               (s->section == SETTINGS_UPDATES && s->updates_copied) ||
                (s->section == SETTINGS_SYSTEM && s->path_copied)) {
         wattrset(w, COLOR_PAIR(THEME_SUCCESS));
         text_label(w, height - 3, 2, width - 4, _("Cópia solicitada."));
@@ -1960,52 +1963,66 @@ void settings_draw(app_settings *s)
         user_notice_draw(s, w, height, width);
     bool profile = s->section == SETTINGS_PROFILE, account = s->section == SETTINGS_ACCOUNT,
          notifications = s->section == SETTINGS_NOTIFICATIONS, about = s->section == SETTINGS_ABOUT,
-         system = s->section == SETTINGS_SYSTEM;
+         system = s->section == SETTINGS_SYSTEM, updates = s->section == SETTINGS_UPDATES;
     button_draw(w, height - 2, 2, 18,
                 profile         ? _("Salvar perfil")
                 : account       ? s->account_confirm ? _("Confirmar") : _("Alterar senha")
                 : notifications ? _("Salvar")
-                : about         ? about_button_label()
+                : about         ? _("Copiar link")
+                : updates       ? updates_button_label()
                 : system        ? _("Copiar caminho")
                                 : _("Salvar e aplicar"),
                 s->focus == 2 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     button_draw(w, height - 2, width - 14, 12,
-                profile || account || notifications || about || system ? _("Fechar")
-                                                                       : _("Cancelar"),
+                profile || account || notifications || about || system || updates ? _("Fechar")
+                                                                                  : _("Cancelar"),
                 s->focus == 3 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     wnoutrefresh(w);
 }
-/* Sobre keeps no draft: each line acts at once and its button asks GitHub,
- * downloads the newer version or copies how to install it. */
-static void about_act(app_settings *s, profile_config *config, about_action action)
+/* Sobre keeps no draft: its line and its button copy the source link. */
+static void about_act(app_settings *s, about_action action)
 {
     s->about_copied = false;
     s->error[0] = 0;
-    if (action == ABOUT_COPY_SOURCE || action == ABOUT_COPY_RELEASE ||
-        action == ABOUT_COPY_COMMAND) {
-        s->about_copied = action == ABOUT_COPY_SOURCE    ? about_copy_source()
-                          : action == ABOUT_COPY_RELEASE ? about_copy_release()
-                                                         : about_copy_command();
+    if (action == ABOUT_COPY_SOURCE) {
+        s->about_copied = about_copy_source();
         if (!s->about_copied)
+            snprintf(s->error, sizeof(s->error), "%s", _("Não foi possível copiar o link."));
+    } else if (action == ABOUT_LEAVE_UP)
+        s->focus = 0;
+    else if (action == ABOUT_LEAVE_DOWN)
+        s->focus = 2;
+}
+/* Atualizações keeps no draft: each line acts at once and its button asks
+ * GitHub, downloads the newer version or copies how to install it. */
+static void updates_act(app_settings *s, profile_config *config, updates_action action)
+{
+    s->updates_copied = false;
+    s->error[0] = 0;
+    if (action == UPDATES_COPY_RELEASE || action == UPDATES_COPY_COMMAND) {
+        s->updates_copied =
+            action == UPDATES_COPY_RELEASE ? updates_copy_release() : updates_copy_command();
+        if (!s->updates_copied)
             snprintf(s->error, sizeof(s->error), "%s",
-                     action == ABOUT_COPY_COMMAND ? _("Não foi possível copiar o comando.")
-                                                  : _("Não foi possível copiar o link."));
-    } else if (action == ABOUT_TOGGLE_CHECK) {
+                     action == UPDATES_COPY_COMMAND ? _("Não foi possível copiar o comando.")
+                                                    : _("Não foi possível copiar o link."));
+    } else if (action == UPDATES_TOGGLE_CHECK) {
         if (profiles_set_update_check(config, !s->update_check)) {
             s->update_check = config->update_check;
             update_set_automatic(s->update_check);
         } else
             snprintf(s->error, sizeof(s->error), "%s", config->message);
-    } else if (action == ABOUT_TOGGLE_BETA) {
+        file_snapshot(s, config);
+    } else if (action == UPDATES_TOGGLE_BETA) {
         if (profiles_set_update_prereleases(config, !s->update_prereleases)) {
             s->update_prereleases = config->update_prereleases;
             update_set_prereleases(s->update_prereleases);
         } else
             snprintf(s->error, sizeof(s->error), "%s", config->message);
         file_snapshot(s, config);
-    } else if (action == ABOUT_LEAVE_UP)
+    } else if (action == UPDATES_LEAVE_UP)
         s->focus = 0;
-    else if (action == ABOUT_LEAVE_DOWN)
+    else if (action == UPDATES_LEAVE_DOWN)
         s->focus = 2;
 }
 /* Sistema keeps no draft: its button copies the path of the configuration file. */
@@ -2022,25 +2039,29 @@ static void save(app_settings *s, profile_config *config)
         return;
     }
     if (s->section == SETTINGS_ABOUT) {
-        s->about_copied = false;
+        about_act(s, ABOUT_COPY_SOURCE);
+        return;
+    }
+    if (s->section == SETTINGS_UPDATES) {
+        s->updates_copied = false;
         s->error[0] = 0;
-        switch (about_button_now()) {
-        case ABOUT_BUTTON_DOWNLOAD:
+        switch (updates_button_now()) {
+        case UPDATES_BUTTON_DOWNLOAD:
             /* The screen owns the file picker: it asks where to save first. */
             s->pick = SETTINGS_PICK_UPDATE;
             break;
-        case ABOUT_BUTTON_CANCEL:
+        case UPDATES_BUTTON_CANCEL:
             update_download_cancel();
             break;
-        case ABOUT_BUTTON_COPY:
-            about_act(s, config, ABOUT_COPY_COMMAND);
+        case UPDATES_BUTTON_COPY:
+            updates_act(s, config, UPDATES_COPY_COMMAND);
             break;
-        case ABOUT_BUTTON_INSTALL:
+        case UPDATES_BUTTON_INSTALL:
             if (!update_install_start())
                 snprintf(s->error, sizeof(s->error), "%s",
                          _("Não foi possível iniciar o download da atualização."));
             break;
-        case ABOUT_BUTTON_APPLY:
+        case UPDATES_BUTTON_APPLY:
             /* The screen leaves the program; the version is put in place after it. */
             s->quit = update_install_on_exit();
             break;
@@ -2245,7 +2266,7 @@ void settings_key(app_settings *s, profile_config *config, int type, uint32_t ke
             s->section =
                 tab_strip_hit(&s->tabs, SETTINGS_SECTIONS, s->section, x, getmaxx(s->window));
             s->focus = 0;
-            s->about_copied = false;
+            s->about_copied = s->updates_copied = false;
         } else if (s->section == SETTINGS_ACCESSIBILITY && y >= 5 && y < getmaxy(s->window) - 4) {
             access_click(s, y, x);
         } else if (s->section == SETTINGS_SHORTCUTS && y >= 5 && y < getmaxy(s->window) - 3) {
@@ -2278,7 +2299,13 @@ void settings_key(app_settings *s, profile_config *config, int type, uint32_t ke
             about_action action = about_click(&s->about, y);
             if (action != ABOUT_NOTHING) {
                 s->focus = 1;
-                about_act(s, config, action);
+                about_act(s, action);
+            }
+        } else if (s->section == SETTINGS_UPDATES && y >= 5 && y < getmaxy(s->window) - 3) {
+            updates_action action = updates_click(&s->updates, y);
+            if (action != UPDATES_NOTHING) {
+                s->focus = 1;
+                updates_act(s, config, action);
             }
         } else if (y == getmaxy(s->window) - 2) {
             if (x >= 2 && x < 20)
@@ -2294,7 +2321,7 @@ void settings_key(app_settings *s, profile_config *config, int type, uint32_t ke
             s->path_copied = false;
             s->section =
                 (s->section + (key == KEY_LEFT ? SETTINGS_SECTIONS - 1 : 1)) % SETTINGS_SECTIONS;
-            s->about_copied = false;
+            s->about_copied = s->updates_copied = false;
         } else if (enter || (type == KEY_CODE_YES && key == KEY_DOWN))
             s->focus = has_content(s->section) ? 1 : 2;
     } else if (s->focus == 1) {
@@ -2307,7 +2334,11 @@ void settings_key(app_settings *s, profile_config *config, int type, uint32_t ke
             return;
         }
         if (s->section == SETTINGS_ABOUT) {
-            about_act(s, config, about_key(&s->about, type, key));
+            about_act(s, about_key(&s->about, type, key));
+            return;
+        }
+        if (s->section == SETTINGS_UPDATES) {
+            updates_act(s, config, updates_key(&s->updates, type, key));
             return;
         }
         if (s->section == SETTINGS_SHORTCUTS) {

@@ -204,7 +204,8 @@ static const help_row rows[] = {
     {HELP_SETTINGS, N_("Tab / ↑↓"),
      N_("Percorrer as configurações e os modos Normal, Light e Ultralight")},
     {HELP_SETTINGS, N_("←→ / clique nas abas"),
-     N_("Trocar entre Perfil, Aparência, Áudio, Acessibilidade, Atalhos, Conta e Sobre")},
+     N_("Trocar entre Perfil, Aparência, Áudio, Acessibilidade, Atalhos, Atualizações, Conta e "
+        "Sobre")},
     {HELP_SETTINGS, N_("Enter / clique"), N_("Aplicar ou cancelar as configurações")},
     {HELP_SETTINGS, N_("Áudio: ↑↓ / ←→ / Enter"),
      N_("Escolher dispositivos, ajustar volumes, testar o microfone e configurar pressionar para "
@@ -222,10 +223,11 @@ static const help_row rows[] = {
      N_("Trocar a senha deste servidor após confirmar; encerra todas as sessões da conta, "
         "inclusive "
         "esta")},
-    {HELP_SETTINGS, N_("Sobre: ↑↓ / Enter / clique"),
-     N_("Copiar um link ou o comando de instalação, ligar e desligar a checagem diária e as "
-        "versões beta; o botão verifica agora, baixa a versão nova, cancela o download ou "
-        "instala e sai")},
+    {HELP_SETTINGS, N_("Atualizações: ↑↓ / Enter / clique"),
+     N_("Ligar e desligar a checagem diária e as versões beta, copiar o link da versão nova ou "
+        "o comando de instalação; o botão verifica agora, baixa a versão nova, cancela o "
+        "download ou instala e sai")},
+    {HELP_SETTINGS, N_("Sobre: Enter / clique"), N_("Copiar o link do código-fonte")},
     {HELP_SETTINGS, N_("Esc / {k:conversation.settings}"), N_("Fechar as configurações")},
     {HELP_SERVER_SETTINGS, N_("←→ nas abas / clique"),
      N_("Trocar entre Visão geral, Cargos, Canais, Emojis, Membros e Auditoria; só aparecem as "

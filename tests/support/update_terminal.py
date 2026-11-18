@@ -36,11 +36,12 @@ class UpdateSuite(support.R8Terminal):
             t.read(0.03)
         self.assertNotIn(text, self.text(t))
 
-    def open_sobre(self, t):
+    def open_updates(self, t):
+        """Opens Settings on Atualizações: four sections back from the first one."""
         t.send("\x13")
         self.wait(t, "Configurações")
-        t.send(LEFT)
-        self.wait(t, "< Sobre >")
+        t.send(LEFT * 4)
+        self.wait(t, "< Atualizações >")
 
     def check_now(self, t):
         """From the section selector: past the lines, on the button, Enter."""

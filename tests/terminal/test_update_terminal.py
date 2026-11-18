@@ -40,25 +40,25 @@ class UpdateTerminal(UpdateSuite):
             # 80 columns leave room for the short form only.
             self.wait(t, "Atualização disponível")
             t.resize(24, 140)
-            self.wait(t, "Versão 99.0.0 disponível · Ctrl+S → Sobre")
+            self.wait(t, "Versão 99.0.0 disponível · Ctrl+S → Atualizações")
             self.assertEqual(self.copies(t), [])
             # A click on the notice opens the section that has the details.
             self.click(t, "Versão 99.0.0 disponível")
-            self.wait(t, "< Sobre >")
+            self.wait(t, "< Atualizações >")
             self.wait(t, "[x] " + SWITCH)
             self.wait(t, "Versão 99.0.0 disponível. Baixe manualmente em:")
             self.wait(t, RELEASE_PAGE + "99.0.0")
             self.wait(t, "Verificar agora")
             self.dump(t, "update-available")
-            # Tab enters the lines on the source link; the release page is three below,
-            # after the two switches.
-            t.send("\t" + DOWN * 3 + "\n")
+            # Tab enters the lines on the first switch; the release page comes after
+            # the two switches.
+            t.send("\t" + DOWN * 2 + "\n")
             self.wait(t, "Cópia solicitada.")
             self.assertEqual(self.copies(t), [RELEASE_PAGE + "99.0.0"])
             t.send("\x1b")
             self.wait(t, "Mensagem 0001")
             # Once the details were shown, the footer stops repeating it.
-            self.gone(t, "Ctrl+S → Sobre")
+            self.gone(t, "Ctrl+S → Atualizações")
             self.assertEqual(len(hub.calls), 1, hub.calls)
             with open(self.state_file(t), encoding="utf-8") as f:
                 state = json.load(f)
@@ -77,7 +77,7 @@ class UpdateTerminal(UpdateSuite):
             t = self.login(server, environment=hub.environment)
             self.wait(t, "Mensagem 0001")
             self.calls(hub, 1)
-            self.open_sobre(t)
+            self.open_updates(t)
             self.wait(t, "Você está na versão mais recente.")
             self.assertNotIn("disponível", self.text(t))
             self.assertNotIn(b"hostile-title", t.output)
@@ -104,9 +104,9 @@ class UpdateTerminal(UpdateSuite):
             t = self.login(server, environment=environment)
             self.wait(t, "Mensagem 0001")
             self.calls(hub, 1)
-            self.open_sobre(t)
+            self.open_updates(t)
             self.wait(t, "[x] " + SWITCH)
-            t.send("\t" + DOWN + " ")
+            t.send("\t ")
             self.wait(t, "[ ] " + SWITCH)
             with open(config, encoding="utf-8") as f:
                 saved = json.load(f)
@@ -134,7 +134,7 @@ class UpdateTerminal(UpdateSuite):
             self.wait(t, "Mensagem 0001")
             # The automatic check would start three seconds after the program.
             self.quiet(t, hub, 1, 5)
-            self.open_sobre(t)
+            self.open_updates(t)
             self.wait(t, "[ ] " + SWITCH)
             self.check_now(t)
             self.calls(hub, 2)
@@ -152,15 +152,15 @@ class UpdateTerminal(UpdateSuite):
             t = self.login(server, environment=hub.environment)
             self.wait(t, "Mensagem 0001")
             self.calls(hub, 1)
-            self.open_sobre(t)
+            self.open_updates(t)
             # Off as the program comes: only final versions are asked for.
             self.wait(t, "[ ] " + BETA)
             self.wait(t, "Versão 99.0.0 disponível.")
             self.assertEqual(hub.calls, [(LATEST, None)])
             self.assertNotIn("99.1.0", self.text(t))
-            # Two lines below the source link; turning it on asks again, this
-            # time for the newest release of any kind.
-            t.send("\t" + DOWN * 2 + " ")
+            # The second line; turning it on asks again, this time for the newest
+            # release of any kind.
+            t.send("\t" + DOWN + " ")
             self.wait(t, "[x] " + BETA)
             self.calls(hub, 2)
             self.assertEqual(hub.calls[1], (LIST, None))
@@ -196,9 +196,9 @@ class UpdateTerminal(UpdateSuite):
             t = self.login(server, environment=environment)
             self.wait(t, "Mensagem 0001")
             self.calls(hub, 1)
-            self.open_sobre(t)
+            self.open_updates(t)
             self.wait(t, "Versão 99.0.0 disponível.")
-            t.send("\t" + DOWN * 2 + " ")
+            t.send("\t" + DOWN + " ")
             self.wait(t, "Versão 99.1.0-beta.1 disponível.")
             self.calls(hub, 2)
             self.assertTrue(t.close())
@@ -212,7 +212,7 @@ class UpdateTerminal(UpdateSuite):
             self.wait(t, "[Canais]")
             self.wait(t, "Mensagem 0001")
             self.quiet(t, hub, 2, 4)
-            self.open_sobre(t)
+            self.open_updates(t)
             self.wait(t, "[x] " + BETA)
             self.wait(t, "Versão 99.1.0-beta.1 disponível.")
             self.assertTrue(t.close())
@@ -239,7 +239,7 @@ class UpdateTerminal(UpdateSuite):
             self.wait(t, "Mensagem 0001")
             # The automatic check would start three seconds after the program.
             self.quiet(t, hub, 0, 5)
-            self.open_sobre(t)
+            self.open_updates(t)
             # The saved switch is untouched; the variable only holds this run.
             self.wait(t, "[x] " + SWITCH)
             self.wait(t, "PAPO_UPDATE_CHECK=0: as atualizações só são verificadas a pedido.")
@@ -254,7 +254,7 @@ class UpdateTerminal(UpdateSuite):
             t = self.login(server, environment=hub.environment)
             self.wait(t, "Mensagem 0001")
             self.calls(hub, 1)
-            self.open_sobre(t)
+            self.open_updates(t)
             self.wait(t, "O GitHub limitou as consultas deste endereço. Tente mais tarde.")
             self.dump(t, "update-limited")
             t.send("\x1b")
@@ -278,7 +278,7 @@ class UpdateTerminal(UpdateSuite):
             self.wait(t, "Mensagem 0001")
             # Three attempts, about one and two seconds apart, then no more.
             self.calls(hub, 3, seconds=14)
-            self.open_sobre(t)
+            self.open_updates(t)
             self.wait(t, "O GitHub respondeu algo inesperado. Tente mais tarde.")
             self.quiet(t, hub, 3, 5)
             self.assertFalse(os.path.exists(self.state_file(t)))
@@ -291,7 +291,7 @@ class UpdateTerminal(UpdateSuite):
             environment = dict(hub.environment, CURL_CA_BUNDLE=other.environment["CURL_CA_BUNDLE"])
             t = self.login(server, environment=environment)
             self.wait(t, "Mensagem 0001")
-            self.open_sobre(t)
+            self.open_updates(t)
             self.wait(t, "O certificado do GitHub não é confiável; nada foi consultado.")
             self.assertEqual(hub.calls, [])
             self.assertNotIn("99.0.0", self.text(t))
@@ -307,7 +307,7 @@ class UpdateTerminal(UpdateSuite):
                     },
                 )
                 self.wait(t, "Mensagem 0001")
-                self.open_sobre(t)
+                self.open_updates(t)
                 self.wait(t, "O GitHub respondeu algo inesperado. Tente mais tarde.")
                 self.assertEqual([r for r in plain.requests if "/github/" in r[1]], [])
                 self.assertNotIn("99.0.0", self.text(t))
@@ -321,7 +321,7 @@ class UpdateTerminal(UpdateSuite):
                 },
             )
             self.wait(t, "Mensagem 0001")
-            self.open_sobre(t)
+            self.open_updates(t)
             self.wait(t, "Não foi possível consultar o GitHub. Verifique a conexão.")
 
 

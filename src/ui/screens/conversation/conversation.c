@@ -1490,7 +1490,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 if (e.y == getbegy(ui->footer) + 1 &&
                     status_bar_hit(&ui->status, STATUS_UPDATE, e.x - getbegx(ui->footer))) {
                     open_settings(ui, connections->config);
-                    ui->settings.section = SETTINGS_ABOUT;
+                    ui->settings.section = SETTINGS_UPDATES;
                     scope = DRAW_ALL;
                     continue;
                 }

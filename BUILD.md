@@ -467,7 +467,7 @@ assertions hold on hosts with any locale.
 ### Update check
 
 A copy asks for `/releases/latest`, which GitHub answers with the newest final
-release, unless **Aceitar versões beta** is on in Sobre; it then lists the
+release, unless **Aceitar versões beta** is on in Atualizações; it then lists the
 newest releases of any kind and takes the highest version. The answer is
 stored with the choice it was for, so changing the choice asks again.
 

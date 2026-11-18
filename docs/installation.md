@@ -178,7 +178,7 @@ Each package updates by installing the newer one over the old one; your
 profiles, sessions and settings are kept.
 
 The program tells you when a newer version exists and can fetch the right file
-for you: open **Configurações** (Settings, Ctrl+S), choose **Sobre** (About)
+for you: open **Configurações** (Settings, Ctrl+S), choose **Atualizações** (Updates)
 and select **Baixar atualização** (Download update). It saves the package where
 you choose, after checking its size and SHA-256 against the ones GitHub
 publishes, and shows the command below for your installation. See
@@ -191,7 +191,7 @@ publishes, and shows the command below for your installation. See
 | Arch package | `sudo pacman -U ./papo-tui-*.pkg.tar.zst` |
 | Flatpak bundle | `flatpak install --user ./papo-tui-*.flatpak` |
 | Termux | `apt install ./papo-tui-*-termux-aarch64.deb` |
-| AppImage | **Baixar e instalar** in **Sobre** replaces the file for you; by hand, `chmod +x` the new file and run it instead of the old one |
+| AppImage | **Baixar e instalar** in **Atualizações** replaces the file for you; by hand, `chmod +x` the new file and run it instead of the old one |
 | Portable archive | **Baixar e instalar** replaces the folder for you; by hand, extract the new archive and use its folder |
 | Windows installer | Close the program and run the new `-setup.exe` |
 | Windows ZIP | Close the program and extract the new ZIP over the folder |

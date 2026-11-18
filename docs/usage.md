@@ -1608,7 +1608,9 @@ selector to browse the other sections. **Perfil**, **Notificações** and
 [Voice calls and audio settings](#voice-calls-and-audio-settings));
 **Acessibilidade** changes contrast and colors (see
 [Accessibility](#accessibility)), **Atalhos** the keys of commands (see
-[Customize shortcuts](#customize-shortcuts)) and **Sistema** shows
+[Customize shortcuts](#customize-shortcuts)), **Atualizações** (Updates) holds
+the update check and the download of a newer version (see [Updates](#updates))
+and **Sistema** shows
 [where this device's settings are saved](#where-this-devices-settings-are-saved).
 **Sobre** (About), the last section, shows the version and license; see
 [About Papo TUI](#about-papo-tui).
@@ -1838,14 +1840,27 @@ Press **Ctrl+S** and choose **Sobre** (About), the last section of
   built from source has no such folder and names `THIRD_PARTY_NOTICES.md` in
   the repository instead.
 
-Tab or ↓ moves from the section selector to the lines. Press Enter on the
-**Código-fonte** line, or click it, to copy the address; **Cópia solicitada.**
-(Copy requested) confirms it. The program does not open a browser. Terminals
-with few rows keep the version, the address and the update lines and leave out
-the rest. **Fechar** (Close), Esc or Ctrl+S closes the window.
+Select **Copiar link** (Copy link), press Enter on the **Código-fonte** line or
+click it to copy the address; **Cópia solicitada.** (Copy requested) confirms
+it. The program does not open a browser. Terminals with few rows keep the
+version, the license, the author and the address and leave out the rest.
+**Fechar** (Close), Esc or Ctrl+S closes the window.
 
 Settings opens only from a server you are signed in to. Before signing in,
 `papo-tui --version` shows the version.
+
+## Updates
+
+Press **Ctrl+S** and choose **Atualizações** (Updates), the section between
+**Atalhos** and **Sistema** of **Configurações** (Settings). It has two
+switches, **Verificar atualizações automaticamente** (Check for updates
+automatically) and **Aceitar versões beta** (Accept beta versions), the result
+of the last check and, at the bottom, a button that changes with what there is
+to do: **Verificar agora** (Check now), **Baixar atualização** (Download
+update), **Baixar e instalar** (Download and install), **Cancelar download**
+(Cancel download), **Copiar comando** (Copy command) or **Instalar e sair**
+(Install and quit). Tab or ↓ moves from the section selector to the lines;
+Space, Enter or a click changes a switch.
 
 ### Check for a new version
 
@@ -1861,11 +1876,11 @@ When there is a newer version:
 
 - the sign-in screen adds **Versão X disponível** (Version X available) to its
   message line;
-- the conversation screen shows **Versão X disponível · Ctrl+S → Sobre** in the
+- the conversation screen shows **Versão X disponível · Ctrl+S → Atualizações** in the
   bottom bar, or **Atualização disponível** (Update available) when the bar is
-  short. Click it to open **Sobre**. It leaves the bar once you have opened
-  **Sobre**, until the program starts again;
-- **Sobre** shows **Versão X disponível. Baixe manualmente em:** (Version X
+  short. Click it to open **Atualizações**. It leaves the bar once you have opened
+  **Atualizações**, until the program starts again;
+- **Atualizações** shows **Versão X disponível. Baixe manualmente em:** (Version X
   available. Download it by hand at:) and the address of that release's page.
   Press Enter on the address, or click it, to copy it, open it in a browser and
   download the package for your system. When the program can also fetch that
@@ -1875,18 +1890,18 @@ When there is a newer version:
 ### Download the new version
 
 When the newer release has a package for the way your copy was installed, the
-button in **Sobre** becomes **Baixar atualização** (Download update). The
+button in **Atualizações** becomes **Baixar atualização** (Download update). The
 program picks the file that matches your installation and processor: the DEB
 for Ubuntu or for Debian, the RPM for Fedora, the Arch package, the AppImage,
 the Flatpak bundle, the Termux package, or the Windows installer or ZIP.
 
 1. Select **Baixar atualização**. **Salvar atualização** (Save update) asks
    where to save the file; Esc gives up before anything is downloaded.
-2. **Sobre** shows **Conferindo a assinatura da versão…** (Checking the
+2. **Atualizações** shows **Conferindo a assinatura da versão…** (Checking the
    version's signature) while the program makes sure the release is the
    project's; see [How a download is trusted](#how-a-download-is-trusted). The
    file is then downloaded from GitHub into a private temporary folder while
-   **Sobre** shows **Baixando … 42%**. You can close Settings and keep
+   **Atualizações** shows **Baixando … 42%**. You can close Settings and keep
    chatting. **Cancelar download** (Cancel download) stops it and removes what
    had arrived.
 3. The program compares the file's size and SHA-256 with the ones published
@@ -1894,7 +1909,7 @@ the Flatpak bundle, the Termux package, or the Windows installer or ZIP.
    arquivo baixado não confere com o publicado e foi descartado.** (The
    downloaded file does not match the published one and was discarded) means it
    did not, and nothing was saved.
-4. **Sobre** then shows **Pacote conferido e salvo em** (Package checked and
+4. **Atualizações** then shows **Pacote conferido e salvo em** (Package checked and
    saved to) with the path, and how to install it: for example **Instale com:**
    (Install with:) and `sudo apt install '/home/you/Downloads/papo-tui-….deb'`.
    **Copiar comando** (Copy command), or Enter on that line, copies it. Run it
@@ -1931,7 +1946,7 @@ address of the release page and check the signatures by hand, as the release
 notes describe, before installing anything.
 
 **Baixar atualização** does not appear, and the address of the release page is
-all **Sobre** offers, when the release has no package for your installation,
+all **Atualizações** offers, when the release has no package for your installation,
 when the program cannot tell how it was installed (a copy built from source, or
 unpacked from a portable archive older than this feature), or when GitHub lists
 the file without a SHA-256.
@@ -1949,7 +1964,7 @@ that holds the file or the program's folder.
    against the size and SHA-256 GitHub publishes. The portable archive is also
    unpacked and inspected there: it must hold exactly that version of the
    program. **Cancelar download** stops and removes it.
-2. **Sobre** shows **Versão X pronta** (Version X ready) and the button becomes
+2. **Atualizações** shows **Versão X pronta** (Version X ready) and the button becomes
    **Instalar e sair** (Install and quit). Until you select it, the copy you are
    running is untouched.
 3. Select **Instalar e sair**. The program closes and, once nothing of it is in
@@ -1973,8 +1988,8 @@ program says where it left the new file, already checked. On Windows, and for
 every packaged installation, use **Baixar atualização** as described above.
 
 **[x] Verificar atualizações automaticamente** (Check for updates
-automatically) in **Sobre** turns the daily check on or off; Space, Enter or a
-click changes it and the change is saved at once for this device. With it off,
+automatically) turns the daily check on or off; the change is saved at once
+for this device. With it off,
 nothing is asked until you select **Verificar agora** (Check now), which asks
 right away. Two requests are at least a minute apart: sooner than that the
 button answers **Aguarde um minuto antes de verificar de novo.** (Wait a minute
@@ -1995,7 +2010,7 @@ The change is saved at once for this device, and the program asks GitHub again
 a moment later, because the answer it had was for the other choice; a download
 in progress is cancelled. Turning the switch off never takes you back to an
 older version: when the pre-release you run is newer than the latest final
-version, **Sobre** says you are on the latest version until a newer final one
+version, **Atualizações** says you are on the latest version until a newer final one
 is published.
 
 To keep a run from asking by itself whatever the saved switch says, for example
@@ -2015,7 +2030,7 @@ built from source that is not a release build never asks by itself either.
   there. This applies to the sign-in form, the **Configurações do servidor**
   forms, **Perfil** and **Conta** in Settings, the server profile dialogs, the
   save dialog and the message box.
-- **The update check failed:** **Sobre** in Settings says why.
+- **The update check failed:** **Atualizações** in Settings says why.
   **Não foi possível consultar o GitHub. Verifique a conexão.** (Could not reach
   GitHub) means `api.github.com` did not answer: check the connection and any
   proxy, then select **Verificar agora** (Check now) after a minute.
@@ -2028,7 +2043,7 @@ built from source that is not a release build never asks by itself either.
   nothing is asked over an untrusted connection. A failed check is tried again
   twice within a few seconds and then on the next day. None of this affects
   the chat servers.
-- **The update download failed:** **Sobre** says why and offers
+- **The update download failed:** **Atualizações** says why and offers
   **Baixar atualização** (Download update) again. **O GitHub não entregou o
   arquivo.** (GitHub did not deliver the file) means the answer was not the
   file, or sent the download somewhere other than GitHub: try later. **O

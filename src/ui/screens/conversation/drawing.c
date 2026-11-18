@@ -409,11 +409,12 @@ bool conversation_collect_notices(view *ui, auth_client *auth)
                  "Se não foi você, troque a senha em {k1:conversation.settings} → Conta.")
             : "",
         _("Sessão reutilizada · troque a senha"));
-    /* Shown until Sobre, which has the details, is opened in this run. */
+    /* Shown until Atualizações, which has the details, is opened in this run. */
     char update_text[128] = "";
     if (update_notice())
         snprintf(update_text, sizeof(update_text),
-                 K_("Versão %s disponível · {k1:conversation.settings} → Sobre"), update_latest());
+                 K_("Versão %s disponível · {k1:conversation.settings} → Atualizações"),
+                 update_latest());
     changed |= status_bar_set_compact(&ui->status, STATUS_UPDATE, update_text,
                                       _("Atualização disponível"));
     changed |= status_bar_set_compact(

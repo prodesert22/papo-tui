@@ -274,8 +274,7 @@ class UserSettingsTerminal(support.R8Terminal):
                 "Autor: Papo TUI contributors",
                 "Código-fonte: " + REPOSITORY,
                 "Licenças de terceiros:",
-                "[x] Verificar atualizações automaticamente",
-                "Verificar agora",
+                "Copiar link",
                 "Fechar",
             ):
                 self.wait(t, text)
@@ -293,20 +292,60 @@ class UserSettingsTerminal(support.R8Terminal):
             self.click(t, "Código-fonte:")
             self.wait(t, "Cópia solicitada.")
             self.assertEqual(self.copies(t), [REPOSITORY] * 2)
+            # So does the section's button; the update switches live elsewhere.
+            t.send(UP + LEFT + RIGHT + "\t\t\n")
+            self.wait(t, "Cópia solicitada.")
+            self.assertEqual(self.copies(t), [REPOSITORY] * 3)
+            self.assertNotIn("Verificar", "\n".join(t.screen.display))
             self.dump(t, "sobre")
-            # A short window keeps the version, the link and the update lines.
+            # A short window keeps the version, the license, the author and the link.
             t.resize(14, 60)
             self.wait(t, "< Sobre >")
             self.wait(t, "Código-fonte: " + REPOSITORY)
             self.wait(t, "Papo TUI " + version)
-            self.wait(t, "[x] Verificar atualizações automaticamente")
-            for dropped in ("Cliente de conversas", "Licença:", "Autor:"):
+            self.wait(t, "Autor: Papo TUI contributors")
+            for dropped in ("Cliente de conversas", "Licenças de terceiros"):
                 self.assertNotIn(dropped, "\n".join(t.screen.display))
             t.resize(24, 80)
             self.wait(t, "Cliente de conversas para terminal")
             t.send("\x1b")
             self.wait(t, "Mensagem 0001")
             self.assertNotIn("Papo TUI " + version, "\n".join(t.screen.display))
+
+    def test_atualizacoes_holds_the_update_switches_between_atalhos_and_sistema(self):
+        with SettingsMock() as server:
+            t = self.login(server)
+            self.wait(t, "Mensagem 0001")
+            t.send("\x13")
+            self.wait(t, "Configurações")
+            # The seventh section: six steps from Perfil.
+            t.send(RIGHT * 6)
+            self.wait(t, "< Atualizações >")
+            for text in (
+                "[x] Verificar atualizações automaticamente",
+                "[ ] Aceitar versões beta",
+                # The test terminals keep the program from asking by itself.
+                "PAPO_UPDATE_CHECK=0: as atualizações só são verificadas a pedido.",
+                "Verificar agora",
+                "Fechar",
+            ):
+                self.wait(t, text)
+            # The program's facts are in Sobre, not here.
+            self.assertNotIn("Licença:", "\n".join(t.screen.display))
+            self.assertNotIn("Código-fonte:", "\n".join(t.screen.display))
+            self.dump(t, "atualizacoes")
+            t.send(RIGHT)
+            self.wait(t, "< Sistema >")
+            t.send(LEFT * 2)
+            self.wait(t, "< Atalhos >")
+            # A short window keeps both switches and the state.
+            t.send(RIGHT)
+            self.wait(t, "< Atualizações >")
+            t.resize(14, 60)
+            self.wait(t, "< Atualizações >")
+            self.wait(t, "[x] Verificar atualizações automaticamente")
+            self.wait(t, "[ ] Aceitar versões beta")
+            self.wait(t, "PAPO_UPDATE_CHECK=0")
 
 
 if __name__ == "__main__":

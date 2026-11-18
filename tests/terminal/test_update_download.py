@@ -26,7 +26,7 @@ REFUSED = "O GitHub não entregou o arquivo. Tente mais tarde."
 class UpdateDownload(UpdateSuite):
     def setUp(self):
         # The program's temporary folder is its own here, so leftovers show.
-        # Short names: Sobre shows the saved path on one line of 72 cells.
+        # Short names: Atualizações shows the saved path on one line of 72 cells.
         self.root = tempfile.TemporaryDirectory(prefix="pu-")
         self.addCleanup(self.root.cleanup)
         self.temporary = os.path.join(self.root.name, "t")
@@ -35,14 +35,14 @@ class UpdateDownload(UpdateSuite):
         os.mkdir(self.saved)
 
     def start(self, server, hub, channel="deb-ubuntu", test_key=True):
-        """Signs in as an installation of that kind and opens Sobre once it knows the release."""
+        """Signs in as an installation of that kind and opens Atualizações once it knows the release."""
         environment = dict(hub.environment, PAPO_UPDATE_CHANNEL=channel, TMPDIR=self.temporary)
         if not test_key:
             del environment["PAPO_UPDATE_KEY"]
         t = self.login(server, environment=environment)
         self.wait(t, "Mensagem 0001")
         self.calls(hub, 1)
-        self.open_sobre(t)
+        self.open_updates(t)
         self.wait(t, "Versão 99.0.0 disponível.")
         return t
 
