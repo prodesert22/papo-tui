@@ -59,7 +59,7 @@ class R8Terminal(unittest.TestCase):
         self.addCleanup(t.close)
         t.send(server.url + "\tjosé\tSynthetic!123\n")
         self.wait(t, "[Canais]")
-        self.wait(t, "[DMs]")
+        self.wait(t, "DMs")
         self.wait(t, "Categoria")
         end = time.monotonic() + 5
         while (

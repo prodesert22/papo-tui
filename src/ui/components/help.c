@@ -50,7 +50,7 @@ static const help_row rows[] = {
      N_("Abrir o menu do servidor, com Configurações do servidor e Remover servidor")},
     {HELP_SERVER_TABS, N_("Delete"),
      N_("Remover o servidor da lista e apagar a sessão salva neste computador")},
-    {HELP_HEADER | HELP_CHANNELS, N_("[Canais] / [DMs]"),
+    {HELP_HEADER | HELP_CHANNELS, N_("Canais / DMs"),
      N_("Alternar a lista de canais e mensagens diretas")},
     {HELP_CHANNELS, N_("[⚙] / [*]"), N_("Abrir as configurações do aplicativo")},
     {HELP_HEADER, N_("← / →"), N_("Percorrer Canais/DMs e os botões do histórico")},

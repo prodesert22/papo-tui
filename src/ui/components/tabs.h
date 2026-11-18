@@ -3,17 +3,17 @@
 #include <ncurses.h>
 #include <stdbool.h>
 #define TAB_STRIP_MAX 8
-/* Server tabs: blocks of fill with padding, no markers, where the terminal has
- * 256 colors. Their names show at most TAB_NAME_MAX cells; a longer name (or
- * one squeezed by a narrow strip) dissolves into the block over its last
- * cells instead of ending hard. */
+/* Server tabs and the Canais/DMs tabs of the conversation list: blocks of fill
+ * with padding, no markers, where the terminal has 256 colors. Server names
+ * show at most TAB_NAME_MAX cells; a longer name (or one squeezed by a narrow
+ * strip) dissolves into the block over its last cells instead of ending hard. */
 #define TAB_NAME_MAX 28
 typedef enum { TAB_IDLE, TAB_SELECTED, TAB_ADD } tab_kind;
 /* False on terminals with fewer colors, where the fill cannot tell tabs apart
  * and the callers keep the [selected] and >cursor< markers instead. */
 bool tab_blocks(void);
-/* Colors of a server tab: the one being used, the add tab or any other, with
- * the keyboard cursor on it or not, in a strip that has the focus or not. */
+/* Colors of one of those tabs: the one being used, the add tab or any other,
+ * with the keyboard cursor on it or not, in a strip that has the focus or not. */
 int tab_pair(tab_kind kind, bool cursor, bool strip_focused);
 /* Cells the name takes, up to TAB_NAME_MAX. */
 int tab_name_width(const char *name);

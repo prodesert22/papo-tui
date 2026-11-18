@@ -1317,6 +1317,10 @@ msgstr "Path:"
 msgid "Canais"
 msgstr "Channels"
 
+#: src/ui/components/help.c
+msgid "Canais / DMs"
+msgstr "Channels / DMs"
+
 #: src/ui/components/help.c src/ui/screens/conversation/drawing.c
 msgid "Canais/DMs"
 msgstr "Channels/DMs"
@@ -6648,10 +6652,6 @@ msgstr "[Sign up]"
 #: src/ui/components/help.c src/ui/screens/conversation/drawing.c src/ui/screens/inbox.c src/ui/screens/login.c
 msgid "[Canais]"
 msgstr "[Channels]"
-
-#: src/ui/components/help.c
-msgid "[Canais] / [DMs]"
-msgstr "[Channels] / [DMs]"
 
 #: src/ui/screens/conversation/drawing.c
 msgid "[Cancelar conexão]"

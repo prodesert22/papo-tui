@@ -582,8 +582,26 @@ class Members(unittest.TestCase):
     def test_dm_arrow_navigation_works_after_clicking_list_and_opening_dm(self):
         with self.dm_fixture() as server:
             terminal = self.open(server)
-            self.click(terminal, "[DMs]")
+
+            def tabs():
+                # Panel background, then the cells under "C" of Canais and "D" of DMs.
+                row = terminal.screen.buffer[2]
+                text = "".join(row[column].data for column in range(1, 16))
+                self.assertEqual(text, "  Canais   DMs ", text)
+                return row[1].bg, row[3].bg, row[12].bg
+
+            # The list in use is a tab with a fill of its own and no brackets;
+            # the test screen writes that fill as [name].
+            self.wait(terminal, "[Canais]")
+            panel, channels, dms = tabs()
+            self.assertNotEqual(channels, panel)
+            self.assertEqual(dms, panel)
+            self.click(terminal, "DMs")
             self.wait(terminal, "Foco: DMs")
+            self.wait(terminal, "[DMs")
+            panel, channels, dms = tabs()
+            self.assertEqual(channels, panel)
+            self.assertNotEqual(dms, panel)
             self.wait(terminal, "Carol")
             self.click(terminal, "Bia")
             self.wait(terminal, "Mensagem direta")
@@ -605,7 +623,7 @@ class Members(unittest.TestCase):
                 terminal = self.open(server)
                 self.drawer(terminal)
                 terminal.send("\x15")
-                self.click(terminal, "[DMs]")
+                self.click(terminal, "DMs")
                 self.wait(terminal, "Carol")
                 terminal.send("\x1bOH")
                 terminal.read(0.1)
@@ -663,7 +681,7 @@ class Members(unittest.TestCase):
         for columns, mouse in ((120, False), (120, True), (60, False), (60, True)):
             with self.subTest(columns=columns, mouse=mouse), self.dm_fixture() as server:
                 terminal = self.open(server)
-                self.click(terminal, "[DMs]")
+                self.click(terminal, "DMs")
                 self.wait(terminal, "Carol")
                 self.resize(terminal, 36, columns)
                 self.wait(terminal, "Carol")
@@ -681,7 +699,7 @@ class Members(unittest.TestCase):
         for mouse in (True, False):
             with self.subTest(mouse=mouse), self.dm_fixture() as server:
                 terminal = self.open(server)
-                self.click(terminal, "[DMs]")
+                self.click(terminal, "DMs")
                 self.wait(terminal, "Carol")
                 before = sum("/messages" in path for _, path, *_ in server.requests)
                 if mouse:
@@ -713,7 +731,7 @@ class Members(unittest.TestCase):
             with self.subTest(status=status), self.dm_fixture() as server:
                 server.dm_close_status = status
                 terminal = self.open(server)
-                self.click(terminal, "[DMs]")
+                self.click(terminal, "DMs")
                 self.wait(terminal, "Carol")
                 self.right_click(terminal, "Carol")
                 self.wait(terminal, "Fechar DM")

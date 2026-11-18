@@ -646,7 +646,11 @@ repeated automatically.
 
 ## Direct messages
 
-Choose **DMs** beside **Canais** to see your conversations. ↑/↓ moves the highlighted
+Choose the **DMs** tab beside **Canais** (Channels), above the list, to see your
+conversations. The list in use is the tab with a highlighted background, like
+the selected server. Terminals with fewer than 256 colors, such as the Linux
+console, cannot show the background, so the two are written as **[Canais]** and
+**[DMs]**. ↑/↓ moves the highlighted
 recipient; Enter or → opens the selected conversation. The highlight remains
 visible when people share the same role color. On wide screens, clicking a DM keeps
 focus in the list so the arrows continue selecting people. Typing focuses the
@@ -822,9 +826,9 @@ retries explicitly; failures are never retried automatically.
 
 A channel with new messages shows its name in bold and a small red dot at the
 right of its row. A red badge with a count takes the dot's place when the
-channel has unread mentions of you or `@everyone`. The **[Canais]** and
-**[DMs]** switches show the same dot when one of their conversations has new
-messages.
+channel has unread mentions of you or `@everyone`. The **Canais** and
+**DMs** tabs show the same dot, after their name, when one of their
+conversations has new messages.
 
 The **DMs** list shows only each person's name. A conversation with new
 messages shows the red badge with how many messages are unread;

@@ -63,7 +63,7 @@ class TerminalTitle(unittest.TestCase):
                 dict(type="channel_update", channel_id=OTHER, name="novidades 🐧", position=3)
             )
             self.title(terminal, "novidades 🐧 | Comunidade (2)")
-            self.click(terminal, "[DMs]")
+            self.click(terminal, "DMs")
             self.click(terminal, "Bia")
             self.title(terminal, "DM com Bia | Comunidade (2)")
             terminal.send("\x04\n")

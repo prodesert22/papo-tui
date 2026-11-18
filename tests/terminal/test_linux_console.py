@@ -106,6 +106,11 @@ class LinuxConsole(unittest.TestCase):
                 screen = self.screen(t)
                 for label in ("[/]", "[Fix]", "[@]", "[+]", "[:)]", "◀ voz", "[*]"):
                     self.assertIn(label, screen)
+                # With 8 colors no fill tells the Canais/DMs tabs apart: both
+                # keep their brackets, on the cells themselves, with the unread
+                # dot of the channels right after the first.
+                tabs = "".join(t.screen.buffer[2][column].data for column in range(2, 17))
+                self.assertEqual((tabs[:8], tabs[10:]), ("[Canais]", "[DMs]"), tabs)
                 self.wait_text(t, "Tab / Shift+Tab: mudar foco")
                 self.assertNotIn("Alt +", self.screen(t))
                 self.assert_drawable(t, "conversation")

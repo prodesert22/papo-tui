@@ -75,6 +75,34 @@ void conversation_list_button(view *ui, int button, int column, int width, const
                                                                  : THEME_NOTIFICATION);
 }
 
+/* Canais or DMs as a tab, where the terminal has the colors for it: a fill
+ * with a space on each side of the label and, when one of its conversations
+ * has news, the unread dot before the closing space. Returns the cells of the
+ * fill. Elsewhere conversation_list_button keeps the [label] markers. */
+static int list_tab(view *ui, int button, int column, const char *label)
+{
+    bool cursor = ui->focus == LIST_BUTTONS && ui->list_button == button;
+    bool selected = ui->list_dms == (button != 0);
+    bool focused = ui->focus == CHANNEL_LIST || ui->focus == LIST_BUTTONS;
+    bool notified = conversation_list_notified(ui, button != 0);
+    int name = text_label(NULL, 0, 0, 24, label), width = name + 2 + (notified ? 2 : 0);
+    int pair = tab_pair(selected ? TAB_SELECTED : TAB_IDLE, cursor, focused);
+    attr_t previous = getattrs(ui->list);
+    wattrset(ui->list, COLOR_PAIR(pair) |
+                           theme_text_attributes(selected || cursor ? A_BOLD : A_NORMAL, pair));
+    for (int cell = 0; cell < width; ++cell)
+        mvwaddch(ui->list, 0, column + cell, ' ');
+    text_label(ui->list, 0, column + 1, name, label);
+    if (notified)
+        conversation_notification_dot(ui, ui->list, 0, column + name + 2,
+                                      cursor     ? THEME_NOTIFICATION_BUTTON_FOCUS
+                                      : selected ? THEME_NOTIFICATION_SELECTED
+                                      : focused  ? THEME_NOTIFICATION_FOCUS
+                                                 : THEME_NOTIFICATION);
+    wattrset(ui->list, previous);
+    return width;
+}
+
 int conversation_tab_width(view *ui, size_t index, int available)
 {
     const char *name = ui->connections->items[index].name;
@@ -619,14 +647,21 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
         wbkgd(ui->list, COLOR_PAIR(focused ? THEME_FOCUS_AREA : THEME_PANEL));
         werase(ui->list);
         wattrset(ui->list, COLOR_PAIR(focused ? THEME_FOCUS_MUTED : THEME_PANEL_MUTED) | A_BOLD);
-        /* Each button leaves room for its notification dot after the label. */
-        const char *channels = _("[Canais]"), *dms = _("[DMs]");
-        int channels_width = text_label(NULL, 0, 0, 24, channels) + 1;
-        int dms_width = text_label(NULL, 0, 0, 24, dms) + 3;
-        ui->list_dms_x = 1 + channels_width + 1;
-        ui->list_buttons_end = ui->list_dms_x + dms_width;
-        conversation_list_button(ui, 0, 1, channels_width, channels);
-        conversation_list_button(ui, 1, ui->list_dms_x, dms_width, dms);
+        if (tab_blocks()) {
+            /* Tabs like the servers': the one in use is a block of fill, and a
+             * cell separates the two. */
+            ui->list_dms_x = 1 + list_tab(ui, 0, 1, _("Canais")) + 1;
+            ui->list_buttons_end = ui->list_dms_x + list_tab(ui, 1, ui->list_dms_x, _("DMs"));
+        } else {
+            /* Each button leaves room for its notification dot after the label. */
+            const char *channels = _("[Canais]"), *dms = _("[DMs]");
+            int channels_width = text_label(NULL, 0, 0, 24, channels) + 1;
+            int dms_width = text_label(NULL, 0, 0, 24, dms) + 3;
+            ui->list_dms_x = 1 + channels_width + 1;
+            ui->list_buttons_end = ui->list_dms_x + dms_width;
+            conversation_list_button(ui, 0, 1, channels_width, channels);
+            conversation_list_button(ui, 1, ui->list_dms_x, dms_width, dms);
+        }
         int rows = conversation_list_rows(ui);
         if (rows < 1)
             rows = 1;

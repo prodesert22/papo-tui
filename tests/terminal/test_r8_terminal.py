@@ -1187,9 +1187,11 @@ class R8Terminal(support.R8Terminal):
 
             # The backend cursor lights both the channel and its group without
             # fetching any inactive histories.
+            # Each dot sits inside its tab, after the name; the Canais tab is
+            # two cells wider with its dot, which is where the DMs tab starts.
             dot(2, 10)
             dot(5, 23)
-            dot(2, 19, False)
+            dot(2, 18, False)
             self.assert_initial_history_only(server, OTHER)
             t.click(2, 4)
             group = dot(2, 10)
@@ -1210,15 +1212,15 @@ class R8Terminal(support.R8Terminal):
                     message_content="Nova mensagem",
                 )
             )
-            dot(2, 19)
+            dot(2, 18)
             t.click(2, 13)
             dot(3, 23)
-            self.assertEqual(t.screen.buffer[2][2].data, "[")
-            self.assertEqual(t.screen.buffer[2][12].data, "[")
+            tabs = "".join(t.screen.buffer[2][column].data for column in range(2, 20))
+            self.assertEqual(tabs, " Canais ⦁   DMs ⦁ ")
             self.assert_initial_history_only(server, OTHER)
             t.resize(18, 60)
             dot(3, 10)
-            dot(3, 19)
+            dot(3, 18)
             dot(4, 57)
             # Reading a central notification does not advance the conversation
             # cursor. Both conversation badges remain on.
@@ -1228,7 +1230,7 @@ class R8Terminal(support.R8Terminal):
             self.wait(t, "Detalhes da notificação")
             t.send("\x1b\x1b")
             dot(3, 10)
-            dot(3, 19)
+            dot(3, 18)
             dot(4, 57)
             self.assertEqual(server.marked, [[uuid(4001)]])
             # GET history persists the read cursor; a metadata refresh confirms
@@ -1239,7 +1241,7 @@ class R8Terminal(support.R8Terminal):
             t.read(0.3)
             t.send("\x1bOD")
             self.wait(t, "Foco: DMs")
-            dot(3, 19, False)
+            dot(3, 18, False)
             dot(4, 57, False)
             dot(3, 10)
 
@@ -1354,8 +1356,11 @@ class R8Terminal(support.R8Terminal):
             before = sum("/messages" in r[1] for r in server.requests)
             restarted = self.login(server, environment=environment)
             restarted.read(0.3)
+            # Neither tab carries a dot: Canais would show it in column 10 and
+            # DMs, right after a Canais tab without one, in column 17.
             self.assertNotEqual(restarted.screen.buffer[2][10].data, "⦁")
-            self.assertNotEqual(restarted.screen.buffer[2][19].data, "⦁")
+            self.assertNotEqual(restarted.screen.buffer[2][17].data, "⦁")
+            self.assertNotIn("⦁", restarted.screen.display[2][:25])
             self.assertNotEqual(restarted.screen.buffer[4][23].data, "⦁")
             restarted.click(2, 13)
             self.wait(restarted, "Bia")
@@ -1423,7 +1428,7 @@ class R8Terminal(support.R8Terminal):
             self.wait(t, "Preferências")
             t.send("\x1b\x1b")
             self.wait(t, "[Canais]")
-            self.wait(t, "[DMs]")
+            self.wait(t, "DMs")
 
     def test_member_drawer_replaces_dm_picker_and_includes_banned_members(self):
         with R8Mock() as server:

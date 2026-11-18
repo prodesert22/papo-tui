@@ -25,12 +25,16 @@ from terminal_keys import CTRL_J, encode_keys  # noqa: F401
 BINARY = argument(0)
 
 
-# What pyte reports for the fills of a server tab: the selected one (the
-# "selected conversation" fill) and the keyboard cursor on one (the focus
-# highlight). xterm-256color redefines colors 240 + role, in either palette;
+# What pyte reports for the fills of a server or Canais/DMs tab: the selected
+# one (the "selected conversation" fill) and the keyboard cursor on one (the
+# focus highlight). xterm-256color redefines colors 240 + role, in either palette;
 # Kitty keeps the indexed xterm ones, dark and light.
 TAB_SELECTED_BACKGROUNDS = {"b2b2b2", "262626", "ffd7af"}
 TAB_CURSOR_BACKGROUNDS = {"d0d0d0", "875f00", "d7af5f"}
+# The tabs above the conversation list, in Portuguese and English, and the
+# unread dot one of them may carry after its name.
+LIST_TABS = {"Canais", "Channels", "DMs"}
+UNREAD_DOTS = "⦁•"
 
 
 class ObservedScreen(pyte.Screen):
@@ -40,20 +44,25 @@ class ObservedScreen(pyte.Screen):
 
     @property
     def display(self):
-        """The screen text, with the server tab strip in row 0 written as markers.
+        """The screen text, with the server and Canais/DMs tabs written as markers.
 
-        Server tabs are blocks of fill, so the text alone cannot tell which one
+        These tabs are blocks of fill, so the text alone cannot tell which one
         is selected. Their padding cells keep the columns the old markers had:
         the selected tab shows as [name] and a tab under the keyboard cursor as
-        >name<, as the application still draws them on terminals with fewer
-        than 256 colors. Tests that need the real colors read ``buffer``."""
+        >name<, as the application still draws the server tabs on terminals
+        with fewer than 256 colors. A tab that is neither keeps its bare name.
+        Tests that need the real colors read ``buffer``."""
         lines = super().display
         if self.lines:
-            lines[0] = self._tab_markers(lines[0])
+            lines[0] = self._tab_markers(0, lines[0])
+        # The conversation list starts below the tab rows and the frame's edge.
+        row = 2 if self.columns >= 80 else 3
+        if row < self.lines:
+            lines[row] = self._tab_markers(row, lines[row], LIST_TABS)
         return lines
 
-    def _tab_markers(self, text):
-        row = self.buffer[0]
+    def _tab_markers(self, y, text, names=None):
+        row = self.buffer[y]
         runs, start = [], None
         for x in range(self.columns + 1):
             background = row[x].bg if x < self.columns else None
@@ -65,8 +74,17 @@ class ObservedScreen(pyte.Screen):
             elif start is not None:
                 runs.append((start, x - 1))
                 start = None
-        selected = [run for run in runs if row[run[0]].bg in TAB_SELECTED_BACKGROUNDS]
         cells = [row[x].data for x in range(self.columns)]
+        if names:
+            # The same fills mark other controls of this row; keep the tabs only.
+            runs = [
+                (first, last)
+                for first, last in runs
+                if "".join(cells[first + 1 : last]).strip(" " + UNREAD_DOTS) in names
+            ]
+            if not runs:
+                return text
+        selected = [run for run in runs if row[run[0]].bg in TAB_SELECTED_BACKGROUNDS]
         for first, last in runs:
             label = "".join(cells[first + 1 : last]).strip()
             if row[first].bg in TAB_SELECTED_BACKGROUNDS:
