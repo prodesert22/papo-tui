@@ -64,7 +64,7 @@ jobs:
     name: Build (${{ matrix.platform }}, ${{ matrix.arch }})
     strategy:
       fail-fast: false
-      max-parallel: 4
+      max-parallel: 5
       matrix:
         include:
           - runner: ubuntu-24.04
@@ -82,6 +82,9 @@ jobs:
             platform: windows
             system: CLANGARM64
             package: mingw-w64-clang-aarch64
+            arch: aarch64
+          - runner: macos-15
+            platform: macos
             arch: aarch64
     runs-on: ${{ matrix.runner }}
     env:
@@ -253,6 +256,57 @@ jobs:
           python dist/package.py --build build/release --output build/artifacts --formats zip,installer \
             --arch "$BUILD_ARCH" --flavor windows --dependency-prefix build/release-deps
           python dist/windows/verify.py --artifacts build/artifacts --version "$version" --arch "$BUILD_ARCH"
+      - uses: actions/setup-python@v5
+        if: matrix.platform == 'macos'
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: requirements/ci-macos-py313.txt
+      - name: macOS build environment
+        id: macos-env
+        if: matrix.platform == 'macos'
+        run: |
+          brew bundle --file dist/Brewfile
+          # The tests call the ffmpeg command at configure time. Only the command is used: the
+          # private prefix keeps its own LGPL libraries ahead of Homebrew's on PKG_CONFIG_PATH.
+          brew install ffmpeg
+          python3 -m venv build/test-env
+          build/test-env/bin/pip install --require-hashes -r requirements/ci-macos-py313.txt
+          build/test-env/bin/python tools/dependency_key.py >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v4
+        if: matrix.platform == 'macos'
+        id: macos-cache
+        with:
+          path: |
+            build/source-cache
+            build/resources
+            build/release-deps
+          key: macos-${{ matrix.runner }}-${{ matrix.arch }}-${{ steps.macos-env.outputs.fingerprint }}-${{ hashFiles('dist/dependencies.json', 'dist/bootstrap.py', 'dist/voice_dependencies.py', 'dist/patches/**', 'dist/resources.json', 'tests/fixtures/resources.json', 'dist/Brewfile') }}
+          restore-keys: |
+            macos-${{ matrix.runner }}-${{ matrix.arch }}-${{ steps.macos-env.outputs.fingerprint }}-
+      - name: Build macOS
+        id: macos-build
+        if: matrix.platform == 'macos'
+        env:
+          PAPO_CI_CACHE_HIT: ${{ steps.macos-cache.outputs.cache-hit }}
+        run: |
+          export PATH="$PWD/build/test-env/bin:$PATH"
+          python dist/build.py --build build --prefix build/release-deps --variants release --build-only
+      - uses: actions/cache/save@v4
+        if: always() && !cancelled() && steps.macos-cache.outcome == 'success' && steps.macos-cache.outputs.cache-hit != 'true' && steps.macos-build.outputs.dependencies-ready == 'true'
+        with:
+          path: |
+            build/source-cache
+            build/resources
+            build/release-deps
+          key: ${{ steps.macos-cache.outputs.cache-primary-key }}
+      - name: Test macOS
+        if: matrix.platform == 'macos'
+        env:
+          PAPO_CI_CACHE_HIT: ${{ steps.macos-cache.outputs.cache-hit }}
+        run: |
+          export PATH="$PWD/build/test-env/bin:$PATH"
+          python dist/build.py --build build --prefix build/release-deps --variants release --test-only
       - uses: actions/cache/save@v4
         if: always() && !cancelled() && steps.release-cache.outcome == 'success' && steps.release-cache.outputs.cache-hit != 'true' && steps.release-build.outputs.dependencies-ready == 'true'
         with:
@@ -279,8 +333,9 @@ jobs:
             build/**/coverage/*.html
             build/**/coverage/*.css
             build/**/coverage/*.xml
+      # macOS has no package yet: it is built and tested, and the release publishes nothing for it.
       - uses: actions/upload-artifact@v4
-        if: inputs.release
+        if: inputs.release && matrix.platform != 'macos'
         with:
           name: packages-${{ matrix.platform }}-${{ matrix.arch }}
           path: build/artifacts/*

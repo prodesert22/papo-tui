@@ -20,7 +20,7 @@ class WorkflowTests(unittest.TestCase):
         matrix = WORKFLOW["jobs"]["build"]["strategy"]["matrix"]["include"]
         self.assertEqual(
             {(row["platform"], row["arch"]) for row in matrix},
-            set(product(("linux", "windows"), ("x86_64", "aarch64"))),
+            set(product(("linux", "windows"), ("x86_64", "aarch64"))) | {("macos", "aarch64")},
         )
         self.assertFalse(WORKFLOW["jobs"]["build"]["strategy"]["fail-fast"])
         self.assertEqual(
@@ -69,6 +69,7 @@ class WorkflowTests(unittest.TestCase):
         for job, stage in (
             ("build", "Linux Release"),
             ("build", "Windows"),
+            ("build", "macOS"),
             ("instrumentation", "isolated variant"),
         ):
             steps = WORKFLOW["jobs"][job]["steps"]
@@ -83,7 +84,12 @@ class WorkflowTests(unittest.TestCase):
     def test_native_cache_fallbacks_require_the_same_toolchain_identity(self):
         for job in WORKFLOW["jobs"].values():
             for step in job.get("steps", []):
-                if step.get("id") not in {"linux-cache", "windows-cache", "dependencies"}:
+                if step.get("id") not in {
+                    "linux-cache",
+                    "windows-cache",
+                    "macos-cache",
+                    "dependencies",
+                }:
                     continue
                 for prefix in step["with"]["restore-keys"].splitlines():
                     self.assertIn(".outputs.fingerprint", prefix)

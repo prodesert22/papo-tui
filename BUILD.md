@@ -1,11 +1,12 @@
 # Building Papo TUI
 
-This guide builds the Linux binary or native Windows executable from source.
+This guide builds the Linux binary, the native Windows executable or the macOS
+binary (Apple Silicon) from source.
 For downloaded packages, use the [installation guide](docs/installation.md).
 Run all project commands from the repository root. A source archive can be
 extracted instead of cloning; Git is needed only for checkout and release tools.
 
-Start with [Linux](#linux) or [Windows](#windows-11), then choose a format under
+Start with [Linux](#linux), [Windows](#windows-11) or [macOS](#macos), then choose a format under
 [Packaging and releases](#packaging-and-releases).
 
 ## Requirements
@@ -234,12 +235,59 @@ Keep the whole installed folder when copying it to another Windows machine of
 the same architecture. MSYS2 and Python are needed to build, not to run that
 installed folder. The ZIP/installer recipes use this same installation layout.
 
+## macOS
+
+macOS support is new and covers **Apple Silicon (arm64) built from source**: there
+is no macOS package yet, so the installation guide does not apply. CI builds and
+tests on macOS 15; older versions are untested, because the Homebrew libraries
+come from the runner's own release. The terminal-only parts work as on Linux.
+These Linux desktop integrations have no macOS version yet: voice calls,
+desktop notifications and their click-to-focus, the system file picker, pasting
+files and images from the clipboard (copied text still reaches the terminal
+through OSC 52), and saved sessions, which need a secure store and do not use
+the macOS Keychain yet.
+
+Install the Xcode Command Line Tools (`xcode-select --install`) and
+[Homebrew](https://brew.sh/). [dist/Brewfile](dist/Brewfile) lists the host
+packages: the compiler uses Apple's clang, and Homebrew provides CMake, Ninja,
+pkgconf, the autotools, OpenSSL and the GLib/Pango/Cairo/Fontconfig/librsvg
+family. The private prefix builds ncurses, curl, FFmpeg, libmpv and the rest
+itself, as on Linux, with VideoToolbox/AudioToolbox for FFmpeg and CoreAudio for
+mpv; Homebrew's own ffmpeg and mpv are GPL builds and are not used. Python 3.10
+or later is needed (`brew install python@3.13` for the CI version).
+
+```sh
+brew bundle --file dist/Brewfile
+brew install ffmpeg python@3.13
+git clone https://github.com/prodesert22/papo-tui.git
+cd papo-tui
+python3.13 -m venv build/test-env
+build/test-env/bin/python -m pip install --require-hashes -r requirements/ci-macos-py313.txt
+export PATH="$PWD/build/test-env/bin:$PATH"
+python dist/build.py --build build --prefix build/release-deps --variants release --build-only
+./build/release/papo-tui
+```
+
+Skip clone and cd if already inside the source folder. CMake looks for the
+`ffmpeg` command while configuring, because the tests use it; only the command
+is used, and the private prefix keeps its own libraries ahead of Homebrew's on
+`PKG_CONFIG_PATH`. `dist/build.py` also adds the keg-only Homebrew formulae
+(`openssl@3`, `zlib`, `libffi`) to `PKG_CONFIG_PATH`; do the same when running
+CMake by hand. It configures `PAPO_BUNDLE_RUNTIME=OFF`: the binary runs from the
+build tree and needs the private prefix, but no library path variable.
+
+Replace `--build-only` with `--test-only` to run the tests after a build, or
+omit both to do both. The test suite skips what needs a Linux desktop (D-Bus
+notifications, the Secret Service keyring, the file portal) or the GNU toolchain
+(the `--wrap` memory probe); the reasons are in
+[tests/platforms.json](tests/platforms.json).
+
 ## Tests and build options
 
 For Linux tests, install an **ffmpeg command-line executable** in addition to
 the private FFmpeg libraries: `sudo apt install ffmpeg` on Debian/Ubuntu,
-`sudo dnf install ffmpeg-free` on Fedora, or `sudo pacman -S --needed ffmpeg` on
-Arch. On RHEL, the executable must come from a repository that supplies it for
+`sudo dnf install ffmpeg-free` on Fedora, `sudo pacman -S --needed ffmpeg` on
+Arch, or `brew install ffmpeg` on macOS. On RHEL, the executable must come from a repository that supplies it for
 your RHEL version; the native binary build above does not require it.
 
 Use **CPython 3.13** and the matching committed lock for the same Python
@@ -253,8 +301,10 @@ build/test-env/bin/python dist/build.py --build build/ci --prefix build/release-
 
 On Windows, use native CPython 3.13 in the selected MSYS2 shell and install
 `requirements/ci-windows-py313.txt` into `build/test-env`. Run the same
-`dist/build.py` command with `build/test-env/Scripts/python.exe`. The four
-native OS/architecture combinations run on every PR. Sanitizers and coverage
+`dist/build.py` command with `build/test-env/Scripts/python.exe`. On macOS, install
+`requirements/ci-macos-py313.txt` into `build/test-env` the same way. The five
+native OS/architecture combinations (Linux and Windows on x86_64 and ARM64, and
+macOS on ARM64) run on every PR. Sanitizers and coverage
 use separate Linux x86_64 jobs; CI never multiplies build and test concurrency
 by starting three variants on one runner.
 
@@ -585,7 +635,7 @@ and the program know the same words.
 ### Update test dependencies
 
 `requirements-dev.txt` is the input; the native CI locks include transitive
-versions and hashes. Use the maintained uv resolver for Linux/Windows markers
+versions and hashes. Use the maintained uv resolver for Linux/Windows/macOS markers
 without depending on the host's default Python encoding or package environment:
 
 ```sh
@@ -593,7 +643,9 @@ python -m pip install -r requirements/lock-tools.txt
 python tools/lock_requirements.py
 ```
 
-Review both generated locks and validate them on all four native targets. The
+Name one or more locks (`linux`, `windows`, `macos`) to regenerate only those and
+leave the others' pins unchanged. Review the generated locks and validate them on
+all five native targets. The
 lock generator is a development tool; it adds no runtime dependency to Papo TUI.
 Keep the C dependency recipes and resource manifests synchronized with their
 hashes. A cached compiled dependency is revalidated against its source, recipe,
@@ -608,7 +660,7 @@ compiler, architecture and installation prefix before reuse.
 | `PAPO_DESKTOP_NOTIFICATIONS=OFF` | Disable desktop popups |
 | `PAPO_SANITIZERS=ON` | Enable ASan/UBSan on supported Linux compilers |
 | `PAPO_COVERAGE=ON` | Enable coverage instrumentation with GCC on Linux |
-| `PAPO_BUNDLE_RUNTIME=ON` | Copy runtime libraries during installation |
+| `PAPO_BUNDLE_RUNTIME=ON` | Copy runtime libraries during installation; not available on macOS yet, where configuring with it stops with an error |
 
 The `debug`, `release`, `sanitizers` and `coverage` CMake presets are available.
 Pass the same `CMAKE_PREFIX_PATH` and `Python3_EXECUTABLE` when configuring one.

@@ -101,7 +101,7 @@ animated media also benefit from parallel Chafa processing in text terminals.
 ## Build
 
 See [BUILD.md](BUILD.md) for the packages to install and the commands to build
-the Linux binary or Windows executable, run tests and prepare packages.
+the Linux binary, Windows executable or macOS binary (Apple Silicon, from source), run tests and prepare packages.
 The service contract is in [openapi.yml](openapi.yml).
 
 ## Releases and license
