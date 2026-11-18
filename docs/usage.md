@@ -1789,13 +1789,52 @@ Press **Ctrl+S** and choose **Sobre** (About), the last section of
   built from source has no such folder and names `THIRD_PARTY_NOTICES.md` in
   the repository instead.
 
-Select **Copiar link** (Copy link), or click the **Código-fonte** line, to copy
-the address; **Cópia solicitada.** (Copy requested) confirms it. The program
-does not open a browser. Terminals with few rows leave out the description
-line. **Fechar** (Close), Esc or Ctrl+S closes the window.
+Tab or ↓ moves from the section selector to the lines. Press Enter on the
+**Código-fonte** line, or click it, to copy the address; **Cópia solicitada.**
+(Copy requested) confirms it. The program does not open a browser. Terminals
+with few rows keep the version, the address and the update lines and leave out
+the rest. **Fechar** (Close), Esc or Ctrl+S closes the window.
 
 Settings opens only from a server you are signed in to. Before signing in,
 `papo-tui --version` shows the version.
+
+### Check for a new version
+
+Once a day the program asks GitHub whether a newer release exists: about three
+seconds after it starts, when the last answer is at least a day old, and then
+every 24 hours while it stays open. The request goes to `api.github.com`,
+outside any chat server: it carries no cookie and nothing about your accounts,
+only the program's version, and GitHub sees your network address as any site
+you visit does. A final version is told about final versions only; a
+pre-release, such as a beta, is told about newer pre-releases too.
+
+When there is a newer version:
+
+- the sign-in screen adds **Versão X disponível** (Version X available) to its
+  message line;
+- the conversation screen shows **Versão X disponível · Ctrl+S → Sobre** in the
+  bottom bar, or **Atualização disponível** (Update available) when the bar is
+  short. Click it to open **Sobre**. It leaves the bar once you have opened
+  **Sobre**, until the program starts again;
+- **Sobre** shows **Versão X disponível em:** (Version X available at:) and the
+  address of that release's page. Press Enter on the address, or click it, to
+  copy it, then download the package for your system there; the
+  [installation guide](installation.md) has the commands for each package.
+
+The program does not download or install the new version by itself.
+
+**[x] Verificar atualizações automaticamente** (Check for updates
+automatically) in **Sobre** turns the daily check on or off; Space, Enter or a
+click changes it and the change is saved at once for this device. With it off,
+nothing is asked until you select **Verificar agora** (Check now), which asks
+right away. Two requests are at least a minute apart: sooner than that the
+button answers **Aguarde um minuto antes de verificar de novo.** (Wait a minute
+before checking again). Below the switch, **Você está na versão mais
+recente.** (You are on the latest version) reports the last answer.
+
+To keep a run from asking by itself whatever the saved switch says, for example
+before you ever sign in, start the program with `PAPO_UPDATE_CHECK=0`. A copy
+built from source that is not a release build never asks by itself either.
 
 ## Troubleshooting
 
@@ -1810,6 +1849,19 @@ Settings opens only from a server you are signed in to. Before signing in,
   there. This applies to the sign-in form, the **Configurações do servidor**
   forms, **Perfil** and **Conta** in Settings, the server profile dialogs, the
   save dialog and the message box.
+- **The update check failed:** **Sobre** in Settings says why.
+  **Não foi possível consultar o GitHub. Verifique a conexão.** (Could not reach
+  GitHub) means `api.github.com` did not answer: check the connection and any
+  proxy, then select **Verificar agora** (Check now) after a minute.
+  **O GitHub limitou as consultas deste endereço.** (GitHub limited the requests
+  from this address) appears when many requests left the same network address
+  within the hour; the program waits at least an hour before asking again and
+  your conversations are not slowed. **O certificado do GitHub não é
+  confiável** (GitHub's certificate is not trusted) usually means
+  `CURL_CA_BUNDLE` names a file without the public certificate authorities;
+  nothing is asked over an untrusted connection. A failed check is tried again
+  twice within a few seconds and then on the next day. None of this affects
+  the chat servers.
 - **Command not found:** check that the application is installed and its folder
   is on PATH. For a portable package, run the executable from the extracted
   folder; see the [installation guide](installation.md).

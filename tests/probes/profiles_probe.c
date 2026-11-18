@@ -157,6 +157,8 @@ int main(int argc, char **argv)
                                         strcmp(argv[3], "true") == 0);
     else if (strcmp(mode, "sounds") == 0 && argc == 3)
         ok = profiles_set_sounds(config, strcmp(argv[2], "true") == 0);
+    else if (strcmp(mode, "update-check") == 0 && argc == 3)
+        ok = profiles_set_update_check(config, strcmp(argv[2], "true") == 0);
     else if (strcmp(mode, "accessibility") == 0 && argc == 3) {
         json_error_t error;
         json_t *object = json_loads(argv[2], 0, &error);
@@ -242,6 +244,8 @@ int main(int argc, char **argv)
         json_object_set_new(result, "shortcuts", keymap_overrides_encode(&config->shortcuts));
     if (result)
         json_object_set_new(result, "accessibility", accessibility_encode(&config->accessibility));
+    if (result)
+        json_object_set_new(result, "update_check", json_boolean(config->update_check));
     json_decref(items);
     profiles_destroy(config);
     int status = emit(result);

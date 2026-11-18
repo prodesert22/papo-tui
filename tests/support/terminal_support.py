@@ -293,6 +293,8 @@ class PosixTerminal:
         env["NO_PROXY"] = "127.0.0.1,localhost,::1"
         # Existing PTY suites must never open the user's personal wallet.
         env["DBUS_SESSION_BUS_ADDRESS"] = "unix:path=/nonexistent/papo-test-bus"
+        # No suite asks GitHub for releases unless it serves the answer itself.
+        env["PAPO_UPDATE_CHECK"] = "0"
         self.configuration = tempfile.TemporaryDirectory(prefix="papo-terminal-config-")
         # PulseAudio may create its own runtime directory. Keep it outside the
         # media fixture directory whose cleanup is verified by player tests.

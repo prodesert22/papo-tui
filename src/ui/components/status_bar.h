@@ -20,6 +20,7 @@ typedef enum {
     STATUS_SECURITY,
     /* Acessibilidade → Alerta visual: the last notification, for a while. */
     STATUS_ALERT,
+    STATUS_UPDATE,
     STATUS_CONTEXT_COUNT
 } status_context;
 

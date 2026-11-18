@@ -103,6 +103,21 @@ papo_add_test(NAME permissions-unit COMMAND permissions-test LABELS permissions)
 add_executable(rate-limit-test tests/unit/test_rate_limit.c)
 target_link_libraries(rate-limit-test PRIVATE papo_auth)
 papo_add_test(NAME request-rate-limit COMMAND rate-limit-test LABELS network)
+add_executable(version-test tests/unit/test_version.c)
+target_link_libraries(version-test PRIVATE papo_auth)
+papo_add_test(NAME version-unit COMMAND version-test LABELS packaging)
+add_executable(update-test tests/unit/test_update.c)
+target_link_libraries(update-test PRIVATE papo_auth)
+papo_add_test(
+    NAME
+    update-releases-unit
+    COMMAND
+    update-test
+    ${PROJECT_SOURCE_DIR}/tests/fixtures/update/github_releases_observed.json
+    ${PROJECT_SOURCE_DIR}/tests/fixtures/update/github_latest_observed.json
+    LABELS
+    packaging
+    network)
 add_executable(session-time-test tests/unit/test_session_time.c)
 target_link_libraries(session-time-test PRIVATE papo_auth)
 papo_add_test(NAME session-expiry COMMAND session-time-test LABELS auth)

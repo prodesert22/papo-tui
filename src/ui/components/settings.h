@@ -87,9 +87,10 @@ typedef struct {
     /* Acessibilidade: the draft of this device's choices and the item selected. */
     accessibility_config access;
     int access_selection, access_first;
-    /* Sobre: the facts drawn and whether the link copy was just requested. */
+    /* Sobre: the lines drawn, whether a link copy was just requested and this
+     * device's switch of the daily update check. */
     about_view about;
-    bool about_copied;
+    bool about_copied, update_check;
 } app_settings;
 void settings_open(app_settings *settings, const profile_config *config, voice_client *voice,
                    history *profile, auth_client *auth, icon_view *icons, const char *server);

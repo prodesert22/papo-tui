@@ -124,6 +124,11 @@
     {"glob": "src/net/auth/permissions.c", "areas": ["permissions"]},
     {"glob": "src/net/auth/password.c", "areas": ["auth"]},
     {"glob": "src/net/rate_limit.*", "areas": ["network"]},
+    {"glob": "src/net/http/public_request.*", "areas": ["network", "packaging"]},
+    {"glob": "src/net/http/easy.h", "areas": ["network", "media"]},
+    {"glob": "src/net/update.*", "areas": ["packaging", "network"]},
+    {"glob": "src/app/update.*", "areas": ["packaging", "settings"]},
+    {"glob": "src/model/version.*", "areas": ["packaging"]},
 
     {"glob": "src/ui/components/help.*", "areas": ["ui", "input"]},
     {"glob": "src/ui/components/quick_switcher.*", "areas": ["ui", "servers"]},

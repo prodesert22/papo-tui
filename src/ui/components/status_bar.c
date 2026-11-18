@@ -231,10 +231,11 @@ void status_bar_draw(status_bar *bar, WINDOW *window, int row, const char *full,
         }
         notice->x = x;
         notice->width = widths[i];
-        wattrset(window, COLOR_PAIR(ordered[i] == STATUS_EVENT || ordered[i] == STATUS_EDITOR ||
-                                            ordered[i] == STATUS_SECURITY
-                                        ? THEME_PANEL_ACCENT
-                                        : THEME_PANEL));
+        wattrset(window,
+                 COLOR_PAIR(ordered[i] == STATUS_EVENT || ordered[i] == STATUS_EDITOR ||
+                                    ordered[i] == STATUS_SECURITY || ordered[i] == STATUS_UPDATE
+                                ? THEME_PANEL_ACCENT
+                                : THEME_PANEL));
         label(window, row, x, widths[i], labels[i]);
         x += widths[i];
         wattrset(window, COLOR_PAIR(THEME_PANEL_MUTED));

@@ -464,6 +464,24 @@ from GLib's `g_get_language_names()`. `po/en.po` keeps the standard format, so
 gettext editors can open it. Tests set `PAPO_LANGUAGE=pt`, so their Portuguese
 assertions hold on hosts with any locale.
 
+### Update check
+
+`PAPO_UPDATE_API_URL` replaces the GitHub endpoint
+(`https://api.github.com/repos/prodesert22/papo-tui`) with a stand-in, which
+must also be served over HTTPS; a development build, which otherwise checks
+only on request, then follows the daily schedule too. `tests/support/update_mock.py`
+serves such a stand-in on the loopback with a certificate made by `openssl` and
+trusted through `CURL_CA_BUNDLE`. The test terminals start the program with
+`PAPO_UPDATE_CHECK=0`, so no suite asks GitHub for releases;
+`tests/terminal/test_update_terminal.py` turns the check back on against the
+stand-in. `tests/fixtures/update/` keeps real answers of the GitHub API,
+reduced to the fields the client reads, for `tests/unit/test_update.c`.
+
+The client reads only `tag_name`, `draft` and `prerelease` of each release.
+Tags must stay in the `vMAJOR.MINOR.PATCH[-(alpha|beta|rc).N]` form that
+`dist/release.py` enforces: a release with any other tag is invisible to
+installed copies.
+
 ### Update test dependencies
 
 `requirements-dev.txt` is the input; the native CI locks include transitive

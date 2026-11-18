@@ -29,6 +29,9 @@ add_library(
     src/model/text/mentions.c
     src/model/assets/catalog.c
     src/net/http/download.c
+    src/net/http/public_request.c
+    src/net/update.c
+    src/model/version.c
     src/net/gif_search.c
     src/net/auth/session_time.c
     src/net/rate_limit.c
@@ -134,7 +137,8 @@ add_library(
     src/platform/${PAPO_PLATFORM}/clipboard.c
     src/ui/media/backend_module.c
     src/ui/media/sound.c
-    src/app/instances.c)
+    src/app/instances.c
+    src/app/update.c)
 target_link_libraries(
     papo_send_editor
     PUBLIC papo_outbox

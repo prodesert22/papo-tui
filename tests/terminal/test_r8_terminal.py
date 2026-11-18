@@ -1421,7 +1421,7 @@ class R8Terminal(support.R8Terminal):
             path = t.configuration.name + "/papo-tui/config.json"
             with open(path) as f:
                 config = json.load(f)
-            self.assertEqual(config["version"], 13)
+            self.assertEqual(config["version"], 14)
             self.assertFalse(config["desktop_notifications"])
             self.assertFalse(config["notification_preview"])
             t.resize(14, 44)

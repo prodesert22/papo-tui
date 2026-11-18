@@ -101,6 +101,8 @@ static void print_help(void)
                       "  CURL_CA_BUNDLE=ARQ    Arquivo PEM com a autoridade certificadora de um\n"
                       "                        servidor com certificado próprio. A verificação\n"
                       "                        TLS continua ativa.\n"
+                      "  PAPO_UPDATE_CHECK=0   Não consulta o GitHub por versão nova ao iniciar,\n"
+                      "                        mesmo com a checagem automática ligada.\n"
                       "  NO_COLOR=1            Mostra a interface e esta ajuda sem cores. Fora de\n"
                       "                        um terminal a ajuda já sai sem cores.\n"));
 #ifdef _WIN32

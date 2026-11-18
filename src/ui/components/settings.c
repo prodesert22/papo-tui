@@ -1,4 +1,5 @@
 #include "ui/components/settings.h"
+#include "app/update.h"
 #include "model/conversation/profile_edit.h"
 #include "model/text/translation.h"
 #include "ui/components/button.h"
@@ -29,7 +30,7 @@ static bool has_content(int section)
     return section == SETTINGS_APPEARANCE || section == SETTINGS_PROFILE ||
            section == SETTINGS_NOTIFICATIONS || section == SETTINGS_AUDIO ||
            section == SETTINGS_SHORTCUTS || section == SETTINGS_ACCESSIBILITY ||
-           section == SETTINGS_ACCOUNT;
+           section == SETTINGS_ACCOUNT || section == SETTINGS_ABOUT;
 }
 /* Password text never outlives the window. */
 static void account_erase(app_settings *s)
@@ -77,6 +78,7 @@ void settings_open(app_settings *s, const profile_config *config, voice_client *
     s->open = true;
     s->draft = config->mode;
     s->language = config->language;
+    s->update_check = config->update_check;
     s->selection = config->mode;
     s->audio = s->original_audio = config->audio;
     s->voice = voice;
@@ -1829,7 +1831,9 @@ void settings_draw(app_settings *s)
     } else if (s->section == SETTINGS_ACCESSIBILITY) {
         access_draw(s, w, height, width);
     } else if (s->section == SETTINGS_ABOUT) {
-        about_draw(&s->about, w, 5, 2, width - 4, height - 8);
+        about_draw(&s->about, w, 5, 2, width - 4, height - 8, s->focus == 1, s->update_check);
+        /* The newer version is on screen: the footer need not repeat it. */
+        update_acknowledge();
     }
     wattrset(w, COLOR_PAIR(THEME_ERROR));
     if (*s->error)
@@ -1854,7 +1858,7 @@ void settings_draw(app_settings *s)
                 profile         ? _("Salvar perfil")
                 : account       ? s->account_confirm ? _("Confirmar") : _("Alterar senha")
                 : notifications ? _("Salvar")
-                : about         ? _("Copiar link")
+                : about         ? _("Verificar agora")
                                 : _("Salvar e aplicar"),
                 s->focus == 2 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     button_draw(w, height - 2, width - 14, 12,
@@ -1862,17 +1866,34 @@ void settings_draw(app_settings *s)
                 s->focus == 3 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     wnoutrefresh(w);
 }
-/* Sobre keeps no draft: its button copies the source link. */
-static void about_copy(app_settings *s)
+/* Sobre keeps no draft: each line acts at once and its button asks GitHub. */
+static void about_act(app_settings *s, profile_config *config, about_action action)
 {
-    s->about_copied = about_copy_link();
-    snprintf(s->error, sizeof(s->error), "%s",
-             s->about_copied ? "" : _("Não foi possível copiar o link."));
+    s->about_copied = false;
+    s->error[0] = 0;
+    if (action == ABOUT_COPY_SOURCE || action == ABOUT_COPY_RELEASE) {
+        s->about_copied = action == ABOUT_COPY_SOURCE ? about_copy_source() : about_copy_release();
+        if (!s->about_copied)
+            snprintf(s->error, sizeof(s->error), "%s", _("Não foi possível copiar o link."));
+    } else if (action == ABOUT_TOGGLE_CHECK) {
+        if (profiles_set_update_check(config, !s->update_check)) {
+            s->update_check = config->update_check;
+            update_set_automatic(s->update_check);
+        } else
+            snprintf(s->error, sizeof(s->error), "%s", config->message);
+    } else if (action == ABOUT_LEAVE_UP)
+        s->focus = 0;
+    else if (action == ABOUT_LEAVE_DOWN)
+        s->focus = 2;
 }
 static void save(app_settings *s, profile_config *config)
 {
     if (s->section == SETTINGS_ABOUT) {
-        about_copy(s);
+        s->about_copied = false;
+        s->error[0] = 0;
+        if (!update_check_now() && update_status() != UPDATE_CHECKING)
+            snprintf(s->error, sizeof(s->error), "%s",
+                     _("Aguarde um minuto antes de verificar de novo."));
         return;
     }
     if (s->section == SETTINGS_PROFILE) {
@@ -2094,8 +2115,12 @@ void settings_key(app_settings *s, profile_config *config, int type, uint32_t ke
             bool *value = notify_value(s, s->notify_selection);
             *value = !*value;
             s->error[0] = 0;
-        } else if (s->section == SETTINGS_ABOUT && y == s->about.link_row) {
-            about_copy(s);
+        } else if (s->section == SETTINGS_ABOUT && y >= 5 && y < getmaxy(s->window) - 3) {
+            about_action action = about_click(&s->about, y);
+            if (action != ABOUT_NOTHING) {
+                s->focus = 1;
+                about_act(s, config, action);
+            }
         } else if (y == getmaxy(s->window) - 2) {
             if (x >= 2 && x < 20)
                 save(s, config);
@@ -2119,6 +2144,10 @@ void settings_key(app_settings *s, profile_config *config, int type, uint32_t ke
         }
         if (s->section == SETTINGS_ACCOUNT) {
             account_key(s, type, key);
+            return;
+        }
+        if (s->section == SETTINGS_ABOUT) {
+            about_act(s, config, about_key(&s->about, type, key));
             return;
         }
         if (s->section == SETTINGS_SHORTCUTS) {

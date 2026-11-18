@@ -3,6 +3,7 @@
 #endif
 #include "ui/screens/login.h"
 #include "app/session_store.h"
+#include "app/update.h"
 #include "config/app_mode.h"
 #include "model/text/translation.h"
 #include "net/auth/client.h"
@@ -854,10 +855,17 @@ static void draw(login_ui *ui, auth_client *client)
                                 : ui->resetting ? _("Cole o link recebido e escolha a nova senha.")
                                                 : _("Preencha os dados para entrar.")
                               : auth_message(client);
-    char status_message[384];
+    char status_message[384], update_message[512];
     if (clipboard_notice()) {
         snprintf(status_message, sizeof(status_message), "%s | %s", message, clipboard_notice());
         message = status_message;
+    }
+    /* Settings, where the details are, open only from a signed-in server. */
+    if (update_notice()) {
+        char notice[96];
+        snprintf(notice, sizeof(notice), _("Versão %s disponível"), update_latest());
+        snprintf(update_message, sizeof(update_message), "%s | %s", message, notice);
+        message = update_message;
     }
     const char *remaining = text(ui->footer, 2, 2, ui->width - 8, message);
     if (*remaining) {
@@ -1713,6 +1721,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
     accessibility_set(&config->accessibility);
     accessibility_config access = accessibility_get();
     theme_set_access(&access);
+    update_init(config->update_check);
     connections->sessions = session_store_create(config, !open_profiles);
     connections->config = config;
     interrupted = 0;
@@ -1831,6 +1840,8 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
         auth_poll(client);
         send_editor_poll(instances_editor(connections, client));
         instances_poll(connections, client);
+        if (update_poll())
+            redraw = true;
         if (tabs_changed(&ui, client))
             redraw = true;
         if (before != auth_get_state(client) || before_busy != auth_busy(client))
@@ -2163,6 +2174,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
     erase_text(ui.reset_user, sizeof(ui.reset_user));
     text_paste_cancel(&ui.paste_data);
     clipboard_shutdown();
+    update_shutdown();
     text_input_terminal_active(false);
     fputs("\033[?2004l", stdout);
     fflush(stdout);

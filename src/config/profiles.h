@@ -36,6 +36,8 @@ typedef struct profile_config {
     language_choice language;
     bool members_by_status;
     int player_volume;
+    /* This device asks GitHub for a newer release by itself, once a day. */
+    bool update_check;
     audio_config audio;
     /* Command keys that differ from the defaults (config/keymap.h). */
     keymap_overrides shortcuts;
@@ -74,5 +76,6 @@ bool profiles_select(profile_config *config, const char *id, bool allow_local_ht
 bool profiles_set_rate(profile_config *config, double requests_per_second, unsigned burst);
 bool profiles_set_notifications(profile_config *config, bool desktop, bool preview);
 bool profiles_set_sounds(profile_config *config, bool sounds);
+bool profiles_set_update_check(profile_config *config, bool automatic);
 
 #endif

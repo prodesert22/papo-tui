@@ -54,6 +54,12 @@ choose its notification preference.
 The terminal window title shows the current conversation and server, plus the
 total known unread mentions across connected instances when there are any.
 
+**Ctrl+S → Sobre** shows the version, the license and the address of the source
+code. Once a day the client asks GitHub whether a newer release exists and
+tells you on the sign-in screen and in the footer; it does not download or
+install anything. Turn the check off in **Sobre**, or start with
+`PAPO_UPDATE_CHECK=0`.
+
 ## Install
 
 Packages are available from [Releases](https://github.com/prodesert22/papo-tui/releases).

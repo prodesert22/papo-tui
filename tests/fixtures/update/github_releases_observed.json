@@ -1,0 +1,895 @@
+[
+ {
+  "assets": [
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui-1.0.0-beta.2-arch-aarch64.pkg.tar.zst",
+    "digest": "sha256:d936c3953357d8c687d20543f5e4875feef7d8df6b8cba6fd65f018e2d74933f",
+    "name": "papo-tui-1.0.0-beta.2-arch-aarch64.pkg.tar.zst",
+    "size": 56389101
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui-1.0.0-beta.2-arch-aarch64.pkg.tar.zst.asc",
+    "digest": "sha256:50397e827c740f1e02abc1f149b3c9b6f96156dd0a36b1ebfa881f5dca8c0d05",
+    "name": "papo-tui-1.0.0-beta.2-arch-aarch64.pkg.tar.zst.asc",
+    "size": 833
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui-1.0.0-beta.2-arch-aarch64.pkg.tar.zst.sig",
+    "digest": "sha256:e617fbb7c491afc021c3610c29871825a1a2c8311f02ccf3ef1f34bc473da270",
+    "name": "papo-tui-1.0.0-beta.2-arch-aarch64.pkg.tar.zst.sig",
+    "size": 566
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui-1.0.0-beta.2-arch-x86_64.pkg.tar.zst",
+    "digest": "sha256:b3eb35a4c03ad74c606ae1233971df068d066a86917358fc70fff139758f711e",
+    "name": "papo-tui-1.0.0-beta.2-arch-x86_64.pkg.tar.zst",
+    "size": 57272913
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui-1.0.0-beta.2-arch-x86_64.pkg.tar.zst.asc",
+    "digest": "sha256:14665d316bd104b0d83696550206fc4fbc92236c80ebeaee65bd85e89fdc9959",
+    "name": "papo-tui-1.0.0-beta.2-arch-x86_64.pkg.tar.zst.asc",
+    "size": 833
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui-1.0.0-beta.2-arch-x86_64.pkg.tar.zst.sig",
+    "digest": "sha256:c16da5541f65c4d601bf52a22c0a9ca9b61e7f40f3a6f295a1181866a2623342",
+    "name": "papo-tui-1.0.0-beta.2-arch-x86_64.pkg.tar.zst.sig",
+    "size": 566
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui-1.0.0-beta.2-debian-aarch64.deb",
+    "digest": "sha256:c0890935c2fd455a362ada33fc45b994514df0beaa9019994b623b34099ce1f0",
+    "name": "papo-tui-1.0.0-beta.2-debian-aarch64.deb",
+    "size": 48614762
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui-1.0.0-beta.2-debian-aarch64.deb.asc",
+    "digest": "sha256:c3450d6210c7cb64302db0ce4f6ef17b5fd055310d4ca58f31bb0bda08c34d85",
+    "name": "papo-tui-1.0.0-beta.2-debian-aarch64.deb.asc",
+    "size": 833
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui-1.0.0-beta.2-debian-x86_64.deb",
+    "digest": "sha256:4e243189e7252e53bf694e8eba2b0e03eaf5e46fcd17e9289177ab69f1f5de82",
+    "name": "papo-tui-1.0.0-beta.2-debian-x86_64.deb",
+    "size": 50305688
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui-1.0.0-beta.2-debian-x86_64.deb.asc",
+    "digest": "sha256:48f62a84aa7980dbd9c2b9b74be9984da4991ada0cd5494c50a5aa542ac8bfcd",
+    "name": "papo-tui-1.0.0-beta.2-debian-x86_64.deb.asc",
+    "size": 833
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui-1.0.0-beta.2-fedora-aarch64.rpm",
+    "digest": "sha256:d98f40884e1ae5f61335bf311cb6de99bea8964c157a8d2d82342d003979a4cb",
+    "name": "papo-tui-1.0.0-beta.2-fedora-aarch64.rpm",
+    "size": 43647827
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui-1.0.0-beta.2-fedora-aarch64.rpm.asc",
+    "digest": "sha256:207f2392f5789a409ff23aa718b0d225d4e30123859ac556a20922a9c9756124",
+    "name": "papo-tui-1.0.0-beta.2-fedora-aarch64.rpm.asc",
+    "size": 833
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui-1.0.0-beta.2-fedora-x86_64.rpm",
+    "digest": "sha256:27ba466c77bfe380e07067977bc9608fd267a55f2692b95c9de335bcc4af900f",
+    "name": "papo-tui-1.0.0-beta.2-fedora-x86_64.rpm",
+    "size": 46681930
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui-1.0.0-beta.2-fedora-x86_64.rpm.asc",
+    "digest": "sha256:c1df1cc5d48c952c07ce4ed5cbde4c0f031a5150724dc80dc508e51f32eeafb7",
+    "name": "papo-tui-1.0.0-beta.2-fedora-x86_64.rpm.asc",
+    "size": 833
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui-1.0.0-beta.2-flatpak-aarch64.flatpak",
+    "digest": "sha256:039ce1ede103d5516ad0b9a1a943a51aa93d00964627084726e1d44ba74df8be",
+    "name": "papo-tui-1.0.0-beta.2-flatpak-aarch64.flatpak",
+    "size": 31886704
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui-1.0.0-beta.2-flatpak-aarch64.flatpak.asc",
+    "digest": "sha256:a83ffdf352786f8e5e3d78b6a44ed6fbcd02f3ba9c5dcb778fc83e766ce9a6b3",
+    "name": "papo-tui-1.0.0-beta.2-flatpak-aarch64.flatpak.asc",
+    "size": 833
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui-1.0.0-beta.2-flatpak-x86_64.flatpak",
+    "digest": "sha256:0986b2938fd3b7d2e27d254a36b7c8607f650b2af63cf440dad0f2784bed9aad",
+    "name": "papo-tui-1.0.0-beta.2-flatpak-x86_64.flatpak",
+    "size": 36176880
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui-1.0.0-beta.2-flatpak-x86_64.flatpak.asc",
+    "digest": "sha256:6b66c75dfd900b2bb4198153764b09af4f47d86bfc9f7965c0c510237c538d76",
+    "name": "papo-tui-1.0.0-beta.2-flatpak-x86_64.flatpak.asc",
+    "size": 833
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui-1.0.0-beta.2-linux-aarch64.tar.gz",
+    "digest": "sha256:be2f0dafab9c2a9ee216f6125ea379caeb32add022102baf33d71b8e8bbc5dc7",
+    "name": "papo-tui-1.0.0-beta.2-linux-aarch64.tar.gz",
+    "size": 60017929
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui-1.0.0-beta.2-linux-aarch64.tar.gz.asc",
+    "digest": "sha256:20a9b8602c6796965a6cd37f2a1d1eaec44b7c51235f5e8c9c95fb0a41bea1bc",
+    "name": "papo-tui-1.0.0-beta.2-linux-aarch64.tar.gz.asc",
+    "size": 833
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui-1.0.0-beta.2-linux-x86_64.tar.gz",
+    "digest": "sha256:db2fa4c0457e13016ac9b1162fe5f54b82f5d912cfe4af4bc31162ffbfa70783",
+    "name": "papo-tui-1.0.0-beta.2-linux-x86_64.tar.gz",
+    "size": 61663427
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui-1.0.0-beta.2-linux-x86_64.tar.gz.asc",
+    "digest": "sha256:dad6d38e7447c1b012199f2eaf2aebc557d476d8be430b29afccd959069160f9",
+    "name": "papo-tui-1.0.0-beta.2-linux-x86_64.tar.gz.asc",
+    "size": 833
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui-1.0.0-beta.2-source.tar.gz",
+    "digest": "sha256:e70605d5051852c3d01788c29de71fd4e692d29b8d88b63f7a1d73b95e86f1d9",
+    "name": "papo-tui-1.0.0-beta.2-source.tar.gz",
+    "size": 1798056
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui-1.0.0-beta.2-source.tar.gz.asc",
+    "digest": "sha256:66eefd1f0fd57a63624e90523bd90ffabefa5506149a1d76bc9c599b492a1336",
+    "name": "papo-tui-1.0.0-beta.2-source.tar.gz.asc",
+    "size": 833
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui-1.0.0-beta.2-termux-aarch64.deb",
+    "digest": "sha256:86414277a561a6b22251531d99a5aac1a7ce5775cc6746cb753ace1fc7e9ad2f",
+    "name": "papo-tui-1.0.0-beta.2-termux-aarch64.deb",
+    "size": 10385142
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui-1.0.0-beta.2-termux-aarch64.deb.asc",
+    "digest": "sha256:50680348d919d2cb6a68da22f6c7bdd6a51a373a677cd64da6c1624ec5fbf228",
+    "name": "papo-tui-1.0.0-beta.2-termux-aarch64.deb.asc",
+    "size": 833
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui-1.0.0-beta.2-ubuntu-aarch64.deb",
+    "digest": "sha256:fe7f9813c2afdde191f8b85a45a32db7bf05aef90a3bf727af9e9971e5b10949",
+    "name": "papo-tui-1.0.0-beta.2-ubuntu-aarch64.deb",
+    "size": 60122716
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui-1.0.0-beta.2-ubuntu-aarch64.deb.asc",
+    "digest": "sha256:220739d1ff6888b0e599583249715976e33cd5c96361cd91174cdb2f066a4b86",
+    "name": "papo-tui-1.0.0-beta.2-ubuntu-aarch64.deb.asc",
+    "size": 833
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui-1.0.0-beta.2-ubuntu-x86_64.deb",
+    "digest": "sha256:711570705c796fdc45bf53e63b71cdf48a79fdd1ad401ecc3522d1cfae23cf87",
+    "name": "papo-tui-1.0.0-beta.2-ubuntu-x86_64.deb",
+    "size": 61858970
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui-1.0.0-beta.2-ubuntu-x86_64.deb.asc",
+    "digest": "sha256:5060543aa62dd1ecd08cf4eb5ba9c4c4f1b35e0b69c00e6038160259f59bb7a4",
+    "name": "papo-tui-1.0.0-beta.2-ubuntu-x86_64.deb.asc",
+    "size": 833
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui-1.0.0-beta.2-windows-x86_64-setup.exe",
+    "digest": "sha256:93c0edf59273db9a60ce4b8c21450cf14478f561a296837a8c5b46257fd6e7b9",
+    "name": "papo-tui-1.0.0-beta.2-windows-x86_64-setup.exe",
+    "size": 37058439
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui-1.0.0-beta.2-windows-x86_64-setup.exe.asc",
+    "digest": "sha256:f5ad479f3688651befb5b768592d862dd63514880fdfd864845cf86bbcb7b0d6",
+    "name": "papo-tui-1.0.0-beta.2-windows-x86_64-setup.exe.asc",
+    "size": 833
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui-1.0.0-beta.2-windows-x86_64.zip",
+    "digest": "sha256:aac7e9800bf6d9823a9c27e366e7931e867c847f58f8bdfa641929a3f8a0649f",
+    "name": "papo-tui-1.0.0-beta.2-windows-x86_64.zip",
+    "size": 47397296
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui-1.0.0-beta.2-windows-x86_64.zip.asc",
+    "digest": "sha256:820288d05acb3c54289aa840a41551faf6f919f8e959426a7c115ec8bd453500",
+    "name": "papo-tui-1.0.0-beta.2-windows-x86_64.zip.asc",
+    "size": 833
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui-signing-key.asc",
+    "digest": "sha256:4da49848202950061318411f11a40588858d60301b619442b49dd38377906bf1",
+    "name": "papo-tui-signing-key.asc",
+    "size": 3143
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui_1.0.0-beta.2_amd64.deb",
+    "digest": "sha256:711570705c796fdc45bf53e63b71cdf48a79fdd1ad401ecc3522d1cfae23cf87",
+    "name": "papo-tui_1.0.0-beta.2_amd64.deb",
+    "size": 61858970
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui_1.0.0-beta.2_amd64.deb.asc",
+    "digest": "sha256:62f3167b8cde2b869b61e685cf5d6e171b451c077a88e8751f460aac18a39476",
+    "name": "papo-tui_1.0.0-beta.2_amd64.deb.asc",
+    "size": 833
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui_1.0.0-beta.2_arm64.deb",
+    "digest": "sha256:fe7f9813c2afdde191f8b85a45a32db7bf05aef90a3bf727af9e9971e5b10949",
+    "name": "papo-tui_1.0.0-beta.2_arm64.deb",
+    "size": 60122716
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/papo-tui_1.0.0-beta.2_arm64.deb.asc",
+    "digest": "sha256:4db34060f9ab5b0dfdf6fca35fd780afa08f0685c7966aefe0934b1c33e4f026",
+    "name": "papo-tui_1.0.0-beta.2_arm64.deb.asc",
+    "size": 833
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/PapoTUI-1.0.0-beta.2-linux-aarch64.AppImage",
+    "digest": "sha256:05cb3b53ec1e301215a408f3879af0b61b5a9eac518079ef538d582d9f51f496",
+    "name": "PapoTUI-1.0.0-beta.2-linux-aarch64.AppImage",
+    "size": 56650248
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/PapoTUI-1.0.0-beta.2-linux-aarch64.AppImage.asc",
+    "digest": "sha256:b99886cb775581e49f17a1924ea2a2c2906871afaf721f27d5626df2276193e3",
+    "name": "PapoTUI-1.0.0-beta.2-linux-aarch64.AppImage.asc",
+    "size": 833
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/PapoTUI-1.0.0-beta.2-linux-x86_64.AppImage",
+    "digest": "sha256:6ed4a373fb1eb1c529b0e87d7caefbbf66f0ba13f31e7235f3fee87fa5ab1182",
+    "name": "PapoTUI-1.0.0-beta.2-linux-x86_64.AppImage",
+    "size": 58468856
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/PapoTUI-1.0.0-beta.2-linux-x86_64.AppImage.asc",
+    "digest": "sha256:c884c27e3d360f75b6e17b46f8ce99686d9681597d27ef1bbc1ffc7a8b5b77ed",
+    "name": "PapoTUI-1.0.0-beta.2-linux-x86_64.AppImage.asc",
+    "size": 833
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/SHA256SUMS",
+    "digest": "sha256:896f25abe0811bfe2551446e1029f28993aec8db20b5a8030b5cd7a036c47f39",
+    "name": "SHA256SUMS",
+    "size": 4700
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.2/SHA256SUMS.asc",
+    "digest": "sha256:6d23f97bc06f546001b35a67c629ec017b86a92f63cd9929070efe4c2c8c3b1e",
+    "name": "SHA256SUMS.asc",
+    "size": 833
+   }
+  ],
+  "draft": false,
+  "prerelease": true,
+  "tag_name": "v1.0.0-beta.2"
+ },
+ {
+  "assets": [
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.1/papo-tui-1.0.0-beta.1-arch-aarch64.pkg.tar.zst",
+    "digest": "sha256:a9b75928f54fad2ee66d067df2d9e36fb0e935bb7461d7d716bf7ffe1f43539b",
+    "name": "papo-tui-1.0.0-beta.1-arch-aarch64.pkg.tar.zst",
+    "size": 56388456
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.1/papo-tui-1.0.0-beta.1-arch-x86_64.pkg.tar.zst",
+    "digest": "sha256:d9650eefeeeae5e27d5ccf6037cf6c87835482ceaeaede2f47beeb3187e57464",
+    "name": "papo-tui-1.0.0-beta.1-arch-x86_64.pkg.tar.zst",
+    "size": 57272712
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.1/papo-tui-1.0.0-beta.1-debian-aarch64.deb",
+    "digest": "sha256:a851eb5f204775b03097679ccb8596a3e0c011ace39aa7a8e972994ba07ae116",
+    "name": "papo-tui-1.0.0-beta.1-debian-aarch64.deb",
+    "size": 48613432
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.1/papo-tui-1.0.0-beta.1-debian-x86_64.deb",
+    "digest": "sha256:c678358d2f687fda029d1205b997c11b78004f640a6fd38a7bc1650adb78161a",
+    "name": "papo-tui-1.0.0-beta.1-debian-x86_64.deb",
+    "size": 50304562
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.1/papo-tui-1.0.0-beta.1-fedora-aarch64.rpm",
+    "digest": "sha256:fcd0c727827526a15c479e62cfe19125905626e27cda4fcf4d9a56ae9da155b1",
+    "name": "papo-tui-1.0.0-beta.1-fedora-aarch64.rpm",
+    "size": 43647962
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.1/papo-tui-1.0.0-beta.1-fedora-x86_64.rpm",
+    "digest": "sha256:a08b444b37835420fda8547aa4ad324a47f68f9dcee4349a50bafbd0af33b4d7",
+    "name": "papo-tui-1.0.0-beta.1-fedora-x86_64.rpm",
+    "size": 46686571
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.1/papo-tui-1.0.0-beta.1-flatpak-aarch64.flatpak",
+    "digest": "sha256:cde7fdaaa06acba9833c4659174c0190743f6a175569a9cb9e8054d7fc1f20d6",
+    "name": "papo-tui-1.0.0-beta.1-flatpak-aarch64.flatpak",
+    "size": 31861128
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.1/papo-tui-1.0.0-beta.1-flatpak-x86_64.flatpak",
+    "digest": "sha256:ed040ad0c65e4af327dbca77736cc0709094230ea4bd079200569c43ccb4e8e1",
+    "name": "papo-tui-1.0.0-beta.1-flatpak-x86_64.flatpak",
+    "size": 36181120
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.1/papo-tui-1.0.0-beta.1-linux-aarch64.tar.gz",
+    "digest": "sha256:3100c0e972be5350303cd80f7abdac171fbf3ff0f2a512f5d34443ddfc72d05e",
+    "name": "papo-tui-1.0.0-beta.1-linux-aarch64.tar.gz",
+    "size": 60016758
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.1/papo-tui-1.0.0-beta.1-linux-x86_64.tar.gz",
+    "digest": "sha256:16bb0e909ad49dd0aa9a0205cec74a0f02a7fa26f3c592d1a0a30f3c49dafe3a",
+    "name": "papo-tui-1.0.0-beta.1-linux-x86_64.tar.gz",
+    "size": 61661724
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.1/papo-tui-1.0.0-beta.1-source.tar.gz",
+    "digest": "sha256:e9f56d6947164356b5c5226da56eb28fc5652dd272dc17d123abee9e942e4b7a",
+    "name": "papo-tui-1.0.0-beta.1-source.tar.gz",
+    "size": 1792199
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.1/papo-tui-1.0.0-beta.1-termux-aarch64.deb",
+    "digest": "sha256:0cbe6f8f681d0cd927fc5777d88725c57dd3163d65a95e0776f320209f7ee27a",
+    "name": "papo-tui-1.0.0-beta.1-termux-aarch64.deb",
+    "size": 10385012
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.1/papo-tui-1.0.0-beta.1-ubuntu-aarch64.deb",
+    "digest": "sha256:175ac8a55e19188df12a941ec432abbf330d5aac0d7debf11d36efb3c1a9a3bb",
+    "name": "papo-tui-1.0.0-beta.1-ubuntu-aarch64.deb",
+    "size": 60123334
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.1/papo-tui-1.0.0-beta.1-ubuntu-x86_64.deb",
+    "digest": "sha256:488de8d0cb447e8bed7e7acee311a2cbbba535dd0aac31119bccadbf410e5ef0",
+    "name": "papo-tui-1.0.0-beta.1-ubuntu-x86_64.deb",
+    "size": 61857860
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.1/papo-tui-1.0.0-beta.1-windows-x86_64-setup.exe",
+    "digest": "sha256:a6f4540b1bed11affb9a93c5fe373f1e25d8cfacd2818c5ee1f3eca45753fec2",
+    "name": "papo-tui-1.0.0-beta.1-windows-x86_64-setup.exe",
+    "size": 37060261
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.1/papo-tui-1.0.0-beta.1-windows-x86_64.zip",
+    "digest": "sha256:20d78617467ce7f91b228c191b8ef97520b4e6c78e0fbbf47c01f5207cdd2447",
+    "name": "papo-tui-1.0.0-beta.1-windows-x86_64.zip",
+    "size": 47396705
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.1/papo-tui_1.0.0-beta.1_amd64.deb",
+    "digest": "sha256:488de8d0cb447e8bed7e7acee311a2cbbba535dd0aac31119bccadbf410e5ef0",
+    "name": "papo-tui_1.0.0-beta.1_amd64.deb",
+    "size": 61857860
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.1/papo-tui_1.0.0-beta.1_arm64.deb",
+    "digest": "sha256:175ac8a55e19188df12a941ec432abbf330d5aac0d7debf11d36efb3c1a9a3bb",
+    "name": "papo-tui_1.0.0-beta.1_arm64.deb",
+    "size": 60123334
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.1/PapoTUI-1.0.0-beta.1-linux-aarch64.AppImage",
+    "digest": "sha256:6c5af7663314e22def85b20abe479fdf32acea5b9d6ea996c44a1bc96a20f288",
+    "name": "PapoTUI-1.0.0-beta.1-linux-aarch64.AppImage",
+    "size": 56646152
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.1/PapoTUI-1.0.0-beta.1-linux-x86_64.AppImage",
+    "digest": "sha256:9038f074eca88d1592ce4be1c7a868d3b3352ea4e3a9fb23051dedd1c35879a5",
+    "name": "PapoTUI-1.0.0-beta.1-linux-x86_64.AppImage",
+    "size": 58468856
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v1.0.0-beta.1/SHA256SUMS",
+    "digest": "sha256:12069a958a825ced3f0cd4d1557981a8c323571e2a7bd83c90c56fbbc96f42f9",
+    "name": "SHA256SUMS",
+    "size": 2148
+   }
+  ],
+  "draft": false,
+  "prerelease": true,
+  "tag_name": "v1.0.0-beta.1"
+ },
+ {
+  "assets": [
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.5.0/papo-tui-0.5.0-arch-aarch64.pkg.tar.zst",
+    "digest": "sha256:9cff31e572bf7f823e98584824d46f4d688db7067ccb648faf92b543dffb7c0e",
+    "name": "papo-tui-0.5.0-arch-aarch64.pkg.tar.zst",
+    "size": 36521112
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.5.0/papo-tui-0.5.0-arch-x86_64.pkg.tar.zst",
+    "digest": "sha256:975701e04d7871577777ab082b7bf5c470b457c442ecafb32af99a23eb2c2b32",
+    "name": "papo-tui-0.5.0-arch-x86_64.pkg.tar.zst",
+    "size": 37437270
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.5.0/papo-tui-0.5.0-debian-aarch64.deb",
+    "digest": "sha256:d01797d2cfd94bb4592889a3501712e9acd8d74f5b89aa3dec3126675d736af9",
+    "name": "papo-tui-0.5.0-debian-aarch64.deb",
+    "size": 32970866
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.5.0/papo-tui-0.5.0-debian-x86_64.deb",
+    "digest": "sha256:6d8b8012a898b592a0d8acf13f9a93faed34139e0ce9851cda88e994c0f401e0",
+    "name": "papo-tui-0.5.0-debian-x86_64.deb",
+    "size": 34276160
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.5.0/papo-tui-0.5.0-fedora-aarch64.rpm",
+    "digest": "sha256:0b47338733615bdad070efca2c7c963255a48207ae841045bac8c0edd5540d75",
+    "name": "papo-tui-0.5.0-fedora-aarch64.rpm",
+    "size": 37690216
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.5.0/papo-tui-0.5.0-fedora-x86_64.rpm",
+    "digest": "sha256:03100bb713c81c6fd4cd210b70c10f0e8c2b81d668c96abad6680ccd764cc57f",
+    "name": "papo-tui-0.5.0-fedora-x86_64.rpm",
+    "size": 38694484
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.5.0/papo-tui-0.5.0-flatpak-aarch64.flatpak",
+    "digest": "sha256:c78d91033adf483dc5e5336cfd109244257486760acdffc9079b2b49f11323b0",
+    "name": "papo-tui-0.5.0-flatpak-aarch64.flatpak",
+    "size": 23976792
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.5.0/papo-tui-0.5.0-flatpak-x86_64.flatpak",
+    "digest": "sha256:478472af6811f98ef127dbe555ee5e64e013345a9532ee469df07e06e859269d",
+    "name": "papo-tui-0.5.0-flatpak-x86_64.flatpak",
+    "size": 23047224
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.5.0/papo-tui-0.5.0-linux-aarch64.tar.gz",
+    "digest": "sha256:9cf986b2dce73928a053d13462bbcc71340871f21ab464e68401a8d727ed29ee",
+    "name": "papo-tui-0.5.0-linux-aarch64.tar.gz",
+    "size": 37730019
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.5.0/papo-tui-0.5.0-linux-x86_64.tar.gz",
+    "digest": "sha256:940466874888831da5abbad5d135fc9e14b69829bd1b5ff6ece8ca7d5ab34716",
+    "name": "papo-tui-0.5.0-linux-x86_64.tar.gz",
+    "size": 39274283
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.5.0/papo-tui-0.5.0-termux-aarch64.deb",
+    "digest": "sha256:0bbcc8369462842a459ecb01b12459f894409a727e890aeaa8830fef74f68d77",
+    "name": "papo-tui-0.5.0-termux-aarch64.deb",
+    "size": 10142604
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.5.0/papo-tui-0.5.0-ubuntu-aarch64.deb",
+    "digest": "sha256:d01797d2cfd94bb4592889a3501712e9acd8d74f5b89aa3dec3126675d736af9",
+    "name": "papo-tui-0.5.0-ubuntu-aarch64.deb",
+    "size": 32970866
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.5.0/papo-tui-0.5.0-ubuntu-x86_64.deb",
+    "digest": "sha256:6d8b8012a898b592a0d8acf13f9a93faed34139e0ce9851cda88e994c0f401e0",
+    "name": "papo-tui-0.5.0-ubuntu-x86_64.deb",
+    "size": 34276160
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.5.0/papo-tui-0.5.0-windows-aarch64-setup.exe",
+    "digest": "sha256:7831332044699075d475841489b61ac9578b79233ddef2e17288b1c200f37335",
+    "name": "papo-tui-0.5.0-windows-aarch64-setup.exe",
+    "size": 25144577
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.5.0/papo-tui-0.5.0-windows-aarch64.zip",
+    "digest": "sha256:6baaf23a6f51ca027e1a451b005de61544c3c6c5da3ec9ee0d1e0bda7471717b",
+    "name": "papo-tui-0.5.0-windows-aarch64.zip",
+    "size": 30539549
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.5.0/papo-tui-0.5.0-windows-x86_64-setup.exe",
+    "digest": "sha256:da805c696a9d5a098338dbe58804c945bb3c182b20e6e8d59fec8e9d8c190db5",
+    "name": "papo-tui-0.5.0-windows-x86_64-setup.exe",
+    "size": 26482608
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.5.0/papo-tui-0.5.0-windows-x86_64.zip",
+    "digest": "sha256:911659e911c0578fd357e6759506a0ff4e21a5a67610b64343544065b8bfce9c",
+    "name": "papo-tui-0.5.0-windows-x86_64.zip",
+    "size": 32068215
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.5.0/papo-tui_0.5.0_amd64.deb",
+    "digest": "sha256:6d8b8012a898b592a0d8acf13f9a93faed34139e0ce9851cda88e994c0f401e0",
+    "name": "papo-tui_0.5.0_amd64.deb",
+    "size": 34276160
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.5.0/papo-tui_0.5.0_arm64.deb",
+    "digest": "sha256:d01797d2cfd94bb4592889a3501712e9acd8d74f5b89aa3dec3126675d736af9",
+    "name": "papo-tui_0.5.0_arm64.deb",
+    "size": 32970866
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.5.0/PapoTUI-0.5.0-linux-aarch64.AppImage",
+    "digest": "sha256:f014ca13c9894bac77b2b4fb3dbce66317b6bcb70800386af7d080dd91f9c861",
+    "name": "PapoTUI-0.5.0-linux-aarch64.AppImage",
+    "size": 36157960
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.5.0/PapoTUI-0.5.0-linux-x86_64.AppImage",
+    "digest": "sha256:61d98a415357861439692afac672f0ed62b5db25a0f4e29fc8d16128a549025f",
+    "name": "PapoTUI-0.5.0-linux-x86_64.AppImage",
+    "size": 37812728
+   }
+  ],
+  "draft": false,
+  "prerelease": false,
+  "tag_name": "v0.5.0"
+ },
+ {
+  "assets": [
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.4.0/papo-tui-0.4.0-arch-aarch64.pkg.tar.zst",
+    "digest": "sha256:6397315e377f6319a389e7048300e9b712186181326b6278db3bacdfa3d1809a",
+    "name": "papo-tui-0.4.0-arch-aarch64.pkg.tar.zst",
+    "size": 36208727
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.4.0/papo-tui-0.4.0-arch-x86_64.pkg.tar.zst",
+    "digest": "sha256:d43d62d3c317e35464d984867b8d4426a7d34a6afdc0484aa86e595d56de6ef4",
+    "name": "papo-tui-0.4.0-arch-x86_64.pkg.tar.zst",
+    "size": 37095443
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.4.0/papo-tui-0.4.0-debian-aarch64-dependency-sources.tar.gz",
+    "digest": "sha256:cc79ccf3e9061eb92c6aee4d4815d17c4464f13559f8970fff0cdbaad4c42467",
+    "name": "papo-tui-0.4.0-debian-aarch64-dependency-sources.tar.gz",
+    "size": 319545530
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.4.0/papo-tui-0.4.0-debian-aarch64.deb",
+    "digest": "sha256:8aa4eddfa3b469022ef79361875a564d2bb76eaa265165f6bac179e171c59e3e",
+    "name": "papo-tui-0.4.0-debian-aarch64.deb",
+    "size": 37672652
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.4.0/papo-tui-0.4.0-debian-x86_64-dependency-sources.tar.gz",
+    "digest": "sha256:713c1611156155adcd2062e48424dde5f98f948660328cf7f67a625b6d051199",
+    "name": "papo-tui-0.4.0-debian-x86_64-dependency-sources.tar.gz",
+    "size": 314949433
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.4.0/papo-tui-0.4.0-debian-x86_64.deb",
+    "digest": "sha256:9fae4d498a49c84d7f8bdc1e20dd19b9caf40ea8d722b461e7cd06c697815712",
+    "name": "papo-tui-0.4.0-debian-x86_64.deb",
+    "size": 39225312
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.4.0/papo-tui-0.4.0-fedora-aarch64-dependency-sources.tar.gz",
+    "digest": "sha256:cc79ccf3e9061eb92c6aee4d4815d17c4464f13559f8970fff0cdbaad4c42467",
+    "name": "papo-tui-0.4.0-fedora-aarch64-dependency-sources.tar.gz",
+    "size": 319545530
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.4.0/papo-tui-0.4.0-fedora-aarch64.rpm",
+    "digest": "sha256:34551ca72bf5495df0a7409cb639d8aed5f82b91efe8a3e02e7ea5cbb287ef94",
+    "name": "papo-tui-0.4.0-fedora-aarch64.rpm",
+    "size": 37663071
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.4.0/papo-tui-0.4.0-fedora-x86_64-dependency-sources.tar.gz",
+    "digest": "sha256:713c1611156155adcd2062e48424dde5f98f948660328cf7f67a625b6d051199",
+    "name": "papo-tui-0.4.0-fedora-x86_64-dependency-sources.tar.gz",
+    "size": 314949433
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.4.0/papo-tui-0.4.0-fedora-x86_64.rpm",
+    "digest": "sha256:c0a32b60d6c8c90a8d7c14dd44cc3f64dcb827f4f67eae4e8cfa758ba5f9dac6",
+    "name": "papo-tui-0.4.0-fedora-x86_64.rpm",
+    "size": 38659767
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.4.0/papo-tui-0.4.0-flatpak-aarch64-sources.tar.gz",
+    "digest": "sha256:25130de19b73b6934a5ca8f8c55da7dcace83e8e28875007851c128ab7132473",
+    "name": "papo-tui-0.4.0-flatpak-aarch64-sources.tar.gz",
+    "size": 86150877
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.4.0/papo-tui-0.4.0-flatpak-aarch64.flatpak",
+    "digest": "sha256:63bcc534c01c11dc0df6d2203df3bfca6a1ee2ed320aaa0b2e9885ae860bf427",
+    "name": "papo-tui-0.4.0-flatpak-aarch64.flatpak",
+    "size": 32701064
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.4.0/papo-tui-0.4.0-flatpak-x86_64-sources.tar.gz",
+    "digest": "sha256:69ecfe3b00f91c5bbcc8be92392a8827bd475897cc97ac72a02f6a551c4d2903",
+    "name": "papo-tui-0.4.0-flatpak-x86_64-sources.tar.gz",
+    "size": 90005231
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.4.0/papo-tui-0.4.0-flatpak-x86_64.flatpak",
+    "digest": "sha256:e66fa2ed44e385c51e0857cbfb337cd946ddc52e437f03c99453091ec585222d",
+    "name": "papo-tui-0.4.0-flatpak-x86_64.flatpak",
+    "size": 22759368
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.4.0/papo-tui-0.4.0-source.tar.gz",
+    "digest": "sha256:9c3f8b3c53c578254d4e45a9eda769d6a6864aed28ccac315e53bc6843a4cf22",
+    "name": "papo-tui-0.4.0-source.tar.gz",
+    "size": 1185145
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.4.0/papo-tui-0.4.0-ubuntu-aarch64-dependency-sources.tar.gz",
+    "digest": "sha256:cc79ccf3e9061eb92c6aee4d4815d17c4464f13559f8970fff0cdbaad4c42467",
+    "name": "papo-tui-0.4.0-ubuntu-aarch64-dependency-sources.tar.gz",
+    "size": 319545530
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.4.0/papo-tui-0.4.0-ubuntu-aarch64.deb",
+    "digest": "sha256:8aa4eddfa3b469022ef79361875a564d2bb76eaa265165f6bac179e171c59e3e",
+    "name": "papo-tui-0.4.0-ubuntu-aarch64.deb",
+    "size": 37672652
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.4.0/papo-tui-0.4.0-ubuntu-x86_64-dependency-sources.tar.gz",
+    "digest": "sha256:713c1611156155adcd2062e48424dde5f98f948660328cf7f67a625b6d051199",
+    "name": "papo-tui-0.4.0-ubuntu-x86_64-dependency-sources.tar.gz",
+    "size": 314949433
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.4.0/papo-tui-0.4.0-ubuntu-x86_64.deb",
+    "digest": "sha256:9fae4d498a49c84d7f8bdc1e20dd19b9caf40ea8d722b461e7cd06c697815712",
+    "name": "papo-tui-0.4.0-ubuntu-x86_64.deb",
+    "size": 39225312
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.4.0/papo-tui-0.4.0-windows-aarch64-dependency-sources.tar.gz",
+    "digest": "sha256:e509fc9ec98b8f95f0d5a53486e35cc3b38146f80d2fd91acd79a3e2e47d7105",
+    "name": "papo-tui-0.4.0-windows-aarch64-dependency-sources.tar.gz",
+    "size": 393191148
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.4.0/papo-tui-0.4.0-windows-aarch64-setup.exe",
+    "digest": "sha256:eb7a18d9691b326237bec43d4562ccf47cd8615ae5d2f7f2875afb3925e1ab90",
+    "name": "papo-tui-0.4.0-windows-aarch64-setup.exe",
+    "size": 26300389
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.4.0/papo-tui-0.4.0-windows-aarch64.zip",
+    "digest": "sha256:0fcfa8496e9fc69e4be7c5d54018a6a8e6706b4b9d57623d8cb4a898547ca537",
+    "name": "papo-tui-0.4.0-windows-aarch64.zip",
+    "size": 32244725
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.4.0/papo-tui-0.4.0-windows-x86_64-dependency-sources.tar.gz",
+    "digest": "sha256:c8a51323cbfd310f18e2a8a4e4dae8e83e970c95e647a21d00946cd8fe9992da",
+    "name": "papo-tui-0.4.0-windows-x86_64-dependency-sources.tar.gz",
+    "size": 393190765
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.4.0/papo-tui-0.4.0-windows-x86_64-setup.exe",
+    "digest": "sha256:2e86914ccd6d0b8f788bbc2b16168b57f07e3926f902fe07e8a30c7429a7909e",
+    "name": "papo-tui-0.4.0-windows-x86_64-setup.exe",
+    "size": 27920768
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.4.0/papo-tui-0.4.0-windows-x86_64.zip",
+    "digest": "sha256:b712c7cc718148d151951b224cfb8da9a7cc8a366099c2d4bdad1d6f451d4f35",
+    "name": "papo-tui-0.4.0-windows-x86_64.zip",
+    "size": 34107033
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.4.0/PapoTUI-0.4.0-linux-aarch64.AppImage",
+    "digest": "sha256:16d3fe8ba24fc3a30298d169af7a755e9876fba34ca37a67958e5b236a08879d",
+    "name": "PapoTUI-0.4.0-linux-aarch64.AppImage",
+    "size": 36125192
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.4.0/PapoTUI-0.4.0-linux-x86_64.AppImage",
+    "digest": "sha256:8aa10e610518ac71d30b8a60ab7e213541b3e416cfaff1ddd3f707a853b21eb4",
+    "name": "PapoTUI-0.4.0-linux-x86_64.AppImage",
+    "size": 37779960
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.4.0/SHA256SUMS",
+    "digest": "sha256:d060f71a5909f60fdd5ce408a8e50deffa8972c0f85d0f6705d80438e803dd0a",
+    "name": "SHA256SUMS",
+    "size": 2928
+   }
+  ],
+  "draft": false,
+  "prerelease": false,
+  "tag_name": "v0.4.0"
+ },
+ {
+  "assets": [
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.2.0/papo-tui-0.2.0-arch-aarch64.pkg.tar.zst",
+    "digest": "sha256:92cd2c3d5114e5ecf42b34f18990eeca90116f388f2f551085234cf2d197b84c",
+    "name": "papo-tui-0.2.0-arch-aarch64.pkg.tar.zst",
+    "size": 36760186
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.2.0/papo-tui-0.2.0-arch-x86_64.pkg.tar.zst",
+    "digest": "sha256:c5e161a5492fa93d4b7dcecae9dba95d0d795e75567f3f2435c2bf3b93edf31f",
+    "name": "papo-tui-0.2.0-arch-x86_64.pkg.tar.zst",
+    "size": 37343740
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.2.0/papo-tui-0.2.0-debian-aarch64-dependency-sources.tar.gz",
+    "digest": "sha256:a6f7e8127ed89277c088379a4b654f81011c890bcd45418b779ab161c3507e24",
+    "name": "papo-tui-0.2.0-debian-aarch64-dependency-sources.tar.gz",
+    "size": 348567630
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.2.0/papo-tui-0.2.0-debian-aarch64.deb",
+    "digest": "sha256:ae107a6538def7a5c2ad551267b9c290e049034bdb1a1fef121b96d804217477",
+    "name": "papo-tui-0.2.0-debian-aarch64.deb",
+    "size": 42047344
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.2.0/papo-tui-0.2.0-debian-x86_64-dependency-sources.tar.gz",
+    "digest": "sha256:d5477aa444f681212173b18ac53bfc6290ab11438271fe17a0654209306a6aff",
+    "name": "papo-tui-0.2.0-debian-x86_64-dependency-sources.tar.gz",
+    "size": 348567648
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.2.0/papo-tui-0.2.0-debian-x86_64.deb",
+    "digest": "sha256:3b3de6d04a1f5a7a39c018309df20a9bac6e76f26f373ba05b8d92ce44c6e3f3",
+    "name": "papo-tui-0.2.0-debian-x86_64.deb",
+    "size": 42920050
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.2.0/papo-tui-0.2.0-fedora-aarch64-dependency-sources.tar.gz",
+    "digest": "sha256:03528d44231d4a5e6dcf0d6493aa9ec1df45d54632ff5db9f36d2dfe9df4a67f",
+    "name": "papo-tui-0.2.0-fedora-aarch64-dependency-sources.tar.gz",
+    "size": 314892135
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.2.0/papo-tui-0.2.0-fedora-aarch64.rpm",
+    "digest": "sha256:e6a70cbd3c474b4398e57362c74fa886e91b56821211557e23b351697f3b46f3",
+    "name": "papo-tui-0.2.0-fedora-aarch64.rpm",
+    "size": 37910222
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.2.0/papo-tui-0.2.0-fedora-x86_64-dependency-sources.tar.gz",
+    "digest": "sha256:3083cd840928eb2f7cf1ca4a3ac800b279a05adb15c5cc23d5aacd5c20f804ed",
+    "name": "papo-tui-0.2.0-fedora-x86_64-dependency-sources.tar.gz",
+    "size": 314892151
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.2.0/papo-tui-0.2.0-fedora-x86_64.rpm",
+    "digest": "sha256:b81c268d63130825903a31bd4cfda58d9d43dea836a583523ac8fbbe4b63cbc4",
+    "name": "papo-tui-0.2.0-fedora-x86_64.rpm",
+    "size": 39154355
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.2.0/papo-tui-0.2.0-flatpak-aarch64-sources.tar.gz",
+    "digest": "sha256:3302863530ae76172e0a03118c0e2ba8352d124430322b35eb426e94958bbaf0",
+    "name": "papo-tui-0.2.0-flatpak-aarch64-sources.tar.gz",
+    "size": 46383600
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.2.0/papo-tui-0.2.0-flatpak-aarch64.flatpak",
+    "digest": "sha256:c8fc1065e0a4e4fb813cfa8c932cb7e19a721d64ef986ad649ce5af81c10aea3",
+    "name": "papo-tui-0.2.0-flatpak-aarch64.flatpak",
+    "size": 20959288
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.2.0/papo-tui-0.2.0-flatpak-x86_64-sources.tar.gz",
+    "digest": "sha256:9617fe75fcebe8b1f04bc02bb55410c7f3bda461753da31c7805e074182bcc4c",
+    "name": "papo-tui-0.2.0-flatpak-x86_64-sources.tar.gz",
+    "size": 46383246
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.2.0/papo-tui-0.2.0-flatpak-x86_64.flatpak",
+    "digest": "sha256:45ed63fd3fc6ebc5d2e096c1e7dd81917a317a2ef34f6a1290cd51dfe5dd1f51",
+    "name": "papo-tui-0.2.0-flatpak-x86_64.flatpak",
+    "size": 22401832
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.2.0/papo-tui-0.2.0-source.tar.gz",
+    "digest": "sha256:431751b7974382df9fd3064b7da1ca379a13f12e4ba511dbb2c911d6c01ed231",
+    "name": "papo-tui-0.2.0-source.tar.gz",
+    "size": 973205
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.2.0/papo-tui-0.2.0-ubuntu-aarch64-dependency-sources.tar.gz",
+    "digest": "sha256:962821e28e17660a3ec323358456cc1701f855493704b46488ee2d90a0606796",
+    "name": "papo-tui-0.2.0-ubuntu-aarch64-dependency-sources.tar.gz",
+    "size": 314889924
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.2.0/papo-tui-0.2.0-ubuntu-aarch64.deb",
+    "digest": "sha256:0dc43d03e8e4311bcefb3e525199505be35ca7e220a201ed6d44d03fe320bfa8",
+    "name": "papo-tui-0.2.0-ubuntu-aarch64.deb",
+    "size": 37923176
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.2.0/papo-tui-0.2.0-ubuntu-x86_64-dependency-sources.tar.gz",
+    "digest": "sha256:7370c729560f5b30d8b6d8ec38d59e8257be5a77e6ae41c11f0e2456df9d2d8a",
+    "name": "papo-tui-0.2.0-ubuntu-x86_64-dependency-sources.tar.gz",
+    "size": 314889940
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.2.0/papo-tui-0.2.0-ubuntu-x86_64.deb",
+    "digest": "sha256:1966fab492e12a7157bdf6a87d6889a159fc7479f1a0e39323a044a1a600b64a",
+    "name": "papo-tui-0.2.0-ubuntu-x86_64.deb",
+    "size": 39225930
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.2.0/papo-tui-0.2.0-windows-aarch64-dependency-sources.tar.gz",
+    "digest": "sha256:65da96ea5464ce3659c17dfdec7e6db2d345bd5d8fff2248e7f2ced2de7b5538",
+    "name": "papo-tui-0.2.0-windows-aarch64-dependency-sources.tar.gz",
+    "size": 388541128
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.2.0/papo-tui-0.2.0-windows-aarch64-setup.exe",
+    "digest": "sha256:cbda2f010e09b2b61e1cce1e4c80808ef8653ee7ea399fb63556e974bca040e2",
+    "name": "papo-tui-0.2.0-windows-aarch64-setup.exe",
+    "size": 26129802
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.2.0/papo-tui-0.2.0-windows-aarch64.zip",
+    "digest": "sha256:40d1ec69d380f1529e306b6ec2889677c2457020ffcd218e68a0567ea75ee5ed",
+    "name": "papo-tui-0.2.0-windows-aarch64.zip",
+    "size": 32043064
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.2.0/papo-tui-0.2.0-windows-x86_64-dependency-sources.tar.gz",
+    "digest": "sha256:d4a934f7616650cda4ac03d008d1c18188462004acc58cf65149f349d75ee274",
+    "name": "papo-tui-0.2.0-windows-x86_64-dependency-sources.tar.gz",
+    "size": 388540687
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.2.0/papo-tui-0.2.0-windows-x86_64-setup.exe",
+    "digest": "sha256:740cebf6fc17e460725e76c107b566419dc22fa92062da8918d668021293391a",
+    "name": "papo-tui-0.2.0-windows-x86_64-setup.exe",
+    "size": 27751676
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.2.0/papo-tui-0.2.0-windows-x86_64.zip",
+    "digest": "sha256:6131aef8b4901841329c951bbfe47a9d5483cd8fe02a80302362c338a36be291",
+    "name": "papo-tui-0.2.0-windows-x86_64.zip",
+    "size": 33912356
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.2.0/PapoTUI-0.2.0-linux-aarch64.AppImage",
+    "digest": "sha256:99a759ed84656c56b6b0e9492acba54e454734c8840753e8486a346ef98610a4",
+    "name": "PapoTUI-0.2.0-linux-aarch64.AppImage",
+    "size": 36342280
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.2.0/PapoTUI-0.2.0-linux-x86_64.AppImage",
+    "digest": "sha256:8d15677274d9c55719a226849ebc688f93b85d5a4c76cf3fc6273d913476f3ea",
+    "name": "PapoTUI-0.2.0-linux-x86_64.AppImage",
+    "size": 37751288
+   },
+   {
+    "browser_download_url": "https://github.com/prodesert22/papo-tui/releases/download/v0.2.0/SHA256SUMS",
+    "digest": "sha256:c6661e478f5663d3799b15d391bed9f7e882f91af0632a446bdba00975d59746",
+    "name": "SHA256SUMS",
+    "size": 2928
+   }
+  ],
+  "draft": false,
+  "prerelease": false,
+  "tag_name": "v0.2.0"
+ }
+]

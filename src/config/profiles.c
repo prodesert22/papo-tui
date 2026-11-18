@@ -127,7 +127,7 @@ static bool decode(profile_config *config, json_t *root)
     if (version == 1) {
         if (json_object_size(root) != 3)
             return false;
-    } else if (version >= 2 && version <= 13) {
+    } else if (version >= 2 && version <= 14) {
         json_t *rate = json_object_get(root, "requests_per_second");
         json_t *burst = json_object_get(root, "request_burst");
         if (json_object_size(root) != (version == 2    ? 5U
@@ -139,7 +139,8 @@ static bool decode(profile_config *config, json_t *root)
                                        : version == 8  ? 12U
                                        : version == 9  ? 13U
                                        : version == 10 ? 14U
-                                                       : 15U) ||
+                                       : version <= 13 ? 15U
+                                                       : 16U) ||
             !json_is_number(rate) || !json_is_integer(burst) || json_integer_value(burst) <= 0 ||
             json_integer_value(burst) > UINT_MAX ||
             !net_rate_parameters_valid(json_number_value(rate),
@@ -191,6 +192,12 @@ static bool decode(profile_config *config, json_t *root)
         !accessibility_decode(&config->accessibility, json_object_get(root, "accessibility"),
                               (int)version))
         return false;
+    if (version >= 14) {
+        json_t *update = json_object_get(root, "update_check");
+        if (!json_is_boolean(update))
+            return false;
+        config->update_check = json_is_true(update);
+    }
     json_t *array = json_object_get(root, "profiles");
     json_t *selected = json_object_get(root, "selected_profile");
     if (!json_is_array(array) || json_array_size(array) > PROFILE_LIMIT)
@@ -227,6 +234,7 @@ bool profiles_reload(profile_config *config)
     config->request_burst = PAPO_REQUEST_BURST;
     config->desktop_notifications = config->notification_preview = config->notification_sounds =
         true;
+    config->update_check = true;
     audio_config_default(&config->audio);
     accessibility_default(&config->accessibility);
     config->player_volume = PLAYER_VOLUME_DEFAULT;
@@ -312,7 +320,7 @@ static bool save_locked(profile_config *config)
     }
     json_t *selection = *config->selected ? json_string(config->selected) : json_null();
     json_t *root =
-        selection ? json_pack("{s:i,s:O,s:O,s:f,s:I,s:b,s:b,s:b,s:s,s:s,s:b,s:i}", "version", 13,
+        selection ? json_pack("{s:i,s:O,s:O,s:f,s:I,s:b,s:b,s:b,s:s,s:s,s:b,s:i,s:b}", "version", 14,
                               "profiles", array, "selected_profile", selection,
                               "requests_per_second", config->requests_per_second, "request_burst",
                               (json_int_t)config->request_burst, "desktop_notifications",
@@ -321,7 +329,8 @@ static bool save_locked(profile_config *config)
                               config->notification_sounds, "app_mode", app_mode_name(config->mode),
                               "language", language_choice_name(config->language),
                               "members_by_status", config->members_by_status, "player_volume",
-                              (json_int_t)config->player_volume)
+                              (json_int_t)config->player_volume, "update_check",
+                              config->update_check)
                   : NULL;
     json_decref(selection);
     json_decref(array);
@@ -498,6 +507,14 @@ bool profiles_set_sounds(profile_config *config, bool sounds)
     if (!copy)
         return false;
     copy->notification_sounds = sounds;
+    return commit(config, copy);
+}
+bool profiles_set_update_check(profile_config *config, bool automatic)
+{
+    profile_config *copy = candidate(config);
+    if (!copy)
+        return false;
+    copy->update_check = automatic;
     return commit(config, copy);
 }
 

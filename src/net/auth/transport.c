@@ -1,6 +1,6 @@
 #include "model/text/translation.h"
 #include "net/auth/private.h"
-#include "net/tls.h"
+#include "net/http/easy.h"
 
 void auth_internal_detach(auth_client *client)
 {
@@ -170,7 +170,7 @@ error:
 
 static CURL *media_easy(auth_client *client, const char *url, bool cookies)
 {
-    CURL *easy = curl_easy_init();
+    CURL *easy = net_easy_base(url);
     if (!easy)
         return NULL;
 #define MEDIA_SET(option, value)                                                                   \
@@ -178,25 +178,14 @@ static CURL *media_easy(auth_client *client, const char *url, bool cookies)
         if (curl_easy_setopt(easy, option, value) != CURLE_OK)                                     \
             goto error;                                                                            \
     } while (0)
-    MEDIA_SET(CURLOPT_URL, url);
     if (cookies) {
         MEDIA_SET(CURLOPT_SHARE, client->cookies);
         MEDIA_SET(CURLOPT_COOKIEFILE, "");
     }
-    MEDIA_SET(CURLOPT_FOLLOWLOCATION, 0L);
-    MEDIA_SET(CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
     MEDIA_SET(CURLOPT_PROTOCOLS_STR, "http,https");
-    MEDIA_SET(CURLOPT_SSL_VERIFYPEER, 1L);
-    MEDIA_SET(CURLOPT_SSL_VERIFYHOST, 2L);
-    MEDIA_SET(CURLOPT_CONNECTTIMEOUT_MS, 5000L);
     MEDIA_SET(CURLOPT_TIMEOUT_MS, 120000L);
     MEDIA_SET(CURLOPT_LOW_SPEED_LIMIT, 1024L);
     MEDIA_SET(CURLOPT_LOW_SPEED_TIME, 15L);
-    MEDIA_SET(CURLOPT_NOSIGNAL, 1L);
-    MEDIA_SET(CURLOPT_USERAGENT, "papo-tui/" PAPO_VERSION);
-    const char *ca_bundle = net_ca_bundle();
-    if (ca_bundle && *ca_bundle)
-        MEDIA_SET(CURLOPT_CAINFO, ca_bundle);
     return easy;
 error:
     curl_easy_cleanup(easy);

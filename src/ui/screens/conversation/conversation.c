@@ -1,3 +1,4 @@
+#include "app/update.h"
 #include "config/view_state.h"
 #include "model/conversation/user_settings.h"
 #include "model/text/translation.h"
@@ -624,6 +625,10 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             scope = DRAW_ALL;
         }
         if (instances_poll(connections, auth)) {
+            redraw = true;
+            scope = DRAW_ALL;
+        }
+        if (update_poll()) {
             redraw = true;
             scope = DRAW_ALL;
         }
@@ -1468,6 +1473,13 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 }
                 if (media_view_click(ui->media, e.y, e.x))
                     continue;
+                if (e.y == getbegy(ui->footer) + 1 &&
+                    status_bar_hit(&ui->status, STATUS_UPDATE, e.x - getbegx(ui->footer))) {
+                    open_settings(ui, connections->config);
+                    ui->settings.section = SETTINGS_ABOUT;
+                    scope = DRAW_ALL;
+                    continue;
+                }
                 if (ui->unseen && e.y == getbegy(ui->footer) + 1 &&
                     status_bar_hit(&ui->status, STATUS_UNREAD, e.x - getbegx(ui->footer))) {
                     if (history_has_newer(ui->model))

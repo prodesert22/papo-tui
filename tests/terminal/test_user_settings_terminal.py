@@ -274,17 +274,18 @@ class UserSettingsTerminal(support.R8Terminal):
                 "Autor: Papo TUI contributors",
                 "Código-fonte: " + REPOSITORY,
                 "Licenças de terceiros:",
-                "Copiar link",
+                "[x] Verificar atualizações automaticamente",
+                "Verificar agora",
                 "Fechar",
             ):
                 self.wait(t, text)
             self.assertEqual(self.copies(t), [])
-            # Nothing to edit: Tab goes from the sections to the button.
+            # Tab enters the lines on the source link; Enter copies it.
             t.send("\t\n")
             self.wait(t, "Cópia solicitada.")
             self.assertEqual(self.copies(t), [REPOSITORY])
             # Leaving the section forgets the notice; a click on the link copies too.
-            t.send("\x1b[Z" + RIGHT)
+            t.send(UP + RIGHT)
             self.wait(t, "< Perfil >")
             t.send(LEFT)
             self.wait(t, "< Sobre >")
@@ -293,12 +294,14 @@ class UserSettingsTerminal(support.R8Terminal):
             self.wait(t, "Cópia solicitada.")
             self.assertEqual(self.copies(t), [REPOSITORY] * 2)
             self.dump(t, "sobre")
-            # A short window keeps the facts and drops the description.
+            # A short window keeps the version, the link and the update lines.
             t.resize(14, 60)
             self.wait(t, "< Sobre >")
             self.wait(t, "Código-fonte: " + REPOSITORY)
             self.wait(t, "Papo TUI " + version)
-            self.assertNotIn("Cliente de conversas", "\n".join(t.screen.display))
+            self.wait(t, "[x] Verificar atualizações automaticamente")
+            for dropped in ("Cliente de conversas", "Licença:", "Autor:"):
+                self.assertNotIn(dropped, "\n".join(t.screen.display))
             t.resize(24, 80)
             self.wait(t, "Cliente de conversas para terminal")
             t.send("\x1b")

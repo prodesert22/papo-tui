@@ -54,6 +54,8 @@ class WindowsTerminal:
             XDG_STATE_HOME=os.path.join(self.configuration.name, "state"),
             XDG_CACHE_HOME=os.path.join(self.configuration.name, "cache"),
             PYTHONUTF8="1",
+            # No suite asks GitHub for releases unless it serves the answer itself.
+            PAPO_UPDATE_CHECK="0",
         )
         # Every test has its own config scope; it cannot read personal credentials.
         env.update(environment or {})

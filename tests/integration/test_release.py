@@ -52,6 +52,7 @@ class ReleaseCLI(unittest.TestCase):
                     "--version",
                     "PAPO_LANGUAGE",
                     "CURL_CA_BUNDLE",
+                    "PAPO_UPDATE_CHECK",
                 ):
                     self.assertIn(expected, text)
                 # Keyboard controls belong to the in-app help and the guide.

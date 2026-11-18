@@ -222,7 +222,9 @@ static const help_row rows[] = {
      N_("Trocar a senha deste servidor após confirmar; encerra todas as sessões da conta, "
         "inclusive "
         "esta")},
-    {HELP_SETTINGS, N_("Sobre: Enter / clique"), N_("Copiar o link do código-fonte")},
+    {HELP_SETTINGS, N_("Sobre: ↑↓ / Enter / clique"),
+     N_("Copiar um link ou ligar e desligar a checagem diária de atualizações; Verificar agora "
+        "consulta o GitHub na hora")},
     {HELP_SETTINGS, N_("Esc / {k:conversation.settings}"), N_("Fechar as configurações")},
     {HELP_SERVER_SETTINGS, N_("←→ nas abas / clique"),
      N_("Trocar entre Visão geral, Cargos, Canais, Emojis, Membros e Auditoria; só aparecem as "

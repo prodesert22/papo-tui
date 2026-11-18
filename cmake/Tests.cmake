@@ -483,6 +483,18 @@ if(BUILD_TESTING)
         media)
     papo_set_tests_properties(gif-picker-terminal PROPERTIES TIMEOUT 120)
     find_program(OPENSSL_CLI NAMES openssl REQUIRED)
+    # The stand-in for GitHub is served over TLS with a certificate made by openssl.
+    papo_add_test(
+        NAME
+        update-terminal
+        COMMAND
+        ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_update_terminal.py
+        $<TARGET_FILE:papo-tui>
+        LABELS
+        packaging
+        settings
+        network)
     add_executable(realtime-probe tests/probes/realtime_probe.c)
     target_link_libraries(realtime-probe PRIVATE papo_auth)
     target_compile_options(realtime-probe PRIVATE -Wall -Wextra -Wpedantic -Werror)
