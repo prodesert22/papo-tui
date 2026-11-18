@@ -111,7 +111,8 @@ GVariant *media_wire_request(const image_decode_request *r)
               (r->retain_static ? 8U : 0U) | (r->static_only ? 16U : 0U) | (r->matte ? 32U : 0U) |
               (r->center ? 64U : 0U) | (r->first_frame ? 128U : 0U) | (r->cover ? 256U : 0U) |
               (r->region ? 512U : 0U) | (r->video_poster ? 1024U : 0U) |
-              (r->notification_badge ? 2048U : 0U) | (r->video_clip ? 4096U : 0U);
+              (r->notification_badge ? 2048U : 0U) | (r->video_clip ? 4096U : 0U) |
+              (r->play_badge ? 8192U : 0U);
     return g_variant_new("(@ays)", media_wire_bytes(&w, sizeof(w)), r->path ? r->path : "");
 }
 bool media_wire_read_request(GVariant *v, image_decode_request *r, char **path)
@@ -129,7 +130,7 @@ bool media_wire_read_request(GVariant *v, image_decode_request *r, char **path)
         w.cell_width > 128 || w.cell_height < 0 || w.cell_height > 128 ||
         w.frame >= ANIMATION_FRAMES || w.top < 0 || w.bottom < 0 || w.left < 0 || w.right < 0 ||
         w.top > 16384 || w.bottom > 16384 || w.left > 16384 || w.right > 16384 ||
-        (w.flags & ~8191U))
+        (w.flags & ~16383U))
         return false;
     GVariant *name = g_variant_get_child_value(v, 1);
     gsize length;
@@ -166,6 +167,7 @@ bool media_wire_read_request(GVariant *v, image_decode_request *r, char **path)
     r->video_clip = w.flags & 4096;
     r->video_poster = w.flags & 1024;
     r->notification_badge = w.flags & 2048;
+    r->play_badge = w.flags & 8192;
     return true;
 }
 GVariant *media_wire_image(const graphics_image *i)

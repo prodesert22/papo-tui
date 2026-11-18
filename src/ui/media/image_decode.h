@@ -42,6 +42,7 @@ typedef struct {
     /* Fill the output with a proportional center crop instead of letterboxing. */
     bool cover;
     bool notification_badge; /* Centered red badge; glyph text is its optional count. */
+    bool play_badge;         /* Play mark over the picture: a still cover of a video. */
 } image_decode_request;
 void animation_ref(animation *frames);
 void animation_free(animation *frames);

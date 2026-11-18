@@ -1215,6 +1215,29 @@ class MediaTerminal(support.MediaTerminal):
                     self.assertNotIn("Anexo:", display)
                     self.assertNotIn("Tipo:", display)
                     self.assertNotIn("Reproduzindo", display)
+                    if protocol == "kitty":
+                        # The 32x24 blue cover carries a white play triangle
+                        # in its middle, inside a disc smaller than the cover.
+                        def poster():
+                            return next(
+                                (
+                                    pixels
+                                    for header, pixels in t.stream.kitty_frames
+                                    if (int(header[b"s"]), int(header[b"v"])) == (32, 24)
+                                ),
+                                None,
+                            )
+
+                        wait_for_screen(t, lambda: poster() is not None, "Poster was not drawn")
+                        pixels = poster()
+                        center = 4 * (12 * 32 + 16)
+                        self.assertGreater(
+                            min(pixels[center : center + 3]), 230, "Poster has no play mark"
+                        )
+                        self.assertTrue(
+                            pixels[0] < 30 and pixels[2] > 200,
+                            "The play mark must leave the cover visible around it",
+                        )
                     count = picture_frame_count(t.stream)
                     t.read(0.3)
                     self.assertEqual(

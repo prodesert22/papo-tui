@@ -700,6 +700,7 @@ static bool media(message_blocks *b, json_t *message, json_t *entry, const char 
         return false;
     size_t image_start = b->count;
     int height = graphics && (!video || kind == AUTH_MEDIA_ATTACHMENT || b->media[n].clip) ? 6 : 0;
+    b->media[n].player_cover = video && height && !b->media[n].clip;
     int media_width = width - (card ? 4 : 0);
     if (height && b->measure)
         b->measure(b->measure_context, &b->media[n], media_width, &media_width, &height);
@@ -1122,7 +1123,7 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
         if (index >= 10)
             break;
         int card_width = width > 76 ? 76 : width;
-        size_t card_start = b->count;
+        size_t card_start = b->count, embed_media = b->media_count;
         char root[96], key[128];
         if (*str(item, "id"))
             snprintf(root, sizeof(root), "embed:%s", str(item, "id"));
@@ -1265,6 +1266,9 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
                           !strcmp(str(v, "mime_type"), "video/webm") ||
                           !strcmp(str(v, "mime_type"), "video/ogg");
             if (direct) {
+                /* Enter on the cover of this embed opens the same player. */
+                for (size_t n = embed_media; !clip && n < b->media_count; ++n)
+                    b->media[n].player_cover = !strcmp(b->media[n].role, "thumbnail");
                 if (!media(b, m, item, key, "video", _("Abrir player"), AUTH_MEDIA_VIDEO, true,
                            card_width, graphics, true, color, clip))
                     goto error;

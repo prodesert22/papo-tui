@@ -1278,11 +1278,11 @@ bool media_cache_poll(media_cache *c, uint64_t now)
 static bool equal_request(const image_decode_request *a, const image_decode_request *b)
 {
     return a->width == b->width && a->height == b->height && a->native == b->native &&
-           a->notification_badge == b->notification_badge && a->cover == b->cover &&
-           a->center == b->center && a->matte == b->matte && a->background == b->background &&
-           a->first_frame == b->first_frame && a->top == b->top && a->bottom == b->bottom &&
-           a->left == b->left && a->right == b->right && a->region == b->region &&
-           a->terminal.protocol == b->terminal.protocol &&
+           a->notification_badge == b->notification_badge && a->play_badge == b->play_badge &&
+           a->cover == b->cover && a->center == b->center && a->matte == b->matte &&
+           a->background == b->background && a->first_frame == b->first_frame && a->top == b->top &&
+           a->bottom == b->bottom && a->left == b->left && a->right == b->right &&
+           a->region == b->region && a->terminal.protocol == b->terminal.protocol &&
            a->terminal.cell_width == b->terminal.cell_width &&
            a->terminal.cell_height == b->terminal.cell_height;
 }
@@ -1465,6 +1465,8 @@ const graphics_image *media_resource_image(media_resource *r, bool author,
             workspace += (size_t)request.width * request.height * 3 + 64U * 1024U;
         if (request.region && (request.left || request.right))
             workspace += (size_t)request.width * request.height * 3 + IMAGE_PIXEL_PADDING;
+        if (request.play_badge) /* The marked copy of the canvas. */
+            workspace += (size_t)request.width * request.height * 4 + IMAGE_PIXEL_PADDING;
         if (o->frames && request.cover) {
             double scale = fmax((double)request.width / o->frames->source_width,
                                 (double)request.height / o->frames->source_height);

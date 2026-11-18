@@ -81,6 +81,116 @@ static void turn_pixels(const unsigned char *stored, int pw, int ph, unsigned ch
         }
     }
 }
+/* Where the play mark of a video cover goes: the middle of the visible picture,
+ * which the w x h canvas letterboxes or cuts, and the size of that part. */
+typedef struct {
+    int x, y, width, height;
+} play_spot;
+static play_spot play_position(const image_decode_request *j, int w, int h, int source_w,
+                               int source_h)
+{
+    int sw = w, sh = h;
+    if (source_w > 0 && source_h > 0) {
+        double ratio = j->cover ? fmax((double)w / source_w, (double)h / source_h)
+                                : fmin((double)w / source_w, (double)h / source_h);
+        sw = (int)fmax(1, source_w * ratio);
+        sh = (int)fmax(1, source_h * ratio);
+    }
+    int left = j->center ? (w - sw) / 2 : 0, top = j->center ? (h - sh) / 2 : 0;
+    int x0 = MAX(left, 0), x1 = MIN(left + sw, w), y0 = MAX(top, 0), y1 = MIN(top + sh, h);
+    return (play_spot){(x0 + x1) / 2, (y0 + y1) / 2, x1 - x0, y1 - y0};
+}
+/* The pixel mark: a translucent dark disc with a white triangle, two to four
+ * text rows tall so it stays readable on a tall cover. Returns an owned copy of
+ * the canvas (3 = RGB, 4 = unassociated RGBA) with the mark; NULL when the
+ * picture is too small for it or memory is short, and the cover is then shown
+ * without the mark. */
+static unsigned char *play_marked(const image_decode_request *j, const unsigned char *pixels,
+                                  int channels, int w, int h, int source_w, int source_h)
+{
+    play_spot spot = play_position(j, w, h, source_w, source_h);
+    int side = MIN(spot.width, spot.height);
+    int size = CLAMP(side * 2 / 5, 2 * j->terminal.cell_height, 4 * j->terminal.cell_height);
+    size = MIN(size, side * 4 / 5); /* A small cover still shows around the mark. */
+    if (size < 12)
+        return NULL;
+    size_t bytes = (size_t)w * (size_t)h * (size_t)channels;
+    unsigned char *marked = NULL;
+    cairo_surface_t *surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, size, size);
+    cairo_t *cr = cairo_create(surface);
+    double radius = size / 2., arm = radius * .5;
+    cairo_arc(cr, radius, radius, radius, 0, 2 * G_PI);
+    cairo_set_source_rgba(cr, 0, 0, 0, .6);
+    cairo_fill(cr);
+    /* An equilateral triangle around the center, pointing right. */
+    cairo_move_to(cr, radius + arm, radius);
+    cairo_line_to(cr, radius - arm / 2, radius - arm * sqrt(3) / 2);
+    cairo_line_to(cr, radius - arm / 2, radius + arm * sqrt(3) / 2);
+    cairo_close_path(cr);
+    cairo_set_source_rgb(cr, 1, 1, 1);
+    cairo_fill(cr);
+    cairo_surface_flush(surface);
+    if (cairo_status(cr) == CAIRO_STATUS_SUCCESS &&
+        cairo_surface_status(surface) == CAIRO_STATUS_SUCCESS)
+        marked = host.allocate(bytes + IMAGE_PIXEL_PADDING);
+    if (marked) {
+        memcpy(marked, pixels, bytes);
+        memset(marked + bytes, 0, IMAGE_PIXEL_PADDING);
+        const unsigned char *mark = cairo_image_surface_get_data(surface);
+        int stride = cairo_image_surface_get_stride(surface);
+        /* The mark is no larger than the visible picture, itself inside the canvas. */
+        int mark_x = CLAMP(spot.x - size / 2, 0, w - size),
+            mark_y = CLAMP(spot.y - size / 2, 0, h - size);
+        for (int y = 0; y < size; ++y)
+            for (int x = 0; x < size; ++x) {
+                /* Cairo stores premultiplied ARGB in native byte order. */
+                uint32_t pixel;
+                memcpy(&pixel, mark + (size_t)y * (size_t)stride + (size_t)x * 4, sizeof(pixel));
+                unsigned alpha = pixel >> 24, rest = 255 - alpha;
+                if (!alpha)
+                    continue;
+                unsigned char *at =
+                    marked +
+                    ((size_t)(mark_y + y) * (size_t)w + (size_t)(mark_x + x)) * (size_t)channels;
+                unsigned below = channels == 4 ? at[3] : 255;
+                unsigned opacity = alpha + (below * rest + 127) / 255;
+                for (int c = 0; c < 3; ++c) {
+                    unsigned color = (pixel >> (16 - 8 * c)) & 255;
+                    at[c] = (unsigned char)((color * 255 * 255 + at[c] * below * rest) /
+                                            (255 * opacity));
+                }
+                if (channels == 4)
+                    at[3] = (unsigned char)opacity;
+            }
+    }
+    cairo_destroy(cr);
+    cairo_surface_destroy(surface);
+    return marked;
+}
+/* Characters cannot draw that disc legibly, so Chafa cells get the mark as
+ * text: a black box of whole cells around the same ▶ the history labels use.
+ * `left` and `top` are the pixels, whole cells, cut from the canvas before it
+ * was encoded; a mark that was cut with them is not moved into what remains. */
+static void play_cells(const image_decode_request *j, graphics_image *out, int w, int h,
+                       int source_w, int source_h, int left, int top)
+{
+    int cell_w = j->terminal.cell_width, cell_h = j->terminal.cell_height;
+    if (out->protocol != GRAPHICS_CHAFA || cell_w < 1 || cell_h < 1 || out->columns < 1 ||
+        out->rows < 1 ||
+        out->length != (size_t)out->columns * (size_t)out->rows * sizeof(graphics_cell))
+        return;
+    play_spot spot = play_position(j, w, h, source_w, source_h);
+    int tall = spot.height / cell_h >= 5 && spot.width / cell_w >= 5;
+    if (spot.width / cell_w < 3 || spot.height < cell_h)
+        return;
+    graphics_cell *cells = (graphics_cell *)out->data;
+    int column = spot.x / cell_w - left / cell_w, row = spot.y / cell_h - top / cell_h;
+    for (int y = row - tall; y <= row + tall; ++y)
+        for (int x = column - 1 - tall; x <= column + 1 + tall; ++x)
+            if (x >= 0 && y >= 0 && x < out->columns && y < out->rows)
+                cells[(size_t)y * (size_t)out->columns + (size_t)x] =
+                    (graphics_cell){x == column && y == row ? 0x25b6 : ' ', 0xffffff, 0x000000};
+}
 static bool encode_pixels(const image_decode_request *j, const unsigned char *pixels, int w, int h,
                           int source_w, int source_h, graphics_image *out)
 {
@@ -88,12 +198,20 @@ static bool encode_pixels(const image_decode_request *j, const unsigned char *pi
     int bottom = j->terminal.protocol == GRAPHICS_KITTY && !j->region ? 0 : j->bottom;
     if (top < 0 || bottom < 0 || top >= h || bottom >= h || top >= h - bottom)
         return false;
+    bool cells = j->terminal.protocol == GRAPHICS_CHAFA;
+    unsigned char *marked =
+        j->play_badge && !cells ? play_marked(j, pixels, 3, w, h, source_w, source_h) : NULL;
+    if (marked)
+        pixels = marked;
     bool ok = j->region ? host.region(pixels, w, h, top, bottom, j->left, j->right, j->terminal,
                                       j->image_id, out)
               : !top && !bottom && j->preview
                   ? host.preview(pixels, w, h, j->terminal, j->image_id, out)
                   : host.encode(pixels + (size_t)top * (size_t)w * 3, w, h - top - bottom,
                                 j->terminal, j->image_id, out);
+    host.release(marked);
+    if (ok && j->play_badge && cells)
+        play_cells(j, out, w, h, source_w, source_h, j->region ? j->left : 0, top);
     if (ok) {
         out->source_width = source_w;
         out->source_height = source_h;
@@ -115,9 +233,14 @@ static bool encode_alpha_pixels(const image_decode_request *j, const unsigned ch
     int bottom = j->terminal.protocol == GRAPHICS_KITTY && !j->region ? 0 : j->bottom;
     if (top < 0 || bottom < 0 || top >= h || bottom >= h || top >= h - bottom)
         return false;
+    unsigned char *marked =
+        j->play_badge ? play_marked(j, rgba, 4, w, h, source_w, source_h) : NULL;
+    if (marked)
+        rgba = marked;
     bool ok =
         host.encode_rgba(rgba, w, h, top, bottom, j->region ? j->left : 0, j->region ? j->right : 0,
                          !j->region && j->preview, j->terminal, j->image_id, out);
+    host.release(marked);
     if (ok) {
         out->source_width = source_w;
         out->source_height = source_h;

@@ -827,6 +827,8 @@ static void video_preview_layout(void)
     message_blocks b;
     assert(message_blocks_build(&b, m, "Author", "", 80, true));
     assert(b.media_count == 2 && b.media[0].video && b.media[1].video);
+    /* Only the still cover carries the play mark, not the text link to the player. */
+    assert(b.media[0].player_cover && !b.media[1].player_cover);
     bool poster = false, player_link = false;
     for (size_t r = 0; r < b.count; ++r)
         for (int i = 0; i < b.rows[r].media_count; ++i) {
@@ -841,6 +843,31 @@ static void video_preview_layout(void)
     assert(poster && player_link);
     message_blocks_free(&b);
     json_decref(m);
+    /* The cover of an embed opens its video, so it is marked too; the author's
+     * avatar is not, and neither is a cover whose video the player cannot open
+     * or the loop of a GIF site, which already plays in place. */
+    static const struct {
+        const char *url, *mime;
+        bool cover, clip;
+    } embeds[] = {{"https://example.test/watch", "video/mp4", true, false},
+                  {"https://example.test/watch", "text/html", false, false},
+                  {"https://tenor.com/view/loop", "video/mp4", false, true}};
+    for (size_t e = 0; e < sizeof(embeds) / sizeof(embeds[0]); ++e) {
+        m = json_pack("{s:s,s:[{s:s,s:s,s:{s:s,s:{}},s:{},s:{s:s}}]}", "id",
+                      "00000000-0000-4000-8000-000000000001", "embeds", "id",
+                      "00000000-0000-4000-8000-000000000003", "url", embeds[e].url, "author",
+                      "name", "Site", "media", "thumbnail", "video", "mime_type", embeds[e].mime);
+        assert(m && message_blocks_build(&b, m, "Author", "", 80, true));
+        bool cover = false, clip = false;
+        for (size_t i = 0; i < b.media_count; ++i) {
+            assert(!b.media[i].player_cover || !strcmp(b.media[i].role, "thumbnail"));
+            cover |= b.media[i].player_cover;
+            clip |= b.media[i].clip;
+        }
+        assert(cover == embeds[e].cover && clip == embeds[e].clip);
+        message_blocks_free(&b);
+        json_decref(m);
+    }
 }
 static void reactions_and_replies(void)
 {

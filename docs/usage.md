@@ -1659,6 +1659,12 @@ to generate a static cover; they do not play or produce sound in the history.
 This consumes bandwidth even before you open the player. Opening the player
 reuses that same download, whether it is still running or already cached.
 
+A cover that opens the player has a play icon in its middle, which tells a video
+apart from a picture: a dark disc with a white triangle when the terminal shows
+graphics, or a black box with **▶** when the cover is drawn with characters
+(Light mode, or Normal mode without terminal graphics). The icon is part of the
+cover only; the player itself shows the video without it.
+
 The server reports the type of an attachment from the file's own contents, and
 that check recognizes only some video containers. A video whose type is reported
 as a generic binary file is still recognized by its file name, so `.mp4`, `.mov`,
@@ -1783,7 +1789,9 @@ playing in the conversation, up to three per message. The picture is loaded from
 that site, which sees your address, and the link text stays in the message.
 
 When a message carries an embed with a video, pressing Enter on the embed cover
-opens the video player directly. The **Abrir player** entry keeps working as
+opens the video player directly; that cover shows the same play icon as a video
+attachment. Covers of videos the player cannot open, listed as **Vídeo externo**
+(external video), have no icon. The **Abrir player** entry keeps working as
 before and reuses the download already made for the cover. Videos served by the
 embed relay also play while they download, under the same limits described
 above.

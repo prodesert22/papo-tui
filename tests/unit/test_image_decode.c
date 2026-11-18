@@ -38,6 +38,44 @@ static bool iterm2_tiff_has_alpha(const graphics_image *image)
     g_free(tiff);
     return samples && extra;
 }
+/* Reads one pixel of the uncompressed TIFF an iTerm2 payload carries. */
+static void iterm2_pixel(const graphics_image *image, int x, int y, unsigned char rgb[3])
+{
+    const char *start = memmem(image->data, image->length, ":", 1);
+    const char *end =
+        start ? memchr(start, '\a', image->length - (size_t)(start - image->data)) : NULL;
+    assert(start && end);
+    char *text = g_strndup(start + 1, (gsize)(end - start - 1));
+    gsize size = 0;
+    guchar *tiff = g_base64_decode(text, &size);
+    g_free(text);
+    assert(size >= 8 && !memcmp(tiff, "II*\0", 4));
+    guint32 at = tiff[4] | tiff[5] << 8 | tiff[6] << 16 | (guint32)tiff[7] << 24;
+    guint32 width = 0, pixels = 0, samples = 0;
+    assert(at + 2 <= size);
+    unsigned count = tiff[at] | tiff[at + 1] << 8;
+    for (unsigned i = 0; i < count && at + 2 + 12 * (i + 1) <= size; ++i) {
+        const guchar *entry = tiff + at + 2 + 12 * i;
+        unsigned tag = entry[0] | entry[1] << 8;
+        guint32 value = entry[8] | entry[9] << 8 | entry[10] << 16 | (guint32)entry[11] << 24;
+        if (tag == 256) /* ImageWidth */
+            width = value;
+        else if (tag == 273) /* StripOffsets: a single strip */
+            pixels = value;
+        else if (tag == 277) /* SamplesPerPixel */
+            samples = value & 0xffff;
+    }
+    gsize offset = pixels + ((gsize)y * width + (gsize)x) * samples;
+    assert(width && samples >= 3 && (guint32)x < width && offset + 3 <= size);
+    memcpy(rgb, tiff + offset, 3);
+    g_free(tiff);
+}
+/* A cell of the play mark drawn with characters: white on black, blank or ▶. */
+static bool play_box(const graphics_cell *cell)
+{
+    return (cell->character == ' ' || cell->character == 0x25b6) && cell->foreground == 0xffffff &&
+           !cell->background;
+}
 /* Names the saturated quadrant colour of a pixel: R, G, B or W. */
 static char quadrant(const animation *frames, int x, int y)
 {
@@ -247,6 +285,69 @@ int main(int argc, char **argv)
     animation_free(still);
     still = NULL;
     assert(!image_decode_file(&poster, &cover, &still, cancelled, NULL));
+    /* A still cover carries a play mark in the middle of the picture: on pixel
+     * protocols a dark disc with a white triangle, composed before any crop. */
+    image_decode_request marked = poster;
+    marked.native = false;
+    assert(image_decode_file(&marked, &cover, &still, NULL, NULL));
+    assert(still && still->width == 160 && still->height == 120 && !still->rgba[0]);
+    marked.decode_only = marked.retain_static = false;
+    marked.path = NULL;
+    marked.animation = still;
+    marked.image_id = 42;
+    marked.terminal.protocol = GRAPHICS_ITERM2;
+    unsigned char pixel[3];
+    assert(image_encode_frame(&marked, &cover));
+    iterm2_pixel(&cover, 80, 60, pixel);
+    assert(pixel[0] < 30 && pixel[2] > 200);
+    graphics_image_free(&cover);
+    marked.play_badge = true;
+    assert(image_encode_frame(&marked, &cover));
+    assert(cover.width == 160 && cover.height == 120);
+    iterm2_pixel(&cover, 80, 60, pixel); /* The triangle. */
+    assert(pixel[0] > 230 && pixel[1] > 230 && pixel[2] > 230);
+    iterm2_pixel(&cover, 62, 60, pixel); /* The disc beside it darkens the picture. */
+    assert(pixel[0] < 30 && pixel[2] > 80 && pixel[2] < 125);
+    iterm2_pixel(&cover, 4, 4, pixel); /* The rest of the picture is untouched. */
+    assert(pixel[0] < 30 && pixel[2] > 200);
+    graphics_image_free(&cover);
+    /* Characters get a black box of whole cells around the ▶ of the text labels:
+     * five by three in rows 2 to 4, and rows cut above the cover take their part
+     * of it instead of moving it down. */
+    marked.terminal.protocol = GRAPHICS_CHAFA;
+    for (int cut = 0; cut <= 6; ++cut) {
+        marked.top = cut * 16;
+        assert(image_encode_frame(&marked, &cover));
+        assert(cover.columns == 20 && cover.rows == 8 - cut);
+        const graphics_cell *cells = (const graphics_cell *)cover.data;
+        for (int row = cut; row < 8; ++row)
+            for (int column = 0; column < 20; ++column) {
+                const graphics_cell *cell = &cells[(row - cut) * 20 + column];
+                bool inside = row >= 2 && row <= 4 && column >= 8 && column <= 12;
+                assert(play_box(cell) == inside);
+                assert((cell->character == 0x25b6) == (row == 3 && column == 10));
+            }
+        graphics_image_free(&cover);
+    }
+    /* A cover of three rows keeps a single row for the mark. */
+    marked.top = 0;
+    marked.width = 64;
+    marked.height = 48;
+    assert(image_encode_frame(&marked, &cover));
+    assert(cover.columns == 8 && cover.rows == 3);
+    const graphics_cell *small = (const graphics_cell *)cover.data;
+    for (int i = 0; i < 24; ++i) {
+        assert(play_box(&small[i]) == (i >= 8 + 3 && i <= 8 + 5));
+        assert((small[i].character == 0x25b6) == (i == 8 + 4));
+    }
+    graphics_image_free(&cover);
+    marked.play_badge = false;
+    assert(image_encode_frame(&marked, &cover));
+    for (int i = 0; i < 24; ++i)
+        assert(!play_box(&((const graphics_cell *)cover.data)[i]));
+    graphics_image_free(&cover);
+    animation_free(still);
+    still = NULL;
     /* A silent clip loops like a GIF, B-frame delay included; sound keeps it a cover. */
     image_decode_request loop = poster;
     loop.path = argv[11];

@@ -462,6 +462,14 @@ class AppModes(unittest.TestCase):
             t = self.open(server)
             try:
                 self.helper.wait(t, "Fixture")
+                # The cover drawn with characters carries its own play mark,
+                # apart from the one of the label above it.
+                self.wait(
+                    t,
+                    lambda: any(
+                        "▶" in line and "Fixture" not in line for line in t.screen.display
+                    ),
+                )
                 t.send("rascunho do vídeo\x1b\ue00a\n")
                 self.helper.wait(t, "Reproduzindo")
                 self.assertNotIn("Vídeos desativados", "\n".join(t.screen.display))
