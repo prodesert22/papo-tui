@@ -121,8 +121,8 @@ class LanguageTerminal(unittest.TestCase):
         t.send("\t\n")
 
     def system_tab(self, t):
-        """From the buttons of Aparência: back to the tabs, then five tabs ahead."""
-        t.send("\x1b[Z\x1b[Z" + "\x1bOC" * 5)
+        """From the buttons of Aparência: back to the tabs, then six tabs ahead."""
+        t.send("\x1b[Z\x1b[Z" + "\x1bOC" * 6)
         self.wait(t, "Arquivo de configuração:")
 
     def test_sistema_shows_where_the_configuration_file_is_saved_and_copies_it(self):
