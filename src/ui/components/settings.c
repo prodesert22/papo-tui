@@ -22,7 +22,7 @@ static int first_mode(app_settings *s)
 }
 static const char *sections[SETTINGS_SECTIONS] = {
     N_("Perfil"),         N_("Aparência"), N_("Notificações"), N_("Áudio"),
-    N_("Acessibilidade"), N_("Atalhos"),   N_("Conta")};
+    N_("Acessibilidade"), N_("Atalhos"),   N_("Conta"),        N_("Sobre")};
 /* Sections that have controls between the tabs and the buttons. */
 static bool has_content(int section)
 {
@@ -1828,6 +1828,8 @@ void settings_draw(app_settings *s)
         keys_draw(s, w, height, width);
     } else if (s->section == SETTINGS_ACCESSIBILITY) {
         access_draw(s, w, height, width);
+    } else if (s->section == SETTINGS_ABOUT) {
+        about_draw(&s->about, w, 5, 2, width - 4, height - 8);
     }
     wattrset(w, COLOR_PAIR(THEME_ERROR));
     if (*s->error)
@@ -1840,24 +1842,39 @@ void settings_draw(app_settings *s)
         char hint[512];
         wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
         text_label(w, height - 3, 2, width - 4, keys_hint(s, hint, sizeof(hint)));
+    } else if (s->section == SETTINGS_ABOUT && s->about_copied) {
+        wattrset(w, COLOR_PAIR(THEME_SUCCESS));
+        text_label(w, height - 3, 2, width - 4, _("Cópia solicitada."));
     } else if (s->profile &&
                (s->section == SETTINGS_APPEARANCE || s->section == SETTINGS_NOTIFICATIONS))
         user_notice_draw(s, w, height, width);
     bool profile = s->section == SETTINGS_PROFILE, account = s->section == SETTINGS_ACCOUNT,
-         notifications = s->section == SETTINGS_NOTIFICATIONS;
+         notifications = s->section == SETTINGS_NOTIFICATIONS, about = s->section == SETTINGS_ABOUT;
     button_draw(w, height - 2, 2, 18,
                 profile         ? _("Salvar perfil")
                 : account       ? s->account_confirm ? _("Confirmar") : _("Alterar senha")
                 : notifications ? _("Salvar")
+                : about         ? _("Copiar link")
                                 : _("Salvar e aplicar"),
                 s->focus == 2 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     button_draw(w, height - 2, width - 14, 12,
-                profile || account || notifications ? _("Fechar") : _("Cancelar"),
+                profile || account || notifications || about ? _("Fechar") : _("Cancelar"),
                 s->focus == 3 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     wnoutrefresh(w);
 }
+/* Sobre keeps no draft: its button copies the source link. */
+static void about_copy(app_settings *s)
+{
+    s->about_copied = about_copy_link();
+    snprintf(s->error, sizeof(s->error), "%s",
+             s->about_copied ? "" : _("Não foi possível copiar o link."));
+}
 static void save(app_settings *s, profile_config *config)
 {
+    if (s->section == SETTINGS_ABOUT) {
+        about_copy(s);
+        return;
+    }
     if (s->section == SETTINGS_PROFILE) {
         profile_save(s);
         return;
@@ -2048,6 +2065,7 @@ void settings_key(app_settings *s, profile_config *config, int type, uint32_t ke
             s->section =
                 tab_strip_hit(&s->tabs, SETTINGS_SECTIONS, s->section, x, getmaxx(s->window));
             s->focus = 0;
+            s->about_copied = false;
         } else if (s->section == SETTINGS_ACCESSIBILITY && y >= 5 && y < getmaxy(s->window) - 4) {
             access_click(s, y, x);
         } else if (s->section == SETTINGS_SHORTCUTS && y >= 5 && y < getmaxy(s->window) - 3) {
@@ -2076,6 +2094,8 @@ void settings_key(app_settings *s, profile_config *config, int type, uint32_t ke
             bool *value = notify_value(s, s->notify_selection);
             *value = !*value;
             s->error[0] = 0;
+        } else if (s->section == SETTINGS_ABOUT && y == s->about.link_row) {
+            about_copy(s);
         } else if (y == getmaxy(s->window) - 2) {
             if (x >= 2 && x < 20)
                 save(s, config);
@@ -2089,6 +2109,7 @@ void settings_key(app_settings *s, profile_config *config, int type, uint32_t ke
             voice_test(s->voice, false);
             s->section =
                 (s->section + (key == KEY_LEFT ? SETTINGS_SECTIONS - 1 : 1)) % SETTINGS_SECTIONS;
+            s->about_copied = false;
         } else if (enter || (type == KEY_CODE_YES && key == KEY_DOWN))
             s->focus = has_content(s->section) ? 1 : 2;
     } else if (s->focus == 1) {

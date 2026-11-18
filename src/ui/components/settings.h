@@ -5,6 +5,7 @@
 #include "model/conversation/profile_edit.h"
 #include "model/conversation/user_settings.h"
 #include "net/voice/client.h"
+#include "ui/components/about.h"
 #include "ui/components/tabs.h"
 #include "ui/input/text.h"
 #include "ui/media/icons.h"
@@ -13,7 +14,8 @@
  * device) and the theme and display of the account on the active server;
  * Notificações holds that account's notification settings; Atalhos lists every
  * key and changes the keys of commands on this device; Conta changes the
- * account's password on the active server. */
+ * account's password on the active server; Sobre shows the program's version,
+ * license and source link. */
 enum {
     SETTINGS_PROFILE,
     SETTINGS_APPEARANCE,
@@ -22,6 +24,7 @@ enum {
     SETTINGS_ACCESSIBILITY,
     SETTINGS_SHORTCUTS,
     SETTINGS_ACCOUNT,
+    SETTINGS_ABOUT,
     SETTINGS_SECTIONS
 };
 /* Perfil fields, in display order. */
@@ -84,6 +87,9 @@ typedef struct {
     /* Acessibilidade: the draft of this device's choices and the item selected. */
     accessibility_config access;
     int access_selection, access_first;
+    /* Sobre: the facts drawn and whether the link copy was just requested. */
+    about_view about;
+    bool about_copied;
 } app_settings;
 void settings_open(app_settings *settings, const profile_config *config, voice_client *voice,
                    history *profile, auth_client *auth, icon_view *icons, const char *server);

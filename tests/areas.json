@@ -74,6 +74,7 @@
 
     {"glob": "src/model/conversation/user_settings.*", "areas": ["settings"]},
     {"glob": "src/ui/components/settings.*", "areas": ["settings"]},
+    {"glob": "src/ui/components/about.*", "areas": ["settings"]},
     {"glob": "src/config/app_mode.*", "areas": ["settings", "media"]},
 
     {"glob": "src/model/text/emoji*", "areas": ["emoji"]},

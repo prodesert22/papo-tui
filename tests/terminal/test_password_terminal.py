@@ -122,8 +122,8 @@ class PasswordTerminal(unittest.TestCase):
     def conta(self, t):
         t.send("\x13")
         self.wait(t, "Seu perfil em")
-        # Conta is the last tab: Left from Perfil reaches it.
-        t.send(LEFT)
+        # Conta is the tab before the last, Sobre: two Lefts from Perfil reach it.
+        t.send(LEFT * 2)
         self.wait(t, "Sua conta em")
         self.wait(t, "@josé")
         t.send(DOWN)

@@ -290,7 +290,8 @@ class Persistence(unittest.TestCase):
             t = self.login(server)
             t.send("\x13")
             self.wait(t, "Seu perfil em")
-            t.send("\x1bOD")
+            # Conta is the tab before the last, Sobre.
+            t.send("\x1bOD" * 2)
             self.wait(t, "Sua conta em")
             t.send("\x1bOBRenewed!456\x1bOBRenewed!456\n")
             self.wait(t, "Confirmar")

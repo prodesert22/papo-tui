@@ -630,10 +630,11 @@ again.
 
 Your password belongs to your account on each server. To change it on the
 server tab that is open, press **Ctrl+S** and choose **Conta** (Account), the
-last tab; ← from **Perfil** reaches it. The tab shows **Sua conta em** (Your
-account on) with the server name and your @username, then **Nova senha** (New
-password) and **Confirmar senha** (Confirm password). Both fields hide what you
-type. The password needs 8 or more characters, an uppercase letter and a symbol.
+tab before **Sobre**; pressing ← twice from **Perfil** reaches it. The tab shows
+**Sua conta em** (Your account on) with the server name and your @username,
+then **Nova senha** (New password) and **Confirmar senha** (Confirm password).
+Both fields hide what you type. The password needs 8 or more characters, an
+uppercase letter and a symbol.
 
 Press Enter or select **Alterar senha** (Change password). The first press only
 checks the fields and asks for confirmation: the button becomes **Confirmar**
@@ -1568,7 +1569,8 @@ selector to browse the other sections. **Perfil**, **Notificações** and
 [Voice calls and audio settings](#voice-calls-and-audio-settings));
 **Acessibilidade** changes contrast and colors (see
 [Accessibility](#accessibility)) and **Atalhos** the keys of commands (see
-[Customize shortcuts](#customize-shortcuts)).
+[Customize shortcuts](#customize-shortcuts)). **Sobre** (About), the last section, shows
+the version and license; see [About Papo TUI](#about-papo-tui).
 
 | Mode | Behavior |
 | --- | --- |
@@ -1771,6 +1773,29 @@ The focused button, tab or row has an orange fill with black text. Alt+← and
 Alt+→ switch virtual consoles there, so they never reach the application: move
 the focus with Tab and Shift+Tab, as the footer shows (**Tab / Shift+Tab: mudar
 foco**, Tab / Shift+Tab: move focus).
+
+## About Papo TUI
+
+Press **Ctrl+S** and choose **Sobre** (About), the last section of
+**Configurações** (Settings); ← from **Perfil** reaches it directly. It shows:
+
+- the version you are running, the same one `papo-tui --version` prints;
+- the license (MIT) and its copyright holder, **Papo TUI contributors**, who are
+  also listed as the author;
+- **Código-fonte** (Source code), the address of the project on GitHub, where
+  the releases and the issue tracker are;
+- **Licenças de terceiros** (Third-party licenses), the folder where your
+  installation keeps the license notices of the libraries it includes. A copy
+  built from source has no such folder and names `THIRD_PARTY_NOTICES.md` in
+  the repository instead.
+
+Select **Copiar link** (Copy link), or click the **Código-fonte** line, to copy
+the address; **Cópia solicitada.** (Copy requested) confirms it. The program
+does not open a browser. Terminals with few rows leave out the description
+line. **Fechar** (Close), Esc or Ctrl+S closes the window.
+
+Settings opens only from a server you are signed in to. Before signing in,
+`papo-tui --version` shows the version.
 
 ## Troubleshooting
 

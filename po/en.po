@@ -1137,7 +1137,7 @@ msgstr "Author not loaded yet"
 msgid "Autor indisponível"
 msgstr "Author unavailable"
 
-#: src/ui/screens/message_browser.c
+#: src/ui/components/about.c src/ui/screens/message_browser.c
 msgid "Autor: %s"
 msgstr "Author: %s"
 
@@ -1669,6 +1669,10 @@ msgstr "Light"
 msgid "Clicar para abrir busca, mensagens fixadas ou membros"
 msgstr "Click to open search, pinned messages or members"
 
+#: src/ui/components/about.c
+msgid "Cliente de conversas para terminal"
+msgstr "Terminal chat client"
+
 #: src/platform/windows/clipboard.c
 msgid "Clipboard indisponível"
 msgstr "Clipboard unavailable"
@@ -2025,9 +2029,17 @@ msgstr "Copy URL"
 msgid "Copiar a seleção; sem seleção, copiar o campo"
 msgstr "Copy the selection; without a selection, copy the field"
 
+#: src/ui/components/settings.c
+msgid "Copiar link"
+msgstr "Copy link"
+
 #: src/config/keymap.c
 msgid "Copiar o link de redefinição de senha"
 msgstr "Copy the password reset link"
+
+#: src/ui/components/help.c
+msgid "Copiar o link do código-fonte"
+msgstr "Copy the source code link"
 
 #: src/ui/screens/conversation/interactions.c
 msgid "Copiar texto"
@@ -2129,11 +2141,15 @@ msgstr "Ctrl+W / Ctrl+Backspace"
 msgid "Ctrl+← / Ctrl+→"
 msgstr "Ctrl+← / Ctrl+→"
 
+#: src/ui/components/about.c
+msgid "Código-fonte: %s"
+msgstr "Source code: %s"
+
 #: src/platform/linux/clipboard.c
 msgid "Cópia em andamento"
 msgstr "Copy in progress"
 
-#: src/ui/screens/conversation/members.c
+#: src/ui/components/settings.c src/ui/screens/conversation/members.c
 msgid "Cópia solicitada."
 msgstr "Copy requested."
 
@@ -3573,6 +3589,18 @@ msgstr "Read the conversation and locate the selected message"
 msgid "Ler o canal"
 msgstr "Read the channel"
 
+#: src/ui/components/about.c
+msgid "Licença: %s"
+msgstr "License: %s"
+
+#: src/ui/components/about.c
+msgid "Licenças de terceiros:"
+msgstr "Third-party licenses:"
+
+#: src/ui/components/about.c
+msgid "Licenças de terceiros: THIRD_PARTY_NOTICES.md no repositório"
+msgstr "Third-party licenses: THIRD_PARTY_NOTICES.md in the repository"
+
 #: src/ui/components/settings.c
 msgid "Light"
 msgstr "Light"
@@ -4541,7 +4569,7 @@ msgstr "Could not confirm permissions after renewing. Sign in again."
 msgid "Não foi possível copiar agora."
 msgstr "Could not copy now."
 
-#: src/ui/screens/conversation/members.c
+#: src/ui/components/settings.c src/ui/screens/conversation/members.c
 msgid "Não foi possível copiar o link."
 msgstr "Could not copy the link."
 
@@ -6237,6 +6265,14 @@ msgstr "System"
 msgid "Situação"
 msgstr "State"
 
+#: src/ui/components/settings.c
+msgid "Sobre"
+msgstr "About"
+
+#: src/ui/components/help.c
+msgid "Sobre: Enter / clique"
+msgstr "About: Enter / click"
+
 #: src/config/app_mode.c
 msgid "Somente texto; sem imagens ou vídeos; libera a pilha de mídia."
 msgstr "Text only; no images or videos; frees the media stack."
@@ -6502,8 +6538,8 @@ msgid "Trocar a senha encerra todas as sessões desta conta, inclusive esta: dep
 msgstr "Changing the password ends all of this account's sessions, this one included: afterwards, sign in again with the new password."
 
 #: src/ui/components/help.c
-msgid "Trocar entre Perfil, Aparência, Áudio, Acessibilidade, Atalhos e Conta"
-msgstr "Switch between Profile, Appearance, Audio, Accessibility, Shortcuts and Account"
+msgid "Trocar entre Perfil, Aparência, Áudio, Acessibilidade, Atalhos, Conta e Sobre"
+msgstr "Switch between Profile, Appearance, Audio, Accessibility, Shortcuts, Account and About"
 
 #: src/ui/components/help.c
 msgid "Trocar entre Visão geral, Cargos, Canais, Emojis, Membros e Auditoria; só aparecem as abas que suas permissões permitem"

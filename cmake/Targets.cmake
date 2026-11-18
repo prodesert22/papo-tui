@@ -273,6 +273,7 @@ add_executable(
     src/ui/screens/conversation/members.c
     src/ui/screens/conversation/layout.c
     src/ui/screens/conversation/selection.c
+    src/ui/components/about.c
     src/ui/components/settings.c
     src/ui/components/tabs.c
     src/ui/components/server_settings/server_settings.c

@@ -1,18 +1,23 @@
-"""Account settings (Ctrl+S → Aparência / Notificações) and sounds through the real TUI."""
+"""Settings (Ctrl+S → Aparência / Notificações / Sobre) and sounds through the real TUI."""
 
 from test_context import main as test_main
 
+import base64
 import copy
 import os
+import pathlib
 import re
+import subprocess
 import tempfile
 import time
 
 from r8_mock import AUTHOR, uuid
 from settings_mock import DEFAULT, SettingsMock, settings
 import terminal_discovery as support
+import terminal_support
 
 DOWN, UP, LEFT, RIGHT = "\x1bOB", "\x1bOA", "\x1bOD", "\x1bOC"
+REPOSITORY = "https://github.com/prodesert22/papo-tui"
 CLOCK = re.compile(r"\d\d:\d\d:\d\d")
 
 
@@ -236,6 +241,69 @@ class UserSettingsTerminal(support.R8Terminal):
             self.assertEqual(len(self.sounds(log)), 2)
             self.notify(server, 5, "Outra mensagem")
             self.assertEqual(self.wait_sounds(log, 3)[2:], ["sound=message"])
+
+    def copies(self, t):
+        return [
+            base64.b64decode(value).decode()
+            for value in re.findall(rb"\x1b\]52;c;([A-Za-z0-9+/=]*)\x07", t.output)
+        ]
+
+    def test_sobre_shows_the_program_facts_and_copies_the_source_link(self):
+        version = subprocess.run(
+            [terminal_support.BINARY, "--version"], capture_output=True, text=True, check=True
+        ).stdout.split()[1]
+        # The holder shown is the one in the LICENSE file shipped with the program.
+        license_lines = (
+            (pathlib.Path(__file__).resolve().parents[2] / "LICENSE")
+            .read_text(encoding="utf-8")
+            .splitlines()
+        )
+        self.assertEqual(license_lines[0], "MIT License")
+        with SettingsMock() as server:
+            t = self.login(server)
+            self.wait(t, "Mensagem 0001")
+            # Sobre is the last section: Left from Perfil wraps to it.
+            t.send("\x13")
+            self.wait(t, "Configurações")
+            t.send(LEFT)
+            self.wait(t, "< Sobre >")
+            for text in (
+                "Papo TUI " + version,
+                "Cliente de conversas para terminal",
+                "Licença: MIT · " + license_lines[2],
+                "Autor: Papo TUI contributors",
+                "Código-fonte: " + REPOSITORY,
+                "Licenças de terceiros:",
+                "Copiar link",
+                "Fechar",
+            ):
+                self.wait(t, text)
+            self.assertEqual(self.copies(t), [])
+            # Nothing to edit: Tab goes from the sections to the button.
+            t.send("\t\n")
+            self.wait(t, "Cópia solicitada.")
+            self.assertEqual(self.copies(t), [REPOSITORY])
+            # Leaving the section forgets the notice; a click on the link copies too.
+            t.send("\x1b[Z" + RIGHT)
+            self.wait(t, "< Perfil >")
+            t.send(LEFT)
+            self.wait(t, "< Sobre >")
+            self.assertNotIn("Cópia solicitada.", "\n".join(t.screen.display))
+            self.click(t, "Código-fonte:")
+            self.wait(t, "Cópia solicitada.")
+            self.assertEqual(self.copies(t), [REPOSITORY] * 2)
+            self.dump(t, "sobre")
+            # A short window keeps the facts and drops the description.
+            t.resize(14, 60)
+            self.wait(t, "< Sobre >")
+            self.wait(t, "Código-fonte: " + REPOSITORY)
+            self.wait(t, "Papo TUI " + version)
+            self.assertNotIn("Cliente de conversas", "\n".join(t.screen.display))
+            t.resize(24, 80)
+            self.wait(t, "Cliente de conversas para terminal")
+            t.send("\x1b")
+            self.wait(t, "Mensagem 0001")
+            self.assertNotIn("Papo TUI " + version, "\n".join(t.screen.display))
 
 
 if __name__ == "__main__":
