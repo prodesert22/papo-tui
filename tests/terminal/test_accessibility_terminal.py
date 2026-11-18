@@ -176,6 +176,50 @@ class AccessibilityTerminal(unittest.TestCase):
             self.wait(t, "[+]")
             self.assertNotIn("📎", self.screen(t))
 
+    @staticmethod
+    def drawn(terminal, row):
+        """The characters the application wrote on a row. ``display`` writes block
+        tabs as markers too, so it cannot tell them from real brackets."""
+        cells = terminal.screen.buffer[row]
+        return "".join(cells[x].data for x in range(terminal.screen.columns))
+
+    def tab_rows(self, terminal):
+        """The server tabs and the row of the Canais/DMs tabs, as drawn."""
+        lists = next(
+            y
+            for y, line in enumerate(terminal.screen.display)
+            if "Canais" in line and "DMs" in line
+        )
+        return self.drawn(terminal, 0), self.drawn(terminal, lists)
+
+    def test_screen_reader_writes_the_tabs_between_brackets(self):
+        with HistoryMock() as server:
+            t = self.open(server)
+            # By default the tabs are blocks of fill: no marker is written.
+            servers, lists = self.tab_rows(t)
+            self.assertIn(" Comunidade ", servers)
+            self.assertIn(" + Adicionar ", servers)
+            self.assertNotIn("[", servers + lists)
+            self.choose(t, 4)
+            self.assertTrue(self.stored()["screen_reader"])
+            wait_for_screen(
+                t,
+                lambda: "[Comunidade]" in self.drawn(t, 0),
+                "The selected server tab has no brackets",
+            )
+            servers, lists = self.tab_rows(t)
+            self.assertIn("[+ Adicionar]", servers)
+            self.assertIn("[Canais]", lists)
+            self.assertIn("[DMs]", lists)
+            # Turning the mode off brings the blocks back.
+            self.choose(t, 4)
+            self.assertFalse(self.stored()["screen_reader"])
+            wait_for_screen(
+                t,
+                lambda: "[" not in "".join(self.tab_rows(t)),
+                "The brackets stayed after the mode was turned off",
+            )
+
     def test_text_symbols_emoji_names_and_ascii_borders(self):
         with HistoryMock() as server:
             t = self.open(server)

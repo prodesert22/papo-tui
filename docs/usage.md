@@ -40,7 +40,8 @@ long for its tab is not cut with an ellipsis: its last characters fade into the
 tab. Terminals
 with fewer than 256 colors, such as the Linux console, cannot show the
 background, so the selected server is written as **[Name]** and the add tab as
-**[+ Adicionar]**.
+**[+ Adicionar]**. The
+[screen reader mode](#accessibility) writes them the same way on any terminal.
 
 The sign-in screen keeps the server tabs at the top while another server is
 open, for example when the selected server is unreachable at startup or you are
@@ -691,7 +692,7 @@ Choose the **DMs** tab beside **Canais** (Channels), above the list, to see your
 conversations. The list in use is the tab with a highlighted background, like
 the selected server. Terminals with fewer than 256 colors, such as the Linux
 console, cannot show the background, so the two are written as **[Canais]** and
-**[DMs]**. ↑/↓ moves the highlighted
+**[DMs]**, as they are with the [screen reader mode](#accessibility). ↑/↓ moves the highlighted
 recipient; Enter or → opens the selected conversation. The highlight remains
 visible when people share the same role color. On wide screens, clicking a DM keeps
 focus in the list so the arrows continue selecting people. Typing focuses the
@@ -791,7 +792,10 @@ belong to this device: they apply to every server and are saved in
   channel or DM, the selected message, the menu item, the settings row, the tab
   or the button. Screen readers that follow the terminal cursor, such as Orca or
   NVDA, then read it. The loading animation stands still and interface icons are
-  shown as text.
+  shown as text. The server tabs and the **Canais**/**DMs** tabs are written
+  between brackets again, such as **[Name]**, **[+ Adicionar]**, **[Canais]**
+  and **[DMs]**, instead of being marked only by their background, which a
+  screen reader does not read.
 - **Símbolos da interface** (Interface symbols): **Ícones** (Icons) or
   **Texto** (Text). Text replaces icons such as 🔍, 🖈, 👤, 📎, 😄, ⚙ and 🎤 with
   labels such as **[/]**, **[Fix]**, **[@]**, **[+]**, **[:)]**, **[*]** and
@@ -1014,8 +1018,8 @@ Server badges sit inside the tab, separated from the name by one
 space, for example `Server ❶`. With text rendering (Chafa, Light or Ultralight),
 the badge is a plain red mention counter, such as `Server 1`; zero indicates
 unread activity without a confirmed mention. On terminals with fewer than 256
-colors, the badge stays inside the brackets of the selected server, as in
-`[Server 1]`.
+colors, and with the screen reader mode, the badge stays inside the brackets of
+the selected server, as in `[Server 1]`.
 Counts cover loaded previews, which can be truncated, rather than a server-wide
 total. Opening a notification clears its mention badge after confirmation.
 The server dot also covers notifications with missing mention metadata.

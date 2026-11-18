@@ -9,8 +9,9 @@ static const int fade_percent[] = {20, 44, 68, 92};
 
 bool tab_blocks(void)
 {
-    /* Without colors, as with Contraste: Sem cores, the brackets mark the tab. */
-    return theme_colors() && COLORS >= 256;
+    /* Without colors, as with Contraste: Sem cores, the brackets mark the tab.
+     * A screen reader reads text, not fills, so its mode keeps them too. */
+    return theme_colors() && COLORS >= 256 && !theme_screen_reader();
 }
 int tab_pair(tab_kind kind, bool cursor, bool strip_focused)
 {

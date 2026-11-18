@@ -9,8 +9,9 @@
  * strip) dissolves into the block over its last cells instead of ending hard. */
 #define TAB_NAME_MAX 28
 typedef enum { TAB_IDLE, TAB_SELECTED, TAB_ADD } tab_kind;
-/* False on terminals with fewer colors, where the fill cannot tell tabs apart
- * and the callers keep the [selected] and >cursor< markers instead. */
+/* False on terminals with fewer colors, where the fill cannot tell tabs apart,
+ * and with the screen reader mode, which reads text and not fills: the callers
+ * then keep the [selected] and >cursor< markers instead. */
 bool tab_blocks(void);
 /* Colors of one of those tabs: the one being used, the add tab or any other,
  * with the keyboard cursor on it or not, in a strip that has the focus or not. */
