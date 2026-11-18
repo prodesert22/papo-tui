@@ -153,17 +153,49 @@ static char *custom_origin(void)
     rest += 3;
     return g_strndup(custom, (gsize)(rest + strcspn(rest, "/?#") - custom));
 }
-bool update_asset_url(const app_version *version, const update_asset *asset, char *url, size_t size)
+bool update_release_url(const app_version *version, const char *file, char *url, size_t size)
 {
     char text[APP_VERSION_TEXT];
     const char *custom = getenv("PAPO_UPDATE_API_URL");
-    if (!update_asset_valid(asset) || !app_version_format(version, text, sizeof(text)))
+    if (!file || !*file || !app_version_format(version, text, sizeof(text)))
         return false;
-    int written = custom && *custom
-                      ? snprintf(url, size, "%s/download/v%s/%s", custom, text, asset->name)
-                      : snprintf(url, size, "%s/releases/download/v%s/%s", UPDATE_REPOSITORY, text,
-                                 asset->name);
+    int written = custom && *custom ? snprintf(url, size, "%s/download/v%s/%s", custom, text, file)
+                                    : snprintf(url, size, "%s/releases/download/v%s/%s",
+                                               UPDATE_REPOSITORY, text, file);
     return written > 0 && (size_t)written < size;
+}
+bool update_asset_url(const app_version *version, const update_asset *asset, char *url, size_t size)
+{
+    return update_asset_valid(asset) && update_release_url(version, asset->name, url, size);
+}
+bool update_manifest_hash(const char *manifest, size_t length, const char *name,
+                          char sha256[UPDATE_HASH_BYTES])
+{
+    bool found = false;
+    size_t wanted = name ? strlen(name) : 0;
+    if (!manifest || !wanted || memchr(manifest, 0, length))
+        return false;
+    for (const char *line = manifest, *end = manifest + length; line < end;) {
+        const char *stop = memchr(line, '\n', (size_t)(end - line));
+        size_t size = (size_t)((stop ? stop : end) - line);
+        if (size && line[size - 1] == '\r')
+            --size;
+        /* "<64 hex digits>  <name>", as sha256sum writes it; "*" marks binary mode. */
+        if (size == UPDATE_HASH_BYTES - 1 + 2 + wanted && line[UPDATE_HASH_BYTES - 1] == ' ' &&
+            (line[UPDATE_HASH_BYTES] == ' ' || line[UPDATE_HASH_BYTES] == '*') &&
+            !memcmp(line + UPDATE_HASH_BYTES + 1, name, wanted)) {
+            char sum[UPDATE_HASH_BYTES];
+            memcpy(sum, line, UPDATE_HASH_BYTES - 1);
+            sum[UPDATE_HASH_BYTES - 1] = 0;
+            /* A name listed twice with different sums names no file. */
+            if (!hash_text(sum) || (found && strcmp(sum, sha256)))
+                return false;
+            memcpy(sha256, sum, UPDATE_HASH_BYTES);
+            found = true;
+        }
+        line = stop ? stop + 1 : end;
+    }
+    return found;
 }
 bool update_redirect_allowed(const char *url, void *context)
 {

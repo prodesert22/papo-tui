@@ -87,6 +87,10 @@ static const char *transfer_failure_text(void)
         return _("Não foi possível gravar o arquivo temporário. Verifique o espaço em disco.");
     case UPDATE_TRANSFER_UNUSABLE:
         return _("O arquivo baixado não contém a versão esperada do programa e foi descartado.");
+    case UPDATE_TRANSFER_UNSIGNED:
+        return _("Esta versão não publica uma assinatura; nada foi baixado.");
+    case UPDATE_TRANSFER_FORGED:
+        return _("A assinatura desta versão não confere; nada foi baixado.");
     default:
         return _("Não foi possível baixar a atualização. Verifique a conexão.");
     }
@@ -153,6 +157,10 @@ static int status_text(char *line, size_t size)
     update_state state = update_status();
     const char *latest = update_latest();
     update_transfer transfer = update_download_status();
+    if (transfer == UPDATE_TRANSFER_AUTHENTICATING) {
+        snprintf(line, size, "%s", _("Conferindo a assinatura da versão…"));
+        return THEME_PANEL_MUTED;
+    }
     if (transfer == UPDATE_TRANSFER_RUNNING) {
         snprintf(line, size, _("Baixando %s… %d%%"), update_asset_name(),
                  update_download_percent());
@@ -389,8 +397,8 @@ bool about_copy_command(void)
 about_button about_button_now(void)
 {
     update_transfer transfer = update_download_status();
-    if (transfer == UPDATE_TRANSFER_RUNNING || transfer == UPDATE_TRANSFER_VERIFYING ||
-        transfer == UPDATE_TRANSFER_UNPACKING)
+    if (transfer == UPDATE_TRANSFER_AUTHENTICATING || transfer == UPDATE_TRANSFER_RUNNING ||
+        transfer == UPDATE_TRANSFER_VERIFYING || transfer == UPDATE_TRANSFER_UNPACKING)
         return ABOUT_BUTTON_CANCEL;
     if (update_install_staged())
         return ABOUT_BUTTON_APPLY;

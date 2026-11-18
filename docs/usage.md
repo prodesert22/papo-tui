@@ -1874,13 +1874,16 @@ the Flatpak bundle, the Termux package, or the Windows installer or ZIP.
 
 1. Select **Baixar atualização**. **Salvar atualização** (Save update) asks
    where to save the file; Esc gives up before anything is downloaded.
-2. The file is downloaded from GitHub into a private temporary folder while
+2. **Sobre** shows **Conferindo a assinatura da versão…** (Checking the
+   version's signature) while the program makes sure the release is the
+   project's; see [How a download is trusted](#how-a-download-is-trusted). The
+   file is then downloaded from GitHub into a private temporary folder while
    **Sobre** shows **Baixando … 42%**. You can close Settings and keep
    chatting. **Cancelar download** (Cancel download) stops it and removes what
    had arrived.
-3. The program compares the file's size and SHA-256 with the ones GitHub
-   publishes for it. Only a file that matches is moved to the place you chose;
-   **O arquivo baixado não confere com o publicado e foi descartado.** (The
+3. The program compares the file's size and SHA-256 with the ones published
+   for it. Only a file that matches is moved to the place you chose; **O
+   arquivo baixado não confere com o publicado e foi descartado.** (The
    downloaded file does not match the published one and was discarded) means it
    did not, and nothing was saved.
 4. **Sobre** then shows **Pacote conferido e salvo em** (Package checked and
@@ -1891,9 +1894,33 @@ the Flatpak bundle, the Termux package, or the Windows installer or ZIP.
 
 For these packages the program does not install anything or replace its own
 files: you run the command, with your password where the package manager asks
-for one. What is checked is that the file is the one GitHub publishes for that
-release; the signatures published with each release can be verified by hand,
-as its notes describe.
+for one.
+
+### How a download is trusted
+
+Every release is signed with the project's key. Before it asks for a single
+byte of the package, the program fetches the release's list of checksums
+(`SHA256SUMS`) and its signature (`SHA256SUMS.asc`), and continues only when:
+
+- the signature of that list was made with the project's release key, which is
+  built into the program (OpenPGP key `AA09 D90E 1547 7426 DAFD F098 30F8 5714
+  E332 3D6B`, the one each release publishes as `papo-tui-signing-key.asc`);
+- the list names the package for your installation, with the same SHA-256
+  GitHub reports for it.
+
+The package is then downloaded and its own SHA-256 compared with that signed
+value. So a file is accepted only when the holder of the project's key vouched
+for exactly those bytes: someone who could change what GitHub serves, or the
+connection to it, still could not make the program accept another file.
+
+**Esta versão não publica uma assinatura; nada foi baixado.** (This version
+publishes no signature; nothing was downloaded) means the release has no such
+list or signature. **A assinatura desta versão não confere; nada foi baixado.**
+(This version's signature does not match; nothing was downloaded) means the
+signature is not the project's, or the list does not name the package with
+that SHA-256. In both cases nothing of the package was requested; use the
+address of the release page and check the signatures by hand, as the release
+notes describe, before installing anything.
 
 **Baixar atualização** does not appear, and the address of the release page is
 all **Sobre** offers, when the release has no package for your installation,
@@ -1986,6 +2013,10 @@ built from source that is not a release build never asks by itself either.
   points to a full or read-only temporary folder; set `TMPDIR` to one with
   room. **Não foi possível gravar em …** names the place you chose: pick a
   folder you can write to.
+- **The update's signature was refused:** see
+  [How a download is trusted](#how-a-download-is-trusted). Nothing is
+  downloaded from a release the project's key did not sign; trying again does
+  not change that. If the release page looks right, tell the project.
 - **Baixar e instalar could not finish:** **O arquivo baixado não contém a
   versão esperada do programa e foi descartado.** (The downloaded file does not
   hold the expected version of the program) means the portable archive was not

@@ -201,6 +201,10 @@ folder unpacked from the portable archive, when you can write to the place
 that holds it; see
 [Let the program install the new version](usage.md#let-the-program-install-the-new-version).
 
+Both ways only accept a release whose list of checksums is signed with the
+project's key; see
+[How a download is trusted](usage.md#how-a-download-is-trusted).
+
 Close the program before installing. To verify a download yourself, use the
 `SHA256SUMS` file and the signatures of the release, as its notes describe.
 

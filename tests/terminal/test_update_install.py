@@ -288,6 +288,30 @@ class UpdateInstall(UpdateSuite):
             self.assertIn(staged, output)
             self.assertEqual(self.read(staged, "bin/papo-tui"), b"new program")
 
+    def test_unsigned_release_prepares_nothing_beside_the_installation(self):
+        data = os.urandom(40_000)
+        target = self.image()
+        for case, message in (
+            ("unsigned", "Esta versão não publica uma assinatura; nada foi baixado."),
+            ("stranger", "A assinatura desta versão não confere; nada foi baixado."),
+        ):
+            with self.subTest(case=case), SettingsMock() as server, update_mock() as hub:
+                hub.answer = [release("v99.0.0", assets=[asset(IMAGE, data)])]
+                hub.files["v99.0.0/" + IMAGE] = data
+                if case == "unsigned":
+                    hub.signed = False
+                else:
+                    hub.signer = hub.stranger
+                t = self.start(server, hub, "appimage", target)
+                self.wait(t, "Baixar e instalar")
+                self.press(t, first=True)
+                self.wait(t, message)
+                self.assertEqual(hub.downloads, [])
+                self.assertNotIn("Instalar e sair", self.text(t))
+                self.assertEqual(self.leftovers(), [])
+                self.assertEqual(self.read(target), b"old image")
+                self.assertTrue(t.close())
+
     def test_folder_without_room_for_the_new_version_reports_it(self):
         data = os.urandom(40_000)
         target = self.image()

@@ -9,6 +9,7 @@ taken from the emoji map published by Emzi0767; see data/emoji/README.md.
 | --- | --- | --- |
 | ncursesw/formw | Terminal and forms | MIT/X11 |
 | libcurl | HTTP, TLS and WebSocket | curl |
+| OpenSSL (libcrypto) | TLS for libcurl on Linux and Termux; signature check of releases | Apache-2.0 |
 | Jansson | JSON | MIT |
 | libunibreak | Unicode segmentation | zlib |
 | GLib/GIO/GModule | Data structures, tasks, integration and modules | LGPL-2.1-or-later |

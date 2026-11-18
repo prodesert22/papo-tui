@@ -31,6 +31,7 @@ add_library(
     src/net/http/download.c
     src/net/http/public_request.c
     src/net/update.c
+    src/net/signature.c
     src/model/version.c
     src/net/gif_search.c
     src/net/auth/session_time.c
@@ -64,7 +65,7 @@ add_library(
     src/model/conversation/pagination.c
     src/model/notifications/inbox.c)
 target_include_directories(papo_auth PUBLIC src)
-target_link_libraries(papo_auth PUBLIC papo_platform PkgConfig::CURL PkgConfig::JANSSON
+target_link_libraries(papo_auth PUBLIC papo_platform PkgConfig::CURL PkgConfig::CRYPTO PkgConfig::JANSSON
                                        PkgConfig::GLIB PkgConfig::GIO m)
 
 # Voice calls need the GStreamer WebRTC stack. Platforms without it build the inert stub instead, so

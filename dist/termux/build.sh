@@ -13,7 +13,7 @@ TERMUX_PKG_SHA256=151667c98d2714b414135e1b7d6bbf3414d4a37e5da07aef555414a6cc96dc
 # every Termux repository instead of requiring an unpublished package.
 # The GStreamer WebRTC stack is not published for Android either, so the
 # package is built without voice calls.
-TERMUX_PKG_DEPENDS="ca-certificates, chafa, ffmpeg, fontconfig, glib, libcurl, libjansson, libsixel, mpv, ncurses, ncurses-ui-libs, pango, librsvg, zlib"
+TERMUX_PKG_DEPENDS="ca-certificates, chafa, ffmpeg, fontconfig, glib, libcurl, libjansson, libsixel, mpv, ncurses, ncurses-ui-libs, openssl, pango, librsvg, zlib"
 TERMUX_PKG_BUILD_DEPENDS="aosp-libs"
 # getrandom() is provided by Android's libc starting at API 28 (Android 9).
 TERMUX_PKG_API_LEVEL=28

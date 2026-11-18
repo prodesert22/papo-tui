@@ -128,6 +128,8 @@
     {"glob": "src/net/http/public_request.*", "areas": ["network", "packaging"]},
     {"glob": "src/net/http/easy.h", "areas": ["network", "media"]},
     {"glob": "src/net/update.*", "areas": ["packaging", "network"]},
+    {"glob": "src/net/signature.*", "areas": ["packaging", "network"]},
+    {"glob": "src/net/update_key.h", "areas": ["packaging", "network"]},
     {"glob": "src/app/update.*", "areas": ["packaging", "settings"]},
     {"glob": "src/model/version.*", "areas": ["packaging"]},
     {"glob": "src/platform/install.*", "areas": ["packaging", "platform", "media"]},

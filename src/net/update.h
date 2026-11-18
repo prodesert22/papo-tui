@@ -52,6 +52,17 @@ bool update_asset_valid(const update_asset *asset);
  * repository's download address (or the test endpoint's). */
 bool update_asset_url(const app_version *version, const update_asset *asset, char *url,
                       size_t size);
+/* Where a release keeps any of its files, such as the manifest of checksums and
+ * its signature. */
+#define UPDATE_MANIFEST "SHA256SUMS"
+#define UPDATE_MANIFEST_SIGNATURE "SHA256SUMS.asc"
+#define UPDATE_MANIFEST_LIMIT (1024U * 1024U)
+bool update_release_url(const app_version *version, const char *file, char *url, size_t size);
+/* The SHA-256 a manifest in sha256sum's format lists for a file name; false
+ * when it lists none, or lists the name with two different sums. The manifest
+ * is borrowed text of that length. */
+bool update_manifest_hash(const char *manifest, size_t length, const char *name,
+                          char sha256[UPDATE_HASH_BYTES]);
 /* Whether a download may follow a redirect there: https on GitHub's own hosts,
  * or the origin of the test endpoint. context is unused. */
 bool update_redirect_allowed(const char *url, void *context);

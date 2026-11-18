@@ -1,0 +1,2 @@
+tests/fixtures/update/sha256sums_observed.txt -text
+tests/fixtures/update/sha256sums_observed.asc -text

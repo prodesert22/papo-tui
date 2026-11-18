@@ -1,6 +1,8 @@
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(CURL REQUIRED IMPORTED_TARGET libcurl>=7.86)
 pkg_check_modules(JANSSON REQUIRED IMPORTED_TARGET jansson>=2.14)
+# libcurl's own TLS library on Linux and Termux; it checks the signature of releases.
+pkg_check_modules(CRYPTO REQUIRED IMPORTED_TARGET libcrypto>=1.1.1)
 pkg_check_modules(NCURSES REQUIRED IMPORTED_TARGET ncursesw>=6.6)
 pkg_check_modules(FORM REQUIRED IMPORTED_TARGET formw>=6.6)
 pkg_check_modules(UNIBREAK REQUIRED IMPORTED_TARGET libunibreak>=6.1)

@@ -4,7 +4,9 @@
 #include "net/clock.h"
 #include "net/http/public_request.h"
 #include "net/retry.h"
+#include "net/signature.h"
 #include "net/update.h"
+#include "net/update_key.h"
 #include "platform/file_transfer.h"
 #include "platform/install.h"
 #include "platform/runtime.h"
@@ -54,6 +56,11 @@ static struct {
      * the portable archive, and whether to apply it when the program ends. */
     char *target, *tree;
     bool install, unpacking, apply;
+    /* The key releases must be signed with, and which of the two files that
+     * prove it is being fetched: the signature first, then the manifest. */
+    unsigned char *key;
+    size_t key_length;
+    bool manifest;
 } update;
 /* What the screen left to be done once it is gone. */
 static struct {
@@ -181,6 +188,25 @@ static void schedule(uint64_t now, uint64_t milliseconds)
     update.due = now + milliseconds;
     update.has_due = true;
 }
+/* The key built into the program. A test endpoint may name another, as a DER
+ * file, since nobody but the project can sign with the real one; a file that
+ * cannot be read leaves no key, and then nothing is accepted. */
+static void load_key(void)
+{
+    const char *custom = getenv("PAPO_UPDATE_API_URL"), *named = getenv("PAPO_UPDATE_KEY");
+    char *bytes = NULL;
+    gsize length = 0;
+    if (custom && *custom && named && *named) {
+        if (g_file_get_contents(named, &bytes, &length, NULL) && length <= 4096) {
+            update.key = (unsigned char *)bytes;
+            update.key_length = length;
+        } else
+            g_free(bytes);
+        return;
+    }
+    update.key = g_memdup2(update_release_key, sizeof(update_release_key));
+    update.key_length = sizeof(update_release_key);
+}
 /* What a newer version replaces by itself, or NULL: an AppImage file or a
  * folder unpacked from the portable archive that this user can write. A test
  * endpoint that names the installation may name the place too. */
@@ -201,6 +227,7 @@ void update_init(bool automatic)
         !net_now_ms(&now))
         return;
     update.ready = true;
+    load_key();
     update.channel = channel_of_run(update.development);
     update.target = target_of_run();
     /* The copy this one replaced was kept until the new one started. */
@@ -230,6 +257,16 @@ void update_init(bool automatic)
     }
     schedule(now, wait);
 }
+/* Removes the signature and the manifest fetched to check the release. */
+static void forget_proof(void)
+{
+    static const char *const names[] = {UPDATE_MANIFEST_SIGNATURE, UPDATE_MANIFEST};
+    for (size_t i = 0; i < 2; ++i) {
+        char *path = g_build_filename(update.directory, names[i], NULL);
+        g_unlink(path);
+        g_free(path);
+    }
+}
 /* Removes the temporary file and its folder, or the folder prepared beside
  * the installation with everything in it. */
 static void discard_files(void)
@@ -239,8 +276,10 @@ static void discard_files(void)
     else {
         if (update.file)
             g_unlink(update.file);
-        if (update.directory)
+        if (update.directory) {
+            forget_proof();
             g_rmdir(update.directory);
+        }
     }
     g_free(update.file);
     g_free(update.directory);
@@ -275,6 +314,7 @@ void update_shutdown(void)
     discard_files();
     forget_saved();
     g_free(update.target);
+    g_free(update.key);
     public_request_destroy(update.request);
     public_request_destroy(update.transfer);
     memset(&update, 0, sizeof(update));
@@ -484,10 +524,101 @@ static void verify_begin(void)
     g_task_run_in_thread(update.verify, verify_worker);
     update.transfer_state = UPDATE_TRANSFER_VERIFYING;
 }
+/* Starts fetching one of the release's two proof files into the folder. */
+static bool proof_fetch(const char *name, size_t limit)
+{
+    char url[UPDATE_URL_BYTES];
+    char *path = g_build_filename(update.directory, name, NULL);
+    bool started =
+        update_release_url(&update.latest, name, url, sizeof(url)) &&
+        public_request_download(update.transfer, url, path, limit, update_redirect_allowed, NULL);
+    g_free(path);
+    return started;
+}
+/* The manifest is the release's when the project's key signed it, and the
+ * package is the release's when the manifest lists it with the sum GitHub
+ * reported: only then is the package worth fetching. */
+static bool authentic(void)
+{
+    char *signature_path = g_build_filename(update.directory, UPDATE_MANIFEST_SIGNATURE, NULL);
+    char *manifest_path = g_build_filename(update.directory, UPDATE_MANIFEST, NULL);
+    char *signature = NULL, *manifest = NULL, sum[UPDATE_HASH_BYTES];
+    gsize signature_length = 0, manifest_length = 0;
+    bool ok =
+        update.key && g_file_get_contents(signature_path, &signature, &signature_length, NULL) &&
+        g_file_get_contents(manifest_path, &manifest, &manifest_length, NULL) &&
+        signature_verify((const unsigned char *)manifest, manifest_length, signature,
+                         signature_length, update.key, update.key_length) == SIGNATURE_VALID &&
+        update_manifest_hash(manifest, manifest_length, update.asset.name, sum) &&
+        !strcmp(sum, update.asset.sha256);
+    g_free(manifest);
+    g_free(signature);
+    g_free(manifest_path);
+    g_free(signature_path);
+    return ok;
+}
+static bool asset_fetch(void)
+{
+    char url[UPDATE_URL_BYTES];
+    return update_asset_url(&update.latest, &update.asset, url, sizeof(url)) &&
+           public_request_download(update.transfer, url, update.file, (size_t)update.asset.size,
+                                   update_redirect_allowed, NULL);
+}
+static update_transfer_failure transport_failure(public_error error)
+{
+    return error == PUBLIC_ERROR_TLS         ? UPDATE_TRANSFER_TLS
+           : error == PUBLIC_ERROR_TOO_LARGE ? UPDATE_TRANSFER_MISMATCH
+           : error == PUBLIC_ERROR_REDIRECT  ? UPDATE_TRANSFER_REFUSED
+           : error == PUBLIC_ERROR_STORAGE   ? UPDATE_TRANSFER_STORAGE
+                                             : UPDATE_TRANSFER_NETWORK;
+}
+/* The signature, then the manifest, then the check of both. */
+static bool authenticate_poll(void)
+{
+    if (!public_request_poll(update.transfer))
+        return false;
+    public_state state = public_request_state(update.transfer);
+    if (state == PUBLIC_FAILED) {
+        public_error error = public_request_error(update.transfer);
+        public_request_cancel(update.transfer);
+        /* A proof larger than any real one is no proof. */
+        transfer_fail(error == PUBLIC_ERROR_TOO_LARGE ? UPDATE_TRANSFER_FORGED
+                                                      : transport_failure(error));
+        return true;
+    }
+    if (state != PUBLIC_READY)
+        return true;
+    long status = public_request_status(update.transfer);
+    public_request_cancel(update.transfer);
+    if (status != 200) {
+        /* A release without these files was not signed for this program. */
+        transfer_fail(status == 404 ? UPDATE_TRANSFER_UNSIGNED : UPDATE_TRANSFER_REFUSED);
+        return true;
+    }
+    if (!update.manifest) {
+        update.manifest = true;
+        if (!proof_fetch(UPDATE_MANIFEST, UPDATE_MANIFEST_LIMIT))
+            transfer_fail(UPDATE_TRANSFER_STORAGE);
+        return true;
+    }
+    if (!authentic()) {
+        transfer_fail(UPDATE_TRANSFER_FORGED);
+        return true;
+    }
+    forget_proof();
+    if (!asset_fetch()) {
+        transfer_fail(UPDATE_TRANSFER_STORAGE);
+        return true;
+    }
+    update.transfer_state = UPDATE_TRANSFER_RUNNING;
+    return true;
+}
 static bool download_poll(void)
 {
     bool changed = false;
-    if (update.transfer_state == UPDATE_TRANSFER_RUNNING) {
+    if (update.transfer_state == UPDATE_TRANSFER_AUTHENTICATING)
+        changed = authenticate_poll();
+    else if (update.transfer_state == UPDATE_TRANSFER_RUNNING) {
         changed = public_request_poll(update.transfer);
         public_state state = public_request_state(update.transfer);
         if (state == PUBLIC_READY) {
@@ -501,11 +632,7 @@ static bool download_poll(void)
         } else if (state == PUBLIC_FAILED) {
             public_error error = public_request_error(update.transfer);
             public_request_cancel(update.transfer);
-            transfer_fail(error == PUBLIC_ERROR_TLS         ? UPDATE_TRANSFER_TLS
-                          : error == PUBLIC_ERROR_TOO_LARGE ? UPDATE_TRANSFER_MISMATCH
-                          : error == PUBLIC_ERROR_REDIRECT  ? UPDATE_TRANSFER_REFUSED
-                          : error == PUBLIC_ERROR_STORAGE   ? UPDATE_TRANSFER_STORAGE
-                                                            : UPDATE_TRANSFER_NETWORK);
+            transfer_fail(transport_failure(error));
             changed = true;
         } else {
             int percent = update_download_percent();
@@ -599,8 +726,8 @@ uint64_t update_asset_size(void)
  * into a folder beside it. */
 static bool download_start(bool install)
 {
-    char url[UPDATE_URL_BYTES];
     if (!update.ready || !*update_asset_name() || (install && !update.target) ||
+        update.transfer_state == UPDATE_TRANSFER_AUTHENTICATING ||
         update.transfer_state == UPDATE_TRANSFER_RUNNING ||
         update.transfer_state == UPDATE_TRANSFER_VERIFYING ||
         update.transfer_state == UPDATE_TRANSFER_UNPACKING || update.verify)
@@ -625,13 +752,13 @@ static bool download_start(bool install)
     update.file = g_build_filename(update.directory, update.asset.name, NULL);
     if (!update.transfer)
         update.transfer = public_request_create();
-    if (!update.transfer || !update_asset_url(&update.latest, &update.asset, url, sizeof(url)) ||
-        !public_request_download(update.transfer, url, update.file, (size_t)update.asset.size,
-                                 update_redirect_allowed, NULL)) {
+    /* Nothing of the package is fetched before the release proves who made it. */
+    update.manifest = false;
+    if (!update.transfer || !proof_fetch(UPDATE_MANIFEST_SIGNATURE, SIGNATURE_ARMOR_LIMIT)) {
         transfer_fail(UPDATE_TRANSFER_STORAGE);
         return true;
     }
-    update.transfer_state = UPDATE_TRANSFER_RUNNING;
+    update.transfer_state = UPDATE_TRANSFER_AUTHENTICATING;
     return true;
 }
 bool update_download_start(void)
@@ -682,7 +809,8 @@ bool update_apply(update_applied *result)
 }
 void update_download_cancel(void)
 {
-    if (update.transfer_state == UPDATE_TRANSFER_RUNNING)
+    if (update.transfer_state == UPDATE_TRANSFER_RUNNING ||
+        update.transfer_state == UPDATE_TRANSFER_AUTHENTICATING)
         public_request_cancel(update.transfer);
     if (update.verify) {
         /* The worker still reads the file: it is removed when it returns. */
@@ -704,6 +832,8 @@ update_transfer_failure update_download_error(void)
 }
 int update_download_percent(void)
 {
+    if (update.transfer_state == UPDATE_TRANSFER_AUTHENTICATING)
+        return 0;
     if (update.transfer_state != UPDATE_TRANSFER_RUNNING || !update.asset.size)
         return update.transfer_state == UPDATE_TRANSFER_NONE ? 0 : 100;
     uint64_t bytes = public_request_bytes(update.transfer);

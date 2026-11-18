@@ -429,6 +429,10 @@ msgstr ">+ Add<"
 msgid "@ / :nome"
 msgstr "@ / :name"
 
+#: src/ui/components/about.c
+msgid "A assinatura desta versão não confere; nada foi baixado."
+msgstr "This version's signature does not match; nothing was downloaded."
+
 #: src/ui/components/emoji_picker.c
 msgid "A busca de GIFs falhou"
 msgstr "The GIF search failed"
@@ -1858,6 +1862,10 @@ msgid "Conexão recusada. Confira o host e a porta."
 msgstr "Connection refused. Check the host and port."
 
 #: src/ui/components/about.c
+msgid "Conferindo a assinatura da versão…"
+msgstr "Checking the version's signature…"
+
+#: src/ui/components/about.c
 msgid "Conferindo o tamanho e o SHA-256 do arquivo…"
 msgstr "Checking the file's size and SHA-256…"
 
@@ -3024,6 +3032,10 @@ msgstr "This instance is private. Fill in the server password."
 #: src/config/keymap.c
 msgid "Esta tecla é fixa: navega, confirma ou edita texto."
 msgstr "This key is fixed: it navigates, confirms or edits text."
+
+#: src/ui/components/about.c
+msgid "Esta versão não publica uma assinatura; nada foi baixado."
+msgstr "This version publishes no signature; nothing was downloaded."
 
 #: src/app/session_slot.c
 msgid "Estado de sessão inválido. Recuperação desativada."

@@ -498,6 +498,20 @@ the chosen one, the `name`, `size` and `digest` of one asset. Keep these stable:
   any other name it only shows the release page.
 - GitHub must list the asset with a `sha256:` digest (it computes one for every
   uploaded file) and it must be at most 256 MiB.
+- The release must publish `SHA256SUMS`, made by `dist/checksums.py` after every
+  asset is in place, and `SHA256SUMS.asc`, its armored detached signature by the
+  release key:
+
+  ```sh
+  python3 dist/checksums.py build/release
+  gpg --local-user AA09D90E15477426DAFDF09830F85714E3323D6B --armor --detach-sign \
+      --output build/release/SHA256SUMS.asc build/release/SHA256SUMS
+  ```
+
+  Installed copies fetch both before any package and refuse the release
+  without them, when the signature is not that key's, or when `SHA256SUMS` does
+  not list the package with the digest GitHub reports. A file uploaded or
+  replaced after the manifest was signed is therefore refused: sign last.
 
 | Channel word | Asset |
 | --- | --- |
@@ -511,6 +525,19 @@ the chosen one, the `name`, `size` and `digest` of one asset. Keep these stable:
 | `termux` | `papo-tui-<v>-termux-aarch64.deb` |
 | `windows-installer` | `papo-tui-<v>-windows-<arch>-setup.exe` |
 | `windows-zip` | `papo-tui-<v>-windows-<arch>.zip` |
+
+The public half of the release key is built into the program as
+`src/net/update_key.h` (the RSA numbers only, as a DER SubjectPublicKeyInfo);
+`src/net/signature.c` reads the signature packet and OpenSSL's libcrypto does
+the arithmetic. Only what `gpg --armor --detach-sign` produces with an RSA key
+is read: one version 4 signature over a binary document, with SHA-256 or
+SHA-512. `tests/unit/test_signature.c` verifies the real `SHA256SUMS` and
+`SHA256SUMS.asc` of 1.0.0-beta.2 with that key. Copies already installed trust
+only the key they were built with, so a new key has to be introduced by a
+release signed with the old one, and a release signed with any other kind of
+key (Ed25519, for example) is refused by them. With the stand-in for GitHub,
+`PAPO_UPDATE_KEY` names the DER file of the key to trust instead, since nobody
+else can sign with the real one.
 
 `dist/package.py` writes the channel word into each package it makes, as
 `share/papo-tui/install-channel` under the installation prefix

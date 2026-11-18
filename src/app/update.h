@@ -49,6 +49,9 @@ void update_acknowledge(void);
 /* The package of the newer version for this installation. */
 typedef enum {
     UPDATE_TRANSFER_NONE,
+    /* The release's manifest and its signature are fetched and checked with
+     * the project's key before any byte of the package is asked for. */
+    UPDATE_TRANSFER_AUTHENTICATING,
     UPDATE_TRANSFER_RUNNING,
     UPDATE_TRANSFER_VERIFYING, /* Downloaded; its size and SHA-256 are being checked. */
     UPDATE_TRANSFER_UNPACKING, /* Checked; the portable archive is being unpacked. */
@@ -62,7 +65,11 @@ typedef enum {
     UPDATE_TRANSFER_REFUSED,  /* An answer other than the file, or a redirect not allowed. */
     UPDATE_TRANSFER_MISMATCH, /* Not the published size or SHA-256: discarded. */
     UPDATE_TRANSFER_STORAGE,  /* The temporary file could not be written. */
-    UPDATE_TRANSFER_UNUSABLE  /* The archive is not the tree of that version: discarded. */
+    UPDATE_TRANSFER_UNUSABLE, /* The archive is not the tree of that version: discarded. */
+    UPDATE_TRANSFER_UNSIGNED, /* The release publishes no signed manifest. */
+    /* The manifest is not signed by the project's key, or does not list the
+     * package with the sum GitHub reports. */
+    UPDATE_TRANSFER_FORGED
 } update_transfer_failure;
 
 /* How this copy was installed, which decides the package offered. */

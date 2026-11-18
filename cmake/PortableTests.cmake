@@ -117,6 +117,19 @@ papo_add_test(
     LABELS
     packaging
     platform)
+add_executable(signature-test tests/unit/test_signature.c)
+target_link_libraries(signature-test PRIVATE papo_auth)
+papo_add_test(
+    NAME
+    release-signature-unit
+    COMMAND
+    signature-test
+    ${PROJECT_SOURCE_DIR}/tests/fixtures/update/sha256sums_observed.txt
+    ${PROJECT_SOURCE_DIR}/tests/fixtures/update/sha256sums_observed.asc
+    ${PROJECT_SOURCE_DIR}/tests/fixtures/update/github_releases_observed.json
+    LABELS
+    packaging
+    network)
 add_executable(update-test tests/unit/test_update.c)
 target_link_libraries(update-test PRIVATE papo_auth)
 papo_add_test(
