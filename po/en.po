@@ -1281,6 +1281,10 @@ msgstr "Download attachments"
 msgid "Baixar atualização"
 msgstr "Download update"
 
+#: src/ui/components/settings.c
+msgid "Baixar e instalar"
+msgstr "Download and install"
+
 #: src/ui/components/server_settings/members.c src/ui/screens/conversation/members.c
 msgid "Banido"
 msgstr "Banned"
@@ -2114,8 +2118,8 @@ msgid "Copiar token"
 msgstr "Copy token"
 
 #: src/ui/components/help.c
-msgid "Copiar um link ou o comando de instalação, ligar e desligar a checagem diária; o botão verifica agora, baixa a versão nova ou cancela o download"
-msgstr "Copy a link or the install command, turn the daily check on and off; the button checks now, downloads the new version or cancels the download"
+msgid "Copiar um link ou o comando de instalação, ligar e desligar a checagem diária; o botão verifica agora, baixa a versão nova, cancela o download ou instala e sai"
+msgstr "Copy a link or the install command, turn the daily check on and off; the button checks now, downloads the new version, cancels the download or installs and quits"
 
 #: src/ui/screens/conversation/members.c
 msgid "Copiar · Enter"
@@ -3601,6 +3605,10 @@ msgstr "Insert a line break without sending"
 msgid "Insert"
 msgstr "Insert"
 
+#: src/ui/components/settings.c
+msgid "Instalar e sair"
+msgstr "Install and quit"
+
 #: src/ui/components/about.c
 msgid "Instale com:"
 msgstr "Install with:"
@@ -4769,7 +4777,7 @@ msgstr "Could not start the connection."
 msgid "Não foi possível iniciar a troca de senha. Tente de novo."
 msgstr "Could not start the password change. Try again."
 
-#: src/ui/screens/conversation/update_save.c
+#: src/ui/components/settings.c src/ui/screens/conversation/update_save.c
 msgid "Não foi possível iniciar o download da atualização."
 msgstr "Could not start the update download."
 
@@ -4792,6 +4800,16 @@ msgstr "Could not start the audio test."
 #: src/net/voice/client.c
 msgid "Não foi possível iniciar o áudio."
 msgstr "Could not start audio."
+
+#: src/main.c
+msgid ""
+"Não foi possível instalar a versão %s; esta continua no lugar.\n"
+"A versão nova, já conferida, ficou em:\n"
+"  %s\n"
+msgstr ""
+"Could not install version %s; this one stays in place.\n"
+"The new version, already checked, is at:\n"
+"  %s\n"
 
 #: src/ui/media/profile_image.c
 msgid "Não foi possível ler a imagem."
@@ -5044,6 +5062,10 @@ msgstr "GitHub sent an unexpected answer. Try again later."
 #: src/ui/components/about.c
 msgid "O arquivo baixado não confere com o publicado e foi descartado."
 msgstr "The downloaded file does not match the published one and was discarded."
+
+#: src/ui/components/about.c
+msgid "O arquivo baixado não contém a versão esperada do programa e foi descartado."
+msgstr "The downloaded file does not hold the expected version of the program and was discarded."
 
 #: src/ui/components/file_picker.c
 msgid "O arquivo já existe. Salve de novo para substituí-lo."
@@ -5349,6 +5371,10 @@ msgstr "Page Down"
 msgid "Page Up"
 msgstr "Page Up"
 
+#: src/main.c
+msgid "Papo TUI atualizado para a versão %s. Abra o programa novamente.\n"
+msgstr "Papo TUI was updated to version %s. Open the program again.\n"
+
 #: src/ui/components/settings.c
 msgid "Parar"
 msgstr "Stop"
@@ -5640,6 +5666,10 @@ msgstr "Fill in the username and password."
 #: src/ui/screens/inbox.c
 msgid "Preferências"
 msgstr "Preferences"
+
+#: src/ui/components/about.c
+msgid "Preparando a versão nova…"
+msgstr "Preparing the new version…"
 
 #: src/ui/screens/conversation/attachments.c
 msgid "Preparando anexos…"
@@ -6880,6 +6910,10 @@ msgstr "Version %s available at:"
 #: src/ui/screens/conversation/drawing.c
 msgid "Versão %s disponível · {k1:conversation.settings} → Sobre"
 msgstr "Version %s available · {k1:conversation.settings} → About"
+
+#: src/ui/components/about.c
+msgid "Versão %s pronta: Instalar e sair a coloca no lugar desta."
+msgstr "Version %s ready: Install and quit puts it in place of this one."
 
 #: src/ui/components/about.c
 msgid "Versão de desenvolvimento: as atualizações só são verificadas a pedido."

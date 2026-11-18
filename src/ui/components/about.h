@@ -47,12 +47,16 @@ bool about_copy_source(void);
 bool about_copy_release(void);
 bool about_copy_command(void);
 /* What the section's button does now: ask GitHub, download the package of the
- * newer version, stop that download, or copy how to install what was saved. */
+ * newer version, stop that download, or copy how to install what was saved.
+ * A copy that can replace itself downloads to install, and then offers to put
+ * the prepared version in place and leave. */
 typedef enum {
     ABOUT_BUTTON_CHECK,
     ABOUT_BUTTON_DOWNLOAD,
     ABOUT_BUTTON_CANCEL,
-    ABOUT_BUTTON_COPY
+    ABOUT_BUTTON_COPY,
+    ABOUT_BUTTON_INSTALL,
+    ABOUT_BUTTON_APPLY
 } about_button;
 about_button about_button_now(void);
 

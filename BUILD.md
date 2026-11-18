@@ -517,8 +517,35 @@ the chosen one, the `name`, `size` and `digest` of one asset. Keep these stable:
 (`src/platform/install.c` reads it). Packages without the file are recognized by
 what they show: `FLATPAK_ID`, `TERMUX_VERSION`, `APPIMAGE` with `APPDIR` holding
 the executable, an Inno Setup uninstaller beside the executable, or the
-distribution in `/etc/os-release` for a copy under `/usr`. The portable archive
-has no word yet, so a copy unpacked from it is not offered a download.
+distribution in `/etc/os-release` for a copy under `/usr`. A copy unpacked from
+a portable archive without the word is not offered a download.
+
+The portable archive must be made with `--formats tarball`, after the common
+packaging build on Ubuntu 24.04:
+
+```sh
+python dist/package.py --build build/package --output build/artifacts \
+    --formats tarball --arch x86_64 --flavor ubuntu --dependency-prefix build/release-deps
+```
+
+It holds the installed tree under one folder, `papo-tui-<v>/`, with the word
+`tarball` inside. A copy that updates itself accepts only that shape: the
+folder of the expected version, `bin/papo-tui`, the word, and no link or entry
+leaving the folder (`src/platform/self_install.c`,
+`tests/unit/test_self_install.c`). An archive packed by hand without the word is
+downloaded and then refused. `dist/linux-release.sh` and `dist/release.py` do
+not list this format yet.
+
+Before replacing a folder the program checks that every name at its top and
+one level down (`bin/…`, `lib/…`, `share/…`) also exists in the new tree, so a
+folder shared with other software is never renamed away. A release that drops
+one of those names makes copies of the previous version refuse to update
+themselves; they then keep the new tree and say where it is.
+
+With the stand-in for GitHub, `PAPO_UPDATE_TARGET` names the AppImage file or
+the unpacked folder that `PAPO_UPDATE_CHANNEL=appimage` or `tarball` pretends
+to be; `tests/terminal/test_update_install.py` replaces both in temporary
+folders.
 `tests/unit/test_install.c` checks every name against the files of a real
 release, and `tests/distribution/test_distribution.py` checks that the script
 and the program know the same words.

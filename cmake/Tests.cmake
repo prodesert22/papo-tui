@@ -482,6 +482,18 @@ if(BUILD_TESTING)
         LABELS
         media)
     papo_set_tests_properties(gif-picker-terminal PROPERTIES TIMEOUT 120)
+    # Replacing an AppImage or an unpacked archive exists on Linux only; the
+    # test packs its fixtures with the system's tar.
+    add_executable(self-install-test tests/unit/test_self_install.c)
+    target_link_libraries(self-install-test PRIVATE papo_send_editor)
+    papo_add_test(
+        NAME
+        self-install-unit
+        COMMAND
+        self-install-test
+        LABELS
+        packaging
+        platform)
     find_program(OPENSSL_CLI NAMES openssl REQUIRED)
     # The stand-in for GitHub is served over TLS with a certificate made by openssl.
     papo_add_test(
@@ -506,6 +518,17 @@ if(BUILD_TESTING)
         packaging
         settings
         network)
+    papo_add_test(
+        NAME
+        update-install-terminal
+        COMMAND
+        ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_update_install.py
+        $<TARGET_FILE:papo-tui>
+        LABELS
+        packaging
+        settings
+        platform)
     add_executable(realtime-probe tests/probes/realtime_probe.c)
     target_link_libraries(realtime-probe PRIVATE papo_auth)
     target_compile_options(realtime-probe PRIVATE -Wall -Wextra -Wpedantic -Werror)

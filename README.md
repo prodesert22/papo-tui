@@ -58,8 +58,10 @@ total known unread mentions across connected instances when there are any.
 code. Once a day the client asks GitHub whether a newer release exists and
 tells you on the sign-in screen and in the footer. **Baixar atualização** in
 **Sobre** then downloads the package for your installation, checks its SHA-256
-and shows the command that installs it; the program never installs anything by
-itself. Turn the check off in **Sobre**, or start with `PAPO_UPDATE_CHECK=0`.
+and shows the command that installs it. An AppImage or a folder unpacked from
+the portable archive is replaced by the program itself, with **Baixar e
+instalar** and then **Instalar e sair**. Turn the check off in **Sobre**, or
+start with `PAPO_UPDATE_CHECK=0`.
 
 ## Install
 

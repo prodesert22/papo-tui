@@ -106,6 +106,7 @@ typedef struct {
      * device's switch of the daily update check. */
     about_view about;
     bool about_copied, update_check;
+    bool quit; /* Taken by the view: leave the program to put the newer version in place. */
 } app_settings;
 void settings_open(app_settings *settings, const profile_config *config, voice_client *voice,
                    history *profile, auth_client *auth, icon_view *icons, const char *server);

@@ -131,6 +131,7 @@
     {"glob": "src/app/update.*", "areas": ["packaging", "settings"]},
     {"glob": "src/model/version.*", "areas": ["packaging"]},
     {"glob": "src/platform/install.*", "areas": ["packaging", "platform", "media"]},
+    {"glob": "src/platform/self_install.*", "areas": ["packaging", "platform"]},
 
     {"glob": "src/ui/components/help.*", "areas": ["ui", "input"]},
     {"glob": "src/ui/components/quick_switcher.*", "areas": ["ui", "servers"]},

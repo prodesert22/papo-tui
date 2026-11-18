@@ -133,6 +133,7 @@ add_library(
     src/ui/input/shortcuts.c
     src/ui/input/mouse.c
     src/platform/file_transfer.c
+    src/platform/self_install.c
     src/platform/${PAPO_PLATFORM}/file_transfer.c
     src/platform/${PAPO_PLATFORM}/clipboard.c
     src/ui/media/backend_module.c

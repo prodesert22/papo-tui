@@ -51,6 +51,7 @@ typedef enum {
     UPDATE_TRANSFER_NONE,
     UPDATE_TRANSFER_RUNNING,
     UPDATE_TRANSFER_VERIFYING, /* Downloaded; its size and SHA-256 are being checked. */
+    UPDATE_TRANSFER_UNPACKING, /* Checked; the portable archive is being unpacked. */
     UPDATE_TRANSFER_READY,     /* Checked and waiting to be taken. */
     UPDATE_TRANSFER_FAILED
 } update_transfer;
@@ -60,7 +61,8 @@ typedef enum {
     UPDATE_TRANSFER_TLS,
     UPDATE_TRANSFER_REFUSED,  /* An answer other than the file, or a redirect not allowed. */
     UPDATE_TRANSFER_MISMATCH, /* Not the published size or SHA-256: discarded. */
-    UPDATE_TRANSFER_STORAGE   /* The temporary file could not be written. */
+    UPDATE_TRANSFER_STORAGE,  /* The temporary file could not be written. */
+    UPDATE_TRANSFER_UNUSABLE  /* The archive is not the tree of that version: discarded. */
 } update_transfer_failure;
 
 /* How this copy was installed, which decides the package offered. */
@@ -84,5 +86,27 @@ char *update_download_take(void);
 void update_download_finish(const char *saved);
 /* Where the package of the newer version was saved in this run; "" when not. */
 const char *update_saved(void);
+
+/* Replacing this copy with the newer version, for an AppImage and for a folder
+ * unpacked from the portable archive that this user can write. */
+bool update_install_possible(void);
+/* Downloads the package into a folder beside the installation, checks it and,
+ * for the archive, unpacks and inspects it; false when this copy cannot be
+ * replaced or a download is under way. update_download_status follows it, and
+ * update_download_cancel stops it and removes what was prepared. */
+bool update_install_start(void);
+/* The newer version is prepared and waits to be put in place. */
+bool update_install_staged(void);
+/* Asks for the prepared version to be put in place when the program ends;
+ * false when none is prepared. Leaving any other way discards it. */
+bool update_install_on_exit(void);
+typedef struct {
+    bool done;
+    char version[48];
+    char place[1200]; /* What was replaced; or, when it was not, where the new version is. */
+} update_applied;
+/* After the screens are gone and update_shutdown ran: puts the version asked
+ * for in place and reports it. false when none was asked for. */
+bool update_apply(update_applied *result);
 
 #endif

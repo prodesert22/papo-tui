@@ -224,7 +224,7 @@ static const help_row rows[] = {
         "esta")},
     {HELP_SETTINGS, N_("Sobre: ↑↓ / Enter / clique"),
      N_("Copiar um link ou o comando de instalação, ligar e desligar a checagem diária; o botão "
-        "verifica agora, baixa a versão nova ou cancela o download")},
+        "verifica agora, baixa a versão nova, cancela o download ou instala e sai")},
     {HELP_SETTINGS, N_("Esc / {k:conversation.settings}"), N_("Fechar as configurações")},
     {HELP_SERVER_SETTINGS, N_("←→ nas abas / clique"),
      N_("Trocar entre Visão geral, Cargos, Canais, Emojis, Membros e Auditoria; só aparecem as "

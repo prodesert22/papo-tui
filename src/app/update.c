@@ -8,6 +8,7 @@
 #include "platform/file_transfer.h"
 #include "platform/install.h"
 #include "platform/runtime.h"
+#include "platform/self_install.h"
 #include <glib.h>
 #include <glib/gstdio.h>
 #include <jansson.h>
@@ -48,7 +49,19 @@ static struct {
     GCancellable *cancel;
     bool discard;
     int percent;
+    /* Replacing this copy: what is replaced, whether the download under way is
+     * for that (directory is then a folder beside it), the tree unpacked from
+     * the portable archive, and whether to apply it when the program ends. */
+    char *target, *tree;
+    bool install, unpacking, apply;
 } update;
+/* What the screen left to be done once it is gone. */
+static struct {
+    bool waiting;
+    install_channel channel;
+    char *file, *tree, *target, *staging;
+    char version[APP_VERSION_TEXT];
+} pending;
 
 /* The asset as stored: {"name":...,"sha256":...,"size":...}. */
 static bool asset_decode(const json_t *value, update_asset *asset)
@@ -168,6 +181,17 @@ static void schedule(uint64_t now, uint64_t milliseconds)
     update.due = now + milliseconds;
     update.has_due = true;
 }
+/* What a newer version replaces by itself, or NULL: an AppImage file or a
+ * folder unpacked from the portable archive that this user can write. A test
+ * endpoint that names the installation may name the place too. */
+static char *target_of_run(void)
+{
+    const char *custom = getenv("PAPO_UPDATE_API_URL"), *named = getenv("PAPO_UPDATE_CHANNEL");
+    const char *place = getenv("PAPO_UPDATE_TARGET");
+    if (custom && *custom && named && *named)
+        return place && g_path_is_absolute(place) ? g_strdup(place) : NULL;
+    return self_install_target(update.channel);
+}
 void update_init(bool automatic)
 {
     update_shutdown();
@@ -178,6 +202,10 @@ void update_init(bool automatic)
         return;
     update.ready = true;
     update.channel = channel_of_run(update.development);
+    update.target = target_of_run();
+    /* The copy this one replaced was kept until the new one started. */
+    if (update.channel == INSTALL_TARBALL && update.target)
+        self_install_forget_previous(update.target);
     app_version latest;
     update_asset asset;
     uint64_t wait = STARTUP_DELAY_MS;
@@ -202,19 +230,40 @@ void update_init(bool automatic)
     }
     schedule(now, wait);
 }
-/* Removes the temporary file and its folder. */
+/* Removes the temporary file and its folder, or the folder prepared beside
+ * the installation with everything in it. */
 static void discard_files(void)
 {
-    if (update.file)
-        g_unlink(update.file);
-    if (update.directory)
-        g_rmdir(update.directory);
+    if (update.install)
+        self_install_discard(update.directory);
+    else {
+        if (update.file)
+            g_unlink(update.file);
+        if (update.directory)
+            g_rmdir(update.directory);
+    }
     g_free(update.file);
     g_free(update.directory);
-    update.file = update.directory = NULL;
+    g_free(update.tree);
+    update.file = update.directory = update.tree = NULL;
+    update.install = update.apply = false;
 }
 void update_shutdown(void)
 {
+    /* A newer version asked to be put in place outlives the screens. */
+    if (update.apply && update.install && update.transfer_state == UPDATE_TRANSFER_READY &&
+        !pending.waiting) {
+        pending.waiting = true;
+        pending.channel = update.channel;
+        pending.file = update.file;
+        pending.tree = update.tree;
+        pending.target = update.target;
+        pending.staging = update.directory;
+        snprintf(pending.version, sizeof(pending.version), "%s", update.latest_text);
+        update.file = update.tree = update.target = update.directory = NULL;
+        update.install = false;
+        update.transfer_state = UPDATE_TRANSFER_NONE;
+    }
     update_download_cancel();
     /* A check of the file still running reads it: let it finish first. */
     while (update.verify && !g_task_get_completed(update.verify)) {
@@ -225,6 +274,7 @@ void update_shutdown(void)
     g_clear_object(&update.cancel);
     discard_files();
     forget_saved();
+    g_free(update.target);
     public_request_destroy(update.request);
     public_request_destroy(update.transfer);
     memset(&update, 0, sizeof(update));
@@ -390,6 +440,38 @@ static void transfer_fail(update_transfer_failure failure)
     update.transfer_state = UPDATE_TRANSFER_FAILED;
     update.transfer_failure = failure;
 }
+typedef struct {
+    char *archive, *staging;
+    char version[APP_VERSION_TEXT];
+} unpack_job;
+static void unpack_free(gpointer data)
+{
+    unpack_job *job = data;
+    g_free(job->archive);
+    g_free(job->staging);
+    g_free(job);
+}
+/* Worker thread: the checked archive becomes the tree of the newer version. */
+static void unpack_worker(GTask *task, gpointer source, gpointer data, GCancellable *cancel)
+{
+    (void)source;
+    unpack_job *job = data;
+    g_task_return_pointer(
+        task, self_install_unpack(job->archive, job->staging, job->version, cancel), g_free);
+}
+static void unpack_begin(void)
+{
+    unpack_job *job = g_new0(unpack_job, 1);
+    job->archive = g_strdup(update.file);
+    job->staging = g_strdup(update.directory);
+    snprintf(job->version, sizeof(job->version), "%s", update.latest_text);
+    update.cancel = g_cancellable_new();
+    update.verify = file_transfer_task_new(update.cancel);
+    update.unpacking = true;
+    g_task_set_task_data(update.verify, job, unpack_free);
+    g_task_run_in_thread(update.verify, unpack_worker);
+    update.transfer_state = UPDATE_TRANSFER_UNPACKING;
+}
 static void verify_begin(void)
 {
     verify_job *job = g_new0(verify_job, 1);
@@ -434,16 +516,26 @@ static bool download_poll(void)
     if (update.verify) {
         file_transfer_tasks_poll();
         if (g_task_get_completed(update.verify)) {
-            bool ok = g_task_propagate_boolean(update.verify, NULL);
+            bool unpacked = update.unpacking;
+            char *tree = unpacked ? g_task_propagate_pointer(update.verify, NULL) : NULL;
+            bool ok = unpacked ? tree != NULL : g_task_propagate_boolean(update.verify, NULL);
             g_clear_object(&update.verify);
             g_clear_object(&update.cancel);
+            update.unpacking = false;
             if (update.discard) {
                 update.discard = false;
+                g_free(tree);
                 discard_files();
-            } else if (ok)
+            } else if (!ok)
+                transfer_fail(unpacked ? UPDATE_TRANSFER_UNUSABLE : UPDATE_TRANSFER_MISMATCH);
+            else if (unpacked) {
+                update.tree = tree;
                 update.transfer_state = UPDATE_TRANSFER_READY;
+            } else if (update.install && update.channel == INSTALL_TARBALL)
+                /* The archive is the published one: now it must hold the program. */
+                unpack_begin();
             else
-                transfer_fail(UPDATE_TRANSFER_MISMATCH);
+                update.transfer_state = UPDATE_TRANSFER_READY;
             changed = true;
         }
     }
@@ -503,20 +595,30 @@ uint64_t update_asset_size(void)
 {
     return update.has_latest ? update.asset.size : 0;
 }
-bool update_download_start(void)
+/* Downloads the package into a temporary folder, or, to replace this copy,
+ * into a folder beside it. */
+static bool download_start(bool install)
 {
     char url[UPDATE_URL_BYTES];
-    if (!update.ready || !*update_asset_name() ||
+    if (!update.ready || !*update_asset_name() || (install && !update.target) ||
         update.transfer_state == UPDATE_TRANSFER_RUNNING ||
-        update.transfer_state == UPDATE_TRANSFER_VERIFYING || update.verify)
+        update.transfer_state == UPDATE_TRANSFER_VERIFYING ||
+        update.transfer_state == UPDATE_TRANSFER_UNPACKING || update.verify)
         return false;
     discard_files();
     update.percent = 0;
     update.transfer_failure = UPDATE_TRANSFER_OK;
-    update.directory = g_build_filename(g_get_tmp_dir(), "papo-update-XXXXXX", NULL);
-    if (!papo_mkdtemp(update.directory)) {
-        g_free(update.directory);
-        update.directory = NULL;
+    update.install = install;
+    if (install)
+        update.directory = self_install_staging(update.target);
+    else {
+        update.directory = g_build_filename(g_get_tmp_dir(), "papo-update-XXXXXX", NULL);
+        if (!papo_mkdtemp(update.directory)) {
+            g_free(update.directory);
+            update.directory = NULL;
+        }
+    }
+    if (!update.directory) {
         transfer_fail(UPDATE_TRANSFER_STORAGE);
         return true;
     }
@@ -530,6 +632,52 @@ bool update_download_start(void)
         return true;
     }
     update.transfer_state = UPDATE_TRANSFER_RUNNING;
+    return true;
+}
+bool update_download_start(void)
+{
+    return download_start(false);
+}
+bool update_install_possible(void)
+{
+    return update.target != NULL && *update_asset_name() &&
+           (update.channel == INSTALL_APPIMAGE || update.channel == INSTALL_TARBALL);
+}
+bool update_install_start(void)
+{
+    return update_install_possible() && download_start(true);
+}
+bool update_install_staged(void)
+{
+    return update.install && update.transfer_state == UPDATE_TRANSFER_READY;
+}
+bool update_install_on_exit(void)
+{
+    if (!update_install_staged())
+        return false;
+    update.apply = true;
+    return true;
+}
+bool update_apply(update_applied *result)
+{
+    if (!pending.waiting)
+        return false;
+    pending.waiting = false;
+    memset(result, 0, sizeof(*result));
+    snprintf(result->version, sizeof(result->version), "%s", pending.version);
+    result->done = pending.channel == INSTALL_TARBALL
+                       ? self_install_replace_tree(pending.tree, pending.target)
+                       : self_install_replace_file(pending.file, pending.target);
+    /* What could not be put in place stays where it is, for the user. */
+    const char *kept = pending.channel == INSTALL_TARBALL ? pending.tree : pending.file;
+    snprintf(result->place, sizeof(result->place), "%s", result->done ? pending.target : kept);
+    if (result->done)
+        self_install_discard(pending.staging);
+    g_free(pending.file);
+    g_free(pending.tree);
+    g_free(pending.target);
+    g_free(pending.staging);
+    memset(&pending, 0, sizeof(pending));
     return true;
 }
 void update_download_cancel(void)
@@ -563,7 +711,7 @@ int update_download_percent(void)
 }
 char *update_download_take(void)
 {
-    if (update.transfer_state != UPDATE_TRANSFER_READY)
+    if (update.transfer_state != UPDATE_TRANSFER_READY || update.install)
         return NULL;
     char *file = update.file;
     update.file = NULL;

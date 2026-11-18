@@ -85,6 +85,8 @@ static const char *transfer_failure_text(void)
         return _("O arquivo baixado não confere com o publicado e foi descartado.");
     case UPDATE_TRANSFER_STORAGE:
         return _("Não foi possível gravar o arquivo temporário. Verifique o espaço em disco.");
+    case UPDATE_TRANSFER_UNUSABLE:
+        return _("O arquivo baixado não contém a versão esperada do programa e foi descartado.");
     default:
         return _("Não foi possível baixar a atualização. Verifique a conexão.");
     }
@@ -156,11 +158,18 @@ static int status_text(char *line, size_t size)
                  update_download_percent());
         return THEME_PANEL_MUTED;
     }
-    if (transfer == UPDATE_TRANSFER_VERIFYING || transfer == UPDATE_TRANSFER_READY) {
+    if (update_install_staged()) {
+        snprintf(line, size, _("Versão %s pronta: Instalar e sair a coloca no lugar desta."),
+                 latest);
+        return THEME_SUCCESS;
+    }
+    if (transfer == UPDATE_TRANSFER_VERIFYING || transfer == UPDATE_TRANSFER_UNPACKING ||
+        transfer == UPDATE_TRANSFER_READY) {
         snprintf(line, size, "%s",
                  transfer == UPDATE_TRANSFER_VERIFYING
                      ? _("Conferindo o tamanho e o SHA-256 do arquivo…")
-                     : _("Arquivo conferido. Salvando…"));
+                 : transfer == UPDATE_TRANSFER_UNPACKING ? _("Preparando a versão nova…")
+                                                         : _("Arquivo conferido. Salvando…"));
         return THEME_PANEL_MUTED;
     }
     if (transfer == UPDATE_TRANSFER_FAILED) {
@@ -374,11 +383,15 @@ bool about_copy_command(void)
 about_button about_button_now(void)
 {
     update_transfer transfer = update_download_status();
-    if (transfer == UPDATE_TRANSFER_RUNNING || transfer == UPDATE_TRANSFER_VERIFYING)
+    if (transfer == UPDATE_TRANSFER_RUNNING || transfer == UPDATE_TRANSFER_VERIFYING ||
+        transfer == UPDATE_TRANSFER_UNPACKING)
         return ABOUT_BUTTON_CANCEL;
+    if (update_install_staged())
+        return ABOUT_BUTTON_APPLY;
     if (*update_saved())
         return ABOUT_BUTTON_COPY;
     /* While a check runs its result decides what the button offers. */
-    return *update_asset_name() && update_status() != UPDATE_CHECKING ? ABOUT_BUTTON_DOWNLOAD
-                                                                      : ABOUT_BUTTON_CHECK;
+    if (!*update_asset_name() || update_status() == UPDATE_CHECKING)
+        return ABOUT_BUTTON_CHECK;
+    return update_install_possible() ? ABOUT_BUTTON_INSTALL : ABOUT_BUTTON_DOWNLOAD;
 }

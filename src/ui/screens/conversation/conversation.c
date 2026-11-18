@@ -1057,6 +1057,11 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         }
         if (ui->settings.open) {
             settings_key(&ui->settings, connections->config, type, key);
+            if (ui->settings.quit) {
+                /* Asked for with the button itself: no second key to confirm. */
+                result = HISTORY_EXIT;
+                break;
+            }
             if (ui->settings.pick == SETTINGS_PICK_UPDATE) {
                 if (!conversation_update_save_begin(ui))
                     snprintf(ui->settings.error, sizeof(ui->settings.error), "%s",

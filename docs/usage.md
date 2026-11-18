@@ -1886,17 +1886,53 @@ the Flatpak bundle, the Termux package, or the Windows installer or ZIP.
    **Copiar comando** (Copy command), or Enter on that line, copies it. Run it
    in a terminal after closing the program.
 
-The program does not install the package or replace its own files: you run the
-command, with your password where the package manager asks for one. What is
-checked is that the file is the one GitHub publishes for that release; the
-signatures published with each release can be verified by hand, as its notes
-describe.
+For these packages the program does not install anything or replace its own
+files: you run the command, with your password where the package manager asks
+for one. What is checked is that the file is the one GitHub publishes for that
+release; the signatures published with each release can be verified by hand,
+as its notes describe.
 
 **Baixar atualização** does not appear, and the address of the release page is
 all **Sobre** offers, when the release has no package for your installation,
-when the program cannot tell how it was installed (a copy built from source or
-unpacked from the portable archive), or when GitHub lists the file without a
-SHA-256.
+when the program cannot tell how it was installed (a copy built from source, or
+unpacked from a portable archive older than this feature), or when GitHub lists
+the file without a SHA-256.
+
+### Let the program install the new version
+
+Two kinds of copy belong to you and not to a package manager, so the program
+can replace them itself: an **AppImage** file, and a folder unpacked from the
+**portable archive** (`papo-tui-…-linux-….tar.gz`). For these the button is
+**Baixar e instalar** (Download and install), when you can write to the folder
+that holds the file or the program's folder.
+
+1. Select **Baixar e instalar**. Nothing asks where to save: the new version is
+   prepared in a hidden folder beside the one being replaced, and checked
+   against the size and SHA-256 GitHub publishes. The portable archive is also
+   unpacked and inspected there: it must hold exactly that version of the
+   program. **Cancelar download** stops and removes it.
+2. **Sobre** shows **Versão X pronta** (Version X ready) and the button becomes
+   **Instalar e sair** (Install and quit). Until you select it, the copy you are
+   running is untouched.
+3. Select **Instalar e sair**. The program closes and, once nothing of it is in
+   use, puts the new version in place, then prints **Papo TUI atualizado para a
+   versão X. Abra o programa novamente.** (Papo TUI was updated to version X.
+   Open the program again). Start it again the way you always do: the AppImage
+   keeps its name and permissions, and the folder keeps its name.
+
+Leaving the program any other way discards what was prepared; nothing is
+installed. After a portable folder is replaced, the old one stays beside it as
+`<folder>.previous` until the new version has started once, and is then
+removed.
+
+A portable folder is replaced whole, so it must hold only the program. If you
+unpacked the archive over a folder that has other things, for example
+`~/.local`, the program finds names the new version does not have and replaces
+nothing.
+
+If the new version cannot be put in place, the one you have stays, and the
+program says where it left the new file, already checked. On Windows, and for
+every packaged installation, use **Baixar atualização** as described above.
 
 **[x] Verificar atualizações automaticamente** (Check for updates
 automatically) in **Sobre** turns the daily check on or off; Space, Enter or a
@@ -1947,6 +1983,18 @@ built from source that is not a release build never asks by itself either.
   points to a full or read-only temporary folder; set `TMPDIR` to one with
   room. **Não foi possível gravar em …** names the place you chose: pick a
   folder you can write to.
+- **Baixar e instalar could not finish:** **O arquivo baixado não contém a
+  versão esperada do programa e foi descartado.** (The downloaded file does not
+  hold the expected version of the program) means the portable archive was not
+  the tree of that version; nothing changed. **Não foi possível gravar o
+  arquivo temporário.** means the folder that holds your AppImage or program
+  folder has no room or cannot be written. **Não foi possível instalar a versão
+  X; esta continua no lugar.** (Could not install version X; this one stays in
+  place), printed after the program closed, is followed by the path of the new
+  version: replace the old file or folder with it by hand. For a portable
+  folder this happens when the folder also holds files that are not the
+  program's, or when an older `<folder>.previous` that is not a copy of the
+  program is in the way.
 - **Command not found:** check that the application is installed and its folder
   is on PATH. For a portable package, run the executable from the extracted
   folder; see the [installation guide](installation.md).

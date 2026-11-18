@@ -191,9 +191,15 @@ publishes, and shows the command below for your installation. See
 | Arch package | `sudo pacman -U ./papo-tui-*.pkg.tar.zst` |
 | Flatpak bundle | `flatpak install --user ./papo-tui-*.flatpak` |
 | Termux | `apt install ./papo-tui-*-termux-aarch64.deb` |
-| AppImage | `chmod +x` the new file and run it instead of the old one |
+| AppImage | **Baixar e instalar** in **Sobre** replaces the file for you; by hand, `chmod +x` the new file and run it instead of the old one |
+| Portable archive | **Baixar e instalar** replaces the folder for you; by hand, extract the new archive and use its folder |
 | Windows installer | Close the program and run the new `-setup.exe` |
 | Windows ZIP | Close the program and extract the new ZIP over the folder |
+
+**Baixar e instalar** (Download and install) appears for an AppImage and for a
+folder unpacked from the portable archive, when you can write to the place
+that holds it; see
+[Let the program install the new version](usage.md#let-the-program-install-the-new-version).
 
 Close the program before installing. To verify a download yourself, use the
 `SHA256SUMS` file and the signatures of the release, as its notes describe.

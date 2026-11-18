@@ -1884,6 +1884,10 @@ static const char *about_button_label(void)
         return _("Cancelar download");
     case ABOUT_BUTTON_COPY:
         return _("Copiar comando");
+    case ABOUT_BUTTON_INSTALL:
+        return _("Baixar e instalar");
+    case ABOUT_BUTTON_APPLY:
+        return _("Instalar e sair");
     default:
         return _("Verificar agora");
     }
@@ -2022,6 +2026,15 @@ static void save(app_settings *s, profile_config *config)
             break;
         case ABOUT_BUTTON_COPY:
             about_act(s, config, ABOUT_COPY_COMMAND);
+            break;
+        case ABOUT_BUTTON_INSTALL:
+            if (!update_install_start())
+                snprintf(s->error, sizeof(s->error), "%s",
+                         _("Não foi possível iniciar o download da atualização."));
+            break;
+        case ABOUT_BUTTON_APPLY:
+            /* The screen leaves the program; the version is put in place after it. */
+            s->quit = update_install_on_exit();
             break;
         default:
             if (!update_check_now() && update_status() != UPDATE_CHECKING)

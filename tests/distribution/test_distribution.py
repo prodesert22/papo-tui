@@ -433,8 +433,8 @@ class DistributionTests(unittest.TestCase):
         source = (ROOT / "src/platform/install.c").read_text(encoding="utf-8")
         known = set(re.findall(r'\[INSTALL_[A-Z_]+\] = \{"([a-z-]+)"', source))
         self.assertTrue(set(package.CHANNELS.values()) <= known, known)
-        # Flatpak, Termux and the tarball are not made by this script.
-        self.assertEqual(known - set(package.CHANNELS.values()), {"flatpak", "termux", "tarball"})
+        # Flatpak and Termux are not made by this script.
+        self.assertEqual(known - set(package.CHANNELS.values()), {"flatpak", "termux"})
         with tempfile.TemporaryDirectory(prefix="papo-channel-") as directory:
             stage = Path(directory)
             marker = stage / "share/papo-tui/install-channel"
@@ -448,6 +448,37 @@ class DistributionTests(unittest.TestCase):
             self.assertFalse(marker.exists())
             self.assertIsNone(package.mark_channel(stage, "rpm", "ubuntu"))
             self.assertFalse(marker.exists())
+
+    def test_portable_archive_is_one_marked_folder_named_after_the_version(self):
+        with tempfile.TemporaryDirectory(prefix="papo-tarball-") as directory:
+            root = Path(directory)
+            stage, output = root / "stage", root / "out"
+            (stage / "bin").mkdir(parents=True)
+            (stage / "lib/papo-tui").mkdir(parents=True)
+            output.mkdir()
+            (stage / "bin/papo-tui").write_bytes(b"program")
+            (stage / "bin/papo-tui").chmod(0o755)
+            (stage / "lib/papo-tui/libx.so.1").write_bytes(b"library")
+            (stage / "lib/papo-tui/libx.so").symlink_to("libx.so.1")
+            self.assertEqual(package.mark_channel(stage, "tarball", "ubuntu"), "tarball")
+            target = package.tarball(stage, output, "1.2.3-beta.4", "x86_64")
+            self.assertEqual(target.name, "papo-tui-1.2.3-beta.4-linux-x86_64.tar.gz")
+            with tarfile.open(target) as bundle:
+                members = {member.name: member for member in bundle.getmembers()}
+                # Everything is under the one folder an installed copy expects.
+                top = "papo-tui-1.2.3-beta.4"
+                self.assertTrue(all(name == top or name.startswith(top + "/") for name in members))
+                program = members[top + "/bin/papo-tui"]
+                self.assertTrue(program.isfile() and program.mode & 0o100)
+                self.assertEqual(
+                    bundle.extractfile(top + "/share/papo-tui/install-channel").read(),
+                    b"tarball\n",
+                )
+                link = members[top + "/lib/papo-tui/libx.so"]
+                self.assertTrue(link.issym() and link.linkname == "libx.so.1")
+                self.assertEqual(
+                    {(m.uid, m.gid, m.uname) for m in members.values()}, {(0, 0, "root")}
+                )
 
 
 if __name__ == "__main__":

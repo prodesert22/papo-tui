@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "app/update.h"
 #include "model/text/mentions.h"
 #include "model/text/translation.h"
 #include "platform/file_transfer.h"
@@ -166,6 +167,19 @@ int main(int argc, char **argv)
     }
     media_resources_init();
     int result = login_run_profiles(profiles, allow_http);
+    /* The terminal is back: a newer version asked for in Sobre is put in place
+     * now that nothing of this one is in use. */
+    update_applied applied;
+    if (update_apply(&applied)) {
+        if (applied.done)
+            printf(_("Papo TUI atualizado para a versão %s. Abra o programa novamente.\n"),
+                   applied.version);
+        else
+            printf(_("Não foi possível instalar a versão %s; esta continua no lugar.\n"
+                     "A versão nova, já conferida, ficou em:\n  %s\n"),
+                   applied.version, applied.place);
+        fflush(stdout);
+    }
     file_transfer_shutdown();
     mention_cleanup();
     curl_global_cleanup();

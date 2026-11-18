@@ -251,6 +251,7 @@ CHANNELS = {
     ("rpm", "fedora"): "rpm-fedora",
     ("arch", None): "arch",
     ("appimage", None): "appimage",
+    ("tarball", None): "tarball",
     ("installer", None): "windows-installer",
     ("zip", None): "windows-zip",
 }
@@ -289,6 +290,24 @@ def appimage(stage, output, version, architecture, cache):
     with tempfile.TemporaryDirectory(prefix="papo-appimage-") as cwd:
         run(result, "--version", cwd=cwd, env=dict(os.environ, APPIMAGE_EXTRACT_AND_RUN="1"))
     return result
+
+
+def tarball(stage, output, version, architecture):
+    """The portable archive: the stage under one folder named after the version.
+
+    An installed copy that updates itself accepts only this shape: the folder
+    papo-tui-<version> with bin/papo-tui and the channel marker inside.
+    """
+    target = output / f"papo-tui-{version}-linux-{architecture}.tar.gz"
+
+    def owned_by_root(info):
+        info.uid = info.gid = 0
+        info.uname = info.gname = "root"
+        return info
+
+    with tarfile.open(target, "w:gz") as bundle:
+        bundle.add(stage, arcname=f"papo-tui-{version}", filter=owned_by_root)
+    return target
 
 
 def arch_version(version):
@@ -354,7 +373,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--formats", required=True, help="deb,rpm,arch,appimage,zip,installer")
+    parser.add_argument(
+        "--formats", required=True, help="deb,rpm,arch,appimage,tarball,zip,installer"
+    )
     parser.add_argument("--arch", choices=["x86_64", "aarch64"], required=True)
     parser.add_argument("--flavor", default="linux")
     parser.add_argument("--dependency-prefix", type=Path, required=True)
@@ -370,7 +391,7 @@ def main():
         parser.error("Configure with PAPO_RELEASE_BUILD=ON")
     version = values.get("PAPO_PACKAGE_VERSION") or values["CMAKE_PROJECT_VERSION"]
     selected = set(args.formats.split(","))
-    if selected - {"deb", "rpm", "arch", "appimage", "zip", "installer"}:
+    if selected - {"deb", "rpm", "arch", "appimage", "tarball", "zip", "installer"}:
         parser.error("Unknown package format")
     with tempfile.TemporaryDirectory(prefix="packaging-", dir=build) as temporary:
         work = Path(temporary)
@@ -406,6 +427,8 @@ def main():
                 appimage(stage, output, version, args.arch, cache)
             elif fmt == "arch":
                 arch_package(stage, output, version, args.arch)
+            elif fmt == "tarball":
+                tarball(stage, output, version, args.arch)
             elif fmt == "installer":
                 installer(stage, output, version, args.arch)
             else:
