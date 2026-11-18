@@ -17,6 +17,7 @@ ARCH = {"x86_64": "x86_64", "amd64": "x86_64", "aarch64": "aarch64", "arm64": "a
     platform.machine().lower(), platform.machine().lower()
 )
 DEB = f"papo-tui-99.0.0-ubuntu-{ARCH}.deb"
+RELEASE_PAGE = "https://github.com/prodesert22/papo-tui/releases/tag/v"
 MISMATCH = "O arquivo baixado não confere com o publicado e foi descartado."
 REFUSED = "O GitHub não entregou o arquivo. Tente mais tarde."
 
@@ -39,7 +40,7 @@ class UpdateDownload(UpdateSuite):
         self.wait(t, "Mensagem 0001")
         self.calls(hub, 1)
         self.open_sobre(t)
-        self.wait(t, "Versão 99.0.0 disponível em:")
+        self.wait(t, "Versão 99.0.0 disponível.")
         return t
 
     def press(self, t, first=False):
@@ -75,6 +76,8 @@ class UpdateDownload(UpdateSuite):
             hub.files["store/" + DEB] = data
             t = self.start(server, hub)
             self.wait(t, "Baixar atualização")
+            # The release page stays as the way to get it by hand.
+            self.wait(t, "Versão 99.0.0 disponível. Baixe com o botão ou manualmente em:")
             self.assertEqual(hub.downloads, [])
             self.press(t, first=True)
             self.save_to(t, target)
@@ -268,7 +271,10 @@ class UpdateDownload(UpdateSuite):
             for channel in ("deb-debian", "rpm-fedora", "not-a-channel"):
                 with self.subTest(channel=channel):
                     t = self.start(server, hub, channel=channel)
-                    # The version and its page are shown; the button still only checks.
+                    # The version and its page are shown, to be fetched by hand; the
+                    # button still only checks.
+                    self.wait(t, "Versão 99.0.0 disponível. Baixe manualmente em:")
+                    self.wait(t, RELEASE_PAGE + "99.0.0")
                     self.wait(t, "Verificar agora")
                     self.assertNotIn("Baixar atualização", self.text(t))
                     self.assertEqual(hub.downloads, [])

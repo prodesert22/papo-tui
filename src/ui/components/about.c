@@ -185,7 +185,13 @@ static int status_text(char *line, size_t size)
         return THEME_ERROR;
     }
     if (*latest) {
-        snprintf(line, size, _("Versão %s disponível em:"), latest);
+        /* The release page is always a way to get it by hand; the button is
+         * another when this installation has a package there. */
+        snprintf(line, size,
+                 *update_asset_name()
+                     ? _("Versão %s disponível. Baixe com o botão ou manualmente em:")
+                     : _("Versão %s disponível. Baixe manualmente em:"),
+                 latest);
         return THEME_PANEL_ACCENT;
     }
     snprintf(line, size, "%s",

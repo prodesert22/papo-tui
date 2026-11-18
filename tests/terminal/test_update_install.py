@@ -62,7 +62,7 @@ class UpdateInstall(UpdateSuite):
         self.wait(t, "Mensagem 0001")
         self.calls(hub, 1)
         self.open_sobre(t)
-        self.wait(t, "Versão 99.0.0 disponível em:")
+        self.wait(t, "Versão 99.0.0 disponível. Baixe com o botão ou manualmente em:")
         return t
 
     def press(self, t, first=False):

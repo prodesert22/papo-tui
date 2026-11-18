@@ -1857,9 +1857,12 @@ When there is a newer version:
   bottom bar, or **Atualização disponível** (Update available) when the bar is
   short. Click it to open **Sobre**. It leaves the bar once you have opened
   **Sobre**, until the program starts again;
-- **Sobre** shows **Versão X disponível em:** (Version X available at:) and the
-  address of that release's page. Press Enter on the address, or click it, to
-  copy it.
+- **Sobre** shows **Versão X disponível. Baixe manualmente em:** (Version X
+  available. Download it by hand at:) and the address of that release's page.
+  Press Enter on the address, or click it, to copy it, open it in a browser and
+  download the package for your system. When the program can also fetch that
+  package for you, the line reads **Baixe com o botão ou manualmente em:**
+  (Download it with the button or by hand at:).
 
 ### Download the new version
 

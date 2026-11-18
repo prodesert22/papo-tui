@@ -6903,13 +6903,17 @@ msgstr "Check now"
 msgid "Versão %s disponível"
 msgstr "Version %s available"
 
-#: src/ui/components/about.c
-msgid "Versão %s disponível em:"
-msgstr "Version %s available at:"
-
 #: src/ui/screens/conversation/drawing.c
 msgid "Versão %s disponível · {k1:conversation.settings} → Sobre"
 msgstr "Version %s available · {k1:conversation.settings} → About"
+
+#: src/ui/components/about.c
+msgid "Versão %s disponível. Baixe com o botão ou manualmente em:"
+msgstr "Version %s available. Download it with the button or by hand at:"
+
+#: src/ui/components/about.c
+msgid "Versão %s disponível. Baixe manualmente em:"
+msgstr "Version %s available. Download it by hand at:"
 
 #: src/ui/components/about.c
 msgid "Versão %s pronta: Instalar e sair a coloca no lugar desta."

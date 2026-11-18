@@ -45,7 +45,7 @@ class UpdateTerminal(UpdateSuite):
             self.click(t, "Versão 99.0.0 disponível")
             self.wait(t, "< Sobre >")
             self.wait(t, "[x] " + SWITCH)
-            self.wait(t, "Versão 99.0.0 disponível em:")
+            self.wait(t, "Versão 99.0.0 disponível. Baixe manualmente em:")
             self.wait(t, RELEASE_PAGE + "99.0.0")
             self.wait(t, "Verificar agora")
             self.dump(t, "update-available")
@@ -152,7 +152,7 @@ class UpdateTerminal(UpdateSuite):
             self.wait(t, "PAPO_UPDATE_CHECK=0: as atualizações só são verificadas a pedido.")
             self.check_now(t)
             self.calls(hub, 1)
-            self.wait(t, "Versão 99.0.0 disponível em:")
+            self.wait(t, "Versão 99.0.0 disponível. Baixe manualmente em:")
             self.paths(hub)
 
     def test_github_limit_is_reported_once_and_never_slows_the_chat(self):
