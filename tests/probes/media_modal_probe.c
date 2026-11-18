@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
+#include "../support/test_locale.h"
 #include "ui/components/theme.h"
 #include "ui/input/mouse.h"
 #include "ui/input/text.h"
@@ -18,7 +19,7 @@ static void stop(int signum)
 }
 int main(void)
 {
-    if (!setlocale(LC_ALL, "C.UTF-8") || curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK)
+    if (!test_utf8_locale() || curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK)
         return 1;
     auth_client *auth = auth_create();
     if (!auth)

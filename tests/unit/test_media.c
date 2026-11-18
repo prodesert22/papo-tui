@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
+#include "../support/test_locale.h"
 #include "config/app_mode.h"
 #include "ui/input/text.h"
 #include "ui/media/graphics.h"
@@ -908,7 +909,7 @@ static void reactions_and_replies(void)
 }
 int main(void)
 {
-    assert(setlocale(LC_ALL, "C.UTF-8"));
+    assert(test_utf8_locale());
     init_graphemebreak();
     attachment_mime_types();
     attachment_video_extensions();

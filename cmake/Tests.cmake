@@ -176,7 +176,10 @@ if(BUILD_TESTING)
         LABELS
         notifications)
     papo_set_tests_properties(read-state-persistence PROPERTIES TIMEOUT 60)
-    if(PAPO_DESKTOP_NOTIFICATIONS AND GIO_FOUND)
+    # The fake daemon speaks D-Bus and the freedesktop notification interface; macOS has neither.
+    if(PAPO_DESKTOP_NOTIFICATIONS
+       AND GIO_FOUND
+       AND NOT APPLE)
         add_executable(fake-notifications tests/support/fake_notifications.c)
         target_link_libraries(fake-notifications PRIVATE PkgConfig::GIO PkgConfig::JANSSON)
         target_compile_options(fake-notifications PRIVATE -Wall -Wextra -Wpedantic -Werror)
@@ -300,29 +303,32 @@ if(BUILD_TESTING)
         LABELS
         text)
     papo_set_tests_properties(mentions-terminal PROPERTIES TIMEOUT 120)
-    add_library(media-metrics SHARED tests/support/media_metrics.c)
-    target_link_libraries(media-metrics PRIVATE PkgConfig::CHAFA PkgConfig::AVCODEC
-                                                Threads::Threads ${CMAKE_DL_LIBS})
-    target_compile_options(media-metrics PRIVATE -Wall -Wextra -Wpedantic -Werror)
-    add_executable(media-cache-probe tests/probes/media_cache_probe.c)
-    target_link_libraries(media-cache-probe PRIVATE papo_media)
-    target_link_options(media-cache-probe PRIVATE -Wl,--wrap=malloc -Wl,--wrap=calloc
-                        -Wl,--wrap=strdup -Wl,--wrap=malloc_trim)
-    if(PAPO_SANITIZERS)
-        target_compile_definitions(media-cache-probe PRIVATE PAPO_TEST_SANITIZERS)
+    # Both rely on the GNU toolchain: LD_PRELOAD interposition, the linker's --wrap and /proc.
+    if(NOT APPLE)
+        add_library(media-metrics SHARED tests/support/media_metrics.c)
+        target_link_libraries(media-metrics PRIVATE PkgConfig::CHAFA PkgConfig::AVCODEC
+                                                    Threads::Threads ${CMAKE_DL_LIBS})
+        target_compile_options(media-metrics PRIVATE -Wall -Wextra -Wpedantic -Werror)
+        add_executable(media-cache-probe tests/probes/media_cache_probe.c)
+        target_link_libraries(media-cache-probe PRIVATE papo_media)
+        target_link_options(media-cache-probe PRIVATE -Wl,--wrap=malloc -Wl,--wrap=calloc
+                            -Wl,--wrap=strdup -Wl,--wrap=malloc_trim)
+        if(PAPO_SANITIZERS)
+            target_compile_definitions(media-cache-probe PRIVATE PAPO_TEST_SANITIZERS)
+        endif()
+        target_compile_options(media-cache-probe PRIVATE -Wall -Wextra -Wpedantic -Werror)
+        papo_add_test(
+            NAME
+            media-cache
+            COMMAND
+            ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/integration/test_media_cache.py
+            $<TARGET_FILE:media-cache-probe>
+            ${FFMPEG_CLI}
+            LABELS
+            media)
+        papo_set_tests_properties(media-cache PROPERTIES TIMEOUT 120)
     endif()
-    target_compile_options(media-cache-probe PRIVATE -Wall -Wextra -Wpedantic -Werror)
-    papo_add_test(
-        NAME
-        media-cache
-        COMMAND
-        ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests/integration/test_media_cache.py
-        $<TARGET_FILE:media-cache-probe>
-        ${FFMPEG_CLI}
-        LABELS
-        media)
-    papo_set_tests_properties(media-cache PROPERTIES TIMEOUT 120)
     add_library(fake-media-backend MODULE tests/support/fake_media_backend.c)
     target_include_directories(fake-media-backend PRIVATE src)
     target_link_libraries(fake-media-backend PRIVATE PkgConfig::NCURSES PkgConfig::GMODULE)
@@ -558,8 +564,10 @@ if(BUILD_TESTING)
     papo_add_test(NAME websocket-partial-output COMMAND ws-output-test LABELS realtime)
     find_program(DBUS_RUN_SESSION NAMES dbus-run-session)
     find_program(GDBUS_CLI NAMES gdbus)
+    # The fake keyring is a Secret Service on a private D-Bus; the Keychain is not tested this way.
     if(PAPO_DESKTOP_SESSIONS
        AND GIO_FOUND
+       AND NOT APPLE
        AND DBUS_RUN_SESSION
        AND GDBUS_CLI)
         add_executable(fake-keyring tests/support/fake_keyring.c)
@@ -673,7 +681,8 @@ if(BUILD_TESTING)
         LABELS
         send
         platform)
-    if(NOT WIN32)
+    # xdg-desktop-portal is a D-Bus service of Linux desktops.
+    if(NOT WIN32 AND NOT APPLE)
         add_executable(file-portal-test tests/unit/test_file_portal.c)
         target_link_libraries(file-portal-test PRIVATE papo_send_editor)
         target_compile_options(file-portal-test PRIVATE -Wall -Wextra -Wpedantic -Werror)

@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
+#include "../support/test_locale.h"
 #include "model/text/emoji_catalog.h"
 #include "model/text/translation.h"
 #include "ui/input/text.h"
@@ -20,7 +21,7 @@
 
 int main(void)
 {
-    CHECK(setlocale(LC_ALL, "C.UTF-8"));
+    CHECK(test_utf8_locale());
     /* The Linux console projects emoji and symbols; it has its own checks. */
     CHECK(setenv("TERM", "xterm-256color", 1) == 0);
     init_graphemebreak();

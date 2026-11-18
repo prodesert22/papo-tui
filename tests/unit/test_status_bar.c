@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
+#include "../support/test_locale.h"
 #include "ui/components/status_bar.h"
 #include "ui/input/text.h"
 #include <assert.h>
@@ -11,7 +12,7 @@ int main(void)
 #ifdef _WIN32
     assert(setlocale(LC_ALL, ".UTF8"));
 #else
-    assert(setlocale(LC_ALL, "C.UTF-8"));
+    assert(test_utf8_locale());
 #endif
     init_graphemebreak();
     status_bar bar = {0};

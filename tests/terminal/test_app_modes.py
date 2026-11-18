@@ -19,6 +19,7 @@ import unittest
 
 BINARY, FFMPEG = (Path(argument(i)) for i in range(2))
 import terminal_media as media  # noqa: E402 - prepare test arguments before import
+import process_inspect  # noqa: E402
 import terminal_support as test_terminal  # noqa: E402
 import terminal_emojis as emoji_tests  # noqa: E402
 from history_mock import uuid  # noqa: E402
@@ -101,23 +102,16 @@ class AppModes(unittest.TestCase):
 
     def children(self, t):
         found = []
-        for task in Path(f"/proc/{t.process.pid}/task").iterdir():
-            # A thread or child that exits between the listing and the read is gone:
-            # /proc then answers ENOENT or, while the process is being reaped, ESRCH.
+        for pid in process_inspect.children(t.process.pid):
             try:
-                pids = (task / "children").read_text(encoding="utf-8").split()
+                if b"papo-media-worker" in process_inspect.command_line(pid):
+                    found.append(pid)
             except (FileNotFoundError, ProcessLookupError):
-                continue
-            for pid in pids:
-                try:
-                    if b"papo-media-worker" in Path(f"/proc/{pid}/cmdline").read_bytes():
-                        found.append(int(pid))
-                except (FileNotFoundError, ProcessLookupError):
-                    pass
-        return list(set(found))
+                pass
+        return found
 
     def assert_no_media_libs(self, t):
-        maps = Path(f"/proc/{t.process.pid}/maps").read_text(encoding="utf-8")
+        maps = process_inspect.mapped_files(t.process.pid)
         for name in ("libchafa.", "libsixel.", "libpango", "libcairo.", "libavcodec.", "libmpv."):
             self.assertNotIn(name, maps)
 
@@ -473,10 +467,7 @@ class AppModes(unittest.TestCase):
                 self.assertNotIn("Vídeos desativados", "\n".join(t.screen.display))
                 self.assertEqual(t.stream.frames, [])
                 self.assertTrue(
-                    any(
-                        "libmpv." in Path(f"/proc/{pid}/maps").read_text(encoding="utf-8")
-                        for pid in self.children(t)
-                    )
+                    any("libmpv." in process_inspect.mapped_files(pid) for pid in self.children(t))
                 )
                 t.send(" ")
                 self.helper.wait(t, "Pausado")
@@ -1020,10 +1011,7 @@ class AppModes(unittest.TestCase):
                 self.helper.wait(t, "Reproduzindo")
                 self.assertEqual(t.stream.frames, [])
                 self.assertTrue(
-                    any(
-                        "libmpv." in Path(f"/proc/{pid}/maps").read_text(encoding="utf-8")
-                        for pid in self.children(t)
-                    )
+                    any("libmpv." in process_inspect.mapped_files(pid) for pid in self.children(t))
                 )
                 t.send(" ")
                 self.helper.wait(t, "Pausado")

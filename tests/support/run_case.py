@@ -65,6 +65,13 @@ def redact(value):
     )
 
 
+def host_platform():
+    """The key of this machine in tests/platforms.json."""
+    if sys.platform == "win32":
+        return "windows"
+    return "macos" if sys.platform == "darwin" else "linux"
+
+
 def allowed_skip_reason(script, case, platform=None):
     root = Path(__file__).resolve().parents[2]
     try:
@@ -72,7 +79,7 @@ def allowed_skip_reason(script, case, platform=None):
     except ValueError:
         return None
     policies = json.loads((root / "tests/platforms.json").read_text(encoding="utf-8"))
-    platform = platform or ("windows" if os.name == "nt" else "linux")
+    platform = platform or host_platform()
     return policies.get(relative, {}).get("skips", {}).get(platform, {}).get(case)
 
 

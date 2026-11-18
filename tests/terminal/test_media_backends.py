@@ -13,6 +13,7 @@ import unittest
 # test_media_terminal consumes the first two arguments when imported.
 BINARY, FFMPEG, FAKE, IMAGE, VIDEO = (Path(argument(i)) for i in range(5))
 import terminal_media as media  # noqa: E402 - path and test arguments are prepared above
+import process_inspect  # noqa: E402 - path and test arguments are prepared above
 import terminal_support as test_terminal  # noqa: E402 - path and test arguments are prepared above
 from history_mock import HistoryMock  # noqa: E402 - path and test arguments are prepared above
 
@@ -37,19 +38,14 @@ class MediaBackends(unittest.TestCase):
         test_terminal.BINARY = self.previous
 
     def maps(self, terminal):
-        maps = Path(f"/proc/{terminal.process.pid}/maps").read_text(encoding="utf-8")
-        for task in Path(f"/proc/{terminal.process.pid}/task").iterdir():
-            # A thread or child that exits meanwhile answers ENOENT or ESRCH.
+        maps = process_inspect.mapped_files(terminal.process.pid)
+        for pid in process_inspect.children(terminal.process.pid):
+            # A child that exits meanwhile answers ENOENT or ESRCH.
             try:
-                pids = (task / "children").read_text(encoding="utf-8").split()
+                if b"papo-media-worker" in process_inspect.command_line(pid):
+                    maps += process_inspect.mapped_files(pid)
             except (FileNotFoundError, ProcessLookupError):
-                continue
-            for pid in pids:
-                try:
-                    if b"papo-media-worker" in Path(f"/proc/{pid}/cmdline").read_bytes():
-                        maps += Path(f"/proc/{pid}/maps").read_text(encoding="utf-8")
-                except (FileNotFoundError, ProcessLookupError):
-                    pass
+                pass
         return maps
 
     def assert_text_only(self, terminal):

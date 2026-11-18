@@ -8,7 +8,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tests/support"))
-from run_case import discover  # noqa: E402
+from run_case import discover, host_platform  # noqa: E402
 
 
 def check(build):
@@ -42,7 +42,7 @@ def check(build):
             stale = set(platform_cases) - set(declared)
             if stale:
                 raise ValueError(f"Stale platform skip declarations: {relative}: {sorted(stale)}")
-    platform = "windows" if sys.platform == "win32" else "linux"
+    platform = host_platform()
     expected = set()
     skipped = []
     cache = (Path(build) / "CMakeCache.txt").read_text(encoding="utf-8")

@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
+#include "../support/test_locale.h"
 #include "model/assets/catalog.h"
 #include "model/conversation/history.h"
 #include "model/text/emoji_catalog.h"
@@ -458,7 +459,7 @@ static void media_backgrounds_follow_the_theme(void)
 }
 int main(void)
 {
-    assert(setlocale(LC_ALL, "C.UTF-8"));
+    assert(test_utf8_locale());
     init_graphemebreak();
     media_backgrounds_follow_the_theme();
     sequences();
