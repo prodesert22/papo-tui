@@ -22,6 +22,17 @@ typedef struct {
     char url[PROFILE_URL_BYTES];
 } server_profile;
 
+/* Newest format of the configuration file: the one written, and the last one read. */
+#define PROFILE_FILE_VERSION 14
+/* How the last load found the configuration file. Only PROFILE_FILE_READY may be saved over. */
+typedef enum {
+    PROFILE_FILE_READY,       /* Loaded, or absent until the first save. */
+    PROFILE_FILE_NEWER,       /* Valid JSON of a format after PROFILE_FILE_VERSION. */
+    PROFILE_FILE_INVALID,     /* Damaged, or not a configuration of a known format. */
+    PROFILE_FILE_UNREADABLE,  /* Not a private regular file within the size limit. */
+    PROFILE_FILE_NO_DIRECTORY /* The private directory could not be opened. */
+} profile_file_state;
+
 /* Owns its directory descriptor. Contains public connection metadata only.
  * Mutations become visible in memory only after an atomic save succeeds. */
 typedef struct profile_config {
@@ -44,6 +55,8 @@ typedef struct profile_config {
     accessibility_config accessibility;
     int directory;
     bool writable, existed;
+    profile_file_state file_state;
+    int file_version; /* Format found in a PROFILE_FILE_NEWER file; 0 otherwise. */
     struct stat revision;
 #ifdef _WIN32
     char *directory_path; /* Owned; candidates borrow from their original. */
@@ -68,6 +81,9 @@ bool profiles_set_player_volume(profile_config *config, int level);
 profile_config *profiles_create(void);
 void profiles_destroy(profile_config *config);
 bool profiles_reload(profile_config *config);
+/* Copies where this device's configuration file is kept, for display; the path
+ * is local text, not validated UTF-8. False, with output empty, when unknown. */
+bool profiles_path(const profile_config *config, char *output, size_t size);
 const server_profile *profiles_find(const profile_config *config, const char *id);
 bool profiles_update(profile_config *config, const char *id, const char *name, const char *url,
                      bool allow_local_http, char output_id[PROFILE_ID_BYTES]);

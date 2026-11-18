@@ -13,9 +13,10 @@
 /* Settings open on the first tab, Perfil. Aparência holds the app modes (this
  * device) and the theme and display of the account on the active server;
  * Notificações holds that account's notification settings; Atalhos lists every
- * key and changes the keys of commands on this device; Conta changes the
- * account's password on the active server; Sobre shows the program's version,
- * license and source link. */
+ * key and changes the keys of commands on this device; Sistema shows where
+ * this device's settings are kept and whether they can be saved; Conta changes
+ * the account's password on the active server; Sobre shows the program's
+ * version, license and source link. */
 enum {
     SETTINGS_PROFILE,
     SETTINGS_APPEARANCE,
@@ -23,6 +24,7 @@ enum {
     SETTINGS_AUDIO,
     SETTINGS_ACCESSIBILITY,
     SETTINGS_SHORTCUTS,
+    SETTINGS_SYSTEM,
     SETTINGS_ACCOUNT,
     SETTINGS_ABOUT,
     SETTINGS_SECTIONS
@@ -35,6 +37,7 @@ enum {
     PROFILE_FIELD_TYPING
 };
 #define PROFILE_FIELDS 4
+#define SETTINGS_PATH_BYTES 4096
 typedef enum {
     SETTINGS_PICK_NONE,
     SETTINGS_PICK_AVATAR,
@@ -54,6 +57,12 @@ typedef struct {
     tab_strip tabs;
     WINDOW *window;
     char error[192];
+    /* Sistema: the file that keeps this device's settings, empty when unknown,
+     * how the last load found it, and whether a copy of its path was just requested. */
+    char config_path[SETTINGS_PATH_BYTES];
+    profile_file_state file_state;
+    int file_version;
+    bool file_writable, file_existed, path_copied;
     /* Perfil: the active server's own profile, borrowed while open. */
     history *profile;
     icon_view *icons; /* Borrowed from the screen; paints the avatar and banner preview. */

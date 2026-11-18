@@ -501,6 +501,53 @@ class ProfilesTests(unittest.TestCase):
         self.seed(self.configuration())
         self.assertTrue(self.probe("list")["writable"])
 
+    def test_a_newer_format_is_told_apart_from_a_damaged_file(self):
+        fresh = self.probe("list")
+        self.assertEqual((fresh["file_state"], fresh["file_version"]), ("ready", 0))
+        self.assertEqual(fresh["path"], str(self.path))
+        self.add()
+        saved = json.loads(self.path.read_text(encoding="utf-8"))
+        self.assertEqual(self.probe("list")["file_state"], "ready")
+        # The next format: sound JSON that this build does not know.
+        following = saved["version"] + 1
+        newer = dict(saved, version=following, extra={})
+        self.seed(newer)
+        before = self.path.read_bytes()
+        loaded = self.probe("list")
+        self.assertEqual((loaded["file_state"], loaded["file_version"]), ("newer", following))
+        self.assertFalse(loaded["writable"])
+        self.assertEqual(loaded["profiles"], [])
+        self.assertIn("mais nova", loaded["message"])
+        self.assertIn(f"formato {following}; esta lê até o {following - 1}", loaded["message"])
+        refused = self.probe("language", "en")
+        self.assertFalse(refused["ok"])
+        self.assertIn("mais nova", refused["message"])
+        self.assertEqual(self.path.read_bytes(), before)
+        # Damage, and a known format with the wrong content, are not a newer version.
+        for value in (
+            "{broken",
+            dict(saved, version=str(following)),
+            dict(saved, app_mode="unknown"),
+        ):
+            with self.subTest(value=value):
+                self.seed(value)
+                before = self.path.read_bytes()
+                loaded = self.probe("list")
+                self.assertEqual((loaded["file_state"], loaded["file_version"]), ("invalid", 0))
+                self.assertIn("inválida", loaded["message"])
+                refused = self.probe("language", "en")
+                self.assertFalse(refused["ok"])
+                self.assertNotIn("mais nova", refused["message"])
+                self.assertIn("corrija o arquivo", refused["message"])
+                self.assertEqual(self.path.read_bytes(), before)
+        # A file that is not a private regular file is neither.
+        self.path.unlink()
+        self.path.mkdir()
+        self.assertEqual(self.probe("list")["file_state"], "unreadable")
+        self.path.rmdir()
+        self.seed(saved)
+        self.assertEqual(self.probe("list")["file_state"], "ready")
+
     def test_links_fifo_and_oversized_configuration_are_rejected(self):
         self.path.parent.mkdir(mode=0o700)
         outside = self.root / "outside.json"

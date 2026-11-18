@@ -461,6 +461,41 @@ example, silence a work computer without changing your account:
 - **Sons neste aparelho** (Sounds on this device): play notification and call
   sounds.
 
+### Where this device's settings are saved
+
+The application mode, the interface language, the audio settings, the
+[shortcuts](#customize-shortcuts), the [accessibility](#accessibility) choices,
+the switches above, the player volume, the request limits and the saved server
+profiles belong to this computer. They are kept in one file, `config.json`:
+
+- Linux and Termux: `~/.config/papo-tui/config.json`, or
+  `$XDG_CONFIG_HOME/papo-tui/config.json` when that variable holds an absolute
+  path.
+- Windows: `%LOCALAPPDATA%\papo-tui\config.json`.
+
+To see the exact path on your computer, press **Ctrl+S** and open **Sistema**
+(System), the tab before **Conta**.
+Under **Arquivo de configuração:** (Configuration file) the tab shows the whole
+path, on up to three lines, and then the state of the file:
+
+- **Em uso** (In use): changes made on this computer are saved in it.
+- **Ainda não existe** (It does not exist yet): nothing was saved on this
+  computer so far; the first saved change creates the file.
+- **Bloqueado** (Locked): the file is kept as it is and nothing is saved over
+  it. The text says why: the file was saved by a newer version of Papo TUI,
+  with its format number and the newest one this version reads; the file is
+  damaged or is not a valid configuration; or it could not be read as a private
+  file of yours.
+- **Indisponível** (Unavailable): the configuration folder could not be opened.
+
+**Copiar caminho** (Copy path) copies the path to the clipboard and shows
+**Cópia solicitada.** (Copy requested), so you can open the file in an editor.
+The tab changes no setting; **Fechar** (Close) or Esc leaves it.
+
+Passwords and session cookies are never written to this file. If the
+application reports that the configuration is locked, see
+[Troubleshooting](#troubleshooting).
+
 ### Sounds
 
 Papo TUI plays short sounds of its own:
@@ -1568,9 +1603,11 @@ selector to browse the other sections. **Perfil**, **Notificações** and
 [Account notifications](#account-notifications) and
 [Voice calls and audio settings](#voice-calls-and-audio-settings));
 **Acessibilidade** changes contrast and colors (see
-[Accessibility](#accessibility)) and **Atalhos** the keys of commands (see
-[Customize shortcuts](#customize-shortcuts)). **Sobre** (About), the last section, shows
-the version and license; see [About Papo TUI](#about-papo-tui).
+[Accessibility](#accessibility)), **Atalhos** the keys of commands (see
+[Customize shortcuts](#customize-shortcuts)) and **Sistema** shows
+[where this device's settings are saved](#where-this-devices-settings-are-saved).
+**Sobre** (About), the last section, shows the version and license; see
+[About Papo TUI](#about-papo-tui).
 
 | Mode | Behavior |
 | --- | --- |
@@ -1975,6 +2012,26 @@ built from source that is not a release build never asks by itself either.
   report its background color. Choose **Claro** (Light) in Ctrl+S → Aparência.
 - **Text is too small or too large:** the font size comes from the terminal;
   change it there. The server's font size setting does not apply in a terminal.
+- **Settings shows Configuração bloqueada** (Configuration locked) **when you
+  save:** the application could not use `config.json` when it started, so it
+  left the file untouched and refuses to save over it. Changes to the
+  application mode, the interface language, the audio settings, the shortcuts
+  and the accessibility choices are not kept until this is solved. **Ctrl+S → Sistema** shows the path of the file and the
+  reason; see
+  [Where this device's settings are saved](#where-this-devices-settings-are-saved).
+  - **Configuração bloqueada: arquivo de uma versão mais nova do Papo TUI.**
+    (Configuration locked: file from a newer version of Papo TUI): the file is
+    sound, but a newer version of the application saved it in a format this
+    one does not read. Use that newer version again, or update this
+    installation. To keep using the older version, move the file elsewhere;
+    it then starts with the default preferences and no saved servers.
+  - **Configuração bloqueada; corrija o arquivo e use Ctrl+R.** (Configuration
+    locked; fix the file and use Ctrl+R): the file is damaged, is not a valid
+    configuration, or is not a private file of your user. Correct it, or move
+    it elsewhere to start with the default preferences and no saved servers.
+
+  Then restart the application, or press Ctrl+R in the profile manager
+  (`papo-tui --profiles`), which reads the file again.
 - **An account setting was not saved:** the message under the options says
   whether the server refused it or the result is unknown. Nothing is repeated
   automatically; reopen the window to see the server's current values before

@@ -29,6 +29,17 @@ void profiles_storage_close(profile_config *config)
     config->directory_path = NULL;
     config->directory = -1;
 }
+bool profiles_storage_path(const profile_config *config, char *output, size_t size)
+{
+    if (!config->directory_path)
+        return false;
+    char *path = filename(config, "config.json");
+    bool fits = strlen(path) < size;
+    if (fits)
+        snprintf(output, size, "%s", path);
+    g_free(path);
+    return fits;
+}
 int profiles_storage_read(profile_config *config, char **data, size_t *length)
 {
     char *path = filename(config, "config.json");

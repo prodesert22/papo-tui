@@ -2,7 +2,7 @@
 #define PAPO_TABS_H
 #include <ncurses.h>
 #include <stdbool.h>
-#define TAB_STRIP_MAX 8
+#define TAB_STRIP_MAX 12
 /* Server tabs and the Canais/DMs tabs of the conversation list: blocks of fill
  * with padding, no markers, where the terminal has 256 colors. Server names
  * show at most TAB_NAME_MAX cells; a longer name (or one squeezed by a narrow

@@ -33,15 +33,32 @@ static bool mkdir_parents(char *path)
     }
     return true;
 }
-static int open_directory(profile_config *config)
+/* The directory that holds papo-tui: an absolute XDG_CONFIG_HOME, else ~/.config. */
+static bool base_directory(char path[PATH_MAX])
 {
     const char *base = getenv("XDG_CONFIG_HOME");
     bool xdg = base && *base == '/';
     if (!xdg)
         base = getenv("HOME");
+    return base && *base == '/' &&
+           snprintf(path, PATH_MAX, "%s%s", base, xdg ? "" : "/.config") < PATH_MAX;
+}
+bool profiles_storage_path(const profile_config *config, char *output, size_t size)
+{
+    (void)config; /* The file is found from the environment, even when it could not be opened. */
+    char base[PATH_MAX];
+    if (!base_directory(base))
+        return false;
+    size_t length = strlen(base);
+    while (length > 1 && base[length - 1] == '/')
+        base[--length] = '\0';
+    int written = snprintf(output, size, "%s/papo-tui/config.json", length > 1 ? base : "");
+    return written > 0 && (size_t)written < size;
+}
+static int open_directory(profile_config *config)
+{
     char path[PATH_MAX];
-    if (!base || *base != '/' ||
-        snprintf(path, sizeof(path), "%s%s", base, xdg ? "" : "/.config") >= (int)sizeof(path)) {
+    if (!base_directory(path)) {
         error(config, _("Não foi possível localizar a configuração XDG. Defina HOME ou "
                         "XDG_CONFIG_HOME absoluto."));
         return -1;

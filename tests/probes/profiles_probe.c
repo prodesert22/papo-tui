@@ -246,6 +246,16 @@ int main(int argc, char **argv)
         json_object_set_new(result, "accessibility", accessibility_encode(&config->accessibility));
     if (result)
         json_object_set_new(result, "update_check", json_boolean(config->update_check));
+    static const char *const states[] = {"ready", "newer", "invalid", "unreadable", "no-directory"};
+    if (result)
+        json_object_set_new(result, "file_state", json_string(states[config->file_state]));
+    if (result)
+        json_object_set_new(result, "file_version", json_integer(config->file_version));
+    char location[4096];
+    if (result)
+        json_object_set_new(
+            result, "path",
+            json_string(profiles_path(config, location, sizeof(location)) ? location : ""));
     json_decref(items);
     profiles_destroy(config);
     int status = emit(result);

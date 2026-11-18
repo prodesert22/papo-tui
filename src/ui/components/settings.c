@@ -2,6 +2,7 @@
 #include "app/update.h"
 #include "model/conversation/profile_edit.h"
 #include "model/text/translation.h"
+#include "platform/clipboard.h"
 #include "ui/components/button.h"
 #include "ui/components/input_border.h"
 #include "ui/components/tabs.h"
@@ -22,8 +23,8 @@ static int first_mode(app_settings *s)
     return APP_MODE_LIGHT;
 }
 static const char *sections[SETTINGS_SECTIONS] = {
-    N_("Perfil"),         N_("Aparência"), N_("Notificações"), N_("Áudio"),
-    N_("Acessibilidade"), N_("Atalhos"),   N_("Conta"),        N_("Sobre")};
+    N_("Perfil"),  N_("Aparência"), N_("Notificações"), N_("Áudio"), N_("Acessibilidade"),
+    N_("Atalhos"), N_("Sistema"),   N_("Conta"),        N_("Sobre")};
 /* Sections that have controls between the tabs and the buttons. */
 static bool has_content(int section)
 {
@@ -66,6 +67,15 @@ void settings_close(app_settings *s)
         s->window = NULL;
     }
 }
+/* Sistema shows a copy: the configuration is only at hand while a key is handled. */
+static void file_snapshot(app_settings *s, const profile_config *config)
+{
+    profiles_path(config, s->config_path, sizeof(s->config_path));
+    s->file_state = config->file_state;
+    s->file_version = config->file_version;
+    s->file_writable = config->writable;
+    s->file_existed = config->existed;
+}
 void settings_open(app_settings *s, const profile_config *config, voice_client *voice,
                    history *profile, auth_client *auth, icon_view *icons, const char *server)
 {
@@ -79,6 +89,7 @@ void settings_open(app_settings *s, const profile_config *config, voice_client *
     s->draft = config->mode;
     s->language = config->language;
     s->update_check = config->update_check;
+    file_snapshot(s, config);
     s->selection = config->mode;
     s->audio = s->original_audio = config->audio;
     s->voice = voice;
@@ -1162,6 +1173,79 @@ static void access_click(app_settings *s, int y, int x)
     s->focus = 1;
     access_adjust(s, x < getmaxx(s->window) / 2 ? -1 : 1);
 }
+/* Draws text wrapped into at most rows rows from y and returns the rows it took.
+ * Paths have no spaces, so they wrap anywhere; prose wraps between words. */
+static int paragraph(WINDOW *w, const char *text, bool words, int y, int x, int width, int rows)
+{
+    text_buffer buffer;
+    text_layout layout;
+    if (rows < 1 || width < 1 || !text_decode(&buffer, text) || !buffer.length)
+        return 0;
+    if (words)
+        text_measure_words(&buffer, width, &layout);
+    else
+        text_measure(&buffer, width, &layout);
+    text_draw(w, &buffer, &layout, 0, rows, y, x);
+    return layout.rows < rows ? layout.rows : rows;
+}
+/* Why the file is or is not being saved, from the last load. */
+static void system_status(const app_settings *s, char *status, size_t size)
+{
+    if (s->file_writable)
+        snprintf(status, size, "%s",
+                 s->file_existed
+                     ? _("Em uso. As alterações deste computador são salvas neste arquivo.")
+                     : _("Ainda não existe. Será criado na primeira alteração salva."));
+    else if (s->file_state == PROFILE_FILE_NEWER)
+        snprintf(status, size,
+                 _("Bloqueado: foi gravado por uma versão mais nova do Papo TUI (formato %d; "
+                   "esta lê até o %d). Nada é salvo até você usar uma versão que leia esse "
+                   "formato."),
+                 s->file_version, PROFILE_FILE_VERSION);
+    else if (s->file_state == PROFILE_FILE_INVALID)
+        snprintf(status, size, "%s",
+                 _("Bloqueado: o arquivo está corrompido ou não é uma configuração válida. Nada "
+                   "é salvo até você corrigi-lo, ou movê-lo para outro lugar, e reiniciar o "
+                   "aplicativo."));
+    else if (s->file_state == PROFILE_FILE_NO_DIRECTORY)
+        snprintf(status, size, "%s",
+                 _("Indisponível: a pasta de configuração não pôde ser aberta como uma pasta "
+                   "privada sua. Nada é salvo nesta sessão."));
+    else
+        snprintf(status, size, "%s",
+                 _("Bloqueado: o arquivo não pôde ser lido como um arquivo privado seu de até "
+                   "256 KiB. Corrija-o e reinicie o aplicativo."));
+}
+/* Sistema: where this device's settings are kept and whether they can be saved.
+ * Nothing is edited here; the button copies the path. The description leads
+ * with what the file never holds, so a short window cuts only the end of the list. */
+static void system_draw(app_settings *s, WINDOW *w, int height, int width)
+{
+    int row = 5, end = height - 3;
+    wattrset(w, COLOR_PAIR(THEME_PANEL));
+    text_label(w, row++, 2, width - 4, _("Arquivo de configuração:"));
+    int rows = *s->config_path
+                   ? paragraph(w, s->config_path, false, row, 4, width - 7, MIN(3, end - row))
+                   : 0;
+    if (!rows && row < end) {
+        wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
+        text_label(w, row, 4, width - 7, _("Local indisponível."));
+        rows = 1;
+    }
+    row += rows + 1;
+    char status[512];
+    system_status(s, status, sizeof(status));
+    wattrset(w, COLOR_PAIR(s->file_writable ? THEME_PANEL : THEME_ERROR));
+    row += paragraph(w, status, true, row, 2, width - 4, MIN(3, end - row)) + 1;
+    if (height < 16)
+        return;
+    wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
+    paragraph(w,
+              _("Senhas e cookies de sessão não são gravados neste arquivo. Ele guarda o modo do "
+                "aplicativo, o idioma, o áudio, os atalhos, a acessibilidade, as preferências "
+                "deste computador e os servidores salvos."),
+              true, row, 3, width - 6, end - row);
+}
 /* Notificações: the account's switches; this device keeps its own in Ctrl+D. */
 #define NOTIFY_ITEMS 4
 static bool *notify_value(app_settings *s, int item)
@@ -1847,6 +1931,8 @@ void settings_draw(app_settings *s)
         about_draw(&s->about, w, 5, 2, width - 4, height - 8, s->focus == 1, s->update_check);
         /* The newer version is on screen: the footer need not repeat it. */
         update_acknowledge();
+    } else if (s->section == SETTINGS_SYSTEM) {
+        system_draw(s, w, height, width);
     }
     wattrset(w, COLOR_PAIR(THEME_ERROR));
     if (*s->error)
@@ -1859,23 +1945,27 @@ void settings_draw(app_settings *s)
         char hint[512];
         wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
         text_label(w, height - 3, 2, width - 4, keys_hint(s, hint, sizeof(hint)));
-    } else if (s->section == SETTINGS_ABOUT && s->about_copied) {
+    } else if ((s->section == SETTINGS_ABOUT && s->about_copied) ||
+               (s->section == SETTINGS_SYSTEM && s->path_copied)) {
         wattrset(w, COLOR_PAIR(THEME_SUCCESS));
         text_label(w, height - 3, 2, width - 4, _("Cópia solicitada."));
     } else if (s->profile &&
                (s->section == SETTINGS_APPEARANCE || s->section == SETTINGS_NOTIFICATIONS))
         user_notice_draw(s, w, height, width);
     bool profile = s->section == SETTINGS_PROFILE, account = s->section == SETTINGS_ACCOUNT,
-         notifications = s->section == SETTINGS_NOTIFICATIONS, about = s->section == SETTINGS_ABOUT;
+         notifications = s->section == SETTINGS_NOTIFICATIONS, about = s->section == SETTINGS_ABOUT,
+         system = s->section == SETTINGS_SYSTEM;
     button_draw(w, height - 2, 2, 18,
                 profile         ? _("Salvar perfil")
                 : account       ? s->account_confirm ? _("Confirmar") : _("Alterar senha")
                 : notifications ? _("Salvar")
                 : about         ? about_button_label()
+                : system        ? _("Copiar caminho")
                                 : _("Salvar e aplicar"),
                 s->focus == 2 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     button_draw(w, height - 2, width - 14, 12,
-                profile || account || notifications || about ? _("Fechar") : _("Cancelar"),
+                profile || account || notifications || about || system ? _("Fechar")
+                                                                       : _("Cancelar"),
                 s->focus == 3 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     wnoutrefresh(w);
 }
@@ -1900,13 +1990,25 @@ static void about_act(app_settings *s, profile_config *config, about_action acti
             update_set_automatic(s->update_check);
         } else
             snprintf(s->error, sizeof(s->error), "%s", config->message);
+        file_snapshot(s, config);
     } else if (action == ABOUT_LEAVE_UP)
         s->focus = 0;
     else if (action == ABOUT_LEAVE_DOWN)
         s->focus = 2;
 }
+/* Sistema keeps no draft: its button copies the path of the configuration file. */
+static void path_copy(app_settings *s)
+{
+    s->path_copied = *s->config_path && clipboard_copy_text(s->config_path);
+    snprintf(s->error, sizeof(s->error), "%s",
+             s->path_copied ? "" : _("Não foi possível copiar o caminho."));
+}
 static void save(app_settings *s, profile_config *config)
 {
+    if (s->section == SETTINGS_SYSTEM) {
+        path_copy(s);
+        return;
+    }
     if (s->section == SETTINGS_ABOUT) {
         s->about_copied = false;
         s->error[0] = 0;
@@ -1943,7 +2045,10 @@ static void save(app_settings *s, profile_config *config)
     }
     keymap_overrides shortcuts;
     keymap_table_to_overrides(&s->keys, &config->shortcuts, &shortcuts);
-    if (profiles_set_settings(config, s->draft, s->language, &s->audio, &shortcuts, &s->access)) {
+    bool saved =
+        profiles_set_settings(config, s->draft, s->language, &s->audio, &shortcuts, &s->access);
+    file_snapshot(s, config);
+    if (saved) {
         s->applied = true;
         s->original_audio = s->audio;
         voice_configure(&s->audio);
@@ -2115,6 +2220,7 @@ void settings_key(app_settings *s, profile_config *config, int type, uint32_t ke
             return;
         if (y == 3) {
             voice_test(s->voice, false);
+            s->path_copied = false;
             s->section =
                 tab_strip_hit(&s->tabs, SETTINGS_SECTIONS, s->section, x, getmaxx(s->window));
             s->focus = 0;
@@ -2164,6 +2270,7 @@ void settings_key(app_settings *s, profile_config *config, int type, uint32_t ke
     if (s->focus == 0) {
         if (type == KEY_CODE_YES && (key == KEY_LEFT || key == KEY_RIGHT)) {
             voice_test(s->voice, false);
+            s->path_copied = false;
             s->section =
                 (s->section + (key == KEY_LEFT ? SETTINGS_SECTIONS - 1 : 1)) % SETTINGS_SECTIONS;
             s->about_copied = false;

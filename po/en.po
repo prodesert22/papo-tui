@@ -793,6 +793,10 @@ msgstr "Wait for the send before closing the DM."
 msgid "Aguarde um minuto antes de verificar de novo."
 msgstr "Wait a minute before checking again."
 
+#: src/ui/components/settings.c
+msgid "Ainda não existe. Será criado na primeira alteração salva."
+msgstr "It does not exist yet. It is created by the first saved change."
+
 #: src/ui/components/help.c
 msgid "Ajuda do contexto"
 msgstr "Contextual help"
@@ -996,6 +1000,10 @@ msgstr "Unknown or repeated argument. Use papo-tui --help.\n"
 #: src/ui/components/about.c
 msgid "Arquivo conferido. Salvando…"
 msgstr "File checked. Saving…"
+
+#: src/ui/components/settings.c
+msgid "Arquivo de configuração:"
+msgstr "Configuration file:"
 
 #: src/ui/media/media_cache.c
 msgid "Arquivo de imagem indisponível."
@@ -1308,6 +1316,18 @@ msgstr "Banner unavailable · {k1:app.refresh}: try again"
 #: src/model/conversation/profile_edit.c
 msgid "Banner removido"
 msgstr "Banner removed"
+
+#: src/ui/components/settings.c
+msgid "Bloqueado: foi gravado por uma versão mais nova do Papo TUI (formato %d; esta lê até o %d). Nada é salvo até você usar uma versão que leia esse formato."
+msgstr "Locked: it was saved by a newer version of Papo TUI (format %d; this one reads up to %d). Nothing is saved until you use a version that reads that format."
+
+#: src/ui/components/settings.c
+msgid "Bloqueado: o arquivo está corrompido ou não é uma configuração válida. Nada é salvo até você corrigi-lo, ou movê-lo para outro lugar, e reiniciar o aplicativo."
+msgstr "Locked: the file is damaged or is not a valid configuration. Nothing is saved until you correct it, or move it elsewhere, and restart the application."
+
+#: src/ui/components/settings.c
+msgid "Bloqueado: o arquivo não pôde ser lido como um arquivo privado seu de até 256 KiB. Corrija-o e reinicie o aplicativo."
+msgstr "Locked: the file could not be read as a private file of yours of up to 256 KiB. Correct it and restart the application."
 
 #: src/ui/screens/conversation/members.c
 msgid "Bloquear"
@@ -1850,12 +1870,20 @@ msgid "Configurar o orçamento de requisições"
 msgstr "Configure the request budget"
 
 #: src/config/profiles.c
+msgid "Configuração bloqueada: arquivo de uma versão mais nova do Papo TUI."
+msgstr "Configuration locked: file from a newer version of Papo TUI."
+
+#: src/config/profiles.c
 msgid "Configuração bloqueada; corrija o arquivo e use {k1:app.refresh}. Nenhum perfil foi alterado."
 msgstr "Configuration locked; fix the file and use {k1:app.refresh}. No profile was changed."
 
 #: src/config/profiles.c
 msgid "Configuração de acessibilidade inválida."
 msgstr "Invalid accessibility settings."
+
+#: src/config/profiles.c
+msgid "Configuração de uma versão mais nova do Papo TUI (formato %d; esta lê até o %d). Arquivo preservado."
+msgstr "Configuration from a newer version of Papo TUI (format %d; this one reads up to %d). File preserved."
 
 #: src/config/profiles.c
 msgid "Configuração de áudio inválida."
@@ -2064,6 +2092,10 @@ msgstr "Copy URL"
 #: src/config/keymap.c src/ui/components/help.c
 msgid "Copiar a seleção; sem seleção, copiar o campo"
 msgstr "Copy the selection; without a selection, copy the field"
+
+#: src/ui/components/settings.c
+msgid "Copiar caminho"
+msgstr "Copy path"
 
 #: src/ui/components/settings.c
 msgid "Copiar comando"
@@ -2480,6 +2512,10 @@ msgstr "Edit not saved; editing the message again recovers the text."
 #: src/ui/screens/conversation/interactions.c
 msgid "Edição não salva; o texto voltou ao editor."
 msgstr "Edit not saved; the text went back to the editor."
+
+#: src/ui/components/settings.c
+msgid "Em uso. As alterações deste computador são salvas neste arquivo."
+msgstr "In use. Changes made on this computer are saved in this file."
 
 #: src/model/conversation/server_admin.c
 msgid "Emoji adicionado"
@@ -3513,6 +3549,10 @@ msgstr "Unavailable"
 msgid "Indisponível sem um servidor conectado."
 msgstr "Unavailable without a connected server."
 
+#: src/ui/components/settings.c
+msgid "Indisponível: a pasta de configuração não pôde ser aberta como uma pasta privada sua. Nada é salvo nesta sessão."
+msgstr "Unavailable: the configuration folder could not be opened as a private folder of yours. Nothing is saved in this session."
+
 #: src/model/conversation/server_admin.c
 msgid "Informe a senha do servidor para torná-lo privado."
 msgstr "Enter the server password to make it private."
@@ -3812,6 +3852,10 @@ msgstr "List the commands; ↑↓ chooses, Tab completes, Esc closes"
 #: src/config/keymap.c
 msgid "Listas e seleção"
 msgstr "Lists and selection"
+
+#: src/ui/components/settings.c
+msgid "Local indisponível."
+msgstr "Location unavailable."
 
 #: src/model/conversation/interactions.c
 msgid "Localizando mensagem…"
@@ -4636,6 +4680,10 @@ msgstr "Could not reach GitHub. Check your connection."
 #: src/ui/components/server_settings/webhooks.c
 msgid "Não foi possível copiar agora."
 msgstr "Could not copy now."
+
+#: src/ui/components/settings.c
+msgid "Não foi possível copiar o caminho."
+msgstr "Could not copy the path."
 
 #: src/ui/components/settings.c
 msgid "Não foi possível copiar o comando."
@@ -6264,6 +6312,10 @@ msgstr "Password reset. Sign in with the new password."
 #: src/ui/screens/login.c
 msgid "Senha: 8+ caracteres, maiúscula e símbolo."
 msgstr "Password: 8+ characters, uppercase and symbol."
+
+#: src/ui/components/settings.c
+msgid "Senhas e cookies de sessão não são gravados neste arquivo. Ele guarda o modo do aplicativo, o idioma, o áudio, os atalhos, a acessibilidade, as preferências deste computador e os servidores salvos."
+msgstr "Passwords and session cookies are not written to this file. It keeps the application mode, the language, the audio settings, the shortcuts, the accessibility choices, this computer's preferences and the saved servers."
 
 #: src/app/instances.c src/ui/components/emoji_picker.c src/ui/components/server_settings/audit.c src/ui/components/terminal_title.c
 msgid "Servidor"

@@ -114,6 +114,15 @@ static const char *json_text(json_t *value, size_t limit)
     return length < limit && strlen(text) == length ? text : NULL;
 }
 
+/* The format of a file left by a later version of the program; 0 for any other content. */
+static json_int_t newer_format(const json_t *root)
+{
+    json_t *version = json_is_object(root) ? json_object_get(root, "version") : NULL;
+    return json_is_integer(version) && json_integer_value(version) > PROFILE_FILE_VERSION
+               ? json_integer_value(version)
+               : 0;
+}
+
 static bool decode(profile_config *config, json_t *root)
 {
     config->mode = APP_MODE_NORMAL;
@@ -127,7 +136,7 @@ static bool decode(profile_config *config, json_t *root)
     if (version == 1) {
         if (json_object_size(root) != 3)
             return false;
-    } else if (version >= 2 && version <= 14) {
+    } else if (version >= 2 && version <= PROFILE_FILE_VERSION) {
         json_t *rate = json_object_get(root, "requests_per_second");
         json_t *burst = json_object_get(root, "request_burst");
         if (json_object_size(root) != (version == 2    ? 5U
@@ -239,14 +248,18 @@ bool profiles_reload(profile_config *config)
     accessibility_default(&config->accessibility);
     config->player_volume = PLAYER_VOLUME_DEFAULT;
     player_volume_set(PLAYER_VOLUME_DEFAULT);
-    if (!profiles_storage_open(config))
+    if (!profiles_storage_open(config)) {
+        config->file_state = PROFILE_FILE_NO_DIRECTORY;
         return false;
+    }
     char *buffer = NULL;
     size_t length = 0;
     int loaded = profiles_storage_read(config, &buffer, &length);
-    if (loaded < 0)
+    if (loaded < 0) {
+        config->file_state = PROFILE_FILE_UNREADABLE;
         return error(config, K_("Configuração inacessível; o arquivo foi preservado. Corrija-o e "
                                 "use {k1:app.refresh}."));
+    }
     if (!loaded) {
         config->writable = true;
         net_rate_configure(config->requests_per_second, config->request_burst);
@@ -257,7 +270,9 @@ bool profiles_reload(profile_config *config)
     json_error_t diagnostic;
     json_t *root = valid ? json_loadb(buffer, length, JSON_REJECT_DUPLICATES, &diagnostic) : NULL;
     free(buffer);
-    valid = root && decode(config, root);
+    /* A later format is told apart from damage: its file is sound, only unknown here. */
+    json_int_t newer = newer_format(root);
+    valid = root && !newer && decode(config, root);
     json_decref(root);
     if (!valid) {
         memset(config->profiles, 0, sizeof(config->profiles));
@@ -272,6 +287,16 @@ bool profiles_reload(profile_config *config)
         accessibility_default(&config->accessibility);
         config->player_volume = PLAYER_VOLUME_DEFAULT;
         player_volume_set(PLAYER_VOLUME_DEFAULT);
+        if (newer) {
+            config->file_state = PROFILE_FILE_NEWER;
+            config->file_version = newer > INT_MAX ? INT_MAX : (int)newer;
+            snprintf(config->message, sizeof(config->message),
+                     _("Configuração de uma versão mais nova do Papo TUI (formato %d; esta lê "
+                       "até o %d). Arquivo preservado."),
+                     config->file_version, PROFILE_FILE_VERSION);
+            return false;
+        }
+        config->file_state = PROFILE_FILE_INVALID;
         return error(config, K_("Configuração inválida ou incompatível; arquivo preservado. "
                                 "Corrija-o e use {k1:app.refresh}."));
     }
@@ -284,6 +309,16 @@ bool profiles_reload(profile_config *config)
     snprintf(config->message, sizeof(config->message),
              _("Perfis carregados; senhas e cookies não são salvos."));
     return true;
+}
+
+bool profiles_path(const profile_config *config, char *output, size_t size)
+{
+    if (!size)
+        return false;
+    if (config && profiles_storage_path(config, output, size))
+        return true;
+    output[0] = '\0';
+    return false;
 }
 
 profile_config *profiles_create(void)
@@ -320,18 +355,18 @@ static bool save_locked(profile_config *config)
     }
     json_t *selection = *config->selected ? json_string(config->selected) : json_null();
     json_t *root =
-        selection ? json_pack("{s:i,s:O,s:O,s:f,s:I,s:b,s:b,s:b,s:s,s:s,s:b,s:i,s:b}", "version", 14,
-                              "profiles", array, "selected_profile", selection,
-                              "requests_per_second", config->requests_per_second, "request_burst",
-                              (json_int_t)config->request_burst, "desktop_notifications",
-                              config->desktop_notifications, "notification_preview",
-                              config->notification_preview, "notification_sounds",
-                              config->notification_sounds, "app_mode", app_mode_name(config->mode),
-                              "language", language_choice_name(config->language),
-                              "members_by_status", config->members_by_status, "player_volume",
-                              (json_int_t)config->player_volume, "update_check",
-                              config->update_check)
-                  : NULL;
+        selection
+            ? json_pack("{s:i,s:O,s:O,s:f,s:I,s:b,s:b,s:b,s:s,s:s,s:b,s:i,s:b}", "version",
+                        PROFILE_FILE_VERSION, "profiles", array, "selected_profile", selection,
+                        "requests_per_second", config->requests_per_second, "request_burst",
+                        (json_int_t)config->request_burst, "desktop_notifications",
+                        config->desktop_notifications, "notification_preview",
+                        config->notification_preview, "notification_sounds",
+                        config->notification_sounds, "app_mode", app_mode_name(config->mode),
+                        "language", language_choice_name(config->language), "members_by_status",
+                        config->members_by_status, "player_volume",
+                        (json_int_t)config->player_volume, "update_check", config->update_check)
+            : NULL;
     json_decref(selection);
     json_decref(array);
     json_t *audio = audio_config_encode(&config->audio);
@@ -367,6 +402,10 @@ static bool save(profile_config *config)
 
 static profile_config *candidate(profile_config *config)
 {
+    if (!config->writable && config->file_state == PROFILE_FILE_NEWER) {
+        error(config, _("Configuração bloqueada: arquivo de uma versão mais nova do Papo TUI."));
+        return NULL;
+    }
     if (!config->writable) {
         error(config, K_("Configuração bloqueada; corrija o arquivo e use {k1:app.refresh}. Nenhum "
                          "perfil foi "

@@ -5,6 +5,8 @@
 bool profiles_random_id(char output[PROFILE_ID_BYTES]);
 bool profiles_storage_open(profile_config *config);
 void profiles_storage_close(profile_config *config);
+/* Absolute path of config.json, whether or not it exists; false when it cannot be told or fit. */
+bool profiles_storage_path(const profile_config *config, char *output, size_t size);
 /* 1 = loaded, 0 = absent, -1 = preserved but inaccessible. malloc ownership. */
 int profiles_storage_read(profile_config *config, char **data, size_t *length);
 bool profiles_storage_commit(profile_config *config, const char *serialized);
