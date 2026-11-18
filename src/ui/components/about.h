@@ -12,6 +12,7 @@ typedef enum {
     ABOUT_SOURCE,  /* The source link; copies it. */
     ABOUT_CHECK,   /* The switch of the daily update check. */
     ABOUT_RELEASE, /* The page of the newer release, when one is known; copies it. */
+    ABOUT_COMMAND, /* How to install the package just saved; copies it. */
     ABOUT_ITEMS
 } about_item;
 typedef enum {
@@ -19,6 +20,7 @@ typedef enum {
     ABOUT_COPY_SOURCE,
     ABOUT_TOGGLE_CHECK,
     ABOUT_COPY_RELEASE,
+    ABOUT_COPY_COMMAND,
     ABOUT_LEAVE_UP, /* Up from the first line, Down from the last. */
     ABOUT_LEAVE_DOWN
 } about_action;
@@ -43,5 +45,15 @@ about_action about_click(about_view *view, int row);
  * the clipboard refused it or there is no such page. */
 bool about_copy_source(void);
 bool about_copy_release(void);
+bool about_copy_command(void);
+/* What the section's button does now: ask GitHub, download the package of the
+ * newer version, stop that download, or copy how to install what was saved. */
+typedef enum {
+    ABOUT_BUTTON_CHECK,
+    ABOUT_BUTTON_DOWNLOAD,
+    ABOUT_BUTTON_CANCEL,
+    ABOUT_BUTTON_COPY
+} about_button;
+about_button about_button_now(void);
 
 #endif

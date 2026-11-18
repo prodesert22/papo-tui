@@ -106,6 +106,17 @@ papo_add_test(NAME request-rate-limit COMMAND rate-limit-test LABELS network)
 add_executable(version-test tests/unit/test_version.c)
 target_link_libraries(version-test PRIVATE papo_auth)
 papo_add_test(NAME version-unit COMMAND version-test LABELS packaging)
+add_executable(install-test tests/unit/test_install.c)
+target_link_libraries(install-test PRIVATE papo_auth)
+papo_add_test(
+    NAME
+    install-channel-unit
+    COMMAND
+    install-test
+    ${PROJECT_SOURCE_DIR}/tests/fixtures/update/github_releases_observed.json
+    LABELS
+    packaging
+    platform)
 add_executable(update-test tests/unit/test_update.c)
 target_link_libraries(update-test PRIVATE papo_auth)
 papo_add_test(

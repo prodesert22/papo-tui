@@ -11,6 +11,9 @@ void file_picker_show_image(file_picker *picker);
 /* Save-as variant for downloads: native dialog first, terminal modal when none
  * is available. The chosen path is taken with file_picker_take_save. */
 void file_picker_show_save(file_picker *picker, const char *name);
+/* Names what the open save dialog saves, when it is not an attachment; title is
+ * borrowed and must outlive the dialog. */
+void file_picker_save_title(file_picker *picker, const char *title);
 /* Marks which of several items to act on, with no file browsing. Labels are
  * copied. The result, taken once with file_picker_take_choice, holds the
  * chosen positions as decimal strings in list order; NULL means cancelled. */

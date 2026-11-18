@@ -1791,6 +1791,19 @@ static void account_key(app_settings *s, int type, uint32_t key)
             s->account_bad = 0;
     }
 }
+static const char *about_button_label(void)
+{
+    switch (about_button_now()) {
+    case ABOUT_BUTTON_DOWNLOAD:
+        return _("Baixar atualização");
+    case ABOUT_BUTTON_CANCEL:
+        return _("Cancelar download");
+    case ABOUT_BUTTON_COPY:
+        return _("Copiar comando");
+    default:
+        return _("Verificar agora");
+    }
+}
 void settings_draw(app_settings *s)
 {
     if (!s->open)
@@ -1858,7 +1871,7 @@ void settings_draw(app_settings *s)
                 profile         ? _("Salvar perfil")
                 : account       ? s->account_confirm ? _("Confirmar") : _("Alterar senha")
                 : notifications ? _("Salvar")
-                : about         ? _("Verificar agora")
+                : about         ? about_button_label()
                                 : _("Salvar e aplicar"),
                 s->focus == 2 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     button_draw(w, height - 2, width - 14, 12,
@@ -1866,15 +1879,21 @@ void settings_draw(app_settings *s)
                 s->focus == 3 ? BUTTON_FOCUSED : BUTTON_NORMAL, BUTTON_PANEL);
     wnoutrefresh(w);
 }
-/* Sobre keeps no draft: each line acts at once and its button asks GitHub. */
+/* Sobre keeps no draft: each line acts at once and its button asks GitHub,
+ * downloads the newer version or copies how to install it. */
 static void about_act(app_settings *s, profile_config *config, about_action action)
 {
     s->about_copied = false;
     s->error[0] = 0;
-    if (action == ABOUT_COPY_SOURCE || action == ABOUT_COPY_RELEASE) {
-        s->about_copied = action == ABOUT_COPY_SOURCE ? about_copy_source() : about_copy_release();
+    if (action == ABOUT_COPY_SOURCE || action == ABOUT_COPY_RELEASE ||
+        action == ABOUT_COPY_COMMAND) {
+        s->about_copied = action == ABOUT_COPY_SOURCE    ? about_copy_source()
+                          : action == ABOUT_COPY_RELEASE ? about_copy_release()
+                                                         : about_copy_command();
         if (!s->about_copied)
-            snprintf(s->error, sizeof(s->error), "%s", _("Não foi possível copiar o link."));
+            snprintf(s->error, sizeof(s->error), "%s",
+                     action == ABOUT_COPY_COMMAND ? _("Não foi possível copiar o comando.")
+                                                  : _("Não foi possível copiar o link."));
     } else if (action == ABOUT_TOGGLE_CHECK) {
         if (profiles_set_update_check(config, !s->update_check)) {
             s->update_check = config->update_check;
@@ -1891,9 +1910,22 @@ static void save(app_settings *s, profile_config *config)
     if (s->section == SETTINGS_ABOUT) {
         s->about_copied = false;
         s->error[0] = 0;
-        if (!update_check_now() && update_status() != UPDATE_CHECKING)
-            snprintf(s->error, sizeof(s->error), "%s",
-                     _("Aguarde um minuto antes de verificar de novo."));
+        switch (about_button_now()) {
+        case ABOUT_BUTTON_DOWNLOAD:
+            /* The screen owns the file picker: it asks where to save first. */
+            s->pick = SETTINGS_PICK_UPDATE;
+            break;
+        case ABOUT_BUTTON_CANCEL:
+            update_download_cancel();
+            break;
+        case ABOUT_BUTTON_COPY:
+            about_act(s, config, ABOUT_COPY_COMMAND);
+            break;
+        default:
+            if (!update_check_now() && update_status() != UPDATE_CHECKING)
+                snprintf(s->error, sizeof(s->error), "%s",
+                         _("Aguarde um minuto antes de verificar de novo."));
+        }
         return;
     }
     if (s->section == SETTINGS_PROFILE) {

@@ -2,7 +2,7 @@
 #include "app/update.h"
 #include "model/text/translation.h"
 #include "platform/clipboard.h"
-#include "platform/runtime.h"
+#include "platform/install.h"
 #include "ui/components/theme.h"
 #include "ui/input/text.h"
 #include <glib.h>
@@ -27,37 +27,31 @@ enum {
     LINE_CHECK,
     LINE_STATUS,
     LINE_RELEASE,
+    LINE_SAVED,
+    LINE_COMMAND_LABEL,
+    LINE_COMMAND,
     ABOUT_LINES
 };
 /* What a short area gives up first; the version always stays. */
-static const int drop_order[] = {LINE_NOTICES_PATH, LINE_NOTICES, LINE_SPACER,  LINE_SUBTITLE,
-                                 LINE_AUTHOR,       LINE_LICENSE, LINE_RELEASE, LINE_STATUS,
-                                 LINE_CHECK,        LINE_SOURCE};
+static const int drop_order[] = {LINE_NOTICES_PATH,  LINE_NOTICES, LINE_SPACER,  LINE_SUBTITLE,
+                                 LINE_AUTHOR,        LINE_LICENSE, LINE_RELEASE, LINE_SAVED,
+                                 LINE_COMMAND_LABEL, LINE_STATUS,  LINE_CHECK,   LINE_COMMAND,
+                                 LINE_SOURCE};
 
-/* Packages install the notices under the prefix that holds the executable's
- * directory; a build tree has none. */
+/* Packages install the notices under the installation prefix; a build tree
+ * has none. */
 static void resolve_licenses(about_view *view)
 {
     view->resolved = true;
     view->licenses[0] = 0;
-    char *executable = papo_executable_path();
-    if (!executable)
+    char *prefix = install_prefix();
+    if (!prefix)
         return;
-    char *directory = g_path_get_dirname(executable);
-#ifdef _WIN32
-    char *prefix = g_strdup(directory);
-#else
-    char *name = g_path_get_basename(directory);
-    char *prefix = !strcmp(name, "bin") ? g_path_get_dirname(directory) : g_strdup(directory);
-    g_free(name);
-#endif
     char *licenses = g_build_filename(prefix, "share", "licenses", "papo-tui", NULL);
     if (g_file_test(licenses, G_FILE_TEST_IS_DIR) && strlen(licenses) < sizeof(view->licenses))
         snprintf(view->licenses, sizeof(view->licenses), "%s", licenses);
     g_free(licenses);
     g_free(prefix);
-    g_free(directory);
-    free(executable);
 }
 /* The page of the newer release; the tag is rebuilt from the validated version. */
 static bool release_url(char *url, size_t size)
@@ -80,12 +74,99 @@ static const char *failure_text(void)
         return _("Não foi possível consultar o GitHub. Verifique a conexão.");
     }
 }
-/* The state of the check; a known newer version is named unless the last
- * check failed, whose reason matters more. Returns the color pair. */
+static const char *transfer_failure_text(void)
+{
+    switch (update_download_error()) {
+    case UPDATE_TRANSFER_TLS:
+        return _("O certificado do GitHub não é confiável; nada foi baixado.");
+    case UPDATE_TRANSFER_REFUSED:
+        return _("O GitHub não entregou o arquivo. Tente mais tarde.");
+    case UPDATE_TRANSFER_MISMATCH:
+        return _("O arquivo baixado não confere com o publicado e foi descartado.");
+    case UPDATE_TRANSFER_STORAGE:
+        return _("Não foi possível gravar o arquivo temporário. Verifique o espaço em disco.");
+    default:
+        return _("Não foi possível baixar a atualização. Verifique a conexão.");
+    }
+}
+/* What the user types, or runs, to put the saved package in place: the label
+ * that introduces it and the text itself. false when nothing was saved. */
+static bool command_text(const char **label, char *command, size_t size)
+{
+    const char *saved = update_saved();
+    if (!*saved)
+        return false;
+#ifdef _WIN32
+    char *quoted = g_strdup_printf("\"%s\"", saved);
+#else
+    char *quoted = g_shell_quote(saved);
+#endif
+    const char *verb = "";
+    switch (update_channel()) {
+    case INSTALL_DEB_UBUNTU:
+    case INSTALL_DEB_DEBIAN:
+        *label = _("Instale com:");
+        verb = "sudo apt install ";
+        break;
+    case INSTALL_RPM_FEDORA:
+        *label = _("Instale com:");
+        verb = "sudo dnf install ";
+        break;
+    case INSTALL_ARCH:
+        *label = _("Instale com:");
+        verb = "sudo pacman -U ";
+        break;
+    case INSTALL_FLATPAK:
+        *label = _("Instale com:");
+        verb = "flatpak install --user ";
+        break;
+    case INSTALL_TERMUX:
+        *label = _("Instale com:");
+        verb = "apt install ";
+        break;
+    case INSTALL_APPIMAGE:
+        *label = _("Torne o arquivo executável e abra-o no lugar do atual:");
+        verb = "chmod +x ";
+        break;
+    case INSTALL_TARBALL:
+        *label = _("Feche o programa e extraia sobre a pasta atual:");
+        verb = "tar -xzf ";
+        break;
+    case INSTALL_WINDOWS_INSTALLER:
+        *label = _("Feche o programa e execute o instalador:");
+        break;
+    default:
+        *label = _("Feche o programa e extraia o arquivo sobre a pasta atual:");
+        break;
+    }
+    int written = snprintf(command, size, "%s%s", verb, quoted);
+    g_free(quoted);
+    return written > 0 && (size_t)written < size;
+}
+/* The state of the download when there is one, otherwise of the check; a known
+ * newer version is named unless the last check failed, whose reason matters
+ * more. Returns the color pair. */
 static int status_text(char *line, size_t size)
 {
     update_state state = update_status();
     const char *latest = update_latest();
+    update_transfer transfer = update_download_status();
+    if (transfer == UPDATE_TRANSFER_RUNNING) {
+        snprintf(line, size, _("Baixando %s… %d%%"), update_asset_name(),
+                 update_download_percent());
+        return THEME_PANEL_MUTED;
+    }
+    if (transfer == UPDATE_TRANSFER_VERIFYING || transfer == UPDATE_TRANSFER_READY) {
+        snprintf(line, size, "%s",
+                 transfer == UPDATE_TRANSFER_VERIFYING
+                     ? _("Conferindo o tamanho e o SHA-256 do arquivo…")
+                     : _("Arquivo conferido. Salvando…"));
+        return THEME_PANEL_MUTED;
+    }
+    if (transfer == UPDATE_TRANSFER_FAILED) {
+        snprintf(line, size, "%s", transfer_failure_text());
+        return THEME_ERROR;
+    }
     if (state == UPDATE_CHECKING) {
         snprintf(line, size, "%s", _("Verificando atualizações…"));
         return THEME_PANEL_MUTED;
@@ -123,7 +204,8 @@ void about_draw(about_view *view, WINDOW *window, int top, int left, int width, 
         return;
     if (!view->resolved)
         resolve_licenses(view);
-    char line[1280], release[256];
+    char line[1280], release[256], command[1200];
+    const char *command_label = "";
     bool shown[ABOUT_LINES];
     int count = ABOUT_LINES;
     for (int i = 0; i < ABOUT_LINES; ++i)
@@ -135,6 +217,10 @@ void about_draw(about_view *view, WINDOW *window, int top, int left, int width, 
     if (!release_url(release, sizeof(release))) {
         shown[LINE_RELEASE] = false;
         --count;
+    }
+    if (!command_text(&command_label, command, sizeof(command))) {
+        shown[LINE_SAVED] = shown[LINE_COMMAND_LABEL] = shown[LINE_COMMAND] = false;
+        count -= 3;
     }
     for (size_t i = 0; count > rows && i < sizeof(drop_order) / sizeof(drop_order[0]); ++i)
         if (shown[drop_order[i]]) {
@@ -203,6 +289,20 @@ void about_draw(about_view *view, WINDOW *window, int top, int left, int width, 
             text_label(window, row, left, width, release);
             view->rows[ABOUT_RELEASE] = row;
             break;
+        case LINE_SAVED:
+            wattrset(window, COLOR_PAIR(THEME_SUCCESS));
+            snprintf(line, sizeof(line), _("Pacote conferido e salvo em %s"), update_saved());
+            text_label(window, row, left, width, line);
+            break;
+        case LINE_COMMAND_LABEL:
+            wattrset(window, COLOR_PAIR(THEME_PANEL));
+            text_label(window, row, left, width, command_label);
+            break;
+        case LINE_COMMAND:
+            item_attributes(view, window, ABOUT_COMMAND, focused);
+            text_label(window, row, left, width, command);
+            view->rows[ABOUT_COMMAND] = row;
+            break;
         default:
             break;
         }
@@ -218,9 +318,10 @@ void about_draw(about_view *view, WINDOW *window, int top, int left, int width, 
 }
 static about_action action_of(int item)
 {
-    return item == ABOUT_SOURCE  ? ABOUT_COPY_SOURCE
-           : item == ABOUT_CHECK ? ABOUT_TOGGLE_CHECK
-                                 : ABOUT_COPY_RELEASE;
+    return item == ABOUT_SOURCE    ? ABOUT_COPY_SOURCE
+           : item == ABOUT_CHECK   ? ABOUT_TOGGLE_CHECK
+           : item == ABOUT_RELEASE ? ABOUT_COPY_RELEASE
+                                   : ABOUT_COPY_COMMAND;
 }
 /* The next shown item in a direction, or -1 at the edge. */
 static int neighbor(const about_view *view, int direction)
@@ -263,4 +364,21 @@ bool about_copy_release(void)
 {
     char url[256];
     return release_url(url, sizeof(url)) && clipboard_copy_text(url);
+}
+bool about_copy_command(void)
+{
+    char command[1200];
+    const char *label;
+    return command_text(&label, command, sizeof(command)) && clipboard_copy_text(command);
+}
+about_button about_button_now(void)
+{
+    update_transfer transfer = update_download_status();
+    if (transfer == UPDATE_TRANSFER_RUNNING || transfer == UPDATE_TRANSFER_VERIFYING)
+        return ABOUT_BUTTON_CANCEL;
+    if (*update_saved())
+        return ABOUT_BUTTON_COPY;
+    /* While a check runs its result decides what the button offers. */
+    return *update_asset_name() && update_status() != UPDATE_CHECKING ? ABOUT_BUTTON_DOWNLOAD
+                                                                      : ABOUT_BUTTON_CHECK;
 }

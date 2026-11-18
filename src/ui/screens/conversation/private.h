@@ -238,7 +238,8 @@ typedef struct {
     history_row *select_rows;
     int select_row_count;
     file_picker *files;
-    struct downloads *downloads; /* attachment saves in progress, or NULL */
+    struct downloads *downloads;     /* attachment saves in progress, or NULL */
+    struct update_save *update_save; /* the newer version's package being saved, or NULL */
     GTask *attachment_task;
     GCancellable *attachment_cancel;
     char attachment_channel[64], attachment_notice[256];
@@ -395,6 +396,13 @@ bool conversation_download_start(view *ui, const char *message_id, int only);
 bool conversation_download_menu(view *ui, const char *message_id);
 bool conversation_downloads_poll(view *ui);
 void conversation_downloads_close(view *ui);
+/* The package of a newer version (update_save.c): asks where to save it, then
+ * downloads, checks and moves it there. begin is false when a picker or another
+ * save is in the way. */
+bool conversation_update_save_begin(view *ui);
+bool conversation_update_save_poll(view *ui);
+bool conversation_update_save_busy(const view *ui);
+void conversation_update_save_close(view *ui);
 void conversation_attachments_open(view *ui, bool clipboard);
 void conversation_profile_pick(view *ui, profile_image kind);
 /* Picks the server icon or, with emoji, the image of the emoji being added. */

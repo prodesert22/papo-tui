@@ -172,6 +172,32 @@ From PowerShell in the extracted ZIP folder, run:
 .\papo-tui.exe
 ```
 
+## Updating
+
+Each package updates by installing the newer one over the old one; your
+profiles, sessions and settings are kept.
+
+The program tells you when a newer version exists and can fetch the right file
+for you: open **Configurações** (Settings, Ctrl+S), choose **Sobre** (About)
+and select **Baixar atualização** (Download update). It saves the package where
+you choose, after checking its size and SHA-256 against the ones GitHub
+publishes, and shows the command below for your installation. See
+[Download the new version](usage.md#download-the-new-version).
+
+| Installed from | Install the new file with |
+| --- | --- |
+| DEB (Ubuntu, Debian) | `sudo apt install ./papo-tui-*.deb` |
+| RPM (Fedora) | `sudo dnf install ./papo-tui-*.rpm` |
+| Arch package | `sudo pacman -U ./papo-tui-*.pkg.tar.zst` |
+| Flatpak bundle | `flatpak install --user ./papo-tui-*.flatpak` |
+| Termux | `apt install ./papo-tui-*-termux-aarch64.deb` |
+| AppImage | `chmod +x` the new file and run it instead of the old one |
+| Windows installer | Close the program and run the new `-setup.exe` |
+| Windows ZIP | Close the program and extract the new ZIP over the folder |
+
+Close the program before installing. To verify a download yourself, use the
+`SHA256SUMS` file and the signatures of the release, as its notes describe.
+
 ## Build from source
 
 [BUILD.md](../BUILD.md) lists development packages and complete build/run commands

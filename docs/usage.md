@@ -1818,10 +1818,44 @@ When there is a newer version:
   **Sobre**, until the program starts again;
 - **Sobre** shows **Versão X disponível em:** (Version X available at:) and the
   address of that release's page. Press Enter on the address, or click it, to
-  copy it, then download the package for your system there; the
-  [installation guide](installation.md) has the commands for each package.
+  copy it.
 
-The program does not download or install the new version by itself.
+### Download the new version
+
+When the newer release has a package for the way your copy was installed, the
+button in **Sobre** becomes **Baixar atualização** (Download update). The
+program picks the file that matches your installation and processor: the DEB
+for Ubuntu or for Debian, the RPM for Fedora, the Arch package, the AppImage,
+the Flatpak bundle, the Termux package, or the Windows installer or ZIP.
+
+1. Select **Baixar atualização**. **Salvar atualização** (Save update) asks
+   where to save the file; Esc gives up before anything is downloaded.
+2. The file is downloaded from GitHub into a private temporary folder while
+   **Sobre** shows **Baixando … 42%**. You can close Settings and keep
+   chatting. **Cancelar download** (Cancel download) stops it and removes what
+   had arrived.
+3. The program compares the file's size and SHA-256 with the ones GitHub
+   publishes for it. Only a file that matches is moved to the place you chose;
+   **O arquivo baixado não confere com o publicado e foi descartado.** (The
+   downloaded file does not match the published one and was discarded) means it
+   did not, and nothing was saved.
+4. **Sobre** then shows **Pacote conferido e salvo em** (Package checked and
+   saved to) with the path, and how to install it: for example **Instale com:**
+   (Install with:) and `sudo apt install '/home/you/Downloads/papo-tui-….deb'`.
+   **Copiar comando** (Copy command), or Enter on that line, copies it. Run it
+   in a terminal after closing the program.
+
+The program does not install the package or replace its own files: you run the
+command, with your password where the package manager asks for one. What is
+checked is that the file is the one GitHub publishes for that release; the
+signatures published with each release can be verified by hand, as its notes
+describe.
+
+**Baixar atualização** does not appear, and the address of the release page is
+all **Sobre** offers, when the release has no package for your installation,
+when the program cannot tell how it was installed (a copy built from source or
+unpacked from the portable archive), or when GitHub lists the file without a
+SHA-256.
 
 **[x] Verificar atualizações automaticamente** (Check for updates
 automatically) in **Sobre** turns the daily check on or off; Space, Enter or a
@@ -1862,6 +1896,16 @@ built from source that is not a release build never asks by itself either.
   nothing is asked over an untrusted connection. A failed check is tried again
   twice within a few seconds and then on the next day. None of this affects
   the chat servers.
+- **The update download failed:** **Sobre** says why and offers
+  **Baixar atualização** (Download update) again. **O GitHub não entregou o
+  arquivo.** (GitHub did not deliver the file) means the answer was not the
+  file, or sent the download somewhere other than GitHub: try later. **O
+  arquivo baixado não confere com o publicado** means its size or SHA-256 was
+  not the published one; it was removed and nothing was saved. **Não foi
+  possível gravar o arquivo temporário.** (Could not write the temporary file)
+  points to a full or read-only temporary folder; set `TMPDIR` to one with
+  room. **Não foi possível gravar em …** names the place you chose: pick a
+  folder you can write to.
 - **Command not found:** check that the application is installed and its folder
   is on PATH. For a portable package, run the executable from the extracted
   folder; see the [installation guide](installation.md).

@@ -477,10 +477,51 @@ trusted through `CURL_CA_BUNDLE`. The test terminals start the program with
 stand-in. `tests/fixtures/update/` keeps real answers of the GitHub API,
 reduced to the fields the client reads, for `tests/unit/test_update.c`.
 
-The client reads only `tag_name`, `draft` and `prerelease` of each release.
-Tags must stay in the `vMAJOR.MINOR.PATCH[-(alpha|beta|rc).N]` form that
-`dist/release.py` enforces: a release with any other tag is invisible to
-installed copies.
+`PAPO_UPDATE_CHANNEL`, honored only together with `PAPO_UPDATE_API_URL`, names
+the kind of installation to pretend (a word of the table below), since a build
+tree is none. With the stand-in, files are fetched from
+`<PAPO_UPDATE_API_URL>/download/v<version>/<name>` and redirects may only stay
+on its origin. `tests/terminal/test_update_download.py` covers the download.
+
+#### What installed copies expect from a release
+
+The client reads `tag_name`, `draft` and `prerelease` of each release and, of
+the chosen one, the `name`, `size` and `digest` of one asset. Keep these stable:
+
+- Tags stay in the `vMAJOR.MINOR.PATCH[-(alpha|beta|rc).N]` form that
+  `dist/release.py` enforces. A release with any other tag is invisible to
+  installed copies.
+- Asset names stay as below, with `<v>` the version without the `v` and
+  `<arch>` either `x86_64` or `aarch64`. A copy looks for exactly the name of
+  its own channel and downloads it from
+  `https://github.com/prodesert22/papo-tui/releases/download/v<v>/<name>`; under
+  any other name it only shows the release page.
+- GitHub must list the asset with a `sha256:` digest (it computes one for every
+  uploaded file) and it must be at most 256 MiB.
+
+| Channel word | Asset |
+| --- | --- |
+| `deb-ubuntu` | `papo-tui-<v>-ubuntu-<arch>.deb` |
+| `deb-debian` | `papo-tui-<v>-debian-<arch>.deb` |
+| `rpm-fedora` | `papo-tui-<v>-fedora-<arch>.rpm` |
+| `arch` | `papo-tui-<v>-arch-<arch>.pkg.tar.zst` |
+| `appimage` | `PapoTUI-<v>-linux-<arch>.AppImage` |
+| `tarball` | `papo-tui-<v>-linux-<arch>.tar.gz` |
+| `flatpak` | `papo-tui-<v>-flatpak-<arch>.flatpak` |
+| `termux` | `papo-tui-<v>-termux-aarch64.deb` |
+| `windows-installer` | `papo-tui-<v>-windows-<arch>-setup.exe` |
+| `windows-zip` | `papo-tui-<v>-windows-<arch>.zip` |
+
+`dist/package.py` writes the channel word into each package it makes, as
+`share/papo-tui/install-channel` under the installation prefix
+(`src/platform/install.c` reads it). Packages without the file are recognized by
+what they show: `FLATPAK_ID`, `TERMUX_VERSION`, `APPIMAGE` with `APPDIR` holding
+the executable, an Inno Setup uninstaller beside the executable, or the
+distribution in `/etc/os-release` for a copy under `/usr`. The portable archive
+has no word yet, so a copy unpacked from it is not offered a download.
+`tests/unit/test_install.c` checks every name against the files of a real
+release, and `tests/distribution/test_distribution.py` checks that the script
+and the program know the same words.
 
 ### Update test dependencies
 

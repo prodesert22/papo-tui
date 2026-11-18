@@ -428,6 +428,27 @@ class DistributionTests(unittest.TestCase):
                 worker.write_bytes(header)
                 package.smoke(stage, "test", "x86_64")
 
+    def test_each_package_is_marked_with_a_channel_the_program_knows(self):
+        # The words written by the packaging script are the ones the program reads.
+        source = (ROOT / "src/platform/install.c").read_text(encoding="utf-8")
+        known = set(re.findall(r'\[INSTALL_[A-Z_]+\] = \{"([a-z-]+)"', source))
+        self.assertTrue(set(package.CHANNELS.values()) <= known, known)
+        # Flatpak, Termux and the tarball are not made by this script.
+        self.assertEqual(known - set(package.CHANNELS.values()), {"flatpak", "termux", "tarball"})
+        with tempfile.TemporaryDirectory(prefix="papo-channel-") as directory:
+            stage = Path(directory)
+            marker = stage / "share/papo-tui/install-channel"
+            for (fmt, flavor), token in package.CHANNELS.items():
+                with self.subTest(fmt=fmt, flavor=flavor):
+                    self.assertEqual(package.mark_channel(stage, fmt, flavor or "ubuntu"), token)
+                    self.assertEqual(marker.read_text(encoding="ascii"), token + "\n")
+            # One stage makes several packages: a format without a word of its
+            # own must not inherit the previous one.
+            self.assertIsNone(package.mark_channel(stage, "deb", "linux"))
+            self.assertFalse(marker.exists())
+            self.assertIsNone(package.mark_channel(stage, "rpm", "ubuntu"))
+            self.assertFalse(marker.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

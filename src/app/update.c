@@ -5,9 +5,14 @@
 #include "net/http/public_request.h"
 #include "net/retry.h"
 #include "net/update.h"
+#include "platform/file_transfer.h"
+#include "platform/install.h"
+#include "platform/runtime.h"
 #include <glib.h>
+#include <glib/gstdio.h>
 #include <jansson.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -31,10 +36,41 @@ static struct {
     public_request *request;
     uint64_t due, started;
     unsigned failures;
+    /* The file of the newer release for this installation, and its download:
+     * a private temporary folder holds the file until it is checked and taken. */
+    install_channel channel;
+    update_asset asset;
+    public_request *transfer;
+    update_transfer transfer_state;
+    update_transfer_failure transfer_failure;
+    char *directory, *file, *saved;
+    GTask *verify;
+    GCancellable *cancel;
+    bool discard;
+    int percent;
 } update;
 
-/* {"version":1,"contexts":[]} or one {"checked":<unix seconds>,"latest":"<version>"}:
- * when the last successful check ran and the newest version it knew. */
+/* The asset as stored: {"name":...,"sha256":...,"size":...}. */
+static bool asset_decode(const json_t *value, update_asset *asset)
+{
+    const json_t *name = json_object_get(value, "name"), *sum = json_object_get(value, "sha256");
+    const json_t *size = json_object_get(value, "size");
+    memset(asset, 0, sizeof(*asset));
+    if (!json_is_object(value) || json_object_size(value) != 3 || !json_is_string(name) ||
+        !json_is_string(sum) || !json_is_integer(size) || json_integer_value(size) <= 0 ||
+        json_string_length(name) >= sizeof(asset->name) ||
+        strlen(json_string_value(name)) != json_string_length(name) ||
+        json_string_length(sum) != UPDATE_HASH_BYTES - 1 ||
+        strlen(json_string_value(sum)) != json_string_length(sum))
+        return false;
+    snprintf(asset->name, sizeof(asset->name), "%s", json_string_value(name));
+    snprintf(asset->sha256, sizeof(asset->sha256), "%s", json_string_value(sum));
+    asset->size = (uint64_t)json_integer_value(size);
+    return update_asset_valid(asset);
+}
+/* {"version":1,"contexts":[]} or one {"checked":<unix seconds>,"latest":"<version>"},
+ * with "asset" when that release has a file for this installation: when the
+ * last successful check ran and what it found. */
 static bool validate(json_t *root)
 {
     json_t *contexts = json_object_get(root, "contexts");
@@ -48,28 +84,34 @@ static bool validate(json_t *root)
     json_t *context = json_array_get(contexts, 0);
     json_t *checked = json_object_get(context, "checked");
     json_t *latest = json_object_get(context, "latest");
+    json_t *stored_asset = json_object_get(context, "asset");
     app_version version;
-    return json_is_object(context) && json_object_size(context) == 2 && json_is_integer(checked) &&
-           json_integer_value(checked) >= 0 && json_is_string(latest) &&
+    update_asset asset;
+    return json_is_object(context) && json_object_size(context) == (stored_asset ? 3U : 2U) &&
+           json_is_integer(checked) && json_integer_value(checked) >= 0 && json_is_string(latest) &&
            json_string_length(latest) < APP_VERSION_TEXT &&
            strlen(json_string_value(latest)) == json_string_length(latest) &&
-           app_version_parse(json_string_value(latest), &version);
+           app_version_parse(json_string_value(latest), &version) &&
+           (!stored_asset || asset_decode(stored_asset, &asset));
 }
-static bool stored(uint64_t *checked, app_version *latest)
+static bool stored(uint64_t *checked, app_version *latest, update_asset *asset)
 {
     read_storage *storage = read_storage_open_named(stem, validate);
     json_t *root = storage ? read_storage_load(storage) : NULL;
     read_storage_close(storage);
     json_t *context = json_array_get(json_object_get(root, "contexts"), 0);
     bool found = context != NULL;
+    memset(asset, 0, sizeof(*asset));
     if (found) {
         *checked = (uint64_t)json_integer_value(json_object_get(context, "checked"));
         app_version_parse(json_string_value(json_object_get(context, "latest")), latest);
+        if (json_object_get(context, "asset"))
+            asset_decode(json_object_get(context, "asset"), asset);
     }
     json_decref(root);
     return found;
 }
-static void store(uint64_t checked, const app_version *latest)
+static void store(uint64_t checked, const app_version *latest, const update_asset *asset)
 {
     char text[APP_VERSION_TEXT];
     if (!app_version_format(latest, text, sizeof(text)))
@@ -78,8 +120,12 @@ static void store(uint64_t checked, const app_version *latest)
     if (!storage)
         return;
     if (read_storage_lock(storage)) {
-        json_t *root = json_pack("{s:i,s:[{s:I,s:s}]}", "version", 1, "contexts", "checked",
-                                 (json_int_t)checked, "latest", text);
+        json_t *context = json_pack("{s:I,s:s}", "checked", (json_int_t)checked, "latest", text);
+        if (context && asset && *asset->name)
+            json_object_set_new(context, "asset",
+                                json_pack("{s:s,s:s,s:I}", "name", asset->name, "sha256",
+                                          asset->sha256, "size", (json_int_t)asset->size));
+        json_t *root = context ? json_pack("{s:i,s:[o]}", "version", 1, "contexts", context) : NULL;
         if (root)
             read_storage_write(storage, root);
         json_decref(root);
@@ -91,13 +137,31 @@ static uint64_t wall_seconds(void)
     gint64 now = g_get_real_time();
     return now > 0 ? (uint64_t)now / G_USEC_PER_SEC : 0;
 }
-static void know(const app_version *latest)
+static void forget_saved(void)
+{
+    g_free(update.saved);
+    update.saved = NULL;
+}
+static void know(const app_version *latest, const update_asset *asset)
 {
     bool same = update.has_latest && !app_version_compare(latest, &update.latest);
     update.has_latest = app_version_format(latest, update.latest_text, sizeof(update.latest_text));
     update.latest = *latest;
-    if (!same)
+    update.asset = *asset;
+    if (!same) {
         update.acknowledged = false;
+        /* A package saved earlier is of another version. */
+        forget_saved();
+    }
+}
+/* A test endpoint may also name the kind of installation to pretend; a
+ * development build is otherwise no installation at all. */
+static install_channel channel_of_run(bool development)
+{
+    const char *custom = getenv("PAPO_UPDATE_API_URL"), *named = getenv("PAPO_UPDATE_CHANNEL");
+    if (custom && *custom && named && *named)
+        return install_channel_parse(named);
+    return development ? INSTALL_UNKNOWN : install_detect();
 }
 static void schedule(uint64_t now, uint64_t milliseconds)
 {
@@ -113,11 +177,21 @@ void update_init(bool automatic)
         !net_now_ms(&now))
         return;
     update.ready = true;
+    update.channel = channel_of_run(update.development);
     app_version latest;
+    update_asset asset;
     uint64_t wait = STARTUP_DELAY_MS;
-    if (stored(&checked, &latest)) {
-        if (app_version_compare(&latest, &update.current) > 0)
-            know(&latest);
+    if (stored(&checked, &latest, &asset)) {
+        if (app_version_compare(&latest, &update.current) > 0) {
+            /* The stored file counts only for the installation it was chosen for. */
+            char text[APP_VERSION_TEXT], name[INSTALL_ASSET_BYTES];
+            if (!*asset.name || !app_version_format(&latest, text, sizeof(text)) ||
+                !install_asset_name(update.channel, install_architecture(), text, name,
+                                    sizeof(name)) ||
+                strcmp(name, asset.name))
+                memset(&asset, 0, sizeof(asset));
+            know(&latest, &asset);
+        }
         /* A clock set back makes the stored time useless: check again. */
         if (checked <= wall && wall - checked < CHECK_INTERVAL_S) {
             update.state = update.has_latest ? UPDATE_AVAILABLE : UPDATE_CURRENT;
@@ -128,9 +202,31 @@ void update_init(bool automatic)
     }
     schedule(now, wait);
 }
+/* Removes the temporary file and its folder. */
+static void discard_files(void)
+{
+    if (update.file)
+        g_unlink(update.file);
+    if (update.directory)
+        g_rmdir(update.directory);
+    g_free(update.file);
+    g_free(update.directory);
+    update.file = update.directory = NULL;
+}
 void update_shutdown(void)
 {
+    update_download_cancel();
+    /* A check of the file still running reads it: let it finish first. */
+    while (update.verify && !g_task_get_completed(update.verify)) {
+        file_transfer_tasks_poll();
+        g_usleep(1000);
+    }
+    g_clear_object(&update.verify);
+    g_clear_object(&update.cancel);
+    discard_files();
+    forget_saved();
     public_request_destroy(update.request);
+    public_request_destroy(update.transfer);
     memset(&update, 0, sizeof(update));
 }
 void update_set_automatic(bool automatic)
@@ -176,6 +272,7 @@ static void complete(uint64_t now)
 {
     update_failure failure = UPDATE_FAILURE_NONE;
     app_version latest;
+    update_asset asset = {0};
     bool found = false;
     uint64_t wait = 0;
     if (public_request_state(update.request) == PUBLIC_READY) {
@@ -183,7 +280,8 @@ static void complete(uint64_t now)
         if (status == 200) {
             size_t length;
             const char *body = public_request_body(update.request, &length);
-            update_parse parsed = update_parse_releases(body, length, update.list, &latest);
+            update_parse parsed = update_parse_releases(body, length, update.list, update.channel,
+                                                        install_architecture(), &latest, &asset);
             found = parsed == UPDATE_PARSE_FOUND;
             if (parsed == UPDATE_PARSE_INVALID)
                 failure = UPDATE_FAILURE_RESPONSE;
@@ -203,13 +301,15 @@ static void complete(uint64_t now)
     if (failure == UPDATE_FAILURE_NONE) {
         bool newer = found && app_version_compare(&latest, &update.current) > 0;
         if (newer)
-            know(&latest);
-        else
+            know(&latest, &asset);
+        else {
             update.has_latest = false;
+            memset(&update.asset, 0, sizeof(update.asset));
+        }
         update.state = newer ? UPDATE_AVAILABLE : UPDATE_CURRENT;
         update.failure = UPDATE_FAILURE_NONE;
         update.failures = 0;
-        store(wall_seconds(), newer ? &latest : &update.current);
+        store(wall_seconds(), newer ? &latest : &update.current, newer ? &asset : NULL);
         schedule(now, CHECK_INTERVAL_S * 1000);
         return;
     }
@@ -233,11 +333,8 @@ static void complete(uint64_t now)
         schedule(now, CHECK_INTERVAL_S * 1000);
     }
 }
-bool update_poll(void)
+static bool check_poll(uint64_t now)
 {
-    uint64_t now;
-    if (!update.ready || !net_now_ms(&now))
-        return false;
     if (update.state != UPDATE_CHECKING) {
         if (!update.has_due || now < update.due || !automatic_allowed())
             return false;
@@ -248,6 +345,118 @@ bool update_poll(void)
         return false;
     complete(now);
     return true;
+}
+typedef struct {
+    char *path;
+    uint64_t size;
+    char sha256[UPDATE_HASH_BYTES];
+} verify_job;
+static void verify_free(gpointer data)
+{
+    verify_job *job = data;
+    g_free(job->path);
+    g_free(job);
+}
+/* Worker thread: the file must have the published size and SHA-256. */
+static void verify_worker(GTask *task, gpointer source, gpointer data, GCancellable *cancel)
+{
+    (void)source;
+    verify_job *job = data;
+    FILE *file = fopen(job->path, "rb");
+    GChecksum *sum = g_checksum_new(G_CHECKSUM_SHA256);
+    unsigned char *buffer = g_malloc(64 * 1024);
+    uint64_t bytes = 0;
+    bool ok = file && sum;
+    size_t n;
+    while (ok && (n = fread(buffer, 1, 64 * 1024, file))) {
+        bytes += n;
+        if (bytes > job->size || g_cancellable_is_cancelled(cancel))
+            ok = false;
+        else
+            g_checksum_update(sum, buffer, (gssize)n);
+    }
+    ok = ok && !ferror(file) && bytes == job->size &&
+         !strcmp(g_checksum_get_string(sum), job->sha256);
+    if (file)
+        fclose(file);
+    if (sum)
+        g_checksum_free(sum);
+    g_free(buffer);
+    g_task_return_boolean(task, ok);
+}
+static void transfer_fail(update_transfer_failure failure)
+{
+    discard_files();
+    update.transfer_state = UPDATE_TRANSFER_FAILED;
+    update.transfer_failure = failure;
+}
+static void verify_begin(void)
+{
+    verify_job *job = g_new0(verify_job, 1);
+    job->path = g_strdup(update.file);
+    job->size = update.asset.size;
+    snprintf(job->sha256, sizeof(job->sha256), "%s", update.asset.sha256);
+    update.cancel = g_cancellable_new();
+    update.verify = file_transfer_task_new(update.cancel);
+    g_task_set_task_data(update.verify, job, verify_free);
+    g_task_run_in_thread(update.verify, verify_worker);
+    update.transfer_state = UPDATE_TRANSFER_VERIFYING;
+}
+static bool download_poll(void)
+{
+    bool changed = false;
+    if (update.transfer_state == UPDATE_TRANSFER_RUNNING) {
+        changed = public_request_poll(update.transfer);
+        public_state state = public_request_state(update.transfer);
+        if (state == PUBLIC_READY) {
+            long status = public_request_status(update.transfer);
+            public_request_cancel(update.transfer);
+            if (status == 200)
+                verify_begin();
+            else
+                transfer_fail(UPDATE_TRANSFER_REFUSED);
+            changed = true;
+        } else if (state == PUBLIC_FAILED) {
+            public_error error = public_request_error(update.transfer);
+            public_request_cancel(update.transfer);
+            transfer_fail(error == PUBLIC_ERROR_TLS         ? UPDATE_TRANSFER_TLS
+                          : error == PUBLIC_ERROR_TOO_LARGE ? UPDATE_TRANSFER_MISMATCH
+                          : error == PUBLIC_ERROR_REDIRECT  ? UPDATE_TRANSFER_REFUSED
+                          : error == PUBLIC_ERROR_STORAGE   ? UPDATE_TRANSFER_STORAGE
+                                                            : UPDATE_TRANSFER_NETWORK);
+            changed = true;
+        } else {
+            int percent = update_download_percent();
+            changed |= percent != update.percent;
+            update.percent = percent;
+        }
+    }
+    if (update.verify) {
+        file_transfer_tasks_poll();
+        if (g_task_get_completed(update.verify)) {
+            bool ok = g_task_propagate_boolean(update.verify, NULL);
+            g_clear_object(&update.verify);
+            g_clear_object(&update.cancel);
+            if (update.discard) {
+                update.discard = false;
+                discard_files();
+            } else if (ok)
+                update.transfer_state = UPDATE_TRANSFER_READY;
+            else
+                transfer_fail(UPDATE_TRANSFER_MISMATCH);
+            changed = true;
+        }
+    }
+    return changed;
+}
+bool update_poll(void)
+{
+    uint64_t now;
+    if (!update.ready || !net_now_ms(&now))
+        return false;
+    bool changed = check_poll(now);
+    changed |= download_poll();
+    return changed;
 }
 bool update_check_now(void)
 {
@@ -281,4 +490,94 @@ bool update_notice(void)
 void update_acknowledge(void)
 {
     update.acknowledged = true;
+}
+install_channel update_channel(void)
+{
+    return update.channel;
+}
+const char *update_asset_name(void)
+{
+    return update.has_latest ? update.asset.name : "";
+}
+uint64_t update_asset_size(void)
+{
+    return update.has_latest ? update.asset.size : 0;
+}
+bool update_download_start(void)
+{
+    char url[UPDATE_URL_BYTES];
+    if (!update.ready || !*update_asset_name() ||
+        update.transfer_state == UPDATE_TRANSFER_RUNNING ||
+        update.transfer_state == UPDATE_TRANSFER_VERIFYING || update.verify)
+        return false;
+    discard_files();
+    update.percent = 0;
+    update.transfer_failure = UPDATE_TRANSFER_OK;
+    update.directory = g_build_filename(g_get_tmp_dir(), "papo-update-XXXXXX", NULL);
+    if (!papo_mkdtemp(update.directory)) {
+        g_free(update.directory);
+        update.directory = NULL;
+        transfer_fail(UPDATE_TRANSFER_STORAGE);
+        return true;
+    }
+    update.file = g_build_filename(update.directory, update.asset.name, NULL);
+    if (!update.transfer)
+        update.transfer = public_request_create();
+    if (!update.transfer || !update_asset_url(&update.latest, &update.asset, url, sizeof(url)) ||
+        !public_request_download(update.transfer, url, update.file, (size_t)update.asset.size,
+                                 update_redirect_allowed, NULL)) {
+        transfer_fail(UPDATE_TRANSFER_STORAGE);
+        return true;
+    }
+    update.transfer_state = UPDATE_TRANSFER_RUNNING;
+    return true;
+}
+void update_download_cancel(void)
+{
+    if (update.transfer_state == UPDATE_TRANSFER_RUNNING)
+        public_request_cancel(update.transfer);
+    if (update.verify) {
+        /* The worker still reads the file: it is removed when it returns. */
+        g_cancellable_cancel(update.cancel);
+        update.discard = true;
+    } else
+        discard_files();
+    update.transfer_state = UPDATE_TRANSFER_NONE;
+    update.transfer_failure = UPDATE_TRANSFER_OK;
+}
+update_transfer update_download_status(void)
+{
+    return update.transfer_state;
+}
+update_transfer_failure update_download_error(void)
+{
+    return update.transfer_state == UPDATE_TRANSFER_FAILED ? update.transfer_failure
+                                                           : UPDATE_TRANSFER_OK;
+}
+int update_download_percent(void)
+{
+    if (update.transfer_state != UPDATE_TRANSFER_RUNNING || !update.asset.size)
+        return update.transfer_state == UPDATE_TRANSFER_NONE ? 0 : 100;
+    uint64_t bytes = public_request_bytes(update.transfer);
+    return bytes >= update.asset.size ? 100 : (int)(bytes * 100 / update.asset.size);
+}
+char *update_download_take(void)
+{
+    if (update.transfer_state != UPDATE_TRANSFER_READY)
+        return NULL;
+    char *file = update.file;
+    update.file = NULL;
+    update.transfer_state = UPDATE_TRANSFER_NONE;
+    return file;
+}
+void update_download_finish(const char *saved)
+{
+    discard_files();
+    forget_saved();
+    if (saved && *saved)
+        update.saved = g_strdup(saved);
+}
+const char *update_saved(void)
+{
+    return update.saved ? update.saved : "";
 }

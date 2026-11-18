@@ -2,10 +2,8 @@
 
 from test_context import main as test_main
 
-import base64
 import json
 import os
-import re
 import tempfile
 import time
 
@@ -13,70 +11,13 @@ from mock_server import MockServer
 from settings_mock import SettingsMock
 from terminal_support import Terminal
 from update_mock import release, update_mock
-import terminal_discovery as support
+from update_terminal import DOWN, RIGHT, UpdateSuite
 
-DOWN, UP, LEFT, RIGHT = "\x1bOB", "\x1bOA", "\x1bOD", "\x1bOC"
 RELEASE_PAGE = "https://github.com/prodesert22/papo-tui/releases/tag/v"
-LIST = "/papo/github/releases?per_page=5"
-LATEST = "/papo/github/releases/latest"
 SWITCH = "Verificar atualizações automaticamente"
 
 
-class UpdateTerminal(support.R8Terminal):
-    def text(self, t):
-        return "\n".join(t.screen.display)
-
-    def calls(self, hub, count, seconds=10):
-        """Waits for exactly ``count`` release requests."""
-        end = time.monotonic() + seconds
-        while len(hub.calls) < count and time.monotonic() < end:
-            time.sleep(0.03)
-        self.assertEqual(len(hub.calls), count, hub.calls)
-
-    def quiet(self, t, hub, count, seconds):
-        """Proves no further release request is sent for ``seconds``."""
-        end = time.monotonic() + seconds
-        while time.monotonic() < end:
-            t.read(0.05)
-        self.assertEqual(len(hub.calls), count, hub.calls)
-
-    def gone(self, t, text):
-        end = time.monotonic() + 7
-        while text in self.text(t) and time.monotonic() < end:
-            t.read(0.03)
-        self.assertNotIn(text, self.text(t))
-
-    def open_sobre(self, t):
-        t.send("\x13")
-        self.wait(t, "Configurações")
-        t.send(LEFT)
-        self.wait(t, "< Sobre >")
-
-    def check_now(self, t):
-        """From the section selector: past the lines, on the button, Enter."""
-        t.send("\t\t\n")
-
-    def click(self, t, label):
-        for y, line in enumerate(t.screen.display):
-            if label in line:
-                t.click(y, line.index(label) + 1)
-                return
-        self.fail("Item absent: " + label)
-
-    def copies(self, t):
-        return [
-            base64.b64decode(value).decode()
-            for value in re.findall(rb"\x1b\]52;c;([A-Za-z0-9+/=]*)\x07", t.output)
-        ]
-
-    def state_file(self, t):
-        return os.path.join(t.configuration.name, "state", "papo-tui", "update.json")
-
-    def paths(self, hub):
-        """The request a build of this kind sends: finals ask for the latest final."""
-        self.assertTrue(all(path in (LIST, LATEST) for path, _ in hub.calls), hub.calls)
-        self.assertTrue(all(cookie is None for _, cookie in hub.calls), hub.calls)
-
+class UpdateTerminal(UpdateSuite):
     def test_newer_release_is_announced_on_both_screens_and_detailed_in_sobre(self):
         with SettingsMock() as server, update_mock() as hub:
             hub.answer = [
@@ -125,7 +66,9 @@ class UpdateTerminal(support.R8Terminal):
     def test_current_version_ignores_foreign_text_and_keeps_a_minute_between_requests(self):
         with SettingsMock() as server, update_mock() as hub:
             hostile = release("v99.0.0\x1b]0;hostile-title\x07")
-            hostile.update(name="\x1b]0;hostile-title\x07", body="\x1b[2J\x1b]52;c;aG9zdGlsZQ==\x07")
+            hostile.update(
+                name="\x1b]0;hostile-title\x07", body="\x1b[2J\x1b]52;c;aG9zdGlsZQ==\x07"
+            )
             older = release("v0.5.0")
             older.update(name="\x1b]0;hostile-title\x07", body="\x1b[2Jhostile")
             hub.answer = [hostile, older]
@@ -287,13 +230,6 @@ class UpdateTerminal(support.R8Terminal):
             self.wait(t, "Mensagem 0001")
             self.open_sobre(t)
             self.wait(t, "Não foi possível consultar o GitHub. Verifique a conexão.")
-
-    def dump(self, t, name):
-        """Keeps the screen text as evidence when PAPO_SCREEN_DUMPS names a folder."""
-        folder = os.environ.get("PAPO_SCREEN_DUMPS")
-        if folder:
-            with open(os.path.join(folder, name + ".txt"), "w", encoding="utf-8") as f:
-                f.write("\n".join(t.screen.display) + "\n")
 
 
 if __name__ == "__main__":

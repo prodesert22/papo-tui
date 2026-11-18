@@ -2,19 +2,32 @@
 #define PAPO_NET_UPDATE_H
 
 #include "model/version.h"
+#include "platform/install.h"
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 /* The releases of this program on GitHub, read through its public REST API. */
 #define UPDATE_REPOSITORY "https://github.com/prodesert22/papo-tui"
 #define UPDATE_RESPONSE_LIMIT (2U * 1024U * 1024U)
 #define UPDATE_URL_BYTES 2049U
+/* The largest package ever published is about 62 MB. */
+#define UPDATE_ASSET_LIMIT (256U * 1024U * 1024U)
+#define UPDATE_HASH_BYTES 65U
 
 typedef enum {
     UPDATE_PARSE_FOUND,  /* latest holds the newest eligible release. */
     UPDATE_PARSE_NONE,   /* A valid answer without an eligible release. */
     UPDATE_PARSE_INVALID /* Not the documented shape. */
 } update_parse;
+/* The file of a release that replaces one kind of installation. Its name is
+ * worked out here, never taken from the answer; the answer only says whether
+ * the release has that file, how large it is and its SHA-256. */
+typedef struct {
+    char name[INSTALL_ASSET_BYTES]; /* Empty when the release has no such file. */
+    char sha256[UPDATE_HASH_BYTES]; /* Lowercase hexadecimal. */
+    uint64_t size;
+} update_asset;
 
 /* The request that answers "what is the newest release a build of this version
  * may move to": a final version asks for the latest final release, a
@@ -26,9 +39,21 @@ extern const char *const update_request_headers[];
 extern const size_t update_request_header_count;
 /* Reads one release object or a list of them. Drafts never count; releases
  * with a pre-release tag or marked as pre-release count only when asked; a tag
- * that is not a release version of this program is skipped. Nothing else from
- * the answer is used or kept. */
+ * that is not a release version of this program is skipped. asset receives the
+ * file of the chosen release for an installation of that channel and
+ * architecture, when the release lists it with a usable size and digest.
+ * Nothing else from the answer is used or kept. */
 update_parse update_parse_releases(const char *json, size_t length, bool prereleases,
-                                   app_version *latest);
+                                   install_channel channel, const char *architecture,
+                                   app_version *latest, update_asset *asset);
+/* A name, a 64-digit lowercase hash and a size within the limit. */
+bool update_asset_valid(const update_asset *asset);
+/* Where a release keeps a file: built from the version and the name, under the
+ * repository's download address (or the test endpoint's). */
+bool update_asset_url(const app_version *version, const update_asset *asset, char *url,
+                      size_t size);
+/* Whether a download may follow a redirect there: https on GitHub's own hosts,
+ * or the origin of the test endpoint. context is unused. */
+bool update_redirect_allowed(const char *url, void *context);
 
 #endif

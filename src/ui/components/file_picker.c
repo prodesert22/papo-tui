@@ -21,6 +21,7 @@ typedef struct {
     bool directory, exists;
 } save_target;
 struct file_picker {
+    const char *save_title; /* Borrowed; replaces the save dialog's title when set. */
     bool open, native, save, resolving, choice, image;
     char *name, *save_result, *confirm;
     WINDOW *window;
@@ -263,11 +264,17 @@ void file_picker_show_image(file_picker *p)
     file_picker_show(p);
     p->image = true;
 }
+void file_picker_save_title(file_picker *p, const char *title)
+{
+    if (p && p->save)
+        p->save_title = title;
+}
 void file_picker_show_save(file_picker *p, const char *name)
 {
     file_picker_close(p);
     p->open = p->save = true;
     p->choice = p->image = false;
+    p->save_title = NULL;
     p->path_refused = false;
     p->focus = 0;
     g_free(p->name);
@@ -609,7 +616,7 @@ WINDOW *file_picker_draw(file_picker *p)
     wattrset(w, COLOR_PAIR(THEME_PANEL_ACCENT) | A_BOLD);
     text_label(w, 0, 2, width - 4,
                p->choice  ? _(" Baixar anexos ")
-               : p->save  ? _(" Salvar anexo ")
+               : p->save  ? (p->save_title ? p->save_title : _(" Salvar anexo "))
                : p->image ? _(" Escolher imagem ")
                           : _(" Anexar arquivos "));
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));

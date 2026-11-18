@@ -2,6 +2,7 @@
 
 from contextlib import contextmanager
 from pathlib import Path
+import hashlib
 import ssl
 import subprocess
 import tempfile
@@ -16,6 +17,16 @@ def release(tag, prerelease=None, draft=False, assets=()):
         "draft": draft,
         "prerelease": ("-" in tag) if prerelease is None else prerelease,
         "assets": list(assets),
+    }
+
+
+def asset(name, data, digest=None, size=None):
+    """One asset entry as GitHub lists it; digest and size default to the data's."""
+    return {
+        "name": name,
+        "size": len(data) if size is None else size,
+        "digest": "sha256:" + hashlib.sha256(data).hexdigest() if digest is None else digest,
+        "browser_download_url": "https://example.invalid/unused/" + name,
     }
 
 
@@ -60,6 +71,10 @@ class UpdateMock:
     def __init__(self, server, cert):
         self.server = server
         self.answer = []
+        # What each download path answers: the bytes of a file, or a tuple in
+        # the form ``respond`` takes (a redirect is (302, None, None, None,
+        # None, location)). Paths are "v<version>/<name>".
+        self.files = {}
         # Terminals of the test suites start with the automatic check off.
         self.environment = {
             "PAPO_UPDATE_API_URL": server.url + "/github",
@@ -69,6 +84,13 @@ class UpdateMock:
         server.api_handler = self.route
 
     def route(self, method, path, _body):
+        if method == "GET" and "/github/download/" in path:
+            served = self.files.get(path.split("/github/download/", 1)[1])
+            if isinstance(served, tuple):
+                return served
+            if served is None:
+                return 404, None
+            return 200, served, None, None, "application/octet-stream"
         if method != "GET" or "/github/releases" not in path:
             return 404, None
         if isinstance(self.answer, tuple):
@@ -81,8 +103,17 @@ class UpdateMock:
 
     @property
     def calls(self):
-        """The paths asked for, and the cookies sent with them."""
-        return [(r[1], r[2]) for r in self.server.requests if "/github/" in r[1]]
+        """The release requests: the paths asked for, and the cookies sent with them."""
+        return [(r[1], r[2]) for r in self.server.requests if "/github/releases" in r[1]]
+
+    @property
+    def downloads(self):
+        """The file requests: the paths asked for, and the cookies sent with them."""
+        return [(r[1], r[2]) for r in self.server.requests if "/github/releases" not in r[1]]
+
+    def url(self, path):
+        """The address of a download path on this server."""
+        return self.server.url + "/github/download/" + path
 
 
 @contextmanager

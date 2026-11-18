@@ -495,6 +495,17 @@ if(BUILD_TESTING)
         packaging
         settings
         network)
+    papo_add_test(
+        NAME
+        update-download-terminal
+        COMMAND
+        ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal/test_update_download.py
+        $<TARGET_FILE:papo-tui>
+        LABELS
+        packaging
+        settings
+        network)
     add_executable(realtime-probe tests/probes/realtime_probe.c)
     target_link_libraries(realtime-probe PRIVATE papo_auth)
     target_compile_options(realtime-probe PRIVATE -Wall -Wextra -Wpedantic -Werror)

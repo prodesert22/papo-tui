@@ -128,7 +128,15 @@ class MockServer:
             def log_message(self, *_args):
                 pass
 
-            def respond(self, status, body=None, cookie=None, retry_after=None, content_type=None):
+            def respond(
+                self,
+                status,
+                body=None,
+                cookie=None,
+                retry_after=None,
+                content_type=None,
+                location=None,
+            ):
                 if isinstance(body, ChunkedBody):
                     if body.hold is not None:
                         body.hold.wait(15)
@@ -191,6 +199,8 @@ class MockServer:
                     )
                 if retry_after is not None:
                     self.send_header("Retry-After", retry_after)
+                if location is not None:
+                    self.send_header("Location", location)
                 self.end_headers()
                 try:
                     self.wfile.write(data)

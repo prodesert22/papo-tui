@@ -95,6 +95,7 @@
     {"glob": "src/net/gif_search.*", "areas": ["media"]},
     {"glob": "src/net/http/download.*", "areas": ["media"]},
     {"glob": "src/ui/screens/conversation/downloads.c", "areas": ["media"]},
+    {"glob": "src/ui/screens/conversation/update_save.c", "areas": ["packaging", "settings"]},
     {"glob": "src/ui/media/image_*", "areas": ["media"]},
     {"glob": "src/ui/media/media_*", "areas": ["media"]},
     {"glob": "src/ui/media/video_player.c", "areas": ["media"]},
@@ -129,6 +130,7 @@
     {"glob": "src/net/update.*", "areas": ["packaging", "network"]},
     {"glob": "src/app/update.*", "areas": ["packaging", "settings"]},
     {"glob": "src/model/version.*", "areas": ["packaging"]},
+    {"glob": "src/platform/install.*", "areas": ["packaging", "platform", "media"]},
 
     {"glob": "src/ui/components/help.*", "areas": ["ui", "input"]},
     {"glob": "src/ui/components/quick_switcher.*", "areas": ["ui", "servers"]},

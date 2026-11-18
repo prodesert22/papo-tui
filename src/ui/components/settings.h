@@ -35,7 +35,13 @@ enum {
     PROFILE_FIELD_TYPING
 };
 #define PROFILE_FIELDS 4
-typedef enum { SETTINGS_PICK_NONE, SETTINGS_PICK_AVATAR, SETTINGS_PICK_BANNER } settings_pick;
+typedef enum {
+    SETTINGS_PICK_NONE,
+    SETTINGS_PICK_AVATAR,
+    SETTINGS_PICK_BANNER,
+    /* Sobre: where to save the package of the newer version. */
+    SETTINGS_PICK_UPDATE
+} settings_pick;
 typedef struct {
     bool open, applied, ptt_capture;
     int section, selection, focus;

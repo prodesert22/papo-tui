@@ -56,9 +56,10 @@ total known unread mentions across connected instances when there are any.
 
 **Ctrl+S → Sobre** shows the version, the license and the address of the source
 code. Once a day the client asks GitHub whether a newer release exists and
-tells you on the sign-in screen and in the footer; it does not download or
-install anything. Turn the check off in **Sobre**, or start with
-`PAPO_UPDATE_CHECK=0`.
+tells you on the sign-in screen and in the footer. **Baixar atualização** in
+**Sobre** then downloads the package for your installation, checks its SHA-256
+and shows the command that installs it; the program never installs anything by
+itself. Turn the check off in **Sobre**, or start with `PAPO_UPDATE_CHECK=0`.
 
 ## Install
 

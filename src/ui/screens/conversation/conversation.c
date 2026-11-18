@@ -624,6 +624,10 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
             redraw = true;
             scope = DRAW_ALL;
         }
+        if (conversation_update_save_poll(ui)) {
+            redraw = true;
+            scope = DRAW_ALL;
+        }
         if (instances_poll(connections, auth)) {
             redraw = true;
             scope = DRAW_ALL;
@@ -1053,7 +1057,12 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         }
         if (ui->settings.open) {
             settings_key(&ui->settings, connections->config, type, key);
-            if (ui->settings.pick) {
+            if (ui->settings.pick == SETTINGS_PICK_UPDATE) {
+                if (!conversation_update_save_begin(ui))
+                    snprintf(ui->settings.error, sizeof(ui->settings.error), "%s",
+                             _("Feche o seletor de arquivos aberto antes de baixar."));
+                ui->settings.pick = SETTINGS_PICK_NONE;
+            } else if (ui->settings.pick) {
                 conversation_profile_pick(ui, ui->settings.pick == SETTINGS_PICK_AVATAR
                                                   ? PROFILE_AVATAR
                                                   : PROFILE_BANNER);
@@ -1815,6 +1824,7 @@ finished:
     }
     conversation_members_destroy(ui);
     conversation_downloads_close(ui);
+    conversation_update_save_close(ui);
     conversation_attachments_close(ui);
     conversation_profile_close(ui);
     file_picker_destroy(ui->files);

@@ -1,7 +1,9 @@
 #ifndef PAPO_APP_UPDATE_H
 #define PAPO_APP_UPDATE_H
 
+#include "platform/install.h"
 #include <stdbool.h>
+#include <stdint.h>
 
 typedef enum {
     UPDATE_UNKNOWN,  /* Never checked, or the last answer is older than a day. */
@@ -43,5 +45,44 @@ bool update_suppressed(void);
 /* A newer version is known and no screen has shown its details in this run. */
 bool update_notice(void);
 void update_acknowledge(void);
+
+/* The package of the newer version for this installation. */
+typedef enum {
+    UPDATE_TRANSFER_NONE,
+    UPDATE_TRANSFER_RUNNING,
+    UPDATE_TRANSFER_VERIFYING, /* Downloaded; its size and SHA-256 are being checked. */
+    UPDATE_TRANSFER_READY,     /* Checked and waiting to be taken. */
+    UPDATE_TRANSFER_FAILED
+} update_transfer;
+typedef enum {
+    UPDATE_TRANSFER_OK,
+    UPDATE_TRANSFER_NETWORK,
+    UPDATE_TRANSFER_TLS,
+    UPDATE_TRANSFER_REFUSED,  /* An answer other than the file, or a redirect not allowed. */
+    UPDATE_TRANSFER_MISMATCH, /* Not the published size or SHA-256: discarded. */
+    UPDATE_TRANSFER_STORAGE   /* The temporary file could not be written. */
+} update_transfer_failure;
+
+/* How this copy was installed, which decides the package offered. */
+install_channel update_channel(void);
+/* The package's file name and size; "" and zero when the newer release has
+ * none for this installation, or this is not a recognized installation. */
+const char *update_asset_name(void);
+uint64_t update_asset_size(void);
+/* Downloads the package into a private temporary folder and checks it; false
+ * when there is none or a download is already under way. update_poll drives
+ * it. Cancelling, or a failed check, removes the file. */
+bool update_download_start(void);
+void update_download_cancel(void);
+update_transfer update_download_status(void);
+update_transfer_failure update_download_error(void);
+int update_download_percent(void);
+/* READY only: hands the checked file to the caller (g_free), who moves or
+ * removes it and then calls update_download_finish with the place it was
+ * saved to, or NULL when it was not. */
+char *update_download_take(void);
+void update_download_finish(const char *saved);
+/* Where the package of the newer version was saved in this run; "" when not. */
+const char *update_saved(void);
 
 #endif

@@ -181,6 +181,10 @@ msgstr " Remove profile "
 msgid " Salvar anexo "
 msgstr " Save attachment "
 
+#: src/ui/screens/conversation/update_save.c
+msgid " Salvar atualização "
+msgstr " Save update "
+
 #: src/ui/media/profile_image.c
 msgid " no modo Ultralight"
 msgstr " in Ultralight mode"
@@ -989,6 +993,10 @@ msgstr "Application"
 msgid "Argumento desconhecido ou repetido. Use papo-tui --help.\n"
 msgstr "Unknown or repeated argument. Use papo-tui --help.\n"
 
+#: src/ui/components/about.c
+msgid "Arquivo conferido. Salvando…"
+msgstr "File checked. Saving…"
+
 #: src/ui/media/media_cache.c
 msgid "Arquivo de imagem indisponível."
 msgstr "Image file unavailable."
@@ -1001,7 +1009,7 @@ msgstr "Image file not found."
 msgid "Arquivo grande demais; use uma imagem de até 2 MB."
 msgstr "File too large; use an image of up to 2 MB."
 
-#: src/ui/screens/conversation/downloads.c
+#: src/ui/screens/conversation/downloads.c src/ui/screens/conversation/update_save.c
 msgid "Arquivo salvo em %s"
 msgstr "File saved to %s"
 
@@ -1241,11 +1249,11 @@ msgstr "Incompatible backend: the instance's configuration could not be identifi
 msgid "Backspace"
 msgstr "Backspace"
 
-#: src/ui/screens/conversation/downloads.c
+#: src/ui/screens/conversation/downloads.c src/ui/screens/conversation/update_save.c
 msgid "Baixando %s…"
 msgstr "Downloading %s…"
 
-#: src/ui/screens/conversation/downloads.c
+#: src/ui/components/about.c src/ui/screens/conversation/downloads.c
 msgid "Baixando %s… %d%%"
 msgstr "Downloading %s… %d%%"
 
@@ -1260,6 +1268,10 @@ msgstr "Download attachment"
 #: src/ui/screens/conversation/interactions.c
 msgid "Baixar anexos"
 msgstr "Download attachments"
+
+#: src/ui/components/settings.c
+msgid "Baixar atualização"
+msgstr "Download update"
 
 #: src/ui/components/server_settings/members.c src/ui/screens/conversation/members.c
 msgid "Banido"
@@ -1496,6 +1508,10 @@ msgstr "Cancel"
 #: src/ui/components/help.c
 msgid "Cancelar a seleção de arquivos"
 msgstr "Cancel the file selection"
+
+#: src/ui/components/settings.c
+msgid "Cancelar download"
+msgstr "Cancel download"
 
 #: src/ui/components/help.c
 msgid "Cancelar e voltar sem executar a ação"
@@ -1817,6 +1833,10 @@ msgstr "Voice connection interrupted. Join again to retry."
 msgid "Conexão recusada. Confira o host e a porta."
 msgstr "Connection refused. Check the host and port."
 
+#: src/ui/components/about.c
+msgid "Conferindo o tamanho e o SHA-256 do arquivo…"
+msgstr "Checking the file's size and SHA-256…"
+
 #: src/ui/components/help.c
 msgid "Configurar avisos no desktop e a prévia"
 msgstr "Configure desktop alerts and the preview"
@@ -2045,6 +2065,10 @@ msgstr "Copy URL"
 msgid "Copiar a seleção; sem seleção, copiar o campo"
 msgstr "Copy the selection; without a selection, copy the field"
 
+#: src/ui/components/settings.c
+msgid "Copiar comando"
+msgstr "Copy command"
+
 #: src/config/keymap.c
 msgid "Copiar o link de redefinição de senha"
 msgstr "Copy the password reset link"
@@ -2058,8 +2082,8 @@ msgid "Copiar token"
 msgstr "Copy token"
 
 #: src/ui/components/help.c
-msgid "Copiar um link ou ligar e desligar a checagem diária de atualizações; Verificar agora consulta o GitHub na hora"
-msgstr "Copy a link or turn the daily update check on and off; Check now asks GitHub right away"
+msgid "Copiar um link ou o comando de instalação, ligar e desligar a checagem diária; o botão verifica agora, baixa a versão nova ou cancela o download"
+msgstr "Copy a link or the install command, turn the daily check on and off; the button checks now, downloads the new version or cancels the download"
 
 #: src/ui/screens/conversation/members.c
 msgid "Copiar · Enter"
@@ -2380,6 +2404,10 @@ msgstr "Download cancelled."
 #: src/ui/screens/conversation/downloads.c
 msgid "Download cancelado: a sessão ou a aba mudou."
 msgstr "Download cancelled: the session or the tab changed."
+
+#: src/ui/screens/conversation/update_save.c
+msgid "Download da atualização cancelado."
+msgstr "Update download cancelled."
 
 #: src/ui/screens/conversation/downloads.c
 msgid "Download na fila: %u arquivo(s)."
@@ -3157,7 +3185,19 @@ msgstr "Close a form or go back without selecting"
 msgid "Fechar, cancelar ou voltar"
 msgstr "Close, cancel or go back"
 
-#: src/ui/screens/conversation/downloads.c
+#: src/ui/components/about.c
+msgid "Feche o programa e execute o instalador:"
+msgstr "Close the program and run the installer:"
+
+#: src/ui/components/about.c
+msgid "Feche o programa e extraia o arquivo sobre a pasta atual:"
+msgstr "Close the program and extract the file over the current folder:"
+
+#: src/ui/components/about.c
+msgid "Feche o programa e extraia sobre a pasta atual:"
+msgstr "Close the program and extract over the current folder:"
+
+#: src/ui/screens/conversation/conversation.c src/ui/screens/conversation/downloads.c
 msgid "Feche o seletor de arquivos aberto antes de baixar."
 msgstr "Close the open file picker before downloading."
 
@@ -3520,6 +3560,10 @@ msgstr "Insert a line break without sending"
 #: src/config/key_binding.c
 msgid "Insert"
 msgstr "Insert"
+
+#: src/ui/components/about.c
+msgid "Instale com:"
+msgstr "Install with:"
 
 #: src/net/auth/responses.c
 msgid "Instância não inicializada ou URL incompatível com o Papo."
@@ -4489,6 +4533,14 @@ msgstr "Could not change the profile now."
 msgid "Não foi possível aplicar o evento. {k1:app.refresh}: recuperar."
 msgstr "Could not apply the event. {k1:app.refresh}: recover."
 
+#: src/ui/screens/conversation/update_save.c
+msgid "Não foi possível baixar a atualização."
+msgstr "Could not download the update."
+
+#: src/ui/components/about.c
+msgid "Não foi possível baixar a atualização. Verifique a conexão."
+msgstr "Could not download the update. Check your connection."
+
 #: src/net/gif_search.c
 msgid "Não foi possível buscar GIFs. Verifique a conexão."
 msgstr "Could not search GIFs. Check the connection."
@@ -4585,6 +4637,10 @@ msgstr "Could not reach GitHub. Check your connection."
 msgid "Não foi possível copiar agora."
 msgstr "Could not copy now."
 
+#: src/ui/components/settings.c
+msgid "Não foi possível copiar o comando."
+msgstr "Could not copy the command."
+
 #: src/ui/components/settings.c src/ui/screens/conversation/members.c
 msgid "Não foi possível copiar o link."
 msgstr "Could not copy the link."
@@ -4633,9 +4689,13 @@ msgstr "Could not close the DM; wait or try again."
 msgid "Não foi possível gerar o ID do perfil."
 msgstr "Could not generate the profile ID."
 
-#: src/ui/screens/conversation/downloads.c
+#: src/ui/screens/conversation/downloads.c src/ui/screens/conversation/update_save.c
 msgid "Não foi possível gravar em %s. Verifique o acesso e o espaço."
 msgstr "Could not write to %s. Check access and free space."
+
+#: src/ui/components/about.c
+msgid "Não foi possível gravar o arquivo temporário. Verifique o espaço em disco."
+msgstr "Could not write the temporary file. Check the free disk space."
 
 #: src/main.c
 msgid "Não foi possível inicializar a comunicação.\n"
@@ -4660,6 +4720,10 @@ msgstr "Could not start the connection."
 #: src/ui/components/settings.c
 msgid "Não foi possível iniciar a troca de senha. Tente de novo."
 msgstr "Could not start the password change. Try again."
+
+#: src/ui/screens/conversation/update_save.c
+msgid "Não foi possível iniciar o download da atualização."
+msgstr "Could not start the update download."
 
 #: src/ui/screens/conversation/downloads.c
 msgid "Não foi possível iniciar o download de %s."
@@ -4922,8 +4986,16 @@ msgid "O GitHub limitou as consultas deste endereço. Tente mais tarde."
 msgstr "GitHub limited the requests from this address. Try again later."
 
 #: src/ui/components/about.c
+msgid "O GitHub não entregou o arquivo. Tente mais tarde."
+msgstr "GitHub did not deliver the file. Try again later."
+
+#: src/ui/components/about.c
 msgid "O GitHub respondeu algo inesperado. Tente mais tarde."
 msgstr "GitHub sent an unexpected answer. Try again later."
+
+#: src/ui/components/about.c
+msgid "O arquivo baixado não confere com o publicado e foi descartado."
+msgstr "The downloaded file does not match the published one and was discarded."
 
 #: src/ui/components/file_picker.c
 msgid "O arquivo já existe. Salve de novo para substituí-lo."
@@ -4932,6 +5004,10 @@ msgstr "The file already exists. Save again to replace it."
 #: src/model/attachment.c
 msgid "O arquivo mudou durante a preparação; selecione novamente."
 msgstr "The file changed while being prepared; select it again."
+
+#: src/ui/components/about.c
+msgid "O certificado do GitHub não é confiável; nada foi baixado."
+msgstr "GitHub's certificate is not trusted; nothing was downloaded."
 
 #: src/ui/components/about.c
 msgid "O certificado do GitHub não é confiável; nada foi consultado."
@@ -5196,6 +5272,10 @@ msgstr "Another window uses the saved session. This window needs a login and wil
 #: src/ui/components/about.c
 msgid "PAPO_UPDATE_CHECK=0: as atualizações só são verificadas a pedido."
 msgstr "PAPO_UPDATE_CHECK=0: updates are only checked on request."
+
+#: src/ui/components/about.c
+msgid "Pacote conferido e salvo em %s"
+msgstr "Package checked and saved to %s"
 
 #: src/ui/components/settings.c
 msgid "Padrão"
@@ -6548,6 +6628,10 @@ msgstr "Access token"
 #: src/ui/components/server_settings/webhooks.c
 msgid "Token:"
 msgstr "Token:"
+
+#: src/ui/components/about.c
+msgid "Torne o arquivo executável e abra-o no lugar do atual:"
+msgstr "Make the file executable and open it in place of the current one:"
 
 #: src/ui/components/help.c
 msgid "Transmitir com pressionar para falar; a combinação ou o botão 4/5 do mouse é escolhido em Configurações > Áudio"

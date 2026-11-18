@@ -243,6 +243,31 @@ def dependency_sources(output, version, architecture, flavor, prefix, cache, sta
     return target
 
 
+# The word each package carries so an installed copy knows which release file
+# replaces it; src/platform/install.c reads it and knows the same words.
+CHANNELS = {
+    ("deb", "ubuntu"): "deb-ubuntu",
+    ("deb", "debian"): "deb-debian",
+    ("rpm", "fedora"): "rpm-fedora",
+    ("arch", None): "arch",
+    ("appimage", None): "appimage",
+    ("installer", None): "windows-installer",
+    ("zip", None): "windows-zip",
+}
+
+
+def mark_channel(stage, fmt, flavor):
+    """Writes the channel of the package about to be made from stage, or removes it."""
+    token = CHANNELS.get((fmt, flavor if fmt in ("deb", "rpm") else None))
+    marker = stage / "share" / "papo-tui" / "install-channel"
+    if token is None:
+        marker.unlink(missing_ok=True)
+        return None
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(token + "\n", encoding="ascii")
+    return token
+
+
 def appimage(stage, output, version, architecture, cache):
     appdir = stage.parent / "PapoTUI.AppDir"
     (appdir / "usr").mkdir(parents=True)
@@ -354,6 +379,8 @@ def main():
         smoke(stage, version, args.arch)
         collect_licenses(stage, args.dependency_prefix.resolve())
         for fmt in sorted(selected):
+            # One stage makes several packages: each gets its own word.
+            mark_channel(stage, fmt, args.flavor)
             if fmt in ("deb", "rpm"):
                 destination = work / fmt
                 run(

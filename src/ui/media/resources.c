@@ -1,5 +1,5 @@
 #include "ui/media/resources.h"
-#include "platform/runtime.h"
+#include "platform/install.h"
 #ifdef PAPO_MEDIA_RESOURCES_WORKER
 #include <fontconfig/fontconfig.h>
 #endif
@@ -33,24 +33,9 @@ static char *ascii_path(const char *path)
 #endif
 void media_resources_init(void)
 {
-    char *executable = papo_executable_path();
-    if (!executable)
+    char *prefix = install_prefix();
+    if (!prefix)
         return;
-    char *directory = g_path_get_dirname(executable);
-    char *base = g_path_get_basename(directory);
-    if (!strcmp(base, "papo-backends")) {
-        char *parent = g_path_get_dirname(directory);
-        g_free(directory);
-        directory = parent;
-    }
-    g_free(base);
-#ifdef _WIN32
-    char *prefix = g_strdup(directory);
-#else
-    char *name = g_path_get_basename(directory);
-    char *prefix = !strcmp(name, "bin") ? g_path_get_dirname(directory) : g_strdup(directory);
-    g_free(name);
-#endif
 #ifdef _WIN32
     char *terminfo = g_build_filename(prefix, "share", "terminfo", NULL);
     if (g_file_test(terminfo, G_FILE_TEST_IS_DIR)) {
@@ -71,6 +56,4 @@ void media_resources_init(void)
     g_free(font);
 #endif
     g_free(prefix);
-    g_free(directory);
-    free(executable);
 }

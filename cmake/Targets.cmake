@@ -4,7 +4,7 @@ else()
     set(PAPO_PLATFORM linux)
 endif()
 add_library(papo_platform src/platform/${PAPO_PLATFORM}/runtime.c src/platform/terminal_notify.c
-                          src/model/text/translation.c)
+                          src/platform/install.c src/model/text/translation.c)
 target_include_directories(papo_platform PUBLIC src)
 target_link_libraries(papo_platform PUBLIC PkgConfig::GLIB)
 if(WIN32)
@@ -272,6 +272,7 @@ add_executable(
     src/ui/screens/conversation/attachments.c
     src/ui/screens/conversation/profile.c
     src/ui/screens/conversation/downloads.c
+    src/ui/screens/conversation/update_save.c
     src/ui/screens/conversation/interactions.c
     src/ui/screens/conversation/reactions.c
     src/ui/screens/conversation/members.c
