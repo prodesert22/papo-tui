@@ -928,8 +928,29 @@ Counts are saved per account and instance in the user configuration directory,
 under `papo-tui/emoji-usage/`; if it cannot be written, ranking lasts for the
 current run.
 
+Unicode emojis have the names they have on Discord, such as `:thumbsup:`,
+`:joy:` and `:flag_br:`, and answer to the same aliases: `:+1:`, `:thumbup:`
+and `:thumbs_up:` are all 👍, and `:-1:`, `:thumbdown:` and `:thumbs_down:` are
+all 👎. Each suggestion shows the emoji's name with its aliases below it.
+Emojis that Discord has not named yet have a name in the same style, made from
+their Unicode name. The Portuguese and English Unicode names and keywords, such
+as `polegar` or `thumbs up`, still find an emoji. A name typed in full is
+always the first suggestion, even when another emoji is used more often.
+The underscores of a name may be left out while searching: `:pointup` finds
+`:point_up:` and `:hearteyes` finds `:heart_eyes:`.
+
+Typing the closing colon of a complete name or alias inserts the emoji at
+once: `:+1:` becomes 👍 as you type the second colon. Here the name must be
+written as it is, in lower case and with its underscores. To keep the text
+instead, press Esc to dismiss the suggestions before typing the colon. Pasted
+text is not converted, and a server emoji with the same name keeps its
+`:name:` text. Emoticons such as `:)` are not converted.
+
 Ctrl+E opens the full emoji picker. Each tile shows a 32×32 preview with its name
-below. Use ↓ to move from search to the Unicode/Servidor buttons, then ↓ again
+below, and the line under the grid shows every name that types the chosen
+emoji, such as `:thumbsup: :+1: :thumbup: :thumbs_up:`. The search accepts any
+of them, with or without the colons. Use ↓ to move from search to the
+Unicode/Servidor buttons, then ↓ again
 to enter the grid. From its first row, ↑ returns to the buttons; ↑ again returns
 to search. Use ←/→ to switch emoji sources while the buttons have focus.
 Tab and Shift+Tab also move between these areas.
@@ -1609,10 +1630,9 @@ the interface uses symbols those fonts can draw:
 | Loading | turning dots | turning bar `\| / - \` |
 
 Emojis in messages, reactions and the editor appear as their names between
-colons, such as **:rosto chorando de rir:** (in English, **:face with tears of
-joy:**). The message keeps the emoji itself: what you send is unchanged. The
-emoji picker (Ctrl+E or **[:)]**) lists emojis by name, one per row; search and
-choose them as usual.
+colons, such as **:joy:** for 😂. The message keeps the emoji itself: what you
+send is unchanged. The emoji picker (Ctrl+E or **[:)]**) lists emojis by name,
+one per row; search and choose them as usual.
 
 The focused button, tab or row has an orange fill with black text. Alt+← and
 Alt+→ switch virtual consoles there, so they never reach the application: move

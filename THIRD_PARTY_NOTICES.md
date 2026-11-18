@@ -2,7 +2,8 @@
 
 The MIT license at the repository root covers original code. Each library
 retains its own license. The Unicode/CLDR catalog retains the license in
-data/emoji/LICENSE.
+data/emoji/LICENSE. The emoji names and aliases are the ones Discord uses,
+taken from the emoji map published by Emzi0767; see data/emoji/README.md.
 
 | Component | Purpose | Upstream license |
 | --- | --- | --- |

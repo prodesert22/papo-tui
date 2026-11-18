@@ -1308,7 +1308,7 @@ static size_t utf8_scalars(const char *utf8, uint32_t *out, size_t room)
 #define CONSOLE_LABEL 50
 /* On the Linux console, the source scalars at i that need a substitute: the
  * label goes to out (at most CONSOLE_LABEL scalars). An emoji shows as its
- * name between colons, like :rosto sorridente:, so it stays recognizable. */
+ * name between colons, like :slight_smile:, so it stays recognizable. */
 static size_t console_label(const text_buffer *source, size_t i, uint32_t *out, size_t *count)
 {
     *count = 0;
@@ -1331,8 +1331,7 @@ static size_t console_label(const text_buffer *source, size_t i, uint32_t *out, 
     out[(*count)++] = ':';
     /* One scalar more than fits tells a long name apart from one that fits
      * exactly; a long name ends in an ellipsis. */
-    size_t name =
-        utf8_scalars(language_english() ? emoji->english : emoji->name, out + 1, CONSOLE_LABEL - 2);
+    size_t name = utf8_scalars(emoji->name, out + 1, CONSOLE_LABEL - 2);
     if (name > CONSOLE_LABEL - 3) {
         name = CONSOLE_LABEL - 3;
         out[name] = 0x2026;

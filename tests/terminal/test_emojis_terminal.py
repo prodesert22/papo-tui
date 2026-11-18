@@ -81,8 +81,9 @@ class EmojiTerminal(support.EmojiTerminal):
             try:
                 t.send("antes depois\x1b[1;5D\x05")
                 self.wait(t, "Emojis · Esc voltar")
+                # The CLDR name finds the emoji, which is shown by its Discord name.
                 t.send("family: man, woman, girl, boy")
-                self.wait(t, "família")
+                self.wait(t, ":family_mwgb:")
                 t.send("\n")
                 self.until(t, lambda: "Emojis · Esc voltar" not in "\n".join(t.screen.display))
                 self.assertNotIn("Emojis · Esc voltar", "\n".join(t.screen.display))
@@ -112,6 +113,41 @@ class EmojiTerminal(support.EmojiTerminal):
                 t.send("\n")
                 self.until(t, lambda: s.message_count == 1)
                 self.assertEqual(s.sent_messages[0]["content"], ":gato 界: 🚀")
+            finally:
+                self.assertTrue(t.close())
+
+    def test_discord_names_and_aliases_complete_standard_emojis(self):
+        with self.server() as s:
+            t = self.open(s, protocol="kitty")
+            try:
+                popup = "Emojis · mais usados"
+
+                def closed():
+                    return popup not in "\n".join(t.screen.display)
+
+                # An alias finds the emoji, shown by its name and other aliases.
+                t.send(":+1")
+                self.wait(t, popup)
+                self.wait(t, "thumbsup")
+                self.wait(t, "Unicode · :+1: :thumbup: :thumbs_up:")
+                t.send("\t")
+                self.until(t, closed)
+                # The closing colon of a complete name inserts the emoji by itself.
+                t.send(" :-1")
+                self.wait(t, "thumbsdown")
+                t.send(":")
+                self.until(t, closed)
+                # After Esc the name stays as it was typed.
+                t.send(" :tada")
+                self.wait(t, popup)
+                t.send("\x1b")
+                self.until(t, closed)
+                t.send(":")
+                self.wait(t, ":tada:")
+                self.assertEqual(s.message_count, 0)
+                t.send("\n")
+                self.until(t, lambda: s.message_count == 1)
+                self.assertEqual(s.sent_messages[0]["content"], "👍 👎 :tada:")
             finally:
                 self.assertTrue(t.close())
 

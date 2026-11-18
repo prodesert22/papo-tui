@@ -12,9 +12,12 @@ static chat_assets *assets(void)
     chat_assets *a = chat_assets_create();
     assert(a);
     chat_assets_emojis_request(a, false);
+    /* The second emoji has the name of a standard one, 🎉. */
     json_t *page =
-        json_pack("{s:[{s:s,s:s,s:s,s:s,s:s}],s:b}", "emojis", "id",
+        json_pack("{s:[{s:s,s:s,s:s,s:s,s:s},{s:s,s:s,s:s,s:s,s:s}],s:b}", "emojis", "id",
                   "00000000-0000-4000-8000-000000000001", "name", "gato_fixture", "format", "PNG",
+                  "created_at", "2026-10-14T10:00:00Z", "image_blob", "AQID", "id",
+                  "00000000-0000-4000-8000-000000000002", "name", "tada", "format", "PNG",
                   "created_at", "2026-10-14T10:00:00Z", "image_blob", "AQID", "has_more", 0);
     assert(page && chat_assets_emojis_response(a, page, 200));
     json_decref(page);
@@ -33,6 +36,26 @@ static void insert(emoji_picker *p, text_buffer *b, const char *query, const cha
     if (strcmp(value, expected))
         fprintf(stderr, "Completion for %s: expected %s, got %s\n", query, expected, value);
     assert(!strcmp(value, expected));
+}
+/* Types the colon that closes a name; the draft becomes expected when the
+ * colon completes it and otherwise waits for the colon as ordinary text. */
+static void close_name(emoji_picker *p, text_buffer *b, const char *typed, size_t cursor,
+                       const char *expected)
+{
+    assert(text_decode(b, typed));
+    if (cursor != SIZE_MAX)
+        b->cursor = cursor;
+    emoji_picker_suggest(p, b, true);
+    assert(emoji_picker_suggesting(p));
+    bool inserted = true;
+    bool consumed = emoji_picker_key(p, b, OK, ':', &inserted);
+    char value[TEXT_UTF8_BYTES];
+    assert(text_encode(b, value));
+    if (strcmp(value, expected) || consumed != !!strcmp(typed, expected))
+        fprintf(stderr, "Closing %s: expected %s, got %s\n", typed, expected, value);
+    assert(!strcmp(value, expected));
+    assert(consumed == !!strcmp(typed, expected) && inserted == consumed);
+    assert(emoji_picker_suggesting(p) == !consumed);
 }
 int main(void)
 {
@@ -94,6 +117,48 @@ int main(void)
     emoji_picker_destroy(p);
     p = emoji_picker_create(a, NULL, "https://one.example", "other-account");
     insert(p, &b, ":", "😀");
+    emoji_picker_destroy(p);
+
+    /* A separate account, so that these uses do not rank the cases above. */
+    p = emoji_picker_create(a, NULL, "https://names.example", "account");
+    assert(p);
+    /* Discord's names and their aliases reach the standard emojis. */
+    insert(p, &b, ":thumbsup", "👍");
+    insert(p, &b, ":+1", "👍");
+    insert(p, &b, ":thumbup", "👍");
+    insert(p, &b, ":thumbs_up", "👍");
+    insert(p, &b, ":thumbsdown", "👎");
+    insert(p, &b, ":-1", "👎");
+    insert(p, &b, ":face_with_tears_of_joy", "😂"); /* The CLDR name still finds it. */
+    insert(p, &b, "ok :-1", "ok 👎");
+    /* The underscores of a name may be left out, as on Discord. */
+    insert(p, &b, ":pointup", "☝️");
+    insert(p, &b, ":pointup_2", "👆");
+    insert(p, &b, ":hearteyes", "😍");
+    insert(p, &b, ":flagbr", "🇧🇷");
+    insert(p, &b, ":thumbsdo", "👎");
+    insert(p, &b, ":redheart", "❤️");
+    insert(p, &b, ":pinata", "🪅");
+    close_name(p, &b, ":pointup", SIZE_MAX, ":pointup"); /* Not a name by itself. */
+    /* A complete name leads an emoji that is used more often. */
+    insert(p, &b, ":joy_cat", "😹");
+    insert(p, &b, ":joy_cat", "😹");
+    insert(p, &b, ":joy", "😂");
+    /* The closing colon of a complete name inserts the emoji by itself. */
+    close_name(p, &b, ":+1", SIZE_MAX, "👍");
+    close_name(p, &b, ":-1", SIZE_MAX, "👎");
+    close_name(p, &b, "a :thumbsdown", SIZE_MAX, "a 👎");
+    close_name(p, &b, ":100", SIZE_MAX, "💯");
+    close_name(p, &b, ":thumbsu", SIZE_MAX, ":thumbsu");
+    close_name(p, &b, ":Thumbsup", SIZE_MAX, ":Thumbsup");
+    close_name(p, &b, ":+1abc", 3, ":+1abc"); /* The name goes on after the cursor. */
+    close_name(p, &b, ":gato_fixture", SIZE_MAX, ":gato_fixture");
+    close_name(p, &b, ":tada", SIZE_MAX, ":tada"); /* The server emoji keeps its text. */
+    /* Dismissing the suggestions leaves the colon as text. */
+    assert(text_decode(&b, ":+1"));
+    emoji_picker_suggest(p, &b, true);
+    assert(emoji_picker_key(p, &b, OK, 27, &inserted));
+    assert(!emoji_picker_key(p, &b, OK, ':', &inserted) && !inserted);
     emoji_picker_destroy(p);
 
     /* Storage errors must preserve the draft and keep ranking in memory. */

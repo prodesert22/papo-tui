@@ -3,9 +3,69 @@
 from pathlib import Path
 import argparse
 import json
+import re
+import unicodedata
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
+DISCORD = ROOT / "data/emoji/discord-names.json"
+DISCORD_SOURCE = "https://emzi0767.mzgit.io/discord-emoji/discordEmojiMap.json"
+
+
+def shortcode(name):
+    """Whether a name can be typed between colons and stored space separated."""
+    return bool(name) and all(c.isalnum() or c in "_+-" for c in name)
+
+
+def import_discord(source):
+    """Reduce a downloaded discordEmojiMap.json to each sequence's colon names."""
+    upstream = json.loads(Path(source).read_text(encoding="utf-8"))
+    names = {}
+    for definition in upstream["emojiDefinitions"]:
+        # `utf32codepoints` disagrees with `surrogates` for some sequences.
+        points = tuple(ord(c) for c in definition["surrogates"])
+        # Emoticons such as :) and the :name::skin-tone-N: spellings are not
+        # single names between colons.
+        kept = [
+            name
+            for name, colons in zip(definition["names"], definition["namesWithColons"])
+            if colons == f":{name}:" and ":" not in name
+        ]
+        if not kept or kept[0] != definition["primaryName"] or not all(map(shortcode, kept)):
+            raise SystemExit(f"Unexpected Discord names: {definition['names']}")
+        if points in names:
+            raise SystemExit(f"Repeated Discord sequence: {definition['surrogates']}")
+        names[points] = kept
+    out = [
+        "{",
+        f'  "source": {json.dumps(DISCORD_SOURCE)},',
+        f'  "version": {json.dumps(upstream["version"])},',
+        f'  "versionTimestamp": {json.dumps(upstream["versionTimestamp"])},',
+        '  "names": {',
+    ]
+    entries = [
+        f"    {json.dumps(' '.join(f'{p:X}' for p in points))}: "
+        f"{json.dumps(kept, ensure_ascii=False)}"
+        for points, kept in sorted(names.items())
+    ]
+    out.append(",\n".join(entries))
+    out += ["  }", "}", ""]
+    DISCORD.write_text("\n".join(out), encoding="utf-8")
+
+
+def discord_names():
+    """Discord's names by sequence without VS16; the primary name comes first."""
+    names = {}
+    for codes, kept in json.loads(DISCORD.read_text(encoding="utf-8"))["names"].items():
+        text = "".join(chr(int(code, 16)) for code in codes.split())
+        names[text.replace("️", "")] = kept
+    return names
+
+
+def derived_name(english):
+    """A name in Discord's style for an emoji Discord has not named yet."""
+    plain = unicodedata.normalize("NFKD", english).encode("ascii", "ignore").decode()
+    return re.sub(r"[^a-z0-9]+", "_", plain.lower()).strip("_")
 
 
 def generate():
@@ -16,11 +76,12 @@ def generate():
             for annotation in ET.parse(ROOT / "data/emoji" / f"{lang}{suffix}.xml").iter(
                 "annotation"
             ):
-                item = entries.setdefault(annotation.attrib["cp"].replace("\ufe0f", ""), {})
+                item = entries.setdefault(annotation.attrib["cp"].replace("️", ""), {})
                 item["name" if annotation.attrib.get("type") == "tts" else "keywords"] = (
                     annotation.text or ""
                 )
         names[lang] = entries
+    discord = discord_names()
     records, aliases = [], []
     for line in (ROOT / "data/emoji/emoji-test.txt").read_text().splitlines():
         if ";" not in line or line.startswith("#"):
@@ -33,37 +94,49 @@ def generate():
         # punctuation/digits into images. ZWJ sequences and flags remain atomic.
         if status.strip() != "fully-qualified":
             if len(points) > 1:
-                aliases.append((points, text.replace("\ufe0f", "")))
+                aliases.append((points, text.replace("️", "")))
             continue
-        key = text.replace("\ufe0f", "")
+        key = text.replace("️", "")
         en = names["en"].get(key, {})
         pt = names["pt"].get(key, {})
         fallback = description.strip().split(" ", 2)[-1]
+        english = en.get("name", fallback)
         records.append(
             (
                 points,
                 text,
-                pt.get("name", en.get("name", fallback)),
-                en.get("name", fallback),
+                discord.get(key) or [derived_name(english)],
+                pt.get("name", english),
+                english,
                 " | ".join((pt.get("keywords", ""), en.get("keywords", ""))),
             )
         )
     display_order = [r[0] for r in records]
     records.sort()
-    canonical = {r[1].replace("\ufe0f", ""): i for i, r in enumerate(records)}
+    canonical = {r[1].replace("️", ""): i for i, r in enumerate(records)}
+    shortcodes = {}
+    for i, record in enumerate(records):
+        for name in record[2]:
+            if not shortcode(name) or name in shortcodes:
+                raise SystemExit(f"Unusable or repeated emoji name: {name}")
+            shortcodes[name] = i
 
     def q(s):
         return json.dumps(s, ensure_ascii=False)
 
-    out = ["/* Generated by tools/emoji_catalog.py; Unicode-3.0, see data/emoji/LICENSE. */"]
+    out = [
+        "/* Generated by tools/emoji_catalog.py; Unicode-3.0, see data/emoji/LICENSE."
+        " The names\n * and aliases are Discord's, see data/emoji/README.md. */"
+    ]
     for i, (points, *_rest) in enumerate(records):
         out.append(
             f"static const uint32_t emoji_points_{i}[] = {{{','.join(hex(p) for p in points)}}};"
         )
     out.append("static const unicode_emoji catalogue[] = {")
-    for i, (points, text, name, english, words) in enumerate(records):
+    for i, (points, text, named, portuguese, english, words) in enumerate(records):
         out.append(
-            f"    {{{q(text)}, {q(name)}, {q(english)}, {q(words)}, emoji_points_{i}, {len(points)}}},"
+            f"    {{{q(text)}, {q(named[0])}, {q(' '.join(named[1:]))}, {q(portuguese)}, "
+            f"{q(english)}, {q(words)}, emoji_points_{i}, {len(points)}}},"
         )
     out.append("};")
     out.append("typedef struct { uint32_t points[16]; size_t length, index; } emoji_alias;")
@@ -73,6 +146,12 @@ def generate():
             out.append(
                 f"    {{{{{','.join(hex(p) for p in points)}}}, {len(points)}, {canonical[key]}}},"
             )
+    out.append("};")
+    # Ordered by bytes, as strcmp() compares them.
+    out.append("typedef struct { const char *name; size_t index; } emoji_shortcode;")
+    out.append("static const emoji_shortcode emoji_shortcodes[] = {")
+    for name in sorted(shortcodes, key=str.encode):
+        out.append(f"    {{{q(name)}, {shortcodes[name]}}},")
     out.append("};")
     sorted_indices = {r[0]: i for i, r in enumerate(records)}
     out.append(
@@ -86,7 +165,14 @@ def generate():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(__doc__)
     parser.add_argument("--check", action="store_true")
+    parser.add_argument(
+        "--import-discord",
+        metavar="MAP",
+        help=f"rewrite {DISCORD.relative_to(ROOT)} from a downloaded discordEmojiMap.json",
+    )
     args = parser.parse_args()
+    if args.import_discord:
+        import_discord(args.import_discord)
     target = ROOT / "src/model/text/emoji_data.inc"
     data = generate()
     if args.check:

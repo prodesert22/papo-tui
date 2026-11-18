@@ -224,7 +224,7 @@ int main(void)
     size_t consumed = 0;
     const unicode_emoji *grin = emoji_catalog_match(buffer.data + 1, 1, &consumed);
     CHECK(grin && consumed == 1);
-    const char *name = language_english() ? grin->english : grin->name;
+    const char *name = grin->name;
     /* Names longer than 47 scalars end in an ellipsis. */
     size_t label = MIN((size_t)g_utf8_strlen(name, -1), 47) + 2;
     CHECK(layout.count == 2 + label + 1);

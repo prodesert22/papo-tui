@@ -77,6 +77,45 @@ static void sequences(void)
     assert(text_insert_buffer(&b, &insertion));
     assert(text_encode(&b, out) && !strcmp(out, "a👍🏽"));
 }
+/* Standard emojis answer to Discord's names; the aliases are shortcuts. */
+static void names(void)
+{
+    const char *up[] = {"thumbsup", "+1", "thumbup", "thumbs_up"};
+    const char *down[] = {"thumbsdown", "-1", "thumbdown", "thumbs_down"};
+    for (size_t i = 0; i < 4; ++i) {
+        const unicode_emoji *e = emoji_catalog_named(up[i]);
+        assert(e && !strcmp(e->text, "👍") && !strcmp(e->name, "thumbsup"));
+        assert(!strcmp(e->aliases, "+1 thumbup thumbs_up"));
+        e = emoji_catalog_named(down[i]);
+        assert(e && !strcmp(e->text, "👎") && !strcmp(e->name, "thumbsdown"));
+    }
+    const unicode_emoji *joy = emoji_catalog_named("joy");
+    assert(joy && !strcmp(joy->text, "😂") && !*joy->aliases);
+    assert(!strcmp(joy->portuguese, "rosto chorando de rir"));
+    assert(!strcmp(joy->english, "face with tears of joy"));
+    assert(!strcmp(emoji_catalog_named("thumbsup_tone3")->text, "👍🏽"));
+    assert(!strcmp(emoji_catalog_named("flag_br")->text, "🇧🇷"));
+    assert(!strcmp(emoji_catalog_named("piñata")->text, "🪅"));
+    const char *missing[] = {
+        "", "thumbs up", "Thumbsup", ":thumbsup:", "thumbsu", "thumbsupp", ":)"};
+    for (size_t i = 0; i < sizeof(missing) / sizeof(*missing); ++i)
+        assert(!emoji_catalog_named(missing[i]));
+    assert(!emoji_catalog_named(NULL));
+    /* Every emoji has a name of its own, and each name leads back to it. */
+    for (size_t i = 0; i < emoji_catalog_count(); ++i) {
+        const unicode_emoji *e = emoji_catalog_get(i);
+        assert(*e->name && !strpbrk(e->name, " :") && emoji_catalog_named(e->name) == e);
+        for (const char *alias = e->aliases; *alias;) {
+            char name[128];
+            size_t length = strcspn(alias, " ");
+            assert(length && length < sizeof(name) && !memchr(alias, ':', length));
+            memcpy(name, alias, length);
+            name[length] = 0;
+            assert(emoji_catalog_named(name) == e);
+            alias += length + (alias[length] == ' ');
+        }
+    }
+}
 static void assets(void)
 {
     chat_assets *a = chat_assets_create();
@@ -423,6 +462,7 @@ int main(void)
     init_graphemebreak();
     media_backgrounds_follow_the_theme();
     sequences();
+    names();
     assets();
     avatar_refresh_keeps_last_good_image();
     visible_avatar_inputs();

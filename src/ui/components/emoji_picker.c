@@ -27,7 +27,7 @@ struct emoji_picker {
     text_buffer search;
     emoji_match *matches;
     emoji_usage *usage;
-    char **unicode_search;
+    char **unicode_search, **unicode_names;
     size_t count, selected, first;
     uint64_t revision, generation;
     bool open, server, gif, suggesting, dismissed, reaction;
@@ -76,6 +76,30 @@ static const char *item_key(emoji_picker *p, uint32_t id)
     const unicode_emoji *e = emoji_catalog_get(id - 1);
     return e ? e->text : "";
 }
+/* An emoji's other names as they are typed, each after a space:
+ * " :+1: :thumbup:". Names that do not fit are left out whole. */
+static void alias_list(const unicode_emoji *e, char *out, size_t size)
+{
+    size_t used = 0;
+    *out = 0;
+    for (const char *alias = e ? e->aliases : ""; *alias;) {
+        size_t length = strcspn(alias, " ");
+        int written = snprintf(out + used, size - used, " :%.*s:", (int)length, alias);
+        if (written < 0 || (size_t)written >= size - used) {
+            out[used] = 0;
+            return;
+        }
+        used += (size_t)written;
+        alias += length + strspn(alias + length, " ");
+    }
+}
+/* Every name that types the item: ":thumbsup: :+1: :thumbup: :thumbs_up:". */
+static void item_names(emoji_picker *p, uint32_t id, char *out, size_t size)
+{
+    char aliases[384];
+    alias_list(id & ICON_CUSTOM ? NULL : emoji_catalog_get(id - 1), aliases, sizeof(aliases));
+    snprintf(out, size, ":%s:%s", item_name(p, id), aliases);
+}
 static void remember(emoji_picker *p)
 {
     if (p->gif)
@@ -90,33 +114,123 @@ static void usage_key(emoji_picker *p, uint32_t id, char key[164])
 static int compare_matches(const void *a, const void *b)
 {
     const emoji_match *x = a, *y = b;
+    /* A complete name is a shortcut: it leads whatever is used more often. */
+    if (!x->quality != !y->quality)
+        return x->quality ? 1 : -1;
     if (x->uses != y->uses)
         return x->uses > y->uses ? -1 : 1;
     if (x->quality != y->quality)
         return x->quality < y->quality ? -1 : 1;
     return x->order < y->order ? -1 : x->order != y->order;
 }
+/* Whether query begins name once the spaces of name are skipped, so that
+ * "pointup" meets "point up"; whole tells that it also ends it. */
+static bool joined_prefix(const char *name, size_t length, const char *query, bool *whole)
+{
+    size_t at = 0;
+    for (; *query; ++query) {
+        while (at < length && name[at] == ' ')
+            ++at;
+        if (at == length || name[at++] != *query)
+            return false;
+    }
+    while (at < length && name[at] == ' ')
+        ++at;
+    *whole = at == length;
+    return true;
+}
+/* How a folded query meets one folded name: 0 is the whole name, 1 its
+ * beginning, 2 another part of it and 3 none of it. joined is the query
+ * without its spaces: it may run over the words of the name from the start
+ * of any of them. */
+static int name_quality(const char *name, size_t length, const char *query, const char *joined)
+{
+    size_t size = strlen(query);
+    int best = 3;
+    if (size <= length && !memcmp(name, query, size))
+        best = size == length ? 0 : 1;
+    else if (g_strstr_len(name, (gssize)length, query))
+        best = 2;
+    for (size_t at = 0; *joined && best && at < length; ++at) {
+        bool whole;
+        if (name[at] == ' ' || (at && name[at - 1] != ' ') ||
+            !joined_prefix(name + at, length - at, joined, &whole))
+            continue;
+        int quality = at ? 2 : whole ? 0 : 1;
+        if (quality < best)
+            best = quality;
+    }
+    return best;
+}
+/* The best match among folded names, one per line; what else the search
+ * covers, such as keywords, counts as 3. */
+static int names_quality(const char *names, const char *query, const char *joined)
+{
+    int best = *query ? 3 : 0;
+    for (const char *name = names; *name && best;) {
+        size_t length = strcspn(name, "\n");
+        int quality = name_quality(name, length, query, joined);
+        if (quality < best)
+            best = quality;
+        name += length + (name[length] == '\n');
+    }
+    return best;
+}
+static void free_index(char **index, size_t count)
+{
+    for (size_t i = 0; index && i < count; ++i)
+        g_free(index[i]);
+    free(index);
+}
+/* Adds the folded form of one name and its line end; false when it cannot. */
+static bool add_folded(GString *names, const char *name, size_t length)
+{
+    char *copy = g_strndup(name, length), *folded = fold(copy);
+    g_free(copy);
+    if (!folded)
+        return false;
+    g_string_append_printf(names, "%s\n", folded);
+    g_free(folded);
+    return true;
+}
+/* The folded names an emoji answers to, one per line: its Discord name, the
+ * aliases and the CLDR names. Caller g_free(). */
+static char *folded_names(const unicode_emoji *e)
+{
+    GString *names = g_string_new(NULL);
+    bool ok = add_folded(names, e->name, strlen(e->name)) &&
+              add_folded(names, e->portuguese, strlen(e->portuguese)) &&
+              add_folded(names, e->english, strlen(e->english));
+    for (const char *alias = e->aliases; ok && *alias;) {
+        size_t length = strcspn(alias, " ");
+        ok = add_folded(names, alias, length);
+        alias += length + strspn(alias + length, " ");
+    }
+    return g_string_free(names, !ok);
+}
 static bool prepare_search(emoji_picker *p)
 {
     if (p->unicode_search)
         return true;
     size_t count = emoji_catalog_count();
-    char **index = calloc(count, sizeof(*index));
-    if (!index)
-        return false;
-    for (size_t i = 0; i < count; ++i) {
+    char **index = calloc(count, sizeof(*index)), **names = calloc(count, sizeof(*names));
+    bool ok = index && names;
+    for (size_t i = 0; ok && i < count; ++i) {
         const unicode_emoji *e = emoji_catalog_get(i);
-        char *words = g_strdup_printf("%s %s %s %s", e->name, e->english, e->keywords, e->text);
+        char *words = g_strdup_printf("%s %s %s %s %s %s", e->name, e->aliases, e->portuguese,
+                                      e->english, e->keywords, e->text);
         index[i] = words ? fold(words) : NULL;
         g_free(words);
-        if (!index[i]) {
-            for (size_t j = 0; j < i; ++j)
-                g_free(index[j]);
-            free(index);
-            return false;
-        }
+        names[i] = folded_names(e);
+        ok = index[i] && names[i];
+    }
+    if (!ok) {
+        free_index(index, count);
+        free_index(names, count);
+        return false;
     }
     p->unicode_search = index;
+    p->unicode_names = names;
     return true;
 }
 static void update_matches(emoji_picker *p)
@@ -128,7 +242,17 @@ static void update_matches(emoji_picker *p)
     }
     char query[TEXT_UTF8_BYTES];
     text_encode(&p->search, query);
-    char *normalized = fold(query);
+    /* A name may be searched as it is written in a message, as in :+1:. */
+    char *end = query + strlen(query);
+    while (end > query && end[-1] == ':')
+        *--end = 0;
+    char *normalized = fold(query + strspn(query, ":"));
+    /* The underscores of a name may be left out: pointup finds point_up. */
+    char *joined = g_strdup(normalized ? normalized : ""), *tail = joined;
+    for (const char *c = joined; *c; ++c)
+        if (*c != ' ')
+            *tail++ = *c;
+    *tail = 0;
     p->count = 0;
     size_t unicode_count = emoji_catalog_count(), custom_count = chat_assets_emoji_count(p->assets);
     size_t count = p->suggesting ? unicode_count + custom_count
@@ -140,22 +264,13 @@ static void update_matches(emoji_picker *p)
         uint32_t id = (uint32_t)(index + 1) | (custom ? ICON_CUSTOM : 0);
         const unicode_emoji *e = !custom ? emoji_catalog_get(index) : NULL;
         char *candidate = e ? p->unicode_search[index] : fold(item_name(p, id));
-        if (candidate && normalized && strstr(candidate, normalized)) {
+        int quality =
+            candidate && normalized
+                ? names_quality(e ? p->unicode_names[index] : candidate, normalized, joined)
+                : 3;
+        if (candidate && normalized && (quality < 3 || strstr(candidate, normalized))) {
             char key[164];
             usage_key(p, id, key);
-            char *name = *normalized ? fold(item_name(p, id)) : NULL;
-            char *english = *normalized && e ? fold(e->english) : NULL;
-            int quality = 3;
-            if (!*normalized || (name && !strcmp(name, normalized)) ||
-                (english && !strcmp(english, normalized)))
-                quality = 0;
-            else if ((name && g_str_has_prefix(name, normalized)) ||
-                     (english && g_str_has_prefix(english, normalized)))
-                quality = 1;
-            else if ((name && strstr(name, normalized)) || (english && strstr(english, normalized)))
-                quality = 2;
-            g_free(name);
-            g_free(english);
             p->matches[p->count++] =
                 (emoji_match){id, emoji_usage_count(p->usage, key), i, quality};
         }
@@ -163,6 +278,7 @@ static void update_matches(emoji_picker *p)
             g_free(candidate);
     }
     g_free(normalized);
+    g_free(joined);
     qsort(p->matches, p->count, sizeof(*p->matches), compare_matches);
     p->selected = 0;
     for (size_t i = 0; i < p->count; ++i)
@@ -197,10 +313,8 @@ void emoji_picker_destroy(emoji_picker *p)
     if (p) {
         if (p->window)
             delwin(p->window);
-        if (p->unicode_search)
-            for (size_t i = 0; i < emoji_catalog_count(); ++i)
-                g_free(p->unicode_search[i]);
-        free(p->unicode_search);
+        free_index(p->unicode_search, emoji_catalog_count());
+        free_index(p->unicode_names, emoji_catalog_count());
         free(p->matches);
         gif_search_destroy(p->gifs);
         json_decref(p->reaction_choice);
@@ -435,23 +549,9 @@ static bool choose_gif(emoji_picker *p, text_buffer *editor)
     emoji_picker_close(p);
     return true;
 }
-static bool choose(emoji_picker *p, text_buffer *editor)
+/* Puts the item in the draft, over the name being completed if there is one. */
+static bool insert_item(emoji_picker *p, text_buffer *editor, uint32_t id)
 {
-    if (p->gif)
-        return choose_gif(p, editor);
-    if (p->selected >= p->count)
-        return false;
-    uint32_t id = p->matches[p->selected].id;
-    if (p->reaction) {
-        json_t *choice =
-            json_pack("{s:s}", id & ICON_CUSTOM ? "emoji_id" : "unicode", item_key(p, id));
-        if (!choice)
-            return false;
-        json_decref(p->reaction_choice);
-        p->reaction_choice = choice;
-        emoji_picker_close(p);
-        return true;
-    }
     if (!editor)
         return false;
     char value[256];
@@ -479,6 +579,42 @@ static bool choose(emoji_picker *p, text_buffer *editor)
     emoji_picker_close(p);
     return true;
 }
+static bool choose(emoji_picker *p, text_buffer *editor)
+{
+    if (p->gif)
+        return choose_gif(p, editor);
+    if (p->selected >= p->count)
+        return false;
+    uint32_t id = p->matches[p->selected].id;
+    if (p->reaction) {
+        json_t *choice =
+            json_pack("{s:s}", id & ICON_CUSTOM ? "emoji_id" : "unicode", item_key(p, id));
+        if (!choice)
+            return false;
+        json_decref(p->reaction_choice);
+        p->reaction_choice = choice;
+        emoji_picker_close(p);
+        return true;
+    }
+    return insert_item(p, editor, id);
+}
+/* Typing the colon that closes a complete name, as in :+1:, inserts the emoji
+ * it names. A server emoji with that name keeps its text, which is how the
+ * server knows it. */
+static bool complete_name(emoji_picker *p, text_buffer *editor)
+{
+    char name[TEXT_UTF8_BYTES];
+    if (!editor || !p->search.length || editor->cursor != p->end ||
+        editor->cursor != p->start + 1 + p->search.length || !text_encode(&p->search, name))
+        return false;
+    const unicode_emoji *e = emoji_catalog_named(name);
+    if (!e)
+        return false;
+    for (size_t i = 0; i < chat_assets_emoji_count(p->assets); ++i)
+        if (!strcmp(chat_assets_emoji(p->assets, i)->name, name))
+            return false;
+    return insert_item(p, editor, (uint32_t)(emoji_catalog_index(e) + 1));
+}
 bool emoji_picker_key(emoji_picker *p, text_buffer *editor, int type, uint32_t key, bool *inserted)
 {
     *inserted = false;
@@ -500,6 +636,8 @@ bool emoji_picker_key(emoji_picker *p, text_buffer *editor, int type, uint32_t k
                                                  : p->rows);
             return true;
         }
+        if (type == OK && key == ':')
+            return *inserted = complete_name(p, editor);
         return false;
     }
     if (!emoji_picker_open(p))
@@ -744,7 +882,7 @@ void emoji_picker_draw(emoji_picker *p)
             mvwhline(w, y + row, x, ' ', p->tile_width - 1);
         if (list) {
             char name[160];
-            snprintf(name, sizeof(name), id & ICON_CUSTOM ? ":%s:" : "%s", item_name(p, id));
+            snprintf(name, sizeof(name), ":%s:", item_name(p, id));
             text_label(w, y, x + 1, p->tile_width - 2, name);
             continue;
         }
@@ -764,12 +902,14 @@ void emoji_picker_draw(emoji_picker *p)
                    : gif_search_state(p->gifs) == GIF_SEARCH_LOADING ? _("Buscando GIFs…")
                    : gif_search_state(p->gifs) == GIF_SEARCH_FAILED  ? _("A busca de GIFs falhou")
                                                                      : _("Nenhum GIF encontrado"));
+    char names[512] = "";
+    if (!p->gif && p->selected < p->count)
+        item_names(p, p->matches[p->selected].id, names, sizeof(names));
     text_label(w, height - 3, 2, width - 4,
                *p->error ? p->error
                : p->gif
                    ? (p->selected < p->count ? gif_search_result(p->gifs, p->selected)->title : "")
-               : p->selected < p->count ? item_name(p, p->matches[p->selected].id)
-                                        : "");
+                   : names);
     text_label(w, height - 2, 2, width - 4,
                p->gif      ? _("Busca no Wikimedia Commons · Enter inserir o link · Ctrl+R repetir")
                : p->server ? chat_assets_notice(p->assets)
@@ -850,7 +990,11 @@ void emoji_picker_draw_suggestions(emoji_picker *p, int cy, int cx, int left, in
         int x = image_columns + 3;
         text_label(w, y, x, p->width - x - 2, item_name(p, id));
         wattrset(w, COLOR_PAIR(console && i == p->selected ? pair : THEME_PANEL_MUTED));
-        text_label(w, y + 1, x, p->width - x - 2, id & ICON_CUSTOM ? _("Servidor") : _("Unicode"));
+        char source[512], aliases[384];
+        alias_list(id & ICON_CUSTOM ? NULL : emoji_catalog_get(id - 1), aliases, sizeof(aliases));
+        snprintf(source, sizeof(source), "%s%s%s", id & ICON_CUSTOM ? _("Servidor") : _("Unicode"),
+                 *aliases ? " ·" : "", aliases);
+        text_label(w, y + 1, x, p->width - x - 2, source);
     }
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
     if (!p->count)

@@ -66,3 +66,18 @@ const unicode_emoji *emoji_catalog_match(const uint32_t *text, size_t length, si
     }
     return best;
 }
+const unicode_emoji *emoji_catalog_named(const char *name)
+{
+    size_t low = 0, high = sizeof(emoji_shortcodes) / sizeof(*emoji_shortcodes);
+    while (name && low < high) {
+        size_t mid = low + (high - low) / 2;
+        int order = strcmp(emoji_shortcodes[mid].name, name);
+        if (!order)
+            return &catalogue[emoji_shortcodes[mid].index];
+        if (order < 0)
+            low = mid + 1;
+        else
+            high = mid;
+    }
+    return NULL;
+}
