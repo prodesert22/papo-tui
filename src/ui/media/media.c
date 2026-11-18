@@ -791,11 +791,23 @@ static bool live(history *h, const message_media *item)
     }
     return false;
 }
+/* The previous/next buttons are for mouse use; the Linux console steps with the arrows. */
+static bool nav_buttons(const media_view *v)
+{
+    return v->member_count > 1 && v->modal != MODAL_LIST && !theme_linux_console();
+}
+/* Side buttons: a framed block of 9x5 cells with the ⬅ or ➡ in its middle. */
+enum { NAV_COLUMNS = 9, NAV_ROWS = 5 };
 static bool modal_layout_update(media_view *v)
 {
     media_modal_layout layout;
-    if (!media_modal_geometry(COLS, LINES, v->info_open && v->modal != MODAL_LIST,
-                              v->modal_image.columns, v->modal_image.rows, &layout))
+    int nav_columns = 0, nav_rows = 0;
+    if (nav_buttons(v)) {
+        nav_columns = NAV_COLUMNS;
+        nav_rows = NAV_ROWS;
+    }
+    if (!media_modal_geometry(COLS, LINES, v->info_open && v->modal != MODAL_LIST, nav_columns,
+                              nav_rows, v->modal_image.columns, v->modal_image.rows, &layout))
         return false;
     int width, height;
     geometry(layout.area_width, layout.area_height, &width, &height);
@@ -1385,6 +1397,11 @@ bool media_view_click(media_view *v, int y, int x)
             if (x > v->layout.x && x < v->layout.x + v->layout.width - 1 && row >= 0 &&
                 row < v->layout.height - 4 && first + row < v->visible_count)
                 select_item(v, first + row);
+        } else if (nav_buttons(v) && v->layout.nav_width > 0 && y >= v->layout.nav_y &&
+                   y < v->layout.nav_y + v->layout.nav_height &&
+                   ((x >= v->layout.prev_x && x < v->layout.prev_x + v->layout.nav_width) ||
+                    (x >= v->layout.next_x && x < v->layout.next_x + v->layout.nav_width))) {
+            gallery_step(v, x >= v->layout.next_x);
         } else if (y == v->layout.button_y && x >= v->layout.button_x &&
                    x < v->layout.button_x + v->layout.button_width) {
             v->info_open = !v->info_open;
@@ -1393,7 +1410,8 @@ bool media_view_click(media_view *v, int y, int x)
         } else if (v->selected_item.audio && v->modal == MODAL_PLAYING &&
                    y == v->layout.y + v->layout.height - 4) {
             media_audio_layout options;
-            if (media_audio_geometry(v->layout.height - 4, 3, v->layout.area_width, &options)) {
+            if (media_audio_geometry(v->layout.height - 4, v->layout.area_x - v->layout.x,
+                                     v->layout.area_width, &options)) {
                 media_audio_control action =
                     media_audio_hit(&options, y - v->layout.y, x - v->layout.x);
                 if (action == MEDIA_AUDIO_STOP) {
@@ -1410,7 +1428,8 @@ bool media_view_click(media_view *v, int y, int x)
             }
         } else if (v->selected_item.video && v->modal == MODAL_PLAYING) {
             media_controls_layout controls;
-            if (media_controls_geometry(v->layout.height - 3, 3, v->layout.area_width, &controls)) {
+            if (media_controls_geometry(v->layout.height - 3, v->layout.area_x - v->layout.x,
+                                        v->layout.area_width, &controls)) {
                 double fraction;
                 media_control action =
                     media_controls_hit(&controls, y - v->layout.y, x - v->layout.x, &fraction);
@@ -1627,7 +1646,8 @@ static void draw_video_controls(media_view *v, WINDOW *w)
                         .speed = v->speed};
     g_mutex_unlock(&v->lock);
     media_controls_layout controls;
-    if (media_controls_geometry(v->layout.height - 3, 3, v->layout.area_width, &controls)) {
+    if (media_controls_geometry(v->layout.height - 3, v->layout.area_x - v->layout.x,
+                                v->layout.area_width, &controls)) {
         const char *label =
             controls.play_width == 1 ? (info.paused ? "▶" : "⏸") : (info.paused ? "[▶]" : "[⏸]");
         button_draw(w, controls.row, controls.play_x, controls.play_width, label, BUTTON_NORMAL,
@@ -1679,7 +1699,8 @@ static void draw_video_controls(media_view *v, WINDOW *w)
                  info.muted ? _(" · Mudo") : "",
                  info.audio_missing ? _(" · Sem dispositivo de áudio") : "");
     wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
-    text_label(w, v->layout.height - 2, 3, v->layout.area_width, status);
+    text_label(w, v->layout.height - 2, v->layout.area_x - v->layout.x, v->layout.area_width,
+               status);
 }
 /* Keys of the open viewer, shown on the bottom border so the row above it
  * can show only the state. Moving between media comes first because it is
@@ -1717,6 +1738,23 @@ static const char *modal_keys(const media_view *v, int width)
         if (text_label(NULL, 0, 0, 1000, _(list[k])) + 2 <= width)
             return _(list[k]);
     return "";
+}
+/* Only the frame, in the panel's line color, and the arrow on its middle row: the
+ * inside keeps whatever the modal painted. */
+static void draw_nav_button(WINDOW *w, int y, int x, int width, int height, const char *arrow)
+{
+    wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
+    mvwaddch(w, y, x, ACS_ULCORNER);
+    mvwhline(w, y, x + 1, ACS_HLINE, width - 2);
+    mvwaddch(w, y, x + width - 1, ACS_URCORNER);
+    for (int row = 1; row < height - 1; ++row) {
+        mvwaddch(w, y + row, x, ACS_VLINE);
+        mvwaddch(w, y + row, x + width - 1, ACS_VLINE);
+    }
+    mvwaddch(w, y + height - 1, x, ACS_LLCORNER);
+    mvwhline(w, y + height - 1, x + 1, ACS_HLINE, width - 2);
+    mvwaddch(w, y + height - 1, x + width - 1, ACS_LRCORNER);
+    button_draw(w, y + height / 2, x + width / 2, 1, arrow, BUTTON_NORMAL, BUTTON_PANEL);
 }
 static void draw_centered(WINDOW *w, int row, int x, int width, const char *text)
 {
@@ -1835,6 +1873,7 @@ void media_view_draw(media_view *v)
         int image_width = v->layout.area_width;
         int label_x = v->layout.button_x + v->layout.button_width + 2;
         int label_end = v->info_open ? v->layout.info_x - 1 : v->layout.x + width - 2;
+        bool nav = nav_buttons(v) && v->layout.nav_width > 0;
         if (label_end > label_x) {
             char title[MESSAGE_MEDIA_LABEL + 32];
             if (v->member_count > 1) {
@@ -1853,6 +1892,13 @@ void media_view_draw(media_view *v)
                     : v->info_open  ? BUTTON_SELECTED
                                     : BUTTON_NORMAL,
                     BUTTON_PANEL);
+        if (nav) {
+            draw_nav_button(w, v->layout.nav_y - v->layout.y, v->layout.prev_x - v->layout.x,
+                            v->layout.nav_width, v->layout.nav_height, "⬅");
+            draw_nav_button(w, v->layout.nav_y - v->layout.y, v->layout.next_x - v->layout.x,
+                            v->layout.nav_width, v->layout.nav_height, "➡");
+            wattrset(w, COLOR_PAIR(THEME_PANEL));
+        }
         if (v->modal == MODAL_LOADING) {
             char loading[96];
             size_t available = 0, total = 0;
@@ -1876,9 +1922,11 @@ void media_view_draw(media_view *v)
                        v->modal_animated ? _("GIF animado") : _("Imagem"));
         if (v->modal != MODAL_ERROR) {
             char keys[160];
-            snprintf(keys, sizeof(keys), " %s ", modal_keys(v, image_width));
+            /* The side buttons narrow the picture area, not the key list. */
+            int keys_width = v->info_open ? v->layout.info_x - v->layout.x - 4 : width - 6;
+            snprintf(keys, sizeof(keys), " %s ", modal_keys(v, keys_width));
             wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
-            text_label(w, height - 1, 2, image_width, keys);
+            text_label(w, height - 1, 2, keys_width, keys);
         }
         draw_properties(v, w);
     }
