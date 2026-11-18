@@ -16,6 +16,10 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#ifndef MSG_NOSIGNAL
+#define MSG_NOSIGNAL 0 /* macOS has no such flag; native_copy sets SO_NOSIGPIPE on the socket. */
+#endif
+
 extern char **environ;
 static struct {
     char *data; /* Owned; wiped before it is freed. */
@@ -69,6 +73,11 @@ static bool native_copy(char *const arguments[])
         close(pair[1]);
         return false;
     }
+#ifdef SO_NOSIGPIPE
+    /* The writer may exit before it has read everything; that must not kill this program. */
+    int quiet = 1;
+    setsockopt(pair[0], SOL_SOCKET, SO_NOSIGPIPE, &quiet, sizeof(quiet));
+#endif
     posix_spawn_file_actions_t actions;
     if (posix_spawn_file_actions_init(&actions)) {
         close(pair[0]);

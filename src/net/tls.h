@@ -15,6 +15,7 @@ static inline const char *net_ca_bundle(void)
         "/etc/ssl/certs/ca-certificates.crt",
         "/etc/pki/tls/certs/ca-bundle.crt",
         "/etc/ssl/ca-bundle.pem",
+        "/etc/ssl/cert.pem", /* macOS */
     };
     for (size_t i = 0; i < G_N_ELEMENTS(paths); ++i)
         if (g_file_test(paths[i], G_FILE_TEST_IS_REGULAR))

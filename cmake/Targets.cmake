@@ -1,6 +1,8 @@
 if(WIN32)
     set(PAPO_PLATFORM windows)
 else()
+    # src/platform/linux holds the POSIX implementation, which macOS shares through #ifdef __APPLE__
+    # where the systems differ.
     set(PAPO_PLATFORM linux)
 endif()
 add_library(papo_platform src/platform/${PAPO_PLATFORM}/runtime.c src/platform/terminal_notify.c
@@ -111,7 +113,10 @@ target_compile_options(papo_desktop PRIVATE -Wall -Wextra -Wpedantic -Werror)
 if(PAPO_DESKTOP_NOTIFICATIONS AND GIO_FOUND)
     target_compile_definitions(papo_desktop PRIVATE HAVE_GIO)
     target_link_libraries(papo_desktop PRIVATE PkgConfig::GIO)
-    if(NOT WIN32)
+    if(APPLE)
+        # Raising the terminal is not implemented on macOS; the stub keeps the code shared.
+        target_sources(papo_desktop PRIVATE src/platform/macos/terminal_focus.c)
+    elseif(NOT WIN32)
         # Raises the terminal when a notification is clicked; XCB adds X11.
         target_sources(papo_desktop PRIVATE src/platform/linux/terminal_focus.c)
         if(XCB_FOUND)

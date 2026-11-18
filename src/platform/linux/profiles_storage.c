@@ -89,6 +89,14 @@ failed:
     error(config, _("Não foi possível abrir um diretório privado de configuração."));
     return -1;
 }
+#ifdef __APPLE__
+/* The same fields, under the names that macOS gives them. */
+#define MTIME_OF(status) ((status).st_mtimespec)
+#define CTIME_OF(status) ((status).st_ctimespec)
+#else
+#define MTIME_OF(status) ((status).st_mtim)
+#define CTIME_OF(status) ((status).st_ctim)
+#endif
 static bool unchanged(const profile_config *config)
 {
     struct stat current;
@@ -97,10 +105,10 @@ static bool unchanged(const profile_config *config)
     const struct stat *old = &config->revision;
     return config->existed && S_ISREG(current.st_mode) && current.st_dev == old->st_dev &&
            current.st_ino == old->st_ino && current.st_size == old->st_size &&
-           current.st_mtim.tv_sec == old->st_mtim.tv_sec &&
-           current.st_mtim.tv_nsec == old->st_mtim.tv_nsec &&
-           current.st_ctim.tv_sec == old->st_ctim.tv_sec &&
-           current.st_ctim.tv_nsec == old->st_ctim.tv_nsec;
+           MTIME_OF(current).tv_sec == MTIME_OF(*old).tv_sec &&
+           MTIME_OF(current).tv_nsec == MTIME_OF(*old).tv_nsec &&
+           CTIME_OF(current).tv_sec == CTIME_OF(*old).tv_sec &&
+           CTIME_OF(current).tv_nsec == CTIME_OF(*old).tv_nsec;
 }
 bool profiles_storage_open(profile_config *config)
 {

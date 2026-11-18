@@ -838,7 +838,8 @@ static gpointer worker(gpointer data)
             GDir *directory_handle = g_dir_open(plugins, 0, NULL);
             const char *name;
             while (directory_handle && (name = g_dir_read_name(directory_handle))) {
-                if (!g_str_has_suffix(name, ".so") && !g_str_has_suffix(name, ".dll"))
+                if (!g_str_has_suffix(name, ".so") && !g_str_has_suffix(name, ".dylib") &&
+                    !g_str_has_suffix(name, ".dll"))
                     continue;
                 char *path = g_build_filename(plugins, name, NULL);
                 GstPlugin *plugin = gst_plugin_load_file(path, NULL);

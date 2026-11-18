@@ -31,7 +31,7 @@ install(
 install(FILES README.md BUILD.md DESTINATION ${CMAKE_INSTALL_DOCDIR})
 install(FILES docs/usage.md docs/installation.md docs/builds.md
         DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)
-if(UNIX)
+if(UNIX AND NOT APPLE)
     install(FILES dist/io.github.prodesert22.PapoTUI.desktop
             DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
     install(FILES dist/io.github.prodesert22.PapoTUI.metainfo.xml
@@ -51,6 +51,12 @@ if(EXISTS "${PAPO_RESOURCE_DIR}/NotoColorEmoji.ttf")
         RENAME Noto-OFL.txt)
 endif()
 option(PAPO_BUNDLE_RUNTIME "Include non-system runtime libraries in the installation" OFF)
+if(PAPO_BUNDLE_RUNTIME AND APPLE)
+    message(
+        FATAL_ERROR
+            "The runtime bundle does not support macOS yet (Mach-O install names and code signing); "
+            "configure with -DPAPO_BUNDLE_RUNTIME=OFF")
+endif()
 if(PAPO_BUNDLE_RUNTIME AND PAPO_VOICE)
     pkg_get_variable(PAPO_GST_PLUGIN_DIR gstreamer-1.0 pluginsdir)
     set(voice_plugins
@@ -141,7 +147,9 @@ set(CPACK_RPM_PACKAGE_LICENSE MIT)
 set(CPACK_RPM_PACKAGE_GROUP "Applications/Internet")
 set(CPACK_RPM_PACKAGE_AUTOREQPROV ON)
 set(CPACK_RPM_PACKAGE_RECOMMENDS "google-noto-color-emoji-fonts")
-if(PAPO_BUNDLE_RUNTIME AND UNIX)
+if(PAPO_BUNDLE_RUNTIME
+   AND UNIX
+   AND NOT APPLE)
     execute_process(
         COMMAND getconf GNU_LIBC_VERSION
         OUTPUT_VARIABLE PAPO_GLIBC

@@ -40,10 +40,15 @@ if(WIN32)
 else()
     pkg_check_modules(GIO REQUIRED IMPORTED_TARGET gio-2.0>=2.66)
 endif()
-if(PAPO_DESKTOP_SESSIONS AND NOT WIN32)
+# macOS has neither the Secret Service nor X11: its desktop integration is separate.
+if(PAPO_DESKTOP_SESSIONS
+   AND NOT WIN32
+   AND NOT APPLE)
     pkg_check_modules(SECRET QUIET IMPORTED_TARGET libsecret-1>=0.20)
 endif()
-if(PAPO_DESKTOP_NOTIFICATIONS AND NOT WIN32)
+if(PAPO_DESKTOP_NOTIFICATIONS
+   AND NOT WIN32
+   AND NOT APPLE)
     # Optional: activates the terminal window on X11 after a notification click.
     pkg_check_modules(XCB QUIET IMPORTED_TARGET xcb>=1.6)
 endif()

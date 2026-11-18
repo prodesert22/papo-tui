@@ -130,6 +130,20 @@ static void print_help(void)
     g_string_free(help, true);
 }
 
+/* Applies the locale the terminal asks for. macOS has no C.UTF-8, which a session inherited over
+ * SSH from Linux may name; its own UTF-8 locales then stand in, so that wide characters work. */
+static bool select_locale(const char *requested)
+{
+    if (setlocale(LC_ALL, requested))
+        return true;
+#ifdef __APPLE__
+    static const char *const fallbacks[] = {"en_US.UTF-8", "UTF-8"};
+    for (size_t i = 0; i < sizeof(fallbacks) / sizeof(fallbacks[0]); ++i)
+        if (setlocale(LC_ALL, fallbacks[i]))
+            return true;
+#endif
+    return false;
+}
 int main(int argc, char **argv)
 {
     if (argc == 2 && strcmp(argv[1], "--version") == 0) {
@@ -157,7 +171,7 @@ int main(int argc, char **argv)
     const char *locale = "";
 #endif
     /* libmpv requires C numeric formatting; preserve the terminal's UTF-8 locale. */
-    if (!setlocale(LC_ALL, locale) || !setlocale(LC_NUMERIC, "C")) {
+    if (!select_locale(locale) || !setlocale(LC_NUMERIC, "C")) {
         fputs(_("Não foi possível inicializar a localidade do terminal.\n"), stderr);
         return 1;
     }

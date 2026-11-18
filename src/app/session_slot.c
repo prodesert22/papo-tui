@@ -721,9 +721,15 @@ static int scope_directory(const profile_config *configuration, char scope[65])
         !S_ISDIR(config.st_mode) || (config.st_mode & 07777) != 0700)
         return -1;
 #ifdef HAVE_GIO
-    char descriptor[64], path[4096];
+    char path[4096];
+#ifdef __APPLE__
+    /* There is no /proc: the kernel names the directory that the descriptor holds. */
+    ssize_t n = fcntl(config_directory, F_GETPATH, path) < 0 ? -1 : (ssize_t)strlen(path);
+#else
+    char descriptor[64];
     snprintf(descriptor, sizeof(descriptor), "/proc/self/fd/%d", config_directory);
     ssize_t n = readlink(descriptor, path, sizeof(path) - 1);
+#endif
     if (n <= 0 || n >= (ssize_t)sizeof(path) - 1)
         return -1;
     path[n] = 0;

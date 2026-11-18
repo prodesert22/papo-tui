@@ -14,7 +14,14 @@ set(PAPO_PACKAGE_VERSION
     "${PAPO_PACKAGE_VERSION}"
     CACHE INTERNAL "Version in package names and --version")
 include(GNUInstallDirs)
-if(UNIX)
+if(APPLE)
+    # dyld has no $ORIGIN: @loader_path is the folder of the file that holds the reference.
+    set(CMAKE_INSTALL_RPATH
+        "@loader_path/../${CMAKE_INSTALL_LIBDIR}/papo-tui;@loader_path/../../${CMAKE_INSTALL_LIBDIR}/papo-tui"
+    )
+    # The macOS headers hide everything beyond POSIX once a source selects _POSIX_C_SOURCE.
+    add_compile_definitions(_DARWIN_C_SOURCE)
+elseif(UNIX)
     set(CMAKE_INSTALL_RPATH
         "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}/papo-tui;$ORIGIN/../../${CMAKE_INSTALL_LIBDIR}/papo-tui"
     )
