@@ -29,11 +29,11 @@ typedef struct {
     uint64_t size;
 } update_asset;
 
-/* The request that answers "what is the newest release a build of this version
- * may move to": a final version asks for the latest final release, a
- * pre-release lists the newest releases of any kind. PAPO_UPDATE_API_URL
- * replaces the repository endpoint, for tests. list reports which form it is. */
-bool update_request_url(const app_version *current, char *url, size_t size, bool *list);
+/* The request that answers "what is the newest release this copy may move
+ * to": the latest final release, or, when pre-releases are accepted, the list
+ * of the newest releases of any kind. PAPO_UPDATE_API_URL replaces the
+ * repository endpoint, for tests. */
+bool update_request_url(bool prereleases, char *url, size_t size);
 /* The request headers GitHub documents for this API. */
 extern const char *const update_request_headers[];
 extern const size_t update_request_header_count;

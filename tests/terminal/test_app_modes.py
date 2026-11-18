@@ -466,9 +466,7 @@ class AppModes(unittest.TestCase):
                 # apart from the one of the label above it.
                 self.wait(
                     t,
-                    lambda: any(
-                        "▶" in line and "Fixture" not in line for line in t.screen.display
-                    ),
+                    lambda: any("▶" in line and "Fixture" not in line for line in t.screen.display),
                 )
                 t.send("rascunho do vídeo\x1b\ue00a\n")
                 self.helper.wait(t, "Reproduzindo")
@@ -1239,7 +1237,7 @@ class AppModes(unittest.TestCase):
                 self.assertEqual(json.loads(self.config.read_text(encoding="utf-8"))["version"], 1)
                 t.resize(24, 80)
                 self.choose(t, "ultralight")
-                self.assertEqual(json.loads(self.config.read_text(encoding="utf-8"))["version"], 14)
+                self.assertEqual(json.loads(self.config.read_text(encoding="utf-8"))["version"], 15)
             finally:
                 self.assertTrue(t.close())
 

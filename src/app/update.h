@@ -24,10 +24,15 @@ typedef enum {
  * the answer is about the program, not about a server or an account. Reads
  * the stored result of the last check. With automatic set, a check runs soon
  * after start when the last one is a day old, and then once a day; development
- * builds, and runs with PAPO_UPDATE_CHECK=0, only check on request. */
-void update_init(bool automatic);
+ * builds, and runs with PAPO_UPDATE_CHECK=0, only check on request. Only
+ * final releases count unless prereleases is set. */
+void update_init(bool automatic, bool prereleases);
 void update_shutdown(void);
 void update_set_automatic(bool automatic);
+/* Changes whether pre-releases count. What was known, and any download of it,
+ * answered the other question: both are dropped and a check follows shortly,
+ * when checks run by themselves. */
+void update_set_prereleases(bool accepted);
 /* Drives the schedule and the request; true when what a screen shows changed. */
 bool update_poll(void);
 /* Starts a check on request; false while one runs or within a minute of the

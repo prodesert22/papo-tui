@@ -1721,7 +1721,7 @@ int login_run_profiles(bool open_profiles, bool allow_local_http)
     accessibility_set(&config->accessibility);
     accessibility_config access = accessibility_get();
     theme_set_access(&access);
-    update_init(config->update_check);
+    update_init(config->update_check, config->update_prereleases);
     connections->sessions = session_store_create(config, !open_profiles);
     connections->config = config;
     interrupted = 0;

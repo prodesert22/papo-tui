@@ -159,6 +159,8 @@ int main(int argc, char **argv)
         ok = profiles_set_sounds(config, strcmp(argv[2], "true") == 0);
     else if (strcmp(mode, "update-check") == 0 && argc == 3)
         ok = profiles_set_update_check(config, strcmp(argv[2], "true") == 0);
+    else if (strcmp(mode, "update-prereleases") == 0 && argc == 3)
+        ok = profiles_set_update_prereleases(config, strcmp(argv[2], "true") == 0);
     else if (strcmp(mode, "accessibility") == 0 && argc == 3) {
         json_error_t error;
         json_t *object = json_loads(argv[2], 0, &error);
@@ -246,6 +248,8 @@ int main(int argc, char **argv)
         json_object_set_new(result, "accessibility", accessibility_encode(&config->accessibility));
     if (result)
         json_object_set_new(result, "update_check", json_boolean(config->update_check));
+    if (result)
+        json_object_set_new(result, "update_prereleases", json_boolean(config->update_prereleases));
     static const char *const states[] = {"ready", "newer", "invalid", "unreadable", "no-directory"};
     if (result)
         json_object_set_new(result, "file_state", json_string(states[config->file_state]));

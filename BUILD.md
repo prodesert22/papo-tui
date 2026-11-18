@@ -466,6 +466,11 @@ assertions hold on hosts with any locale.
 
 ### Update check
 
+A copy asks for `/releases/latest`, which GitHub answers with the newest final
+release, unless **Aceitar versões beta** is on in Sobre; it then lists the
+newest releases of any kind and takes the highest version. The answer is
+stored with the choice it was for, so changing the choice asks again.
+
 `PAPO_UPDATE_API_URL` replaces the GitHub endpoint
 (`https://api.github.com/repos/prodesert22/papo-tui`) with a stand-in, which
 must also be served over HTTPS; a development build, which otherwise checks

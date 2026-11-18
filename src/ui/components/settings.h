@@ -105,7 +105,7 @@ typedef struct {
     /* Sobre: the lines drawn, whether a link copy was just requested and this
      * device's switch of the daily update check. */
     about_view about;
-    bool about_copied, update_check;
+    bool about_copied, update_check, update_prereleases;
     bool quit; /* Taken by the view: leave the program to put the newer version in place. */
 } app_settings;
 void settings_open(app_settings *settings, const profile_config *config, voice_client *voice,

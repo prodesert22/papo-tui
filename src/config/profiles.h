@@ -23,7 +23,7 @@ typedef struct {
 } server_profile;
 
 /* Newest format of the configuration file: the one written, and the last one read. */
-#define PROFILE_FILE_VERSION 14
+#define PROFILE_FILE_VERSION 15
 /* How the last load found the configuration file. Only PROFILE_FILE_READY may be saved over. */
 typedef enum {
     PROFILE_FILE_READY,       /* Loaded, or absent until the first save. */
@@ -49,6 +49,8 @@ typedef struct profile_config {
     int player_volume;
     /* This device asks GitHub for a newer release by itself, once a day. */
     bool update_check;
+    /* Pre-releases (alpha, beta, release candidates) are offered too. */
+    bool update_prereleases;
     audio_config audio;
     /* Command keys that differ from the defaults (config/keymap.h). */
     keymap_overrides shortcuts;
@@ -93,5 +95,6 @@ bool profiles_set_rate(profile_config *config, double requests_per_second, unsig
 bool profiles_set_notifications(profile_config *config, bool desktop, bool preview);
 bool profiles_set_sounds(profile_config *config, bool sounds);
 bool profiles_set_update_check(profile_config *config, bool automatic);
+bool profiles_set_update_prereleases(profile_config *config, bool accepted);
 
 #endif

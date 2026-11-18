@@ -149,7 +149,8 @@ static bool decode(profile_config *config, json_t *root)
                                        : version == 9  ? 13U
                                        : version == 10 ? 14U
                                        : version <= 13 ? 15U
-                                                       : 16U) ||
+                                       : version == 14 ? 16U
+                                                       : 17U) ||
             !json_is_number(rate) || !json_is_integer(burst) || json_integer_value(burst) <= 0 ||
             json_integer_value(burst) > UINT_MAX ||
             !net_rate_parameters_valid(json_number_value(rate),
@@ -206,6 +207,12 @@ static bool decode(profile_config *config, json_t *root)
         if (!json_is_boolean(update))
             return false;
         config->update_check = json_is_true(update);
+    }
+    if (version >= 15) {
+        json_t *prereleases = json_object_get(root, "update_prereleases");
+        if (!json_is_boolean(prereleases))
+            return false;
+        config->update_prereleases = json_is_true(prereleases);
     }
     json_t *array = json_object_get(root, "profiles");
     json_t *selected = json_object_get(root, "selected_profile");
@@ -356,7 +363,7 @@ static bool save_locked(profile_config *config)
     json_t *selection = *config->selected ? json_string(config->selected) : json_null();
     json_t *root =
         selection
-            ? json_pack("{s:i,s:O,s:O,s:f,s:I,s:b,s:b,s:b,s:s,s:s,s:b,s:i,s:b}", "version",
+            ? json_pack("{s:i,s:O,s:O,s:f,s:I,s:b,s:b,s:b,s:s,s:s,s:b,s:i,s:b,s:b}", "version",
                         PROFILE_FILE_VERSION, "profiles", array, "selected_profile", selection,
                         "requests_per_second", config->requests_per_second, "request_burst",
                         (json_int_t)config->request_burst, "desktop_notifications",
@@ -365,7 +372,8 @@ static bool save_locked(profile_config *config)
                         config->notification_sounds, "app_mode", app_mode_name(config->mode),
                         "language", language_choice_name(config->language), "members_by_status",
                         config->members_by_status, "player_volume",
-                        (json_int_t)config->player_volume, "update_check", config->update_check)
+                        (json_int_t)config->player_volume, "update_check", config->update_check,
+                        "update_prereleases", config->update_prereleases)
             : NULL;
     json_decref(selection);
     json_decref(array);
@@ -554,6 +562,14 @@ bool profiles_set_update_check(profile_config *config, bool automatic)
     if (!copy)
         return false;
     copy->update_check = automatic;
+    return commit(config, copy);
+}
+bool profiles_set_update_prereleases(profile_config *config, bool accepted)
+{
+    profile_config *copy = candidate(config);
+    if (!copy)
+        return false;
+    copy->update_prereleases = accepted;
     return commit(config, copy);
 }
 

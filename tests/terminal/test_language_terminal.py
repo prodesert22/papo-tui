@@ -179,7 +179,7 @@ class LanguageTerminal(unittest.TestCase):
             self.wait(t, str(config))
             self.wait(t, "Bloqueado: foi gravado por uma versão mais nova do Papo TUI")
             # Wrapped between words: the formats are on the next row.
-            self.wait(t, "9000; esta lê até o 14).")
+            self.wait(t, "9000; esta lê até o 15).")
             self.assertNotIn("corrompido", self.screen(t))
             self.assertEqual(config.read_text("utf-8"), newer)
 

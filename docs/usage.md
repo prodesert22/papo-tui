@@ -1854,8 +1854,8 @@ seconds after it starts, when the last answer is at least a day old, and then
 every 24 hours while it stays open. The request goes to `api.github.com`,
 outside any chat server: it carries no cookie and nothing about your accounts,
 only the program's version, and GitHub sees your network address as any site
-you visit does. A final version is told about final versions only; a
-pre-release, such as a beta, is told about newer pre-releases too.
+you visit does. Only final versions are offered, unless you turn on
+[**Aceitar versões beta**](#accept-beta-versions).
 
 When there is a newer version:
 
@@ -1978,8 +1978,25 @@ click changes it and the change is saved at once for this device. With it off,
 nothing is asked until you select **Verificar agora** (Check now), which asks
 right away. Two requests are at least a minute apart: sooner than that the
 button answers **Aguarde um minuto antes de verificar de novo.** (Wait a minute
-before checking again). Below the switch, **Você está na versão mais
+before checking again). Below the switches, **Você está na versão mais
 recente.** (You are on the latest version) reports the last answer.
+
+### Accept beta versions
+
+**[ ] Aceitar versões beta** (Accept beta versions), below that switch, is off
+when the program is installed: you are told about final versions only, even
+when the copy you run is itself a beta. Turn it on, with Space, Enter or a
+click, to be offered pre-releases too: alpha and beta versions and release
+candidates, which arrive earlier and are less tested. The newest version of
+any kind is then the one offered, so a final version still replaces the
+pre-releases that led to it.
+
+The change is saved at once for this device, and the program asks GitHub again
+a moment later, because the answer it had was for the other choice; a download
+in progress is cancelled. Turning the switch off never takes you back to an
+older version: when the pre-release you run is newer than the latest final
+version, **Sobre** says you are on the latest version until a newer final one
+is published.
 
 To keep a run from asking by itself whatever the saved switch says, for example
 before you ever sign in, start the program with `PAPO_UPDATE_CHECK=0`. A copy

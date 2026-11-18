@@ -40,9 +40,8 @@ static update_parse parse_file(const char *path, bool prereleases, char text[APP
 int main(int argc, char **argv)
 {
     char text[APP_VERSION_TEXT], url[UPDATE_URL_BYTES];
-    app_version latest, beta, final;
+    app_version latest, final;
     update_asset asset;
-    bool list = false;
     CHECK(argc == 3);
 
     /* Real answers: the newest release is a pre-release, the latest final is older. */
@@ -228,19 +227,18 @@ int main(int argc, char **argv)
     CHECK(!update_redirect_allowed("https://github.com/a/b", NULL));
     CHECK(!update_redirect_allowed("http://127.0.0.1:9443/elsewhere", NULL));
 
-    /* A final build asks for the latest final release; a pre-release lists them. */
-    CHECK(app_version_parse("1.0.0-beta.2", &beta) && app_version_parse("1.0.0", &final));
+    /* Only final releases are asked for, unless pre-releases are accepted. */
     g_unsetenv("PAPO_UPDATE_API_URL");
-    CHECK(update_request_url(&beta, url, sizeof(url), &list) && list);
+    CHECK(update_request_url(true, url, sizeof(url)));
     CHECK(!strcmp(url, "https://api.github.com/repos/prodesert22/papo-tui/releases?per_page=5"));
-    CHECK(update_request_url(&final, url, sizeof(url), &list) && !list);
+    CHECK(update_request_url(false, url, sizeof(url)));
     CHECK(!strcmp(url, "https://api.github.com/repos/prodesert22/papo-tui/releases/latest"));
     g_setenv("PAPO_UPDATE_API_URL", "https://127.0.0.1:9/fake", TRUE);
-    CHECK(update_request_url(&beta, url, sizeof(url), &list) && list);
+    CHECK(update_request_url(true, url, sizeof(url)));
     CHECK(!strcmp(url, "https://127.0.0.1:9/fake/releases?per_page=5"));
-    CHECK(!update_request_url(&final, url, 16, &list));
+    CHECK(!update_request_url(false, url, 16));
     g_setenv("PAPO_UPDATE_API_URL", "", TRUE);
-    CHECK(update_request_url(&final, url, sizeof(url), &list));
+    CHECK(update_request_url(false, url, sizeof(url)));
     CHECK(!strcmp(url, "https://api.github.com/repos/prodesert22/papo-tui/releases/latest"));
     return 0;
 }

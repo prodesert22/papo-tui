@@ -11,10 +11,11 @@ from mock_server import MockServer
 from settings_mock import SettingsMock
 from terminal_support import Terminal
 from update_mock import release, update_mock
-from update_terminal import DOWN, RIGHT, UpdateSuite
+from update_terminal import DOWN, LATEST, LIST, RIGHT, UpdateSuite
 
 RELEASE_PAGE = "https://github.com/prodesert22/papo-tui/releases/tag/v"
 SWITCH = "Verificar atualizações automaticamente"
+BETA = "Aceitar versões beta"
 
 
 class UpdateTerminal(UpdateSuite):
@@ -49,8 +50,9 @@ class UpdateTerminal(UpdateSuite):
             self.wait(t, RELEASE_PAGE + "99.0.0")
             self.wait(t, "Verificar agora")
             self.dump(t, "update-available")
-            # Tab enters the lines on the source link; the release page is two below.
-            t.send("\t" + DOWN + DOWN + "\n")
+            # Tab enters the lines on the source link; the release page is three below,
+            # after the two switches.
+            t.send("\t" + DOWN * 3 + "\n")
             self.wait(t, "Cópia solicitada.")
             self.assertEqual(self.copies(t), [RELEASE_PAGE + "99.0.0"])
             t.send("\x1b")
@@ -108,7 +110,7 @@ class UpdateTerminal(UpdateSuite):
             self.wait(t, "[ ] " + SWITCH)
             with open(config, encoding="utf-8") as f:
                 saved = json.load(f)
-            self.assertEqual((saved["version"], saved["update_check"]), (14, False))
+            self.assertEqual((saved["version"], saved["update_check"]), (15, False))
             # A click toggles it too, and each change is saved at once.
             self.click(t, SWITCH)
             self.wait(t, "[x] " + SWITCH)
@@ -138,6 +140,97 @@ class UpdateTerminal(UpdateSuite):
             self.calls(hub, 2)
             self.wait(t, "Você está na versão mais recente.")
             self.paths(hub)
+
+    def test_beta_versions_are_offered_only_after_the_switch_is_turned_on(self):
+        with SettingsMock() as server, update_mock() as hub:
+            hub.answer = [
+                release("v99.1.0-rc.1"),
+                release("v99.1.0-beta.2"),
+                release("v99.0.0"),
+                release("v0.5.0"),
+            ]
+            t = self.login(server, environment=hub.environment)
+            self.wait(t, "Mensagem 0001")
+            self.calls(hub, 1)
+            self.open_sobre(t)
+            # Off as the program comes: only final versions are asked for.
+            self.wait(t, "[ ] " + BETA)
+            self.wait(t, "Versão 99.0.0 disponível.")
+            self.assertEqual(hub.calls, [(LATEST, None)])
+            self.assertNotIn("99.1.0", self.text(t))
+            # Two lines below the source link; turning it on asks again, this
+            # time for the newest release of any kind.
+            t.send("\t" + DOWN * 2 + " ")
+            self.wait(t, "[x] " + BETA)
+            self.calls(hub, 2)
+            self.assertEqual(hub.calls[1], (LIST, None))
+            self.wait(t, "Versão 99.1.0-rc.1 disponível.")
+            self.wait(t, RELEASE_PAGE + "99.1.0-rc.1")
+            self.dump(t, "update-beta")
+            with open(os.path.join(t.configuration.name, "papo-tui", "config.json")) as f:
+                saved = json.load(f)
+            self.assertEqual((saved["version"], saved["update_prereleases"]), (15, True))
+            with open(self.state_file(t), encoding="utf-8") as f:
+                stored = json.load(f)["contexts"][0]
+            self.assertEqual((stored["latest"], stored["prereleases"]), ("99.1.0-rc.1", True))
+            # Off again: the pre-release is forgotten and the final one is back.
+            self.click(t, BETA)
+            self.wait(t, "[ ] " + BETA)
+            self.calls(hub, 3)
+            self.assertEqual(hub.calls[2], (LATEST, None))
+            self.wait(t, "Versão 99.0.0 disponível.")
+            self.assertNotIn("99.1.0", self.text(t))
+            with open(os.path.join(t.configuration.name, "papo-tui", "config.json")) as f:
+                self.assertFalse(json.load(f)["update_prereleases"])
+
+    def test_beta_switch_is_remembered_and_an_answer_for_the_other_choice_is_not_used(self):
+        root = tempfile.TemporaryDirectory(prefix="papo-update-beta-")
+        self.addCleanup(root.cleanup)
+        with SettingsMock() as server, update_mock() as hub:
+            hub.answer = [release("v99.1.0-beta.1"), release("v99.0.0")]
+            environment = dict(
+                hub.environment,
+                XDG_CONFIG_HOME=root.name,
+                XDG_STATE_HOME=os.path.join(root.name, "state"),
+            )
+            t = self.login(server, environment=environment)
+            self.wait(t, "Mensagem 0001")
+            self.calls(hub, 1)
+            self.open_sobre(t)
+            self.wait(t, "Versão 99.0.0 disponível.")
+            t.send("\t" + DOWN * 2 + " ")
+            self.wait(t, "Versão 99.1.0-beta.1 disponível.")
+            self.calls(hub, 2)
+            self.assertTrue(t.close())
+            # The next run starts with the switch on and the stored answer,
+            # fresh and for this choice: nothing is asked again.
+            t = Terminal(environment=environment)
+            self.addCleanup(t.close)
+            self.wait(t, server.url)
+            self.wait(t, "Versão 99.1.0-beta.1")
+            t.send("josé\tSynthetic!123\n")
+            self.wait(t, "[Canais]")
+            self.wait(t, "Mensagem 0001")
+            self.quiet(t, hub, 2, 4)
+            self.open_sobre(t)
+            self.wait(t, "[x] " + BETA)
+            self.wait(t, "Versão 99.1.0-beta.1 disponível.")
+            self.assertTrue(t.close())
+            # Turned off by hand in the file: the stored answer was for the
+            # other choice, so the program asks again instead of offering it.
+            config = os.path.join(root.name, "papo-tui", "config.json")
+            with open(config, encoding="utf-8") as f:
+                saved = json.load(f)
+            saved["update_prereleases"] = False
+            with open(config, "w", encoding="utf-8") as f:
+                json.dump(saved, f)
+            t = Terminal(environment=environment)
+            self.addCleanup(t.close)
+            self.wait(t, server.url)
+            self.calls(hub, 3)
+            self.assertEqual(hub.calls[2], (LATEST, None))
+            self.wait(t, "Versão 99.0.0")
+            self.assertNotIn("99.1.0", self.text(t))
 
     def test_environment_switch_keeps_the_run_from_checking_by_itself(self):
         with SettingsMock() as server, update_mock() as hub:

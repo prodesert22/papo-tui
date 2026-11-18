@@ -25,6 +25,7 @@ enum {
     LINE_NOTICES,
     LINE_NOTICES_PATH,
     LINE_CHECK,
+    LINE_BETA,
     LINE_STATUS,
     LINE_RELEASE,
     LINE_SAVED,
@@ -35,8 +36,8 @@ enum {
 /* What a short area gives up first; the version always stays. */
 static const int drop_order[] = {LINE_NOTICES_PATH,  LINE_NOTICES, LINE_SPACER,  LINE_SUBTITLE,
                                  LINE_AUTHOR,        LINE_LICENSE, LINE_RELEASE, LINE_SAVED,
-                                 LINE_COMMAND_LABEL, LINE_STATUS,  LINE_CHECK,   LINE_COMMAND,
-                                 LINE_SOURCE};
+                                 LINE_COMMAND_LABEL, LINE_BETA,    LINE_STATUS,  LINE_CHECK,
+                                 LINE_COMMAND,       LINE_SOURCE};
 
 /* Packages install the notices under the installation prefix; a build tree
  * has none. */
@@ -219,7 +220,7 @@ static void item_attributes(const about_view *view, WINDOW *window, about_item i
 }
 
 void about_draw(about_view *view, WINDOW *window, int top, int left, int width, int rows,
-                bool focused, bool automatic)
+                bool focused, bool automatic, bool prereleases)
 {
     for (int i = 0; i < ABOUT_ITEMS; ++i)
         view->rows[i] = -1;
@@ -303,6 +304,12 @@ void about_draw(about_view *view, WINDOW *window, int top, int left, int width, 
             text_label(window, row, left, width, line);
             view->rows[ABOUT_CHECK] = row;
             break;
+        case LINE_BETA:
+            item_attributes(view, window, ABOUT_BETA, focused);
+            snprintf(line, sizeof(line), _("[%c] Aceitar versões beta"), prereleases ? 'x' : ' ');
+            text_label(window, row, left, width, line);
+            view->rows[ABOUT_BETA] = row;
+            break;
         case LINE_STATUS:
             wattrset(window, COLOR_PAIR(status_text(line, sizeof(line))));
             text_label(window, row, left, width, line);
@@ -343,6 +350,7 @@ static about_action action_of(int item)
 {
     return item == ABOUT_SOURCE    ? ABOUT_COPY_SOURCE
            : item == ABOUT_CHECK   ? ABOUT_TOGGLE_CHECK
+           : item == ABOUT_BETA    ? ABOUT_TOGGLE_BETA
            : item == ABOUT_RELEASE ? ABOUT_COPY_RELEASE
                                    : ABOUT_COPY_COMMAND;
 }

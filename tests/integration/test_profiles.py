@@ -75,7 +75,7 @@ class ProfilesTests(unittest.TestCase):
                 self.assertEqual(self.probe("list")["app_mode"], "normal")
                 self.assertTrue(self.probe("mode", "light")["ok"])
                 saved = json.loads(self.path.read_text(encoding="utf-8"))
-                self.assertEqual((saved["version"], saved["app_mode"]), (14, "light"))
+                self.assertEqual((saved["version"], saved["app_mode"]), (15, "light"))
                 self.assertEqual(saved["request_burst"], 7 if version >= 2 else 25)
                 self.assertEqual(saved["player_volume"], 50)
                 self.assertEqual(self.probe("list")["app_mode"], "light")
@@ -89,7 +89,7 @@ class ProfilesTests(unittest.TestCase):
         self.assertTrue(self.probe("volume", "80")["ok"])
         self.assertEqual(self.probe("list")["player_volume"], 80)
         saved = json.loads(self.path.read_text())
-        self.assertEqual((saved["version"], saved["player_volume"]), (14, 80))
+        self.assertEqual((saved["version"], saved["player_volume"]), (15, 80))
         self.assertTrue(self.probe("volume", "0")["ok"])
         self.assertTrue(self.probe("volume", "100")["ok"])
         self.assertEqual(self.probe("list")["player_volume"], 100)
@@ -165,6 +165,7 @@ class ProfilesTests(unittest.TestCase):
                 "app_mode",
                 "language",
                 "update_check",
+                "update_prereleases",
                 "members_by_status",
                 "player_volume",
                 "audio",
@@ -239,7 +240,7 @@ class ProfilesTests(unittest.TestCase):
         self.assertEqual(self.probe("list")["requests_per_second"], 10)
         self.assertEqual(self.path.read_bytes(), before)
         self.assertTrue(self.probe("rate", "2.5", "3")["ok"])
-        self.assertEqual(json.loads(self.path.read_text(encoding="utf-8"))["version"], 14)
+        self.assertEqual(json.loads(self.path.read_text(encoding="utf-8"))["version"], 15)
         restored = self.probe("list")
         self.assertEqual(
             (restored["requests_per_second"], restored["request_burst"], restored["selected"]),
@@ -275,7 +276,7 @@ class ProfilesTests(unittest.TestCase):
         self.assertFalse(loaded["desktop_notifications"])
         self.assertFalse(loaded["notification_preview"])
         valid = json.loads(self.path.read_text(encoding="utf-8"))
-        self.assertEqual(valid["version"], 14)
+        self.assertEqual(valid["version"], 15)
         valid["notification_preview"] = "false"
         self.seed(valid)
         before = self.path.read_bytes()
@@ -289,7 +290,7 @@ class ProfilesTests(unittest.TestCase):
         self.assertTrue(self.probe("list")["notification_sounds"])
         self.assertTrue(self.probe("sounds", "false")["ok"])
         saved = json.loads(self.path.read_text(encoding="utf-8"))
-        self.assertEqual((saved["version"], saved["notification_sounds"]), (14, False))
+        self.assertEqual((saved["version"], saved["notification_sounds"]), (15, False))
         self.assertFalse(self.probe("list")["notification_sounds"])
         legacy = dict(saved, version=7)
         for key in (
@@ -298,6 +299,7 @@ class ProfilesTests(unittest.TestCase):
             "shortcuts",
             "accessibility",
             "update_check",
+            "update_prereleases",
         ):
             del legacy[key]
         self.seed(legacy)
@@ -320,7 +322,7 @@ class ProfilesTests(unittest.TestCase):
         self.assertEqual(self.probe("list")["language"], "system")
         self.assertTrue(self.probe("language", "en")["ok"])
         saved = json.loads(self.path.read_text(encoding="utf-8"))
-        self.assertEqual((saved["version"], saved["language"]), (14, "en"))
+        self.assertEqual((saved["version"], saved["language"]), (15, "en"))
         self.assertEqual(self.probe("list")["language"], "en")
         self.assertTrue(self.probe("language", "pt")["ok"])
         self.assertEqual(self.probe("list")["language"], "pt")
@@ -330,7 +332,8 @@ class ProfilesTests(unittest.TestCase):
         legacy = {
             k: v
             for k, v in saved.items()
-            if k not in ("language", "shortcuts", "accessibility", "update_check")
+            if k
+            not in ("language", "shortcuts", "accessibility", "update_check", "update_prereleases")
         }
         self.seed(dict(legacy, version=8))
         self.assertEqual(self.probe("list")["language"], "system")
@@ -354,7 +357,7 @@ class ProfilesTests(unittest.TestCase):
         }
         self.assertTrue(self.probe("shortcuts", json.dumps(changed))["ok"])
         saved = json.loads(self.path.read_text(encoding="utf-8"))
-        self.assertEqual((saved["version"], saved["shortcuts"]), (14, changed))
+        self.assertEqual((saved["version"], saved["shortcuts"]), (15, changed))
         self.assertEqual(self.probe("list")["shortcuts"], changed)
         # Another setting keeps them, including the id this version does not know.
         self.assertTrue(self.probe("sounds", "false")["ok"])
@@ -362,7 +365,7 @@ class ProfilesTests(unittest.TestCase):
         legacy = {
             k: v
             for k, v in saved.items()
-            if k not in ("shortcuts", "accessibility", "update_check")
+            if k not in ("shortcuts", "accessibility", "update_check", "update_prereleases")
         }
         self.seed(dict(legacy, version=9))
         self.assertEqual(self.probe("list")["shortcuts"], {})
@@ -415,10 +418,10 @@ class ProfilesTests(unittest.TestCase):
         }
         self.assertTrue(self.probe("accessibility", json.dumps(chosen))["ok"])
         saved = json.loads(self.path.read_text(encoding="utf-8"))
-        self.assertEqual((saved["version"], saved["accessibility"]), (14, chosen))
+        self.assertEqual((saved["version"], saved["accessibility"]), (15, chosen))
         self.assertEqual(self.probe("list")["accessibility"], chosen)
-        # Files before version 14 have no update switch either.
-        older = {k: v for k, v in saved.items() if k != "update_check"}
+        # Files before version 14 have no update switches either.
+        older = {k: v for k, v in saved.items() if k not in ("update_check", "update_prereleases")}
         legacy = {k: v for k, v in older.items() if k != "accessibility"}
         self.seed(dict(legacy, version=10))
         self.assertEqual(self.probe("list")["accessibility"], defaults)
@@ -459,13 +462,14 @@ class ProfilesTests(unittest.TestCase):
         self.assertTrue(self.probe("list")["update_check"])
         self.assertTrue(self.probe("update-check", "false")["ok"])
         saved = json.loads(self.path.read_text(encoding="utf-8"))
-        self.assertEqual((saved["version"], saved["update_check"]), (14, False))
+        self.assertEqual((saved["version"], saved["update_check"]), (15, False))
         self.assertFalse(self.probe("list")["update_check"])
-        legacy = {k: v for k, v in saved.items() if k != "update_check"}
+        legacy = {k: v for k, v in saved.items() if k not in ("update_check", "update_prereleases")}
         self.seed(dict(legacy, version=13))
         self.assertTrue(self.probe("list")["update_check"])
         self.assertTrue(self.probe("update-check", "true")["ok"])
         self.assertTrue(json.loads(self.path.read_text(encoding="utf-8"))["update_check"])
+        legacy = {k: v for k, v in saved.items() if k != "update_check"}
         # Files from version 14 on must carry the switch, as a boolean.
         for broken in (legacy, dict(saved, update_check="false"), dict(saved, update_check=1)):
             with self.subTest(broken=broken.get("update_check")):
@@ -473,6 +477,38 @@ class ProfilesTests(unittest.TestCase):
                 before = self.path.read_bytes()
                 self.assertFalse(self.probe("list")["writable"])
                 self.assertFalse(self.probe("update-check", "true")["ok"])
+                self.assertEqual(before, self.path.read_bytes())
+
+    def test_prereleases_default_off_migrate_and_reject_invalid_values(self):
+        # Files before version 15 have no switch: only final versions are offered.
+        self.seed(self.configuration())
+        self.assertFalse(self.probe("list")["update_prereleases"])
+        self.assertTrue(self.probe("update-prereleases", "true")["ok"])
+        saved = json.loads(self.path.read_text(encoding="utf-8"))
+        self.assertEqual((saved["version"], saved["update_prereleases"]), (15, True))
+        self.assertTrue(self.probe("list")["update_prereleases"])
+        # Another preference keeps it, and a version 14 file gains it turned off.
+        self.assertTrue(self.probe("update-check", "false")["ok"])
+        self.assertTrue(self.probe("list")["update_prereleases"])
+        legacy = {k: v for k, v in saved.items() if k != "update_prereleases"}
+        self.seed(dict(legacy, version=14))
+        listed = self.probe("list")
+        self.assertTrue(listed["writable"])
+        self.assertFalse(listed["update_prereleases"])
+        self.assertTrue(self.probe("update-prereleases", "false")["ok"])
+        upgraded = json.loads(self.path.read_text(encoding="utf-8"))
+        self.assertEqual((upgraded["version"], upgraded["update_prereleases"]), (15, False))
+        # Files from version 15 on must carry the switch, as a boolean.
+        for broken in (
+            legacy,
+            dict(saved, update_prereleases="true"),
+            dict(saved, update_prereleases=1),
+        ):
+            with self.subTest(broken=broken.get("update_prereleases")):
+                self.seed(broken)
+                before = self.path.read_bytes()
+                self.assertFalse(self.probe("list")["writable"])
+                self.assertFalse(self.probe("update-prereleases", "true")["ok"])
                 self.assertEqual(before, self.path.read_bytes())
 
     def test_invalid_configuration_is_preserved_and_partial_data_discarded(self):

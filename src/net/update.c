@@ -16,13 +16,13 @@ const char *const update_request_headers[] = {"Accept: application/vnd.github+js
 const size_t update_request_header_count =
     sizeof(update_request_headers) / sizeof(update_request_headers[0]);
 
-bool update_request_url(const app_version *current, char *url, size_t size, bool *list)
+bool update_request_url(bool prereleases, char *url, size_t size)
 {
     const char *custom = getenv("PAPO_UPDATE_API_URL");
     const char *endpoint = custom && *custom ? custom : UPDATE_ENDPOINT;
-    *list = current->stage != VERSION_FINAL;
-    int written = *list ? snprintf(url, size, "%s/releases?per_page=%d", endpoint, UPDATE_LIST_SIZE)
-                        : snprintf(url, size, "%s/releases/latest", endpoint);
+    int written = prereleases
+                      ? snprintf(url, size, "%s/releases?per_page=%d", endpoint, UPDATE_LIST_SIZE)
+                      : snprintf(url, size, "%s/releases/latest", endpoint);
     return written > 0 && (size_t)written < size;
 }
 /* -1 malformed, 0 not eligible, 1 version read. */

@@ -89,6 +89,7 @@ void settings_open(app_settings *s, const profile_config *config, voice_client *
     s->draft = config->mode;
     s->language = config->language;
     s->update_check = config->update_check;
+    s->update_prereleases = config->update_prereleases;
     file_snapshot(s, config);
     s->selection = config->mode;
     s->audio = s->original_audio = config->audio;
@@ -1932,7 +1933,8 @@ void settings_draw(app_settings *s)
     } else if (s->section == SETTINGS_ACCESSIBILITY) {
         access_draw(s, w, height, width);
     } else if (s->section == SETTINGS_ABOUT) {
-        about_draw(&s->about, w, 5, 2, width - 4, height - 8, s->focus == 1, s->update_check);
+        about_draw(&s->about, w, 5, 2, width - 4, height - 8, s->focus == 1, s->update_check,
+                   s->update_prereleases);
         /* The newer version is on screen: the footer need not repeat it. */
         update_acknowledge();
     } else if (s->section == SETTINGS_SYSTEM) {
@@ -1992,6 +1994,12 @@ static void about_act(app_settings *s, profile_config *config, about_action acti
         if (profiles_set_update_check(config, !s->update_check)) {
             s->update_check = config->update_check;
             update_set_automatic(s->update_check);
+        } else
+            snprintf(s->error, sizeof(s->error), "%s", config->message);
+    } else if (action == ABOUT_TOGGLE_BETA) {
+        if (profiles_set_update_prereleases(config, !s->update_prereleases)) {
+            s->update_prereleases = config->update_prereleases;
+            update_set_prereleases(s->update_prereleases);
         } else
             snprintf(s->error, sizeof(s->error), "%s", config->message);
         file_snapshot(s, config);

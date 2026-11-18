@@ -21,6 +21,8 @@
 
 /* Late enough for the first screen and the sign-in requests to go first. */
 #define STARTUP_DELAY_MS UINT64_C(3000)
+/* After the choice of which releases count changes. */
+#define RECHECK_DELAY_MS UINT64_C(1000)
 #define CHECK_INTERVAL_S UINT64_C(86400)
 #define MANUAL_INTERVAL_MS UINT64_C(60000)
 /* GitHub allows 60 anonymous requests an hour for an address. */
@@ -30,7 +32,7 @@
 static const char *const stem = "update";
 
 static struct {
-    bool ready, automatic, development, list, manual, acknowledged;
+    bool ready, automatic, development, prereleases, list, manual, acknowledged;
     bool has_latest, has_due, has_started;
     app_version current, latest;
     char latest_text[APP_VERSION_TEXT];
@@ -88,9 +90,10 @@ static bool asset_decode(const json_t *value, update_asset *asset)
     asset->size = (uint64_t)json_integer_value(size);
     return update_asset_valid(asset);
 }
-/* {"version":1,"contexts":[]} or one {"checked":<unix seconds>,"latest":"<version>"},
- * with "asset" when that release has a file for this installation: when the
- * last successful check ran and what it found. */
+/* {"version":1,"contexts":[]} or one
+ * {"checked":<unix seconds>,"latest":"<version>","prereleases":<bool>}, with
+ * "asset" when that release has a file for this installation: when the last
+ * successful check ran, what it found and whether it asked for pre-releases. */
 static bool validate(json_t *root)
 {
     json_t *contexts = json_object_get(root, "contexts");
@@ -107,14 +110,15 @@ static bool validate(json_t *root)
     json_t *stored_asset = json_object_get(context, "asset");
     app_version version;
     update_asset asset;
-    return json_is_object(context) && json_object_size(context) == (stored_asset ? 3U : 2U) &&
-           json_is_integer(checked) && json_integer_value(checked) >= 0 && json_is_string(latest) &&
+    return json_is_object(context) && json_object_size(context) == (stored_asset ? 4U : 3U) &&
+           json_is_boolean(json_object_get(context, "prereleases")) && json_is_integer(checked) &&
+           json_integer_value(checked) >= 0 && json_is_string(latest) &&
            json_string_length(latest) < APP_VERSION_TEXT &&
            strlen(json_string_value(latest)) == json_string_length(latest) &&
            app_version_parse(json_string_value(latest), &version) &&
            (!stored_asset || asset_decode(stored_asset, &asset));
 }
-static bool stored(uint64_t *checked, app_version *latest, update_asset *asset)
+static bool stored(uint64_t *checked, app_version *latest, update_asset *asset, bool *prereleases)
 {
     read_storage *storage = read_storage_open_named(stem, validate);
     json_t *root = storage ? read_storage_load(storage) : NULL;
@@ -124,6 +128,7 @@ static bool stored(uint64_t *checked, app_version *latest, update_asset *asset)
     memset(asset, 0, sizeof(*asset));
     if (found) {
         *checked = (uint64_t)json_integer_value(json_object_get(context, "checked"));
+        *prereleases = json_is_true(json_object_get(context, "prereleases"));
         app_version_parse(json_string_value(json_object_get(context, "latest")), latest);
         if (json_object_get(context, "asset"))
             asset_decode(json_object_get(context, "asset"), asset);
@@ -140,7 +145,8 @@ static void store(uint64_t checked, const app_version *latest, const update_asse
     if (!storage)
         return;
     if (read_storage_lock(storage)) {
-        json_t *context = json_pack("{s:I,s:s}", "checked", (json_int_t)checked, "latest", text);
+        json_t *context = json_pack("{s:I,s:s,s:b}", "checked", (json_int_t)checked, "latest", text,
+                                    "prereleases", update.list);
         if (context && asset && *asset->name)
             json_object_set_new(context, "asset",
                                 json_pack("{s:s,s:s,s:I}", "name", asset->name, "sha256",
@@ -218,10 +224,11 @@ static char *target_of_run(void)
         return place && g_path_is_absolute(place) ? g_strdup(place) : NULL;
     return self_install_target(update.channel);
 }
-void update_init(bool automatic)
+void update_init(bool automatic, bool prereleases)
 {
     update_shutdown();
     update.automatic = automatic;
+    update.prereleases = prereleases;
     uint64_t now, checked = 0, wall = wall_seconds();
     if (!app_version_parse_build(PAPO_VERSION, &update.current, &update.development) ||
         !net_now_ms(&now))
@@ -235,8 +242,11 @@ void update_init(bool automatic)
         self_install_forget_previous(update.target);
     app_version latest;
     update_asset asset;
+    bool kind = false;
     uint64_t wait = STARTUP_DELAY_MS;
-    if (stored(&checked, &latest, &asset)) {
+    /* An answer to the other question, with or without pre-releases, says
+     * nothing now: it is as if no check had run. */
+    if (stored(&checked, &latest, &asset, &kind) && kind == prereleases) {
         if (app_version_compare(&latest, &update.current) > 0) {
             /* The stored file counts only for the installation it was chosen for. */
             char text[APP_VERSION_TEXT], name[INSTALL_ASSET_BYTES];
@@ -323,6 +333,26 @@ void update_set_automatic(bool automatic)
 {
     update.automatic = automatic;
 }
+void update_set_prereleases(bool accepted)
+{
+    uint64_t now;
+    bool changed = update.prereleases != accepted;
+    update.prereleases = accepted;
+    if (!changed || !update.ready || !net_now_ms(&now))
+        return;
+    /* What is known, being fetched or already saved answered the other
+     * question: it is dropped, and GitHub is asked again shortly. */
+    update_download_cancel();
+    if (update.state == UPDATE_CHECKING)
+        public_request_cancel(update.request);
+    update.has_latest = false;
+    memset(&update.asset, 0, sizeof(update.asset));
+    forget_saved();
+    update.state = UPDATE_UNKNOWN;
+    update.failure = UPDATE_FAILURE_NONE;
+    update.failures = 0;
+    schedule(now, RECHECK_DELAY_MS);
+}
 bool update_suppressed(void)
 {
     const char *value = getenv("PAPO_UPDATE_CHECK");
@@ -347,7 +377,8 @@ static void begin(uint64_t now, bool manual)
     update.has_started = true;
     if (!update.request)
         update.request = public_request_create();
-    if (!update.request || !update_request_url(&update.current, url, sizeof(url), &update.list) ||
+    update.list = update.prereleases;
+    if (!update.request || !update_request_url(update.list, url, sizeof(url)) ||
         !public_request_get(update.request, url, update_request_headers,
                             update_request_header_count, UPDATE_RESPONSE_LIMIT)) {
         /* Nothing was sent: an invalid test endpoint or no memory. */
