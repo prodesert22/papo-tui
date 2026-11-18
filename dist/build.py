@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 import subprocess
 import sys
-from bootstrap import ROOT
+from bootstrap import ROOT, host_platform, macos_pkg_config_dirs
 
 
 def build_variant(
@@ -32,8 +32,8 @@ def build_variant(
 ):
     env = dict(os.environ)
     env["PATH"] = str(prefix / "bin") + os.pathsep + env["PATH"]
-    env["PKG_CONFIG_PATH"] = (
-        str(prefix / "lib/pkgconfig") + os.pathsep + env.get("PKG_CONFIG_PATH", "")
+    env["PKG_CONFIG_PATH"] = os.pathsep.join(
+        [str(prefix / "lib/pkgconfig"), *macos_pkg_config_dirs(), env.get("PKG_CONFIG_PATH", "")]
     )
     env.update(PYTHONUTF8="1", PYTHONIOENCODING="utf-8", TZ="UTC")
     options = [
@@ -44,7 +44,8 @@ def build_variant(
         "-DCMAKE_BUILD_TYPE=Debug" if mode != "release" else "-DCMAKE_BUILD_TYPE=Release",
         "-DPython3_EXECUTABLE=" + sys.executable,
         "-DPAPO_RELEASE_BUILD=ON",
-        "-DPAPO_BUNDLE_RUNTIME=ON",
+        # The macOS bundle (Mach-O, install names, code signature) is not implemented yet.
+        "-DPAPO_BUNDLE_RUNTIME=" + ("OFF" if host_platform() == "macos" else "ON"),
         "-DPAPO_DEPENDENCY_LICENSE_DIR=" + str(prefix / "share/licenses/papo-dependencies"),
         "-DPAPO_RUNTIME_SEARCH_DIRS="
         + str(prefix / "bin")

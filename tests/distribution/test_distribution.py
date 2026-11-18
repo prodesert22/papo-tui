@@ -127,7 +127,9 @@ class DistributionTests(unittest.TestCase):
         ]
         ncurses = next(entry for entry in sources if entry["name"] == "ncurses")
         self.assertEqual(ncurses["version"], "6.6")
-        self.assertTrue({"posix", "nt"} <= set(ncurses.get("platforms", ("posix", "nt"))))
+        self.assertTrue(
+            {"linux", "macos", "nt"} <= set(ncurses.get("platforms", ("linux", "macos", "nt")))
+        )
         manifest = flatpak.manifest({"path": "/tmp/source.tar.gz"}, "a" * 64)
         module = next(item for item in manifest["modules"] if item["name"] == "ncurses")
         self.assertEqual(module["sources"][0]["sha256"], ncurses["sha256"])
@@ -176,7 +178,7 @@ class DistributionTests(unittest.TestCase):
         ]
         modules = {x["name"]: x for x in manifest["modules"]}
         for entry in locked:
-            if "posix" not in entry.get("platforms", ["posix"]):
+            if "linux" not in entry.get("platforms", ["linux"]):
                 self.assertNotIn(entry["name"], modules)
                 continue
             self.assertEqual(
@@ -232,6 +234,130 @@ class DistributionTests(unittest.TestCase):
             self.assertIn("-Dwin32-threads=enabled", setup)
             self.assertIn("-Dd3d-hwaccel=enabled", setup)
             self.assertIn("--prefix=C:/Users/Pedro/Documents/papo-tui/build/release-deps", setup)
+
+    def macos_commands(self, entry):
+        """Commands that bootstrap.build runs for entry on a simulated Apple Silicon Mac."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, work = root / "source", root / "work"
+            source.mkdir()
+            work.mkdir()
+            calls = []
+
+            def capture(args, **kwargs):
+                calls.append(args)
+                return bootstrap.subprocess.CompletedProcess(args=args, returncode=0)
+
+            with (
+                patch.object(bootstrap.os, "name", "posix"),
+                patch.object(bootstrap.sys, "platform", "darwin"),
+                patch.object(bootstrap, "macos_keg", return_value="/opt/homebrew/opt/openssl@3"),
+                patch.object(bootstrap.subprocess, "run", side_effect=capture),
+            ):
+                bootstrap.build(entry, source, work, root / "prefix", 4, {"PATH": ""})
+            return calls
+
+    def test_macos_uses_system_frameworks_instead_of_linux_backends(self):
+        ffmpeg = next(
+            args
+            for args in self.macos_commands({"name": "ffmpeg", "buildsystem": "ffmpeg"})
+            if args[0] == "sh"
+        )
+        self.assertIn("--enable-videotoolbox", ffmpeg)
+        self.assertIn("--enable-audiotoolbox", ffmpeg)
+        self.assertNotIn("--enable-vaapi", ffmpeg)
+        mpv = next(
+            args
+            for args in self.macos_commands({"name": "mpv", "buildsystem": "meson"})
+            if args[:2] == ["meson", "setup"]
+        )
+        self.assertIn("-Dcoreaudio=enabled", mpv)
+        for option in ("-Dpulse=enabled", "-Dalsa=enabled", "-Dvaapi=enabled", "-Ddrm=enabled"):
+            self.assertNotIn(option, mpv)
+        for name, expected, unwanted in (
+            ("gst-plugins-good", "-Dosxaudio=enabled", "-Dpulse=enabled"),
+            ("gst-plugins-base", "-Dopus=enabled", "-Dalsa=enabled"),
+        ):
+            setup = next(
+                args
+                for args in self.macos_commands({"name": name, "buildsystem": "meson"})
+                if args[:2] == ["meson", "setup"]
+            )
+            self.assertIn(expected, setup)
+            self.assertNotIn(unwanted, setup)
+
+    def test_macos_curl_uses_the_keg_only_openssl(self):
+        configure = next(
+            args
+            for args in self.macos_commands({"name": "curl", "buildsystem": "cmake"})
+            if args[0] == "cmake" and "-S" in args
+        )
+        self.assertIn("-DCURL_USE_OPENSSL=ON", configure)
+        self.assertIn("-DOPENSSL_ROOT_DIR=/opt/homebrew/opt/openssl@3", configure)
+
+    def test_linux_recipes_keep_their_backends(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, work = root / "source", root / "work"
+            source.mkdir()
+            work.mkdir()
+            calls = []
+
+            def capture(args, **kwargs):
+                calls.append(args)
+                return bootstrap.subprocess.CompletedProcess(args=args, returncode=0)
+
+            with (
+                patch.object(bootstrap.os, "name", "posix"),
+                patch.object(bootstrap.sys, "platform", "linux"),
+                patch.object(bootstrap.subprocess, "run", side_effect=capture),
+            ):
+                bootstrap.build(
+                    {"name": "ffmpeg", "buildsystem": "ffmpeg"}, source, work, root, 4, {}
+                )
+                bootstrap.build({"name": "mpv", "buildsystem": "meson"}, source, work, root, 4, {})
+            ffmpeg = next(args for args in calls if args[0] == "sh")
+            mpv = next(args for args in calls if args[:2] == ["meson", "setup"])
+            self.assertIn("--enable-vaapi", ffmpeg)
+            self.assertNotIn("--enable-videotoolbox", ffmpeg)
+            self.assertIn("-Dpulse=enabled", mpv)
+            self.assertNotIn("-Dcoreaudio=enabled", mpv)
+
+    def test_dependency_platform_filter_distinguishes_linux_and_macos(self):
+        entry = {"name": "libsecret", "platforms": ["linux"]}
+        everywhere = {"name": "ncurses"}
+        for system, name, expected in (
+            ("linux", "posix", True),
+            ("darwin", "posix", False),
+            ("win32", "nt", False),
+        ):
+            with (
+                patch.object(bootstrap.os, "name", name),
+                patch.object(bootstrap.sys, "platform", system),
+            ):
+                self.assertEqual(bootstrap.builds_here(entry), expected, system)
+                self.assertTrue(bootstrap.builds_here(everywhere), system)
+
+    def test_only_macos_adds_keg_only_pkg_config_paths(self):
+        with (
+            patch.object(bootstrap.os, "name", "posix"),
+            patch.object(bootstrap.sys, "platform", "linux"),
+            patch.object(bootstrap.subprocess, "check_output", side_effect=AssertionError),
+        ):
+            self.assertEqual(bootstrap.macos_pkg_config_dirs(), [])
+        with tempfile.TemporaryDirectory() as directory:
+            keg = Path(directory) / "openssl@3"
+            (keg / "lib/pkgconfig").mkdir(parents=True)
+
+            def brew(command, **kwargs):
+                return str(keg) if command[-1] == "openssl@3" else str(Path(directory) / "none")
+
+            with (
+                patch.object(bootstrap.os, "name", "posix"),
+                patch.object(bootstrap.sys, "platform", "darwin"),
+                patch.object(bootstrap.subprocess, "check_output", side_effect=brew),
+            ):
+                self.assertEqual(bootstrap.macos_pkg_config_dirs(), [str(keg / "lib/pkgconfig")])
 
     def test_ncurses_pkg_config_uses_native_relocatable_paths(self):
         with tempfile.TemporaryDirectory() as directory:

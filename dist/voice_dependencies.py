@@ -14,7 +14,7 @@ def cmake_options(name):
     return []
 
 
-def meson_options(name, *, windows=False):
+def meson_options(name, *, windows=False, macos=False):
     options = {
         "opus": ["-Dtests=disabled", "-Ddocs=disabled", "-Dintrinsics=disabled", "-Dasm=disabled"],
         "libsrtp": [
@@ -34,7 +34,7 @@ def meson_options(name, *, windows=False):
             "-Dtests=disabled",
             "-Dintrospection=disabled",
         ]
-        + ([] if windows else ["-Dalsa=enabled"]),
+        + ([] if windows or macos else ["-Dalsa=enabled"]),
         "libnice": [
             "-Dgstreamer=enabled",
             "-Dcrypto-library=openssl",
@@ -49,7 +49,7 @@ def meson_options(name, *, windows=False):
             "-Drtpmanager=enabled",
             "-Dtests=disabled",
         ]
-        + ([] if windows else ["-Dpulse=enabled"]),
+        + (["-Dosxaudio=enabled"] if macos else [] if windows else ["-Dpulse=enabled"]),
         "gst-plugins-bad": [
             "-Dwebrtc=enabled",
             "-Dwebrtcdsp=enabled",

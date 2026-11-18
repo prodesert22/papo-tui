@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tarfile
 import urllib.request
 from voice_dependencies import (
@@ -17,6 +18,45 @@ from voice_dependencies import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
+
+# Homebrew formulae installed outside its prefix ("keg-only"): pkg-config does not see them
+# until their own pkgconfig directory is added.
+MACOS_KEGS = ("openssl@3", "zlib", "libffi")
+
+
+def host_platform():
+    """Name that a source's "platforms" list uses for this machine: linux, macos or nt."""
+    if os.name == "nt":
+        return "nt"
+    return "macos" if sys.platform == "darwin" else "linux"
+
+
+def builds_here(entry):
+    """Whether a locked source is built for this machine."""
+    return host_platform() in entry.get("platforms", [host_platform()])
+
+
+def macos_keg(formula):
+    """Install prefix of a Homebrew formula, or None when Homebrew or the formula is missing."""
+    try:
+        text = subprocess.check_output(
+            ["brew", "--prefix", formula], text=True, stderr=subprocess.DEVNULL
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return text if text and Path(text).is_dir() else None
+
+
+def macos_pkg_config_dirs():
+    """pkgconfig directories of the keg-only Homebrew formulae; empty outside macOS."""
+    if host_platform() != "macos":
+        return []
+    directories = []
+    for formula in MACOS_KEGS:
+        keg = macos_keg(formula)
+        if keg and (Path(keg) / "lib/pkgconfig").is_dir():
+            directories.append(str(Path(keg) / "lib/pkgconfig"))
+    return directories
 
 
 def sha256(path):
@@ -239,6 +279,11 @@ def build(entry, source, work, prefix, jobs, env):
                 if os.name == "nt"
                 else ["-DCURL_USE_OPENSSL=ON"]
             )
+            if host_platform() == "macos":
+                # Apple's curl dropped Secure Transport; the keg-only OpenSSL is not on the default path.
+                openssl = macos_keg("openssl@3")
+                if openssl:
+                    options += ["-DOPENSSL_ROOT_DIR=" + openssl]
         elif name == "jansson":
             options += [
                 "-DJANSSON_BUILD_SHARED_LIBS=ON",
@@ -307,6 +352,9 @@ def build(entry, source, work, prefix, jobs, env):
                 options += ["--arch=aarch64"]
             else:
                 options += ["--arch=x86_64"]
+        elif host_platform() == "macos":
+            # --disable-autodetect leaves the system frameworks out unless they are named.
+            options += ["--enable-videotoolbox", "--enable-audiotoolbox"]
         else:
             options += ["--enable-vaapi"]
         run("sh", unix_path(source / "configure"), *options, cwd=binary)
@@ -333,6 +381,8 @@ def build(entry, source, work, prefix, jobs, env):
             ]
             if os.name == "nt":
                 options += ["-Dwasapi=enabled", "-Dwin32-threads=enabled", "-Dd3d-hwaccel=enabled"]
+            elif host_platform() == "macos":
+                options += ["-Dcoreaudio=enabled"]
             else:
                 options += [
                     "-Dpulse=enabled",
@@ -363,7 +413,9 @@ def build(entry, source, work, prefix, jobs, env):
             ]
         elif name == "libass":
             options += ["-Dfontconfig=enabled", "-Dlibunibreak=enabled", "-Dasm=auto"]
-        options += voice_meson_options(name, windows=os.name == "nt")
+        options += voice_meson_options(
+            name, windows=os.name == "nt", macos=host_platform() == "macos"
+        )
         run("meson", "setup", binary, source, *options)
         run("meson", "compile", "-C", binary, "-j", jobs)
         run("meson", "install", "-C", binary)
@@ -386,6 +438,7 @@ def main():
         [
             str(prefix / "lib/pkgconfig"),
             str(prefix / "lib64/pkgconfig"),
+            *macos_pkg_config_dirs(),
             env.get("PKG_CONFIG_PATH", ""),
         ]
     )
@@ -411,7 +464,7 @@ def main():
     for entry in lock["sources"]:
         if entry["name"] not in selected:
             continue
-        if os.name not in entry.get("platforms", [os.name]):
+        if not builds_here(entry):
             continue
         stamp = prefix / (".papo-" + entry["name"] + ".json")
         identity = {
@@ -435,7 +488,7 @@ def main():
                 if entry["name"] == "webrtc-audio-processing"
                 else None
             ),
-            "system": os.name,
+            "system": host_platform(),
             "architecture": os.environ.get(
                 "MSYSTEM", os.uname().machine if hasattr(os, "uname") else "windows"
             ),

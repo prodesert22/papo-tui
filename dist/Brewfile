@@ -1,0 +1,25 @@
+# Host packages to build on macOS (Apple Silicon): brew bundle --file dist/Brewfile
+#
+# The libraries that dist/bootstrap.py builds into the private prefix (ncurses, curl, Jansson,
+# libunibreak, libsixel, Chafa, FFmpeg, libplacebo, libass, mpv, GStreamer and its voice
+# dependencies) are deliberately absent: the system copies are old, lack the required options or
+# are GPL builds. The tests also call the ffmpeg command (brew install ffmpeg); only the command is
+# used, because the private prefix stays first on PKG_CONFIG_PATH. Python 3.10 or later is needed
+# too (brew install python@3.13).
+brew "cmake"
+brew "ninja"
+brew "pkgconf"
+brew "autoconf"
+brew "automake"
+brew "libtool"
+brew "openssl@3"
+brew "glib"
+brew "pango"
+brew "cairo"
+brew "fontconfig"
+brew "freetype"
+brew "harfbuzz"
+brew "fribidi"
+brew "librsvg"
+# libplacebo includes the Vulkan headers even when Vulkan is disabled.
+brew "vulkan-headers"

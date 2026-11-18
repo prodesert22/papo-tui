@@ -81,7 +81,7 @@
       "buildsystem": "meson",
       "archive": "libdisplay-info-0.3.0.tar.xz",
       "platforms": [
-        "posix"
+        "linux"
       ]
     },
     {
@@ -100,7 +100,7 @@
       "buildsystem": "meson",
       "archive": "libsecret-0.21.8.2.tar.xz",
       "platforms": [
-        "posix"
+        "linux"
       ]
     },
     {

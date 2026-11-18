@@ -13,7 +13,7 @@ import tarfile
 import tempfile
 import zipfile
 
-from bootstrap import ROOT, download
+from bootstrap import ROOT, builds_here, download
 from system_sources import collect, collect_licenses
 
 APP_ID = "io.github.prodesert22.PapoTUI"
@@ -199,7 +199,7 @@ def dependency_sources(output, version, architecture, flavor, prefix, cache, sta
     with tempfile.TemporaryDirectory(dir=output, prefix="source-kit-") as tmp:
         kit = Path(tmp)
         for entry in lock["sources"]:
-            if os.name not in entry.get("platforms", [os.name]):
+            if not builds_here(entry):
                 continue
             archive = cache / entry["archive"]
             download(entry["url"], entry["sha256"], archive)
