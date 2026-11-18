@@ -36,6 +36,51 @@ static int decode_interrupt(void *context)
     decode_guard *guard = context;
     return guard->cancelled && guard->cancelled(guard->context);
 }
+/* How a decoded picture is turned to be shown upright. Phone cameras store the
+ * sensor's pixels and record the turn separately: the EXIF orientation of a
+ * photo, the display matrix of a video. Only quarter turns and mirrors exist. */
+typedef struct {
+    bool transpose;          /* Rows become columns: width and height are swapped. */
+    bool mirror_x, mirror_y; /* Then reverse the shown columns / rows. */
+} picture_turn;
+static picture_turn frame_turn(const AVFrame *frame)
+{
+    /* EXIF orientations 1 to 8: where the stored row 0 and column 0 are shown. */
+    static const picture_turn exif[] = {
+        {false, false, false}, {false, true, false}, {false, true, true}, {false, false, true},
+        {true, false, false},  {true, true, false},  {true, true, true},  {true, false, true}};
+    const AVFrameSideData *side = av_frame_get_side_data(frame, AV_FRAME_DATA_DISPLAYMATRIX);
+    if (side && (size_t)side->size >= 9 * sizeof(int32_t)) {
+        /* (p, q) is shown at (a*p + c*q, b*p + d*q); other angles stay as stored. */
+        int32_t matrix[9];
+        memcpy(matrix, side->data, sizeof(matrix));
+        int32_t a = matrix[0], b = matrix[1], c = matrix[3], d = matrix[4];
+        if (a && d && !b && !c)
+            return (picture_turn){false, a < 0, d < 0};
+        if (b && c && !a && !d)
+            return (picture_turn){true, c < 0, b < 0};
+        return exif[0];
+    }
+    /* FFmpeg releases older than the display matrix leave the EXIF tag as text. */
+    const AVDictionaryEntry *tag = av_dict_get(frame->metadata, "Orientation", NULL, 0);
+    long orientation = tag ? strtol(tag->value, NULL, 10) : 1;
+    return exif[orientation >= 1 && orientation <= 8 ? orientation - 1 : 0];
+}
+/* Copies the stored pw x ph RGBA picture into its shown, turned position; the
+ * destination holds ph x pw pixels when the turn transposes, pw x ph otherwise. */
+static void turn_pixels(const unsigned char *stored, int pw, int ph, unsigned char *shown,
+                        picture_turn turn)
+{
+    int w = turn.transpose ? ph : pw, h = turn.transpose ? pw : ph;
+    for (int y = 0; y < h; ++y) {
+        int v = turn.mirror_y ? h - 1 - y : y;
+        for (int x = 0; x < w; ++x) {
+            int u = turn.mirror_x ? w - 1 - x : x;
+            size_t from = turn.transpose ? (size_t)u * pw + v : (size_t)v * pw + u;
+            memcpy(shown + ((size_t)y * w + x) * 4, stored + from * 4, 4);
+        }
+    }
+}
 static bool encode_pixels(const image_decode_request *j, const unsigned char *pixels, int w, int h,
                           int source_w, int source_h, graphics_image *out)
 {
@@ -303,9 +348,10 @@ static bool decode_attempt(const image_decode_request *j, graphics_image *out, a
     AVFrame *frame = NULL;
     AVPacket *packet = NULL;
     struct SwsContext *scale = NULL;
-    unsigned char *rgba = NULL;
+    unsigned char *rgba = NULL, *stored = NULL;
     AVDictionary *options = NULL;
     animation *frames = NULL;
+    picture_turn turn = {0};
     bool ok = false;
     if (!format)
         goto done;
@@ -430,15 +476,22 @@ static bool decode_attempt(const image_decode_request *j, graphics_image *out, a
         if (frame->width < 1 || frame->height < 1 ||
             (size_t)frame->width > IMAGE_PIXELS / (size_t)frame->height)
             goto done;
+        /* The first frame decides the turn; sizes below are those of the shown,
+         * upright picture, which the layout and the encoders work with. */
+        if (!frames->count)
+            turn = frame_turn(frame);
+        bool turned = turn.transpose || turn.mirror_x || turn.mirror_y;
+        int shown_width = turn.transpose ? frame->height : frame->width;
+        int shown_height = turn.transpose ? frame->width : frame->height;
         if (!frames->count) {
             int w = j->width, h = j->height;
             if (!graphics_image_capacity(w, h))
                 goto done;
-            double ratio = j->cover ? fmax((double)w / frame->width, (double)h / frame->height)
-                                    : fmin((double)w / frame->width, (double)h / frame->height);
+            double ratio = j->cover ? fmax((double)w / shown_width, (double)h / shown_height)
+                                    : fmin((double)w / shown_width, (double)h / shown_height);
             if (j->native && ratio > 1)
                 ratio = 1;
-            int sw = (int)(frame->width * ratio), sh = (int)(frame->height * ratio);
+            int sw = (int)(shown_width * ratio), sh = (int)(shown_height * ratio);
             if (sw < 1)
                 sw = 1;
             if (sh < 1)
@@ -449,38 +502,45 @@ static bool decode_attempt(const image_decode_request *j, graphics_image *out, a
             }
             frames->width = w;
             frames->height = h;
-            frames->source_width = frame->width;
-            frames->source_height = frame->height;
+            frames->source_width = shown_width;
+            frames->source_height = shown_height;
             size_t rgba_bytes = (size_t)sw * (size_t)sh * 4;
             rgba = host.allocate_zero(1, rgba_bytes + IMAGE_PIXEL_PADDING);
+            /* The scaler writes the picture as stored; it is turned afterwards. */
+            if (turned)
+                stored = host.allocate_zero(1, rgba_bytes + IMAGE_PIXEL_PADDING);
+            int pw = turn.transpose ? sh : sw, ph = turn.transpose ? sw : sh;
             scale =
-                sws_getContext(frame->width, frame->height, frame->format, sw, sh, AV_PIX_FMT_RGBA,
-                               scale_flags(frame->width, frame->height, sw, sh), NULL, NULL, NULL);
-            if (!rgba || !scale)
+                sws_getContext(frame->width, frame->height, frame->format, pw, ph, AV_PIX_FMT_RGBA,
+                               scale_flags(frame->width, frame->height, pw, ph), NULL, NULL, NULL);
+            if (!rgba || !scale || (turned && !stored))
                 goto done;
         }
-        if (frame->width != frames->source_width || frame->height != frames->source_height ||
+        if (shown_width != frames->source_width || shown_height != frames->source_height ||
             frames->count == ANIMATION_FRAMES)
             goto done;
         int sw = 0, sh = 0;
-        double ratio =
-            j->cover ? fmax((double)j->width / frame->width, (double)j->height / frame->height)
-                     : fmin((double)j->width / frame->width, (double)j->height / frame->height);
+        double ratio = j->cover
+                           ? fmax((double)j->width / shown_width, (double)j->height / shown_height)
+                           : fmin((double)j->width / shown_width, (double)j->height / shown_height);
         if (j->native && ratio > 1)
             ratio = 1;
-        sw = (int)(frame->width * ratio);
-        sh = (int)(frame->height * ratio);
+        sw = (int)(shown_width * ratio);
+        sh = (int)(shown_height * ratio);
         if (sw < 1)
             sw = 1;
         if (sh < 1)
             sh = 1;
-        if (!rgba || !scale)
+        if (!rgba || !scale || (turned && !stored))
             goto done;
-        unsigned char *dest[] = {rgba, NULL, NULL, NULL};
-        int stride[] = {sw * 4, 0, 0, 0};
+        int pw = turn.transpose ? sh : sw, ph = turn.transpose ? sw : sh;
+        unsigned char *dest[] = {turned ? stored : rgba, NULL, NULL, NULL};
+        int stride[] = {pw * 4, 0, 0, 0};
         if (sws_scale(scale, (const uint8_t *const *)frame->data, frame->linesize, 0, frame->height,
-                      dest, stride) != sh)
+                      dest, stride) != ph)
             goto done;
+        if (turned)
+            turn_pixels(stored, pw, ph, rgba, turn);
         bool alpha = false;
         if (j->decode_only)
             for (int y = 0; y < sh && !alpha; ++y)
@@ -535,6 +595,7 @@ done:
     av_dict_free(&options);
     sws_freeContext(scale);
     host.release(rgba);
+    host.release(stored);
     av_packet_free(&packet);
     av_frame_free(&frame);
     avcodec_free_context(&decoder);

@@ -1,6 +1,7 @@
 """Exercise FFmpeg and graphical encoders with local files; no HTTP/PTY responder."""
 
 from pathlib import Path
+import struct
 import subprocess
 import sys
 import tempfile
@@ -96,6 +97,27 @@ with tempfile.TemporaryDirectory(prefix="papo-image-decode-") as directory:
     ffmpeg("-i", edge_ppm, "-frames:v", "1", edge)
     many = root / "many.gif"
     ffmpeg("-f", "lavfi", "-i", "testsrc2=size=480x426:rate=15", "-t", "10", many)
+    # A photo as cameras store it: the sensor's pixels plus an EXIF orientation
+    # saying how to turn them. Quadrants: red, green over blue, white.
+    quadrants_ppm, quadrants = root / "quadrants.ppm", root / "quadrants.jpg"
+    red, green, blue, white = (
+        bytes(color) for color in ((255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 255))
+    )
+    quadrants_ppm.write_bytes(
+        b"P6\n64 32\n255\n" + (red * 32 + green * 32) * 16 + (blue * 32 + white * 32) * 16
+    )
+    ffmpeg("-i", quadrants_ppm, "-frames:v", "1", "-q:v", "2", quadrants)
+    jpeg = quadrants.read_bytes()
+    assert jpeg[:2] == b"\xff\xd8" and b"Exif\0\0" not in jpeg
+    oriented = []
+    for orientation in range(1, 9):
+        # One little-endian IFD holding only the Orientation tag (0x0112, SHORT).
+        exif = b"Exif\0\0II*\0" + struct.pack("<IHHHIHHI", 8, 1, 0x0112, 3, 1, orientation, 0, 0)
+        path = root / f"oriented-{orientation}.jpg"
+        path.write_bytes(
+            jpeg[:2] + b"\xff\xe1" + struct.pack(">H", len(exif) + 2) + exif + jpeg[2:]
+        )
+        oriented.append(path)
     subprocess.run(
         [
             sys.argv[1],
@@ -112,6 +134,7 @@ with tempfile.TemporaryDirectory(prefix="papo-image-decode-") as directory:
             str(clip),
             str(many),
             str(edge),
+            *map(str, oriented),
         ],
         check=True,
     )

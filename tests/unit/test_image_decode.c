@@ -38,9 +38,22 @@ static bool iterm2_tiff_has_alpha(const graphics_image *image)
     g_free(tiff);
     return samples && extra;
 }
+/* Names the saturated quadrant colour of a pixel: R, G, B or W. */
+static char quadrant(const animation *frames, int x, int y)
+{
+    int channels = frames->rgba[0] ? 4 : 3;
+    const unsigned char *p = frames->pixels[0] + ((size_t)y * frames->width + x) * channels;
+    bool r = p[0] > 190, g = p[1] > 190, b = p[2] > 190;
+    bool dark_r = p[0] < 70, dark_g = p[1] < 70, dark_b = p[2] < 70;
+    return r && g && b             ? 'W'
+           : r && dark_g && dark_b ? 'R'
+           : g && dark_r && dark_b ? 'G'
+           : b && dark_r && dark_g ? 'B'
+                                   : '?';
+}
 int main(int argc, char **argv)
 {
-    assert(argc == 14);
+    assert(argc == 22);
     image_decode_request request = {
         .width = 640,
         .height = 360,
@@ -282,7 +295,52 @@ int main(int argc, char **argv)
     }
     assert(steepest >= 36);
     animation_free(enlarged);
-    puts("GIF frame pixels/delays, native dimensions, proportional limits, crops and cancellation "
-         "verified");
+    /* A camera photo is shown upright: the 64x32 picture stored as red, green
+     * over blue, white is turned by its EXIF orientation 1 to 8, and the four
+     * quarter turns swap the reported size. Corners: top left, top right,
+     * bottom left, bottom right. */
+    static const char *const upright[] = {"RGBW", "GRWB", "WBGR", "BWRG",
+                                          "RBGW", "BRWG", "WGBR", "GWRB"};
+    for (int orientation = 1; orientation <= 8; ++orientation) {
+        int width = orientation < 5 ? 64 : 32, height = orientation < 5 ? 32 : 64;
+        /* Full size, then reduced to a quarter by the scaler before the turn. */
+        for (int divisor = 1; divisor <= 4; divisor += 3) {
+            image_decode_request photo = {
+                .path = argv[13 + orientation],
+                .width = 64 / divisor,
+                .height = 64 / divisor,
+                .native = true,
+                .decode_only = true,
+                .retain_static = true,
+                .terminal = {.protocol = GRAPHICS_KITTY, .cell_width = 8, .cell_height = 16}};
+            animation *turned = NULL;
+            assert(image_decode_file(&photo, &cover, &turned, NULL, NULL));
+            assert(turned && turned->count == 1);
+            assert(turned->source_width == width && turned->source_height == height);
+            int w = width / divisor, h = height / divisor, inset = 4 / divisor;
+            assert(turned->width == w && turned->height == h);
+            const char corners[] = {quadrant(turned, inset, inset),
+                                    quadrant(turned, w - 1 - inset, inset),
+                                    quadrant(turned, inset, h - 1 - inset),
+                                    quadrant(turned, w - 1 - inset, h - 1 - inset), 0};
+            assert(!strcmp(corners, upright[orientation - 1]));
+            animation_free(turned);
+        }
+        /* The encoded image and its layout size follow the upright picture. */
+        image_decode_request shown = {
+            .path = argv[13 + orientation],
+            .width = 640,
+            .height = 360,
+            .native = true,
+            .image_id = 42,
+            .terminal = {.protocol = GRAPHICS_SIXEL, .cell_width = 8, .cell_height = 16}};
+        animation *none = NULL;
+        assert(image_decode_file(&shown, &cover, &none, NULL, NULL));
+        assert(cover.width == width && cover.height == height && !none);
+        assert(cover.source_width == width && cover.source_height == height);
+        graphics_image_free(&cover);
+    }
+    puts("GIF frame pixels/delays, native dimensions, proportional limits, crops, cancellation "
+         "and EXIF orientation verified");
     return 0;
 }
