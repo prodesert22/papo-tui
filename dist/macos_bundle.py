@@ -65,9 +65,13 @@ README = """Papo TUI for macOS (Apple Silicon) - test build
        xattr -dr com.apple.quarantine "/Applications/Papo TUI.app"
 
    (Or open it, then allow it in System Settings > Privacy & Security > "Open Anyway".)
-3. Double-click "Papo TUI": it opens in your terminal. To start it from a terminal instead:
+3. Double-click "Papo TUI": it opens in your terminal.
+4. To type `papo-tui` in a terminal, link the program into a folder of PATH once, then open a
+   new terminal window:
 
-       "/Applications/Papo TUI.app/Contents/Resources/papo-tui/bin/papo-tui"
+       sudo mkdir -p /usr/local/bin
+       sudo ln -sf "/Applications/Papo TUI.app/Contents/Resources/papo-tui/bin/papo-tui" \
+           /usr/local/bin/papo-tui
 
 Copying uses the macOS clipboard, and Ctrl+V pastes files copied in Finder, images and text. Not
 available on macOS yet: voice calls, desktop notifications, the system file picker and saved
@@ -79,6 +83,7 @@ Ghostty, WezTerm and iTerm2, and colored characters in Terminal.
 Papo TUI para macOS (Apple Silicon) - build de teste: arraste "Papo TUI" para Aplicativos e, antes
 de abrir pela primeira vez, rode no Terminal:
     xattr -dr com.apple.quarantine "/Applications/Papo TUI.app"
+Para usar o comando papo-tui no terminal, crie o link do passo 4 acima.
 """
 
 

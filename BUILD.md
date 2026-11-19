@@ -290,8 +290,10 @@ the same layout as the Linux archive), copies every library that is not part of
 macOS, rewrites their references relative to each file, signs everything ad hoc
 and adds a link to Applications. It is not notarized and is no release asset:
 it has no update channel, and its `READ ME FIRST.txt` explains how to open it
-with `xattr -dr com.apple.quarantine`. Double-clicking the app opens the program
-in the default terminal.
+with `xattr -dr com.apple.quarantine` and how to make the `papo-tui` command
+available, by linking `Contents/Resources/papo-tui/bin/papo-tui` into
+`/usr/local/bin`. Double-clicking the app opens the program in the default
+terminal.
 
 Replace `--build-only` with `--test-only` to run the tests after a build, or
 omit both to do both. The test suite skips what needs a Linux desktop (D-Bus
