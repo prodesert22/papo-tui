@@ -384,7 +384,9 @@ static bool emoji_content(message_blocks *b, const char *value, int width, bool 
         g_free(points);
         return true;
     }
-    int columns = (MESSAGE_EMOJI_PIXELS + terminal.cell_width - 1) / terminal.cell_width;
+    int columns = (graphics_scale_pixels(MESSAGE_EMOJI_PIXELS, terminal.cell_height) +
+                   terminal.cell_width - 1) /
+                  terminal.cell_width;
     if (columns > width)
         columns = width;
     /* Fill the whole cell span so adjacent emojis touch even when the cell
@@ -959,7 +961,9 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
         width = 8;
     graphics_terminal terminal = graphics_terminal_get();
     int author_x = graphics && terminal.cell_width > 0
-                       ? (MESSAGE_AVATAR_PIXELS + terminal.cell_width - 1) / terminal.cell_width
+                       ? (graphics_scale_pixels(MESSAGE_AVATAR_PIXELS, terminal.cell_height) +
+                          terminal.cell_width - 1) /
+                             terminal.cell_width
                        : 6;
     /* Without avatars the gutter goes too, initials included. */
     if (app_mode_get() == APP_MODE_ULTRALIGHT || !display.avatars)

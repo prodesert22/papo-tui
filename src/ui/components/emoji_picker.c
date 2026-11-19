@@ -796,8 +796,9 @@ void emoji_picker_draw(emoji_picker *p)
     graphics_terminal terminal = graphics_terminal_get();
     int cell_width = terminal.cell_width > 0 ? terminal.cell_width : 8;
     int cell_height = terminal.cell_height > 0 ? terminal.cell_height : 16;
-    int image_columns = (32 + cell_width - 1) / cell_width;
-    p->image_rows = (32 + cell_height - 1) / cell_height;
+    int side = graphics_scale_pixels(32, cell_height);
+    int image_columns = (side + cell_width - 1) / cell_width;
+    p->image_rows = (side + cell_height - 1) / cell_height;
     p->tile_width = image_columns + 2 > 12 ? image_columns + 2 : 12;
     p->tile_height = p->image_rows + 2;
     p->columns = (width - 4) / p->tile_width;

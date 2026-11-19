@@ -415,7 +415,7 @@ static int field_height(const server_settings *s, const admin_field *f, int widt
         return 3;
     if (f->kind == FIELD_EMOJI) {
         int cell = graphics_terminal_get().cell_height;
-        return cell > 0 ? (EMOJI_PREVIEW_PIXELS + cell - 1) / cell : 1;
+        return cell > 0 ? (graphics_scale_pixels(EMOJI_PREVIEW_PIXELS, cell) + cell - 1) / cell : 1;
     }
     return f->kind == FIELD_NOTE ? note_rows(NULL, f->value, 0, 0, width, 8, false) : 1;
 }
@@ -429,7 +429,8 @@ static void draw_emoji(server_settings *s, WINDOW *w, const admin_field *f, int 
             icon = ICON_CUSTOM | (uint32_t)(i + 1);
     icons_scope(s->icons, "server-settings", 0);
     if (!icon || !icons_paint_size(s->icons, w, icon, y, s->form_x, THEME_PANEL, icon,
-                                   EMOJI_PREVIEW_PIXELS)) {
+                                   graphics_scale_pixels(EMOJI_PREVIEW_PIXELS,
+                                                         graphics_terminal_get().cell_height))) {
         wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
         text_label(w, y, s->form_x, s->form_w, _("Carregando imagem…"));
     }

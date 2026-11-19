@@ -419,19 +419,20 @@ static bool avatar_image(icon_view *v, const author_avatar *avatar, const char *
     if (!avatar || (!avatar->path && !avatar->url) || !v->store)
         return false;
     graphics_terminal terminal = graphics_terminal_get();
-    int rows = (MESSAGE_AVATAR_PIXELS + terminal.cell_height - 1) / terminal.cell_height;
+    int side = graphics_scale_pixels(MESSAGE_AVATAR_PIXELS, terminal.cell_height);
+    int rows = (side + terminal.cell_height - 1) / terminal.cell_height;
     int crop_top = top * terminal.cell_height;
-    int crop_bottom = MESSAGE_AVATAR_PIXELS - (rows - bottom) * terminal.cell_height;
+    int crop_bottom = side - (rows - bottom) * terminal.cell_height;
     if (crop_bottom < 0)
         crop_bottom = 0;
-    if (crop_top + crop_bottom >= MESSAGE_AVATAR_PIXELS)
+    if (crop_top + crop_bottom >= side)
         return false;
     media_resource *resource =
         avatar->url ? media_cache_acquire_url(v->store, avatar->url, avatar->revision)
                     : media_cache_acquire_file(v->store, avatar->path, avatar->revision);
     media_resource_cache_for_session(resource);
-    image_decode_request request = {.width = MESSAGE_AVATAR_PIXELS,
-                                    .height = MESSAGE_AVATAR_PIXELS,
+    image_decode_request request = {.width = side,
+                                    .height = side,
                                     .terminal = terminal,
                                     .cover = true,
                                     .center = true,

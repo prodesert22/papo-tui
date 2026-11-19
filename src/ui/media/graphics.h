@@ -63,6 +63,11 @@ typedef enum {
 graphics_capability graphics_terminal_capability(void);
 int graphics_terminal_input(uint32_t *key);
 graphics_terminal graphics_terminal_get(void);
+/* A fixed picture size (avatars, emojis), chosen in pixels for text cells
+ * about 17 pixels tall. macOS terminals count the pixels of a Retina screen,
+ * twice as many per cell, so there the size grows with the cell and keeps its
+ * place beside the text; elsewhere it is returned as is. */
+int graphics_scale_pixels(int pixels, int cell_height);
 bool graphics_terminal_reply(graphics_terminal *terminal, const char *reply);
 /* Borrow RGB888 pixels; return owned output. A worker uses a terminal snapshot,
  * independent library contexts and no terminal, environment or network I/O. */

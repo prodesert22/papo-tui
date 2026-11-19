@@ -359,6 +359,16 @@ int graphics_terminal_input(uint32_t *key)
     }
 }
 
+int graphics_scale_pixels(int pixels, int cell_height)
+{
+#ifdef __APPLE__
+    int scale = (cell_height + 8) / 17;
+    return scale > 1 ? pixels * scale : pixels;
+#else
+    (void)cell_height;
+    return pixels;
+#endif
+}
 graphics_terminal graphics_terminal_get(void)
 {
     graphics_terminal t = terminal;

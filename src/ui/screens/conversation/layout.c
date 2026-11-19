@@ -333,10 +333,11 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
     bool avatars = display.avatars;
     /* Comfortable density keeps the blank row between messages of one author. */
     bool spaced = display.density == MESSAGE_DENSITY_COMFORTABLE;
-    int avatar_rows =
-        avatars && terminal.supported && terminal.cell_height > 0
-            ? (MESSAGE_AVATAR_PIXELS + terminal.cell_height - 1) / terminal.cell_height
-            : 1;
+    int avatar_rows = avatars && terminal.supported && terminal.cell_height > 0
+                          ? (graphics_scale_pixels(MESSAGE_AVATAR_PIXELS, terminal.cell_height) +
+                             terminal.cell_height - 1) /
+                                terminal.cell_height
+                          : 1;
     int group_start = 0;
     *anchor = 0;
     ui->marker_index = marker_find(ui);
