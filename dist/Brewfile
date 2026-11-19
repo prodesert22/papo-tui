@@ -21,5 +21,7 @@ brew "freetype"
 brew "harfbuzz"
 brew "fribidi"
 brew "librsvg"
-# libplacebo includes the Vulkan headers even when Vulkan is disabled.
+# libplacebo includes the Vulkan headers even when Vulkan is disabled, and needs fast_float
+# (header-only) because Apple's libc++ cannot parse floating-point numbers with from_chars.
 brew "vulkan-headers"
+brew "fast_float"

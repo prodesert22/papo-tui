@@ -403,6 +403,14 @@ def build(entry, source, work, prefix, jobs, env):
                 "-Dtest_setup=disabled",
             ]
         elif name == "libplacebo":
+            fast_float = macos_keg("fast_float") if host_platform() == "macos" else None
+            if fast_float:
+                # Apple's libc++ has no floating-point std::from_chars; libplacebo then needs
+                # the header-only fast_float, which it does not look for outside its source.
+                env = dict(env)
+                env["CXXFLAGS"] = (
+                    "-I" + fast_float + "/include " + env.get("CXXFLAGS", "")
+                ).strip()
             options += [
                 "-Dvulkan=disabled",
                 "-Dshaderc=disabled",
