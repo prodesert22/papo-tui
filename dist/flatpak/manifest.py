@@ -76,7 +76,10 @@ def module(entry):
             "--disable-gpl",
             "--disable-nonfree",
             "--disable-autodetect",
-            "--disable-network",
+            # Only the protocols the player uses: local files and the loopback relay that streams
+            # an attachment while it downloads (video_player.c allows nothing else).
+            "--disable-protocols",
+            "--enable-protocol=file,http,tcp",
             "--enable-zlib",
             "--enable-vaapi",
             "--libdir=/app/lib",
