@@ -761,6 +761,10 @@ if(BUILD_TESTING)
     target_link_libraries(text-test PRIVATE PkgConfig::GLIB PkgConfig::NCURSES PkgConfig::UNIBREAK
                                             PkgConfig::JANSSON m)
     target_compile_options(text-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    if(APPLE)
+        # translation.c reads the languages of System Settings.
+        target_link_libraries(text-test PRIVATE "-framework CoreFoundation")
+    endif()
     if(PAPO_SANITIZERS)
         target_compile_options(text-test PRIVATE -fsanitize=address,undefined
                                                  -fno-omit-frame-pointer)
