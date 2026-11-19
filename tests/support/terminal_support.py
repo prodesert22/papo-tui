@@ -36,6 +36,8 @@ TAB_CURSOR_BACKGROUNDS = {"d0d0d0", "875f00", "d7af5f"}
 # unread dot one of them may carry after its name.
 LIST_TABS = {"Canais", "Channels", "DMs"}
 UNREAD_DOTS = "⦁•"
+# The dot that the program draws here: macOS fonts have no ⦁ (theme_unread_dot).
+UNREAD_DOT = "•" if sys.platform == "darwin" else "⦁"
 
 
 class ObservedScreen(pyte.Screen):

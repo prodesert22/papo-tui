@@ -8,7 +8,7 @@ import tempfile
 import time
 import unittest
 from history_mock import OTHER, STAMP, HistoryMock, uuid
-from terminal_support import Terminal, wait_for_screen
+from terminal_support import UNREAD_DOT, Terminal, wait_for_screen
 
 AUTHOR = uuid(301)
 
@@ -115,8 +115,8 @@ class QuickSwitcher(unittest.TestCase):
             self.wait(t, "Ir para conversa")
             rows = self.rows(t)
             self.assertIn("# zebra", rows[0])
-            self.assertIn("⦁", rows[0])
-            self.assertNotIn("⦁", "\n".join(rows[1:]))
+            self.assertIn(UNREAD_DOT, rows[0])
+            self.assertNotIn(UNREAD_DOT, "\n".join(rows[1:]))
             # Empty search: Enter opens the first one, the unread conversation.
             t.send("\n")
             self.gone(t, "Ir para conversa")

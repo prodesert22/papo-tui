@@ -135,8 +135,8 @@ int theme_volume_pair(int percent);
  * emoji and most symbols, so the interface uses labels drawn from the glyphs
  * it has. */
 bool theme_linux_console(void);
-/* The unread dot glyph, one cell wide: ⦁, or • on the Linux console, whose
- * fonts lack the former. */
+/* The unread dot glyph, one cell wide: ⦁, or • on the Linux console and on
+ * macOS, whose fonts lack the former. */
 const char *theme_unread_dot(void);
 /* Frame step of the loading indicator: a turning braille dot, or a turning
  * bar on the Linux console, whose fonts have no braille. */

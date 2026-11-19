@@ -640,7 +640,13 @@ bool theme_linux_console(void)
 }
 const char *theme_unread_dot(void)
 {
+#ifdef __APPLE__
+    /* The monospaced fonts of macOS lack ⦁: the terminal borrows it from a font where it is taller
+     * than the line, so a large circle showed with its lower part cut off. */
+    return "•";
+#else
     return theme_text_symbols() ? "•" : "⦁";
+#endif
 }
 const char *theme_spinner_frame(uint64_t step)
 {
