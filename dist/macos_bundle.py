@@ -107,8 +107,9 @@ README = """Papo TUI for macOS (Apple Silicon) - test build
            /usr/local/bin/papo-tui
 
 Copying uses the macOS clipboard, Ctrl+V pastes files copied in Finder, images and text, and
-attaching or saving a file opens the Finder's dialog. Not available on macOS yet: voice calls,
-desktop notifications and saved sessions. Images use terminal graphics in kitty,
+attaching or saving a file opens the Finder's dialog. Notifications appear in Notification
+Center under "Script Editor" (allow them in System Settings > Notifications if they do not show).
+Not available on macOS yet: voice calls and saved sessions. Images use terminal graphics in kitty,
 Ghostty, WezTerm and iTerm2, and colored characters in Terminal.
 
 ---

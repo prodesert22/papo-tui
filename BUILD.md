@@ -245,8 +245,10 @@ The clipboard uses the macOS pasteboard: copying goes through `pbcopy`, and
 **Ctrl+V** reads files copied in Finder, images and text through `osascript`;
 over SSH copying uses OSC 52 instead. Attaching (**Ctrl+O**/**📎**) and saving an
 attachment open the Finder's dialogs, and the terminal's own picker over SSH.
-These Linux desktop integrations have no macOS version yet: voice calls, desktop
-notifications and their click-to-focus, and saved sessions, which need a secure
+Desktop notifications go to Notification Center through `osascript`, listed
+there as Script Editor, unless the terminal shows them itself (kitty); clicking
+one does not bring the conversation forward yet. These Linux desktop integrations
+have no macOS version yet: voice calls and saved sessions, which need a secure
 store and do not use the macOS Keychain yet.
 
 Install the Xcode Command Line Tools (`xcode-select --install`) and

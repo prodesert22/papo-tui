@@ -171,8 +171,30 @@ static void action_invoked(GDBusConnection *bus, const gchar *sender, const gcha
         }
 }
 static void bus_ready(GObject *source, GAsyncResult *result, gpointer context);
+#ifdef __APPLE__
+/* macOS has no notification service on a session bus: Notification Center shows the alert through
+ * osascript, which reports no click. Title and text come from other users, so they go as arguments
+ * after "--", never into the script; the script also drops a "--" that osascript passes on. */
+static void notification_center(const char *title, const char *body)
+{
+    static const char script[] =
+        "on run argv\n"
+        "  if (count of argv) > 0 and item 1 of argv is \"--\" then set argv to rest of argv\n"
+        "  display notification (item 2 of argv) with title (item 1 of argv)\n"
+        "end run\n";
+    const char *argv[] = {"osascript", "-e", script, "--", title, body, NULL};
+    /* Not waited for: GLib reaps the child on its own worker thread. */
+    GSubprocess *process = g_subprocess_newv(
+        argv, G_SUBPROCESS_FLAGS_STDOUT_SILENCE | G_SUBPROCESS_FLAGS_STDERR_SILENCE, NULL);
+    g_clear_object(&process);
+}
+#endif
 static void connect_bus(desktop_notifier *n)
 {
+#ifdef __APPLE__
+    (void)n; /* No session bus to look for; see notification_center. */
+    return;
+#endif
     if (n->bus || n->connecting || n->dying)
         return;
     n->connecting = true;
@@ -365,6 +387,17 @@ bool desktop_poll(desktop_notifier *n)
             n->notice[0] = 0;
             continue;
         }
+#ifdef __APPLE__
+        {
+            unsigned count = s->count;
+            s->count = 0;
+            char body[2200];
+            snprintf(body, sizeof(body), count > 1 ? "%s · %u novos avisos" : "%s", s->body, count);
+            notification_center(s->title, body);
+            n->notice[0] = 0;
+            continue;
+        }
+#endif
         if (!n->ready) {
             /* Keep it only briefly: probe or reconnect now, and deliver when
              * the daemon answers. A longer outage is not replayed. */
