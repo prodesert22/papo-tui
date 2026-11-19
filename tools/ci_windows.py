@@ -304,7 +304,14 @@ cd /c/papo-ci-work/{job}
 find . -exec touch -c {{}} +
 git init -q && git add -A >/dev/null 2>&1 || true
 /c/Python313/python.exe tools/ci.py run windows-release {arguments} > "$share/job.log" 2>&1
-echo $? > "$share/exit"
+status=$?
+# The reports GitHub uploads as artifacts: logs, JUnit results and failed cases' diagnostics.
+build=build/toolchain/windows-{arch}
+mkdir -p "$share/results"
+cp -r "$build/ci-logs" "$share/results/" 2>/dev/null
+cp -r "$build/release/ci-logs" "$share/results/release-ci-logs" 2>/dev/null
+cp -r "$build/release/Testing/Temporary" "$share/results/Testing" 2>/dev/null
+echo $status > "$share/exit"
 """
     # The VM moves job.sh away when it starts it; a new file each time avoids a cached copy.
     pending = shared / "jobs" / "job.sh.part"
@@ -328,4 +335,5 @@ echo $? > "$share/exit"
     log = work / "job.log"
     if log.exists():
         print(log.read_text(encoding="utf-8", errors="replace")[shown:], end="", flush=True)
+    print(f"Reports: {work / 'results'}", flush=True)
     return int((work / "exit").read_text().strip() or 1)
