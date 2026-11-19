@@ -152,6 +152,16 @@ class DistributionTests(unittest.TestCase):
         self.assertIn("--disable-gpl", ffmpeg["config-opts"])
         self.assertIn("--disable-nonfree", ffmpeg["config-opts"])
         self.assertIn("--enable-vaapi", ffmpeg["config-opts"])
+        self.assertEqual(
+            ffmpeg["config-opts"].count("--disable-protocols"), 1, "only listed protocols are built"
+        )
+        protocols = next(x for x in ffmpeg["config-opts"] if x.startswith("--enable-protocol="))
+        # The player reads files, and HTTP only from its loopback relay of a video still being
+        # downloaded; nothing else reaches the network.
+        self.assertEqual(
+            set(protocols.split("=", 1)[1].split(",")) & {"http", "tcp", "https", "tls", "udp"},
+            {"http", "tcp"},
+        )
         mpv = next(x for x in manifest["modules"] if x["name"] == "mpv")
         self.assertIn("-Dvaapi=enabled", mpv["config-opts"])
         self.assertIn("-Dvaapi-drm=enabled", mpv["config-opts"])

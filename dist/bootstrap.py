@@ -83,6 +83,37 @@ def unix_path(path):
     return str(path)
 
 
+# FFmpeg reads local files, and HTTP only from the player's loopback relay of a video that is still
+# downloading (src/ui/media/media_stream.c). Every other network protocol stays out of the build.
+FFMPEG_PROTOCOLS = (
+    "async",
+    "cache",
+    "concat",
+    "concatf",
+    "crypto",
+    "data",
+    "fd",
+    "file",
+    "http",
+    "pipe",
+    "subfile",
+    "tcp",
+)
+
+
+# Upstream leaks that sanitizers report in the voice tests, fixed until a release has them.
+LEAK_PATCHES = {
+    # Device probing without a PulseAudio server leaks its context and main loop.
+    "gst-plugins-good": "gst-plugins-good-pulse-probe-leak.patch",
+    # The echo probe leaks the latency query it makes for each latency event.
+    "gst-plugins-bad": "gst-plugins-bad-echo-probe-query-leak.patch",
+}
+
+
+def ffmpeg_protocol_options():
+    return ["--disable-protocols", "--enable-protocol=" + ",".join(FFMPEG_PROTOCOLS)]
+
+
 def ncurses_options(prefix, windows=False):
     options = [
         "--prefix=" + prefix,
@@ -220,6 +251,14 @@ def build(entry, source, work, prefix, jobs, env):
             "--input",
             unix_path(ROOT / "dist/patches/webrtc-audio-processing-cstdint.patch"),
         )
+    if name in LEAK_PATCHES:
+        run(
+            "patch",
+            "-p1",
+            "--forward",
+            "--input",
+            unix_path(ROOT / "dist/patches" / LEAK_PATCHES[name]),
+        )
     if name == "abseil-cpp" and os.name == "nt":
         # MinGW's roapi.h does not include the HSTRING functions abseil calls.
         run(
@@ -312,7 +351,7 @@ def build(entry, source, work, prefix, jobs, env):
             "--disable-gpl",
             "--disable-nonfree",
             "--disable-autodetect",
-            "--disable-network",
+            *ffmpeg_protocol_options(),
             "--enable-zlib",
         ]
         if os.name == "nt":
@@ -447,6 +486,8 @@ def main():
                 else "cstdint-v1-"
                 + sha256(ROOT / "dist/patches/webrtc-audio-processing-cstdint.patch")
                 if entry["name"] == "webrtc-audio-processing"
+                else "leak-v1-" + sha256(ROOT / "dist/patches" / LEAK_PATCHES[entry["name"]])
+                if entry["name"] in LEAK_PATCHES
                 else None
             ),
             "system": os.name,

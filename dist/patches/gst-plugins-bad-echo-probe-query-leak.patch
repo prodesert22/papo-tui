@@ -1,0 +1,10 @@
+--- a/ext/webrtcdsp/gstwebrtcechoprobe.cpp
++++ b/ext/webrtcdsp/gstwebrtcechoprobe.cpp
+@@ -154,6 +154,7 @@
+         if (!GST_CLOCK_TIME_IS_VALID (upstream_latency))
+           upstream_latency = 0;
+       }
++      gst_query_unref (query);
+ 
+       GST_WEBRTC_ECHO_PROBE_LOCK (self);
+       self->latency = latency;

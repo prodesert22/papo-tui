@@ -7,7 +7,7 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from bootstrap import ROOT, ncurses_options, sha256
+from bootstrap import LEAK_PATCHES, ROOT, ffmpeg_protocol_options, ncurses_options, sha256
 from voice_dependencies import (
     cmake_options as voice_cmake_options,
     meson_options as voice_meson_options,
@@ -76,7 +76,7 @@ def module(entry):
             "--disable-gpl",
             "--disable-nonfree",
             "--disable-autodetect",
-            "--disable-network",
+            *ffmpeg_protocol_options(),
             "--enable-zlib",
             "--enable-vaapi",
             "--libdir=/app/lib",
@@ -146,6 +146,10 @@ def module(entry):
                 "type": "patch",
                 "path": str(ROOT / "dist/patches/webrtc-audio-processing-cstdint.patch"),
             }
+        )
+    if name in LEAK_PATCHES:
+        result["sources"].append(
+            {"type": "patch", "path": str(ROOT / "dist/patches" / LEAK_PATCHES[name])}
         )
     if name == "gst-plugins-bad":
         # Meson post-install commands run in the build directory, not the source.
