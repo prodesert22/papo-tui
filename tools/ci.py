@@ -69,6 +69,8 @@ JOBS = {
     "linux-sanitizers": ("build", "test"),
     "linux-coverage": ("build", "test"),
 }
+# Windows jobs run in the archive of dist/windows/toolchain.py, on Windows or in the Windows VM.
+WINDOWS_JOBS = {"windows-release": ("build", "test")}
 SENSITIVE_SCENARIOS = (
     "test_grouping_survives_prepend_scroll_and_resize"
     "|test_graphical_server_badge_is_inside_tab_delimiters"
@@ -132,14 +134,20 @@ def build_image(tag, arch, root=ROOT):
 
 
 def ensure_image(arch, root=ROOT, pull=True):
-    """Use the local image, else the published one, else build it from the checkout."""
+    """The published image when there is one, else a local build of the same inputs.
+
+    A local build has the same tools but not the same bytes as the image GitHub runs, so a
+    published tag replaces it; without the registry, the local image is used as it is.
+    """
     tag = image_tag(arch, root)
-    if image_identity(tag):
-        return tag
-    if (
-        pull
-        and subprocess.run(["docker", "pull", "--platform", PLATFORMS[arch], tag]).returncode == 0
-    ):
+    local = image_identity(tag)
+    if pull:
+        command = ["docker", "pull", "--quiet", "--platform", PLATFORMS[arch], tag]
+        result = quiet(command) if local else subprocess.run(command)
+        if result.returncode == 0:
+            return tag
+    if local:
+        print(f"Using the local build of {tag}; it is not published yet", flush=True)
         return tag
     build_image(tag, arch, root)
     return tag
@@ -241,12 +249,40 @@ def committed_source(root=ROOT):
     return source
 
 
+def run_windows_job(args, source):
+    """The Windows job: here on Windows, otherwise in the Windows VM."""
+    sys.path.insert(0, str(source / "tools"))
+    import ci_windows
+
+    stages = [stage for stage in WINDOWS_JOBS["windows-release"] if args.stage in ("all", stage)]
+    started = time.monotonic()
+    if os.name != "nt":
+        code = ci_windows.run_in_vm(args.arch, args.stage, args.extra, args.fast)
+        return "windows-release", code, time.monotonic() - started
+    for stage in stages:
+        code = ci_windows.run_windows(args.arch, stage, args.extra, args.fast)
+        if code:
+            return "windows-release", code, time.monotonic() - started
+    return "windows-release", 0, time.monotonic() - started
+
+
 def run_jobs(args):
-    jobs = args.jobs or list(JOBS)
-    unknown = [job for job in jobs if job not in JOBS]
+    known = {**JOBS, **WINDOWS_JOBS}
+    # Docker runs the Linux jobs; a Windows host runs only its own.
+    jobs = args.jobs or (list(WINDOWS_JOBS) if os.name == "nt" else list(JOBS))
+    unknown = [job for job in jobs if job not in known]
     if unknown:
-        raise SystemExit(f"Unknown jobs {unknown}; choose from {list(JOBS)}")
+        raise SystemExit(f"Unknown jobs {unknown}; choose from {list(known)}")
     source = committed_source() if args.committed else ROOT
+    if os.name == "nt" and set(jobs) - set(WINDOWS_JOBS):
+        raise SystemExit("Linux jobs need Docker; run them on a Linux host")
+    windows = [job for job in jobs if job in WINDOWS_JOBS]
+    jobs = [job for job in jobs if job not in WINDOWS_JOBS]
+    if not jobs:
+        results = [run_windows_job(args, source)]
+        for job, code, seconds in results:
+            print(f"{'passed' if code == 0 else 'FAILED':7}  {job}  {seconds:.0f}s", flush=True)
+        raise SystemExit(1 if results[0][1] else 0)
     tag = ensure_image(args.arch, source)
     identity = image_identity(tag)
     print(f"Toolchain {tag} ({identity})", flush=True)
@@ -297,12 +333,15 @@ def run_jobs(args):
                 return job, code, time.monotonic() - started
         return job, 0, time.monotonic() - started
 
-    if len(jobs) == 1:
+    if len(jobs) == 1 and not windows:
         results = [run(0, jobs[0])]
     else:
-        print(f"Running {', '.join(jobs)} together; logs in {logs}", flush=True)
-        with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
-            results = list(pool.map(run, range(len(jobs)), jobs))
+        print(f"Running {', '.join(jobs + windows)} together; logs in {logs}", flush=True)
+        with ThreadPoolExecutor(max_workers=len(jobs) + len(windows)) as pool:
+            futures = [pool.submit(run, slot, job) for slot, job in enumerate(jobs)]
+            if windows:
+                futures.append(pool.submit(run_windows_job, args, source))
+            results = [future.result() for future in futures]
     for job, code, seconds in results:
         state = "skipped" if code is None else "passed" if code == 0 else "FAILED"
         print(f"{state:7}  {job}  {seconds:.0f}s", flush=True)
@@ -475,6 +514,7 @@ def main():
     image = with_arch(commands.add_parser("image", help="pull or build the toolchain image"))
     image.add_argument("--push", action="store_true", help="publish the tag when it is missing")
     image.add_argument("--print", action="store_true", help="only print the tag")
+    image.add_argument("--windows", action="store_true", help="the Windows toolchain archive")
 
     run = with_arch(
         commands.add_parser(
@@ -483,7 +523,7 @@ def main():
             epilog="Options after -- go to dist/build.py's test stage, such as --case or --suite.",
         )
     )
-    run.add_argument("jobs", nargs="*", metavar="JOB", help=", ".join(JOBS))
+    run.add_argument("jobs", nargs="*", metavar="JOB", help=", ".join([*JOBS, *WINDOWS_JOBS]))
     run.add_argument("--stage", choices=("all", "build", "test"), default="all")
     run.add_argument("--fast", action="store_true", help="use every CPU instead of a runner's four")
     run.add_argument("--full", action="store_true", help="the scheduled, fully instrumented run")
@@ -497,6 +537,11 @@ def main():
     job.add_argument("--full", action="store_true")
 
     with_arch(commands.add_parser("shell", help="an interactive shell in the toolchain"))
+
+    script = with_arch(
+        commands.add_parser("exec", help="Windows: run a bash script in the toolchain's shell")
+    )
+    script.add_argument("script", help="path of the script in the checkout")
 
     check = with_arch(commands.add_parser("compare", help="compare tools with a GitHub run"))
     check.add_argument("run", help="GitHub run id")
@@ -512,7 +557,16 @@ def main():
         arguments = arguments[: arguments.index("--")]
     args = parser.parse_args(arguments)
     args.extra = extra
-    if args.command == "image":
+    if args.command == "image" and args.windows:
+        import ci_windows
+
+        if args.print:
+            print(ci_windows.toolchain_tag(args.arch))
+        elif args.push:
+            ci_windows.publish_toolchain(args.arch)
+        else:
+            print(ci_windows.ensure_toolchain(args.arch))
+    elif args.command == "image":
         if args.print:
             print(image_tag(args.arch))
         elif args.push:
@@ -525,6 +579,10 @@ def main():
         inside(args)
     elif args.command == "shell":
         shell(args)
+    elif args.command == "exec":
+        import ci_windows
+
+        raise SystemExit(ci_windows.run_script(args.arch, args.script))
     else:
         compare(args)
 

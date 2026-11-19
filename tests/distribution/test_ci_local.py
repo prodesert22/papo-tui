@@ -1,5 +1,6 @@
-"""GitHub and a developer's machine must run the Linux jobs with the same tools and commands."""
+"""GitHub and a developer's machine must run the CI jobs with the same tools and commands."""
 
+import json
 import os
 from pathlib import Path
 import re
@@ -23,7 +24,8 @@ LINUX_JOBS = ("toolchain", "quality", "instrumentation")
 def linux_steps():
     for name in LINUX_JOBS:
         for step in WORKFLOW["jobs"][name]["steps"]:
-            yield name, step
+            if "matrix.platform == 'windows'" not in str(step.get("if", "")):
+                yield name, step
     for step in WORKFLOW["jobs"]["build"]["steps"]:
         condition = str(step.get("if", ""))
         if "matrix.platform == 'linux'" in condition and "!inputs.release" in condition:
@@ -54,14 +56,88 @@ class WorkflowParity(unittest.TestCase):
         variants = WORKFLOW["jobs"]["instrumentation"]["strategy"]["matrix"]["variant"]
         self.assertTrue(all("linux-" + variant in ci.JOBS for variant in variants))
 
-    def test_linux_jobs_wait_for_the_published_toolchain(self):
+    def test_jobs_wait_for_the_published_toolchain_of_every_native_platform(self):
         for name in ("quality", "build", "instrumentation"):
             self.assertEqual(WORKFLOW["jobs"][name]["needs"], "toolchain")
-        arches = {
-            row["arch"] for row in WORKFLOW["jobs"]["toolchain"]["strategy"]["matrix"]["include"]
+        rows = WORKFLOW["jobs"]["toolchain"]["strategy"]["matrix"]["include"]
+        built = {(row["platform"], row["arch"]) for row in rows}
+        tested = {
+            (row["platform"], row["arch"])
+            for row in WORKFLOW["jobs"]["build"]["strategy"]["matrix"]["include"]
         }
-        self.assertEqual(arches, set(ci.PLATFORMS))
+        self.assertEqual(built, tested)
+        self.assertEqual(
+            {arch for platform, arch in built if platform == "linux"}, set(ci.PLATFORMS)
+        )
         self.assertEqual(WORKFLOW["jobs"]["toolchain"]["permissions"]["packages"], "write")
+
+    def test_windows_ci_runs_the_local_command_without_msys2_setup_or_caches(self):
+        steps = [
+            step
+            for step in WORKFLOW["jobs"]["build"]["steps"]
+            if "matrix.platform == 'windows'" in str(step.get("if", ""))
+        ]
+        self.assertTrue(steps)
+        for step in steps:
+            text = str(step.get("run", "")) + str(step.get("uses", ""))
+            self.assertNotIn("setup-msys2", text, step.get("name"))
+            self.assertNotIn("actions/cache", text, step.get("name"))
+            self.assertNotIn("pip install", text, step.get("name"))
+            if "run" in step:
+                self.assertIn("tools/ci.py", step["run"], step.get("name"))
+        for step in steps:
+            for name in re.findall(r"tools/ci\.py run ([\w-]+)", str(step.get("run", ""))):
+                self.assertIn(name, ci.WINDOWS_JOBS)
+
+
+class WindowsToolchain(unittest.TestCase):
+    def test_the_archive_is_named_after_every_file_the_recipe_reads(self):
+        sys.path.insert(0, str(ROOT / "dist/windows"))
+        import ci_windows
+        import toolchain
+
+        recipe = (ROOT / "dist/windows/toolchain.py").read_text(encoding="utf-8")
+        # What it writes under build/ is output, not an input.
+        read = [
+            name
+            for name in re.findall(r'ROOT / "([^"]+)"', recipe)
+            if not name.startswith("build/")
+        ]
+        self.assertIn("dist/windows/toolchain.json", read)
+        for name in read:
+            self.assertTrue(
+                any(
+                    name == item or name.startswith(item + "/")
+                    for item in ci_windows.TOOLCHAIN_INPUTS
+                ),
+                name,
+            )
+        for arch in ("x86_64", "aarch64"):
+            self.assertRegex(
+                ci_windows.toolchain_tag(arch), rf"^ghcr\.io/.+:windows-{arch}-[0-9a-f]{{16}}$"
+            )
+            packages = toolchain.packages(arch)
+            self.assertIn("flex", packages)
+            self.assertIn("bison", packages)
+            self.assertFalse(any("{" in name for name in packages))
+
+    def test_downloads_are_pinned(self):
+        lock = json.loads((ROOT / "dist/windows/toolchain.json").read_text(encoding="utf-8"))
+        pinned = [lock["msys2"], *(system["python"] for system in lock["systems"].values())]
+        for item in pinned:
+            self.assertRegex(item["sha256"], r"^[0-9a-f]{64}$")
+            self.assertTrue(item["url"].startswith("https://"))
+        oras = json.loads((ROOT / "dist/tools.json").read_text(encoding="utf-8"))["oras"]
+        for asset in oras["assets"]:
+            self.assertRegex(asset["sha256"], r"^[0-9a-f]{64}$")
+
+    def test_vm_jobs_carry_only_files_a_commit_would_hold(self):
+        sys.path.insert(0, str(ROOT / "tools"))
+        import ci_windows
+
+        files = ci_windows.tracked_files()
+        self.assertIn("tools/ci.py", files)
+        self.assertFalse(any(name.startswith("build/") for name in files))
 
 
 class ImageInputs(unittest.TestCase):

@@ -1,0 +1,52 @@
+{
+  "epoch": "2026-11-19",
+  "msys2": {
+    "url": "https://repo.msys2.org/distrib/x86_64/msys2-base-x86_64-20260927.sfx.exe",
+    "sha256": "ad336cccfda47758b5e15cda993fbba421115cb0b126697daef1ee4dfe37209f"
+  },
+  "systems": {
+    "x86_64": {
+      "msystem": "CLANG64",
+      "prefix": "clang64",
+      "package": "mingw-w64-clang-x86_64",
+      "python": {
+        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261110/cpython-3.13.18+20261110-x86_64-pc-windows-msvc-install_only_stripped.tar.gz",
+        "sha256": "2e0fed09d48989f64c9305da9ff2d37a41c0d13ab2aa6283405b2b620dfbf805"
+      }
+    },
+    "aarch64": {
+      "msystem": "CLANGARM64",
+      "prefix": "clangarm64",
+      "package": "mingw-w64-clang-aarch64",
+      "python": {
+        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261110/cpython-3.13.18+20261110-aarch64-pc-windows-msvc-install_only_stripped.tar.gz",
+        "sha256": "0a8840071810ddb8565256cd406b466d4e9dc6dc523395a5477880dbc4f67eb3"
+      }
+    }
+  },
+  "packages": [
+    "base-devel",
+    "git",
+    "autoconf",
+    "automake",
+    "libtool",
+    "nasm",
+    "flex",
+    "bison",
+    "{package}-toolchain",
+    "{package}-cmake",
+    "{package}-ninja",
+    "{package}-pkgconf",
+    "{package}-ncurses",
+    "{package}-glib2",
+    "{package}-pango",
+    "{package}-fontconfig",
+    "{package}-librsvg",
+    "{package}-libass",
+    "{package}-libplacebo",
+    "{package}-ffmpeg",
+    "{package}-libgcrypt",
+    "{package}-vulkan-headers",
+    "{package}-openssl"
+  ]
+}

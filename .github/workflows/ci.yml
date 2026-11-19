@@ -29,18 +29,27 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ inputs.ref || github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ !inputs.release }}
 jobs:
-  # The Linux jobs run inside one image, named after the hash of its inputs. It is built and
-  # published only when that tag does not exist yet; tools/ci.py uses the same tag locally.
+  # Every job runs in one toolchain per system and architecture, named after the hash of its
+  # inputs: an image on Linux, an archive of C:\papo-ci on Windows. It is built and published only
+  # when that tag does not exist yet; tools/ci.py uses the same tag on a developer's machine.
   toolchain:
     if: ${{ !inputs.release || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))) }}
-    name: Toolchain (linux, ${{ matrix.arch }})
+    name: Toolchain (${{ matrix.platform }}, ${{ matrix.arch }})
     strategy:
       fail-fast: false
       matrix:
         include:
           - runner: ubuntu-24.04
+            platform: linux
             arch: x86_64
           - runner: ubuntu-24.04-arm
+            platform: linux
+            arch: aarch64
+          - runner: windows-2025
+            platform: windows
+            arch: x86_64
+          - runner: windows-11-arm
+            platform: windows
             arch: aarch64
     runs-on: ${{ matrix.runner }}
     permissions:
@@ -52,13 +61,24 @@ jobs:
           ref: ${{ inputs.ref || github.sha }}
       # A pull request from a fork cannot publish; its jobs build the image themselves.
       - name: Publish the toolchain image when its inputs changed
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        if: matrix.platform == 'linux' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         env:
           REGISTRY_USER: ${{ github.actor }}
           REGISTRY_TOKEN: ${{ github.token }}
         run: |
           echo "$REGISTRY_TOKEN" | docker login ghcr.io --username "$REGISTRY_USER" --password-stdin
           python3 tools/ci.py image --push
+      # Only starts tools/ci.py; the toolchain brings the Python the jobs use.
+      - uses: actions/setup-python@v5
+        if: matrix.platform == 'windows'
+        with:
+          python-version: '3.13'
+      - name: Publish the Windows toolchain when its inputs changed
+        if: matrix.platform == 'windows' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: python tools/ci.py image --windows --push
   quality:
     needs: toolchain
     if: ${{ !inputs.release || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))) }}
@@ -98,13 +118,9 @@ jobs:
             arch: aarch64
           - runner: windows-2025
             platform: windows
-            system: CLANG64
-            package: mingw-w64-clang-x86_64
             arch: x86_64
           - runner: windows-11-arm
             platform: windows
-            system: CLANGARM64
-            package: mingw-w64-clang-aarch64
             arch: aarch64
     runs-on: ${{ matrix.runner }}
     env:
@@ -174,83 +190,29 @@ jobs:
         run: |
           version="$(build/test-env/bin/python dist/release.py "$RELEASE_REF" --require-head)"
           build/test-env/bin/python dist/ci_linux.py --arch "$BUILD_ARCH" --version "$version"
+      # Windows builds and tests in the toolchain archive, through the command a developer uses.
+      # setup-python only starts tools/ci.py; the toolchain brings the Python the jobs use.
       - uses: actions/setup-python@v5
         if: matrix.platform == 'windows'
         with:
           python-version: '3.13'
-      - uses: msys2/setup-msys2@v2
+      - name: Windows toolchain
         if: matrix.platform == 'windows'
-        with:
-          msystem: ${{ matrix.system }}
-          update: true
-          install: >-
-            base-devel git autoconf automake libtool nasm flex bison
-            ${{ matrix.package }}-toolchain ${{ matrix.package }}-cmake
-            ${{ matrix.package }}-ninja ${{ matrix.package }}-pkgconf
-            ${{ matrix.package }}-ncurses ${{ matrix.package }}-glib2
-            ${{ matrix.package }}-pango ${{ matrix.package }}-fontconfig
-            ${{ matrix.package }}-librsvg
-            ${{ matrix.package }}-libass ${{ matrix.package }}-libplacebo
-            ${{ matrix.package }}-ffmpeg ${{ matrix.package }}-libgcrypt
-            ${{ matrix.package }}-vulkan-headers ${{ matrix.package }}-openssl
-      - name: Windows Python test environment
-        id: windows-env
-        if: matrix.platform == 'windows'
-        shell: msys2 {0}
-        run: |
-          native_python="$(cygpath -u "$pythonLocation")/python.exe"
-          "$native_python" -m venv build/test-env
-          build/test-env/Scripts/python.exe -m pip install --require-hashes -r requirements/ci-windows-py313.txt
-          build/test-env/Scripts/python.exe tools/dependency_key.py >> "$GITHUB_OUTPUT"
-      - uses: actions/cache/restore@v4
-        if: matrix.platform == 'windows'
-        id: windows-cache
-        with:
-          path: |
-            build/source-cache
-            build/resources
-            build/release-deps
-          key: windows-${{ matrix.system }}-${{ steps.windows-env.outputs.fingerprint }}-${{ hashFiles('dist/dependencies.json', 'dist/bootstrap.py', 'dist/voice_dependencies.py', 'dist/patches/**', 'dist/resources.json', 'tests/fixtures/resources.json') }}
-          restore-keys: |
-            windows-${{ matrix.system }}-${{ steps.windows-env.outputs.fingerprint }}-
-      - name: Build Windows
         env:
-          PAPO_CI_CACHE_HIT: ${{ steps.windows-cache.outputs.cache-hit }}
-        id: windows-build
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: python tools/ci.py image --windows
+      - name: Build Windows
         if: matrix.platform == 'windows'
-        shell: msys2 {0}
-        run: |
-          export PATH="$PWD/build/test-env/Scripts:$PATH"
-          export PAPO_SYSTEM_BIN="$(cygpath -w "$MINGW_PREFIX/bin")"
-          python dist/build.py --build build/release --prefix build/release-deps --build-only
-      - uses: actions/cache/save@v4
-        if: always() && !cancelled() && steps.windows-cache.outcome == 'success' && steps.windows-cache.outputs.cache-hit != 'true' && steps.windows-build.outputs.dependencies-ready == 'true'
-        with:
-          path: |
-            build/source-cache
-            build/resources
-            build/release-deps
-          key: ${{ steps.windows-cache.outputs.cache-primary-key }}
+        run: python tools/ci.py run windows-release --stage build
       - name: Test Windows
         if: matrix.platform == 'windows'
-        env:
-          PAPO_CI_CACHE_HIT: ${{ steps.windows-cache.outputs.cache-hit }}
-        shell: msys2 {0}
-        run: |
-          export PATH="$PWD/build/test-env/Scripts:$PATH"
-          python dist/build.py --build build/release --prefix build/release-deps --test-only
+        run: python tools/ci.py run windows-release --stage test
       - name: ZIP, installer and installation lifecycle
         if: matrix.platform == 'windows' && inputs.release
-        shell: msys2 {0}
         env:
           RELEASE_REF: ${{ inputs.ref }}
-        run: |
-          export PATH="$PWD/build/test-env/Scripts:$PATH"
-          export ISCC="$(python dist/windows/tools.py | tail -1)"
-          version="$(python dist/release.py "$RELEASE_REF" --require-head)"
-          python dist/package.py --build build/release --output build/artifacts --formats zip,installer \
-            --arch "$BUILD_ARCH" --flavor windows --dependency-prefix build/release-deps
-          python dist/windows/verify.py --artifacts build/artifacts --version "$version" --arch "$BUILD_ARCH"
+        run: python tools/ci.py exec dist/windows/package-release.sh
       - uses: actions/cache/save@v4
         if: always() && !cancelled() && steps.release-cache.outcome == 'success' && steps.release-cache.outputs.cache-hit != 'true' && steps.release-build.outputs.dependencies-ready == 'true'
         with:
