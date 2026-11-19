@@ -276,6 +276,22 @@ is used, and the private prefix keeps its own libraries ahead of Homebrew's on
 CMake by hand. It configures `PAPO_BUNDLE_RUNTIME=OFF`: the binary runs from the
 build tree and needs the private prefix, but no library path variable.
 
+To try a build on a Mac without compiling there, the macOS CI job also makes a
+test disk image, `papo-tui-<version>-macos-aarch64-test.dmg`, and attaches it to
+the run as the **macos-test-dmg-aarch64** artifact. Locally, after a build:
+
+```sh
+python dist/macos_bundle.py --build build/release --prefix build/release-deps --output build/macos-test
+```
+
+It installs the build into `Papo TUI.app` (under `Contents/Resources/papo-tui`,
+the same layout as the Linux archive), copies every library that is not part of
+macOS, rewrites their references relative to each file, signs everything ad hoc
+and adds a link to Applications. It is not notarized and is no release asset:
+it has no update channel, and its `READ ME FIRST.txt` explains how to open it
+with `xattr -dr com.apple.quarantine`. Double-clicking the app opens the program
+in the default terminal.
+
 Replace `--build-only` with `--test-only` to run the tests after a build, or
 omit both to do both. The test suite skips what needs a Linux desktop (D-Bus
 notifications, the Secret Service keyring, the file portal) or the GNU toolchain

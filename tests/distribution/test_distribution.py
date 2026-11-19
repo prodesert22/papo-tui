@@ -19,6 +19,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "dist"))
 import bootstrap  # noqa: E402 - path and test arguments are prepared above
+import macos_bundle  # noqa: E402 - path and test arguments are prepared above
 import package  # noqa: E402 - path and test arguments are prepared above
 import release  # noqa: E402 - path and test arguments are prepared above
 
@@ -358,6 +359,66 @@ class DistributionTests(unittest.TestCase):
                 patch.object(bootstrap.subprocess, "check_output", side_effect=brew),
             ):
                 self.assertEqual(bootstrap.macos_pkg_config_dirs(), [str(keg / "lib/pkgconfig")])
+
+    def test_macos_otool_listing_drops_the_library_own_name(self):
+        listings = {
+            ("otool", "-D"): "lib.dylib:\n@rpath/libown.1.dylib\n",
+            ("otool", "-L"): "lib.dylib:\n\t@rpath/libown.1.dylib (compatibility version 1.0.0)\n"
+            "\t/opt/homebrew/opt/glib/lib/libglib-2.0.0.dylib (compatibility version 1.0.0)\n"
+            "\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0)\n",
+        }
+        with patch.object(macos_bundle, "output", lambda *args: listings[args[:2]]):
+            self.assertEqual(
+                macos_bundle.install_names(Path("lib.dylib")),
+                ["/opt/homebrew/opt/glib/lib/libglib-2.0.0.dylib", "/usr/lib/libSystem.B.dylib"],
+            )
+
+    def test_macos_app_copies_libraries_once_and_names_them_relatively(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            tree = root / "Papo TUI.app/Contents/Resources/papo-tui"
+            external = root / "homebrew"
+            external.mkdir()
+            magic = b"\xcf\xfa\xed\xfe" + bytes(28)
+            for path in (tree / "bin/papo-tui", tree / "bin/papo-backends/image.so"):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(magic)
+            for name in ("libglib-2.0.0.dylib", "libintl.8.dylib"):
+                (external / name).write_bytes(magic)
+            glib, intl = (
+                str(external / name) for name in ("libglib-2.0.0.dylib", "libintl.8.dylib")
+            )
+            loads = {
+                "papo-tui": [glib, "/usr/lib/libSystem.B.dylib"],
+                "image.so": [glib],
+                "libglib-2.0.0.dylib": ["@loader_path/libintl.8.dylib"],
+                "libintl.8.dylib": [],
+            }
+            calls = []
+            with (
+                patch.object(macos_bundle, "install_names", lambda path: loads[path.name]),
+                patch.object(macos_bundle, "rpaths", lambda path: []),
+                patch.object(macos_bundle, "run", lambda *args: calls.append(args)),
+            ):
+                copies = macos_bundle.bundle_libraries(tree, [external])
+            libraries = tree / "lib/papo-tui"
+            self.assertEqual(
+                sorted(path.name for path in copies.values()),
+                ["libglib-2.0.0.dylib", "libintl.8.dylib"],
+            )
+            changes = {Path(args[-1]).name: args[1:-1] for args in calls}
+            self.assertEqual(
+                changes["papo-tui"],
+                ("-change", glib, "@loader_path/../lib/papo-tui/libglib-2.0.0.dylib"),
+            )
+            self.assertEqual(
+                changes["image.so"],
+                ("-change", glib, "@loader_path/../../lib/papo-tui/libglib-2.0.0.dylib"),
+            )
+            # The copy keeps its relative reference; only its own name changes.
+            self.assertEqual(changes["libglib-2.0.0.dylib"], ("-id", "@rpath/libglib-2.0.0.dylib"))
+            self.assertEqual(changes["libintl.8.dylib"], ("-id", "@rpath/libintl.8.dylib"))
+            self.assertTrue((libraries / "libintl.8.dylib").is_file())
 
     def test_ncurses_pkg_config_uses_native_relocatable_paths(self):
         with tempfile.TemporaryDirectory() as directory:

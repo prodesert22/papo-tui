@@ -48,6 +48,18 @@ void media_resources_init(void)
         g_setenv("FONTCONFIG_PATH", fontconfig, FALSE);
     g_free(fontconfig);
     g_free(terminfo);
+#elif defined(__APPLE__)
+    /* Only the macOS app carries etc/fonts. Its libraries come from Homebrew, whose compiled-in
+     * font configuration and GIO modules live under /opt/homebrew: absent from most Macs, and on
+     * one with Homebrew they would load a second copy of GLib. */
+    char *fontconfig = g_build_filename(prefix, "etc", "fonts", NULL);
+    if (g_file_test(fontconfig, G_FILE_TEST_IS_DIR)) {
+        g_setenv("FONTCONFIG_PATH", fontconfig, FALSE);
+        char *modules = g_build_filename(prefix, "lib", "gio", "modules", NULL);
+        g_setenv("GIO_MODULE_DIR", modules, FALSE);
+        g_free(modules);
+    }
+    g_free(fontconfig);
 #endif
 #ifdef PAPO_MEDIA_RESOURCES_WORKER
     char *font = g_build_filename(prefix, "share", "fonts", "papo-tui", "NotoColorEmoji.ttf", NULL);

@@ -300,6 +300,20 @@ jobs:
             build/resources
             build/release-deps
           key: ${{ steps.macos-cache.outputs.cache-primary-key }}
+      # A disk image to try the program on a Mac; it is not a release asset and is made before the
+      # tests, so a failing test still leaves something to try.
+      - name: macOS test disk image
+        id: macos-dmg
+        if: matrix.platform == 'macos'
+        run: |
+          export PATH="$PWD/build/test-env/bin:$PATH"
+          python dist/macos_bundle.py --build build/release --prefix build/release-deps --output build/macos-test
+      - uses: actions/upload-artifact@v4
+        if: steps.macos-dmg.outcome == 'success'
+        with:
+          name: macos-test-dmg-${{ matrix.arch }}
+          path: build/macos-test/*.dmg
+          if-no-files-found: error
       - name: Test macOS
         if: matrix.platform == 'macos'
         env:

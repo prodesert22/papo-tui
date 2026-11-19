@@ -452,6 +452,9 @@ def main():
             + " "
             + env.get("LDFLAGS", "")
         )
+    if host_platform() == "macos":
+        # dist/macos_bundle.py rewrites library names in place; leave room in the headers.
+        env["LDFLAGS"] = "-Wl,-headerpad_max_install_names " + env["LDFLAGS"]
     selected = set(args.only.split(",")) if args.only else {x["name"] for x in lock["sources"]}
     unknown = selected - {x["name"] for x in lock["sources"]}
     if unknown:
