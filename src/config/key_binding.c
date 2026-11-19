@@ -219,6 +219,9 @@ static bool parse_modifier(const char *text, unsigned *modifiers)
         bit = KEY_BINDING_ALT;
     else if (!g_ascii_strcasecmp(text, "shift"))
         bit = KEY_BINDING_SHIFT;
+    else if (!g_ascii_strcasecmp(text, "super") || !g_ascii_strcasecmp(text, "cmd") ||
+             !g_ascii_strcasecmp(text, "command"))
+        bit = KEY_BINDING_SUPER;
     else
         return false;
     if (*modifiers & bit)
@@ -323,6 +326,8 @@ static bool format_prefix(unsigned modifiers, char *output, size_t size, size_t 
         return false;
     if ((modifiers & KEY_BINDING_SHIFT) && !append(output, size, used, "shift+"))
         return false;
+    if ((modifiers & KEY_BINDING_SUPER) && !append(output, size, used, "super+"))
+        return false;
     return true;
 }
 
@@ -363,6 +368,13 @@ bool key_binding_label(const key_binding *binding, char *output, size_t size)
         return false;
     if ((binding->modifiers & KEY_BINDING_SHIFT) && !append(output, size, &used, _("Shift+")))
         return false;
+    /* The key's name on each keyboard; the same in every language. */
+#ifdef __APPLE__
+    if ((binding->modifiers & KEY_BINDING_SUPER) && !append(output, size, &used, "Cmd+"))
+#else
+    if ((binding->modifiers & KEY_BINDING_SUPER) && !append(output, size, &used, "Super+"))
+#endif
+        return false;
     switch (binding->kind) {
     case KEY_BINDING_CHAR:
         if (binding->code == ' ')
@@ -371,8 +383,7 @@ bool key_binding_label(const key_binding *binding, char *output, size_t size)
             return append(output, size, &used, "+");
         {
             unsigned code = binding->code;
-            if ((binding->modifiers & (KEY_BINDING_CTRL | KEY_BINDING_ALT | KEY_BINDING_SHIFT)) &&
-                code >= 'a' && code <= 'z')
+            if ((binding->modifiers & KEY_BINDING_MODIFIERS) && code >= 'a' && code <= 'z')
                 code -= 'a' - 'A';
             char buffer[8];
             int length = g_unichar_to_utf8((gunichar)code, buffer);
@@ -397,7 +408,7 @@ bool key_binding_label(const key_binding *binding, char *output, size_t size)
 
 bool key_binding_well_formed(const key_binding *binding)
 {
-    if (!binding || binding->modifiers & ~(KEY_BINDING_SHIFT | KEY_BINDING_ALT | KEY_BINDING_CTRL))
+    if (!binding || binding->modifiers & ~(unsigned)KEY_BINDING_MODIFIERS)
         return false;
     switch (binding->kind) {
     case KEY_BINDING_CHAR:
@@ -421,9 +432,9 @@ bool key_binding_valid(const key_binding *binding)
         return false;
     switch (binding->kind) {
     case KEY_BINDING_CHAR:
-        /* Printable keys always need Ctrl or Alt. Shift alone cannot be
+        /* Printable keys always need Ctrl, Alt or Super. Shift alone cannot be
          * distinguished from ordinary shifted typing by the terminal. */
-        return (binding->modifiers & (KEY_BINDING_CTRL | KEY_BINDING_ALT)) != 0;
+        return (binding->modifiers & (KEY_BINDING_CTRL | KEY_BINDING_ALT | KEY_BINDING_SUPER)) != 0;
     case KEY_BINDING_KEY:
         if (binding->code < KEY_BINDING_UP || binding->code > KEY_BINDING_F12)
             return false;
@@ -464,7 +475,7 @@ bool key_binding_equal(const key_binding *left, const key_binding *right)
 unsigned key_binding_legacy_ctrl_byte(const key_binding *binding)
 {
     if (!binding || binding->kind != KEY_BINDING_CHAR || !(binding->modifiers & KEY_BINDING_CTRL) ||
-        (binding->modifiers & KEY_BINDING_ALT))
+        (binding->modifiers & (KEY_BINDING_ALT | KEY_BINDING_SUPER)))
         return 0;
     unsigned code = binding->code, value = 0;
     if (code >= 'a' && code <= 'z')

@@ -10,6 +10,8 @@
 #define CTRL(c) {KEY_BINDING_CHAR, (c), KEY_BINDING_CTRL}
 #define LETTER(c) {KEY_BINDING_CHAR, (c), 0}
 #define FUNCTION(n) {KEY_BINDING_KEY, KEY_BINDING_F1 + (n) - 1, 0}
+#define SUPER(c) {KEY_BINDING_CHAR, (c), KEY_BINDING_SUPER}
+#define TEXT_MODIFIERS (KEY_BINDING_CTRL | KEY_BINDING_ALT | KEY_BINDING_SUPER)
 
 typedef struct {
     const char *id, *label;
@@ -268,7 +270,7 @@ void keymap_binding_normalize(key_binding *binding)
     if (!binding || binding->kind != KEY_BINDING_CHAR)
         return;
     unsigned code = binding->code;
-    if (binding->modifiers & (KEY_BINDING_CTRL | KEY_BINDING_ALT)) {
+    if (binding->modifiers & TEXT_MODIFIERS) {
         if (code >= 'A' && code <= 'Z') {
             binding->code = code - 'A' + 'a';
             binding->modifiers |= KEY_BINDING_SHIFT;
@@ -348,7 +350,7 @@ const char *keymap_binding_error(keymap_action action, const key_binding *bindin
     keymap_binding_normalize(&key);
     if (reserved(&key))
         return _("Esta tecla é fixa: navega, confirma ou edita texto.");
-    if (key.kind == KEY_BINDING_CHAR && !(key.modifiers & (KEY_BINDING_CTRL | KEY_BINDING_ALT))) {
+    if (key.kind == KEY_BINDING_CHAR && !(key.modifiers & TEXT_MODIFIERS)) {
         if (actions[action].flags & KEYMAP_TEXT_SAFE)
             return _("Esta função age em campos de texto: use Ctrl, Alt ou F1–F12.");
         if (key.code == ' ')
@@ -365,13 +367,43 @@ static unsigned definition_count(keymap_action action)
     return count;
 }
 
-void keymap_table_defaults(keymap_table *table)
+/* Command (super) alternatives offered on macOS after the Ctrl defaults, which
+ * keep working in every terminal. Only terminals with the kitty keyboard
+ * protocol report Command, such as kitty, Ghostty and WezTerm with
+ * enable_kitty_keyboard; Terminal.app and iTerm2 keep it for their menus. These
+ * letters are free in the default bindings of those three terminals and of
+ * macOS, while Command+A, C, D, E, F, G, H, J, K, L, M, N, Q, R, T, V and W
+ * already belong to one of them. */
+static const struct {
+    keymap_action action;
+    key_binding key;
+} apple_keys[] = {
+    {KEYMAP_HELP_ALL, SUPER('/')}, {KEYMAP_SETTINGS, SUPER('s')},   {KEYMAP_PINNED, SUPER('b')},
+    {KEYMAP_MEMBERS, SUPER('u')},  {KEYMAP_PROFILES, SUPER('p')},   {KEYMAP_PLAYER, SUPER('x')},
+    {KEYMAP_ATTACH, SUPER('o')},   {KEYMAP_RETRY_SEND, SUPER('y')},
+};
+
+void keymap_table_platform_defaults(keymap_table *table, bool apple)
 {
     memset(table, 0, sizeof(*table));
     for (int i = 0; i < KEYMAP_ACTIONS; ++i) {
         table->count[i] = definition_count((keymap_action)i);
         memcpy(table->keys[i], actions[i].keys, sizeof(table->keys[i]));
     }
+    for (size_t i = 0; apple && i < sizeof(apple_keys) / sizeof(apple_keys[0]); ++i) {
+        keymap_action action = apple_keys[i].action;
+        if (table->count[action] < KEYMAP_BINDINGS)
+            table->keys[action][table->count[action]++] = apple_keys[i].key;
+    }
+}
+
+void keymap_table_defaults(keymap_table *table)
+{
+#ifdef __APPLE__
+    keymap_table_platform_defaults(table, true);
+#else
+    keymap_table_platform_defaults(table, false);
+#endif
 }
 
 void keymap_table_from_overrides(keymap_table *table, const keymap_overrides *overrides)
@@ -404,9 +436,11 @@ void keymap_table_to_overrides(const keymap_table *table, const keymap_overrides
 {
     keymap_overrides result;
     memset(&result, 0, sizeof(result));
+    keymap_table defaults;
+    keymap_table_defaults(&defaults);
     for (int i = 0; i < KEYMAP_ACTIONS && result.count < KEYMAP_OVERRIDES; ++i) {
         unsigned count = table->count[i] > KEYMAP_BINDINGS ? KEYMAP_BINDINGS : table->count[i];
-        if (same_keys(table->keys[i], count, actions[i].keys, definition_count((keymap_action)i)))
+        if (same_keys(table->keys[i], count, defaults.keys[i], defaults.count[i]))
             continue;
         keymap_override *item = &result.items[result.count++];
         snprintf(item->id, sizeof(item->id), "%s", actions[i].id);

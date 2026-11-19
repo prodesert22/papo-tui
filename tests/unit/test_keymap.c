@@ -1,8 +1,13 @@
+#define _POSIX_C_SOURCE 200809L
 #include "config/keymap.h"
 #include "ui/input/shortcuts.h"
 #include <assert.h>
 #include <ncurses.h>
+#include <stdio.h>
 #include <string.h>
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 
 static key_binding parse(const char *text)
 {
@@ -222,6 +227,176 @@ static void test_events(void)
     assert(!shortcut_is(OK, 10, KEYMAP_NONE));
 }
 
+static void test_super(void)
+{
+    /* Command on macOS, the Super key elsewhere, as the kitty protocol bit 8. */
+    key_binding key = parse("cmd+S");
+    assert(key.code == 's' && key.modifiers == (KEY_BINDING_SUPER | KEY_BINDING_SHIFT));
+    key = parse("command+/");
+    assert(key.code == '/' && key.modifiers == KEY_BINDING_SUPER);
+    key = parse("ctrl+alt+shift+super+pagedown");
+    char text[KEY_BINDING_TEXT];
+    assert(key_binding_format(&key, text, sizeof(text)) &&
+           !strcmp(text, "ctrl+alt+shift+super+pagedown"));
+    key = parse("super+s");
+    assert(key_binding_format(&key, text, sizeof(text)) && !strcmp(text, "super+s"));
+    assert(key_binding_parse("super+super+s", &key) == false);
+    key = parse("super+s");
+    char label[64];
+    assert(key_binding_label(&key, label, sizeof(label)));
+#ifdef __APPLE__
+    assert(!strcmp(label, "Cmd+S"));
+#else
+    assert(!strcmp(label, "Super+S"));
+#endif
+    /* A Super letter is not typed, so commands that act in text fields take it. */
+    assert(!keymap_binding_error(KEYMAP_SWITCHER, &key));
+    assert(key_binding_valid(&key) && !key_binding_error(&key));
+    key = parse("ctrl+super+a");
+    assert(!key_binding_legacy_ctrl_byte(&key) && !keymap_binding_error(KEYMAP_SWITCHER, &key));
+    assert(key_binding_well_formed(
+        &(key_binding){KEY_BINDING_KEY, KEY_BINDING_UP, KEY_BINDING_SUPER}));
+    assert(!key_binding_well_formed(&(key_binding){KEY_BINDING_CHAR, 's', 16}));
+
+    json_error_t error;
+    json_t *object =
+        json_loads("{\"conversation.switcher\": [\"cmd+k\", \"super+shift+k\"]}", 0, &error);
+    keymap_overrides overrides;
+    assert(object && keymap_overrides_decode(&overrides, object));
+    json_decref(object);
+    assert(overrides.items[0].keys[0].modifiers == KEY_BINDING_SUPER);
+    json_t *encoded = keymap_overrides_encode(&overrides);
+    char *dumped = json_dumps(encoded, JSON_COMPACT);
+    assert(!strcmp(dumped, "{\"conversation.switcher\":[\"super+k\",\"shift+super+k\"]}"));
+    free(dumped);
+    json_decref(encoded);
+}
+
+static void test_platform_defaults(void)
+{
+    keymap_table others, apple;
+    keymap_table_platform_defaults(&others, false);
+    keymap_table_platform_defaults(&apple, true);
+    /* Linux and Windows keep one key; macOS adds Command after Ctrl. */
+    assert(others.count[KEYMAP_SETTINGS] == 1);
+    assert(apple.count[KEYMAP_SETTINGS] == 2 &&
+           key_binding_equal(&apple.keys[KEYMAP_SETTINGS][0], &others.keys[KEYMAP_SETTINGS][0]) &&
+           key_binding_equal(&apple.keys[KEYMAP_SETTINGS][1],
+                             &(key_binding){KEY_BINDING_CHAR, 's', KEY_BINDING_SUPER}));
+    /* Command+K, F, Q and the other keys of the terminals stay with them. */
+    assert(apple.count[KEYMAP_SWITCHER] == 1 && apple.count[KEYMAP_SEARCH] == 1 &&
+           apple.count[KEYMAP_QUIT] == 1 && apple.count[KEYMAP_RECONNECT] == 1);
+    for (int i = 0; i < KEYMAP_ACTIONS; ++i) {
+        assert(apple.count[i] >= others.count[i]);
+        for (unsigned j = 0; j < others.count[i]; ++j)
+            assert(key_binding_equal(&apple.keys[i][j], &others.keys[i][j]));
+        for (unsigned j = 0; j < apple.count[i]; ++j) {
+            assert(!keymap_binding_error((keymap_action)i, &apple.keys[i][j]));
+            assert(keymap_find_conflict(&apple, (keymap_action)i, &apple.keys[i][j]).kind ==
+                   KEYMAP_CONFLICT_NONE);
+        }
+    }
+    keymap_table built;
+    keymap_table_defaults(&built);
+#ifdef __APPLE__
+    assert(!memcmp(&built, &apple, sizeof(built)));
+#else
+    assert(!memcmp(&built, &others, sizeof(built)));
+#endif
+    /* Only what differs from this platform's defaults is stored. */
+    keymap_overrides saved;
+    keymap_table_to_overrides(&built, NULL, &saved);
+    assert(!saved.count);
+    keymap_apply(&apple);
+    char label[128];
+    assert(keymap_label(KEYMAP_SETTINGS, false, label, sizeof(label)));
+#ifdef __APPLE__
+    assert(!strcmp(label, "Ctrl+S / Cmd+S"));
+#else
+    assert(!strcmp(label, "Ctrl+S / Super+S"));
+#endif
+    assert(keymap_label(KEYMAP_SETTINGS, true, label, sizeof(label)) && !strcmp(label, "Ctrl+S"));
+    keymap_apply(&built);
+}
+
+/* The Windows ncurses backend cannot create a screen from tmpfile streams. */
+#ifndef _WIN32
+/* Reads the next key a terminal sends, through the application's decoder. */
+static int read_key(int terminal, const char *bytes, uint32_t *key)
+{
+    size_t length = strlen(bytes);
+    assert(write(terminal, bytes, length) == (ssize_t)length);
+    return text_input_read(key);
+}
+
+static void test_super_decoding(void)
+{
+    int ends[2];
+    assert(!pipe(ends));
+    FILE *input = fdopen(ends[0], "r"), *output = tmpfile();
+    assert(input && output);
+    SCREEN *screen = newterm("xterm-256color", output, input);
+    assert(screen);
+    raw();
+    noecho();
+    keypad(stdscr, TRUE);
+    timeout(0);
+    set_escdelay(25);
+    text_input_init();
+    keymap_table table;
+    keymap_table_platform_defaults(&table, true);
+    keymap_apply(&table);
+
+    /* Kitty, Ghostty and WezTerm report Command+S as CSI 115 ; 1+8 u. */
+    uint32_t key;
+    int type = read_key(ends[1], "\033[115;9u", &key);
+    assert(type == KEY_CODE_YES && shortcut_is(type, key, KEYMAP_SETTINGS));
+    key_binding binding;
+    assert(shortcut_event(type, key, &binding) && binding.code == 's' &&
+           binding.modifiers == KEY_BINDING_SUPER);
+    type = read_key(ends[1], "\033[47;9u", &key);
+    assert(type == KEY_CODE_YES && shortcut_is(type, key, KEYMAP_HELP_ALL));
+    /* Ctrl+S keeps its control byte. */
+    type = read_key(ends[1], "\023", &key);
+    assert(type == OK && shortcut_is(type, key, KEYMAP_SETTINGS));
+    /* With press and release events for push-to-talk, releases are consumed too. */
+    text_input_terminal_active(true);
+    assert(read_key(ends[1], "\033[?1u", &key) == ERR && text_keyboard_events_supported());
+    text_input_event_reporting(true);
+    type = read_key(ends[1], "\033[115;9:1u", &key);
+    assert(type == KEY_CODE_YES && shortcut_is(type, key, KEYMAP_SETTINGS));
+    type = read_key(ends[1], "\033[115;9:3u", &key);
+    assert(type == KEY_CODE_YES && key == TEXT_IGNORED);
+    text_input_event_reporting(false);
+    text_input_terminal_active(false);
+
+    /* Settings → Atalhos captures Command with the kitty protocol flags. */
+    assert(text_capture_begin());
+    type = read_key(ends[1], "\033[115;10u", &key);
+    assert(type == KEY_CODE_YES && key == TEXT_CAPTURED && text_capture_take(&binding));
+    assert(binding.kind == KEY_BINDING_CHAR && binding.code == 's' &&
+           binding.modifiers == (KEY_BINDING_SUPER | KEY_BINDING_SHIFT));
+    assert(text_capture_begin());
+    type = read_key(ends[1], "\033[57352;9u", &key);
+    assert(type == KEY_CODE_YES && key == TEXT_CAPTURED && text_capture_take(&binding));
+    assert(binding.kind == KEY_BINDING_KEY && binding.code == KEY_BINDING_UP &&
+           binding.modifiers == KEY_BINDING_SUPER);
+    /* In xterm's modifyOtherKeys bit 8 is Meta, never Command. */
+    assert(text_capture_begin());
+    type = read_key(ends[1], "\033[27;13;107~", &key);
+    assert(type == KEY_CODE_YES && key == TEXT_CAPTURED && text_capture_take(&binding));
+    assert(binding.code == 'k' && binding.modifiers == KEY_BINDING_CTRL);
+
+    keymap_table_defaults(&table);
+    keymap_apply(&table);
+    endwin();
+    delscreen(screen);
+    fclose(input);
+    fclose(output);
+    close(ends[1]);
+}
+#endif
+
 int main(void)
 {
     language_set(LANGUAGE_PORTUGUESE);
@@ -231,6 +406,11 @@ int main(void)
     test_apply_and_text();
     test_conflicts();
     test_events();
+    test_super();
+    test_platform_defaults();
+#ifndef _WIN32
+    test_super_decoding();
+#endif
     keymap_shutdown();
     return 0;
 }

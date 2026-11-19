@@ -178,6 +178,9 @@ bool shortcut_is(int type, uint32_t key, keymap_action action)
 static bool decoded_natively(const key_binding *key)
 {
     unsigned modifiers = key->modifiers;
+    /* Only the kitty keyboard protocol reports Super (Command on macOS). */
+    if (modifiers & KEY_BINDING_SUPER)
+        return false;
     if (key->kind == KEY_BINDING_CHAR) {
         if (!modifiers)
             return true;

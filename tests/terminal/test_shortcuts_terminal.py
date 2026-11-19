@@ -4,6 +4,7 @@ from test_context import main as test_main
 
 import json
 from pathlib import Path
+import sys
 import tempfile
 import time
 import unittest
@@ -11,6 +12,9 @@ from history_mock import HistoryMock
 from terminal_support import Terminal, wait_for_screen
 
 RIGHT, DOWN, END = "\x1bOC", "\x1bOB", "\x1bOF"
+# The Super key is Command on macOS, which also gives some commands a Command
+# key after their Ctrl default.
+SUPER = "Cmd" if sys.platform == "darwin" else "Super"
 
 
 class ShortcutsTerminal(unittest.TestCase):
@@ -89,6 +93,32 @@ class ShortcutsTerminal(unittest.TestCase):
             t.send("F3")
             self.wait(t, "Ir para um canal ou DM")
 
+    def test_super_key_is_captured_and_unused_ones_are_ignored(self):
+        with HistoryMock() as server:
+            t = self.open(server)
+            # A Super combination no command uses neither closes the panel as Esc
+            # nor reaches its field as text.
+            t.send("\x0b")
+            self.wait(t, "Ir para conversa")
+            t.send("\x1b[106;9uzzq")
+            self.wait(t, "zzq")
+            self.assertNotIn("106;9u", self.screen(t))
+            self.assertIn("Ir para conversa", self.screen(t))
+            t.send("\x1b")
+            self.gone(t, "Ir para conversa")
+            self.shortcuts(t, "canal ou DM")
+            # Kitty's keyboard protocol reports Super (Command on macOS) as bit 8.
+            self.change(t, "\x1b[107;9u")
+            wait_for_screen(
+                t,
+                lambda: f"{SUPER}+K" in self.row(t, "Ir para um canal ou DM"),
+                "The Super key was not captured",
+            )
+            self.save(t)
+            self.assertEqual(self.stored(), {"conversation.switcher": ["super+k"]})
+            t.send("\x1b[107;9u")
+            self.wait(t, "Ir para conversa")
+
     def test_key_of_another_command_moves_after_confirmation(self):
         with HistoryMock() as server:
             t = self.open(server)
@@ -102,11 +132,13 @@ class ShortcutsTerminal(unittest.TestCase):
                 "The key did not move",
             )
             t.send("\x15fixadas")
-            self.wait(t, "sem tecla")
+            # Only Ctrl+B moves; on macOS pinned messages keep Command+B.
+            kept = ["super+b"] if sys.platform == "darwin" else []
+            self.wait(t, "Cmd+B" if kept else "sem tecla")
             self.save(t)
             self.assertEqual(
                 self.stored(),
-                {"conversation.switcher": ["ctrl+b"], "conversation.pinned": []},
+                {"conversation.switcher": ["ctrl+b"], "conversation.pinned": kept},
             )
             t.send("\x02")
             self.wait(t, "Ir para conversa")

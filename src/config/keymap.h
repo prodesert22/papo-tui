@@ -135,7 +135,11 @@ unsigned keymap_action_flags(keymap_action action);
 /* Bit (1 << keymap_scope) for each area that hears the command. */
 unsigned long keymap_action_scopes(keymap_action action);
 
+/* The defaults of this build's platform. */
 void keymap_table_defaults(keymap_table *table);
+/* The defaults of a platform: macOS (apple) adds Command alternatives to some
+ * Ctrl keys; the other platforms share the same keys. */
+void keymap_table_platform_defaults(keymap_table *table, bool apple);
 /* Applies overrides of known commands on top of the defaults. */
 void keymap_table_from_overrides(keymap_table *table, const keymap_overrides *overrides);
 /* Records what differs from the defaults, keeping unknown ids of `previous`. */

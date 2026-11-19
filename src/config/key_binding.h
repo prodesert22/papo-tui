@@ -14,7 +14,12 @@ typedef enum {
     KEY_BINDING_MOUSE
 } key_binding_kind;
 
-enum { KEY_BINDING_SHIFT = 1, KEY_BINDING_ALT = 2, KEY_BINDING_CTRL = 4 };
+/* The bits are those of the kitty keyboard protocol, which reports a modifier
+ * parameter of 1 + these bits. Super is the Command key on a Mac keyboard and
+ * the Windows/Super key elsewhere; only terminals with that protocol report it. */
+enum { KEY_BINDING_SHIFT = 1, KEY_BINDING_ALT = 2, KEY_BINDING_CTRL = 4, KEY_BINDING_SUPER = 8 };
+#define KEY_BINDING_MODIFIERS                                                                      \
+    (KEY_BINDING_SHIFT | KEY_BINDING_ALT | KEY_BINDING_CTRL | KEY_BINDING_SUPER)
 
 typedef enum {
     KEY_BINDING_UP = 1,
@@ -54,18 +59,19 @@ typedef struct {
     unsigned modifiers;
 } key_binding;
 
-/* Canonical strings use ctrl+alt+shift+name, e.g. "ctrl+shift+m", "mouse4" and
- * "ctrl+f12". A printable character is its UTF-8 encoding except space
- * ("space") and plus ("u002b"); parsing also accepts "uXXXX" code points. */
+/* Canonical strings use ctrl+alt+shift+super+name, e.g. "ctrl+shift+m", "super+s",
+ * "mouse4" and "ctrl+f12". A printable character is its UTF-8 encoding except
+ * space ("space") and plus ("u002b"); parsing also accepts "uXXXX" code points
+ * and "cmd" or "command" for super. */
 bool key_binding_parse(const char *text, key_binding *binding);
 bool key_binding_format(const key_binding *binding, char *output, size_t size);
-/* Friendly label for the settings panel. */
+/* Friendly label for the settings panel; Super is "Cmd" on macOS. */
 bool key_binding_label(const key_binding *binding, char *output, size_t size);
 /* A key that exists: modifiers, a printable character, a named key or mouse
  * button 4 or 5. Format and label accept these. */
 bool key_binding_well_formed(const key_binding *binding);
-/* Acceptable for push-to-talk: also needs Ctrl or Alt with a character and a
- * modifier with Esc, Enter, Tab or Backspace. */
+/* Acceptable for push-to-talk: also needs Ctrl, Alt or Super with a character
+ * and a modifier with Esc, Enter, Tab or Backspace. */
 bool key_binding_valid(const key_binding *binding);
 /* Human-readable reason for a rejected binding; NULL when it is valid. */
 const char *key_binding_error(const key_binding *binding);

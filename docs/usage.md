@@ -856,8 +856,8 @@ or click it, to open its menu:
 - **Restaurar o padrão** (Restore the default).
 
 While **Pressione a nova tecla** (Press the new key) is shown, press the
-combination; a lone Ctrl, Alt or Shift is ignored and Esc cancels. A refused key
-keeps the capture waiting and shows why below the list:
+combination; a lone Ctrl, Alt, Shift or Command is ignored and Esc cancels. A
+refused key keeps the capture waiting and shows why below the list:
 
 - the fixed keys, Ctrl+H, Ctrl+I, Ctrl+M and Ctrl+[ (the terminal sends them as
   Backspace, Tab, Enter and Esc), Ctrl+A, Ctrl+C and Ctrl+V;
@@ -888,7 +888,10 @@ never sent to a server. Terminals that do not report modified keys cannot tell
 every combination apart. There, Ctrl+Shift+letter arrives as Ctrl+letter, and
 Ctrl+number or function keys with Ctrl, Alt or Shift may not arrive at all; use
 Ctrl+letter, Alt+letter or a plain function key, or a terminal with the
-extended keyboard protocol, such as Kitty, foot, WezTerm or Ghostty.
+extended keyboard protocol, such as Kitty, foot, WezTerm or Ghostty. Only those
+terminals report the Super key, so combinations with it, shown as **Super+…**
+(**Cmd+…** on macOS, where it is Command), work only there and only when the
+terminal or the desktop does not use them itself.
 
 ## Keyboard and mouse
 
@@ -1825,6 +1828,64 @@ Alt+→ switch virtual consoles there, so they never reach the application: move
 the focus with Tab and Shift+Tab, as the footer shows (**Tab / Shift+Tab: mudar
 foco**, Tab / Shift+Tab: move focus).
 
+## Keyboard on macOS
+
+Shortcuts written with **Ctrl** use the Control key (⌃), not Command (⌘), in
+every macOS terminal: **Ctrl+S** opens settings in Terminal, iTerm2, kitty,
+Ghostty and WezTerm alike. **Alt** is the Option key (⌥).
+
+**Command.** Terminal and iTerm2 keep Command for their own menus, so Command
+combinations never reach the application there. kitty, Ghostty and WezTerm
+pass on the ones they do not use themselves; in WezTerm, set
+`enable_kitty_keyboard = true` in its configuration first. In those terminals
+these Command keys work as well as their Ctrl versions:
+
+| Command | Same as | Action |
+| --- | --- | --- |
+| Cmd+S | Ctrl+S | Open application settings |
+| Cmd+/ | Ctrl+/ | Open global help |
+| Cmd+O | Ctrl+O | Choose files to attach |
+| Cmd+B | Ctrl+B | Open pinned messages |
+| Cmd+U | Ctrl+U | Open or close the member drawer |
+| Cmd+P | Ctrl+P | Select or manage server profiles |
+| Cmd+X | Ctrl+X | Go back to the audio playing in the background |
+| Cmd+Y | Ctrl+Y | Retry the last failed send |
+
+The help dialogs and **Ctrl+S → Atalhos** list them beside the Ctrl key, as
+**Ctrl+S / Cmd+S**. Other Command combinations belong to the terminal or to
+macOS, such as Cmd+C (copy), Cmd+V (paste text), Cmd+K, Cmd+F, Cmd+T, Cmd+W
+and Cmd+Q, so they keep doing what the terminal does. In those three
+terminals, **Ctrl+S → Atalhos** also accepts a Command combination the
+terminal does not use as a new key. Cmd+V pastes text only: to paste files
+copied in Finder or an image, use **Ctrl+V**.
+
+**Option.** Option with a letter types a special character, such as ® for
+Option+R, unless the terminal treats Option as Alt. Alt shortcuts that you
+assign in **Ctrl+S → Atalhos** need that setting: in Terminal, **Use Option as
+Meta key** under Settings → Profiles → Keyboard; in iTerm2, **Esc+** for the
+left Option key under Settings → Profiles → Keys; in kitty,
+`macos_option_as_alt yes`; in Ghostty, `macos-option-as-alt = true`. WezTerm
+already uses the left Option key as Alt. Option+arrows move the focus between
+areas without that setting.
+
+**Function keys.** On a Mac keyboard F1–F12 control the brightness, the volume
+and other features, so hold **Fn** for the function key: **Fn+F5** reconnects
+and **Fn+F1** opens contextual help, which **Ctrl+G** also opens. To use the
+top row as function keys without Fn, turn on **Use F1, F2, etc. keys as
+standard function keys** in System Settings → Keyboard → Keyboard Shortcuts →
+Function Keys, or give **Reconectar agora quando a conexão cair** (Reconnect
+now when the connection drops) another key in **Ctrl+S → Atalhos**. Laptop
+keyboards have no Page Up, Page Down, Home and End keys: press Fn+↑, Fn+↓,
+Fn+← and Fn+→. If Terminal scrolls its own window instead, add Shift, which
+makes Terminal send the key to the application.
+
+**System shortcuts.** macOS takes some Control combinations before the terminal
+sees them. Ctrl+← and Ctrl+→ switch Spaces and Ctrl+↑ and Ctrl+↓ open Mission
+Control, so moving by words with Ctrl+← / Ctrl+→ needs those shortcuts turned
+off in System Settings → Keyboard → Keyboard Shortcuts → Mission Control. With
+more than one input source, Ctrl+Space switches between them (Keyboard
+Shortcuts → Input Sources); open menus with **m** or a right-click instead.
+
 ## About Papo TUI
 
 Press **Ctrl+S** and choose **Sobre** (About), the last section of
@@ -2113,6 +2174,9 @@ built from source that is not a release build never asks by itself either.
 - **Alt+arrows switch to another console:** on the Linux console these keys
   belong to the system. Use Tab and Shift+Tab to move the focus; press Alt+→
   or Alt+← to return to the console the application runs on.
+- **A shortcut does nothing on a Mac:** press Control (⌃), not Command, with
+  the letter; Fn with F1–F12; and check that macOS does not use the
+  combination itself. See [Keyboard on macOS](#keyboard-on-macos).
 - **Video is still loading:** the player status line shows the transfer
   progress. Videos prepared for streaming start before the download ends;
   files whose index is at the end start only when it finishes. If progress

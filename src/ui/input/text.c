@@ -397,7 +397,7 @@ static bool unshifted_character(unsigned code, unsigned *base)
 static void normalize_character(key_binding *binding)
 {
     if (binding->kind != KEY_BINDING_CHAR ||
-        !(binding->modifiers & (KEY_BINDING_CTRL | KEY_BINDING_ALT)))
+        !(binding->modifiers & (KEY_BINDING_CTRL | KEY_BINDING_ALT | KEY_BINDING_SUPER)))
         return;
     unsigned base;
     if (unshifted_character(binding->code, &base)) {
@@ -417,7 +417,7 @@ static void ptt_add_legacy_ctrl(const key_binding *binding)
 
 static void ptt_add_legacy_alt(unsigned code, unsigned modifiers)
 {
-    if (!(modifiers & KEY_BINDING_ALT) || (modifiers & KEY_BINDING_CTRL))
+    if (!(modifiers & KEY_BINDING_ALT) || (modifiers & (KEY_BINDING_CTRL | KEY_BINDING_SUPER)))
         return;
     if (modifiers & KEY_BINDING_SHIFT)
         code = shifted_character(code);
@@ -471,9 +471,13 @@ static void ptt_add_key(key_binding_code code, unsigned modifiers)
     ptt_add_csi_u_events(kitty_code(code), modifiers);
     unsigned modifier = modifiers + 1;
     char sequence[64];
-    /* xterm modifyOtherKeys reports control keys as ESC [ 27 ; mod ; code ~. */
-    if (code == KEY_BINDING_ENTER || code == KEY_BINDING_TAB || code == KEY_BINDING_BACKSPACE ||
-        code == KEY_BINDING_ESCAPE) {
+    bool control = code == KEY_BINDING_ENTER || code == KEY_BINDING_TAB ||
+                   code == KEY_BINDING_BACKSPACE || code == KEY_BINDING_ESCAPE;
+    /* xterm modifyOtherKeys reports control keys as ESC [ 27 ; mod ; code ~.
+     * Its bit 8 is Meta, not Super: Super has only the CSI u form above. */
+    if (control && (modifiers & KEY_BINDING_SUPER))
+        return;
+    if (control) {
         snprintf(sequence, sizeof(sequence), "\033[27;%u;%uu", modifier, kitty_code(code));
         ptt_store(sequence, target_press);
         snprintf(sequence, sizeof(sequence), "\033[27;%u;%u~", modifier, kitty_code(code));
@@ -593,16 +597,20 @@ static void ptt_add_key(key_binding_code code, unsigned modifiers)
 
 static void ptt_add_char(unsigned code, unsigned modifiers)
 {
+    /* xterm's modifyOtherKeys has no Super: its bit 8 is Meta. */
+    bool other_keys = !(modifiers & KEY_BINDING_SUPER);
     ptt_add_csi_u_events(code, modifiers);
     char sequence[64];
     snprintf(sequence, sizeof(sequence), "\033[27;%u;%u~", modifiers + 1, code);
-    ptt_store(sequence, target_press);
+    if (other_keys)
+        ptt_store(sequence, target_press);
     ptt_add_legacy_alt(code, modifiers);
     unsigned shifted = shifted_character(code);
     if (shifted != code && (modifiers & KEY_BINDING_SHIFT)) {
         ptt_add_csi_u_events(shifted, modifiers);
         snprintf(sequence, sizeof(sequence), "\033[27;%u;%u~", modifiers + 1, shifted);
-        ptt_store(sequence, target_press);
+        if (other_keys)
+            ptt_store(sequence, target_press);
         ptt_add_legacy_alt(shifted, modifiers);
     }
 }
@@ -765,7 +773,7 @@ static bool capture_control(unsigned value, unsigned extra, key_binding *binding
 
 static bool capture_code(unsigned code, unsigned modifiers, key_binding *binding)
 {
-    binding->modifiers = modifiers & (KEY_BINDING_CTRL | KEY_BINDING_ALT | KEY_BINDING_SHIFT);
+    binding->modifiers = modifiers & KEY_BINDING_MODIFIERS;
     switch (code) {
     case 27:
         binding->kind = KEY_BINDING_KEY;
@@ -954,7 +962,10 @@ static capture_result capture_csi(key_binding *binding)
     if (event == 2 || event == 3)
         return CAPTURE_IGNORED;
     unsigned modifier = count >= 2 && values[1] > 0 ? (unsigned)values[1] - 1 : 0;
-    modifier &= KEY_BINDING_CTRL | KEY_BINDING_ALT | KEY_BINDING_SHIFT;
+    modifier &= KEY_BINDING_MODIFIERS;
+    /* ESC [ 27 ; mod ; code is xterm's modifyOtherKeys, where bit 8 is Meta. */
+    if (count >= 3 && values[0] == 27)
+        modifier &= ~(unsigned)KEY_BINDING_SUPER;
     if (final == 'u') {
         if (!count)
             return CAPTURE_IGNORED;

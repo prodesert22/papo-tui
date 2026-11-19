@@ -30,7 +30,10 @@ colors, focus cues beyond color, readable role colors, a screen reader mode,
 text symbols, emoji names, ASCII borders, visual alerts, longer notices,
 keyboard-only use without the mouse and a second key before quitting. The footer keeps only the help
 hint alongside operational notices. Global help includes a search field for
-keys, actions and areas. F1 also opens contextual help.
+keys, actions and areas. F1 also opens contextual help. On a Mac, Ctrl is the
+Control key in every terminal, and kitty, Ghostty and WezTerm also accept
+Command for some commands, such as **Cmd+S**; see
+[Keyboard on macOS](docs/usage.md#keyboard-on-macos).
 
 Attach files with **Ctrl+O** or **📎**, or paste copied files and images with
 **Ctrl+V** when the local clipboard is available. Files attached to messages
