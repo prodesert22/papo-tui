@@ -403,14 +403,18 @@ def build(entry, source, work, prefix, jobs, env):
                 "-Dtest_setup=disabled",
             ]
         elif name == "libplacebo":
-            fast_float = macos_keg("fast_float") if host_platform() == "macos" else None
-            if fast_float:
-                # Apple's libc++ has no floating-point std::from_chars; libplacebo then needs
-                # the header-only fast_float, which it does not look for outside its source.
+            if host_platform() == "macos":
+                # Apple's libc++ has no floating-point std::from_chars, so libplacebo needs the
+                # header-only fast_float; its Vulkan stubs need the Vulkan headers. Homebrew
+                # keeps both outside the compiler's default include path.
+                includes = " ".join(
+                    "-I" + keg + "/include"
+                    for keg in map(macos_keg, ("fast_float", "vulkan-headers"))
+                    if keg
+                )
                 env = dict(env)
-                env["CXXFLAGS"] = (
-                    "-I" + fast_float + "/include " + env.get("CXXFLAGS", "")
-                ).strip()
+                for variable in ("CFLAGS", "CXXFLAGS"):
+                    env[variable] = (includes + " " + env.get(variable, "")).strip()
             options += [
                 "-Dvulkan=disabled",
                 "-Dshaderc=disabled",
