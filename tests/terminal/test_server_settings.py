@@ -19,7 +19,7 @@ from server_admin_mock import (
     WEBHOOK,
     ServerAdminMock,
 )
-from terminal_support import Terminal
+from terminal_support import HORIZONTAL, Terminal
 import terminal_interactions as interactions
 
 UP, DOWN, RIGHT, LEFT = "\x1bOA", "\x1bOB", "\x1bOC", "\x1bOD"
@@ -359,7 +359,9 @@ class ServerSettings(unittest.TestCase):
         # The notice and the cursor belong to one frame, but may be read between its parts.
         self.settled(terminal, lambda: terminal.screen.cursor.y == row, seconds=4)
         for edge in (row - 1, row + 1):
-            self.assertIn("qqqq", terminal.screen.display[edge], "No border around the input")
+            self.assertIn(
+                HORIZONTAL * 4, terminal.screen.display[edge], "No border around the input"
+            )
         return row
 
     def border_gone(self, terminal, label):
@@ -368,7 +370,8 @@ class ServerSettings(unittest.TestCase):
         def gone():
             rows = [i for i, line in enumerate(terminal.screen.display) if label + ":" in line]
             return rows and all(
-                "qqqq" not in terminal.screen.display[edge] for edge in (rows[0] - 1, rows[0] + 1)
+                HORIZONTAL * 4 not in terminal.screen.display[edge]
+                for edge in (rows[0] - 1, rows[0] + 1)
             )
 
         self.settled(terminal, gone)

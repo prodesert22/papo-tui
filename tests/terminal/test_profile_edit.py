@@ -11,7 +11,7 @@ import zlib
 from pathlib import Path
 
 from profile_mock import ME, ProfileMock
-from terminal_support import Terminal
+from terminal_support import VERTICAL, Terminal
 import terminal_interactions as interactions
 
 DOWN, RIGHT = "\x1bOB", "\x1bOC"
@@ -177,9 +177,9 @@ class ProfileEdit(unittest.TestCase):
             self.wait(t, "Apelido com mais de 32 caracteres.")
             row = next(i for i, line in enumerate(t.screen.display) if "Apelido:" in line)
             self.settled(t, lambda: t.screen.cursor.y == row)
-            sides = t.screen.display[row].count("x")
+            sides = t.screen.display[row].count(VERTICAL)
             t.send("\x7f")
-            self.settled(t, lambda: t.screen.display[row].count("x") < sides)
+            self.settled(t, lambda: t.screen.display[row].count(VERTICAL) < sides)
             self.assertEqual(len(server.profile_puts), 0)
 
     def test_rejected_and_unconfirmed_changes_are_never_repeated(self):

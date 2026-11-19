@@ -431,6 +431,11 @@ class PosixTerminal:
         return restored
 
 
+# DEC line drawing as a screen line holds it: the POSIX stream ignores character set switches and
+# keeps the ASCII letters, while ConPTY's output reaches pyte as box drawing characters.
+VERTICAL = "│" if os.name == "nt" else "x"
+HORIZONTAL = "─" if os.name == "nt" else "q"
+
 if os.name == "nt":
     from terminal_windows import WindowsTerminal
 
