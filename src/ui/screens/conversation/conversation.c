@@ -4,6 +4,21 @@
 #include "model/text/translation.h"
 #include "platform/terminal_notify.h"
 #include "ui/screens/conversation/private.h"
+#ifndef _WIN32
+#include <poll.h>
+#include <unistd.h>
+#endif
+
+/* Whether more terminal input is already waiting to be read. */
+static bool input_waiting(void)
+{
+#ifdef _WIN32
+    return false;
+#else
+    struct pollfd input = {.fd = STDIN_FILENO, .events = POLLIN};
+    return poll(&input, 1, 0) > 0 && (input.revents & POLLIN);
+#endif
+}
 
 help_context conversation_help_context(view *ui, const char **area)
 {
@@ -550,6 +565,11 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
     ui->exit_pending = KEYMAP_NONE;
     bool redraw = true;
     draw_scope scope = DRAW_ALL;
+    /* A wheel or trackpad gesture sends events faster than a frame is drawn, and each frame
+     * waited for the previous one: the history fell behind the gesture. While more input already
+     * waits after a wheel step, it is taken first, drawing at least every 40 ms. */
+    bool wheel = false, deferred = false;
+    uint64_t drawn_at = 0;
     int result = HISTORY_ACCOUNT;
     /* The player volume only reaches the profile once the player closes, so a
      * running player never writes the file for every key press. */
@@ -829,9 +849,20 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         if (!auth_has_session(auth) && !auth_busy(auth))
             break;
         if (redraw) {
-            conversation_draw(ui, auth, scope);
-            redraw = false;
-            scope = DRAW_ALL;
+            uint64_t now = 0;
+            net_now_ms(&now);
+            if (wheel && now - drawn_at < 40 && input_waiting()) {
+                deferred = true;
+            } else {
+                /* Whatever else changed meanwhile is drawn together with the history. */
+                if (deferred && scope != DRAW_CONVERSATION)
+                    scope = DRAW_ALL;
+                conversation_draw(ui, auth, scope);
+                redraw = false;
+                scope = DRAW_ALL;
+                deferred = false;
+                drawn_at = now;
+            }
         }
         uint32_t key;
         int input_delay = media_view_input_delay(ui->media);
@@ -839,8 +870,11 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
         int type = ui->paste ? text_paste_read(&ui->paste_data, &key, true, graphics_terminal_input,
                                                input_delay)
                              : graphics_terminal_input(&key);
-        if (type == ERR)
+        if (type == ERR) {
+            wheel = false;
             continue;
+        }
+        wheel = false;
         if (type == KEY_CODE_YES &&
             (key == TEXT_PTT_PRESS || key == TEXT_PTT_RELEASE || key == TEXT_PTT_TOGGLE)) {
             if (key == TEXT_PTT_RELEASE)
@@ -1441,6 +1475,7 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 }
                 if (e.bstate & (BUTTON4_PRESSED | BUTTON5_PRESSED)) {
                     scope = DRAW_CONVERSATION;
+                    wheel = true;
                     if (ui->body && e.x >= getbegx(ui->body) &&
                         e.x < getbegx(ui->body) + getmaxx(ui->body) &&
                         e.y >= getbegy(ui->body) + ui->history_top &&
