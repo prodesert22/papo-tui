@@ -50,11 +50,43 @@ VOICE_PLUGINS = (
     "webrtcdsp",
     "osxaudio",
 )
-LAUNCHER = """#!/bin/sh
+LAUNCHER = r"""#!/bin/sh
 # Finder starts an app without a terminal, which a terminal program needs. Open the program in the
 # terminal that macOS uses for command-line programs (Terminal unless another one was chosen).
 program="$(cd "$(dirname "$0")/../Resources/papo-tui/bin" && pwd -P)/papo-tui"
-exec /usr/bin/open "$program" || exec /usr/bin/open -a Terminal "$program"
+link=/usr/local/bin/papo-tui
+
+# Once per location of the app, offer the papo-tui command for terminals. Installing it in
+# /usr/local/bin, which is on PATH, needs an administrator password, asked by macOS itself.
+offered="$HOME/Library/Application Support/papo-tui/command-offered"
+if [ "$(readlink "$link" 2>/dev/null)" != "$program" ] &&
+    [ "$(cat "$offered" 2>/dev/null)" != "$program" ]; then
+    mkdir -p "$(dirname "$offered")" && printf '%s' "$program" > "$offered"
+    case "$(defaults read -g AppleLocale 2>/dev/null)" in
+    pt*)
+        question="Instalar o comando papo-tui, para abrir o Papo TUI digitando papo-tui no terminal? O macOS pedirá a senha de administrador."
+        later="Agora não" install="Instalar" ;;
+    *)
+        question="Install the papo-tui command, to start Papo TUI by typing papo-tui in a terminal? macOS will ask for an administrator password."
+        later="Not now" install="Install" ;;
+    esac
+    answer="$(/usr/bin/osascript - "$question" "$later" "$install" 2>/dev/null <<'EOF'
+on run argv
+    display dialog (item 1 of argv) buttons {item 2 of argv, item 3 of argv} default button 2 with title "Papo TUI"
+    return button returned of result
+end run
+EOF
+)"
+    if [ "$answer" = "$install" ]; then
+        /usr/bin/osascript - "$program" "$link" >/dev/null 2>&1 <<'EOF'
+on run argv
+    do shell script "mkdir -p /usr/local/bin && ln -sf " & quoted form of (item 1 of argv) & " " & quoted form of (item 2 of argv) with administrator privileges
+end run
+EOF
+    fi
+fi
+
+/usr/bin/open "$program" || exec /usr/bin/open -a Terminal "$program"
 """
 README = """Papo TUI for macOS (Apple Silicon) - test build
 =================================================
@@ -66,8 +98,9 @@ README = """Papo TUI for macOS (Apple Silicon) - test build
 
    (Or open it, then allow it in System Settings > Privacy & Security > "Open Anyway".)
 3. Double-click "Papo TUI": it opens in your terminal.
-4. To type `papo-tui` in a terminal, link the program into a folder of PATH once, then open a
-   new terminal window:
+4. The first time it opens, the app offers to install the `papo-tui` command for terminals
+   (macOS asks for an administrator password). If you said no, do it by hand and open a new
+   terminal window:
 
        sudo mkdir -p /usr/local/bin
        sudo ln -sf "/Applications/Papo TUI.app/Contents/Resources/papo-tui/bin/papo-tui" \
@@ -83,7 +116,7 @@ Ghostty, WezTerm and iTerm2, and colored characters in Terminal.
 Papo TUI para macOS (Apple Silicon) - build de teste: arraste "Papo TUI" para Aplicativos e, antes
 de abrir pela primeira vez, rode no Terminal:
     xattr -dr com.apple.quarantine "/Applications/Papo TUI.app"
-Para usar o comando papo-tui no terminal, crie o link do passo 4 acima.
+Na primeira abertura, o app oferece instalar o comando papo-tui para o terminal.
 """
 
 
