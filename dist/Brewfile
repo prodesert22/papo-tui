@@ -12,6 +12,8 @@ brew "pkgconf"
 brew "autoconf"
 brew "automake"
 brew "libtool"
+# GStreamer needs bison 2.4 or later; macOS has 2.3. The recipes put this keg first on PATH.
+brew "bison"
 brew "openssl@3"
 brew "glib"
 brew "pango"

@@ -22,6 +22,9 @@ ROOT = Path(__file__).resolve().parents[1]
 # Homebrew formulae installed outside its prefix ("keg-only"): pkg-config does not see them
 # until their own pkgconfig directory is added.
 MACOS_KEGS = ("openssl@3", "zlib", "libffi")
+# Keg-only tools that replace older copies in macOS: GStreamer needs bison 2.4 or later, and macOS
+# ships 2.3.
+MACOS_TOOL_KEGS = ("bison",)
 
 
 def host_platform():
@@ -455,6 +458,9 @@ def main():
         ]
     )
     env["PATH"] = str(prefix / "bin") + os.pathsep + env["PATH"]
+    if host_platform() == "macos":
+        tools = [macos_keg(formula) for formula in MACOS_TOOL_KEGS]
+        env["PATH"] = os.pathsep.join([*(keg + "/bin" for keg in tools if keg), env["PATH"]])
     if os.name != "nt":
         env["LDFLAGS"] = (
             "-L"
