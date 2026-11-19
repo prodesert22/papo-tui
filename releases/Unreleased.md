@@ -129,3 +129,4 @@
 - Fixed videos failing with **Vídeo inválido ou codec indisponível.** (Invalid video or codec unavailable) in the downloaded packages when they were opened while their download was still running. The packaged video player now reads the part already downloaded from the application itself, and still reads nothing else over the network.
 - Fixed a memory leak each time the audio devices were listed on a system without a PulseAudio server.
 - Fixed Papo TUI on Windows freezing when quitting, signing out of a server or removing it after a video from that server had been opened.
+- Fixed the first burst of alerts playing more than one notification sound when the sound player was slow to start, as on Windows; a burst now sounds once.
