@@ -61,7 +61,7 @@ static bool terminal_copy(void)
     feedback(ok ? _("Texto copiado") : _("Falha ao copiar texto"));
     return ok;
 }
-static bool native_copy(char *const arguments[])
+static bool native_copy(char *const arguments[], char *const environment[])
 {
     int pair[2];
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, pair))
@@ -90,7 +90,7 @@ static bool native_copy(char *const arguments[])
     if (!error)
         error = posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, "/dev/null", O_WRONLY, 0);
     if (!error)
-        error = posix_spawnp(&copy.child, arguments[0], &actions, NULL, arguments, environ);
+        error = posix_spawnp(&copy.child, arguments[0], &actions, NULL, arguments, environment);
     posix_spawn_file_actions_destroy(&actions);
     close(pair[1]);
     if (error) {
@@ -112,9 +112,22 @@ static bool start(char *data, size_t length)
     char *wayland[] = {"wl-copy", "--type", "text/plain;charset=utf-8", NULL};
     char *x11[] = {"xclip", "-selection", "clipboard", "-in", NULL};
     const char *wayland_display = getenv("WAYLAND_DISPLAY"), *x11_display = getenv("DISPLAY");
-    if ((wayland_display && *wayland_display && native_copy(wayland)) ||
-        (x11_display && *x11_display && native_copy(x11)))
+    if ((wayland_display && *wayland_display && native_copy(wayland, environ)) ||
+        (x11_display && *x11_display && native_copy(x11, environ)))
         return true;
+#ifdef __APPLE__
+    /* Over SSH the pasteboard of this Mac is not the user's: the terminal sequence reaches it. */
+    const char *ssh = getenv("SSH_CONNECTION"), *tty = getenv("SSH_TTY");
+    if (!(ssh && *ssh) && !(tty && *tty)) {
+        /* pbcopy reads its input in the encoding of the locale; the text is UTF-8. */
+        char **environment = g_environ_setenv(g_get_environ(), "LC_ALL", "en_US.UTF-8", TRUE);
+        char *pasteboard[] = {"pbcopy", NULL};
+        bool started = native_copy(pasteboard, environment);
+        g_strfreev(environment);
+        if (started)
+            return true;
+    }
+#endif
     return terminal_copy();
 }
 bool clipboard_copy(const text_buffer *buffer)

@@ -2,6 +2,10 @@
 #include "config/keymap.h"
 #include "model/text/translation.h"
 #include <string.h>
+#ifdef __APPLE__
+#include <glib/gstdio.h>
+#include <unistd.h>
+#endif
 
 typedef struct {
     GVariant *response;
@@ -173,10 +177,110 @@ static char *bytes_text(GBytes *bytes)
         return NULL;
     return g_strndup(data, size);
 }
+#ifdef __APPLE__
+/* The pasteboard through JavaScript for Automation, which reaches AppKit without linking it: copied
+ * files first, then an image (screenshots and many apps offer only TIFF, converted to PNG), then
+ * text. The first line names what was found; paths follow one per line, text follows as is. */
+static const char pasteboard_script[] =
+    "ObjC.import('AppKit');"
+    "function run(argv) {"
+    "  var board = $.NSPasteboard.generalPasteboard;"
+    "  var only = $.NSDictionary.dictionaryWithObjectForKey(true,"
+    "      $.NSPasteboardURLReadingFileURLsOnlyKey);"
+    "  var urls = board.readObjectsForClassesOptions($.NSArray.arrayWithObject($.NSURL), only);"
+    "  if (urls && !urls.isNil() && urls.count > 0) {"
+    "    var paths = [];"
+    "    for (var i = 0; i < urls.count; i++) paths.push(urls.objectAtIndex(i).path.js);"
+    "    return 'files\\n' + paths.join('\\n');"
+    "  }"
+    "  var data = board.dataForType('public.png');"
+    "  if (data.isNil()) {"
+    "    var tiff = board.dataForType('public.tiff');"
+    "    if (!tiff.isNil()) {"
+    "      var image = $.NSBitmapImageRep.imageRepWithData(tiff);"
+    "      if (!image.isNil())"
+    "        data = image.representationUsingTypeProperties($.NSBitmapImageFileTypePNG,"
+    "            $.NSDictionary.dictionary);"
+    "    }"
+    "  }"
+    "  if (!data.isNil() && data.writeToFileAtomically(argv[0], true)) return 'image\\n';"
+    "  var text = board.stringForType('public.utf8-plain-text');"
+    "  if (!text.isNil()) return 'text\\n' + text.js;"
+    "  return 'none\\n';"
+    "}";
+static clipboard_content *pasteboard_read(GCancellable *cancel, GError **error)
+{
+    char *image_path = NULL;
+    int fd = g_file_open_tmp("papo-clipboard-XXXXXX.png", &image_path, error);
+    if (fd < 0)
+        return NULL;
+    close(fd);
+    const char *argv[] = {"osascript",       "-l",       "JavaScript", "-e",
+                          pasteboard_script, image_path, NULL};
+    GBytes *answer = helper(argv, 1024 * 1024 + 16, cancel, error);
+    char *kind = answer ? bytes_text(answer) : NULL;
+    if (answer && !kind)
+        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                            _("Formatos do clipboard inválidos."));
+    g_clear_pointer(&answer, g_bytes_unref);
+    clipboard_content *content = NULL;
+    char *rest = kind ? strchr(kind, '\n') : NULL;
+    if (rest) {
+        *rest++ = 0;
+        size_t length = strlen(rest);
+        if (length && rest[length - 1] == '\n') /* osascript ends what it prints with a newline */
+            rest[length - 1] = 0;
+    }
+    if (kind && !rest)
+        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                            _("Formatos do clipboard inválidos."));
+    else if (kind && !strcmp(kind, "files")) {
+        content = g_new0(clipboard_content, 1);
+        content->paths = g_ptr_array_new_with_free_func(g_free);
+        for (char *line = rest; line && *line;) {
+            char *end = strchr(line, '\n');
+            if (end)
+                *end = 0;
+            if (*line == '/')
+                g_ptr_array_add(content->paths, g_strdup(line));
+            line = end ? end + 1 : NULL;
+        }
+    } else if (kind && !strcmp(kind, "image")) {
+        char *data = NULL;
+        gsize size = 0;
+        if (g_file_get_contents(image_path, &data, &size, error)) {
+            if (size > ATTACHMENT_CLIPBOARD_LIMIT) {
+                g_free(data);
+                g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NO_SPACE,
+                                    _("Conteúdo do clipboard excede o limite local."));
+            } else {
+                content = g_new0(clipboard_content, 1);
+                content->image = g_bytes_new_take(data, size);
+                content->image_name = g_strdup("clipboard.png");
+            }
+        }
+    } else if (kind && !strcmp(kind, "text")) {
+        content = g_new0(clipboard_content, 1);
+        content->text = g_strdup(rest);
+    } else if (kind)
+        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
+                            _("Clipboard sem arquivos, imagem ou texto compatível."));
+    g_free(kind);
+    g_unlink(image_path);
+    g_free(image_path);
+    return content;
+}
+#endif
 clipboard_content *platform_read_clipboard(GCancellable *cancel, GError **error)
 {
     bool wayland = g_getenv("WAYLAND_DISPLAY") && *g_getenv("WAYLAND_DISPLAY");
     if (!wayland && (!g_getenv("DISPLAY") || !*g_getenv("DISPLAY"))) {
+#ifdef __APPLE__
+        /* Over SSH the pasteboard of this Mac is not the user's. */
+        const char *ssh = g_getenv("SSH_CONNECTION"), *tty = g_getenv("SSH_TTY");
+        if (!(ssh && *ssh) && !(tty && *tty))
+            return pasteboard_read(cancel, error);
+#endif
         g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
                             K_("Clipboard indisponível; use Anexar/{k1:conversation.attach} ou a "
                                "colagem do terminal."));

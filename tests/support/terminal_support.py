@@ -2,6 +2,7 @@
 
 from test_context import argument, terminals
 import os
+import sys
 
 if os.name != "nt":
     import fcntl
@@ -310,6 +311,17 @@ class PosixTerminal:
             env["WAYLAND_DISPLAY"] = ""
         if not environment or "DISPLAY" not in environment:
             env["DISPLAY"] = ""
+        if sys.platform == "darwin":
+            # Nor the Mac's pasteboard: these stand-ins fail, so copying falls back to the
+            # terminal sequence and reading reports an error, as with no Wayland or X11 display.
+            stand_ins = os.path.join(self.configuration.name, "pasteboard")
+            os.makedirs(stand_ins, exist_ok=True)
+            for name in ("pbcopy", "pbpaste", "osascript"):
+                path = os.path.join(stand_ins, name)
+                with open(path, "w", encoding="utf-8") as script:
+                    script.write("#!/bin/sh\nexit 1\n")
+                os.chmod(path, 0o755)
+            env["PATH"] = stand_ins + os.pathsep + env.get("PATH", "")
         command = [BINARY, *arguments]
         if allow_local_http and "--allow-local-http" not in arguments:
             command.append("--allow-local-http")

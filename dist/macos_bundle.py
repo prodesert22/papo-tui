@@ -69,8 +69,9 @@ README = """Papo TUI for macOS (Apple Silicon) - test build
 
        "/Applications/Papo TUI.app/Contents/Resources/papo-tui/bin/papo-tui"
 
-Not available on macOS yet: voice calls, desktop notifications, the system file picker, pasting
-files or images from the clipboard and saved sessions. Images use terminal graphics in kitty,
+Copying uses the macOS clipboard, and Ctrl+V pastes files copied in Finder, images and text. Not
+available on macOS yet: voice calls, desktop notifications, the system file picker and saved
+sessions. Images use terminal graphics in kitty,
 Ghostty, WezTerm and iTerm2, and colored characters in Terminal.
 
 ---
