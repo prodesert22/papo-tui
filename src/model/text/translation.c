@@ -3,6 +3,9 @@
 #include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef __APPLE__
+#include <CoreFoundation/CoreFoundation.h>
+#endif
 
 typedef struct {
     const char *context; /* "" without context. */
@@ -60,11 +63,52 @@ static int language_of(const char *name)
     return 0;
 }
 
+#ifdef __APPLE__
+/* The first of Portuguese or English in a colon-separated list such as LANGUAGE; 0 for neither. */
+static int listed_language(const char *list)
+{
+    int found = 0;
+    gchar **names = g_strsplit(list, ":", -1);
+    for (size_t i = 0; names[i] && !found; ++i)
+        found = language_of(names[i]);
+    g_strfreev(names);
+    return found;
+}
+/* The languages chosen in System Settings, in their order. Terminals such as Ghostty put none of
+ * them in LANG, which then holds only en_US.UTF-8 or nothing at all. */
+static int preferred_language(void)
+{
+    CFArrayRef list = CFLocaleCopyPreferredLanguages();
+    int found = 0;
+    for (CFIndex i = 0; list && !found && i < CFArrayGetCount(list); ++i) {
+        char name[64];
+        CFStringRef item = CFArrayGetValueAtIndex(list, i);
+        if (CFStringGetCString(item, name, sizeof(name), kCFStringEncodingUTF8))
+            found = language_of(name);
+    }
+    if (list)
+        CFRelease(list);
+    return found;
+}
+#endif
 static int detect_system(void)
 {
     const char *forced = getenv("PAPO_LANGUAGE");
     if (forced && (!strcmp(forced, "pt") || !strcmp(forced, "en")))
         return forced[0] == 'p' ? 1 : 2;
+#ifdef __APPLE__
+    /* A language set on purpose in the environment still wins; LANG is the terminal's guess. */
+    static const char *const chosen[] = {"LANGUAGE", "LC_ALL", "LC_MESSAGES"};
+    for (size_t i = 0; i < G_N_ELEMENTS(chosen); ++i) {
+        const char *value = getenv(chosen[i]);
+        int found = value && *value ? listed_language(value) : 0;
+        if (found)
+            return found;
+    }
+    int preferred = preferred_language();
+    if (preferred)
+        return preferred;
+#endif
     const char *const *names = g_get_language_names();
     for (size_t i = 0; names && names[i]; ++i) {
         int found = language_of(names[i]);

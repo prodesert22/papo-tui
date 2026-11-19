@@ -22,7 +22,8 @@ void language_set(language_choice choice);
 language_choice language_get(void);
 /* The language in effect. System follows PAPO_LANGUAGE ("pt" or "en") when set,
  * then the system's language list: Portuguese when it comes first among the
- * two, English otherwise. */
+ * two, English otherwise. On macOS that list is the one of System Settings,
+ * after LANGUAGE, LC_ALL and LC_MESSAGES and before LANG. */
 bool language_english(void);
 
 #if defined(__GNUC__) || defined(__clang__)

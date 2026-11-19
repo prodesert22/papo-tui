@@ -9,6 +9,10 @@ add_library(papo_platform src/platform/${PAPO_PLATFORM}/runtime.c src/platform/t
                           src/platform/install.c src/model/text/translation.c)
 target_include_directories(papo_platform PUBLIC src)
 target_link_libraries(papo_platform PUBLIC PkgConfig::GLIB)
+if(APPLE)
+    # The interface language follows the languages chosen in System Settings.
+    target_link_libraries(papo_platform PRIVATE "-framework CoreFoundation")
+endif()
 if(WIN32)
     target_sources(papo_platform PRIVATE src/platform/windows/files.c)
     target_link_libraries(papo_platform PRIVATE bcrypt advapi32)
