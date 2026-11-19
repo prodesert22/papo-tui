@@ -7,6 +7,66 @@
 #include <unistd.h>
 #endif
 
+static GBytes *helper(const char *const *argv, gsize limit, GCancellable *cancel, GError **error);
+#ifdef __APPLE__
+/* The Finder's open and save dialogs, through AppleScript; a cancelled dialog answers "cancelled".
+ * Paths come one per line after the first. */
+static const char finder_script[] =
+    "on run argv\n"
+    "  activate\n"
+    "  try\n"
+    "    if (count of argv) > 0 then\n"
+    "      set chosen to choose file name default name (item 1 of argv)\n"
+    "      return \"chosen\" & linefeed & POSIX path of chosen\n"
+    "    end if\n"
+    "    set out to \"chosen\"\n"
+    "    repeat with f in (choose file with multiple selections allowed)\n"
+    "      set out to out & linefeed & POSIX path of (contents of f)\n"
+    "    end repeat\n"
+    "    return out\n"
+    "  on error number n\n"
+    "    if n is -128 then return \"cancelled\"\n"
+    "    error number n\n"
+    "  end try\n"
+    "end run\n";
+static GPtrArray *native_choose(const char *save_name, GCancellable *cancel, GError **error)
+{
+    const char *ssh = g_getenv("SSH_CONNECTION"), *tty = g_getenv("SSH_TTY");
+    if ((ssh && *ssh) || (tty && *tty)) {
+        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED, _("Sem desktop local."));
+        return NULL;
+    }
+    const char *argv[] = {"osascript", "-e", finder_script, save_name, NULL};
+    GError *failure = NULL;
+    GBytes *answer = helper(argv, 1024 * 1024, cancel, &failure);
+    gsize size = 0;
+    const char *data = answer ? g_bytes_get_data(answer, &size) : NULL;
+    char *text = data && !memchr(data, 0, size) && g_utf8_validate(data, (gssize)size, NULL)
+                     ? g_strndup(data, size)
+                     : NULL;
+    g_clear_pointer(&answer, g_bytes_unref);
+    GPtrArray *paths = NULL;
+    if (g_cancellable_is_cancelled(cancel)) {
+        g_cancellable_set_error_if_cancelled(cancel, error);
+    } else if (text && g_str_has_prefix(text, "cancelled")) {
+        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_CANCELLED, _("Seletor nativo fechado."));
+    } else if (text && g_str_has_prefix(text, "chosen")) {
+        paths = g_ptr_array_new_with_free_func(g_free);
+        gchar **lines = g_strsplit(text, "\n", -1);
+        for (size_t i = 1; lines[i]; ++i)
+            if (lines[i][0] == '/')
+                g_ptr_array_add(paths, g_strdup(lines[i]));
+        g_strfreev(lines);
+    } else {
+        /* Without the dialog, the terminal's own picker opens instead. */
+        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
+                            _("Seletor nativo indisponível."));
+    }
+    g_clear_error(&failure);
+    g_free(text);
+    return paths;
+}
+#else
 typedef struct {
     GVariant *response;
     const char *handle;
@@ -109,14 +169,16 @@ static GPtrArray *portal_choose(const char *save_name, GCancellable *cancel, GEr
     g_main_context_unref(context);
     return paths;
 }
+#define native_choose portal_choose
+#endif
 
 GPtrArray *platform_pick_files(GCancellable *cancel, GError **error)
 {
-    return portal_choose(NULL, cancel, error);
+    return native_choose(NULL, cancel, error);
 }
 char *platform_pick_save(const char *name, GCancellable *cancel, GError **error)
 {
-    GPtrArray *paths = portal_choose(name && *name ? name : "arquivo", cancel, error);
+    GPtrArray *paths = native_choose(name && *name ? name : "arquivo", cancel, error);
     char *path = paths && paths->len ? g_strdup(g_ptr_array_index(paths, 0)) : NULL;
     if (paths && !path)
         g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_CANCELLED, _("Seletor nativo fechado."));

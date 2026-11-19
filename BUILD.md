@@ -243,10 +243,11 @@ tests on macOS 15; older versions are untested, because the Homebrew libraries
 come from the runner's own release. The terminal-only parts work as on Linux.
 The clipboard uses the macOS pasteboard: copying goes through `pbcopy`, and
 **Ctrl+V** reads files copied in Finder, images and text through `osascript`;
-over SSH copying uses OSC 52 instead. These Linux desktop integrations have no
-macOS version yet: voice calls, desktop notifications and their click-to-focus,
-the system file picker, and saved sessions, which need a secure store and do
-not use the macOS Keychain yet.
+over SSH copying uses OSC 52 instead. Attaching (**Ctrl+O**/**📎**) and saving an
+attachment open the Finder's dialogs, and the terminal's own picker over SSH.
+These Linux desktop integrations have no macOS version yet: voice calls, desktop
+notifications and their click-to-focus, and saved sessions, which need a secure
+store and do not use the macOS Keychain yet.
 
 Install the Xcode Command Line Tools (`xcode-select --install`) and
 [Homebrew](https://brew.sh/). [dist/Brewfile](dist/Brewfile) lists the host
