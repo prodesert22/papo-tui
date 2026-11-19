@@ -368,7 +368,9 @@ void emoji_picker_close(emoji_picker *p)
 {
     if (!p)
         return;
-    p->open = p->suggesting = p->reaction = false;
+    /* The GIF source belongs to the open picker: left on, completing a :name:
+     * would insert the GIF last selected instead of the emoji. */
+    p->open = p->suggesting = p->reaction = p->gif = false;
     if (p->window) {
         delwin(p->window);
         p->window = NULL;
@@ -384,7 +386,6 @@ void emoji_picker_show(emoji_picker *p, const char *channel, uint64_t generation
     json_decref(p->reaction_choice);
     p->reaction_choice = NULL;
     p->focus = 0;
-    p->gif = false;
     text_clear(&p->search);
     p->selected_key[0] = 0;
     p->selected = p->first = 0;

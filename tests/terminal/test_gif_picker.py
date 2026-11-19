@@ -125,6 +125,35 @@ class GifPicker(unittest.TestCase):
                 finally:
                     self.assertTrue(t.close())
 
+    def test_completing_an_emoji_after_a_gif_inserts_the_emoji(self):
+        with self.serve() as server:
+            t = self.open_gifs(server, "kitty")
+            try:
+                popup = "Emojis · mais usados"
+                t.send(DOWN + RIGHT + RIGHT)
+                self.helper.wait(t, "Cat dance")
+                t.send(DOWN + "\n")
+                wait_for_screen(
+                    t,
+                    lambda: "[GIF]" not in self.screen(t) and "/g/ful" in self.screen(t),
+                    "The chosen GIF address must land in the draft and close the picker",
+                )
+                # The GIF source ends with the picker: a name completed in the
+                # draft afterwards is an emoji, not the GIF chosen before.
+                t.send(":rocket")
+                self.helper.wait(t, popup)
+                t.send("\t")
+                wait_for_screen(
+                    t, lambda: popup not in self.screen(t), "Tab must close the completion"
+                )
+                t.send("\n")
+                self.helper.settled(t, lambda: server.message_count == 1)
+                self.assertEqual(
+                    server.sent_messages[0]["content"], server.url + "/g/full-1.gif 🚀"
+                )
+            finally:
+                self.assertTrue(t.close())
+
     def test_empty_and_failed_searches_say_so(self):
         for fail in (False, True):
             with self.subTest(fail=fail), self.serve(fail=fail) as server:
