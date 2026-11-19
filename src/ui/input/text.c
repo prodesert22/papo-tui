@@ -142,6 +142,13 @@ void text_input_init(void)
             define_key(sequence, alt_keys[direction]);
         }
     }
+#ifdef __APPLE__
+    /* macOS terminals send Option+Left and Option+Right as ESC b and ESC f, readline's word
+     * motions, while Option+Up and Option+Down arrive as Alt arrows; the letter was typed instead.
+     * Esc and a letter pressed by hand come further apart than the escape delay (25 ms). */
+    define_key("\033b", TEXT_ALT_LEFT);
+    define_key("\033f", TEXT_ALT_RIGHT);
+#endif
     /* Disambiguation also gives non-text keypad keys their own CSI-u codes. */
     const int keypad_codes[] = {57414, 57421, 57422, 57425, 57426};
     const int keypad_keys[] = {KEY_ENTER, KEY_PPAGE, KEY_NPAGE, KEY_IC, KEY_DC};
