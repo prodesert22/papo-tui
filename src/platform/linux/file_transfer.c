@@ -13,10 +13,11 @@ static GBytes *helper(const char *const *argv, gsize limit, GCancellable *cancel
  * Paths come one per line after the first. */
 static const char finder_script[] =
     "on run argv\n"
+    "  if (count of argv) > 0 and item 1 of argv is \"--\" then set argv to rest of argv\n"
     "  activate\n"
     "  try\n"
-    "    if (count of argv) > 0 then\n"
-    "      set chosen to choose file name default name (item 1 of argv)\n"
+    "    if item 1 of argv is \"save\" then\n"
+    "      set chosen to choose file name default name (item 2 of argv)\n"
     "      return \"chosen\" & linefeed & POSIX path of chosen\n"
     "    end if\n"
     "    set out to \"chosen\"\n"
@@ -36,7 +37,12 @@ static GPtrArray *native_choose(const char *save_name, GCancellable *cancel, GEr
         g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED, _("Sem desktop local."));
         return NULL;
     }
-    const char *argv[] = {"osascript", "-e", finder_script, save_name, NULL};
+    /* The suggested name comes from the server. "--" ends osascript's options, so a name such as
+     * "-e …" cannot become a script of its own; a leading dash is replaced all the same. */
+    if (save_name && save_name[0] == '-')
+        save_name = "arquivo";
+    const char *argv[] = {"osascript", "-e", finder_script, "--", save_name ? "save" : "open",
+                          save_name,   NULL};
     GError *failure = NULL;
     GBytes *answer = helper(argv, 1024 * 1024, cancel, &failure);
     gsize size = 0;
@@ -265,7 +271,8 @@ static const char pasteboard_script[] =
     "            $.NSDictionary.dictionary);"
     "    }"
     "  }"
-    "  if (!data.isNil() && data.writeToFileAtomically(argv[0], true)) return 'image\\n';"
+    "  var target = argv[argv.length - 1];"
+    "  if (!data.isNil() && data.writeToFileAtomically(target, true)) return 'image\\n';"
     "  var text = board.stringForType('public.utf8-plain-text');"
     "  if (!text.isNil()) return 'text\\n' + text.js;"
     "  return 'none\\n';"
@@ -277,8 +284,8 @@ static clipboard_content *pasteboard_read(GCancellable *cancel, GError **error)
     if (fd < 0)
         return NULL;
     close(fd);
-    const char *argv[] = {"osascript",       "-l",       "JavaScript", "-e",
-                          pasteboard_script, image_path, NULL};
+    const char *argv[] = {"osascript",       "-l", "JavaScript", "-e",
+                          pasteboard_script, "--", image_path,   NULL};
     GBytes *answer = helper(argv, 1024 * 1024 + 16, cancel, error);
     char *kind = answer ? bytes_text(answer) : NULL;
     if (answer && !kind)
