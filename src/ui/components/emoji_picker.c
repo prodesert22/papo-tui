@@ -98,7 +98,9 @@ static void item_names(emoji_picker *p, uint32_t id, char *out, size_t size)
 {
     char aliases[384];
     alias_list(id & ICON_CUSTOM ? NULL : emoji_catalog_get(id - 1), aliases, sizeof(aliases));
-    snprintf(out, size, ":%s:%s", item_name(p, id), aliases);
+    /* A long alias list is cut at size; the item's own name still comes first. */
+    if (snprintf(out, size, ":%s:%s", item_name(p, id), aliases) < 0)
+        *out = 0;
 }
 static void remember(emoji_picker *p)
 {
