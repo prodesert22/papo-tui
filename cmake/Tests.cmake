@@ -482,8 +482,8 @@ if(BUILD_TESTING)
         LABELS
         media)
     papo_set_tests_properties(gif-picker-terminal PROPERTIES TIMEOUT 120)
-    # Replacing an AppImage or an unpacked archive exists on Linux only; the
-    # test packs its fixtures with the system's tar.
+    # Replacing an AppImage or an unpacked archive exists on Linux only; the test packs its fixtures
+    # with the system's tar.
     add_executable(self-install-test tests/unit/test_self_install.c)
     target_link_libraries(self-install-test PRIVATE papo_send_editor)
     papo_add_test(

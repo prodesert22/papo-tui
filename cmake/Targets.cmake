@@ -65,8 +65,15 @@ add_library(
     src/model/conversation/pagination.c
     src/model/notifications/inbox.c)
 target_include_directories(papo_auth PUBLIC src)
-target_link_libraries(papo_auth PUBLIC papo_platform PkgConfig::CURL PkgConfig::CRYPTO PkgConfig::JANSSON
-                                       PkgConfig::GLIB PkgConfig::GIO m)
+target_link_libraries(
+    papo_auth
+    PUBLIC papo_platform
+           PkgConfig::CURL
+           PkgConfig::CRYPTO
+           PkgConfig::JANSSON
+           PkgConfig::GLIB
+           PkgConfig::GIO
+           m)
 
 # Voice calls need the GStreamer WebRTC stack. Platforms without it build the inert stub instead, so
 # the rest of the program stays available.
