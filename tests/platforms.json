@@ -165,5 +165,20 @@
   },
   "tests/terminal/test_channel_preferences.py": {
     "windows": "POSIX PTY/graphics channel-menu fixtures; portable mute persistence is checked natively by channel-mutes-unit"
+  },
+  "tests/terminal/test_accessibility_terminal.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/terminal/test_shortcuts_terminal.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/terminal/test_update_terminal.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/terminal/test_update_download.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/terminal/test_update_install.py": {
+    "windows": "Replacing an AppImage or an unpacked archive exists on Linux only"
   }
 }
