@@ -3,6 +3,7 @@
 from test_context import main as test_main
 
 import base64
+import os
 import tempfile
 import time
 import unittest
@@ -313,6 +314,7 @@ class ServerSettings(unittest.TestCase):
             self.wait(t, "Vínculo do cargo removido")
             self.calls(server, "DELETE", f"/channels/{OTHER}/role/{role}", 1)
 
+    @unittest.skipIf(os.name == "nt", "Native Windows file dialogs cannot be driven through ConPTY")
     def test_emojis_are_added_from_a_file_and_deleted(self):
         with tempfile.TemporaryDirectory() as folder, ServerAdminMock() as server:
             image = Path(folder, "aceno.png")

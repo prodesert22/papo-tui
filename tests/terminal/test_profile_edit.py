@@ -3,6 +3,7 @@
 from test_context import main as test_main
 
 import base64
+import os
 import struct
 import tempfile
 import time
@@ -303,6 +304,7 @@ class ProfileEdit(unittest.TestCase):
             self.settled(t, lambda: len(server.sent_messages) == 1)
             self.assertEqual(server.sent_messages[0]["content"], "/x")
 
+    @unittest.skipIf(os.name == "nt", "Native Windows file dialogs cannot be driven through ConPTY")
     def test_images_within_limits_are_sent_unchanged_and_larger_ones_reduced(self):
         with tempfile.TemporaryDirectory() as folder, ProfileMock() as server:
             large, small = Path(folder, "grande.png"), Path(folder, "pequena.png")
