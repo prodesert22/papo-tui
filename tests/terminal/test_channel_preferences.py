@@ -178,6 +178,16 @@ class ChannelPreferences(HistoryTerminal):
                 return sum(r[0] == "GET" and r[1].endswith("/channels") for r in server.requests)
 
             try:
+                # Signing in starts a permission refresh that reads the roles, lists the channels
+                # and ends with the server; count from after it, or its listing lands below.
+                wait_for_screen(
+                    t,
+                    lambda: (
+                        sum(r[0] == "GET" and r[1].endswith("/server") for r in server.requests)
+                        >= 2
+                    ),
+                    "The permission refresh after signing in did not finish",
+                )
                 self.menu(t)
                 listed = listings()
                 # Another device saves Nada; the server sends no event for it.
