@@ -473,8 +473,7 @@ class ServerSettings(unittest.TestCase):
             self.assertIn("/webhooks/", self.screen(t))
             self.click(t, "Copiar token")
             self.wait(t, "Token copiado.")
-            copied = base64.b64encode(TOKEN.encode())
-            self.settled(t, lambda: b"\x1b]52;c;" + copied in t.output)
+            self.settled(t, lambda: TOKEN in t.copies())
             # Looking at another webhook drops the token for good.
             self.click(t, "Robô de deploy")
             self.wait(t, "Salvar apelido")
@@ -487,6 +486,7 @@ class ServerSettings(unittest.TestCase):
             self.assertEqual(sum(TOKEN in str(c) for c in server.admin_calls), 0)
             self.calls(server, "GET", "/webhooks", 2)
 
+    @unittest.skipIf(os.name == "nt", "Native Windows file dialogs cannot be driven through ConPTY")
     def test_nickname_avatar_and_revocation_of_a_webhook(self):
         with tempfile.TemporaryDirectory() as folder, ServerAdminMock() as server:
             image = Path(folder, "robo.png")

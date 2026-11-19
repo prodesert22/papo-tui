@@ -184,7 +184,8 @@
   "tests/terminal/test_server_settings.py": {
     "skips": {
       "windows": {
-        "ServerSettings.test_emojis_are_added_from_a_file_and_deleted": "Native Windows file dialogs cannot be driven through ConPTY"
+        "ServerSettings.test_emojis_are_added_from_a_file_and_deleted": "Native Windows file dialogs cannot be driven through ConPTY",
+        "ServerSettings.test_nickname_avatar_and_revocation_of_a_webhook": "Native Windows file dialogs cannot be driven through ConPTY"
       }
     }
   },

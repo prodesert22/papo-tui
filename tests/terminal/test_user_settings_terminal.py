@@ -2,7 +2,6 @@
 
 from test_context import main as test_main
 
-import base64
 import copy
 import os
 import pathlib
@@ -243,10 +242,14 @@ class UserSettingsTerminal(support.R8Terminal):
             self.assertEqual(self.wait_sounds(log, 3)[2:], ["sound=message"])
 
     def copies(self, t):
-        return [
-            base64.b64decode(value).decode()
-            for value in re.findall(rb"\x1b\]52;c;([A-Za-z0-9+/=]*)\x07", t.output)
-        ]
+        return t.copies()
+
+    def copied(self, t, expected):
+        """Windows copies after the request, at the next turn of the program's loop."""
+        deadline = time.monotonic() + 5
+        while self.copies(t) != expected and time.monotonic() < deadline:
+            t.read(0.05)
+        self.assertEqual(self.copies(t), expected)
 
     def test_sobre_shows_the_program_facts_and_copies_the_source_link(self):
         version = subprocess.run(
@@ -282,7 +285,7 @@ class UserSettingsTerminal(support.R8Terminal):
             # Tab enters the lines on the source link; Enter copies it.
             t.send("\t\n")
             self.wait(t, "Cópia solicitada.")
-            self.assertEqual(self.copies(t), [REPOSITORY])
+            self.copied(t, [REPOSITORY])
             # Leaving the section forgets the notice; a click on the link copies too.
             t.send(UP + RIGHT)
             self.wait(t, "< Perfil >")
@@ -291,11 +294,11 @@ class UserSettingsTerminal(support.R8Terminal):
             self.assertNotIn("Cópia solicitada.", "\n".join(t.screen.display))
             self.click(t, "Código-fonte:")
             self.wait(t, "Cópia solicitada.")
-            self.assertEqual(self.copies(t), [REPOSITORY] * 2)
+            self.copied(t, [REPOSITORY] * 2)
             # So does the section's button; the update switches live elsewhere.
             t.send(UP + LEFT + RIGHT + "\t\t\n")
             self.wait(t, "Cópia solicitada.")
-            self.assertEqual(self.copies(t), [REPOSITORY] * 3)
+            self.copied(t, [REPOSITORY] * 3)
             self.assertNotIn("Verificar", "\n".join(t.screen.display))
             self.dump(t, "sobre")
             # A short window keeps the version, the license, the author and the link.

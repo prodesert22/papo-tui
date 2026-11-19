@@ -7,6 +7,7 @@ if os.name != "nt":
     import fcntl
     import pty
     import termios
+import base64
 import os
 import select
 import signal
@@ -359,6 +360,13 @@ class PosixTerminal:
         fcntl.ioctl(self.slave, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
         self.process.send_signal(signal.SIGWINCH)
         self.read()
+
+    def copies(self):
+        """Texts the program copied, oldest first: here, its OSC 52 sequences."""
+        return [
+            base64.b64decode(value).decode()
+            for value in re.findall(rb"\x1b\]52;c;([A-Za-z0-9+/=]*)\x07", self.output)
+        ]
 
     def wait_text(self, text):
         deadline = time.monotonic() + 5

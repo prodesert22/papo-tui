@@ -289,9 +289,11 @@ class ProfileEdit(unittest.TestCase):
             self.assertIn("/nick Ana", self.screen(t))
             # Choices narrow as the option is typed; Tab completes one.
             t.send("\x03/status o")
+            # Online and Ocupado show before the "o" arrives too: the filter is done once
+            # Ausente leaves.
+            self.settled(t, lambda: "Ausente" not in self.screen(t))
             self.wait(t, "online")
             self.wait(t, "ocupado")
-            self.assertNotIn("Ausente", self.screen(t))
             t.send("\x1bOB\t")
             self.wait(t, "/status ocupado")
             t.send("\n")

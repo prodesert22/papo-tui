@@ -1,5 +1,6 @@
 """ConPTY backend. Shared terminal tests provide navigation and assertions."""
 
+import ctypes
 import os
 import select
 import tempfile
@@ -7,6 +8,36 @@ import time
 from winpty import Backend, PtyProcess
 
 from terminal_keys import encode_keys
+
+
+def clipboard_sequence():
+    return ctypes.windll.user32.GetClipboardSequenceNumber()
+
+
+def clipboard_text():
+    """The clipboard's Unicode text, or None when it holds none or is busy."""
+    user32, kernel32 = ctypes.windll.user32, ctypes.windll.kernel32
+    user32.GetClipboardData.restype = ctypes.c_void_p
+    kernel32.GlobalLock.restype = ctypes.c_void_p
+    kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
+    kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
+    for _ in range(50):
+        if user32.OpenClipboard(None):
+            break
+        time.sleep(0.02)
+    else:
+        return None
+    try:
+        handle = user32.GetClipboardData(13)  # CF_UNICODETEXT
+        pointer = kernel32.GlobalLock(handle) if handle else None
+        if not pointer:
+            return None
+        try:
+            return ctypes.wstring_at(pointer)
+        finally:
+            kernel32.GlobalUnlock(handle)
+    finally:
+        user32.CloseClipboard()
 
 
 def close_pty_process(child):
@@ -45,6 +76,9 @@ class WindowsTerminal:
         from terminal_support import BINARY, ObservedScreen, TerminalStream
 
         self.configuration = tempfile.TemporaryDirectory(prefix="papo-conpty-")
+        # Copies count from here: what the clipboard held before belongs to no one here.
+        self._clipboard_sequence = clipboard_sequence()
+        self._copies = []
         self._closed = False
         self._clean_exit = False
         env = dict(
@@ -106,6 +140,17 @@ class WindowsTerminal:
         keys, self._pasting = encode_keys(value, getattr(self, "_pasting", False))
         self.child.write(keys)
         self.read()
+
+    def copies(self):
+        """Texts the program copied, oldest first. On Windows it writes the system clipboard
+        instead of OSC 52, after the request: each change of the clipboard is one copy."""
+        sequence = clipboard_sequence()
+        if sequence != self._clipboard_sequence:
+            self._clipboard_sequence = sequence
+            text = clipboard_text()
+            if text is not None:
+                self._copies.append(text)
+        return list(self._copies)
 
     def resize(self, rows, cols):
         self.screen.resize(lines=rows, columns=cols)
