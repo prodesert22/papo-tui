@@ -110,7 +110,16 @@ class WindowsTerminal:
     def resize(self, rows, cols):
         self.screen.resize(lines=rows, columns=cols)
         self.child.setwinsize(rows, cols)
-        self.read()
+        # ConPTY hands the new size to the program as a console event, and the program redraws
+        # after this returns; a click meanwhile lands on the old layout. The frame's bottom
+        # border on the new last row, at the new width, shows the redraw.
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline and not self.framed(cols):
+            self.read(0.05)
+
+    def framed(self, cols):
+        last = self.screen.display[-1].rstrip()
+        return len(last) == cols and last.startswith("└") and last.endswith("┘")
 
     def close(self, signal_number=None, exit_key="\x11"):
         if self._closed:
