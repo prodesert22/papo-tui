@@ -66,24 +66,29 @@ class WorkflowTests(unittest.TestCase):
                     self.assertEqual(step["with"]["ref"], "${{ inputs.ref || github.sha }}")
 
     def test_verified_dependencies_are_saved_between_build_and_test(self):
-        for job, stage in (
-            ("build", "Linux Release"),
-            ("build", "Windows"),
-            ("instrumentation", "isolated variant"),
-        ):
+        steps = WORKFLOW["jobs"]["build"]["steps"]
+        start = next(i for i, step in enumerate(steps) if step.get("name") == "Build Windows")
+        end = next(i for i, step in enumerate(steps) if step.get("name") == "Test Windows")
+        self.assertIn("--build-only", steps[start]["run"])
+        self.assertIn("--test-only", steps[end]["run"])
+        self.assertTrue(
+            any(step.get("uses") == "actions/cache/save@v4" for step in steps[start + 1 : end])
+        )
+
+    def test_linux_build_and_test_are_separate_steps_of_the_local_command(self):
+        for job, stage in (("build", "Linux Release"), ("instrumentation", "isolated variant")):
             steps = WORKFLOW["jobs"][job]["steps"]
-            start = next(i for i, step in enumerate(steps) if step.get("name") == "Build " + stage)
-            end = next(i for i, step in enumerate(steps) if step.get("name") == "Test " + stage)
-            self.assertIn("--build-only", steps[start]["run"])
-            self.assertIn("--test-only", steps[end]["run"])
-            self.assertTrue(
-                any(step.get("uses") == "actions/cache/save@v4" for step in steps[start + 1 : end])
-            )
+            build = next(step for step in steps if step.get("name") == "Build " + stage)
+            test = next(step for step in steps if step.get("name") == "Test " + stage)
+            self.assertIn("tools/ci.py run", build["run"])
+            self.assertIn("--stage build", build["run"])
+            self.assertIn("tools/ci.py run", test["run"])
+            self.assertIn("--stage test", test["run"])
 
     def test_native_cache_fallbacks_require_the_same_toolchain_identity(self):
         for job in WORKFLOW["jobs"].values():
             for step in job.get("steps", []):
-                if step.get("id") not in {"linux-cache", "windows-cache", "dependencies"}:
+                if step.get("id") != "windows-cache":
                     continue
                 for prefix in step["with"]["restore-keys"].splitlines():
                     self.assertIn(".outputs.fingerprint", prefix)

@@ -10,6 +10,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tarfile
+import time
 import urllib.request
 from voice_dependencies import (
     cmake_options as voice_cmake_options,
@@ -27,19 +28,32 @@ def sha256(path):
     return digest.hexdigest()
 
 
+# Waits before the second and third attempts; mirrors time out or serve an error page.
+RETRY_SECONDS = (5, 20)
+
+
 def download(url, digest, path):
     if path.exists() and sha256(path) == digest:
         return path
     temporary = path.with_name(path.name + ".part")
-    try:
-        with urllib.request.urlopen(url, timeout=120) as response, temporary.open("wb") as output:
-            shutil.copyfileobj(response, output)
-        if sha256(temporary) != digest:
-            raise RuntimeError(f"Checksum mismatch: {path.name}")
-        temporary.replace(path)
-    finally:
-        temporary.unlink(missing_ok=True)
-    return path
+    for wait in (*RETRY_SECONDS, None):
+        try:
+            with (
+                urllib.request.urlopen(url, timeout=120) as response,
+                temporary.open("wb") as output,
+            ):
+                shutil.copyfileobj(response, output)
+            if sha256(temporary) != digest:
+                raise RuntimeError(f"Checksum mismatch: {path.name}")
+            temporary.replace(path)
+            return path
+        except (OSError, RuntimeError) as error:
+            if wait is None:
+                raise
+            print(f"Retrying {path.name} in {wait}s: {error}", flush=True)
+            time.sleep(wait)
+        finally:
+            temporary.unlink(missing_ok=True)
 
 
 def unpack(archive, destination):

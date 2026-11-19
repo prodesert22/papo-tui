@@ -1,0 +1,12 @@
+# Only the image's inputs reach the builder; tools/ci.py hashes this same set for the tag.
+*
+!dist/ci/entrypoint.sh
+!dist/linux-deps.sh
+!dist/bootstrap.py
+!dist/voice_dependencies.py
+!dist/dependencies.json
+!dist/resources.py
+!dist/resources.json
+!dist/patches
+!tests/fixtures/resources.json
+!requirements/ci-linux-py313.txt

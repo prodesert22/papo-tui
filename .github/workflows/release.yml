@@ -79,6 +79,10 @@ jobs:
   checks:
     needs: identity
     if: needs.identity.outputs.enabled == 'true'
+    # CI publishes its toolchain image when a release changes the image's inputs.
+    permissions:
+      contents: read
+      packages: write
     uses: ./.github/workflows/ci.yml
     with:
       ref: ${{ needs.identity.outputs.tag }}

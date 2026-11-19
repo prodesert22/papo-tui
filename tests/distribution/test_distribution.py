@@ -1,5 +1,6 @@
 """Distribution invariants: reject incomplete releases, unsafe archives and bad locks."""
 
+from contextlib import redirect_stdout
 import hashlib
 import importlib.util
 import io
@@ -15,6 +16,8 @@ import tarfile
 import tempfile
 import unittest
 from unittest.mock import patch
+import urllib.error
+import urllib.request
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "dist"))
@@ -305,10 +308,36 @@ class DistributionTests(unittest.TestCase):
             original.write_bytes(b"upstream")
             target = root / "target"
             target.write_bytes(b"existing")
-            with self.assertRaises(RuntimeError):
-                bootstrap.download(original.as_uri(), "0" * 64, target)
+            with patch.object(bootstrap, "RETRY_SECONDS", (0, 0)), redirect_stdout(io.StringIO()):
+                with self.assertRaises(RuntimeError):
+                    bootstrap.download(original.as_uri(), "0" * 64, target)
             self.assertEqual(target.read_bytes(), b"existing")
             self.assertFalse((root / "target.part").exists())
+
+    def test_download_survives_a_mirror_that_fails_before_it_answers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            original = root / "original"
+            original.write_bytes(b"upstream")
+            digest = hashlib.sha256(b"upstream").hexdigest()
+            opened = urllib.request.urlopen
+            attempts = []
+
+            def flaky(url, timeout):
+                attempts.append(url)
+                if len(attempts) == 1:
+                    raise urllib.error.URLError("timed out")
+                return opened(url, timeout=timeout)
+
+            with (
+                patch.object(bootstrap, "RETRY_SECONDS", (0, 0)),
+                patch.object(bootstrap.urllib.request, "urlopen", flaky),
+                redirect_stdout(io.StringIO()) as output,
+            ):
+                bootstrap.download(original.as_uri(), digest, root / "target")
+            self.assertEqual((root / "target").read_bytes(), b"upstream")
+            self.assertEqual(len(attempts), 2)
+            self.assertIn("Retrying target", output.getvalue())
 
     def test_dependency_kit_only_contains_declared_release_fonts(self):
         with tempfile.TemporaryDirectory() as folder:
