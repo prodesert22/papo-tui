@@ -4,6 +4,7 @@
 #include "ui/media/message_blocks.h"
 #include "config/app_mode.h"
 #include "model/conversation/history.h"
+#include "model/text/markdown.h"
 #include "model/text/translation.h"
 #include "net/auth/session_time.h"
 #include "ui/components/theme.h"
@@ -201,7 +202,7 @@ static bool blank(message_blocks *b, bool card, bool top, bool bottom, unsigned 
 /* Trailing spaces at a line end are invisible; when they overflow the column
  * they wrap alone into an extra empty row, so drop them before measuring.
  * Explicit newlines stay, keeping blank lines written by the author. */
-static void trim_line_ends(text_buffer *buffer)
+static void trim_line_ends(text_buffer *buffer, unsigned char *styles)
 {
     size_t out = 0, pending = 0;
     for (size_t at = 0; at < buffer->length; ++at) {
@@ -213,10 +214,14 @@ static void trim_line_ends(text_buffer *buffer)
         if (character == '\n')
             pending = 0;
         else
-            while (pending) {
+            /* Styles move with their scalars. */
+            for (size_t space = at - pending; pending; --pending, ++space) {
+                if (styles)
+                    styles[out] = styles[space];
                 buffer->data[out++] = ' ';
-                --pending;
             }
+        if (styles)
+            styles[out] = styles[at];
         buffer->data[out++] = character;
     }
     buffer->length = out;
@@ -225,14 +230,20 @@ static void trim_line_ends(text_buffer *buffer)
         buffer->cursor = out;
 }
 /* Appends one wrapped column at a specified row. Other columns can occupy the
- * same rows. All terminal controls pass through the shared Unicode decoder. */
-static bool column(message_blocks *b, size_t start, const char *key, const char *value, int x,
-                   int width, bool bold, bool card, unsigned color, size_t *end)
+ * same rows. All terminal controls pass through the shared Unicode decoder.
+ * styles, when given, holds MARKDOWN_* bits for each scalar of value, which
+ * must decode without dropping any (see text_sanitize). */
+static bool column_styled(message_blocks *b, size_t start, const char *key, const char *value,
+                          size_t offset, const unsigned char *styles, size_t styles_length, int x,
+                          int width, bool bold, bool card, unsigned color, size_t *end)
 {
     if (width < 1)
         width = 1;
-    size_t base = 0, row = start;
+    size_t base = offset, style_base = 0, row = start;
     const char *p = value;
+    unsigned char *marks = NULL;
+    if (styles && !(marks = malloc(TEXT_LIMIT + 1)))
+        return false;
     do {
         text_buffer buffer;
         text_layout layout;
@@ -241,7 +252,7 @@ static bool column(message_blocks *b, size_t start, const char *key, const char 
         bool styled = b->resolver && (card || !strcmp(key, "content")) &&
                       mention_next(value, 0, &first_mention);
         if (!text_decode_chunk(&buffer, &p))
-            return false;
+            goto fail;
         if (styled && *p) {
             mention_range range;
             size_t from = 0, cut = (size_t)(p - begin);
@@ -251,11 +262,11 @@ static bool column(message_blocks *b, size_t start, const char *key, const char 
                 if (range.end > cut) {
                     char *prefix = g_strndup(begin, range.start);
                     if (!prefix)
-                        return false;
+                        goto fail;
                     bool ok = text_decode(&buffer, prefix);
                     g_free(prefix);
                     if (!ok)
-                        return false;
+                        goto fail;
                     p = begin + range.start;
                     break;
                 }
@@ -264,7 +275,12 @@ static bool column(message_blocks *b, size_t start, const char *key, const char 
         }
         if (styled)
             text_mentions(&buffer, b->resolver, b->resolver_context);
-        trim_line_ends(&buffer);
+        if (marks) {
+            for (size_t k = 0; k < buffer.length; ++k)
+                marks[k] = style_base + k < styles_length ? styles[style_base + k] : 0;
+            style_base += buffer.length;
+        }
+        trim_line_ends(&buffer, marks);
         if (b->icon_resolver && (card || !strcmp(key, "content") || !strncmp(key, "reaction:", 9)))
             text_icons(&buffer, b->icon_resolver, b->icon_painter, b->icon_context);
         text_buffer visible;
@@ -278,10 +294,10 @@ static bool column(message_blocks *b, size_t start, const char *key, const char 
             text_measure(&buffer, width + 1, &layout);
         for (int line = 0; line < layout.rows; ++line) {
             if (!reserve(b, row + 1))
-                return false;
+                goto fail;
             message_row *r = &b->rows[row];
             if (r->count == MESSAGE_COLUMNS)
-                return false;
+                goto fail;
             message_segment *s = &r->segments[r->count++];
             size_t first = visible.length, last = first, source_first = buffer.length;
             for (size_t k = 0; k < layout.count; ++k)
@@ -300,30 +316,45 @@ static bool column(message_blocks *b, size_t start, const char *key, const char 
                 --part.length;
             char encoded[TEXT_UTF8_BYTES];
             if (!text_encode(&part, encoded) || !(s->text = strdup(encoded)))
-                return false;
+                goto fail;
             snprintf(s->key, sizeof(s->key), "%s", key);
             s->offset = base + source_first;
             s->x = x;
             s->width = width;
             s->bold = bold;
-            if (styled) {
+            if (styled || marks) {
                 s->highlight = calloc(part.length + 1, 1);
                 s->highlight_length = part.length;
                 if (!s->highlight)
-                    return false;
-                for (size_t k = 0; k < layout.count; ++k)
-                    if (layout.cells[k].row == line && layout.cells[k].mention)
-                        for (size_t q = layout.cells[k].display_start;
-                             q < layout.cells[k].display_end && q < first + part.length; ++q)
-                            if (q >= first)
-                                s->highlight[q - first] = 1;
+                    goto fail;
+                for (size_t k = 0; k < layout.count; ++k) {
+                    const text_cell *cell = &layout.cells[k];
+                    if (cell->row != line || (!cell->mention && !marks))
+                        continue;
+                    unsigned char bits = cell->mention ? MARKDOWN_MENTION : 0;
+                    if (marks && cell->start < buffer.length)
+                        bits |= marks[cell->start];
+                    for (size_t q = cell->display_start;
+                         q < cell->display_end && q < first + part.length; ++q)
+                        if (q >= first)
+                            s->highlight[q - first] = bits;
+                }
+                /* Plain rows keep the ordinary label drawing. */
+                bool marked = false;
+                for (size_t q = 0; q < part.length && !marked; ++q)
+                    marked = s->highlight[q] != 0;
+                if (!styled && !marked) {
+                    free(s->highlight);
+                    s->highlight = NULL;
+                    s->highlight_length = 0;
+                }
             }
             for (size_t k = 0; k < layout.count; ++k)
                 if (layout.cells[k].row == line && layout.cells[k].icon) {
                     message_icon_region *icons =
                         realloc(r->icons, (r->icon_count + 1) * sizeof(*icons));
                     if (!icons)
-                        return false;
+                        goto fail;
                     r->icons = icons;
                     message_icon_region *icon = &r->icons[r->icon_count++];
                     memset(icon, 0, sizeof(*icon));
@@ -342,8 +373,17 @@ static bool column(message_blocks *b, size_t start, const char *key, const char 
         }
         base += buffer.length;
     } while (*p);
+    free(marks);
     *end = row;
     return true;
+fail:
+    free(marks);
+    return false;
+}
+static bool column(message_blocks *b, size_t start, const char *key, const char *value, int x,
+                   int width, bool bold, bool card, unsigned color, size_t *end)
+{
+    return column_styled(b, start, key, value, 0, NULL, 0, x, width, bold, card, color, end);
 }
 static bool text(message_blocks *b, const char *key, const char *value, int width, bool bold,
                  bool card, unsigned color)
@@ -351,6 +391,75 @@ static bool text(message_blocks *b, const char *key, const char *value, int widt
     size_t end;
     return column(b, b->count, key, value, card ? 2 : 0, width - (card ? 4 : 0), bold, card, color,
                   &end);
+}
+/* One run of lines of the rendered text, [from, to) in bytes and scalars. A
+ * run of code block lines becomes a box: its rows are inset by one cell on
+ * each side and drawn over the block background across the whole width. */
+static bool markdown_run(message_blocks *b, const markdown_text *rendered, size_t from, size_t to,
+                         size_t first, size_t last, bool code, int width)
+{
+    char *part = g_strndup(rendered->text + from, to - from);
+    if (!part)
+        return false;
+    size_t start = b->count, end;
+    bool inset = code && width > 2;
+    bool ok =
+        column_styled(b, start, "content", part, first, rendered->styles + first, last - first,
+                      inset ? 1 : 0, inset ? width - 2 : width, false, false, 0, &end);
+    g_free(part);
+    for (size_t i = start; ok && i < b->count; ++i)
+        b->rows[i].code = code;
+    return ok;
+}
+/* The message text with its Markdown rendered; the raw text when it cannot be. */
+static bool markdown_content(message_blocks *b, const char *value, int width)
+{
+    char *clean = text_sanitize(value);
+    markdown_text rendered;
+    bool ok = true;
+    /* Markers with nothing inside, such as an empty code block, stay visible. */
+    bool visible = clean && markdown_render(clean, &rendered);
+    if (visible && !rendered.text[strspn(rendered.text, " \n")]) {
+        markdown_text_free(&rendered);
+        visible = false;
+    }
+    g_free(clean);
+    if (!visible)
+        return text(b, "content", value, width, false, false, 0);
+    /* Split the text into runs of plain lines and of code block lines. A
+     * line belongs to a block when any of its scalars, its end included, is
+     * part of one; the newline between two runs only separates their rows. */
+    const char *text = rendered.text;
+    size_t byte = 0, scalar = 0, run_byte = 0, run_scalar = 0;
+    int run = -1;
+    for (;;) {
+        size_t line_byte = byte, line_scalar = scalar;
+        bool code = false;
+        while (text[byte] && text[byte] != '\n') {
+            code |= markdown_code_block(rendered.styles[scalar]);
+            byte = (size_t)(g_utf8_next_char(text + byte) - text);
+            ++scalar;
+        }
+        bool more = text[byte] == '\n';
+        if (more)
+            code |= markdown_code_block(rendered.styles[scalar]);
+        if (run >= 0 && code != (bool)run) {
+            if (!(ok = markdown_run(b, &rendered, run_byte, line_byte - 1, run_scalar,
+                                    line_scalar - 1, run, width)))
+                break;
+            run_byte = line_byte;
+            run_scalar = line_scalar;
+        }
+        run = code;
+        if (!more) {
+            ok = markdown_run(b, &rendered, run_byte, byte, run_scalar, scalar, run, width);
+            break;
+        }
+        ++byte;
+        ++scalar;
+    }
+    markdown_text_free(&rendered);
+    return ok;
 }
 static bool emoji_content(message_blocks *b, const char *value, int width, bool graphics,
                           bool *rendered)
@@ -1058,7 +1167,7 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
     if (*str(m, "content")) {
         bool enlarged;
         if (!emoji_content(b, str(m, "content"), width, graphics, &enlarged) ||
-            (!enlarged && !text(b, "content", str(m, "content"), width, false, false, 0)) ||
+            (!enlarged && !markdown_content(b, str(m, "content"), width)) ||
             !gif_links(b, m, str(m, "content"), width, graphics))
             goto error;
     }
@@ -1341,7 +1450,18 @@ void message_row_draw(WINDOW *w, const message_row *row, int y, int x, int width
     width -= row->indent;
     if (width < 1)
         return;
+    bool panel = pair != THEME_HISTORY_AREA;
+    int muted = panel ? THEME_PANEL_MUTED : THEME_HISTORY_MUTED;
+    int code = panel ? THEME_FOCUS_AREA : THEME_EMBED_AREA;
     wattrset(w, COLOR_PAIR(pair));
+    if (row->code) {
+        /* A code block is a box across the message width, as in other chat
+         * clients; without colors it is drawn in reverse video. */
+        pair = code;
+        muted = panel ? THEME_FOCUS_MUTED : THEME_EMBED_MUTED;
+        wattrset(w, COLOR_PAIR(pair) | (theme_colors() ? 0 : A_REVERSE));
+        mvwhline(w, y, x, ' ', width);
+    }
     if (row->card) {
         if (row->card_width > 0 && row->card_width < width)
             width = row->card_width;
@@ -1358,7 +1478,7 @@ void message_row_draw(WINDOW *w, const message_row *row, int y, int x, int width
         if (row->card)
             text_pair = s->muted ? THEME_EMBED_MUTED : s->link ? accent : pair;
         else if (s->muted)
-            text_pair = pair == THEME_HISTORY_AREA ? THEME_HISTORY_MUTED : THEME_PANEL_MUTED;
+            text_pair = muted;
         wattrset(w, COLOR_PAIR(text_pair) | (s->bold ? A_BOLD : 0));
         if (s->highlight) {
             text_buffer buffer;
@@ -1370,7 +1490,9 @@ void message_row_draw(WINDOW *w, const message_row *row, int y, int x, int width
                                  row->header && !strcmp(s->key, "header")
                                      ? theme_member_pair(author_color, text_pair)
                                  : row->card ? THEME_EMBED_ACCENT
-                                             : accent);
+                                             : accent,
+                                 row->card ? THEME_EMBED_MUTED : muted,
+                                 row->card ? THEME_FOCUS_AREA : code);
             }
         } else
             text_label(w, y, x + s->x, s->width, s->text);

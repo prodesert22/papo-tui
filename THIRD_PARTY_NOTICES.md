@@ -12,6 +12,7 @@ taken from the emoji map published by Emzi0767; see data/emoji/README.md.
 | OpenSSL (libcrypto) | TLS for libcurl on Linux and Termux; signature check of releases | Apache-2.0 |
 | Jansson | JSON | MIT |
 | libunibreak | Unicode segmentation | zlib |
+| md4c | Markdown parsing of message formatting | MIT |
 | GLib/GIO/GModule | Data structures, tasks, integration and modules | LGPL-2.1-or-later |
 | libsixel | Sixel encoding | MIT |
 | Chafa | Terminal graphics and character rendering | LGPL-3.0-or-later |

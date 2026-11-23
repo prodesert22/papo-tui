@@ -63,6 +63,7 @@ typedef struct {
     text_icon_painter icon_painter;
     void *icon_context;
     bool header, reaction;
+    bool code; /* A line of a code block: drawn on the block background. */
     int indent;
 } message_row;
 typedef void (*message_media_measure)(void *context, const message_media *item, int available_width,

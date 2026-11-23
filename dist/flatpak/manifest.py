@@ -54,6 +54,8 @@ def module(entry):
                 "-DCURL_ZSTD=OFF",
                 "-DCURL_USE_LIBSSH2=OFF",
             ]
+        elif name == "md4c":
+            result["config-opts"] += ["-DBUILD_HTML_LIBRARY=OFF", "-DBUILD_MD2HTML_EXECUTABLE=OFF"]
         elif name == "jansson":
             result["config-opts"] += [
                 "-DJANSSON_BUILD_SHARED_LIBS=ON",

@@ -290,6 +290,10 @@ if(BUILD_TESTING)
     target_link_libraries(mentions-test PRIVATE papo_media)
     target_compile_options(mentions-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
     papo_add_test(NAME mentions-unit COMMAND mentions-test LABELS text)
+    add_executable(markdown-test tests/unit/test_markdown.c)
+    target_link_libraries(markdown-test PRIVATE papo_media)
+    target_compile_options(markdown-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    papo_add_test(NAME markdown-unit COMMAND markdown-test LABELS text)
     papo_add_test(
         NAME
         mentions-terminal

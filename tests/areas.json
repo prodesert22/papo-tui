@@ -82,6 +82,7 @@
     {"glob": "src/ui/components/emoji_picker.*", "areas": ["emoji"]},
     {"glob": "src/ui/media/emoji_*", "areas": ["emoji", "media"]},
     {"glob": "src/model/text/mentions.*", "areas": ["text"]},
+    {"glob": "src/model/text/markdown.*", "areas": ["text"]},
     {"glob": "src/ui/components/mention_popup.*", "areas": ["text"]},
 
     {"glob": "src/model/notifications/**", "areas": ["notifications", "dms"]},

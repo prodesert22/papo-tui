@@ -3,6 +3,7 @@
 #endif
 #include "ui/input/text.h"
 #include "model/text/emoji_catalog.h"
+#include "model/text/markdown.h"
 #include "model/text/translation.h"
 #ifdef _WIN32
 #include "platform/runtime.h"
@@ -19,6 +20,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <wchar.h>
 #include <wctype.h>
 #include <wordbreak.h>
 
@@ -2309,9 +2311,17 @@ void text_draw(WINDOW *window, const text_buffer *buffer, const text_layout *lay
     wattrset(window, attributes);
 }
 
+/* Curses has no strikethrough attribute, so struck text carries a combining
+ * long stroke overlay; text-symbol modes and the Linux console, whose fonts
+ * lack it, dim the text instead. */
+static bool strike_overlay(void)
+{
+    return !theme_text_symbols();
+}
+
 void text_draw_styled(WINDOW *w, const text_buffer *b, const text_layout *l,
                       const unsigned char *mask, size_t length, int first, int height, int y, int x,
-                      int normal, int accent)
+                      int normal, int accent, int muted, int code)
 {
     (void)b;
     attr_t attributes = unbold_window(w);
@@ -2319,11 +2329,39 @@ void text_draw_styled(WINDOW *w, const text_buffer *b, const text_layout *l,
         const text_cell *c = &l->cells[i];
         if (c->newline || c->row < first || c->row >= first + height)
             continue;
-        bool marked = mask && c->start < length && mask[c->start];
+        unsigned char marks = mask && c->start < length ? mask[c->start] : 0;
+        int pair = normal;
+        attr_t style = A_NORMAL;
+        if (marks & MARKDOWN_MENTION) {
+            pair = accent;
+            style = A_BOLD;
+        } else {
+            if (marks & MARKDOWN_CODE) {
+                pair = code;
+                if (!theme_colors())
+                    style |= A_REVERSE;
+            } else if (marks & MARKDOWN_LINK)
+                pair = accent;
+            else if (marks & MARKDOWN_DECOR || (marks & MARKDOWN_STRIKE && !strike_overlay()))
+                pair = muted;
+            if (marks & MARKDOWN_STRIKE && !strike_overlay())
+                style |= A_DIM;
+            if (marks & (MARKDOWN_LINK | MARKDOWN_UNDERLINE))
+                style |= A_UNDERLINE;
+            if (marks & MARKDOWN_BOLD)
+                style |= A_BOLD;
+            if (marks & MARKDOWN_ITALIC)
+                style |= A_ITALIC;
+        }
+        wchar_t text[CCHARW_MAX + 1] = {0};
+        memcpy(text, c->glyph, sizeof(c->glyph));
+        if (marks & MARKDOWN_STRIKE && !(marks & MARKDOWN_MENTION) && strike_overlay()) {
+            size_t used = wcsnlen(text, CCHARW_MAX);
+            if (used && used < CCHARW_MAX)
+                text[used] = 0x0336;
+        }
         cchar_t glyph;
-        if (setcchar(&glyph, c->glyph,
-                     theme_text_attributes(marked ? A_BOLD : A_NORMAL, marked ? accent : normal),
-                     marked ? accent : normal, NULL) == OK)
+        if (setcchar(&glyph, text, theme_text_attributes(style, pair), pair, NULL) == OK)
             mvwadd_wch(w, y + c->row - first, x + c->column, &glyph);
     }
     wattrset(w, attributes);
@@ -2356,6 +2394,28 @@ bool text_decode(text_buffer *buffer, const char *utf8)
     }
     buffer->cursor = buffer->length;
     return true;
+}
+
+char *text_sanitize(const char *utf8)
+{
+    if (!utf8 || !g_utf8_validate(utf8, -1, NULL))
+        return NULL;
+    GString *out = g_string_sized_new(strlen(utf8) + 1);
+    while (*utf8) {
+        uint32_t character;
+        size_t length = papo_utf8_next(utf8, &character);
+        if (!length || length == (size_t)-1 || length == (size_t)-2) {
+            g_string_free(out, TRUE);
+            return NULL;
+        }
+        utf8 += length;
+        if (character == '\t')
+            character = ' ';
+        if (character == '\r' || (character != '\n' && !allowed(character)))
+            continue;
+        g_string_append_unichar(out, (gunichar)character);
+    }
+    return g_string_free(out, FALSE);
 }
 
 bool text_encode(const text_buffer *buffer, char output[TEXT_UTF8_BYTES])

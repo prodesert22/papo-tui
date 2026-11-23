@@ -252,9 +252,10 @@ add_library(
     src/ui/media/profile_image.c
     src/ui/media/graphics.c
     src/ui/media/sixel.c
-    src/ui/media/message_blocks.c)
+    src/ui/media/message_blocks.c
+    src/model/text/markdown.c)
 target_link_libraries(papo_media PUBLIC papo_send_editor PkgConfig::GMODULE PkgConfig::GIO
-                                        PkgConfig::ZLIB Threads::Threads m)
+                                        PkgConfig::ZLIB PkgConfig::MD4C Threads::Threads m)
 target_compile_definitions(
     papo_media
     PRIVATE PAPO_MEDIA_WORKER_FILE="$<TARGET_FILE_NAME:papo-media-worker>"

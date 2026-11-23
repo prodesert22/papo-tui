@@ -239,6 +239,8 @@ def build(entry, source, work, prefix, jobs, env):
                 if os.name == "nt"
                 else ["-DCURL_USE_OPENSSL=ON"]
             )
+        elif name == "md4c":
+            options += ["-DBUILD_HTML_LIBRARY=OFF", "-DBUILD_MD2HTML_EXECUTABLE=OFF"]
         elif name == "jansson":
             options += [
                 "-DJANSSON_BUILD_SHARED_LIBS=ON",

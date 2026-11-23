@@ -156,9 +156,11 @@ void text_mentions(text_buffer *buffer, mention_resolver resolver, void *context
 void text_icons(text_buffer *buffer, text_icon_resolver resolver, text_icon_painter painter,
                 void *context);
 void text_project(const text_buffer *buffer, text_buffer *display);
+/* highlight holds MARKDOWN_* bits per scalar: a mention uses accent in bold;
+ * other bits add attributes, with muted for decorations and code for code. */
 void text_draw_styled(WINDOW *window, const text_buffer *buffer, const text_layout *layout,
                       const unsigned char *highlight, size_t length, int first, int height, int y,
-                      int x, int normal, int accent);
+                      int x, int normal, int accent, int muted, int code);
 bool text_insert(text_buffer *buffer, uint32_t character, bool multiline);
 void text_delete(text_buffer *buffer, bool backward);
 void text_delete_word(text_buffer *buffer, bool right);
@@ -177,6 +179,10 @@ bool text_decode(text_buffer *buffer, const char *utf8);
 /* Decode one bounded segment of a long read-only field, sanitizing controls.
  * Advances input without splitting a grapheme at the segment boundary. */
 bool text_decode_chunk(text_buffer *buffer, const char **utf8);
+/* Copy of utf8 holding only what text_decode keeps, with tabs as spaces, so
+ * its scalar positions match a decoded buffer. NULL on invalid UTF-8 or
+ * allocation failure; the caller frees the copy with g_free. */
+char *text_sanitize(const char *utf8);
 bool text_encode(const text_buffer *buffer, char output[TEXT_UTF8_BYTES]);
 int text_label(WINDOW *window, int y, int x, int width, const char *utf8);
 /* Like text_label, but when the text is cut at width cells its last fade_count

@@ -34,6 +34,14 @@
       "archive": "libunibreak-8.0.tar.gz"
     },
     {
+      "name": "md4c",
+      "version": "0.6.0",
+      "url": "https://codeload.github.com/mity/md4c/tar.gz/refs/tags/v0.6.0",
+      "sha256": "4d151298125a81da3b2efa2e0eed8bdb7a9318569804e4fa4d7a2375ab83ef70",
+      "buildsystem": "cmake",
+      "archive": "md4c-0.6.0.tar.gz"
+    },
+    {
       "name": "libsixel",
       "version": "1.10.5",
       "url": "https://codeload.github.com/libsixel/libsixel/tar.gz/refs/tags/v1.10.5",

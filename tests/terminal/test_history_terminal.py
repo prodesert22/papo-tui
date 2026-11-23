@@ -671,6 +671,70 @@ class HistoryTerminal(support.HistoryTerminal):
             finally:
                 self.assertTrue(t.close())
 
+    def test_markdown_content_is_rendered_without_markers(self):
+        with HistoryMock(count=1) as server:
+            server.messages[0]["content"] = (
+                "**FORTE** _INCLINADO_ ~~RISCADO~~ ~~**AMBOS**~~\n__SUB__ `CODIGO` [SITE](https://e.io)\n"
+                "> CITADO\n- ITEM\n```\n**LITERAL**\n```\nDEPOIS"
+            )
+            t = self.open(server)
+            try:
+                self.wait(t, "• ITEM")
+                self.wait(t, "DEPOIS")
+
+                # Struck cells carry a combining stroke, so compare base glyphs.
+                def plain(row):
+                    line = t.screen.buffer[row]
+                    return "".join(
+                        (line[column].data or " ")[0] for column in range(t.screen.columns)
+                    )
+
+                rows = [plain(row) for row in range(t.screen.lines)]
+                screen = "\n".join(rows)
+                self.assertIn("FORTE INCLINADO RISCADO AMBOS", screen)
+                self.assertIn("SUB CODIGO SITE (https://e.io)", screen)
+                self.assertIn("│ CITADO", screen)
+                self.assertIn("**LITERAL**", screen)
+                self.assertNotIn("**FORTE**", screen)
+                self.assertNotIn("~", screen)
+                self.assertNotIn("```", screen)
+
+                def find(text):
+                    for row, line in enumerate(rows):
+                        column = line.find(text)
+                        if column >= 0:
+                            return row, column
+                    self.fail(text)
+
+                def cell(text):
+                    row, column = find(text)
+                    return t.screen.buffer[row][column]
+
+                self.assertTrue(cell("FORTE").bold)
+                self.assertTrue(cell("INCLINADO").italics)
+                self.assertFalse(cell("INCLINADO").bold)
+                self.assertEqual(cell("RISCADO").data, "R\u0336")
+                self.assertFalse(cell("RISCADO").bold)
+                self.assertEqual(cell("AMBOS").data, "A\u0336")
+                self.assertTrue(cell("AMBOS").bold)
+                self.assertTrue(cell("SITE").underscore)
+                self.assertTrue(cell("SUB").underscore)
+                self.assertFalse(cell("SUB").bold)
+                self.assertFalse(cell("SUB").italics)
+                self.assertNotEqual(cell("CODIGO").bg, cell("FORTE").bg)
+                self.assertFalse(cell("LITERAL").bold)
+                # The code block is a box: inset by one cell, and its
+                # background runs past the text across the message width.
+                row, column = find("**LITERAL**")
+                block = t.screen.buffer[row]
+                self.assertEqual(find("DEPOIS")[1], column - 1)
+                self.assertNotEqual(block[column].bg, cell("DEPOIS").bg)
+                self.assertEqual(block[column - 1].bg, block[column].bg)
+                tail = column + len("**LITERAL**")
+                self.assertTrue(all(block[x].bg == block[column].bg for x in range(tail, tail + 20)))
+            finally:
+                self.assertTrue(t.close())
+
     def test_narrow_navigation_errors_and_return_account(self):
         with HistoryMock("forbidden") as server:
             t = self.open(server)

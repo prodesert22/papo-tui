@@ -1340,9 +1340,9 @@ group with no available option leaves no line.
   the same one shown from the member drawer, without opening the drawer. Esc or a
   click outside closes it; with the drawer open, Esc returns to the drawer.
   Messages sent by applications have no profile and do not show this option.
-- **Copiar texto** (Copy text): copies the message's text to the clipboard,
-  with its own line breaks and mentions written as **@name**, as the history
-  shows them. It appears only on messages that have text; drag over the
+- **Copiar texto** (Copy text): copies the message's text to the clipboard as
+  it was written, with its own line breaks, its Markdown markers and mentions
+  written as **@name**. It appears only on messages that have text; drag over the
   history instead to copy only part of a message, or several messages.
 - **Editar mensagem** (Edit message): available on your own messages. The editor
   shows **Editando mensagem** (Editing message). The message scrolls into view
@@ -1402,6 +1402,45 @@ confirmed, the client refreshes the history before you try again.
 
 Reply targets are kept with each conversation's draft, including after a
 restart and during manual send retries. Confirmed sends clear their reply target.
+
+### Message formatting
+
+Messages in the history show their Markdown formatting instead of the markers
+around it. Write them in the editor as usual; the editor itself shows the
+markers, and other people see the formatting in their own clients.
+
+| You write | The history shows |
+| --- | --- |
+| `**bold**` | **bold** |
+| `*italic*` or `_italic_` | *italic*, in terminals and fonts that have an italic style |
+| `__underlined__` | underlined text |
+| `***bold italic***` | bold and italic |
+| `___underlined italic___` | underlined and italic; markers also combine when nested, such as `__**underlined bold**__` |
+| `~~struck~~` | struck-through text; dimmed text on the Linux console and with text symbols, whose fonts cannot draw the stroke. A single `~` stays as written. It combines with the others, such as `~~**struck bold**~~` |
+| `` `code` `` | code on a darker background |
+| `[label](https://example.com)` | the underlined label followed by its address in gray, so a label never hides where the link leads |
+| `https://example.com` or `www.example.com` | an underlined link |
+| `# Title` (up to `######`) | the title in bold |
+| `> quote` | the text after a gray **│** bar |
+| `- item`, `* item` or `+ item` | the item after a **•** bullet |
+| `1. item` or `1) item` | numbered items, counting from the first number |
+| `---` or `***` on a line of its own | a short **───** rule |
+| a block between two lines of ```` ``` ```` | a box with a darker background across the message width, holding the lines inside exactly as written |
+
+Line breaks and blank lines appear as you typed them. Put a backslash before a
+marker to show it as written, such as `\*not italic\*`. Markers without a
+partner, such as a lone `**`, also stay as written. HTML tags, tables and
+indented text are shown as plain text, and nothing is downloaded for an image
+written as `![description](address)`: the history shows its description and
+address.
+
+Some lines change meaning, as in other Markdown editors. A line of `---` right
+below a text line makes that text a title, and a line right after a quote
+continues the quote unless a blank line separates them.
+
+**Copiar texto** (Copy text) in the message menu copies the message as it was
+written, markers included. Selecting text in the history with the mouse copies
+what the history shows.
 
 ## Download attachments
 
