@@ -441,6 +441,9 @@ class ServerSettings(unittest.TestCase):
         t.resize(50, 110)
         self.tab(t, "Webhooks")
         self.wait(t, "Robô de deploy")
+        # The new webhook's form fills its channel once the channels arrive; typing before
+        # that lands in a form that is then drawn again.
+        self.wait(t, "< #geral >")
         return t
 
     def test_a_webhook_is_created_and_its_token_is_shown_only_while_its_form_is_open(self):

@@ -251,7 +251,9 @@ class DiscoveryTerminal(unittest.TestCase):
             self.wait(t, "Destino de aviso")
             t.send("\n")
             self.wait(t, "Detalhes da notificação")
-            server.delay = 0.8
+            # Slow enough to watch the modal animate. Every request waits, including the
+            # background ones, so 0.8 s each outlasted the 7 s wait on a slow runner.
+            server.delay = 0.4
             self.click(t, "[Abrir conversa]")
             self.assert_location_animates(t)
             self.assert_centered_target(t, target["content"])

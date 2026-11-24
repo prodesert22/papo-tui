@@ -269,8 +269,9 @@ class ProfileEdit(unittest.TestCase):
             self.editor(t)
             t.send("/")
             self.wait(t, "Comandos")
+            # The list is drawn after its title; wait for each entry.
             for name in ("/nick", "/status", "/bio", "/avatar", "/banner"):
-                self.assertIn(name, self.screen(t))
+                self.wait(t, name)
             self.assertIn("Alterar seu apelido neste servidor.", self.screen(t))
             t.send("ni")
             self.settled(t, lambda: "/status " not in self.screen(t))
