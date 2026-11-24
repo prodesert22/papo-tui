@@ -293,11 +293,14 @@ static bool refresh_pending(view *ui, auth_client *auth)
                 : g_strdup(operation->content);
         const char *status = operation->state == OUTBOX_FAILED      ? _("falhou")
                              : operation->state == OUTBOX_UNCERTAIN ? _("não confirmado")
+                             : operation->state == OUTBOX_QUEUED    ? _("na fila")
                                                                     : _("enviando");
         json_t *entry = json_pack("{s:s,s:s,s:s,s:s,s:s,s:s,s:s}", "id", id, "channel_id",
                                   ui->editor_channel, "author_id", auth_user_id(auth), "content",
                                   content ? content : "", "created_at", created ? created : "",
                                   "reply_to", operation->reply_to, "_papo_status", status);
+        if (entry)
+            json_object_set_new(entry, "_papo_dismiss", json_true());
         g_free(content);
         g_free(created);
         if (!entry || json_array_append_new(entries, entry)) {
@@ -1259,6 +1262,22 @@ int history_run(auth_client *auth, instance_connections *connections, size_t *se
                 conversation_submit(ui, latest.id, false);
             else
                 ui->feedback = _("Nenhum envio falhou nesta conversa.");
+            continue;
+        }
+        /* The newest send still queued or in flight leaves the history. */
+        if (shortcut_is(type, key, KEYMAP_CANCEL_SEND) && conversation_input(ui)) {
+            outbox_operation operations[OUTBOX_OPERATION_LIMIT];
+            size_t count = outbox_unconfirmed(send_editor_outbox(ui->editor), ui->editor_channel,
+                                              operations, OUTBOX_OPERATION_LIMIT);
+            uint64_t target = 0;
+            for (size_t i = count; i > 0 && !target; --i)
+                if (operations[i - 1].state == OUTBOX_QUEUED ||
+                    operations[i - 1].state == OUTBOX_SENDING)
+                    target = operations[i - 1].id;
+            if (target)
+                conversation_withdraw_send(ui, target);
+            else
+                ui->feedback = _("Nenhum envio em andamento nesta conversa.");
             continue;
         }
         /* F5 reconnects now instead of at the next automatic attempt. The

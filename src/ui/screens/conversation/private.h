@@ -96,7 +96,9 @@ typedef struct {
     size_t bytes;
     message_blocks blocks;
 } cached_layout;
-enum { MESSAGE_HIT, REPLY_HIT, REACTION_HIT, DOWNLOAD_HIT };
+/* PENDING_HIT covers an unconfirmed send and DISMISS_HIT its [x] button; their
+ * index is the outbox operation. */
+enum { MESSAGE_HIT, REPLY_HIT, REACTION_HIT, DOWNLOAD_HIT, PENDING_HIT, DISMISS_HIT };
 /* A cell of the history in message coordinates: the line within the message,
  * counted from its first row, and the body column. Survives scrolling and
  * pages loaded before it. */
@@ -133,6 +135,8 @@ typedef struct {
         reactor_users_focus;
     char selected_message[37], action_channel[37], reaction_target[37];
     char dm_context_id[37];
+    /* The context menu belongs to this unconfirmed send of the open channel. */
+    uint64_t pending_context;
     char channel_context_id[37];
     /* The context menu belongs to server tab server_context_index. */
     bool server_context;
@@ -329,6 +333,8 @@ cached_layout *conversation_find_layout(view *ui, size_t index, int width);
 size_t conversation_entry_count(view *ui);
 json_t *conversation_entry(view *ui, size_t index);
 bool conversation_entry_pending(view *ui, size_t index);
+/* Cancels, dequeues or discards an unconfirmed send and reports it in the footer. */
+void conversation_withdraw_send(view *ui, uint64_t id);
 void conversation_account_layout(view *ui, cached_layout *c);
 int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor);
 /* Builds released blocks again; NULL when the message cannot be laid out. */

@@ -1086,7 +1086,12 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
         bool app = history_message_webhook(m);
         /* Optimistic entries carry a local status, shown at the right edge. */
         const char *status = str(m, "_papo_status");
-        int status_width = *status ? text_label(NULL, 0, 0, 40, status) : 0;
+        /* An unconfirmed send ends its status with a [x] button that removes it;
+         * the segment key tells the history where to place the click target. */
+        bool dismiss = *status && json_is_true(json_object_get(m, "_papo_dismiss"));
+        char status_text[64];
+        snprintf(status_text, sizeof(status_text), "%s%s", status, dismiss ? " [x]" : "");
+        int status_width = *status ? text_label(NULL, 0, 0, 44, status_text) : 0;
         bool edited = *str(m, "edited_at");
         int metadata = (*timestamp ? text_label(NULL, 0, 0, 200, timestamp) + (edited ? 12 : 3)
                                    : (edited ? 10 : 0)) +
@@ -1119,8 +1124,9 @@ bool message_blocks_build_visual(message_blocks *b, json_t *m, const char *autho
             goto error;
         if (status_width && status_width < width - author_x) {
             size_t status_end;
-            if (!column(b, 0, "status", status, width - status_width, status_width,
-                        !strcmp(status, "falhou"), false, 0, &status_end))
+            if (!column(b, 0, dismiss ? "status:dismiss" : "status", status_text,
+                        width - status_width, status_width, !strcmp(status, "falhou"), false, 0,
+                        &status_end))
                 goto error;
             message_row *first = &b->rows[0];
             first->segments[first->count - 1].muted = strcmp(status, "falhou") != 0;

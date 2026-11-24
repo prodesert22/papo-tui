@@ -87,10 +87,12 @@ void conversation_interactions_close(view *ui)
         delwin(ui->context_window);
         ui->context_window = NULL;
     }
-    if (ui->context_open && !*ui->dm_context_id && !*ui->channel_context_id && !ui->server_context)
+    if (ui->context_open && !*ui->dm_context_id && !*ui->channel_context_id &&
+        !ui->server_context && !ui->pending_context)
         history_discovery_close(ui->model);
     ui->context_open = ui->context_keyboard = ui->reactors_open = ui->delete_confirm = false;
     ui->server_context = false;
+    ui->pending_context = 0;
     ui->dm_context_id[0] = ui->channel_context_id[0] = 0;
     ui->channel_menu = 0;
     history_reactors_close(ui->model);
@@ -109,13 +111,50 @@ void conversation_close_dm(view *ui, const char *id)
 {
     if (!dm_channel(ui, id))
         return;
-    outbox_operation operation;
-    bool busy = outbox_latest(send_editor_outbox(ui->editor), id, &operation) &&
-                (operation.state == OUTBOX_QUEUED || operation.state == OUTBOX_SENDING);
-    if (busy)
+    if (outbox_pending(send_editor_outbox(ui->editor), id))
         ui->feedback = _("Aguarde o envio antes de fechar a DM.");
     else if (!inbox_close_dm(history_inbox(ui->model), id))
         ui->feedback = _("Não foi possível fechar a DM; aguarde ou tente novamente.");
+}
+void conversation_withdraw_send(view *ui, uint64_t id)
+{
+    switch (outbox_withdraw(send_editor_outbox(ui->editor), id)) {
+    case OUTBOX_WITHDRAW_DEQUEUED:
+        ui->feedback = _("Mensagem removida da fila.");
+        break;
+    case OUTBOX_WITHDRAW_CANCELLED:
+        ui->feedback = _("Envio cancelado.");
+        break;
+    case OUTBOX_WITHDRAW_UNCERTAIN:
+        ui->feedback = _("Envio cancelado, mas o servidor pode já ter recebido a mensagem.");
+        break;
+    case OUTBOX_WITHDRAW_DISCARDED:
+        ui->feedback = _("Mensagem descartada.");
+        break;
+    default:
+        ui->feedback = _("Não há envio para cancelar.");
+        break;
+    }
+}
+/* Unconfirmed sends cannot be selected; right-clicking one opens this menu. */
+static void open_pending_context(view *ui, uint64_t id, const MEVENT *event)
+{
+    conversation_interactions_close(ui);
+    outbox_operation operation;
+    if (!outbox_get_operation(send_editor_outbox(ui->editor), id, &operation) ||
+        operation.state == OUTBOX_CONFIRMED)
+        return;
+    ui->pending_context = id;
+    ui->context_open = true;
+    ui->context_keyboard = !event;
+    ui->menu_selected = 0;
+    if (event) {
+        ui->menu_y = event->y;
+        ui->menu_x = event->x;
+    }
+    mention_popup_close(ui->mentions);
+    emoji_picker_dismiss(ui->emojis);
+    ui->dragging = false;
 }
 static void open_dm_context(view *ui, const MEVENT *event)
 {
@@ -293,6 +332,32 @@ static void select_message(view *ui, size_t index)
     snprintf(ui->selected_message, sizeof(ui->selected_message), "%s", conversation_str(m, "id"));
     ui->selected_media = 0;
 }
+/* Entry index of the selected unconfirmed send, or SIZE_MAX. Its entries
+ * follow the loaded history; their IDs are "pending-<operation>". */
+static size_t pending_entry(view *ui)
+{
+    if (strncmp(ui->selected_message, "pending-", 8))
+        return SIZE_MAX;
+    for (size_t i = history_message_count(ui->model); i < conversation_entry_count(ui); ++i)
+        if (!strcmp(ui->selected_message, conversation_str(conversation_entry(ui, i), "id")))
+            return i;
+    return SIZE_MAX;
+}
+static uint64_t pending_operation(view *ui)
+{
+    return pending_entry(ui) == SIZE_MAX ? 0
+                                         : g_ascii_strtoull(ui->selected_message + 8, NULL, 10);
+}
+static void select_entry(view *ui, size_t index)
+{
+    json_t *m = conversation_entry(ui, index);
+    if (!m)
+        return;
+    ui->centered_message[0] = 0;
+    snprintf(ui->selected_message, sizeof(ui->selected_message), "%s", conversation_str(m, "id"));
+    ui->selected_media = 0;
+}
+static void open_pending_context(view *ui, uint64_t id, const MEVENT *event);
 static void reveal(view *ui)
 {
     int ignored;
@@ -361,8 +426,14 @@ void conversation_interactions_sync(view *ui)
         conversation_interactions_close(ui);
     if (ui->server_context && ui->server_context_index >= ui->connections->count)
         conversation_interactions_close(ui);
+    outbox_operation pending;
+    if (ui->pending_context &&
+        (!outbox_get_operation(send_editor_outbox(ui->editor), ui->pending_context, &pending) ||
+         pending.state == OUTBOX_CONFIRMED || strcmp(pending.channel_id, ui->editor_channel)))
+        conversation_interactions_close(ui);
     if (ui->context_open && !*ui->dm_context_id && !*ui->channel_context_id &&
-        !ui->server_context && !ui->delete_confirm && !menu_actions(ui, available)) {
+        !ui->server_context && !ui->pending_context && !ui->delete_confirm &&
+        !menu_actions(ui, available)) {
         conversation_interactions_close(ui);
         ui->feedback = K_("Permissões ainda não confirmadas. Aguarde ou use {k1:app.refresh}.");
     }
@@ -380,7 +451,8 @@ void conversation_interactions_sync(view *ui)
     }
     if (ui->reactors_open && history_recovering(ui->model))
         conversation_interactions_close(ui);
-    if (*ui->selected_message && selected_index(ui) == SIZE_MAX) {
+    if (*ui->selected_message && selected_index(ui) == SIZE_MAX &&
+        pending_entry(ui) == SIZE_MAX) {
         conversation_interactions_close(ui);
         if (history_message_count(ui->model))
             select_message(ui, history_message_count(ui->model) - 1);
@@ -532,7 +604,8 @@ static int menu_actions(view *ui, int items[MESSAGE_ACTIONS])
 static bool grouped_menu(const view *ui)
 {
     return ui->context_open && !ui->reactors_open && !ui->delete_confirm &&
-           !*ui->channel_context_id && !*ui->dm_context_id && !ui->server_context;
+           !*ui->channel_context_id && !*ui->dm_context_id && !ui->server_context &&
+           !ui->pending_context;
 }
 static int menu_dividers(view *ui, const int *items, int count)
 {
@@ -559,7 +632,7 @@ static int menu_count(view *ui)
                                          ? 4
                                          : 2 + channel_menu_first(ui) + channel_menu_configure(ui)
            : ui->server_context    ? server_menu_count(ui)
-           : *ui->dm_context_id    ? 1
+           : *ui->dm_context_id || ui->pending_context ? 1
            : ui->delete_confirm    ? 2
                                    : menu_actions(ui, items);
 }
@@ -612,6 +685,12 @@ static void message_action(view *ui, int action)
 }
 static void menu_activate(view *ui)
 {
+    if (ui->pending_context) {
+        uint64_t id = ui->pending_context;
+        conversation_interactions_close(ui);
+        conversation_withdraw_send(ui, id);
+        return;
+    }
     if (*ui->channel_context_id) {
         channel_menu_activate(ui);
         return;
@@ -701,7 +780,7 @@ bool conversation_interactions_key(view *ui, int type, uint32_t key)
                     history_reload_channels(ui->model);
                 else if (*ui->dm_context_id)
                     inbox_refresh(history_inbox(ui->model));
-                else if (!ui->server_context)
+                else if (!ui->server_context && !ui->pending_context)
                     history_pins_refresh(ui->model);
             }
             if (type == KEY_CODE_YES && key == KEY_UP && ui->menu_selected)
@@ -757,13 +836,14 @@ bool conversation_interactions_key(view *ui, int type, uint32_t key)
             conversation_set_focus(ui, HISTORY_PANEL);
             ui->navigating = true;
             for (size_t i = ui->hit_count; i > 0; --i)
-                if (ui->hits[i - 1].kind == MESSAGE_HIT) {
+                if (ui->hits[i - 1].kind == MESSAGE_HIT || ui->hits[i - 1].kind == PENDING_HIT) {
                     snprintf(ui->selected_message, sizeof(ui->selected_message), "%s",
                              ui->hits[i - 1].id);
                     break;
                 }
-            if (selected_index(ui) == SIZE_MAX && history_message_count(ui->model))
-                select_message(ui, history_message_count(ui->model) - 1);
+            if (selected_index(ui) == SIZE_MAX && pending_entry(ui) == SIZE_MAX &&
+                conversation_entry_count(ui))
+                select_entry(ui, conversation_entry_count(ui) - 1);
             ui->selected_media = 0;
             reveal(ui);
         }
@@ -784,6 +864,31 @@ bool conversation_interactions_key(view *ui, int type, uint32_t key)
         conversation_set_focus(ui, ui->return_focus);
         return true;
     }
+    /* Unconfirmed sends follow the history: arrows move through them, Enter or
+     * the menu key offers their actions and Delete removes the send at once. */
+    size_t pending = pending_entry(ui);
+    if (pending != SIZE_MAX) {
+        size_t loaded = history_message_count(ui->model);
+        if (type == KEY_CODE_YES && key == KEY_UP) {
+            if (pending > loaded)
+                select_entry(ui, pending - 1);
+            else if (loaded)
+                select_message(ui, loaded - 1);
+        } else if (type == KEY_CODE_YES && key == KEY_DOWN) {
+            if (pending + 1 < conversation_entry_count(ui))
+                select_entry(ui, pending + 1);
+        } else if (type == KEY_CODE_YES && key == KEY_DC)
+            conversation_withdraw_send(ui, pending_operation(ui));
+        else if (enter || shortcut_is(type, key, KEYMAP_ITEM_MENU))
+            open_pending_context(ui, pending_operation(ui), NULL);
+        else if (shortcut_is(type, key, KEYMAP_REPLY) || shortcut_is(type, key, KEYMAP_REACT) ||
+                 shortcut_is(type, key, KEYMAP_REACTORS))
+            ui->feedback = _("Aguarde a confirmação do servidor para agir nesta mensagem.");
+        else
+            return type == KEY_CODE_YES && (key == KEY_LEFT || key == KEY_RIGHT);
+        reveal(ui);
+        return true;
+    }
     int action = shortcut_is(type, key, KEYMAP_REPLY)      ? 2
                  : shortcut_is(type, key, KEYMAP_REACT)    ? 1
                  : shortcut_is(type, key, KEYMAP_REACTORS) ? 0
@@ -799,6 +904,8 @@ bool conversation_interactions_key(view *ui, int type, uint32_t key)
             select_message(ui, index - 1);
         else if (key == KEY_DOWN && index + 1 < count)
             select_message(ui, index + 1);
+        else if (key == KEY_DOWN && index + 1 == count && conversation_entry_count(ui) > count)
+            select_entry(ui, count);
         else if (key == KEY_UP && history_has_more(ui->model)) {
             ui->selection_pending = -1;
             history_older(ui->model);
@@ -904,6 +1011,21 @@ bool conversation_interactions_mouse(view *ui, const MEVENT *event)
         if (event->y < hit->y || event->y >= hit->y + hit->height || event->x < hit->x ||
             event->x >= hit->x + hit->width)
             continue;
+        if (hit->kind == DISMISS_HIT && left) {
+            conversation_withdraw_send(ui, hit->index);
+            return true;
+        }
+        if (hit->kind == DISMISS_HIT)
+            continue;
+        if (hit->kind == PENDING_HIT) {
+            if (right)
+                open_pending_context(ui, hit->index, event);
+            else if (ui->navigating)
+                snprintf(ui->selected_message, sizeof(ui->selected_message), "%s", hit->id);
+            else
+                continue;
+            return true;
+        }
         if (right) {
             ui->centered_message[0] = 0;
             snprintf(ui->selected_message, sizeof(ui->selected_message), "%s", hit->id);
@@ -1030,6 +1152,18 @@ void conversation_interactions_draw(view *ui)
     } else if (*ui->dm_context_id) {
         wattrset(w, COLOR_PAIR(THEME_PANEL_ACTIVE));
         text_label(w, 1, 1, width - 2, _("Fechar DM"));
+    } else if (ui->pending_context) {
+        outbox_operation operation;
+        bool known =
+            outbox_get_operation(send_editor_outbox(ui->editor), ui->pending_context, &operation);
+        wattrset(w, COLOR_PAIR(THEME_PANEL_ACTIVE));
+        mvwhline(w, 1, 1, ' ', width - 2);
+        theme_focus_here(w, 1, 2);
+        text_label(w, 1, 1, width - 2,
+                   !known                               ? ""
+                   : operation.state == OUTBOX_QUEUED  ? _("Remover da fila")
+                   : operation.state == OUTBOX_SENDING ? _("Cancelar envio")
+                                                       : _("Descartar mensagem"));
     } else if (ui->server_context) {
         wattrset(w, COLOR_PAIR(THEME_PANEL_MUTED));
         text_label(w, 0, 2, width - 4, ui->connections->items[ui->server_context_index].name);

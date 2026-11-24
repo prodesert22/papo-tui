@@ -100,12 +100,18 @@ int main(int argc, char **argv)
     }
     outbox_submit_result submitted =
         !strcmp(mode, "read") ? OUTBOX_EMPTY : outbox_submit(box, channel, false, &id);
-    /* An accepted send empties the draft; a new text cannot start a second send
-     * of the same channel while the first is in flight. */
-    bool busy = false;
-    if (id && strcmp(mode, "files-uncertain-append")) {
+    /* An accepted send empties the draft; a new text of the same channel waits
+     * behind the first instead of being refused. It is cancelled here so each
+     * mode still observes a single send. */
+    bool queued_behind = false;
+    if (id && strcmp(mode, "files-uncertain-append") && strcmp(mode, "sequence")) {
         outbox_set_draft(box, channel, "Segundo envio");
-        busy = outbox_submit(box, channel, false, NULL) == OUTBOX_BUSY;
+        uint64_t waiting = 0;
+        outbox_operation behind;
+        queued_behind = outbox_submit(box, channel, false, &waiting) == OUTBOX_ACCEPTED &&
+                        outbox_get_operation(box, waiting, &behind) &&
+                        behind.state == OUTBOX_QUEUED && outbox_pending(box, channel) &&
+                        outbox_cancel(box, waiting) && outbox_forget(box, waiting);
         outbox_set_draft(box, channel, "");
     }
     if (id && paths) {
@@ -121,16 +127,20 @@ int main(int argc, char **argv)
         attachment_unref(file);
     }
     bool need_confirmation = false;
+    int withdrawn = -1;
     int exit_code = 0;
     unsigned count = 0;
     json_t *last_message = NULL;
     if (id) {
-        if (!strcmp(mode, "queued-cancel")) {
+        if (!strcmp(mode, "queued-cancel") || !strcmp(mode, "withdraw-sending")) {
             while (net_rate_try_acquire() == 1) {
             }
             outbox_poll(box);
             auth_poll(session);
-            outbox_cancel(box, id);
+            if (!strcmp(mode, "withdraw-sending"))
+                withdrawn = (int)outbox_withdraw(box, id);
+            else
+                outbox_cancel(box, id);
         } else {
             outbox_poll(box);
             if (!strcmp(mode, "append") || !strcmp(mode, "replace") || !strcmp(mode, "restore") ||
@@ -167,7 +177,31 @@ int main(int argc, char **argv)
                         goto cleanup;
                     }
                 }
-                outbox_cancel(box, id);
+                if (getenv("PAPO_SEND_WITHDRAW"))
+                    withdrawn = (int)outbox_withdraw(box, id);
+                else
+                    outbox_cancel(box, id);
+            }
+            /* A queued send leaves the queue without any request. */
+            if (!strcmp(mode, "withdraw-queued")) {
+                uint64_t waiting = 0;
+                outbox_set_draft(box, channel, "Removida da fila");
+                outbox_submit(box, channel, false, &waiting);
+                withdrawn = (int)outbox_withdraw(box, waiting);
+                if (outbox_get_operation(box, waiting, &(outbox_operation){0}))
+                    withdrawn = -2;
+            }
+            /* The second send of the channel stays queued while the first is
+             * in flight and is dispatched only after its result. */
+            if (!strcmp(mode, "sequence")) {
+                outbox_set_draft(box, channel, "Segundo envio");
+                outbox_submit(box, channel, false, &second_id);
+                tick(session, box, 100);
+                outbox_operation first, waiting;
+                queued_behind = outbox_get_operation(box, id, &first) &&
+                                first.state == OUTBOX_SENDING &&
+                                outbox_get_operation(box, second_id, &waiting) &&
+                                waiting.state == OUTBOX_QUEUED;
             }
             if (!strcmp(mode, "channels")) {
                 outbox_set_draft(box, second_channel, "Texto do canal B");
@@ -229,12 +263,13 @@ int main(int argc, char **argv)
                *other = outbox_draft(box, second_channel, NULL);
     json_t *result =
         json_pack("{s:b,s:i,s:b,s:b,s:i,s:I,s:i,s:I,s:b,s:b,s:b,s:i,s:s,s:s}", "saved", saved,
-                  "submit", (int)submitted, "busy", busy, "result_ready", result_ready, "state",
+                  "submit", (int)submitted, "queued_behind", queued_behind, "result_ready", result_ready, "state",
                   (int)operation.state, "id", (json_int_t)id, "status", (int)operation.status,
                   "second_id", (json_int_t)second_id, "second_ready", second_ready, "transmitted",
                   operation.transmitted, "need_confirmation", need_confirmation, "confirmed_count",
                   (int)count, "draft", draft ? draft : "", "second_draft", other ? other : "");
     json_object_set_new(result, "second_state", json_integer((json_int_t)second.state));
+    json_object_set_new(result, "withdrawn", json_integer(withdrawn));
     json_object_set_new(result, "session", json_boolean(auth_has_session(session)));
     const GPtrArray *files = outbox_attachments(box, channel);
     json_object_set_new(result, "draft_files", json_integer(files ? files->len : 0));

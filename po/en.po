@@ -765,6 +765,10 @@ msgstr "Wait for the previous change to finish."
 msgid "Aguarde a configuração pendente ou atualize os canais e tente novamente."
 msgstr "Wait for the pending setting or refresh the channels and try again."
 
+#: src/ui/screens/conversation/interactions.c
+msgid "Aguarde a confirmação do servidor para agir nesta mensagem."
+msgstr "Wait for the server to confirm this message before acting on it."
+
 #: src/ui/screens/message_browser.c
 msgid "Aguarde a consulta ou atualize com {k1:app.refresh}."
 msgstr "Wait for the lookup or refresh with {k1:app.refresh}."
@@ -1553,9 +1557,21 @@ msgstr "Cancel download"
 msgid "Cancelar e voltar sem executar a ação"
 msgstr "Cancel and go back without running the action"
 
+#: src/ui/screens/conversation/interactions.c
+msgid "Cancelar envio"
+msgstr "Cancel send"
+
 #: src/ui/screens/profiles.c
 msgid "Cancelar mantém o perfil."
 msgstr "Cancel keeps the profile."
+
+#: src/config/keymap.c
+msgid "Cancelar o envio mais recente em andamento ou na fila"
+msgstr "Cancel the newest send in progress or queued"
+
+#: src/ui/components/help.c
+msgid "Cancelar o envio mais recente em andamento ou tirá-lo da fila"
+msgstr "Cancel the newest send in progress or remove it from the queue"
 
 #: src/ui/components/help.c
 msgid "Cancelar uma conexão ou voltar à sessão anterior"
@@ -2353,6 +2369,10 @@ msgstr "Unban this member?"
 msgid "Desbloquear"
 msgstr "Unblock"
 
+#: src/ui/screens/conversation/interactions.c
+msgid "Descartar mensagem"
+msgstr "Discard message"
+
 #: src/ui/screens/conversation/drawing.c
 msgid "Desconectado"
 msgstr "Disconnected"
@@ -2748,6 +2768,14 @@ msgstr "Send a message that starts with /"
 #: src/ui/input/editor.c
 msgid "Envio cancelado"
 msgstr "Send cancelled"
+
+#: src/ui/screens/conversation/interactions.c
+msgid "Envio cancelado, mas o servidor pode já ter recebido a mensagem."
+msgstr "Send cancelled, but the server may already have received the message."
+
+#: src/ui/screens/conversation/interactions.c
+msgid "Envio cancelado."
+msgstr "Send cancelled."
 
 #: src/net/auth/client.c
 msgid "Envio cancelado. Tente entrar antes de repetir o cadastro."
@@ -4033,6 +4061,10 @@ msgstr "Message confirmed"
 msgid "Mensagem confirmada pelo servidor."
 msgstr "Message confirmed by the server."
 
+#: src/ui/screens/conversation/interactions.c
+msgid "Mensagem descartada."
+msgstr "Message discarded."
+
 #: src/ui/screens/conversation/conversation.c
 msgid "Mensagem do áudio não está disponível."
 msgstr "The audio's message is not available."
@@ -4084,6 +4116,10 @@ msgstr "Message refused"
 #: src/app/outbox.c
 msgid "Mensagem recusada. Confira o texto; rascunho preservado."
 msgstr "Message refused. Check the text; draft kept."
+
+#: src/ui/screens/conversation/interactions.c
+msgid "Mensagem removida da fila."
+msgstr "Message removed from the queue."
 
 #: src/ui/input/editor.c
 msgid "Mensagem vazia"
@@ -4292,6 +4328,10 @@ msgstr "No roles."
 #: src/ui/components/emoji_picker.c
 msgid "Nenhum emoji encontrado"
 msgstr "No emoji found"
+
+#: src/ui/screens/conversation/conversation.c
+msgid "Nenhum envio em andamento nesta conversa."
+msgstr "No send in progress in this conversation."
 
 #: src/ui/screens/conversation/conversation.c
 msgid "Nenhum envio falhou nesta conversa."
@@ -5050,6 +5090,10 @@ msgstr "Could not use the image."
 #: src/ui/components/file_picker.c
 msgid "Não foi possível usar esse destino. Verifique o acesso."
 msgstr "Could not use that destination. Check access."
+
+#: src/ui/screens/conversation/interactions.c
+msgid "Não há envio para cancelar."
+msgstr "There is no send to cancel."
 
 #: src/ui/input/editor.c
 msgid "Não há espaço para mais envios; revise os resultados pendentes."
@@ -5911,6 +5955,10 @@ msgstr "Remove the keys"
 msgid "Remover avatar"
 msgstr "Remove avatar"
 
+#: src/ui/screens/conversation/interactions.c
+msgid "Remover da fila"
+msgstr "Remove from queue"
+
 #: src/ui/screens/profiles.c
 msgid "Remover este perfil salvo?"
 msgstr "Remove this saved profile?"
@@ -6707,6 +6755,10 @@ msgstr "Type"
 msgid "Tira a aba e apaga a sessão salva"
 msgstr "Removes the tab and deletes the saved session"
 
+#: src/ui/components/help.c
+msgid "Tirar da fila, cancelar ou descartar o envio não confirmado selecionado"
+msgstr "Remove from the queue, cancel or discard the selected unconfirmed send"
+
 #: src/ui/components/settings.c
 msgid "Toca um som quando chega uma notificação e quando você ou outra pessoa entra ou sai de uma chamada de voz."
 msgstr "Plays a sound when a notification arrives and when you or someone else joins or leaves a voice call."
@@ -7493,6 +7545,10 @@ msgstr "m / right button: options"
 msgid "mensagem não disponível"
 msgstr "message not available"
 
+#: src/ui/screens/conversation/conversation.c
+msgid "na fila"
+msgstr "queued"
+
 #: src/ui/screens/conversation/drawing.c
 msgid "neste computador."
 msgstr "on this computer."
@@ -7642,6 +7698,10 @@ msgstr "{k:conversation.attach} / {k:conversation.emojis}"
 #: src/ui/components/help.c
 msgid "{k:conversation.attach} / 📎"
 msgstr "{k:conversation.attach} / 📎"
+
+#: src/ui/components/help.c
+msgid "{k:conversation.cancel_send}"
+msgstr "{k:conversation.cancel_send}"
 
 #: src/ui/components/help.c
 msgid "{k:conversation.close_dm}"

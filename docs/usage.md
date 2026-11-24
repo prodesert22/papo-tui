@@ -149,14 +149,37 @@ its header shows a tag at the right:
 
 - **enviando** (sending): the server has not confirmed the message yet. The tag
   disappears when it does.
+- **na fila** (queued): an earlier message of the same conversation, such as a
+  large attachment, is still being sent. You can keep writing and sending;
+  queued messages go out in order, each after the previous one gets the
+  server's answer.
 - **falhou** (failed): the server rejected the message. Press **Ctrl+Y** to send
   it again.
 - **não confirmado** (not confirmed): the connection failed after the message
   may have reached the server. Check the history before pressing **Ctrl+Y**,
   which asks for confirmation because it can duplicate the message.
 
-Messages that are still sending or failed cannot be selected, replied to,
-edited or reacted to, and they are not kept after the application closes.
+To take back a message before the server confirms it, click the **[x]** at
+the right of its tag. It removes a queued message, cancels the one being sent,
+such as a large upload, or discards a failed or unconfirmed one, and only
+affects that message.
+
+From the keyboard, press **Ctrl+J** to select messages: the selection starts at
+the newest one, and **↓** below the last message reaches the pending ones.
+With a pending message selected, **Delete** removes it like its [x], and
+**Enter** or **m** opens its option: **Remover da fila** (remove from queue),
+**Cancelar envio** (cancel send) or **Descartar mensagem** (discard message).
+Right-clicking a pending message opens the same option. **Ctrl+Z**, from the
+editor, removes the newest queued message or cancels the one being sent; press
+it again for the next one.
+
+A removed or cancelled message disappears from the history; its text does not
+return to the editor. If the server may already have received a cancelled
+message, the footer says so and the message stays as **não confirmado** until
+you discard it or check the history.
+
+Messages that are still sending or failed cannot be replied to, edited or
+reacted to, and they are not kept after the application closes.
 
 In terminals that support window titles, the title shows **channel | server**
 (or **DM com name | server** for a direct message). A count such as **(3)**
@@ -909,6 +932,7 @@ extended keyboard protocol, such as Kitty, foot, WezTerm or Ghostty.
 | Ctrl+R | Refresh or retry a request/connection |
 | F5 | Reconnect now when the connection drops |
 | Ctrl+Y | Retry the last failed send |
+| Ctrl+Z | Cancel the newest send in progress or remove it from the queue |
 | Ctrl+T | Open the account screen |
 | Ctrl+X | Go back to the message of the audio playing in the background and reopen its player |
 | Ctrl+S | Open application settings |

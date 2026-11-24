@@ -104,12 +104,24 @@ class Sending(unittest.TestCase):
             self.assertEqual(result["state"], CONFIRMED)
             self.assertEqual(result["draft"], "")
             self.assertEqual(result["confirmed_count"], 1)
-            self.assertTrue(result["busy"])
+            self.assertTrue(result["queued_behind"])
             self.assertEqual(server.sent_messages[0]["content"], TEXT)
             self.assertTrue(server.multipart_types[0].startswith("multipart/form-data; boundary="))
             request = next(r for r in server.requests if r[1].endswith("/messages"))
             self.assertEqual(set(request[3]), {"channel_id", "content"})
             self.assertEqual(request[2], "Auth=user-fixture")
+
+    def test_second_send_waits_for_the_first_in_the_same_channel(self):
+        with MockServer("send-delayed") as server:
+            result = self.probe(server, "sequence")
+            self.assertTrue(result["queued_behind"])
+            self.assertEqual(result["state"], CONFIRMED)
+            self.assertEqual(result["second_state"], CONFIRMED)
+            self.assertEqual(result["confirmed_count"], 2)
+            self.assertEqual(
+                [message["content"] for message in server.sent_messages], [TEXT, "Segundo envio"]
+            )
+            self.assertEqual(result["draft"], "")
 
     def test_empty_text_rejected_without_request(self):
         with MockServer() as server:
@@ -215,6 +227,28 @@ class Sending(unittest.TestCase):
             self.assertTrue(result["transmitted"])
             self.assertEqual(server.message_count, 1)
             self.assertEqual(result["content"], TEXT)
+
+    def test_withdrawn_sends_leave_the_queue_unless_the_server_may_have_them(self):
+        dequeued, cancelled, uncertain = 1, 2, 3
+        with MockServer("send-delayed") as server:
+            result = self.probe(server, "withdraw-queued")
+            self.assertEqual(result["withdrawn"], dequeued)
+            self.assertEqual(result["state"], CONFIRMED)
+            self.assertEqual([m["content"] for m in server.sent_messages], [TEXT])
+        with MockServer() as server:
+            result = self.probe(server, "withdraw-sending")
+            self.assertEqual(result["withdrawn"], cancelled)
+            self.assertFalse(result["result_ready"])
+            self.assertEqual(server.message_count, 0)
+        with tempfile.TemporaryDirectory() as folder, MockServer("send-cancel") as server:
+            received = Path(folder, "received")
+            server.message_hook = lambda _message: received.touch()
+            result = self.probe(
+                server, "cancel", PAPO_SEND_RECEIVED_FILE=str(received), PAPO_SEND_WITHDRAW="1"
+            )
+            self.assertEqual(result["withdrawn"], uncertain)
+            self.assertEqual(result["state"], UNCERTAIN)
+            self.assertEqual(server.message_count, 1)
 
     def test_instance_switch_does_not_share_same_uuid_drafts_or_results(self):
         with MockServer() as first, MockServer() as second:

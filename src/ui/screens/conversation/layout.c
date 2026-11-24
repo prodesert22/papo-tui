@@ -351,6 +351,11 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
         }
         bool selected = (ui->navigating || ui->context_open || ui->reactors_open) &&
                         !strcmp(ui->selected_message, conversation_str(m, "id"));
+        /* Unconfirmed sends carry their outbox operation in the entry ID. */
+        bool pending = conversation_entry_pending(ui, i);
+        size_t operation = pending && !strncmp(conversation_str(m, "id"), "pending-", 8)
+                               ? (size_t)g_ascii_strtoull(conversation_str(m, "id") + 8, NULL, 10)
+                               : 0;
         bool editing = !strcmp(ui->edit_message, conversation_str(m, "id"));
         bool replying =
             !*ui->edit_message && !strcmp(conversation_reply_target(ui), conversation_str(m, "id"));
@@ -440,11 +445,12 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
                                            line - total);
         if (paint && ui->body && total + height > first && border_start < first + ui->visible) {
             int top = MAX(border_start, first), bottom = MIN(total + height, first + ui->visible);
-            /* Unconfirmed sends have no server identity to select or act on. */
-            if (!conversation_entry_pending(ui, i))
-                conversation_message_hit(ui, conversation_str(m, "id"), MESSAGE_HIT,
-                                         getbegy(ui->body) + ui->history_top + top - first,
-                                         getbegx(ui->body), bottom - top, getmaxx(ui->body), 0);
+            /* Unconfirmed sends have no server identity: selecting one only
+             * offers to cancel, dequeue or discard the send. */
+            conversation_message_hit(ui, conversation_str(m, "id"),
+                                     pending ? PENDING_HIT : MESSAGE_HIT,
+                                     getbegy(ui->body) + ui->history_top + top - first,
+                                     getbegx(ui->body), bottom - top, getmaxx(ui->body), operation);
             if (bordered) {
                 if (selected && ui->selected_media >= blocks->media_count)
                     ui->selected_media = 0;
@@ -528,6 +534,14 @@ int conversation_walk(view *ui, int first, bool paint, bool save, int *anchor)
                             mvwhline(ui->body, y, 2 + r->x + r->indent + r->segments[k].x, ' ',
                                      r->segments[k].width);
                         }
+                for (int k = 0; pending && k < r->count; ++k)
+                    if (!strcmp(r->segments[k].key, "status:dismiss") && r->segments[k].width >= 3) {
+                        int x = 2 + r->x + r->indent + r->segments[k].x + r->segments[k].width - 3;
+                        mvwchgat(ui->body, y, x, 3, A_BOLD, THEME_PANEL_ACTIVE, NULL);
+                        conversation_message_hit(ui, conversation_str(m, "id"), DISMISS_HIT,
+                                                 getbegy(ui->body) + y, getbegx(ui->body) + x, 1,
+                                                 3, operation);
+                    }
                 if (r->count && !strcmp(r->segments[0].key, "reply"))
                     conversation_message_hit(
                         ui, conversation_str(m, "id"), REPLY_HIT, getbegy(ui->body) + y,

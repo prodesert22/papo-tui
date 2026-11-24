@@ -26,6 +26,13 @@ typedef enum {
     OUTBOX_FORBIDDEN,
     OUTBOX_PERMISSIONS_PENDING
 } outbox_submit_result;
+typedef enum {
+    OUTBOX_WITHDRAW_NONE,      /* Unknown, confirmed or not cancellable now. */
+    OUTBOX_WITHDRAW_DEQUEUED,  /* Left the queue before any request. */
+    OUTBOX_WITHDRAW_CANCELLED, /* The request was cancelled before the server had it. */
+    OUTBOX_WITHDRAW_UNCERTAIN, /* Cancelled after transmission: kept as uncertain. */
+    OUTBOX_WITHDRAW_DISCARDED  /* A failed or uncertain send was forgotten. */
+} outbox_withdraw_result;
 typedef struct outbox outbox;
 typedef struct {
     uint64_t id, generation, draft_revision;
@@ -58,7 +65,8 @@ const char *outbox_reply(outbox *box, const char *channel_id);
 const GPtrArray *outbox_attachments(outbox *box, const char *channel_id);
 bool outbox_add_attachment(outbox *box, const char *channel_id, attachment_file *file);
 bool outbox_remove_attachment(outbox *box, const char *channel_id, guint64 file_id);
-/* Accepted text, reply and files leave the draft at once (optimistic send). */
+/* Accepted text, reply and files leave the draft at once (optimistic send).
+ * Sends of a channel with one already queued or in flight wait behind it. */
 outbox_submit_result outbox_submit(outbox *box, const char *channel_id,
                                    bool accept_possible_duplicate, uint64_t *operation_id);
 /* Retries the captured text, preserving the current editor, and replaces the
@@ -69,12 +77,18 @@ outbox_submit_result outbox_retry(outbox *box, uint64_t operation_id,
 /* Call after auth_poll(). Dispatches a bounded queue one request at a time. */
 void outbox_poll(outbox *box);
 bool outbox_cancel(outbox *box, uint64_t operation_id);
+/* Removes a send at the user's request: a queued one leaves the queue, the one
+ * in flight is cancelled and dropped unless the server may already have it,
+ * and a failed or uncertain one is forgotten. Never touches the editor draft. */
+outbox_withdraw_result outbox_withdraw(outbox *box, uint64_t operation_id);
 bool outbox_get_operation(outbox *box, uint64_t operation_id, outbox_operation *operation);
 /* Operations of channel not yet confirmed by the server (queued, sending, failed or
  * uncertain), oldest first, for optimistic history entries. Values borrow text. */
 size_t outbox_unconfirmed(outbox *box, const char *channel, outbox_operation *operations,
                           size_t limit);
 bool outbox_latest(outbox *box, const char *channel_id, outbox_operation *operation);
+/* Whether the channel has any send queued or in flight. */
+bool outbox_pending(outbox *box, const char *channel_id);
 /* Transfers one confirmed Message reference to the caller for merge by ID.
  * Channel and generation are returned in operation. Caller json_decref(). */
 json_t *outbox_take_confirmed(outbox *box, outbox_operation *operation);

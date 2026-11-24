@@ -49,6 +49,93 @@ class SendProduct(support.SendProduct):
                 server.send_release.set()
                 self.assertTrue(terminal.close())
 
+    def test_queued_and_sending_messages_can_be_withdrawn(self):
+        with HistoryMock(count=0) as server:
+            server.scenario = "send-held"
+            terminal = self.open(server)
+            try:
+                terminal.send("Primeira pesada\n")
+                self.wait(terminal, "enviando")
+                # A second send of the conversation waits behind the first.
+                terminal.send("Segunda na fila\n")
+                self.wait(terminal, "na fila")
+                self.assertIn("Segunda na fila", self.history_text(terminal))
+                # Ctrl+Z takes the newest pending send out of the queue.
+                terminal.send("\x1a")
+                self.wait(terminal, "Mensagem removida da fila")
+                self.assertNotIn("Segunda na fila", self.history_text(terminal))
+                # A right click on the send in flight offers to cancel it.
+                row = next(
+                    y
+                    for y, line in enumerate(terminal.screen.display)
+                    if "Primeira pesada" in line
+                )
+                column = terminal.screen.display[row].index("Primeira pesada")
+                terminal.send(f"\x1b[<2;{column + 1};{row + 1}M\x1b[<2;{column + 1};{row + 1}m")
+                self.wait(terminal, "Cancelar envio")
+                self.assertNotIn("Responder", self.screen(terminal))
+                terminal.send("\r")
+                self.wait(terminal, "Envio cancelado")
+                self.assertNotIn("Cancelar envio", self.screen(terminal))
+                server.send_release.set()
+                terminal.read(0.5)
+                # Only the first message ever reached the server.
+                self.assertEqual([m["content"] for m in server.sent_messages], ["Primeira pesada"])
+                self.assertNotIn("na fila", self.screen(terminal))
+            finally:
+                server.send_release.set()
+                self.assertTrue(terminal.close())
+
+    def test_pending_sends_are_removed_by_their_button_or_keyboard_selection(self):
+        with HistoryMock(count=1) as server:
+            server.scenario = "send-held"
+            terminal = self.open(server)
+            try:
+                self.wait(terminal, "Mensagem 0001")
+                terminal.send("Primeira pesada\n")
+                self.wait(terminal, "enviando [x]")
+                terminal.send("Segunda na fila\n")
+                terminal.send("Terceira na fila\n")
+                self.wait(terminal, "Terceira na fila")
+                # The [x] of the newest queued send removes only that one.
+                row = max(
+                    y
+                    for y, line in enumerate(terminal.screen.display)
+                    if "na fila [x]" in line
+                )
+                column = terminal.screen.display[row].index("[x]") + 1
+                terminal.send(f"\x1b[<0;{column + 1};{row + 1}M\x1b[<0;{column + 1};{row + 1}m")
+                self.wait(terminal, "Mensagem removida da fila")
+                self.assertNotIn("Terceira na fila", self.history_text(terminal))
+                self.assertIn("Segunda na fila", self.history_text(terminal))
+                # Ctrl+J selects the newest visible entry, the queued send.
+                terminal.send(CTRL_J)
+                wait_for_screen(
+                    terminal,
+                    lambda: any(
+                        "Segunda na fila" in line and line.count("x") >= 5
+                        for line in terminal.screen.display
+                    ),
+                    "the queued send framed as the selection",
+                )
+                terminal.send("\x1b[3~")
+                self.wait(terminal, "Mensagem removida da fila")
+                self.assertNotIn("Segunda na fila", self.history_text(terminal))
+                # ↓ from the last loaded message reaches the send in flight;
+                # Enter offers its action like the context menu.
+                terminal.send("\x1b[B")
+                terminal.read(0.2)
+                terminal.send("\r")
+                self.wait(terminal, "Cancelar envio")
+                terminal.send("\r")
+                self.wait(terminal, "Envio cancelado")
+                server.send_release.set()
+                terminal.read(0.5)
+                self.assertEqual([m["content"] for m in server.sent_messages], ["Primeira pesada"])
+            finally:
+                server.send_release.set()
+                self.assertTrue(terminal.close())
+
     def test_enter_sends_only_from_the_message_box_and_ctrl_j_selects_messages(self):
         with HistoryMock(count=3) as server:
             terminal = self.open(server)

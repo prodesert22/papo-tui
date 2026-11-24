@@ -429,14 +429,12 @@ static outbox_submit_result enqueue(outbox *box, const char *channel, const char
         if (item->id && item->state == OUTBOX_CONFIRMED && !item->confirmed &&
             (!oldest || item->id < oldest->id))
             oldest = item;
-        if (item->id && !strcmp(item->channel, channel)) {
-            if (item->state == OUTBOX_QUEUED || item->state == OUTBOX_SENDING)
-                return OUTBOX_BUSY;
-            if (item->state == OUTBOX_UNCERTAIN && !accept_duplicate &&
-                !strncmp(content, item->text, strlen(item->text)) &&
-                contains_files(files, item->files))
-                return OUTBOX_CONFIRM_DUPLICATION;
-        }
+        /* A send already queued or in flight in this channel does not block a
+         * new one: it waits behind it and outbox_poll() dispatches in order. */
+        if (item->id && !strcmp(item->channel, channel) && item->state == OUTBOX_UNCERTAIN &&
+            !accept_duplicate && !strncmp(content, item->text, strlen(item->text)) &&
+            contains_files(files, item->files))
+            return OUTBOX_CONFIRM_DUPLICATION;
     }
     if (!slot)
         slot = oldest;
@@ -540,6 +538,31 @@ outbox_submit_result outbox_retry(outbox *box, uint64_t id, bool accept_duplicat
     return result;
 }
 
+/* Applies the result of the request in flight, when there is one. */
+static void consume_receipt(outbox *box)
+{
+    if (!auth_send_result_ready(box->session))
+        return;
+    auth_send_receipt receipt;
+    json_t *message = auth_take_send_result(box->session, &receipt);
+    operation *item = find_operation(box, receipt.operation_id);
+    if (item && receipt.generation == box->generation && receipt.generation == item->generation) {
+        item->state = receipt.outcome == AUTH_SEND_CONFIRMED   ? OUTBOX_CONFIRMED
+                      : receipt.outcome == AUTH_SEND_UNCERTAIN ? OUTBOX_UNCERTAIN
+                                                               : OUTBOX_FAILED;
+        item->status = receipt.status;
+        item->transmitted = receipt.transmitted;
+        item->cancelled = receipt.cancelled;
+        if (item->state == OUTBOX_CONFIRMED) {
+            item->confirmed = message;
+            message = NULL;
+            consume_draft(box, item);
+        }
+    }
+    json_decref(message);
+    box->active = 0;
+}
+
 void outbox_poll(outbox *box)
 {
     if (!box)
@@ -548,27 +571,7 @@ void outbox_poll(outbox *box)
     uint64_t now = 0;
     if (verified && box->dirty && net_now_ms(&now) && now - box->dirty_at >= DRAFT_SAVE_DELAY_MS)
         save_drafts(box);
-    if (auth_send_result_ready(box->session)) {
-        auth_send_receipt receipt;
-        json_t *message = auth_take_send_result(box->session, &receipt);
-        operation *item = find_operation(box, receipt.operation_id);
-        if (item && receipt.generation == box->generation &&
-            receipt.generation == item->generation) {
-            item->state = receipt.outcome == AUTH_SEND_CONFIRMED   ? OUTBOX_CONFIRMED
-                          : receipt.outcome == AUTH_SEND_UNCERTAIN ? OUTBOX_UNCERTAIN
-                                                                   : OUTBOX_FAILED;
-            item->status = receipt.status;
-            item->transmitted = receipt.transmitted;
-            item->cancelled = receipt.cancelled;
-            if (item->state == OUTBOX_CONFIRMED) {
-                item->confirmed = message;
-                message = NULL;
-                consume_draft(box, item);
-            }
-        }
-        json_decref(message);
-        box->active = 0;
-    }
+    consume_receipt(box);
     if (!verified || box->active)
         return;
     operation *next = NULL;
@@ -607,6 +610,31 @@ bool outbox_cancel(outbox *box, uint64_t id)
         return true;
     }
     return item->state == OUTBOX_SENDING && box->active == id && auth_cancel_send(box->session);
+}
+
+outbox_withdraw_result outbox_withdraw(outbox *box, uint64_t id)
+{
+    if (!box || !synchronize(box))
+        return OUTBOX_WITHDRAW_NONE;
+    operation *item = find_operation(box, id);
+    if (!item || item->confirmed || item->state == OUTBOX_CONFIRMED)
+        return OUTBOX_WITHDRAW_NONE;
+    if (item->state == OUTBOX_SENDING) {
+        /* The receipt of a cancelled request is ready at once: a body the server
+         * never fully received is dropped, one it may have kept stays uncertain. */
+        if (box->active != id || !auth_cancel_send(box->session))
+            return OUTBOX_WITHDRAW_NONE;
+        consume_receipt(box);
+        if ((item = find_operation(box, id)) && item->state == OUTBOX_UNCERTAIN)
+            return OUTBOX_WITHDRAW_UNCERTAIN;
+        if (item)
+            dispose_operation(item);
+        return OUTBOX_WITHDRAW_CANCELLED;
+    }
+    outbox_withdraw_result result =
+        item->state == OUTBOX_QUEUED ? OUTBOX_WITHDRAW_DEQUEUED : OUTBOX_WITHDRAW_DISCARDED;
+    dispose_operation(item);
+    return result;
 }
 
 static void view(const operation *item, outbox_operation *value)
@@ -657,6 +685,19 @@ bool outbox_get_operation(outbox *box, uint64_t id, outbox_operation *value)
         return false;
     view(item, value);
     return true;
+}
+
+bool outbox_pending(outbox *box, const char *channel)
+{
+    if (!box || !valid_channel(channel) || !synchronize(box))
+        return false;
+    for (size_t i = 0; i < OUTBOX_OPERATION_LIMIT; ++i) {
+        const operation *item = &box->operations[i];
+        if (item->id && !strcmp(channel, item->channel) &&
+            (item->state == OUTBOX_QUEUED || item->state == OUTBOX_SENDING))
+            return true;
+    }
+    return false;
 }
 
 bool outbox_latest(outbox *box, const char *channel, outbox_operation *value)
