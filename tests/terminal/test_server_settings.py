@@ -32,6 +32,7 @@ class ServerSettings(unittest.TestCase):
     screen = interactions.MessageInteractions.screen
     settled = interactions.MessageInteractions.settled
     click = interactions.MessageInteractions.click
+    resize = interactions.MessageInteractions.resize
 
     def wait(self, terminal, text, seconds=8):
         self.settled(terminal, lambda: text in self.screen(terminal), seconds=seconds)
@@ -439,12 +440,20 @@ class ServerSettings(unittest.TestCase):
 
     def webhooks(self, server):
         t = self.open(server)
-        t.resize(50, 110)
+        # The tab is clicked where the resized window shows it, once that is drawn.
+        self.resize(t, 50, 110)
         self.tab(t, "Webhooks")
-        self.wait(t, "Robô de deploy")
-        # The new webhook's form fills its channel once the channels arrive; typing before
-        # that lands in a form that is then drawn again.
-        self.wait(t, "< #geral >")
+
+        def form_in_place():
+            # While the list loads, a notice sits above the new webhook's form, which moves up
+            # a row when the list arrives. That redraw can be seen half done, with the listed
+            # webhook beside rows of the old layout; a click on a field then misses it. The
+            # form is in place once its channel shares the webhook's row and its name follows.
+            rows = t.screen.display
+            row = next((i for i, line in enumerate(rows) if "Robô de deploy" in line), None)
+            return row is not None and "< #geral >" in rows[row] and "Nome:" in rows[row + 1]
+
+        self.settled(t, form_in_place, seconds=8)
         return t
 
     def test_a_webhook_is_created_and_its_token_is_shown_only_while_its_form_is_open(self):

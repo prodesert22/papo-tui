@@ -908,6 +908,27 @@ class HistoryTerminal(support.HistoryTerminal):
         def history_rows(t):
             return "\n".join(line[26:] for line in t.screen.display[6:16])
 
+        def whole_view(t):
+            """Whether the view holds three consecutive messages, each drawn whole.
+
+            The mock gives message n the author n % 3: "Autor 4", "Apelido" and one it never
+            names. A redraw arrives in pieces, so a row can still be the old one, or hold a
+            new name followed by the end of the longer one it replaces."""
+            names = ("Autor 4", "Apelido", "Autor indisponível")
+            rows = [row[:-1].split() for row in history_rows(t).split("\n")[:9]]
+            numbers = []
+            for author, content, blank in zip(rows[0::3], rows[1::3], rows[2::3]):
+                if blank or content[:1] != ["Mensagem"] or len(content) != 2:
+                    return False
+                if not content[1].isdigit():
+                    return False
+                number = int(content[1])
+                # Avatar letters, the name, a separator, the date and the time.
+                if author[1:-3] != names[number % 3].split() or author[-3:-2] != ["·"]:
+                    return False
+                numbers.append(number)
+            return numbers == list(range(numbers[0], numbers[0] + 3))
+
         with RealtimeMock(count=40) as server:
             t = Terminal()
             try:
@@ -923,13 +944,9 @@ class HistoryTerminal(support.HistoryTerminal):
                     t.send("\x1b[<64;60;10M")
                     wait_for_screen(t, lambda: history_rows(t) != before, "wheel step scrolled")
                 self.assertNotIn("Mensagem 0040", history_rows(t))
-                # Authors show as unavailable until their profiles load. Every
-                # three consecutive messages include a named author.
-                wait_for_screen(
-                    t,
-                    lambda: "Apelido" in history_rows(t) or "Autor 4" in history_rows(t),
-                    "visible authors resolved",
-                )
+                # Authors show as unavailable until their profiles load, after the scroll or
+                # during it. The reading position is taken once both redraws are whole.
+                wait_for_screen(t, lambda: whole_view(t), "messages in view with their authors")
                 reading = history_rows(t)
                 # Another user's and a webhook's messages never move the view.
                 for n, extra in (

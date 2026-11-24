@@ -127,18 +127,40 @@ class ProfileEdit(unittest.TestCase):
             t.read(0.5)
             self.assertEqual(len(server.profile_puts), 2)
 
-    def settings_rows(self, terminal):
-        """Rows of the settings window: from its top border to its bottom one."""
+    def window_rows(self, terminal):
+        """Rows of the settings window, from its top border to its bottom one.
+
+        Raises StopIteration while the window is not all on the screen."""
         lines = terminal.screen.display
         top = next(i for i, line in enumerate(lines) if "Configurações" in line) - 1
         bottom = next(i for i, line in enumerate(lines) if "Fechar" in line and i > top) + 1
         return lines[top : bottom + 1]
+
+    def settings_rows(self, terminal):
+        """Rows of the settings window, once its last rows are on the screen.
+
+        The window is drawn from its top, so its fields can show before the row that
+        closes it."""
+
+        def whole():
+            try:
+                self.window_rows(terminal)
+            except StopIteration:
+                return False
+            return True
+
+        self.settled(terminal, whole)
+        return self.window_rows(terminal)
 
     def test_perfil_previews_the_avatar_and_banner_like_the_profile_card(self):
         with ProfileMock() as server:
             t = self.open(server, mode="light")
             self.perfil(t)
             self.wait(t, "@josé")
+            # The loaded profile is drawn from the preview down to the banner's row, its last.
+            self.settled(
+                t, lambda: any("Banner:" in row and "sem banner" in row for row in t.screen.display)
+            )
             window = self.settings_rows(t)
             text = "\n".join(window)
             # The preview shows the saved name, @username and status, a letter
@@ -173,7 +195,7 @@ class ProfileEdit(unittest.TestCase):
             def short_window():
                 # When the terminal shrinks, its old rows can show until the redraw.
                 try:
-                    return len(self.settings_rows(t)) <= 20
+                    return len(self.window_rows(t)) <= 20
                 except StopIteration:
                     return False
 
