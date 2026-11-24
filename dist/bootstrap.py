@@ -258,6 +258,16 @@ def build(entry, source, work, prefix, jobs, env):
             "--input",
             unix_path(ROOT / "dist/patches/abseil-cpp-mingw-winstring.patch"),
         )
+    if name == "mpv" and host_platform() == "macos":
+        # Without Cocoa, mpv leaves the two CoreFoundation string helpers of its Core Audio output
+        # unbuilt; libmpv then links with them undefined and dyld refuses to load it.
+        run(
+            "patch",
+            "-p1",
+            "--forward",
+            "--input",
+            unix_path(ROOT / "dist/patches/mpv-macos-coreaudio-utils.patch"),
+        )
     if entry["buildsystem"] == "cmake":
         options = [
             "-DBUILD_SHARED_LIBS=ON",
@@ -504,6 +514,9 @@ def main():
                 if os.name == "nt" and entry["name"] == "ncurses"
                 else "windows-native-threads-posix-prefix-v1"
                 if os.name == "nt" and entry["name"] == "mpv"
+                else "macos-coreaudio-utils-v1-"
+                + sha256(ROOT / "dist/patches/mpv-macos-coreaudio-utils.patch")
+                if host_platform() == "macos" and entry["name"] == "mpv"
                 else "mingw-winstring-v1-"
                 + sha256(ROOT / "dist/patches/abseil-cpp-mingw-winstring.patch")
                 if os.name == "nt" and entry["name"] == "abseil-cpp"

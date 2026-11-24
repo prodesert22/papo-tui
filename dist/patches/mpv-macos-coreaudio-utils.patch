@@ -1,0 +1,14 @@
+--- a/meson.build
++++ b/meson.build
+@@ -836,6 +836,11 @@
+ if features['audiounit'] or features['coreaudio'] or features['avfoundation']
+     sources += files('audio/out/ao_coreaudio_chmap.c',
+                      'audio/out/ao_coreaudio_utils.c')
++    # The Core Audio outputs call cfstr_from_cstr and cfstr_get_cstr, which only the Cocoa
++    # sources would otherwise build.
++    if not features['cocoa']
++        sources += files('osdep/utils-mac.c')
++    endif
+ endif
+ 
+ if features['avfoundation']

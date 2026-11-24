@@ -19,6 +19,7 @@ import plistlib
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -232,6 +233,25 @@ def check_references(app):
                     raise SystemExit(f"{path} loads {name}, which is missing from the app")
 
 
+def check_loading(app):
+    """Fails when dyld refuses a library or module of the app, as it does with a symbol that no
+    library defines. Each one loads in a fresh process, where nothing loaded before can supply
+    a missing symbol."""
+    loader = "import ctypes, sys; ctypes.CDLL(sys.argv[1], mode=ctypes.RTLD_LOCAL)"
+    failures = []
+    for path in sorted(app.rglob("*")):
+        if not is_macho(path) or path.suffix not in (".dylib", ".so"):
+            continue
+        result = subprocess.run(
+            [sys.executable, "-c", loader, path], capture_output=True, text=True, check=False
+        )
+        if result.returncode:
+            lines = result.stderr.strip().splitlines()
+            failures.append(f"{path.relative_to(app)}: {lines[-1] if lines else result.returncode}")
+    if failures:
+        raise SystemExit("dyld cannot load:\n" + "\n".join(failures))
+
+
 def icon(resources):
     """PapoTUI.icns from the project's SVG, with the tools of librsvg and macOS."""
     svg = ROOT / "dist" / (APP_ID + ".svg")
@@ -360,6 +380,7 @@ def main():
             run("codesign", "--force", "--sign", "-", app)
         except subprocess.CalledProcessError:
             print("The app itself stays unsigned; each program and library is signed", flush=True)
+        check_loading(app)
         run(tree / "bin/papo-tui", "--version")
         (staging / "Applications").symlink_to("/Applications")
         (staging / "READ ME FIRST.txt").write_text(README, encoding="utf-8")

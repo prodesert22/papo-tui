@@ -275,6 +275,13 @@ class DistributionTests(unittest.TestCase):
         self.assertIn("-Dcoreaudio=enabled", mpv)
         for option in ("-Dpulse=enabled", "-Dalsa=enabled", "-Dvaapi=enabled", "-Ddrm=enabled"):
             self.assertNotIn(option, mpv)
+        # Core Audio without Cocoa needs mpv's CoreFoundation string helpers built as well.
+        patches = [
+            Path(args[-1]).name
+            for args in self.macos_commands({"name": "mpv", "buildsystem": "meson"})
+            if args[0] == "patch"
+        ]
+        self.assertEqual(patches, ["mpv-macos-coreaudio-utils.patch"])
         for name, expected, unwanted in (
             ("gst-plugins-good", "-Dosxaudio=enabled", "-Dpulse=enabled"),
             ("gst-plugins-base", "-Dopus=enabled", "-Dalsa=enabled"),
@@ -323,6 +330,7 @@ class DistributionTests(unittest.TestCase):
             self.assertNotIn("--enable-videotoolbox", ffmpeg)
             self.assertIn("-Dpulse=enabled", mpv)
             self.assertNotIn("-Dcoreaudio=enabled", mpv)
+            self.assertFalse(any(args[0] == "patch" for args in calls))
 
     def test_dependency_platform_filter_distinguishes_linux_and_macos(self):
         entry = {"name": "libsecret", "platforms": ["linux"]}
@@ -372,6 +380,46 @@ class DistributionTests(unittest.TestCase):
                 macos_bundle.install_names(Path("lib.dylib")),
                 ["/opt/homebrew/opt/glib/lib/libglib-2.0.0.dylib", "/usr/lib/libSystem.B.dylib"],
             )
+
+    def test_macos_app_check_names_each_library_that_dyld_refuses(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = Path(directory) / "Papo TUI.app"
+            magic = b"\xcf\xfa\xed\xfe" + bytes(28)
+            files = ("bin/papo-tui", "bin/papo-backends/image.so", "bin/papo-backends/video.so")
+            for name in (*files, "lib/papo-tui/libmpv.2.dylib"):
+                path = app / "Contents/Resources/papo-tui" / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(magic)
+            (app / "Contents/Resources/papo-tui/lib/papo-tui/notes.so").write_text("not Mach-O")
+            loaded = []
+
+            def load(args, **kwargs):
+                loaded.append(Path(args[-1]).name)
+                refused = Path(args[-1]).name in ("video.so", "libmpv.2.dylib")
+                error = (
+                    "OSError: dlopen(...): symbol not found in flat namespace '_cfstr_from_cstr'"
+                )
+                return macos_bundle.subprocess.CompletedProcess(
+                    args, 1 if refused else 0, "", error if refused else ""
+                )
+
+            with patch.object(macos_bundle.subprocess, "run", side_effect=load):
+                with self.assertRaises(SystemExit) as raised:
+                    macos_bundle.check_loading(app)
+            # Programs are not loaded as libraries, and each library loads on its own.
+            self.assertEqual(sorted(loaded), ["image.so", "libmpv.2.dylib", "video.so"])
+            message = str(raised.exception)
+            self.assertIn("bin/papo-backends/video.so: OSError", message)
+            self.assertIn("lib/papo-tui/libmpv.2.dylib: OSError", message)
+            self.assertNotIn("image.so", message)
+            with patch.object(
+                macos_bundle.subprocess,
+                "run",
+                side_effect=lambda args, **kwargs: macos_bundle.subprocess.CompletedProcess(
+                    args, 0, "", ""
+                ),
+            ):
+                macos_bundle.check_loading(app)
 
     def test_macos_app_copies_libraries_once_and_names_them_relatively(self):
         with tempfile.TemporaryDirectory() as directory:

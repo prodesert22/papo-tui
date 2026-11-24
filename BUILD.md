@@ -291,7 +291,9 @@ python dist/macos_bundle.py --build build/release --prefix build/release-deps --
 It installs the build into `Papo TUI.app` (under `Contents/Resources/papo-tui`,
 the same layout as the Linux archive), copies every library that is not part of
 macOS, rewrites their references relative to each file, signs everything ad hoc
-and adds a link to Applications. It is not notarized and is no release asset:
+and adds a link to Applications. It then loads each library and module of the
+app in a separate process and stops, naming the file and dyld's error, when
+macOS would refuse one of them. It is not notarized and is no release asset:
 it has no update channel, and its `READ ME FIRST.txt` explains how to open it
 with `xattr -dr com.apple.quarantine` and how to make the `papo-tui` command
 available, by linking `Contents/Resources/papo-tui/bin/papo-tui` into
