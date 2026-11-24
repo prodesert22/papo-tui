@@ -130,3 +130,4 @@
 - Fixed a memory leak each time the audio devices were listed on a system without a PulseAudio server.
 - Fixed Papo TUI on Windows freezing when quitting, signing out of a server or removing it after a video from that server had been opened.
 - Fixed the first burst of alerts playing more than one notification sound when the sound player was slow to start, as on Windows; a burst now sounds once.
+- The **Auditoria** (Audit log) list in the server settings now shows each event's time without seconds, in 24 hours, so the action stays readable where the time would carry an AM/PM mark, as on Windows in English; the event details still show the full date and time.
