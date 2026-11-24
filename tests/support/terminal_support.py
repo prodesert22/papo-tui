@@ -53,7 +53,7 @@ class ObservedScreen(pyte.Screen):
         >name<, as the application still draws the server tabs on terminals
         with fewer than 256 colors. A tab that is neither keeps its bare name.
         Tests that need the real colors read ``buffer``."""
-        lines = super().display
+        lines = [self._render(self.buffer[y]) for y in range(self.lines)]
         if self.lines:
             lines[0] = self._tab_markers(0, lines[0])
         # The conversation list starts below the tab rows and the frame's edge.
@@ -61,6 +61,23 @@ class ObservedScreen(pyte.Screen):
         if row < self.lines:
             lines[row] = self._tab_markers(row, lines[row], LIST_TABS)
         return lines
+
+    def _render(self, row):
+        """pyte's own rendering, except for a lone half of a wide character: when the
+        program overwrites the first half, the empty second half is left behind, and
+        pyte's display then fails. It shows as a space, keeping the columns."""
+        text, skip = [], False
+        for x in range(self.columns):
+            if skip:
+                skip = False
+                continue
+            data = row[x].data
+            if not data:
+                text.append(" ")
+                continue
+            skip = wcwidth(data[0]) == 2
+            text.append(data)
+        return "".join(text)
 
     def _tab_markers(self, y, text, names=None):
         row = self.buffer[y]

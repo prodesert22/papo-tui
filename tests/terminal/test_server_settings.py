@@ -410,7 +410,8 @@ class ServerSettings(unittest.TestCase):
                         ),
                     )
                     self.border_gone(t, label)
-                    self.assertEqual(self.screen(t).count("Preencha o campo"), 0)
+                    # The notice is erased in its own redraw, after the border's.
+                    self.settled(t, lambda: "Preencha o campo" not in self.screen(t))
             # A name made of spaces counts as missing, and other refusals flag their field too.
             self.tab(t, "Cargos")
             self.type_in(t, "Nome", "Suporte")

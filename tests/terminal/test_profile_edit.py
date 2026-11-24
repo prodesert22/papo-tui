@@ -66,11 +66,17 @@ class ProfileEdit(unittest.TestCase):
         return terminal
 
     def editor(self, terminal):
+        def focus():
+            line = next((row for row in terminal.screen.display if "Foco:" in row), "")
+            return line[line.find("Foco:") :].split("●")[0].strip()
+
         for _ in range(8):
             if "Foco: Mensagem" in self.screen(terminal):
                 return
+            # One Tab at a time: a second one before the first is drawn would skip past.
+            before = focus()
             terminal.send("\t")
-            terminal.read(0.1)
+            self.settled(terminal, lambda: focus() != before)
         self.wait(terminal, "Foco: Mensagem")
 
     def perfil(self, terminal):

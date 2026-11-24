@@ -359,7 +359,9 @@ python3 tools/ci.py run linux-release windows-release   # Linux and Windows toge
 ```
 
 The VM is a [dockur/windows](https://github.com/dockur/windows) container named
-`papo-windows`, using KVM. Its folders are under `build/windows-vm` of the main
+`papo-windows`, using KVM, with 4 CPUs and 16 GB like a GitHub runner
+(`CPU_CORES=4`, `RAM_SIZE=16G`): with more CPUs, timing differences seen on
+GitHub do not show. Its folders are under `build/windows-vm` of the main
 checkout. `storage` holds the disk. `oem` receives `tools/windows_vm/install.bat`
 and `tools/windows_vm/loop.bat`, with the Python 3.13 installer and the MSYS2
 base installer named in those scripts. `shared` is the VM's
