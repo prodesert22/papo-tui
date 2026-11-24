@@ -52,7 +52,7 @@
 #define TABS_ROWS (COLS >= 80 ? 1 : 2)
 #define CONTENT_Y (TABS_ROWS + 1)
 /* Options of the message context menu. */
-#define MESSAGE_ACTIONS 10
+#define MESSAGE_ACTIONS 11
 
 enum {
     SERVER_TABS,

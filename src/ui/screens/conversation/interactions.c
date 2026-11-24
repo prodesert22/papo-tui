@@ -1,4 +1,6 @@
+#include "model/text/markdown.h"
 #include "model/text/translation.h"
+#include "platform/browser.h"
 #include "ui/input/shortcuts.h"
 #include "ui/screens/conversation/private.h"
 
@@ -12,6 +14,7 @@ enum {
     DOWNLOAD_ATTACHMENT,
     PIN_MESSAGE,
     VIEW_PROFILE,
+    OPEN_LINK,
     COPY_TEXT,
     EDIT_MESSAGE,
     DELETE_MESSAGE
@@ -565,6 +568,15 @@ static bool action_allowed(view *ui, int action, const json_t *message)
                history_permission(ui->model, PERMISSION_READ_CHANNEL) == PERMISSION_ALLOWED;
     if (action == PIN_MESSAGE && permissions_role(p, PERMISSION_PIN_MESSAGE) != PERMISSION_ALLOWED)
         return false;
+    /* Only a message whose text is a single link, so the address that
+     * opens is the one the message shows and nothing else. */
+    if (action == OPEN_LINK) {
+        char *link = markdown_only_link(conversation_str(message, "content"));
+        bool only = link != NULL;
+        g_free(link);
+        if (!only)
+            return false;
+    }
     /* Only messages with text; attachments alone have nothing to copy. */
     if (action == COPY_TEXT && !conversation_message_has_text(message))
         return false;
@@ -680,7 +692,12 @@ static void message_action(view *ui, int action)
         conversation_download_menu(ui, ui->selected_message);
     else if (action == VIEW_PROFILE)
         conversation_members_profile(ui, author);
-    else if (action == COPY_TEXT && !conversation_copy_message(ui, m))
+    else if (action == OPEN_LINK) {
+        char *link = markdown_only_link(conversation_str(m, "content"));
+        ui->feedback = link && browser_open(link) ? _("Link aberto no navegador.")
+                                                  : _("Falha ao abrir o navegador.");
+        g_free(link);
+    } else if (action == COPY_TEXT && !conversation_copy_message(ui, m))
         ui->feedback = _("Não foi possível copiar o texto.");
 }
 static void menu_activate(view *ui)
@@ -1190,6 +1207,7 @@ void conversation_interactions_draw(view *ui)
             : history_pin_state(ui->model, ui->selected_message) ? _("Desafixar mensagem")
                                                                  : _("Fixar mensagem"),
             _("Ver perfil"),
+            _("Abrir no navegador"),
             _("Copiar texto"),
             _("Editar mensagem"),
             _("Excluir mensagem")};

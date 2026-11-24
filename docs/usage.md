@@ -1338,8 +1338,8 @@ message. Enter only opens media during message navigation. Press **m** again or
 Esc to close the menu. Use the mouse or ↑/↓ and Enter inside the menu to choose:
 
 A horizontal line separates four groups of options: reactions, navigation,
-content (download, pin, profile and copy text) and, last, actions on your own message. A
-group with no available option leaves no line.
+content (download, pin, profile, open in browser and copy text) and, last, actions on your
+own message. A group with no available option leaves no line.
 
 - **Ver quem reagiu** (See who reacted): show participants grouped by emoji.
   The left column shows rendered emojis and their total counts. Use ↑/↓ to
@@ -1364,6 +1364,15 @@ group with no available option leaves no line.
   the same one shown from the member drawer, without opening the drawer. Esc or a
   click outside closes it; with the drawer open, Esc returns to the drawer.
   Messages sent by applications have no profile and do not show this option.
+- **Abrir no navegador** (Open in browser): opens the message's link in your
+  default web browser, and **Link aberto no navegador.** (Link opened in the
+  browser) appears in the footer. It appears only when the whole text of the
+  message is a single link, written from `http://`, `https://` or `www.`, alone
+  or between `<` and `>`; a `www.` address opens over `https://`. The link is
+  never opened on its own, only when you choose this option. On Linux it is
+  handed to `xdg-open`, from xdg-utils; Windows uses the browser registered in
+  the system. To open a link from a longer message, use your terminal's own
+  way of opening links; see [Open links from the terminal](#open-links-from-the-terminal).
 - **Copiar texto** (Copy text): copies the message's text to the clipboard as
   it was written, with its own line breaks, its Markdown markers and mentions
   written as **@name**. It appears only on messages that have text; drag over the
@@ -1443,7 +1452,7 @@ markers, and other people see the formatting in their own clients.
 | `~~struck~~` | struck-through text; dimmed text on the Linux console and with text symbols, whose fonts cannot draw the stroke. A single `~` stays as written. It combines with the others, such as `~~**struck bold**~~` |
 | `` `code` `` | code on a darker background |
 | `[label](https://example.com)` | the underlined label followed by its address in gray, so a label never hides where the link leads |
-| `https://example.com` or `www.example.com` | an underlined link |
+| `https://example.com` or `www.example.com` | an underlined link, up to the next space: whatever follows the address, such as a `?query` or a `#fragment`, belongs to it, and `*`, `_` and `~` inside it are not formatting. Punctuation right after it, such as a final `.`, `,` or a `)` that the address did not open, stays out |
 | `# Title` (up to `######`) | the title in bold |
 | `> quote` | the text after a gray **│** bar |
 | `- item`, `* item` or `+ item` | the item after a **•** bullet |
@@ -1465,6 +1474,26 @@ continues the quote unless a blank line separates them.
 **Copiar texto** (Copy text) in the message menu copies the message as it was
 written, markers included. Selecting text in the history with the mouse copies
 what the history shows.
+
+### Open links from the terminal
+
+An address written in a message, such as `https://example.com/page#part`, is
+also a hyperlink for your terminal. Open it the way your terminal opens links,
+often **Ctrl+click** or **Ctrl+Shift+click** (in kitty, Ctrl+Shift+click while a
+program uses the mouse), and the whole address opens, also when the link is
+too long for one row and continues on the next ones: every row of it leads to
+the complete address. Without this, a terminal finds an address only within
+one row of the screen and opens a long link cut short, without the end of its
+`?query` or `#fragment`.
+
+This needs a terminal with hyperlinks (OSC 8), such as kitty, Konsole, GNOME
+Terminal, WezTerm, foot, Ghostty, iTerm2 or Alacritty; others ignore it and
+keep finding addresses on their own. It is not used on the Linux console or on
+Windows. Only addresses written out in the text become hyperlinks, never the
+label of a `[label](address)` link, so what opens is what you read. The part of
+a link under a menu, or selected with the mouse, is not a hyperlink until it
+shows again. A message that is only a link also has **Abrir no navegador**
+(Open in browser) in its context menu.
 
 ## Download attachments
 
@@ -2100,6 +2129,20 @@ built from source that is not a release build never asks by itself either.
   there. This applies to the sign-in form, the **Configurações do servidor**
   forms, **Perfil** and **Conta** in Settings, the server profile dialogs, the
   save dialog and the message box.
+- **Falha ao abrir o navegador.** (Could not open the browser) after choosing
+  **Abrir no navegador**: on Linux the program found no `xdg-open` to hand the
+  link to. Install xdg-utils (in Termux, termux-tools provides it), then choose
+  the option again. If the footer says **Link aberto no navegador.** and no
+  window appears, the link was handed over: check the default browser set in
+  your desktop, or run `xdg-open https://example.com` in a terminal to see what
+  it reports.
+- **Ctrl+click opens only part of a long link:** your terminal found the
+  address by itself, one row at a time, instead of using the program's
+  hyperlink. Check that your terminal supports hyperlinks and has them enabled
+  (in kitty, `allow_hyperlinks`; with tmux, a version and terminal that pass
+  them on), or use **Abrir no navegador** from the message's context menu when
+  the message is only the link. See
+  [Open links from the terminal](#open-links-from-the-terminal).
 - **The update check failed:** **Atualizações** in Settings says why.
   **Não foi possível consultar o GitHub. Verifique a conexão.** (Could not reach
   GitHub) means `api.github.com` did not answer: check the connection and any

@@ -52,12 +52,12 @@ class MessageInteractions(unittest.TestCase):
             faulthandler.dump_traceback_later(60)
             self.addCleanup(faulthandler.cancel_dump_traceback_later)
 
-    def open(self, server):
+    def open(self, server, environment=None):
         # Keep Unicode labels observable for text interaction assertions. The
         # graphics suites cover rendered icons; mode tests exercise all modes.
         # Let the app create its private configuration with native permissions.
         self._mock_server = server
-        terminal = product.SendProduct.open(self, server)
+        terminal = product.SendProduct.open(self, server, environment=environment)
         try:
             terminal.send("\x13")
             self.wait(terminal, "Configurações")

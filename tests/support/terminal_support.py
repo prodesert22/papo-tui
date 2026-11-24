@@ -221,6 +221,26 @@ def voice_supported(terminal):
     return any(marker in screen for marker in VOICE_BUTTONS)
 
 
+HYPERLINK_RUN = re.compile(
+    rb"\x1b\[(\d+);(\d+)H\x1b\]8;id=([0-9a-f]+);([^\x1b\x07]*)\x1b\\(.*?)\x1b\]8;;\x1b\\", re.S
+)
+
+
+def hyperlink_runs(output):
+    """Runs of cells written inside a terminal hyperlink (OSC 8), in output order.
+
+    Each is (row, column, id, address, text) with zero-based screen cells; the
+    text is what was written there, without its attribute sequences.
+    """
+    runs = []
+    for row, column, link, address, body in HYPERLINK_RUN.findall(bytes(output)):
+        text = re.sub(rb"\x1b\[[0-9;:]*[A-Za-z]|\x1b\(.|[\x0e\x0f]", b"", body)
+        runs.append(
+            (int(row) - 1, int(column) - 1, link.decode(), address.decode(), text.decode("utf-8"))
+        )
+    return runs
+
+
 def wait_for_screen(terminal, predicate, description, seconds=5):
     """Observe a postcondition; sending input is not a rendering barrier."""
     deadline = time.monotonic() + seconds

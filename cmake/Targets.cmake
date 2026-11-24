@@ -137,6 +137,7 @@ add_library(
     src/platform/self_install.c
     src/platform/${PAPO_PLATFORM}/file_transfer.c
     src/platform/${PAPO_PLATFORM}/clipboard.c
+    src/platform/${PAPO_PLATFORM}/browser.c
     src/ui/media/backend_module.c
     src/ui/media/sound.c
     src/app/instances.c
@@ -253,6 +254,7 @@ add_library(
     src/ui/media/graphics.c
     src/ui/media/sixel.c
     src/ui/media/message_blocks.c
+    src/ui/media/hyperlinks.c
     src/model/text/markdown.c)
 target_link_libraries(papo_media PUBLIC papo_send_editor PkgConfig::GMODULE PkgConfig::GIO
                                         PkgConfig::ZLIB PkgConfig::MD4C Threads::Threads m)

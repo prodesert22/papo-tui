@@ -10,6 +10,7 @@
 #include "ui/components/theme.h"
 #include "ui/input/text.h"
 #include "ui/media/graphics.h"
+#include "ui/media/hyperlinks.h"
 #include "ui/media/message_time.h"
 #include <glib.h>
 #include <limits.h>
@@ -202,7 +203,7 @@ static bool blank(message_blocks *b, bool card, bool top, bool bottom, unsigned 
 /* Trailing spaces at a line end are invisible; when they overflow the column
  * they wrap alone into an extra empty row, so drop them before measuring.
  * Explicit newlines stay, keeping blank lines written by the author. */
-static void trim_line_ends(text_buffer *buffer, unsigned char *styles)
+static void trim_line_ends(text_buffer *buffer, unsigned char *styles, const char **targets)
 {
     size_t out = 0, pending = 0;
     for (size_t at = 0; at < buffer->length; ++at) {
@@ -218,10 +219,14 @@ static void trim_line_ends(text_buffer *buffer, unsigned char *styles)
             for (size_t space = at - pending; pending; --pending, ++space) {
                 if (styles)
                     styles[out] = styles[space];
+                if (targets)
+                    targets[out] = targets[space];
                 buffer->data[out++] = ' ';
             }
         if (styles)
             styles[out] = styles[at];
+        if (targets)
+            targets[out] = targets[at];
         buffer->data[out++] = character;
     }
     buffer->length = out;
@@ -232,18 +237,26 @@ static void trim_line_ends(text_buffer *buffer, unsigned char *styles)
 /* Appends one wrapped column at a specified row. Other columns can occupy the
  * same rows. All terminal controls pass through the shared Unicode decoder.
  * styles, when given, holds MARKDOWN_* bits for each scalar of value, which
- * must decode without dropping any (see text_sanitize). */
+ * must decode without dropping any (see text_sanitize). targets, when given
+ * with styles, holds for each of those scalars the address of its bare link,
+ * owned by b, or NULL. */
 static bool column_styled(message_blocks *b, size_t start, const char *key, const char *value,
-                          size_t offset, const unsigned char *styles, size_t styles_length, int x,
-                          int width, bool bold, bool card, unsigned color, size_t *end)
+                          size_t offset, const unsigned char *styles, size_t styles_length,
+                          const char *const *targets, int x, int width, bool bold, bool card,
+                          unsigned color, size_t *end)
 {
     if (width < 1)
         width = 1;
     size_t base = offset, style_base = 0, row = start;
     const char *p = value;
     unsigned char *marks = NULL;
+    const char **opens = NULL;
     if (styles && !(marks = malloc(TEXT_LIMIT + 1)))
         return false;
+    if (styles && targets && !(opens = malloc((TEXT_LIMIT + 1) * sizeof(*opens)))) {
+        free(marks);
+        return false;
+    }
     do {
         text_buffer buffer;
         text_layout layout;
@@ -276,11 +289,14 @@ static bool column_styled(message_blocks *b, size_t start, const char *key, cons
         if (styled)
             text_mentions(&buffer, b->resolver, b->resolver_context);
         if (marks) {
-            for (size_t k = 0; k < buffer.length; ++k)
+            for (size_t k = 0; k < buffer.length; ++k) {
                 marks[k] = style_base + k < styles_length ? styles[style_base + k] : 0;
+                if (opens)
+                    opens[k] = style_base + k < styles_length ? targets[style_base + k] : NULL;
+            }
             style_base += buffer.length;
         }
-        trim_line_ends(&buffer, marks);
+        trim_line_ends(&buffer, marks, opens);
         if (b->icon_resolver && (card || !strcmp(key, "content") || !strncmp(key, "reaction:", 9)))
             text_icons(&buffer, b->icon_resolver, b->icon_painter, b->icon_context);
         text_buffer visible;
@@ -349,6 +365,18 @@ static bool column_styled(message_blocks *b, size_t start, const char *key, cons
                     s->highlight_length = 0;
                 }
             }
+            /* The rows of a link keep its address for the terminal. */
+            for (size_t k = 0; opens && s->highlight && k < layout.count; ++k) {
+                const text_cell *cell = &layout.cells[k];
+                if (cell->row != line || cell->start >= buffer.length || !opens[cell->start])
+                    continue;
+                if (!s->links && !(s->links = calloc(part.length + 1, sizeof(*s->links))))
+                    goto fail;
+                for (size_t q = cell->display_start;
+                     q < cell->display_end && q < first + part.length; ++q)
+                    if (q >= first)
+                        s->links[q - first] = opens[cell->start];
+            }
             for (size_t k = 0; k < layout.count; ++k)
                 if (layout.cells[k].row == line && layout.cells[k].icon) {
                     message_icon_region *icons =
@@ -374,16 +402,18 @@ static bool column_styled(message_blocks *b, size_t start, const char *key, cons
         base += buffer.length;
     } while (*p);
     free(marks);
+    free(opens);
     *end = row;
     return true;
 fail:
     free(marks);
+    free(opens);
     return false;
 }
 static bool column(message_blocks *b, size_t start, const char *key, const char *value, int x,
                    int width, bool bold, bool card, unsigned color, size_t *end)
 {
-    return column_styled(b, start, key, value, 0, NULL, 0, x, width, bold, card, color, end);
+    return column_styled(b, start, key, value, 0, NULL, 0, NULL, x, width, bold, card, color, end);
 }
 static bool text(message_blocks *b, const char *key, const char *value, int width, bool bold,
                  bool card, unsigned color)
@@ -395,21 +425,59 @@ static bool text(message_blocks *b, const char *key, const char *value, int widt
 /* One run of lines of the rendered text, [from, to) in bytes and scalars. A
  * run of code block lines becomes a box: its rows are inset by one cell on
  * each side and drawn over the block background across the whole width. */
-static bool markdown_run(message_blocks *b, const markdown_text *rendered, size_t from, size_t to,
-                         size_t first, size_t last, bool code, int width)
+static bool markdown_run(message_blocks *b, const markdown_text *rendered,
+                         const char *const *targets, size_t from, size_t to, size_t first,
+                         size_t last, bool code, int width)
 {
     char *part = g_strndup(rendered->text + from, to - from);
     if (!part)
         return false;
     size_t start = b->count, end;
     bool inset = code && width > 2;
-    bool ok =
-        column_styled(b, start, "content", part, first, rendered->styles + first, last - first,
-                      inset ? 1 : 0, inset ? width - 2 : width, false, false, 0, &end);
+    bool ok = column_styled(b, start, "content", part, first, rendered->styles + first,
+                            last - first, targets ? targets + first : NULL, inset ? 1 : 0,
+                            inset ? width - 2 : width, false, false, 0, &end);
     g_free(part);
     for (size_t i = start; ok && i < b->count; ++i)
         b->rows[i].code = code;
     return ok;
+}
+/* For each scalar of the rendered text, the address its bare link opens: an
+ * address written out in the text, which is what the terminal opens when its
+ * rows are hyperlinks. The label of a written link names no address of its
+ * own. The array is owned by the caller and its addresses by b; NULL without
+ * links, or without memory, when the text is only shown. */
+static const char **link_targets(message_blocks *b, const markdown_text *rendered)
+{
+    const char **targets = NULL;
+    const char *text = rendered->text;
+    size_t byte = 0, scalar = 0;
+    while (text[byte]) {
+        size_t start_byte = byte, start = scalar;
+        bool link = rendered->styles[scalar] & MARKDOWN_LINK;
+        while (text[byte] && (bool)(rendered->styles[scalar] & MARKDOWN_LINK) == link) {
+            byte = (size_t)(g_utf8_next_char(text + byte) - text);
+            ++scalar;
+        }
+        if (!link)
+            continue;
+        char *label = g_strndup(text + start_byte, byte - start_byte);
+        char *address = markdown_only_link(label);
+        g_free(label);
+        char **links = address ? realloc(b->links, (b->link_count + 1) * sizeof(*links)) : NULL;
+        if (links)
+            b->links = links;
+        if (links && !targets)
+            targets = calloc(rendered->length + 1, sizeof(*targets));
+        if (!links || !targets) {
+            g_free(address);
+            continue;
+        }
+        b->links[b->link_count++] = address;
+        for (size_t k = start; k < scalar; ++k)
+            targets[k] = address;
+    }
+    return targets;
 }
 /* The message text with its Markdown rendered; the raw text when it cannot be. */
 static bool markdown_content(message_blocks *b, const char *value, int width)
@@ -430,6 +498,7 @@ static bool markdown_content(message_blocks *b, const char *value, int width)
      * line belongs to a block when any of its scalars, its end included, is
      * part of one; the newline between two runs only separates their rows. */
     const char *text = rendered.text;
+    const char **targets = link_targets(b, &rendered);
     size_t byte = 0, scalar = 0, run_byte = 0, run_scalar = 0;
     int run = -1;
     for (;;) {
@@ -444,7 +513,7 @@ static bool markdown_content(message_blocks *b, const char *value, int width)
         if (more)
             code |= markdown_code_block(rendered.styles[scalar]);
         if (run >= 0 && code != (bool)run) {
-            if (!(ok = markdown_run(b, &rendered, run_byte, line_byte - 1, run_scalar,
+            if (!(ok = markdown_run(b, &rendered, targets, run_byte, line_byte - 1, run_scalar,
                                     line_scalar - 1, run, width)))
                 break;
             run_byte = line_byte;
@@ -452,12 +521,14 @@ static bool markdown_content(message_blocks *b, const char *value, int width)
         }
         run = code;
         if (!more) {
-            ok = markdown_run(b, &rendered, run_byte, byte, run_scalar, scalar, run, width);
+            ok =
+                markdown_run(b, &rendered, targets, run_byte, byte, run_scalar, scalar, run, width);
             break;
         }
         ++byte;
         ++scalar;
     }
+    free(targets);
     markdown_text_free(&rendered);
     return ok;
 }
@@ -1441,7 +1512,11 @@ void message_blocks_free(message_blocks *b)
         for (int k = 0; k < b->rows[i].count; ++k) {
             free(b->rows[i].segments[k].text);
             free(b->rows[i].segments[k].highlight);
+            free(b->rows[i].segments[k].links);
         }
+    for (size_t i = 0; i < b->link_count; ++i)
+        g_free(b->links[i]);
+    free(b->links);
     for (size_t i = 0; i < b->capacity; ++i)
         free(b->rows[i].icons);
     free(b->rows);
@@ -1499,6 +1574,27 @@ void message_row_draw(WINDOW *w, const message_row *row, int y, int x, int width
                                              : accent,
                                  row->card ? THEME_EMBED_MUTED : muted,
                                  row->card ? THEME_FOCUS_AREA : code);
+                /* Each run of cells of one link, as just drawn. */
+                for (size_t k = 0; s->links && k + 1 < layout.count;) {
+                    const text_cell *c = &layout.cells[k];
+                    /* A picture drawn in the text is not written again. */
+                    const char *address =
+                        !c->newline && !c->row && !c->icon && c->start < s->highlight_length
+                            ? s->links[c->start]
+                            : NULL;
+                    size_t next = k + 1;
+                    int columns = c->width;
+                    for (; address && next + 1 < layout.count; ++next) {
+                        const text_cell *n = &layout.cells[next];
+                        if (n->newline || n->row || n->icon || n->start >= s->highlight_length ||
+                            s->links[n->start] != address || n->column != c->column + columns)
+                            break;
+                        columns += n->width;
+                    }
+                    if (address)
+                        hyperlinks_offer(w, y, x + s->x + c->column, columns, address);
+                    k = next;
+                }
             }
         } else
             text_label(w, y, x + s->x, s->width, s->text);

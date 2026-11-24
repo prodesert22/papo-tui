@@ -8,7 +8,7 @@ import threading
 import time
 from history_mock import HistoryMock, CHANNEL, OTHER, VOICE, uuid
 from realtime_mock import RealtimeMock
-from terminal_support import Terminal, TerminalStream, wait_for_screen
+from terminal_support import Terminal, TerminalStream, hyperlink_runs, wait_for_screen
 
 
 import terminal_history as support
@@ -668,6 +668,67 @@ class HistoryTerminal(support.HistoryTerminal):
                 self.assertIsNotNone(first)
                 self.assertIsNotNone(second)
                 self.assertEqual(second - first, 3)
+            finally:
+                self.assertTrue(t.close())
+
+    def test_wrapped_link_rows_are_hyperlinks_to_the_whole_address(self):
+        # A text fragment: the terminal's own detection sees one row of it.
+        url = (
+            "https://windowsforum.com/news/alleged-gta-6-xbox-executable-leak-no-playable-"
+            "windows-port-and-malware-risks.453778/#:~:text=Rather%20than%20relying%20solely"
+            "%20on%20slow%2C%20traditional,translates%20RDNA%202%20shaders%20to%20Vulkan%20SPIR-V"
+        )
+        with HistoryMock(count=1) as server:
+            server.messages[0]["content"] = (
+                f"{url}\nveja https://exemplo.org/ação|x e [SITE](https://e.io) FIM"
+            )
+            t = self.open(server)
+            try:
+                self.wait(t, "SPIR-V")
+                self.wait(t, "FIM")
+                # Opening the conversation repaints it a few times; let it settle.
+                deadline, seen, quiet = time.monotonic() + 8, -1, time.monotonic()
+                while time.monotonic() - quiet < 0.5 and time.monotonic() < deadline:
+                    t.read(0.05)
+                    if len(t.output) != seen:
+                        seen, quiet = len(t.output), time.monotonic()
+                self.assertGreaterEqual(time.monotonic() - quiet, 0.5)
+                # The last run written at each place is what the terminal holds.
+                held = {
+                    (row, column): run
+                    for run in hyperlink_runs(t.output)
+                    for row, column, *_ in [run]
+                }
+                whole = sorted(run for run in held.values() if run[3] == url)
+                self.assertGreater(len(whole), 2)  # The link wraps over several rows.
+                self.assertEqual("".join(run[4] for run in whole), url)
+                self.assertEqual(len({run[2] for run in whole}), 1)  # One link, one id.
+                for row, column, _, _, text in held.values():
+                    # Exactly the cells that show the link, nothing around them.
+                    self.assertEqual(t.screen.display[row][column : column + len(text)], text)
+                    self.assertTrue(
+                        all(t.screen.buffer[row][column + i].underscore for i in range(len(text)))
+                    )
+                # Only printable ASCII reaches the terminal as an address.
+                other = [run for run in held.values() if run[3] != url]
+                self.assertEqual(
+                    {(run[3], run[4]) for run in other},
+                    {("https://exemplo.org/a%C3%A7%C3%A3o%7Cx", "https://exemplo.org/ação|x")},
+                )
+                # Nothing is written again while the screen stays as it is.
+                t.read(1)
+                self.assertEqual(len(t.output), seen)
+            finally:
+                self.assertTrue(t.close())
+
+    def test_linux_console_gets_no_hyperlink_sequences(self):
+        with HistoryMock(count=1) as server:
+            server.messages[0]["content"] = "https://example.com/a#:~:text=b FIM"
+            t = self.open(server, terminal_type="linux")
+            try:
+                self.wait(t, "FIM")
+                t.read(0.3)
+                self.assertNotIn(b"\x1b]8;", bytes(t.output))
             finally:
                 self.assertTrue(t.close())
 

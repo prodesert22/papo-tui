@@ -37,6 +37,10 @@ typedef struct {
     bool bold, muted, link;
     unsigned char *highlight;
     size_t highlight_length;
+    /* Owned, or NULL without links: for each scalar of text, as in
+     * highlight, the address that its bare link opens. The addresses are
+     * borrowed from the blocks of the message. */
+    const char **links;
 } message_segment;
 typedef struct {
     int index, row, height, x, width;
@@ -97,6 +101,8 @@ typedef struct {
     text_icon_resolver icon_resolver;
     text_icon_painter icon_painter;
     void *icon_context;
+    char **links; /* Owned addresses of the bare links in the text. */
+    size_t link_count;
 } message_blocks;
 void message_reaction_label(chat_assets *assets, const json_t *emoji, char *label, size_t capacity);
 /* "2.46 KB" style size shown in file cards. */

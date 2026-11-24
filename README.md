@@ -36,6 +36,10 @@ Attach files with **Ctrl+O** or **📎**, or paste copied files and images with
 **Ctrl+V** when the local clipboard is available. Files attached to messages
 appear as cards with a **↓** button; click it, or choose **Baixar anexo** in
 the message's context menu, to save the file where you choose.
+Links in messages are hyperlinks for the terminal, so its own Ctrl+click opens
+the whole address even when a long link wraps. A message that is only a link
+also offers **Abrir no navegador** (Open in browser) in its context menu, which
+opens it in your default browser.
 Available channels and message actions follow your account permissions.
 Member names follow their role color, with white as the default.
 Open the member drawer with **👤** or **Ctrl+U** to search people, view profiles,

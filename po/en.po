@@ -605,6 +605,10 @@ msgstr "Open application settings"
 msgid "Abrir mensagens fixadas"
 msgstr "Open pinned messages"
 
+#: src/ui/screens/conversation/interactions.c
+msgid "Abrir no navegador"
+msgstr "Open in browser"
+
 #: src/ui/components/help.c
 msgid "Abrir o botão selecionado"
 msgstr "Activate the selected button"
@@ -3141,6 +3145,10 @@ msgstr "Deletion waiting to send…"
 msgid "Execute Buscar para aplicar as alterações."
 msgstr "Run Search to apply the changes."
 
+#: src/ui/screens/conversation/interactions.c
+msgid "Falha ao abrir o navegador."
+msgstr "Could not open the browser."
+
 #: src/ui/screens/conversation/downloads.c
 msgid "Falha ao baixar %s: %s"
 msgstr "Failed to download %s: %s"
@@ -3864,6 +3872,10 @@ msgstr "Clear the field; outside a field, quit"
 #: src/ui/components/settings.c
 msgid "Linhas"
 msgstr "Lines"
+
+#: src/ui/screens/conversation/interactions.c
+msgid "Link aberto no navegador."
+msgstr "Link opened in the browser."
 
 #: src/ui/screens/login.c
 msgid "Link de redefinição"

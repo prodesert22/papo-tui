@@ -45,4 +45,17 @@ typedef struct {
 bool markdown_render(const char *source, markdown_text *out);
 void markdown_text_free(markdown_text *text);
 
+/* Length in bytes of the bare link that begins at text[at], or 0 when none
+ * does: an address written from "http://", "https://" or "www." up to the
+ * next blank, as chat clients and GitHub recognize it. Punctuation that ends
+ * the sentence and a bracket the address did not open stay out of it. text
+ * is valid UTF-8 of size bytes; nothing past them is read. */
+size_t markdown_link_length(const char *text, size_t size, size_t at);
+
+/* The address to open when source is a single bare link and nothing else,
+ * alone or between '<' and '>'; NULL otherwise. Owned by the caller. It
+ * starts with "http://" or "https://", which a "www." address gains, and is a
+ * well-formed address, but it still comes from untrusted text. */
+char *markdown_only_link(const char *source);
+
 #endif

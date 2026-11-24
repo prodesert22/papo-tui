@@ -3,11 +3,14 @@
 from test_context import main as test_main
 
 import base64
+from pathlib import Path
 import re
+import tempfile
 import unittest
 from history_mock import CHANNEL, uuid
 from interaction_mock import InteractionMock
 import terminal_interactions as interactions
+from terminal_support import hyperlink_runs
 
 
 class MessageMutations(unittest.TestCase):
@@ -315,6 +318,118 @@ class MessageMutations(unittest.TestCase):
                 # The whole content, its own line break, and the name the history shows.
                 self.assertEqual(base64.b64decode(payload).decode(), f"Oi @{name}, veja\nisto aqui")
                 self.assertNotIn("Copiar texto", self.screen(terminal))
+            finally:
+                self.assertTrue(terminal.close())
+
+    def opener(self, script=None):
+        """PATH holding only a stand-in xdg-open, so no suite opens a real browser.
+
+        The stand-in records its arguments, one per line, and writes to both
+        of its outputs. Without a script the folder is empty: no opener exists.
+        """
+        folder = tempfile.TemporaryDirectory(prefix="papo-opener-")
+        self.addCleanup(folder.cleanup)
+        record = Path(folder.name, "opened")
+        if script is not None:
+            path = Path(folder.name, "xdg-open")
+            path.write_text(script.format(record=record), encoding="utf-8")
+            path.chmod(0o755)
+        return {"PATH": folder.name}, record
+
+    RECORDING_OPENER = (
+        "#!/bin/sh\n"
+        "echo SAIDA-DO-NAVEGADOR\n"
+        "echo ERRO-DO-NAVEGADOR >&2\n"
+        "printf '%s\\n' \"$@\" > '{record}'\n"
+    )
+
+    def test_open_in_browser_hands_a_link_only_message_to_the_system_opener(self):
+        # A text fragment: ':', '~', '%' and ',' after the '#'.
+        url = (
+            "https://windowsforum.com/news/alleged-gta-6-xbox-executable-leak-no-playable-"
+            "windows-port-and-malware-risks.453778/#:~:text=Rather%20than%20relying%20solely"
+            "%20on%20slow%2C%20traditional,translates%20RDNA%202%20shaders%20to%20Vulkan%20SPIR-V"
+        )
+        environment, record = self.opener(self.RECORDING_OPENER)
+        with InteractionMock(count=1) as server:
+            server.messages[0]["content"] = f"  {url}\n"
+            terminal = self.open(server, environment=environment)
+            try:
+                # The history shows the whole address as a link, fragment included.
+                self.wait(terminal, "SPIR-V")
+                for part in ("windowsforum.com", "#:~:text=", "SPIR-V"):
+                    row = next(i for i, x in enumerate(terminal.screen.display) if part in x)
+                    column = terminal.screen.display[row].index(part)
+                    cells = terminal.screen.buffer[row]
+                    self.assertTrue(
+                        all(cells[column + i].underscore for i in range(len(part))), part
+                    )
+                written = len(terminal.output)
+                self.right_click(terminal, "windowsforum.com")
+                self.wait(terminal, "Abrir no navegador")
+                terminal.read(0.3)
+                # Under the menu the link is not a hyperlink: only the cells
+                # that still show it are written as one.
+                beside = hyperlink_runs(terminal.output[written:])
+                self.assertTrue(beside)
+                for row, column, _, address, text in beside:
+                    self.assertEqual(address, url)
+                    self.assertIn(text, url)
+                    self.assertEqual(
+                        terminal.screen.display[row][column : column + len(text)], text
+                    )
+                rows = terminal.screen.display
+
+                def row_of(text):
+                    return next(i for i, line in enumerate(rows) if text in line)
+
+                # A content option, between the profile and the copy.
+                self.assertEqual(row_of("Abrir no navegador"), row_of("Ver perfil") + 1)
+                self.assertEqual(row_of("Copiar texto"), row_of("Abrir no navegador") + 1)
+                self.assertFalse(record.exists())
+                self.click(terminal, "Abrir no navegador")
+                # The whole address as one argument, and nothing else.
+                self.settled(
+                    terminal,
+                    lambda: record.exists() and record.read_text(encoding="utf-8") == url + "\n",
+                )
+                self.wait(terminal, "Link aberto no navegador.")
+                self.assertNotIn("Abrir no navegador", self.screen(terminal))
+                # What the opener prints never reaches the terminal.
+                terminal.read(0.3)
+                self.assertNotIn(b"-DO-NAVEGADOR", bytes(terminal.output))
+            finally:
+                self.assertTrue(terminal.close())
+
+    def test_open_in_browser_is_offered_only_when_the_text_is_a_single_link(self):
+        environment, record = self.opener(self.RECORDING_OPENER)
+        for content in (
+            "veja https://example.com/a",
+            "https://example.com/a https://example.com/b",
+            "ftp://example.com/a",
+        ):
+            with self.subTest(content=content), InteractionMock(count=1) as server:
+                server.messages[0]["content"] = content
+                terminal = self.open(server, environment=environment)
+                try:
+                    self.right_click(terminal, "example.com/a")
+                    self.wait(terminal, "Copiar texto")
+                    self.assertNotIn("Abrir no navegador", self.screen(terminal))
+                finally:
+                    self.assertTrue(terminal.close())
+        self.assertFalse(record.exists())
+
+    def test_open_in_browser_reports_a_missing_system_opener(self):
+        environment, record = self.opener()
+        with InteractionMock(count=1) as server:
+            server.messages[0]["content"] = "<https://example.com/a?b=c>"
+            terminal = self.open(server, environment=environment)
+            try:
+                self.right_click(terminal, "example.com/a")
+                self.click(terminal, "Abrir no navegador")
+                self.wait(terminal, "Falha ao abrir o navegador.")
+                self.assertNotIn("Abrir no navegador", self.screen(terminal))
+                self.assertFalse(record.exists())
             finally:
                 self.assertTrue(terminal.close())
 

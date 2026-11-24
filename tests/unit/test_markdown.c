@@ -26,6 +26,21 @@ static unsigned char style_of(const char *needle)
     return rendered.styles[g_utf8_pointer_to_offset(rendered.text, at)];
 }
 
+/* True when needle, in the last rendering, is one whole link: each of its
+ * scalars is part of a link, and the scalars around it are not. */
+static bool linked(const char *needle)
+{
+    const char *at = strstr(rendered.text, needle);
+    assert(at);
+    size_t first = (size_t)g_utf8_pointer_to_offset(rendered.text, at);
+    size_t count = (size_t)g_utf8_strlen(needle, -1);
+    for (size_t i = 0; i < count; ++i)
+        if (!(rendered.styles[first + i] & MARKDOWN_LINK))
+            return false;
+    return (!first || !(rendered.styles[first - 1] & MARKDOWN_LINK)) &&
+           (first + count == rendered.length || !(rendered.styles[first + count] & MARKDOWN_LINK));
+}
+
 static void expect(const char *source, const char *text)
 {
     const char *got = render(source);
@@ -102,6 +117,73 @@ int main(void)
     expect("veja www.example.com e <https://a.b/c>", "veja www.example.com e https://a.b/c");
     assert(style_of("www") == MARKDOWN_LINK);
     expect("![gato](https://example.com/g.png)", "gato (https://example.com/g.png)");
+
+    /* A bare link runs to the next blank whatever its query and fragment
+     * hold, here a text fragment with ':', '~', '%' and ','. */
+    const char *fragment =
+        "https://windowsforum.com/news/alleged-gta-6-xbox-executable-leak-no-playable-windows-"
+        "port-and-malware-risks.453778/#:~:text=Rather%20than%20relying%20solely%20on%20slow%2C"
+        "%20traditional,translates%20RDNA%202%20shaders%20to%20Vulkan%20SPIR-V";
+    expect(fragment, fragment);
+    assert(linked(fragment));
+    expect("a http://localhost:3000/x?y=1&amp;z=%20#a:b e https://user@a.b:8080/c@d;e=f$g fim",
+           "a http://localhost:3000/x?y=1&amp;z=%20#a:b e https://user@a.b:8080/c@d;e=f$g fim");
+    assert(linked("http://localhost:3000/x?y=1&amp;z=%20#a:b"));
+    assert(linked("https://user@a.b:8080/c@d;e=f$g"));
+    assert(style_of("fim") == 0);
+    /* Markers inside an address are part of it, not formatting. */
+    expect("https://a.b/x*y*z https://a.b/__init__.py https://a.b/c~~d~~e https://a.b/~f~g",
+           "https://a.b/x*y*z https://a.b/__init__.py https://a.b/c~~d~~e https://a.b/~f~g");
+    assert(linked("https://a.b/x*y*z") && linked("https://a.b/__init__.py"));
+    assert(linked("https://a.b/c~~d~~e") && linked("https://a.b/~f~g"));
+    assert(style_of("y*z") == MARKDOWN_LINK && style_of("init") == MARKDOWN_LINK);
+    assert(style_of("d~~e") == MARKDOWN_LINK);
+    /* Punctuation after the address and brackets it did not open stay out,
+     * as do the markers of a span around it. */
+    expect("veja (https://a.b/c), https://pt.example.org/wiki/C_(linguagem). Fim: https://a.b/d!",
+           "veja (https://a.b/c), https://pt.example.org/wiki/C_(linguagem). Fim: https://a.b/d!");
+    assert(linked("https://a.b/c") && linked("https://pt.example.org/wiki/C_(linguagem)"));
+    assert(linked("https://a.b/d"));
+    expect("{https://a.b/y}) https://a.b/f(a)(b)) https://a.b/z)))",
+           "{https://a.b/y}) https://a.b/f(a)(b)) https://a.b/z)))");
+    assert(linked("https://a.b/y") && linked("https://a.b/f(a)(b)") && linked("https://a.b/z"));
+    expect("**https://a.b/n** _https://a.b/i_ ~~https://a.b/s~~ ~https://a.b/t~ \"https://a.b/q\"",
+           "https://a.b/n https://a.b/i https://a.b/s ~https://a.b/t~ \"https://a.b/q\"");
+    assert(style_of("https://a.b/n") == (MARKDOWN_LINK | MARKDOWN_BOLD));
+    assert(style_of("https://a.b/i") == (MARKDOWN_LINK | MARKDOWN_ITALIC));
+    assert(style_of("https://a.b/s") == (MARKDOWN_LINK | MARKDOWN_STRIKE));
+    assert(linked("https://a.b/n") && linked("https://a.b/t") && linked("https://a.b/q"));
+    /* Only where a link can begin, and not in code or in a written link. */
+    expect("xhttps://a.b a@www.c.d ftp://www.e.f https:// www. `https://g.h` e www.i.j/k?l=m%20n.",
+           "xhttps://a.b a@www.c.d ftp://www.e.f https:// www. https://g.h e www.i.j/k?l=m%20n.");
+    assert(style_of("xhttps") == 0 && style_of("www.c.d") == 0 && style_of("www.e.f") == 0);
+    assert(style_of("https:// ") == 0 && style_of("www. ") == 0);
+    assert(style_of("https://g.h") == MARKDOWN_CODE);
+    assert(linked("www.i.j/k?l=m%20n"));
+    expect("[https://a.b/x*y*](https://c.d/#:~:text=e%20f) e [g](https://h.i/#:~:text=j%20k)",
+           "https://a.b/xy (https://c.d/#:~:text=e%20f) e g (https://h.i/#:~:text=j%20k)");
+    assert(style_of("(https://c.d") == MARKDOWN_DECOR &&
+           style_of("(https://h.i") == MARKDOWN_DECOR);
+    expect("```\nhttps://a.b/x*y*\n```\n> https://a.b/q~~w~~e",
+           "https://a.b/x*y*\n│ https://a.b/q~~w~~e");
+    assert(markdown_code_block(style_of("https://a.b/x")) && linked("https://a.b/q~~w~~e"));
+
+    /* A message that is a single link names the address to open. */
+    char *only = markdown_only_link(fragment);
+    assert(only && !strcmp(only, fragment));
+    g_free(only);
+    only = markdown_only_link(" \n<https://a.b/c?d=e>\n ");
+    assert(only && !strcmp(only, "https://a.b/c?d=e"));
+    g_free(only);
+    only = markdown_only_link("www.example.com/a");
+    assert(only && !strcmp(only, "https://www.example.com/a"));
+    g_free(only);
+    assert(!markdown_only_link("veja https://a.b") && !markdown_only_link("https://a.b."));
+    assert(!markdown_only_link("https://a.b https://c.d") && !markdown_only_link("(https://a.b)"));
+    assert(!markdown_only_link("[a](https://a.b)") && !markdown_only_link("ftp://a.b/c"));
+    assert(!markdown_only_link("javascript:alert(1)") && !markdown_only_link("file:///etc/passwd"));
+    assert(!markdown_only_link("https://a.b:porta/") && !markdown_only_link("https://[::1"));
+    assert(!markdown_only_link("") && !markdown_only_link(NULL) && !markdown_only_link("\xff"));
 
     /* Blocks: headings, quotes, lists, fenced code and rules. */
     expect("# Título\ntexto", "Título\ntexto");

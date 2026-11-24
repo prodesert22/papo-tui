@@ -33,6 +33,10 @@ typedef struct {
     char *target; /* Owned; NULL when the target is not shown. */
 } link;
 
+/* Characters that end a sentence or close a Markdown span around a bare link
+ * rather than belong to its address. */
+#define LINK_TRAILING "?!.,:;*_~'"
+
 typedef struct {
     const char *source;
     size_t size;
@@ -51,7 +55,64 @@ typedef struct {
     int strong, em, del, code, heading, code_block;
     int underscores; /* Nested '_' spans, one for each '_' of a delimiter run. */
     int tildes;      /* Single '~' spans whose opening '~' is still to be written. */
+    /* The bare link being written: its bytes of source up to bare_at are
+     * out, and those up to bare_end follow. Both are 0 outside one. */
+    size_t bare_at, bare_end;
+    unsigned char bare_style;
 } renderer;
+
+size_t markdown_link_length(const char *text, size_t size, size_t at)
+{
+    static const char *const prefixes[] = {"https://", "http://", "www."};
+    size_t prefix = 0;
+    for (size_t i = 0; i < G_N_ELEMENTS(prefixes) && !prefix; ++i) {
+        size_t length = strlen(prefixes[i]);
+        if (at < size && size - at > length && !g_ascii_strncasecmp(text + at, prefixes[i], length))
+            prefix = length;
+    }
+    if (!prefix)
+        return 0;
+    bool www = prefix == 4;
+    /* A link begins where a scheme or a host name can: not inside a word,
+     * another scheme or, for "www.", a longer host name or address. */
+    unsigned char before = at ? (unsigned char)text[at - 1] : ' ';
+    if (g_ascii_isalnum(before) ||
+        (www ? before >= 0x80 || strchr("/.-_@:", before) : strchr("+-.", before) != NULL))
+        return 0;
+    unsigned char host = (unsigned char)text[at + prefix];
+    if (!g_ascii_isalnum(host) && host < 0x80 && (www || host != '['))
+        return 0;
+    /* The address runs to the next blank, control or quoting character. */
+    const char *start = text + at, *end = start + prefix, *stop = text + size;
+    while (end < stop) {
+        gunichar c = g_utf8_get_char(end);
+        GUnicodeType kind = g_unichar_type(c);
+        if (!g_unichar_isgraph(c) || (c < 0x80 && strchr("<>\"`\\", (int)c)) ||
+            kind == G_UNICODE_INITIAL_PUNCTUATION || kind == G_UNICODE_FINAL_PUNCTUATION)
+            break;
+        end = g_utf8_next_char(end);
+    }
+    /* Punctuation after the address is the sentence's, and so is a closing
+     * bracket that the address did not open. */
+    static const char openers[] = "([{", closers[] = ")]}";
+    int depth[3] = {0};
+    for (const char *p = start; p < end; ++p) {
+        const char *opener = strchr(openers, *p), *closer = strchr(closers, *p);
+        if (opener)
+            ++depth[opener - openers];
+        else if (closer)
+            --depth[closer - closers];
+    }
+    while (end > start + prefix + 1) {
+        const char *closer = strchr(closers, end[-1]);
+        if (closer && depth[closer - closers] < 0)
+            ++depth[closer - closers];
+        else if (closer || !strchr(LINK_TRAILING, end[-1]))
+            break;
+        --end;
+    }
+    return (size_t)(end - start);
+}
 
 static unsigned char current_style(const renderer *r)
 {
@@ -198,6 +259,22 @@ static void consumed(renderer *r, const char *text, size_t size)
         r->source_end = end;
 }
 
+/* Ends the bare link being written. md4c consumes the Markdown markers that
+ * an address contains, so what it left out up to the link's end is written
+ * here, as the author typed it. */
+static void finish_bare(renderer *r)
+{
+    if (r->bare_end > r->bare_at) {
+        emit(r, r->source + r->bare_at, r->bare_end - r->bare_at, r->bare_style);
+        r->since = 0;
+        /* A '~' that opened a span in there is part of what was written. */
+        r->tildes = 0;
+        if (r->bare_end > r->source_end)
+            r->source_end = r->bare_end;
+    }
+    r->bare_at = r->bare_end = 0;
+}
+
 static void push_container(renderer *r, bool quote, const char *bullet)
 {
     if (r->depth < MARKDOWN_DEPTH) {
@@ -216,6 +293,7 @@ static void push_container(renderer *r, bool quote, const char *bullet)
 static int enter_block(MD_BLOCKTYPE type, void *detail, void *userdata)
 {
     renderer *r = userdata;
+    finish_bare(r);
     if (type == MD_BLOCK_DOC)
         return 0;
     r->need_break = true;
@@ -273,6 +351,7 @@ static int leave_block(MD_BLOCKTYPE type, void *detail, void *userdata)
 {
     (void)detail;
     renderer *r = userdata;
+    finish_bare(r);
     if (type == MD_BLOCK_DOC)
         return 0;
     r->need_break = true;
@@ -332,8 +411,8 @@ static int enter_span(MD_SPANTYPE type, void *detail, void *userdata)
         if (r->link_depth < MARKDOWN_DEPTH) {
             link *l = &r->links[r->link_depth];
             l->start = r->text->len;
-            /* An autolink's label is its address already (www. links only
-             * gain a scheme), so it shows no destination of its own. */
+            /* An autolink's label is its address already, so it shows no
+             * destination of its own. */
             bool autolink = type == MD_SPAN_A && ((MD_SPAN_A_DETAIL *)detail)->is_autolink;
             l->target = target->size && !autolink ? g_strndup(target->text, target->size) : NULL;
             if (target->size && !autolink && !l->target)
@@ -367,7 +446,9 @@ static int leave_span(MD_SPANTYPE type, void *detail, void *userdata)
         break;
 #ifdef MD_FLAG_SUBSCRIPTS
     case MD_SPAN_SUBSCRIPT:
-        emit(r, "~", 1, current_style(r));
+        /* Inside a bare link the closing '~' is written with its address. */
+        if (!r->bare_end)
+            emit(r, "~", 1, current_style(r));
         break;
 #endif
     case MD_SPAN_CODE:
@@ -378,9 +459,12 @@ static int leave_span(MD_SPANTYPE type, void *detail, void *userdata)
         if (r->link_depth > 0 && --r->link_depth < MARKDOWN_DEPTH) {
             link *l = &r->links[r->link_depth];
             /* The destination is shown whenever the label differs from it,
-             * so a label never hides where the link leads. */
-            if (l->target && (r->text->len - l->start != strlen(l->target) ||
-                              memcmp(r->text->str + l->start, l->target, strlen(l->target)))) {
+             * so a label never hides where the link leads. A link that
+             * closes inside a bare link is part of that address, which
+             * shows its markers and its destination as they were typed. */
+            if (l->target && !r->bare_end &&
+                (r->text->len - l->start != strlen(l->target) ||
+                 memcmp(r->text->str + l->start, l->target, strlen(l->target)))) {
                 emit(r, " (", 2, MARKDOWN_DECOR);
                 emit(r, l->target, strlen(l->target), MARKDOWN_DECOR);
                 emit(r, ")", 1, MARKDOWN_DECOR);
@@ -395,27 +479,9 @@ static int leave_span(MD_SPANTYPE type, void *detail, void *userdata)
     return 0;
 }
 
-static int text(MD_TEXTTYPE type, const MD_CHAR *text, MD_SIZE size, void *userdata)
+/* Text of one style, split at the line ends that code blocks carry. */
+static void plain(renderer *r, const char *at, const char *end, unsigned char style)
 {
-    renderer *r = userdata;
-    switch (type) {
-    case MD_TEXT_BR:
-    case MD_TEXT_SOFTBR:
-        /* Chat messages keep every line break the author typed. */
-        newline(r, 0);
-        return 0;
-    case MD_TEXT_NULLCHAR:
-        return 0;
-    default:
-        break;
-    }
-    separate(r, text);
-    unsigned char style = current_style(r);
-    for (; r->tildes; --r->tildes)
-        emit(r, "~", 1, style);
-    /* Entities stay as written: decoding them is not needed for chat text
-     * and would add scalars that the sanitized source does not have. */
-    const char *at = text, *end = text + size;
     while (at < end) {
         const char *line = memchr(at, '\n', (size_t)(end - at));
         const char *stop = line ? line : end;
@@ -430,6 +496,78 @@ static int text(MD_TEXTTYPE type, const MD_CHAR *text, MD_SIZE size, void *userd
         newline(r, r->code_block ? MARKDOWN_CODE_BLOCK : 0);
         at = line + 1;
     }
+}
+
+static int text(MD_TEXTTYPE type, const MD_CHAR *text, MD_SIZE size, void *userdata)
+{
+    renderer *r = userdata;
+    bool breaks = type == MD_TEXT_BR || type == MD_TEXT_SOFTBR || type == MD_TEXT_NULLCHAR;
+    bool sourced = !breaks && size && text >= r->source && text + size <= r->source + r->size;
+    size_t offset = sourced ? (size_t)(text - r->source) : 0;
+    /* Text from inside the bare link being written continues it. */
+    bool continues = sourced && offset >= r->bare_at && offset < r->bare_end;
+    if (!continues)
+        finish_bare(r);
+    switch (type) {
+    case MD_TEXT_BR:
+    case MD_TEXT_SOFTBR:
+        /* Chat messages keep every line break the author typed. */
+        newline(r, 0);
+        return 0;
+    case MD_TEXT_NULLCHAR:
+        return 0;
+    default:
+        break;
+    }
+    separate(r, text);
+    unsigned char style = current_style(r);
+    /* The '~' that opened a span inside a bare link is part of its address. */
+    if (continues)
+        r->tildes = 0;
+    for (; r->tildes; --r->tildes)
+        emit(r, "~", 1, style);
+    /* Entities stay as written: decoding them is not needed for chat text
+     * and would add scalars that the sanitized source does not have. */
+    const char *at = text, *end = text + size;
+    /* Bare links are found here rather than by md4c, whose permissive
+     * autolinks drop the whole link when its query or fragment holds
+     * characters such as ':', '%' or ','. Code and the label of a link the
+     * author wrote out are not searched. */
+    bool linkable = sourced && (type == MD_TEXT_NORMAL || type == MD_TEXT_ENTITY) && !r->code &&
+                    !r->code_block && !r->link_depth;
+    while (at < end && (continues || linkable)) {
+        size_t from = (size_t)(at - r->source);
+        if (r->bare_end) {
+            /* Markers that md4c consumed since the last text of the link. */
+            if (from > r->bare_at)
+                emit(r, r->source + r->bare_at, from - r->bare_at, r->bare_style);
+            size_t stop = MIN((size_t)(end - r->source), r->bare_end);
+            emit(r, at, stop - from, r->bare_style);
+            r->since = 0;
+            r->bare_at = stop;
+            if (r->bare_at == r->bare_end)
+                r->bare_at = r->bare_end = 0;
+            at = r->source + stop;
+            continues = false;
+            continue;
+        }
+        if (!linkable)
+            break;
+        const char *next = end;
+        size_t length = 0;
+        for (const char *p = at; p < end && !length; ++p)
+            if (strchr("hHwW", *p) &&
+                (length = markdown_link_length(r->source, r->size, (size_t)(p - r->source))))
+                next = p;
+        plain(r, at, next, style);
+        at = next;
+        if (length) {
+            r->bare_at = (size_t)(at - r->source);
+            r->bare_end = r->bare_at + length;
+            r->bare_style = style | MARKDOWN_LINK;
+        }
+    }
+    plain(r, at, end, style);
     consumed(r, text, size);
     return r->failed ? 1 : 0;
 }
@@ -447,7 +585,6 @@ bool markdown_render(const char *source, markdown_text *out)
     MD_PARSER parser = {
         .abi_version = 0,
         .flags = MD_FLAG_NOHTML | MD_FLAG_STRIKETHROUGH | MD_FLAG_UNDERLINE |
-                 MD_FLAG_PERMISSIVEURLAUTOLINKS | MD_FLAG_PERMISSIVEWWWAUTOLINKS |
                  MD_FLAG_NOINDENTEDCODEBLOCKS
 #ifdef MD_FLAG_SUBSCRIPTS
                  /* Parsed only to keep single '~' spans literal. */
@@ -461,6 +598,7 @@ bool markdown_render(const char *source, markdown_text *out)
         .text = text,
     };
     int status = md_parse(source, (MD_SIZE)r.size, &parser, &r);
+    finish_bare(&r);
     for (int i = 0; i < r.link_depth && i < MARKDOWN_DEPTH; ++i)
         g_free(r.links[i].target);
     if (status || r.failed) {
@@ -486,4 +624,32 @@ void markdown_text_free(markdown_text *text)
     g_free(text->text);
     g_free(text->styles);
     memset(text, 0, sizeof(*text));
+}
+
+char *markdown_only_link(const char *source)
+{
+    if (!source || !g_utf8_validate(source, -1, NULL))
+        return NULL;
+    const char *start = source, *end = source + strlen(source);
+    while (start < end && g_unichar_isspace(g_utf8_get_char(start)))
+        start = g_utf8_next_char(start);
+    while (end > start && g_unichar_isspace(g_utf8_get_char(g_utf8_prev_char(end))))
+        end = g_utf8_prev_char(end);
+    if (end - start > 2 && *start == '<' && end[-1] == '>') {
+        ++start;
+        --end;
+    }
+    size_t size = (size_t)(end - start);
+    if (!size || markdown_link_length(start, size, 0) != size)
+        return NULL;
+    char *link = g_strndup(start, size);
+    if (!g_ascii_strncasecmp(link, "www.", 4)) {
+        char *address = g_strconcat("https://", link, NULL);
+        g_free(link);
+        link = address;
+    }
+    /* GLib checks the address itself, such as its host and port. */
+    if (!g_uri_is_valid(link, G_URI_FLAGS_PARSE_RELAXED, NULL))
+        g_clear_pointer(&link, g_free);
+    return link;
 }

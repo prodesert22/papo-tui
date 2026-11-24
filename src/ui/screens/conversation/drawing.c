@@ -1,6 +1,7 @@
 #include "app/update.h"
 #include "model/text/translation.h"
 #include "ui/components/tabs.h"
+#include "ui/media/hyperlinks.h"
 #include "ui/screens/conversation/private.h"
 
 static bool graphical_badge(void)
@@ -616,6 +617,7 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
     }
     curs_set(0);
     if (paint_history) {
+        hyperlinks_frame_begin();
         media_view_begin(ui->media);
         icons_begin(ui->icons);
         chat_assets_visible_begin(history_assets(ui->model));
@@ -1204,7 +1206,9 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
     /* Without a text caret, the screen reader mode shows the focused item. */
     if (!caret && theme_focus_cursor())
         caret = true;
+    hyperlinks_frame_prepare();
     doupdate();
+    hyperlinks_frame_flush();
     if (paint_media)
         graphics_frame_flush();
     graphics_update_end();
