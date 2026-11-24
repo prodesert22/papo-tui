@@ -108,6 +108,9 @@ static const help_row rows[] = {
      N_("Tentar novamente o último envio com falha; envios incertos pedem confirmação")},
     {HELP_EDITOR, N_("Ctrl+C"), N_("Limpar o campo de edição")},
     {HELP_EDITOR | HELP_FIELDS, N_("Ctrl+W / Ctrl+Backspace"), N_("Apagar a palavra anterior")},
+#ifdef __APPLE__
+    {HELP_EDITOR | HELP_FIELDS, N_("Cmd+Backspace"), N_("Apagar a palavra anterior")},
+#endif
     {HELP_EDITOR | HELP_FIELDS, N_("Ctrl+← / Ctrl+→"), N_("Mover o cursor por palavras")},
     {HELP_EDITOR | HELP_FIELDS, N_("Shift+setas"), N_("Selecionar texto por caracteres ou linhas")},
     {HELP_EDITOR | HELP_FIELDS, N_("Ctrl+Shift+setas"), N_("Selecionar texto por palavras")},

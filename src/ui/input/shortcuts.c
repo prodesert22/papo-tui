@@ -97,6 +97,9 @@ static bool application_key(uint32_t key, key_binding *binding)
     case TEXT_CTRL_BACKSPACE:
         *binding = make(KEY_BINDING_KEY, KEY_BINDING_BACKSPACE, KEY_BINDING_CTRL);
         return true;
+    case TEXT_SUPER_BACKSPACE:
+        *binding = make(KEY_BINDING_KEY, KEY_BINDING_BACKSPACE, KEY_BINDING_SUPER);
+        return true;
     case TEXT_SHIFT_PAGE_UP:
         *binding = make(KEY_BINDING_KEY, KEY_BINDING_PAGE_UP, KEY_BINDING_SHIFT);
         return true;

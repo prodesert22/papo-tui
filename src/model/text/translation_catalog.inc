@@ -420,6 +420,7 @@ static const translation_entry translation_entries[] = {
     {"", "Clique / arraste", NULL, {"Click / drag", NULL}},
     {"", "Clique direito", NULL, {"Right-click", NULL}},
     {"", "Clique direito / {k:lists.menu} nas abas", NULL, {"Right-click / {k:lists.menu} on tabs", NULL}},
+    {"", "Cmd+Backspace", NULL, {"Cmd+Backspace", NULL}},
     {"", "Cofre indisponível ou em uso por outra janela. Sessão somente nesta execução.", NULL, {"Wallet unavailable or in use by another window. Session only for this run.", NULL}},
     {"", "Cofre indisponível. Sessão somente nesta execução.", NULL, {"Wallet unavailable. Session only for this run.", NULL}},
     {"", "Colagem excede o limite do campo.", NULL, {"The paste exceeds the field's limit.", NULL}},

@@ -98,6 +98,12 @@ void text_input_init(void)
         snprintf(sequence, sizeof(sequence), "\033[27;%d;127~", 5 + locks);
         define_key(sequence, TEXT_CTRL_BACKSPACE);
     }
+    /* Kitty's protocol reports Command+Backspace (Super) as CSI 127 ; 1+8 u. */
+    for (int locks = 0; locks <= 192; locks += 64) {
+        char sequence[32];
+        snprintf(sequence, sizeof(sequence), "\033[127;%du", 9 + locks);
+        define_key(sequence, TEXT_SUPER_BACKSPACE);
+    }
     define_key("\033[27;2;9~", KEY_BTAB);
     const char suffix[] = "DCABHF";
     const int modifiers[] = {1, 2, 5, 6};
@@ -1302,6 +1308,15 @@ int text_input_read(uint32_t *key)
         focus_known = true;
         terminal_focused = *key == TEXT_FOCUS_IN;
     }
+#ifdef __APPLE__
+    /* Ghostty on macOS sends Command+Backspace as ^U, the shell's kill-line, before any key
+     * encoding. With the kitty protocol a real Ctrl+U arrives as CSI 117 ; 5 u, so a bare ^U
+     * then comes from that terminal binding; without the protocol it stays Ctrl+U. */
+    if (type == OK && *key == 0x15 && keyboard_active) {
+        *key = TEXT_SUPER_BACKSPACE;
+        return KEY_CODE_YES;
+    }
+#endif
     if (type == KEY_CODE_YES && *key >= TEXT_CONTROL_BASE && *key < TEXT_CONTROL_BASE + 32) {
         *key -= TEXT_CONTROL_BASE;
         return OK;
@@ -2064,7 +2079,7 @@ bool text_edit(text_buffer *buffer, int type, uint32_t key, int width, bool mult
     }
     if (type != KEY_CODE_YES)
         return false;
-    if (key == TEXT_CTRL_BACKSPACE) {
+    if (key == TEXT_CTRL_BACKSPACE || key == TEXT_SUPER_BACKSPACE) {
         text_delete_word(buffer, false);
         return true;
     }

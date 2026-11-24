@@ -252,6 +252,9 @@ static void test_super(void)
     /* A Super letter is not typed, so commands that act in text fields take it. */
     assert(!keymap_binding_error(KEYMAP_SWITCHER, &key));
     assert(key_binding_valid(&key) && !key_binding_error(&key));
+    /* Command+Backspace deletes the previous word, as Ctrl+Backspace does. */
+    key = parse("super+backspace");
+    assert(keymap_binding_error(KEYMAP_SWITCHER, &key));
     key = parse("ctrl+super+a");
     assert(!key_binding_legacy_ctrl_byte(&key) && !keymap_binding_error(KEYMAP_SWITCHER, &key));
     assert(key_binding_well_formed(
@@ -359,9 +362,30 @@ static void test_super_decoding(void)
     /* Ctrl+S keeps its control byte. */
     type = read_key(ends[1], "\023", &key);
     assert(type == OK && shortcut_is(type, key, KEYMAP_SETTINGS));
+    /* Command+Backspace deletes the previous word wherever Ctrl+Backspace does. */
+    type = read_key(ends[1], "\033[127;9u", &key);
+    assert(type == KEY_CODE_YES && key == TEXT_SUPER_BACKSPACE);
+    assert(shortcut_event(type, key, &binding) && binding.kind == KEY_BINDING_KEY &&
+           binding.code == KEY_BINDING_BACKSPACE && binding.modifiers == KEY_BINDING_SUPER);
+    type = read_key(ends[1], "\033[127;73u", &key);
+    assert(type == KEY_CODE_YES && key == TEXT_SUPER_BACKSPACE);
+    /* Without the kitty protocol ^U is Ctrl+U, which opens the members. */
+    type = read_key(ends[1], "\025", &key);
+    assert(type == OK && key == 0x15 && shortcut_is(type, key, KEYMAP_MEMBERS));
     /* With press and release events for push-to-talk, releases are consumed too. */
     text_input_terminal_active(true);
     assert(read_key(ends[1], "\033[?1u", &key) == ERR && text_keyboard_events_supported());
+    /* With the protocol a real Ctrl+U is CSI 117 ; 5 u, while Ghostty sends Command+Backspace
+     * as a bare ^U on macOS; elsewhere ^U stays Ctrl+U. */
+    type = read_key(ends[1], "\033[117;5u", &key);
+    assert(type == OK && key == 0x15 && shortcut_is(type, key, KEYMAP_MEMBERS));
+    type = read_key(ends[1], "\025", &key);
+#ifdef __APPLE__
+    assert(type == KEY_CODE_YES && key == TEXT_SUPER_BACKSPACE &&
+           !shortcut_is(type, key, KEYMAP_MEMBERS));
+#else
+    assert(type == OK && key == 0x15);
+#endif
     text_input_event_reporting(true);
     type = read_key(ends[1], "\033[115;9:1u", &key);
     assert(type == KEY_CODE_YES && shortcut_is(type, key, KEYMAP_SETTINGS));

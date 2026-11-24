@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import signal
+import sys
 import tempfile
 import time
 import unittest
@@ -58,6 +59,11 @@ class InputControls(unittest.TestCase):
 
     def wait_field(self, t, text, seconds=3):
         wait_for_screen(t, lambda: text in self.field(t), f"Missing editor text: {text}", seconds)
+
+    def wait_gone_from_field(self, t, text, seconds=3):
+        wait_for_screen(
+            t, lambda: text not in self.field(t), f"Editor text was kept: {text}", seconds
+        )
 
     def wait_cursor(self, t, row, column, seconds=3):
         expected = (row, column)
@@ -317,6 +323,32 @@ class InputControls(unittest.TestCase):
             self.wait_field(t, "um ")
             t.send("\x7f")
             self.wait(t, "Conversar em #geral")
+
+    def test_command_backspace_deletes_the_previous_word(self):
+        with HistoryMock(count=0) as server:
+            t = self.open(server)
+            t.send("um dois três")
+            self.wait_field(t, "um dois três")
+            # Kitty and WezTerm report Command+Backspace (Super) as CSI 127 ; 9 u.
+            t.send("\x1b[127;9u")
+            self.wait_gone_from_field(t, "três")
+            self.assertIn("um dois", self.field(t))
+            self.assertNotIn("127;9u", self.screen(t))
+
+    @unittest.skipUnless(sys.platform == "darwin", "Ghostty sends Command+Backspace as ^U on macOS")
+    def test_command_backspace_from_ghostty_deletes_the_word_not_the_text(self):
+        with HistoryMock(count=0) as server:
+            t = self.open(server)
+            t.send("\x1b[?0u")
+            wait_for_screen(t, lambda: b"\x1b[>1u" in t.output, "Keyboard mode was not negotiated")
+            t.send("um dois três")
+            self.wait_field(t, "um dois três")
+            # With the kitty protocol a real Ctrl+U is CSI 117 ; 5 u, so a bare ^U is the
+            # terminal's Command+Backspace binding: it deletes a word and opens no panel.
+            t.send("\x15")
+            self.wait_gone_from_field(t, "três")
+            self.assertIn("um dois", self.field(t))
+            self.assertNotIn("Membros (", self.screen(t))
 
     def test_page_keys_scroll_history_without_leaving_the_editor(self):
         with HistoryMock(count=30) as server:

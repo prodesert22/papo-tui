@@ -1765,6 +1765,10 @@ msgstr "Right-click"
 msgid "Clique direito / {k:lists.menu} nas abas"
 msgstr "Right-click / {k:lists.menu} on tabs"
 
+#: src/config/keymap.c src/ui/components/help.c
+msgid "Cmd+Backspace"
+msgstr "Cmd+Backspace"
+
 #: src/platform/windows/session_slot.c
 msgid "Cofre indisponível ou em uso por outra janela. Sessão somente nesta execução."
 msgstr "Wallet unavailable or in use by another window. Session only for this run."

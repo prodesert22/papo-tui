@@ -308,7 +308,8 @@ static bool reserved(const key_binding *binding)
         case KEY_BINDING_TAB:
         case KEY_BINDING_BACKSPACE:
             return modifiers == 0 || modifiers == KEY_BINDING_SHIFT ||
-                   (binding->code == KEY_BINDING_BACKSPACE && modifiers == KEY_BINDING_CTRL);
+                   (binding->code == KEY_BINDING_BACKSPACE &&
+                    (modifiers == KEY_BINDING_CTRL || modifiers == KEY_BINDING_SUPER));
         case KEY_BINDING_ESCAPE:
             return modifiers == 0;
         case KEY_BINDING_UP:
@@ -485,6 +486,9 @@ static const struct {
     {N_("Delete"), N_("Remover o servidor ou o anexo selecionado")},
     {N_("Shift+Enter / Ctrl+N"), N_("Inserir uma quebra de linha sem enviar")},
     {N_("Ctrl+W / Ctrl+Backspace"), N_("Apagar a palavra anterior")},
+#ifdef __APPLE__
+    {N_("Cmd+Backspace"), N_("Apagar a palavra anterior")},
+#endif
     {N_("Ctrl+A"), N_("Selecionar todo o texto da caixa")},
     {N_("Ctrl+C"), N_("Limpar o campo; fora de um campo, sair")},
     {N_("Ctrl+U"), N_("Limpar o campo de texto")},

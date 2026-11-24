@@ -84,6 +84,8 @@ enum {
     TEXT_FOCUS_OUT,
     TEXT_SHIFT_ENTER,
     TEXT_CTRL_BACKSPACE,
+    /* Command+Backspace on macOS, Super+Backspace elsewhere: delete the previous word. */
+    TEXT_SUPER_BACKSPACE,
     TEXT_SHIFT_PAGE_UP,
     TEXT_SHIFT_PAGE_DOWN,
     TEXT_KEYBOARD_SUPPORTED,

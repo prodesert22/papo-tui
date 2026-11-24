@@ -941,7 +941,7 @@ terminal or the desktop does not use them itself.
 | Esc while editing a message | Cancel editing and restore the send draft |
 | Shift+Enter in the editor | Insert a new line |
 | Ctrl+A in a text field | Select all its text. In GNU screen, whose prefix is Ctrl+A, press Ctrl+A and then `a` |
-| Ctrl+Backspace / Ctrl+W | Delete the word before the cursor |
+| Ctrl+Backspace / Ctrl+W (also Cmd+Backspace on macOS) | Delete the word before the cursor |
 
 Type `@` in the editor to choose a person to mention; confirm with Tab or Enter.
 After closing the chooser, Enter sends the message.
@@ -1858,6 +1858,12 @@ and Cmd+Q, so they keep doing what the terminal does. In those three
 terminals, **Ctrl+S → Atalhos** also accepts a Command combination the
 terminal does not use as a new key. Cmd+V pastes text only: to paste files
 copied in Finder or an image, use **Ctrl+V**.
+
+**Deleting a word.** In kitty, Ghostty and WezTerm, **Cmd+Backspace** deletes
+the word before the cursor in the message box and in text fields, like
+Ctrl+Backspace and Ctrl+W. Ghostty sends Cmd+Backspace as the Ctrl+U code; the
+application tells the two apart, so Ctrl+U still opens the member drawer and
+clears text fields. In Terminal and iTerm2, use **Ctrl+W**.
 
 **Option.** Option with a letter types a special character, such as ® for
 Option+R, unless the terminal treats Option as Alt. Alt shortcuts that you
