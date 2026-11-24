@@ -163,7 +163,15 @@ class ProfileEdit(unittest.TestCase):
             t = self.open(server, mode="light")
             t.resize(24, 100)
             self.perfil(t)
-            self.assertLessEqual(len(self.settings_rows(t)), 20)
+
+            def short_window():
+                # When the terminal shrinks, its old rows can show until the redraw.
+                try:
+                    return len(self.settings_rows(t)) <= 20
+                except StopIteration:
+                    return False
+
+            self.settled(t, short_window)
             self.assertNotIn("@josé", "\n".join(self.settings_rows(t)))
             self.assertIn("Apelido:", self.screen(t))
 

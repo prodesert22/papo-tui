@@ -154,9 +154,6 @@ class WindowsTerminal:
 
     def resize(self, rows, cols):
         self.screen.resize(lines=rows, columns=cols)
-        # pyte drops lines from the top when the screen shrinks, so the old bottom border
-        # would already sit on the new last row: start from a blank screen instead.
-        self.screen.erase_in_display(2)
         self.child.setwinsize(rows, cols)
         # ConPTY hands the new size to the program as a console event, and the program redraws
         # after this returns; a click meanwhile lands on the old layout. The frame's bottom
