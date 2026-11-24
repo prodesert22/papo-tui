@@ -324,7 +324,11 @@ def run_jobs(args):
                             command, stdout=log, stderr=subprocess.STDOUT
                         ).returncode
                     if code:
-                        tail = path.read_text(encoding="utf-8", errors="replace").splitlines()
+                        tail = (
+                            path.read_text(encoding="utf-8", errors="replace").splitlines()
+                            if path.exists()
+                            else [f"(no log: {path})"]
+                        )
                         print(f"FAILED {job} {stage}; {path}\n" + "\n".join(tail[-60:]), flush=True)
             except KeyboardInterrupt:
                 quiet(["docker", "kill", name])
