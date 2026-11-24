@@ -185,6 +185,10 @@ void conversation_set_focus(view *ui, int focus)
         return;
     bool was_channels = ui->show_channels;
     ui->focus = focus;
+    /* Message selection belongs to the history: leaving it by any route, such
+     * as Alt+arrows or a click, ends it so the arrows act on the new focus. */
+    if (focus != HISTORY_PANEL)
+        ui->navigating = false;
     if (focus == CHANNEL_LIST || focus == LIST_BUTTONS || focus == SETTINGS_BUTTON ||
         focus == VOICE_OUTPUT_BUTTON || focus == VOICE_MICROPHONE_BUTTON ||
         focus == VOICE_LEAVE_BUTTON || focus == VOICE_PTT_BUTTON)

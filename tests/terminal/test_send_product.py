@@ -136,6 +136,25 @@ class SendProduct(support.SendProduct):
                 server.send_release.set()
                 self.assertTrue(terminal.close())
 
+    def test_alt_arrows_leave_message_selection_for_the_new_focus(self):
+        with HistoryMock(count=3) as server:
+            terminal = self.open(server)
+            try:
+                self.wait(terminal, "Mensagem 0003")
+                terminal.send(CTRL_J)
+                self.wait(terminal, "Foco: Seleção")
+                # Alt+← moves to the channel list and ends the selection, so
+                # the arrows choose channels instead of messages.
+                terminal.send("\x1b[1;3D")
+                self.wait(terminal, "Foco: Canais")
+                terminal.send("\x1b[B")
+                terminal.read(0.2)
+                self.assertIn("Foco: Canais", self.screen(terminal))
+                terminal.send("\r")
+                self.wait(terminal, "# outro")
+            finally:
+                self.assertTrue(terminal.close())
+
     def test_enter_sends_only_from_the_message_box_and_ctrl_j_selects_messages(self):
         with HistoryMock(count=3) as server:
             terminal = self.open(server)
