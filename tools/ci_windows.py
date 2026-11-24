@@ -196,6 +196,13 @@ def publish_toolchain(arch):
     return tag
 
 
+def prepare_tree():
+    """The archive leaves out MSYS2's temporary, home and cache folders. They are made empty
+    here: the shell points TMP at msys64/tmp, so without it every temporary file fails."""
+    for name in ("msys64/tmp", "msys64/home", "msys64/var/cache"):
+        (TREE / name).mkdir(parents=True, exist_ok=True)
+
+
 def link_source():
     """C:\\papo-ci\\src is a junction to this checkout, so every host compiles the same paths."""
     if SOURCE.exists() or SOURCE.is_symlink():
@@ -212,6 +219,7 @@ def run_windows(arch, stage, extra=(), fast=False, environment=None):
     from ci import ENVIRONMENT, RUNNER_CPUS
 
     tag = ensure_toolchain(arch)
+    prepare_tree()
     link_source()
     toolchain = recipe()
     env = toolchain.shell_environment(arch)
@@ -237,6 +245,7 @@ def run_script(arch, script, environment=None):
     from ci import ENVIRONMENT
 
     ensure_toolchain(arch)
+    prepare_tree()
     link_source()
     toolchain = recipe()
     env = toolchain.shell_environment(arch)
