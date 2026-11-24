@@ -1704,7 +1704,12 @@ class R8Terminal(support.R8Terminal):
                 "read of the message shown in the open channel",
             )
             self.wait(t, "[Comunidade]")
-            self.assertNotIn("⦁", "\n".join(line[:25] for line in t.screen.display))
+            # The dot clears once the read's answer is drawn, after the server receives it.
+            wait_for_screen(
+                t,
+                lambda: "⦁" not in "\n".join(line[:25] for line in t.screen.display),
+                "unread dot left after reading",
+            )
 
     def test_read_seen_shortly_after_input_survives_the_read_pause(self):
         """Without focus reports, a message counts as seen for 2 s after input.
