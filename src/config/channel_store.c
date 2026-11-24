@@ -10,8 +10,34 @@ struct channel_store {
     json_t *channels;
     GFile *file;
     char *etag;
+    /* SHA-256 of the bytes last read or written. The etag comes from the modification time,
+     * which Windows advances in ticks of about 15 ms: two saves within one tick keep the same
+     * etag, so the contents also have to match. NULL while the file is absent. */
+    char *digest;
     bool writable;
 };
+/* The digest of the file as it is now: NULL when it cannot be read whole, "" when absent. */
+static char *current_digest(GFile *file)
+{
+    GError *error = NULL;
+    GFileInputStream *input = g_file_read(file, NULL, &error);
+    if (!input) {
+        bool absent = g_error_matches(error, G_IO_ERROR, G_IO_ERROR_NOT_FOUND);
+        g_clear_error(&error);
+        return absent ? g_strdup("") : NULL;
+    }
+    char *data = malloc(STORE_BYTES + 1);
+    gsize size = 0;
+    bool ok =
+        data &&
+        g_input_stream_read_all(G_INPUT_STREAM(input), data, STORE_BYTES + 1, &size, NULL, NULL) &&
+        size <= STORE_BYTES;
+    char *digest =
+        ok ? g_compute_checksum_for_data(G_CHECKSUM_SHA256, (const guchar *)data, size) : NULL;
+    free(data);
+    g_object_unref(input);
+    return digest;
+}
 channel_store *channel_store_open(const char *url, const char *user, const char *folder,
                                   channel_store_valid valid)
 {
@@ -73,6 +99,8 @@ channel_store *channel_store_open(const char *url, const char *user, const char 
         g_input_stream_read_all(G_INPUT_STREAM(input), data, STORE_BYTES + 1, &size, NULL, NULL) &&
         size <= STORE_BYTES;
     json_t *root = ok ? json_loadb(data, size, JSON_REJECT_DUPLICATES, NULL) : NULL;
+    if (ok)
+        m->digest = g_compute_checksum_for_data(G_CHECKSUM_SHA256, (const guchar *)data, size);
     free(data);
     g_object_unref(input);
     json_t *channels = json_object_get(root, "channels");
@@ -98,6 +126,7 @@ void channel_store_close(channel_store *m)
     json_decref(m->channels);
     g_clear_object(&m->file);
     g_free(m->etag);
+    g_free(m->digest);
     free(m);
 }
 bool channel_store_changed(const channel_store *m)
@@ -109,9 +138,14 @@ bool channel_store_changed(const channel_store *m)
         G_FILE_QUERY_INFO_NOFOLLOW_SYMLINKS, NULL, NULL);
     if (!info)
         return m->etag != NULL;
-    bool changed =
-        !g_file_info_get_is_symlink(info) && g_strcmp0(g_file_info_get_etag(info), m->etag) != 0;
+    bool symlink = g_file_info_get_is_symlink(info);
+    bool changed = !symlink && g_strcmp0(g_file_info_get_etag(info), m->etag) != 0;
     g_object_unref(info);
+    if (!changed && !symlink && m->digest) {
+        char *digest = current_digest(m->file);
+        changed = digest && strcmp(digest, m->digest) != 0;
+        g_free(digest);
+    }
     return changed;
 }
 json_t *channel_store_channels(const channel_store *m)
@@ -126,7 +160,11 @@ bool channel_store_save(channel_store *m, json_t *channels)
     json_t *root = json_pack("{s:i,s:O}", "version", 1, "channels", channels);
     char *data = root ? json_dumps(root, JSON_COMPACT | JSON_SORT_KEYS) : NULL;
     char *etag = NULL;
-    bool ok = data && strlen(data) <= STORE_BYTES &&
+    /* Another process's save within the same tick leaves the etag as it was. */
+    char *digest = m->digest ? current_digest(m->file) : NULL;
+    bool current = !m->digest || (digest && !strcmp(digest, m->digest));
+    g_free(digest);
+    bool ok = current && data && strlen(data) <= STORE_BYTES &&
               /* A nonmatching expected tag also protects a previously absent file: a
                * first save from another process must not become an unconditional overwrite. */
               g_file_replace_contents(m->file, data, strlen(data),
@@ -138,6 +176,9 @@ bool channel_store_save(channel_store *m, json_t *channels)
         m->channels = json_incref(channels);
         g_free(m->etag);
         m->etag = etag;
+        g_free(m->digest);
+        m->digest =
+            g_compute_checksum_for_data(G_CHECKSUM_SHA256, (const guchar *)data, strlen(data));
     } else
         g_free(etag);
     free(data);
