@@ -182,7 +182,12 @@ Messages that are still sending or failed cannot be replied to, edited or
 reacted to, and they are not kept after the application closes.
 
 In terminals that support window titles, the title shows **channel | server**
-(or **DM com name | server** for a direct message). A count such as **(3)**
+(or **DM com name | server** for a direct message). A **●** at the start, as in
+**● geral | Comunidade**, means one of the connected servers has news: it
+appears whenever a server tab shows its red dot, for unread messages or
+notifications in channels and DMs that are not muted. A muted channel does not
+light it, even when new messages arrive there. The dot disappears once you read
+that news or mute those conversations. A count such as **(3)**
 shows the total known unread mentions across connected instances, including
 `@everyone`; ordinary unread messages do not add to it. The count disappears
 when it reaches zero. Switching conversations updates the title, and returning

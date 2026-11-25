@@ -584,12 +584,16 @@ void conversation_draw(view *ui, auth_client *auth, draw_scope scope)
              json_is_true(json_object_get(channel, "_dm")) ? _("DM com ") : "",
              conversation_str(channel, "name"));
     size_t mentions = 0;
+    bool unread = false;
     for (size_t i = 0; i < ui->connections->count; ++i) {
         const instance_connection *connection = &ui->connections->items[i];
-        if (connection->model && auth_has_session(connection->auth))
+        if (connection->model && auth_has_session(connection->auth)) {
             mentions += inbox_unread_mentions(history_inbox(connection->model), NULL);
+            /* The server tabs' red dot: news in conversations that are not muted. */
+            unread = unread || history_instance_unread(connection->model);
+        }
     }
-    terminal_title_set(conversation, ui->connections->items[ui->active_tab].name, mentions);
+    terminal_title_set(conversation, ui->connections->items[ui->active_tab].name, mentions, unread);
     if (ui->members_open || conversation_members_modal(ui))
         scope = DRAW_ALL;
     bool paint_history = scope == DRAW_ALL || scope == DRAW_CONVERSATION;

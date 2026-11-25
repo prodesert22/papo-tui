@@ -43,8 +43,9 @@ emojis, GIF search, voice calls and media in supported terminals.
 - Links in messages are hyperlinks for the terminal, so its own Ctrl+click opens
   the whole address even when a long link wraps. A message that is only a link
   also offers **Abrir no navegador** (Open in browser) in its context menu.
-- The terminal window title shows the current conversation and server, plus the
-  total known unread mentions across connected instances when there are any.
+- The terminal window title shows the current conversation and server, a **●**
+  when a connected server has news outside muted channels, and the total known
+  unread mentions across connected instances when there are any.
 
 **Account and server management**
 

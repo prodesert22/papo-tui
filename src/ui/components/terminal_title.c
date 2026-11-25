@@ -73,7 +73,7 @@ void terminal_title_begin(void)
     terminal_title_reset();
 }
 
-void terminal_title_set(const char *conversation, const char *server, size_t mentions)
+void terminal_title_set(const char *conversation, const char *server, size_t mentions, bool unread)
 {
     if (!active)
         return;
@@ -84,10 +84,13 @@ void terminal_title_set(const char *conversation, const char *server, size_t men
         snprintf(safe_conversation, sizeof(safe_conversation), "%s", "Papo TUI");
     if (!*safe_server)
         snprintf(safe_server, sizeof(safe_server), "%s", _("Servidor"));
+    /* The dot leads, so it stays visible where a tab cuts the end of the title. */
+    const char *dot = unread ? "● " : "";
     if (mentions)
-        snprintf(title, sizeof(title), "%s | %s (%zu)", safe_conversation, safe_server, mentions);
+        snprintf(title, sizeof(title), "%s%s | %s (%zu)", dot, safe_conversation, safe_server,
+                 mentions);
     else
-        snprintf(title, sizeof(title), "%s | %s", safe_conversation, safe_server);
+        snprintf(title, sizeof(title), "%s%s | %s", dot, safe_conversation, safe_server);
     publish(title);
 }
 

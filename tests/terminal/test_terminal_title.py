@@ -1,4 +1,4 @@
-"""Terminal window titles from synthetic conversations and unread mentions."""
+"""Terminal window titles from synthetic conversations, unread news and mentions."""
 
 from test_context import main as test_main
 
@@ -22,12 +22,15 @@ class TerminalTitle(unittest.TestCase):
         )
 
     def title(self, terminal, expected):
-        wait_for_screen(
-            terminal,
-            lambda: terminal.screen.title == expected,
-            "Unexpected terminal title: " + expected,
-            seconds=8,
-        )
+        try:
+            wait_for_screen(
+                terminal,
+                lambda: terminal.screen.title == expected,
+                "Expected terminal title: " + expected,
+                seconds=8,
+            )
+        except AssertionError as error:
+            raise AssertionError("Terminal title: " + terminal.screen.title) from error
 
     def click(self, terminal, text):
         self.wait(terminal, text)
@@ -45,6 +48,34 @@ class TerminalTitle(unittest.TestCase):
         self.wait(terminal, "Conversar em #")
         return terminal
 
+    @staticmethod
+    def read_everything(server):
+        """Start without news: the fixture's channel and DM are already read."""
+        for conversation in server.channels + server.dms:
+            if conversation.get("last_message"):
+                conversation["last_read_message"] = conversation["last_message"]["id"]
+        for dm in server.dms:
+            dm["unread_count"] = 0
+
+    def server_tab(self, terminal, label):
+        # The title is written before the tabs are painted in the same frame.
+        wait_for_screen(
+            terminal,
+            lambda: label in terminal.screen.display[0],
+            "Unexpected server tab: " + label,
+        )
+
+    def channel_menu(self, terminal, name):
+        self.wait(terminal, "# " + name)
+        row, line = next(
+            (row, line)
+            for row, line in enumerate(terminal.screen.display)
+            if row >= 4 and "# " + name in line[:25]
+        )
+        column = wcswidth(line[: line.index("#")]) + 1
+        terminal.send(f"\x1b[<2;{column};{row + 1}M\x1b[<2;{column};{row + 1}m")
+        self.wait(terminal, "Notificações…")
+
     def close(self, terminal):
         if not getattr(terminal, "title_test_closed", False):
             self.assertTrue(terminal.close())
@@ -55,23 +86,25 @@ class TerminalTitle(unittest.TestCase):
             server.notifications[1]["message_content"] = "Olá @mention(<@" + uuid(1) + ">)"
             server.notifications[2]["message_content"] = "Aviso @everyone"
             terminal = self.open(server)
-            self.title(terminal, "geral | Comunidade (2)")
+            self.title(terminal, "● geral | Comunidade (2)")
             self.click(terminal, "# outro")
-            self.title(terminal, "outro | Comunidade (2)")
+            self.title(terminal, "● outro | Comunidade (2)")
             next(c for c in server.channels if c["id"] == OTHER)["name"] = "novidades 🐧"
             server.emit(
                 dict(type="channel_update", channel_id=OTHER, name="novidades 🐧", position=3)
             )
-            self.title(terminal, "novidades 🐧 | Comunidade (2)")
+            self.title(terminal, "● novidades 🐧 | Comunidade (2)")
             self.click(terminal, "DMs")
             self.click(terminal, "Bia")
-            self.title(terminal, "DM com Bia | Comunidade (2)")
+            self.title(terminal, "● DM com Bia | Comunidade (2)")
             terminal.send("\x04\n")
             self.wait(terminal, "Detalhes da notificação")
-            self.title(terminal, "DM com Bia | Comunidade (1)")
+            self.title(terminal, "● DM com Bia | Comunidade (1)")
             terminal.send("\x1b\x1bOB\n")
             self.wait(terminal, "Detalhes da notificação")
-            self.title(terminal, "DM com Bia | Comunidade")
+            # The non-mention notification still lights the server tab, and the title.
+            self.title(terminal, "● DM com Bia | Comunidade")
+            self.server_tab(terminal, "[Comunidade 0]")
             wait_for_screen(
                 terminal, lambda: len(server.marked) == 2, "Notification reads did not finish"
             )
@@ -90,6 +123,7 @@ class TerminalTitle(unittest.TestCase):
             next(c for c in server.channels if c["id"] == CHANNEL)["name"] = (
                 "geral\n\x1b]52;c;TITLE-INJECT\a\x9b界"
             )
+            self.read_everything(server)
             terminal = self.open(server)
             self.title(terminal, "geral ]52;c;TITLE-INJECT界 | Servidor]2;FAKE 🐧")
             self.assertNotIn(b"\x1b]52;c;TITLE-INJECT", terminal.output)
@@ -112,8 +146,9 @@ class TerminalTitle(unittest.TestCase):
         with R8Mock(count=0) as server:
             server.name = "🐧" * 31
             next(c for c in server.channels if c["id"] == CHANNEL)["name"] = "界" * 500
+            # The unread DM adds the dot: the longest title the client writes.
             terminal = self.open(server)
-            self.title(terminal, "界" * 32 + " | " + "🐧" * 24)
+            self.title(terminal, "● " + "界" * 32 + " | " + "🐧" * 24)
             self.assertLess(len(terminal.screen.title.encode()), 255)
 
     def test_inactive_instance_mentions_update_without_prefetching_history(self):
@@ -121,14 +156,14 @@ class TerminalTitle(unittest.TestCase):
             second.name = "Trabalho"
             second.notifications[0]["message_content"] = "Aviso @everyone"
             terminal = self.open(first)
-            self.title(terminal, "geral | Comunidade")
+            self.title(terminal, "● geral | Comunidade")
             self.click(terminal, "+ Adicionar")
             self.wait(terminal, "URL do servidor")
             self.title(terminal, "Papo TUI")
             terminal.send(second.url + "\tjosé\tSynthetic!123\n")
-            self.title(terminal, "geral | Trabalho (1)")
+            self.title(terminal, "● geral | Trabalho (1)")
             self.click(terminal, "Comunidade")
-            self.title(terminal, "geral | Comunidade (1)")
+            self.title(terminal, "● geral | Comunidade (1)")
             history_reads = sum("/messages" in path for _, path, *_ in second.requests)
             second.emit(
                 dict(
@@ -139,9 +174,58 @@ class TerminalTitle(unittest.TestCase):
                     message_content="Mais uma @everyone",
                 )
             )
-            self.title(terminal, "geral | Comunidade (2)")
+            self.title(terminal, "● geral | Comunidade (2)")
             self.assertEqual(
                 sum("/messages" in path for _, path, *_ in second.requests), history_reads
+            )
+
+    def test_unread_dot_follows_the_list_dots_and_skips_muted_channels(self):
+        with R8Mock(count=0) as server:
+            self.read_everything(server)
+            rows = server.other_rows()
+            # The history of #outro also returns the messages it receives, newest first.
+            server.other_rows = lambda: list(reversed(rows))
+            terminal = self.open(server)
+            self.title(terminal, "geral | Comunidade")
+
+            def news(n):
+                message = dict(
+                    server.message(n),
+                    channel_id=OTHER,
+                    author_id=AUTHOR,
+                    content=f"Novidade {n:04d}",
+                )
+                rows.append(message)
+                return dict(message, type="message")
+
+            server.emit(news(10))
+            self.title(terminal, "● geral | Comunidade")
+            self.server_tab(terminal, "[Comunidade 0]")
+            self.channel_menu(terminal, "outro")
+            terminal.send("\n")
+            self.wait(terminal, "Até eu reativar")
+            terminal.send("\x1bOB" * 6 + "\n")
+            self.wait(terminal, "Canal silenciado neste cliente")
+            # Still unread on the server, but muted: no list dot, no title dot.
+            self.title(terminal, "geral | Comunidade")
+            self.wait(terminal, "(silenciado)")
+            server.emit(news(11))
+            # Events arrive in order: the renamed title follows the muted message.
+            next(c for c in server.channels if c["id"] == CHANNEL)["name"] = "geral2"
+            server.emit(dict(type="channel_update", channel_id=CHANNEL, name="geral2", position=2))
+            self.title(terminal, "geral2 | Comunidade")
+            self.server_tab(terminal, "[Comunidade]")
+            self.channel_menu(terminal, "outro")
+            self.wait(terminal, "Reativar canal")
+            terminal.send("\n")
+            self.wait(terminal, "Canal reativado")
+            self.title(terminal, "● geral2 | Comunidade")
+            self.click(terminal, "# outro")
+            self.title(terminal, "outro | Comunidade")
+            wait_for_screen(
+                terminal,
+                lambda: (OTHER, uuid(111)) in server.channel_reads,
+                "The newest message of #outro was not read",
             )
 
 
