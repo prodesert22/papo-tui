@@ -60,6 +60,10 @@ class GraphicsStream:
         self.kitty_control = False
         self.stream = TerminalStream(screen)
         self.pending = b""
+        # Where the search for the end of an unfinished sequence resumes: a large image
+        # arrives in many small reads, and searching it whole on each one costs as much as
+        # the square of its size.
+        self.scanned = 0
         self.frames = []
         self.frame_positions = []
         self.protocols = []
@@ -87,8 +91,11 @@ class GraphicsStream:
         self.pending += data
         while self.pending:
             markers = (b"\x1bP", b"\x1b_G", b"\x1b]1337;")
-            positions = [self.pending.find(marker) for marker in markers]
-            start = min((position for position in positions if position >= 0), default=-1)
+            if self.scanned:
+                start = 0  # The unfinished sequence still begins the buffer.
+            else:
+                positions = [self.pending.find(marker) for marker in markers]
+                start = min((position for position in positions if position >= 0), default=-1)
             if start < 0:
                 keep = max(
                     (
@@ -108,9 +115,11 @@ class GraphicsStream:
                 self.pending = self.pending[start:]
             iterm = self.pending.startswith(b"\x1b]1337;")
             terminator = b"\a" if iterm else b"\x1b\\"
-            end = self.pending.find(terminator, 2)
+            end = self.pending.find(terminator, max(2, self.scanned))
             if end < 0:
+                self.scanned = max(2, len(self.pending) - len(terminator) + 1)
                 return
+            self.scanned = 0
             sequence = self.pending[: end + len(terminator)]
             self.pending = self.pending[end + len(terminator) :]
             if iterm and not sequence.startswith(b"\x1b]1337;File="):
