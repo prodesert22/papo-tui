@@ -455,7 +455,8 @@ network operation has finished. The program writes a redraw in pieces, top rows
 first, so a test terminal's `read()` returns only when output has paused: the
 screen is then inspected between redraws, never halfway through one. `poll()`
 returns when its time is up and is only for measuring output while it flows, as
-the playback cadence checks do. A pause does not mean nothing else will come:
+the playback cadence checks do. `resize()` returns once the program has drawn at
+the new size. A pause does not mean nothing else will come:
 an answer that arrives later draws again and can move what is on the screen, as
 a form does when the list beside it finishes loading, so wait for the state the
 next step depends on before reading a position or clicking. Shared terminal

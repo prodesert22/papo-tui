@@ -247,6 +247,8 @@ def voice_supported(terminal):
 # such as a playing video, extends a read by FRAME_LIMIT at most.
 FRAME_PAUSE = 0.05 if os.name == "nt" else 0.02
 FRAME_LIMIT = 0.3
+# How ncurses clears the screen, by terminal type: at once, or from the top-left corner on.
+CLEARED = re.compile(rb"\x1b\[2J|\x1b\[H\x1b\[J")
 
 
 def wait_for_screen(terminal, predicate, description, seconds=5):
@@ -404,10 +406,26 @@ class PosixTerminal:
         self.read()
 
     def resize(self, rows, cols):
+        changed = (rows, cols) != (self.screen.lines, self.screen.columns)
         self.screen.resize(lines=rows, columns=cols)
+        sent = len(self.output)
         fcntl.ioctl(self.slave, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
         self.process.send_signal(signal.SIGWINCH)
         self.read()
+        # The program redraws once it handles the signal, later on a busy machine. Until then
+        # the screen holds the old layout, where a test would measure rows or aim a click.
+        # ncurses clears the screen before it draws at a new size.
+        deadline = time.monotonic() + 3
+        while (
+            changed
+            and not CLEARED.search(self.output, sent)
+            and self.process.poll() is None
+            and time.monotonic() < deadline
+        ):
+            began = time.monotonic()
+            self.read(0.03)
+            if time.monotonic() - began < 0.01:
+                break  # Reads are deferred, as the synchronization scenarios do: no way to wait.
 
     def copies(self):
         """Texts the program copied, oldest first: here, its OSC 52 sequences."""
