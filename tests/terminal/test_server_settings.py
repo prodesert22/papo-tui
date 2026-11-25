@@ -456,6 +456,17 @@ class ServerSettings(unittest.TestCase):
         self.settled(t, form_in_place, seconds=8)
         return t
 
+    def test_an_untouched_webhook_form_is_not_drawn_without_end(self):
+        with ServerAdminMock() as server:
+            t = self.webhooks(server)
+            # Late answers, such as the names of who created the webhooks, still draw it.
+            t.read(1)
+            written = len(t.output)
+            t.read(2)
+            # Filling the form used to count as a change to its data, which filled and drew it
+            # again without pause: over 100 kB each second on a POSIX terminal.
+            self.assertLess(len(t.output) - written, 20000)
+
     def test_a_webhook_is_created_and_its_token_is_shown_only_while_its_form_is_open(self):
         with ServerAdminMock() as server:
             t = self.webhooks(server)
