@@ -707,10 +707,14 @@ void server_admin_webhook_forget_token(history *h)
     struct history_server_admin *a = h ? h->server_admin : NULL;
     if (!a)
         return;
+    bool held = *a->webhook_for || a->token_lost;
     wipe(a->webhook_token, sizeof(a->webhook_token));
     a->webhook_for[0] = 0;
     a->token_lost = false;
-    changed(a);
+    /* The form asks this every time it is filled. With no token to forget nothing changed:
+     * reporting a change would have the form filled and drawn again, without end. */
+    if (held)
+        changed(a);
 }
 bool server_admin_emoji_deletable(history *h, const json_t *emoji)
 {

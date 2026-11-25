@@ -530,6 +530,12 @@ static bool page_path(char *path, size_t capacity, const char *base, const char 
     curl_free(encoded);
     return true;
 }
+bool history_internal_jump_notice(const history *h)
+{
+    /* As where the failure is reported: a jump the account asked for, not a quiet lookup. */
+    const struct history_actions *a = h->actions;
+    return a && a->failed && *a->jump && !a->jump_silent;
+}
 bool history_internal_actions_dispatch(history *h, bool foreground)
 {
     struct history_actions *a = h->actions;

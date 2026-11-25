@@ -117,7 +117,7 @@ static void rows(server_settings *s, GArray *out)
     json_array_foreach(server_admin_items(s->model, ADMIN_LIST_AUDIT), i, log)
     {
         char when[64], line[256];
-        if (!message_time_format(admin_str(log, "created_at"), now, when, sizeof(when)))
+        if (!message_time_format_compact(admin_str(log, "created_at"), now, when, sizeof(when)))
             snprintf(when, sizeof(when), "—");
         snprintf(line, sizeof(line), "%s %s", when,
                  *admin_str(log, "actor_username") ? admin_str(log, "actor_username") : "—");

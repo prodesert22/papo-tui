@@ -6,7 +6,7 @@ import time
 import unittest
 
 from password_mock import TOKEN, PasswordMock
-from terminal_support import Terminal
+from terminal_support import VERTICAL, Terminal
 import terminal_interactions as interactions
 
 DOWN, LEFT, RIGHT = "\x1bOB", "\x1bOD", "\x1bOC"
@@ -117,7 +117,7 @@ class PasswordTerminal(unittest.TestCase):
         """Row of the label's input and its vertical sides, once the cursor is in it."""
         row = next(i for i, line in enumerate(t.screen.display) if label in line)
         self.settled(t, lambda: t.screen.cursor.y == row)
-        return row, t.screen.display[row].count("x")
+        return row, t.screen.display[row].count(VERTICAL)
 
     def conta(self, t):
         t.send("\x13")
@@ -157,12 +157,12 @@ class PasswordTerminal(unittest.TestCase):
             self.wait(t, "8 caracteres")
             row, sides = self.refused_input(t, "Nova senha:")
             t.send("y")
-            self.settled(t, lambda: t.screen.display[row].count("x") < sides)
+            self.settled(t, lambda: t.screen.display[row].count(VERTICAL) < sides)
             t.send("\x15" + NEW + DOWN + "Other!456\n")
             self.wait(t, "não coincidem")
             row, sides = self.refused_input(t, "Confirmar senha:")
             t.send("y")
-            self.settled(t, lambda: t.screen.display[row].count("x") < sides)
+            self.settled(t, lambda: t.screen.display[row].count(VERTICAL) < sides)
             t.send("\x15Other!456")
             t.read(0.3)
             self.assertEqual(server.password_calls, [])

@@ -1767,6 +1767,13 @@ so use **PageUp** and **PageDown** instead; they work on any media, except
 while the properties panel is open, where they scroll it. The sequence wraps
 around. The title shows the position, for example **2/3 · clip.mp4**.
 
+With the mouse, click the **⬅** (previous) and **➡** (next) buttons at the left
+and right edges of the viewer, halfway down. Each is a framed box, nine columns
+by five rows, so it is easy to hit; clicking anywhere inside it moves to the
+other media. They appear when the message has more than one media and the
+window is wide enough for them, and they work on videos and audio too. The
+Linux console (TTY) does not show them; use the keys there.
+
 The viewer keeps two kinds of text apart. The line above the bottom edge shows
 the state, such as **Reproduzindo · 0:07 / 0:30** (Playing). The keys are listed
 on the bottom edge itself, starting with **PgUp/PgDn outra mídia** (another

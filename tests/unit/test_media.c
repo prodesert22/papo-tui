@@ -301,7 +301,7 @@ static void modal_geometry(void)
     for (size_t c = 0; c < sizeof(widths) / sizeof(*widths); ++c)
         for (size_t r = 0; r < sizeof(heights) / sizeof(*heights); ++r)
             for (int info = 0; info < 2; ++info) {
-                assert(media_modal_geometry(widths[c], heights[r], info != 0, 2, 1, &g));
+                assert(media_modal_geometry(widths[c], heights[r], info != 0, 0, 0, 2, 1, &g));
                 assert(g.x >= 4 && g.y >= 2 && g.x + g.width <= widths[c] - 4);
                 if (widths[c] >= 80)
                     assert(g.x >= 30);
@@ -318,13 +318,39 @@ static void modal_geometry(void)
                 assert(!media_modal_contains(&g, g.y, g.x + g.width));
                 if (info)
                     assert(g.info_x > g.button_x + g.button_width - 1);
+                assert(!g.nav_width && !g.prev_x && !g.next_x);
+                /* Text blocks (7x3) and framed blocks (9x5) alike. */
+                for (int picture = 0; picture < 2; ++picture) {
+                    int columns = picture ? 9 : 7, rows = picture ? 5 : 3;
+                    media_modal_layout nav;
+                    assert(media_modal_geometry(widths[c], heights[r], info != 0, columns, rows, 2,
+                                                1, &nav));
+                    if (nav.nav_width) {
+                        /* Side buttons centered on the modal's middle row, clear of the
+                         * picture area and of the header and footer rows. */
+                        assert(nav.nav_width == columns && nav.nav_height >= 1 &&
+                               nav.nav_height <= rows);
+                        assert(nav.nav_y + nav.nav_height / 2 == nav.y + nav.height / 2);
+                        assert(nav.nav_y > nav.y + 1 &&
+                               nav.nav_y + nav.nav_height < nav.y + nav.height - 1);
+                        assert(nav.prev_x == nav.x + 1);
+                        assert(nav.prev_x + nav.nav_width < nav.area_x);
+                        assert(nav.area_x + nav.area_width < nav.next_x);
+                        assert(nav.next_x + nav.nav_width < nav.x + nav.width);
+                        if (info)
+                            assert(nav.next_x + nav.nav_width < nav.info_x);
+                        assert(nav.image_x >= nav.area_x &&
+                               nav.image_x + 2 <= nav.area_x + nav.area_width);
+                    } else
+                        assert(nav.area_x == g.area_x && nav.area_width == g.area_width);
+                }
                 media_modal_layout toggled;
-                assert(media_modal_geometry(widths[c], heights[r], !info, 2, 1, &toggled));
+                assert(media_modal_geometry(widths[c], heights[r], !info, 0, 0, 2, 1, &toggled));
                 assert(g.button_x == toggled.button_x && g.button_y == toggled.button_y &&
                        g.button_width == toggled.button_width);
             }
-    assert(!media_modal_geometry(29, 24, false, 1, 1, &g));
-    assert(!media_modal_geometry(80, 11, false, 1, 1, &g));
+    assert(!media_modal_geometry(29, 24, false, 0, 0, 1, 1, &g));
+    assert(!media_modal_geometry(80, 11, false, 0, 0, 1, 1, &g));
 }
 static void player_controls(void)
 {

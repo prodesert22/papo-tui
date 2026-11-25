@@ -80,7 +80,8 @@ def measure(
                 changes = 0
                 seen = set()
                 while time.monotonic() - start < seconds:
-                    t.read(0.004)
+                    # Sampled while it plays: a read would wait for a pause between frames.
+                    t.poll(0.004)
                     if not graphical:
                         # Only the media area: omit editor, status and timestamps.
                         snapshot = tuple(
@@ -110,7 +111,7 @@ def measure(
                         if require_input:
                             raise AssertionError("Keyboard input stalled during playback")
                         break
-                    t.read(0.004)
+                    t.poll(0.004)
                 latency = time.monotonic() - sent
                 responded = expected in "\n".join(t.screen.display)
                 return dict(

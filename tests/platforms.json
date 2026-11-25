@@ -165,5 +165,51 @@
   },
   "tests/terminal/test_channel_preferences.py": {
     "windows": "POSIX PTY/graphics channel-menu fixtures; portable mute persistence is checked natively by channel-mutes-unit"
+  },
+  "tests/terminal/test_accessibility_terminal.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/terminal/test_shortcuts_terminal.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/terminal/test_update_terminal.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/terminal/test_update_download.py": {
+    "windows": "POSIX terminal/media or Linux desktop fixture; native ConPTY scenarios are registered separately"
+  },
+  "tests/terminal/test_update_install.py": {
+    "windows": "Replacing an AppImage or an unpacked archive exists on Linux only"
+  },
+  "tests/terminal/test_server_settings.py": {
+    "skips": {
+      "windows": {
+        "ServerSettings.test_emojis_are_added_from_a_file_and_deleted": "Native Windows file dialogs cannot be driven through ConPTY",
+        "ServerSettings.test_nickname_avatar_and_revocation_of_a_webhook": "Native Windows file dialogs cannot be driven through ConPTY"
+      }
+    }
+  },
+  "tests/terminal/test_profile_edit.py": {
+    "skips": {
+      "windows": {
+        "ProfileEdit.test_images_within_limits_are_sent_unchanged_and_larger_ones_reduced": "Native Windows file dialogs cannot be driven through ConPTY"
+      }
+    }
+  },
+  "tests/integration/test_release.py": {
+    "skips": {
+      "windows": {
+        "ReleaseCLI.test_help_colors_only_structure_on_a_terminal": "pseudo-terminals are POSIX only"
+      }
+    }
+  },
+  "tests/unit/test_terminal_stream.py": {
+    "skips": {
+      "windows": {
+        "PosixTerminalReads.test_a_redraw_that_arrives_in_pieces_is_read_whole": "POSIX pseudo-terminal reads; test_terminal_windows.py covers the ConPTY ones",
+        "PosixTerminalReads.test_output_that_never_pauses_extends_a_read_by_a_limited_time": "POSIX pseudo-terminal reads; test_terminal_windows.py covers the ConPTY ones",
+        "PosixTerminalReads.test_a_read_without_output_lasts_only_its_time": "POSIX pseudo-terminal reads; test_terminal_windows.py covers the ConPTY ones"
+      }
+    }
   }
 }

@@ -7,7 +7,7 @@
 #include "platform/runtime.h"
 #include <stdint.h>
 #include <stdio.h>
-bool message_time_format(const char *timestamp, time_t now, char *output, size_t capacity)
+static bool format(const char *timestamp, time_t now, char *output, size_t capacity, bool seconds)
 {
     uint64_t milliseconds;
     struct tm today, date;
@@ -18,10 +18,19 @@ bool message_time_format(const char *timestamp, time_t now, char *output, size_t
         !papo_localtime(&now, &today))
         goto invalid;
     bool same = date.tm_year == today.tm_year && date.tm_yday == today.tm_yday;
-    if (strftime(output, capacity, same ? "%X" : "%x %X", &date))
+    const char *pattern = seconds ? (same ? "%X" : "%x %X") : (same ? "%H:%M" : "%x %H:%M");
+    if (strftime(output, capacity, pattern, &date))
         return true;
 invalid:
     if (capacity)
         snprintf(output, capacity, _("hora indisponível"));
     return false;
+}
+bool message_time_format(const char *timestamp, time_t now, char *output, size_t capacity)
+{
+    return format(timestamp, now, output, capacity, true);
+}
+bool message_time_format_compact(const char *timestamp, time_t now, char *output, size_t capacity)
+{
+    return format(timestamp, now, output, capacity, false);
 }

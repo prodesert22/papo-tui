@@ -639,6 +639,9 @@ static void draw_form(server_settings *s, WINDOW *w, GArray *fields)
         s->field_first = s->field_first < count ? s->field_first : 0;
     if (s->field < s->field_first)
         s->field_first = s->field;
+    /* Without a focused field (-1) the view still starts at a field of this form. */
+    if (s->field_first < 0)
+        s->field_first = 0;
     for (;;) {
         int used = 0;
         for (int i = s->field_first; i <= s->field && i < count; ++i)
@@ -649,6 +652,8 @@ static void draw_form(server_settings *s, WINDOW *w, GArray *fields)
     }
     if (s->focus != 2 && s->field_first > 0 && s->field == 0)
         s->field_first = 0;
+    if (s->field_first >= count)
+        s->field_first = count - 1;
     /* A row starts at the button that owns it. */
     while (s->field_first > 0 && g_array_index(fields, admin_field, s->field_first).same_row)
         --s->field_first;

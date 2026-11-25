@@ -9,9 +9,15 @@ typedef struct {
     int image_x, image_y;
     int info_x, info_width;
     int button_x, button_y, button_width;
+    /* Previous/next media buttons on the left and right sides, centered on the
+     * modal's height (nav_y is the top row). nav_width is 0 when they were not requested or do not
+     * fit; the image area then leaves their columns free. */
+    int prev_x, next_x, nav_y, nav_width, nav_height;
 } media_modal_layout;
-bool media_modal_geometry(int columns, int rows, bool info, int image_columns, int image_rows,
-                          media_modal_layout *out);
+/* nav_columns x nav_rows is the size of each side button; zero columns asks for
+ * none. The height shrinks to fit a short modal. */
+bool media_modal_geometry(int columns, int rows, bool info, int nav_columns, int nav_rows,
+                          int image_columns, int image_rows, media_modal_layout *out);
 bool media_modal_contains(const media_modal_layout *layout, int y, int x);
 
 /* Local window coordinates, shared by painting and mouse hit testing. */

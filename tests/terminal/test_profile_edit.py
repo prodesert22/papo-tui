@@ -3,6 +3,7 @@
 from test_context import main as test_main
 
 import base64
+import os
 import struct
 import tempfile
 import time
@@ -11,7 +12,7 @@ import zlib
 from pathlib import Path
 
 from profile_mock import ME, ProfileMock
-from terminal_support import Terminal
+from terminal_support import VERTICAL, Terminal
 import terminal_interactions as interactions
 
 DOWN, RIGHT = "\x1bOB", "\x1bOC"
@@ -65,11 +66,17 @@ class ProfileEdit(unittest.TestCase):
         return terminal
 
     def editor(self, terminal):
+        def focus():
+            line = next((row for row in terminal.screen.display if "Foco:" in row), "")
+            return line[line.find("Foco:") :].split("●")[0].strip()
+
         for _ in range(8):
             if "Foco: Mensagem" in self.screen(terminal):
                 return
+            # One Tab at a time: a second one before the first is drawn would skip past.
+            before = focus()
             terminal.send("\t")
-            terminal.read(0.1)
+            self.settled(terminal, lambda: focus() != before)
         self.wait(terminal, "Foco: Mensagem")
 
     def perfil(self, terminal):
@@ -120,18 +127,40 @@ class ProfileEdit(unittest.TestCase):
             t.read(0.5)
             self.assertEqual(len(server.profile_puts), 2)
 
-    def settings_rows(self, terminal):
-        """Rows of the settings window: from its top border to its bottom one."""
+    def window_rows(self, terminal):
+        """Rows of the settings window, from its top border to its bottom one.
+
+        Raises StopIteration while the window is not all on the screen."""
         lines = terminal.screen.display
         top = next(i for i, line in enumerate(lines) if "Configurações" in line) - 1
         bottom = next(i for i, line in enumerate(lines) if "Fechar" in line and i > top) + 1
         return lines[top : bottom + 1]
+
+    def settings_rows(self, terminal):
+        """Rows of the settings window, once its last rows are on the screen.
+
+        The window is drawn from its top, so its fields can show before the row that
+        closes it."""
+
+        def whole():
+            try:
+                self.window_rows(terminal)
+            except StopIteration:
+                return False
+            return True
+
+        self.settled(terminal, whole)
+        return self.window_rows(terminal)
 
     def test_perfil_previews_the_avatar_and_banner_like_the_profile_card(self):
         with ProfileMock() as server:
             t = self.open(server, mode="light")
             self.perfil(t)
             self.wait(t, "@josé")
+            # The loaded profile is drawn from the preview down to the banner's row, its last.
+            self.settled(
+                t, lambda: any("Banner:" in row and "sem banner" in row for row in t.screen.display)
+            )
             window = self.settings_rows(t)
             text = "\n".join(window)
             # The preview shows the saved name, @username and status, a letter
@@ -162,7 +191,15 @@ class ProfileEdit(unittest.TestCase):
             t = self.open(server, mode="light")
             t.resize(24, 100)
             self.perfil(t)
-            self.assertLessEqual(len(self.settings_rows(t)), 20)
+
+            def short_window():
+                # When the terminal shrinks, its old rows can show until the redraw.
+                try:
+                    return len(self.window_rows(t)) <= 20
+                except StopIteration:
+                    return False
+
+            self.settled(t, short_window)
             self.assertNotIn("@josé", "\n".join(self.settings_rows(t)))
             self.assertIn("Apelido:", self.screen(t))
 
@@ -177,9 +214,9 @@ class ProfileEdit(unittest.TestCase):
             self.wait(t, "Apelido com mais de 32 caracteres.")
             row = next(i for i, line in enumerate(t.screen.display) if "Apelido:" in line)
             self.settled(t, lambda: t.screen.cursor.y == row)
-            sides = t.screen.display[row].count("x")
+            sides = t.screen.display[row].count(VERTICAL)
             t.send("\x7f")
-            self.settled(t, lambda: t.screen.display[row].count("x") < sides)
+            self.settled(t, lambda: t.screen.display[row].count(VERTICAL) < sides)
             self.assertEqual(len(server.profile_puts), 0)
 
     def test_rejected_and_unconfirmed_changes_are_never_repeated(self):
@@ -268,8 +305,9 @@ class ProfileEdit(unittest.TestCase):
             self.editor(t)
             t.send("/")
             self.wait(t, "Comandos")
+            # The list is drawn after its title; wait for each entry.
             for name in ("/nick", "/status", "/bio", "/avatar", "/banner"):
-                self.assertIn(name, self.screen(t))
+                self.wait(t, name)
             self.assertIn("Alterar seu apelido neste servidor.", self.screen(t))
             t.send("ni")
             self.settled(t, lambda: "/status " not in self.screen(t))
@@ -288,9 +326,11 @@ class ProfileEdit(unittest.TestCase):
             self.assertIn("/nick Ana", self.screen(t))
             # Choices narrow as the option is typed; Tab completes one.
             t.send("\x03/status o")
+            # Online and Ocupado show before the "o" arrives too: the filter is done once
+            # Ausente leaves.
+            self.settled(t, lambda: "Ausente" not in self.screen(t))
             self.wait(t, "online")
             self.wait(t, "ocupado")
-            self.assertNotIn("Ausente", self.screen(t))
             t.send("\x1bOB\t")
             self.wait(t, "/status ocupado")
             t.send("\n")
@@ -303,6 +343,7 @@ class ProfileEdit(unittest.TestCase):
             self.settled(t, lambda: len(server.sent_messages) == 1)
             self.assertEqual(server.sent_messages[0]["content"], "/x")
 
+    @unittest.skipIf(os.name == "nt", "Native Windows file dialogs cannot be driven through ConPTY")
     def test_images_within_limits_are_sent_unchanged_and_larger_ones_reduced(self):
         with tempfile.TemporaryDirectory() as folder, ProfileMock() as server:
             large, small = Path(folder, "grande.png"), Path(folder, "pequena.png")

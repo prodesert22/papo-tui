@@ -1,8 +1,16 @@
 """Terminal observer regression tests run identically on POSIX and ConPTY hosts."""
 
+import os
+import socket
+import threading
+import time
 import unittest
+from unittest.mock import patch
 from test_context import main as test_main
-from terminal_support import ObservedScreen, TerminalStream
+import terminal_support
+from terminal_support import ObservedScreen, PosixTerminal, TerminalStream
+
+POSIX_READS = "POSIX pseudo-terminal reads; test_terminal_windows.py covers the ConPTY ones"
 
 
 class TerminalStreamTests(unittest.TestCase):
@@ -59,6 +67,64 @@ class TerminalStreamTests(unittest.TestCase):
         for byte in b"\x1b(0j\x1b(Bj":
             stream.feed(bytes([byte]))
         self.assertEqual(screen.display[0].rstrip(), "┘j")
+
+
+class PosixTerminalReads(unittest.TestCase):
+    def terminal(self):
+        receiver, sender = socket.socketpair()
+        self.addCleanup(receiver.close)
+        self.addCleanup(sender.close)
+        terminal = PosixTerminal.__new__(PosixTerminal)
+        terminal.master = receiver.fileno()
+        terminal.output = bytearray()
+        terminal.arrivals = []
+        terminal.screen = ObservedScreen(40, 2)
+        terminal.stream = TerminalStream(terminal.screen)
+        return terminal, sender
+
+    @unittest.skipIf(os.name == "nt", POSIX_READS)
+    def test_a_redraw_that_arrives_in_pieces_is_read_whole(self):
+        terminal, sender = self.terminal()
+        sender.sendall(b"top")
+        # The second piece comes after the read's time is up, before the pause that ends it.
+        late = threading.Timer(0.1, sender.sendall, [b" bottom"])
+        late.start()
+        self.addCleanup(late.join)
+        with patch.object(terminal_support, "FRAME_PAUSE", 0.5):
+            terminal.read(0.03)
+        self.assertEqual(terminal.screen.display[0].rstrip(), "top bottom")
+        self.assertEqual([end for _, end in terminal.arrivals], [3, 10])
+
+    @unittest.skipIf(os.name == "nt", POSIX_READS)
+    def test_output_that_never_pauses_extends_a_read_by_a_limited_time(self):
+        terminal, sender = self.terminal()
+        playing = threading.Event()
+
+        def video():
+            while not playing.wait(0.005):
+                sender.sendall(b".")
+
+        writer = threading.Thread(target=video)
+        writer.start()
+        self.addCleanup(writer.join)
+        self.addCleanup(playing.set)
+        with (
+            patch.object(terminal_support, "FRAME_PAUSE", 0.2),
+            patch.object(terminal_support, "FRAME_LIMIT", 0.3),
+        ):
+            started = time.monotonic()
+            terminal.read(0.03)
+            lasted = time.monotonic() - started
+        self.assertGreaterEqual(lasted, 0.3)
+        self.assertLess(lasted, 2)
+
+    @unittest.skipIf(os.name == "nt", POSIX_READS)
+    def test_a_read_without_output_lasts_only_its_time(self):
+        terminal, _ = self.terminal()
+        with patch.object(terminal_support, "FRAME_PAUSE", 5):
+            started = time.monotonic()
+            terminal.read(0.03)
+        self.assertLess(time.monotonic() - started, 1)
 
 
 if __name__ == "__main__":

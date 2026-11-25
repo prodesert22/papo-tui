@@ -1,7 +1,7 @@
 #include "ui/media/media_layout.h"
 #include <string.h>
-bool media_modal_geometry(int columns, int rows, bool info, int image_columns, int image_rows,
-                          media_modal_layout *out)
+bool media_modal_geometry(int columns, int rows, bool info, int nav_columns, int nav_rows,
+                          int image_columns, int image_rows, media_modal_layout *out)
 {
     memset(out, 0, sizeof(*out));
     if (columns < 30 || rows < 12)
@@ -34,6 +34,24 @@ bool media_modal_geometry(int columns, int rows, bool info, int image_columns, i
             out->info_width = out->area_width - 9;
         out->area_width -= out->info_width + 1;
         out->info_x = out->x + out->width - 3 - out->info_width;
+    }
+    /* Side buttons sit in the margins with one free column to the picture area,
+     * so the picture never covers them. */
+    enum { NAV_MIN_AREA = 10 };
+    int nav_height = nav_rows < out->height - 4 ? nav_rows : out->height - 4;
+    if (nav_columns > 0 && nav_height > 0) {
+        int right = info ? out->info_x - 1 - nav_columns : out->x + out->width - 1 - nav_columns;
+        int left_area = out->x + 1 + nav_columns + 1;
+        int right_area = right - 1;
+        if (right_area - left_area >= NAV_MIN_AREA) {
+            out->nav_width = nav_columns;
+            out->nav_height = nav_height;
+            out->prev_x = out->x + 1;
+            out->next_x = right;
+            out->nav_y = out->y + out->height / 2 - nav_height / 2;
+            out->area_width = right_area - left_area;
+            out->area_x = left_area;
+        }
     }
     /* Keep the toggle in the header so opening the pane never moves its hit box. */
     out->button_width = 6;

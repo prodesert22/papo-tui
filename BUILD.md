@@ -258,6 +258,120 @@ native OS/architecture combinations run on every PR. Sanitizers and coverage
 use separate Linux x86_64 jobs; CI never multiplies build and test concurrency
 by starting three variants on one runner.
 
+A native build like this one uses your distribution's compiler and libraries.
+CI does not, so a native pass does not predict CI. Before pushing, run the CI
+jobs themselves as described below.
+
+### Reproduce CI locally
+
+On GitHub, each Linux job runs inside one container image, and `tools/ci.py`
+runs the same jobs in the same image on your machine. The image holds the whole
+toolchain: Ubuntu 24.04 packages from a dated archive snapshot, GCC 13, CMake
+3.31.6, Ninja 1.13.2, Clang 18's analyzer, CPython 3.13.18 with
+`requirements/ci-linux-py313.txt`, actionlint, and every library from
+`dist/dependencies.json`, already compiled. A job compiles only Papo TUI.
+
+You need Docker with Buildx and Python 3.10 or newer on the host. Run every
+command from the checkout or a worktree:
+
+```sh
+python3 tools/ci.py run                      # quality, release, sanitizers and coverage together
+python3 tools/ci.py run quality              # formatting, lint, contract and workflow checks
+python3 tools/ci.py run linux-release --stage build
+python3 tools/ci.py run linux-sanitizers -- --case 'emojis-terminal/EmojiTerminal.test_grouping_survives_prepend_scroll_and_resize'
+python3 tools/ci.py shell                    # interactive shell in the same image
+```
+
+The jobs are `quality`, `linux-release`, `linux-sanitizers` and
+`linux-coverage`. With no job named, they all run in parallel and write their
+logs to `build/toolchain/logs`. Builds go to `build/toolchain/<arch>/<variant>`,
+apart from native builds; reports go to each build's `ci-logs`. Options after
+`--` go to `dist/build.py`'s test stage, as in
+[Select or reproduce a test](#select-or-reproduce-a-test).
+
+The image's name ends in a hash of the files it is built from. They are listed
+in `IMAGE_INPUTS` in `tools/ci.py`: the Dockerfile in `dist/ci/`, the system
+package list, the dependency locks and recipes, and the Python lock. The first
+run downloads the published image for that hash from
+`ghcr.io/prodesert22/papo-tui-ci`. When a change to those files has not been
+published yet, the first run builds the image from your checkout instead, which
+takes about 40 minutes. CI publishes the new image when the change is pushed,
+and pulling it then gives you the same bytes.
+
+Each job runs as your user and, as on a GitHub runner, gets 4 CPUs and 16 GB
+of memory. `--fast` lifts those limits so iteration uses every CPU; use a run
+without it before pushing, because tests that depend on timing are checked
+under the runner's limits. `--committed` tests a clean clone of `HEAD`, as
+GitHub checks it out, without uncommitted or ignored files. `--fresh` discards
+the job's previous build tree. `--full` runs the scheduled variant: every
+scenario under sanitizers or coverage, and repeats of the timing-sensitive
+scenarios.
+
+To check that a GitHub run used the same tools as yours, compare the
+environment each one recorded:
+
+```sh
+python3 tools/ci.py compare <run-id> --variant release
+```
+
+It lists the compiler, CMake, FFmpeg, fonts, Python packages and toolchain
+image of both runs, and exits with an error when any of them differ.
+
+To change the toolchain, edit one of the image's inputs, for example a version
+in `dist/dependencies.json` or a package in `dist/linux-deps.sh`, and move
+`APT_SNAPSHOT` in `dist/ci/Dockerfile` to a newer date when the system packages
+should change. Then run any job: the new image is built locally and published
+by CI after the push. An image tag is never overwritten. Linux ARM64 uses the
+same Dockerfile on a native GitHub runner; running it locally on x86_64 needs
+QEMU emulation and is much slower.
+
+#### Windows
+
+The Windows jobs use a pinned toolchain too. Instead of an image, it is an
+archive of `C:\papo-ci`, published beside the Linux image as
+`windows-<arch>-<hash>`. It holds MSYS2 with the packages listed in
+`dist/windows/toolchain.json`, CPython 3.13.18 with
+`requirements/ci-windows-py313.txt`, and the locked libraries, already
+compiled. `dist/windows/toolchain.py` builds it, and its hash covers the inputs
+listed in `TOOLCHAIN_INPUTS` in `tools/ci_windows.py`. The checkout is always
+reached through `C:\papo-ci\src`, so a GitHub runner and your machine compile
+the same paths.
+
+MSYS2 has no dated package snapshots, so its packages are fixed when an archive
+is built and stay fixed until an input changes. To take newer MSYS2 packages,
+change `epoch` in `dist/windows/toolchain.json`. The list of installed packages
+is kept in `C:\papo-ci\msys2-packages.txt`.
+
+On Windows, run the job with any Python 3.12 or newer:
+
+```sh
+python tools/ci.py run windows-release
+python tools/ci.py run windows-release --stage test -- --case windows-terminal
+```
+
+On Linux, the same command hands the job to the Windows 11 x86_64 VM described
+below and follows its log. Windows ARM64 runs only on GitHub, with its own
+pinned archive.
+
+```sh
+python3 tools/ci.py run windows-release
+python3 tools/ci.py run linux-release windows-release   # Linux and Windows together
+```
+
+The VM is a [dockur/windows](https://github.com/dockur/windows) container named
+`papo-windows`, using KVM, with 4 CPUs and 16 GB like a GitHub runner
+(`CPU_CORES=4`, `RAM_SIZE=16G`): with more CPUs, timing differences seen on
+GitHub do not show. Its folders are under `build/windows-vm` of the main
+checkout. `storage` holds the disk. `oem` receives `tools/windows_vm/install.bat`
+and `tools/windows_vm/loop.bat`, with the Python 3.13 installer and the MSYS2
+base installer named in those scripts. `shared` is the VM's
+`\\host.lan\Data`. On first logon, the VM installs Python and MSYS2 and
+registers the job loop. `tools/ci.py` copies the files a commit would hold to
+`shared/ci/<job>/src` and queues `shared/jobs/job.sh`. The VM then unpacks the
+published Windows archive, or builds it the first time, and writes the log and
+exit code beside the copy. Set `PAPO_WINDOWS_VM` to use a VM folder elsewhere,
+and `PAPO_WINDOWS_CONTAINER` for another container name.
+
 ### Select or reproduce a test
 
 Every unittest method has a stable CTest name. Graphics scenarios additionally
@@ -282,8 +396,9 @@ On a 24-CPU host the whole suite took about 4 minutes with 12 processes and
 about 12 minutes with four; keep such comparisons under `build/reports/`.
 Multiple local `--variants release,sanitizers,coverage` execute sequentially.
 For separate compilation and test stages, run the build command with
-`--build-only`, then repeat it with `--test-only`. CI saves verified dependencies
-between these stages, so test failures preserve the compiled dependency cache.
+`--build-only`, then repeat it with `--test-only`. On Windows, CI saves verified
+dependencies between these stages, so test failures preserve the compiled
+dependency cache; on Linux the dependencies are part of the toolchain image.
 
 ### Run only the tests a change affects
 
@@ -336,8 +451,17 @@ python tools/quality.py
 ```
 
 A test's `send()` delivers input; it does not establish that rendering or a
-network operation has finished. Shared terminal helpers belong in
-`tests/support`, with explicit waits for visible state or mock events. Test
+network operation has finished. The program writes a redraw in pieces, top rows
+first, so a test terminal's `read()` returns only when output has paused: the
+screen is then inspected between redraws, never halfway through one. `poll()`
+returns when its time is up and is only for measuring output while it flows, as
+the playback cadence checks do. `resize()` returns once the program has drawn at
+the new size. A pause does not mean nothing else will come:
+an answer that arrives later draws again and can move what is on the screen, as
+a form does when the list beside it finishes loading, so wait for the state the
+next step depends on before reading a position or clicking. Shared terminal
+helpers belong in `tests/support`, with explicit waits for visible state or
+mock events. Test
 modules must be importable without consuming arguments or starting services.
 Register probe shutdown with the mock's `client_cleanup` so the client can
 finish its HTTP/WS close handshake before the server and handlers stop.

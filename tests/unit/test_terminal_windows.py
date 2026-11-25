@@ -6,10 +6,14 @@ import importlib.util
 from pathlib import Path
 import socket
 import sys
+import threading
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 import pyte
+
+import terminal_support
 
 
 def load_backend():
@@ -145,6 +149,46 @@ class WindowsTerminalReads(unittest.TestCase):
         sender.close()
         terminal.read(0.03)
         self.assertEqual(terminal.output, b"")
+
+    def test_a_redraw_that_arrives_in_pieces_is_read_whole(self):
+        terminal, sender = self.terminal()
+        sender.sendall(b"top")
+        # The second piece comes after the read's time is up, before the pause that ends it.
+        late = threading.Timer(0.1, sender.sendall, [b" bottom"])
+        late.start()
+        self.addCleanup(late.join)
+        with patch.object(terminal_support, "FRAME_PAUSE", 0.5):
+            terminal.read(0.03)
+        self.assertEqual(terminal.screen.display[0].rstrip(), "top bottom")
+
+    def test_output_that_never_pauses_extends_a_read_by_a_limited_time(self):
+        terminal, sender = self.terminal()
+        playing = threading.Event()
+
+        def video():
+            while not playing.wait(0.005):
+                sender.sendall(b".")
+
+        writer = threading.Thread(target=video)
+        writer.start()
+        self.addCleanup(writer.join)
+        self.addCleanup(playing.set)
+        with (
+            patch.object(terminal_support, "FRAME_PAUSE", 0.2),
+            patch.object(terminal_support, "FRAME_LIMIT", 0.3),
+        ):
+            started = time.monotonic()
+            terminal.read(0.03)
+            lasted = time.monotonic() - started
+        self.assertGreaterEqual(lasted, 0.3)
+        self.assertLess(lasted, 2)
+
+    def test_a_read_without_output_lasts_only_its_time(self):
+        terminal, _ = self.terminal()
+        with patch.object(terminal_support, "FRAME_PAUSE", 5):
+            started = time.monotonic()
+            terminal.read(0.03)
+        self.assertLess(time.monotonic() - started, 1)
 
 
 if __name__ == "__main__":

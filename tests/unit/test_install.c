@@ -26,6 +26,8 @@ static bool published(const json_t *assets, const char *name)
     }
     return false;
 }
+#ifndef _WIN32
+/* Only the POSIX checks below read an installation marker. */
 static bool mark(const char *prefix, const char *text)
 {
     char *directory = g_build_filename(prefix, INSTALL_MARKER_DIRECTORY, NULL);
@@ -35,6 +37,7 @@ static bool mark(const char *prefix, const char *text)
     g_free(directory);
     return ok;
 }
+#endif
 
 int main(int argc, char **argv)
 {

@@ -109,7 +109,12 @@ void sound_play(sound_id sound)
         return;
     last_played = now;
     const char *address = load() ? uri(sound) : NULL;
-    record(sound_assets[sound].name, address && api->play(player, address, SOUND_VOLUME));
+    bool played = address && api->play(player, address, SOUND_VOLUME);
+    /* The first alert also loads the player, which can outlast the gap; the
+     * burst is counted from when the sound started, not from the request. */
+    if (net_now_ms(&now))
+        last_played = now;
+    record(sound_assets[sound].name, played);
 }
 void sound_shutdown(void)
 {

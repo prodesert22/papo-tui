@@ -7,6 +7,7 @@ if os.name != "nt":
     import fcntl
     import pty
     import termios
+import base64
 import os
 import select
 import signal
@@ -52,7 +53,7 @@ class ObservedScreen(pyte.Screen):
         >name<, as the application still draws the server tabs on terminals
         with fewer than 256 colors. A tab that is neither keeps its bare name.
         Tests that need the real colors read ``buffer``."""
-        lines = super().display
+        lines = [self._render(self.buffer[y]) for y in range(self.lines)]
         if self.lines:
             lines[0] = self._tab_markers(0, lines[0])
         # The conversation list starts below the tab rows and the frame's edge.
@@ -60,6 +61,23 @@ class ObservedScreen(pyte.Screen):
         if row < self.lines:
             lines[row] = self._tab_markers(row, lines[row], LIST_TABS)
         return lines
+
+    def _render(self, row):
+        """pyte's own rendering, except for a lone half of a wide character: when the
+        program overwrites the first half, the empty second half is left behind, and
+        pyte's display then fails. It shows as a space, keeping the columns."""
+        text, skip = [], False
+        for x in range(self.columns):
+            if skip:
+                skip = False
+                continue
+            data = row[x].data
+            if not data:
+                text.append(" ")
+                continue
+            skip = wcwidth(data[0]) == 2
+            text.append(data)
+        return "".join(text)
 
     def _tab_markers(self, y, text, names=None):
         row = self.buffer[y]
@@ -221,6 +239,18 @@ def voice_supported(terminal):
     return any(marker in screen for marker in VOICE_BUTTONS)
 
 
+# The program writes a redraw in pieces, top rows first. A read that stopped the moment its
+# time was up could leave the screen halfway through one, with new rows above old ones: a
+# layout that never existed, on which a test would then read or click. A read therefore ends
+# only when output has paused for FRAME_PAUSE, so the screen is inspected between redraws.
+# ConPTY forwards a redraw in frames of its own, further apart. Output that never pauses,
+# such as a playing video, extends a read by FRAME_LIMIT at most.
+FRAME_PAUSE = 0.05 if os.name == "nt" else 0.02
+FRAME_LIMIT = 0.3
+# How ncurses clears the screen, by terminal type: at once, or from the top-left corner on.
+CLEARED = re.compile(rb"\x1b\[2J|\x1b\[H\x1b\[J")
+
+
 def wait_for_screen(terminal, predicate, description, seconds=5):
     """Observe a postcondition; sending input is not a rendering barrier."""
     deadline = time.monotonic() + seconds
@@ -330,17 +360,38 @@ class PosixTerminal:
         self.screen = ObservedScreen(80, 24)
         self.stream = TerminalStream(self.screen)
         self.read(0.15)
+        # A resize sent before the program starts ncurses is lost, and it keeps the size it
+        # read at first. Its first output is its first screen: wait for it on a slow start.
+        deadline = time.monotonic() + 5
+        while not self.output and self.process.poll() is None and time.monotonic() < deadline:
+            self.read(0.03)
 
     def read(self, seconds=0.1):
+        """Show the screen what the program writes for seconds, then until its output pauses."""
+        self._receive(seconds, FRAME_PAUSE)
+
+    def poll(self, seconds):
+        """Show the screen what the program writes for seconds and stop there, even halfway
+        through a redraw. It is for measuring output while it flows; tests read()."""
+        self._receive(seconds, 0)
+
+    def _receive(self, seconds, pause):
         deadline = time.monotonic() + seconds
-        while time.monotonic() < deadline:
-            ready, _, _ = select.select([self.master], [], [], 0.02)
+        latest = float("-inf")
+        while True:
+            # It ends when its time is up and output has paused, or at the limit.
+            end = max(deadline, min(latest + pause, deadline + FRAME_LIMIT))
+            now = time.monotonic()
+            if now >= end:
+                return
+            ready, _, _ = select.select([self.master], [], [], end - now)
             if ready:
                 data = os.read(self.master, 65536)
                 arrived = time.monotonic()
                 self.output.extend(data)
                 self.arrivals.append((arrived, len(self.output)))
                 self.stream.feed(data)
+                latest = time.monotonic()
 
     def arrival(self, index):
         """Monotonic time when output byte index was read from the PTY."""
@@ -355,10 +406,33 @@ class PosixTerminal:
         self.read()
 
     def resize(self, rows, cols):
+        changed = (rows, cols) != (self.screen.lines, self.screen.columns)
         self.screen.resize(lines=rows, columns=cols)
+        sent = len(self.output)
         fcntl.ioctl(self.slave, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
         self.process.send_signal(signal.SIGWINCH)
         self.read()
+        # The program redraws once it handles the signal, later on a busy machine. Until then
+        # the screen holds the old layout, where a test would measure rows or aim a click.
+        # ncurses clears the screen before it draws at a new size.
+        deadline = time.monotonic() + 3
+        while (
+            changed
+            and not CLEARED.search(self.output, sent)
+            and self.process.poll() is None
+            and time.monotonic() < deadline
+        ):
+            began = time.monotonic()
+            self.read(0.03)
+            if time.monotonic() - began < 0.01:
+                break  # Reads are deferred, as the synchronization scenarios do: no way to wait.
+
+    def copies(self):
+        """Texts the program copied, oldest first: here, its OSC 52 sequences."""
+        return [
+            base64.b64decode(value).decode()
+            for value in re.findall(rb"\x1b\]52;c;([A-Za-z0-9+/=]*)\x07", self.output)
+        ]
 
     def wait_text(self, text):
         deadline = time.monotonic() + 5
@@ -430,6 +504,11 @@ class PosixTerminal:
         self._restored = restored
         return restored
 
+
+# DEC line drawing as a screen line holds it: the POSIX stream ignores character set switches and
+# keeps the ASCII letters, while ConPTY's output reaches pyte as box drawing characters.
+VERTICAL = "│" if os.name == "nt" else "x"
+HORIZONTAL = "─" if os.name == "nt" else "q"
 
 if os.name == "nt":
     from terminal_windows import WindowsTerminal
