@@ -130,3 +130,34 @@ void ui_mouse_keyboard_poll(void)
     fflush(stdout);
     keyboard_suspended = false;
 }
+
+/* Reports of a later click that one notification hands back for the next one;
+ * ncurses keeps eight. */
+#define HANDED_BACK 6
+
+int ui_mouse_get(MEVENT *event)
+{
+    MEVENT run[32], queued;
+    size_t count = 0, later = 0;
+    int result = ERR;
+    while (getmouse(&queued) == OK)
+        if (count < sizeof(run) / sizeof(*run))
+            run[count++] = queued;
+    for (later = 0; later < count; ++later) {
+        mmask_t state = run[later].bstate;
+        bool pointer = !(state & REPORT_MOUSE_POSITION);
+        if (result == OK && pointer &&
+            (state & (BUTTON1_PRESSED | BUTTON1_CLICKED | BUTTON2_PRESSED | BUTTON2_CLICKED |
+                      BUTTON3_PRESSED | BUTTON3_CLICKED)))
+            break;
+        if (result == ERR && pointer &&
+            (state & (BUTTON1_PRESSED | BUTTON1_CLICKED | BUTTON4_PRESSED | BUTTON5_PRESSED))) {
+            *event = run[later];
+            result = OK;
+        }
+        ui_mouse_keyboard_event(state);
+    }
+    for (size_t i = later; i < count && i < later + HANDED_BACK; ++i)
+        ungetmouse(&run[i]);
+    return result;
+}

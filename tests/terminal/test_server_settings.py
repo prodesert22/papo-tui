@@ -9,6 +9,8 @@ import time
 import unittest
 from pathlib import Path
 
+from wcwidth import wcswidth
+
 from history_mock import OTHER, uuid
 from server_admin_mock import (
     EMOJI,
@@ -455,6 +457,19 @@ class ServerSettings(unittest.TestCase):
 
         self.settled(t, form_in_place, seconds=8)
         return t
+
+    def test_two_clicks_read_at_once_are_both_acted_on(self):
+        with ServerAdminMock() as server:
+            t = self.open(server)
+            self.tab(t, "Canais")
+            self.wait(t, "< Texto >")
+            row = next(i for i, line in enumerate(t.screen.display) if "< Texto >" in line)
+            column = wcswidth(t.screen.display[row][: t.screen.display[row].index("Texto")]) + 1
+            click = f"\x1b[<0;{column + 1};{row + 1}M\x1b[<0;{column + 1};{row + 1}m"
+            # A slow terminal, or the program while busy, gets both clicks in one read. Each
+            # moves the type on; the second used to be discarded with the first one's release.
+            t.send(click + click)
+            self.wait(t, "< Categoria >")
 
     def test_an_untouched_webhook_form_is_not_drawn_without_end(self):
         with ServerAdminMock() as server:

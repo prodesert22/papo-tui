@@ -42,21 +42,11 @@ static inline size_t ui_mouse_events(MEVENT *events, size_t capacity)
 /* Drain the entire report run:
  * a release can follow an actionable press in the same KEY_MOUSE notification.
  * Callers act on an actionable press/click/wheel and ignore separately delivered
- * releases, which must still be requested by mousemask to avoid blocking. */
-static inline int ui_mouse_get(MEVENT *event)
-{
-    MEVENT queued;
-    int result = ERR;
-    while (getmouse(&queued) == OK) {
-        ui_mouse_keyboard_event(queued.bstate);
-        if (result == ERR && !(queued.bstate & REPORT_MOUSE_POSITION) &&
-            (queued.bstate &
-             (BUTTON1_PRESSED | BUTTON1_CLICKED | BUTTON4_PRESSED | BUTTON5_PRESSED))) {
-            *event = queued;
-            result = OK;
-        }
-    }
-    return result;
-}
+ * releases, which must still be requested by mousemask to avoid blocking.
+ * A run also holds a second click when both were read at once, as on a slow
+ * terminal or while the program was busy. That is another gesture: its reports
+ * go back to ncurses, which notifies again, and whoever then owns the pointer
+ * acts on it. Draining it here would lose the click. */
+int ui_mouse_get(MEVENT *event);
 
 #endif
