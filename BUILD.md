@@ -451,8 +451,16 @@ python tools/quality.py
 ```
 
 A test's `send()` delivers input; it does not establish that rendering or a
-network operation has finished. Shared terminal helpers belong in
-`tests/support`, with explicit waits for visible state or mock events. Test
+network operation has finished. The program writes a redraw in pieces, top rows
+first, so a test terminal's `read()` returns only when output has paused: the
+screen is then inspected between redraws, never halfway through one. `poll()`
+returns when its time is up and is only for measuring output while it flows, as
+the playback cadence checks do. A pause does not mean nothing else will come:
+an answer that arrives later draws again and can move what is on the screen, as
+a form does when the list beside it finishes loading, so wait for the state the
+next step depends on before reading a position or clicking. Shared terminal
+helpers belong in `tests/support`, with explicit waits for visible state or
+mock events. Test
 modules must be importable without consuming arguments or starting services.
 Register probe shutdown with the mock's `client_cleanup` so the client can
 finish its HTTP/WS close handshake before the server and handlers stop.

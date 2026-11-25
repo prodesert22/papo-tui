@@ -239,6 +239,16 @@ def voice_supported(terminal):
     return any(marker in screen for marker in VOICE_BUTTONS)
 
 
+# The program writes a redraw in pieces, top rows first. A read that stopped the moment its
+# time was up could leave the screen halfway through one, with new rows above old ones: a
+# layout that never existed, on which a test would then read or click. A read therefore ends
+# only when output has paused for FRAME_PAUSE, so the screen is inspected between redraws.
+# ConPTY forwards a redraw in frames of its own, further apart. Output that never pauses,
+# such as a playing video, extends a read by FRAME_LIMIT at most.
+FRAME_PAUSE = 0.05 if os.name == "nt" else 0.02
+FRAME_LIMIT = 0.3
+
+
 def wait_for_screen(terminal, predicate, description, seconds=5):
     """Observe a postcondition; sending input is not a rendering barrier."""
     deadline = time.monotonic() + seconds
@@ -348,17 +358,38 @@ class PosixTerminal:
         self.screen = ObservedScreen(80, 24)
         self.stream = TerminalStream(self.screen)
         self.read(0.15)
+        # A resize sent before the program starts ncurses is lost, and it keeps the size it
+        # read at first. Its first output is its first screen: wait for it on a slow start.
+        deadline = time.monotonic() + 5
+        while not self.output and self.process.poll() is None and time.monotonic() < deadline:
+            self.read(0.03)
 
     def read(self, seconds=0.1):
+        """Show the screen what the program writes for seconds, then until its output pauses."""
+        self._receive(seconds, FRAME_PAUSE)
+
+    def poll(self, seconds):
+        """Show the screen what the program writes for seconds and stop there, even halfway
+        through a redraw. It is for measuring output while it flows; tests read()."""
+        self._receive(seconds, 0)
+
+    def _receive(self, seconds, pause):
         deadline = time.monotonic() + seconds
-        while time.monotonic() < deadline:
-            ready, _, _ = select.select([self.master], [], [], 0.02)
+        latest = float("-inf")
+        while True:
+            # It ends when its time is up and output has paused, or at the limit.
+            end = max(deadline, min(latest + pause, deadline + FRAME_LIMIT))
+            now = time.monotonic()
+            if now >= end:
+                return
+            ready, _, _ = select.select([self.master], [], [], end - now)
             if ready:
                 data = os.read(self.master, 65536)
                 arrived = time.monotonic()
                 self.output.extend(data)
                 self.arrivals.append((arrived, len(self.output)))
                 self.stream.feed(data)
+                latest = time.monotonic()
 
     def arrival(self, index):
         """Monotonic time when output byte index was read from the PTY."""

@@ -57,7 +57,7 @@ Ao alterar menus, modais ou composição de tela, verifique que imagens, avatare
 - Use o executor e os perfis descritos em `BUILD.md` para reproduzir o CI. As quatro combinações nativas de SO/arquitetura são obrigatórias em PRs; variantes instrumentadas usam runners separados.
 - Coloque helpers em `tests/support`, sem importar cenários de outras suítes para reutilizar infraestrutura. Testes metamórficos podem executar cenários explicitamente sob outro observador.
 - Não consuma argumentos nem inicie processos, rede ou geração de mídia durante importação. Use os recursos explícitos de `test_context` e o executor de cenários.
-- Envio de entrada não é uma barreira de renderização. Aguarde pós-condições da tela, eventos do mock ou frames; preserve esperas que comprovem comportamento temporal.
+- Envio de entrada não é uma barreira de renderização. Aguarde pós-condições da tela, eventos do mock ou frames; preserve esperas que comprovem comportamento temporal. O `read()` do terminal de teste só retorna quando a saída pausa, entre redesenhos; `poll()` retorna no tempo pedido e serve apenas para medir saída em fluxo. Uma resposta que chega depois redesenha e pode deslocar o que estava na tela: espere o estado de que o próximo passo depende antes de ler uma posição ou clicar.
 - Preserve IDs estáveis e a conferência do inventário. Divida cenários extensos por comportamento/protocolo e justifique casos acima de 30 segundos. Exclusões por plataforma precisam de motivo explícito.
 - Mantenha locks, fontes e fixtures verificáveis. Não trate repetição até passar, aumento indiscriminado de timeout ou remoção de asserções como correção de instabilidade.
 

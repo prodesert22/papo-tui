@@ -119,8 +119,25 @@ class WindowsTerminal:
             raise
 
     def read(self, seconds=0.1):
+        """Show the screen what the program writes for seconds, then until its output pauses."""
+        from terminal_support import FRAME_PAUSE
+
+        self._receive(seconds, FRAME_PAUSE)
+
+    def poll(self, seconds):
+        """Show the screen what the program writes for seconds and stop there, even halfway
+        through a redraw. It is for measuring output while it flows; tests read()."""
+        self._receive(seconds, 0)
+
+    def _receive(self, seconds, pause):
+        from terminal_support import FRAME_LIMIT
+
         deadline = time.monotonic() + seconds
-        while time.monotonic() < deadline:
+        latest = float("-inf")
+        while True:
+            now = time.monotonic()
+            if now >= deadline and (now - latest >= pause or now >= deadline + FRAME_LIMIT):
+                break
             ready, _, _ = select.select([self.child.fd], [], [], 0.02)
             # PtyProcess.read() blocks in recv(1) until its entire chunk
             # decodes as UTF-8. Keep incomplete code points in ByteStream
@@ -133,6 +150,7 @@ class WindowsTerminal:
             if data:
                 self.output.extend(data)
                 self.stream.feed(data)
+                latest = time.monotonic()
             else:
                 time.sleep(0.01)
 
