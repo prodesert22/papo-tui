@@ -274,6 +274,9 @@ class MediaNavigation(unittest.TestCase):
             server.api_handler = route
             t = self.helper.open(server, protocol="kitty", size=(38, 100))
             try:
+                # As in the other scenarios, the picture is on the screen before the message
+                # is selected: selecting it earlier found no media to open with Enter.
+                self.helper.wait_frames(t)
                 t.send("\ue00a\n")
                 self.helper.wait(t, "←→ ou PgUp/PgDn outra mídia")
                 t.send("\x1bOC")  # Right arrow steps from an image to the video.
