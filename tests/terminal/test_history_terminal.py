@@ -540,8 +540,21 @@ class HistoryTerminal(support.HistoryTerminal):
                             break
                     self.assertIn(f"Mensagem {expected:04d}", "\n".join(t.screen.display))
                 t.resize(60, 100)
+                # One page at a time, each seen before the next: keys sent ahead would keep
+                # scrolling after the prefetch starts, up to the edge where loading shows.
                 for _ in range(30):
+                    before = "\n".join(t.screen.display[:-2])
                     t.send("\x1b[6~")
+                    wait_for_screen(
+                        t,
+                        lambda: started.is_set() or "\n".join(t.screen.display[:-2]) != before,
+                        "page down scrolled",
+                    )
+                    # The scroll that starts the prefetch sends it with the redraw: give the
+                    # request time to reach the server before the next page.
+                    settle = time.monotonic() + 0.5
+                    while not started.is_set() and time.monotonic() < settle:
+                        t.read(0.03)
                     if started.is_set():
                         break
                 self.assertTrue(started.is_set(), "No forward prefetch after sliding the window")
