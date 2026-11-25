@@ -225,6 +225,8 @@ void history_internal_actions_destroy(history *h);
 bool history_internal_actions_dispatch(history *h, bool foreground);
 void history_internal_actions_response(history *h, json_t *body, long code, bool uncertain);
 void history_internal_actions_users(history *h, json_t *ids, json_t *seen);
+/* A jump failed and its notice stays in view until the retry. */
+bool history_internal_jump_notice(const history *h);
 /* Adds the authors of referenced messages and the listed reactors to ids. */
 bool history_internal_actions_protect(const history *h, json_t *ids);
 /* The user's name is known; a placeholder from a role event is not. */
