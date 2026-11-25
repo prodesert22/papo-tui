@@ -260,6 +260,9 @@ class DiscoveryTerminal(unittest.TestCase):
             server.delay = 0.4
             self.click(t, "[Abrir conversa]")
             self.assert_location_animates(t)
+            # The animation was seen. The jump still has pages to read, which are no longer
+            # delayed: the wait for the target is then for the jump alone, as on a busy runner.
+            server.delay = 0
             self.assert_centered_target(t, target["content"])
 
     def test_cancel_cross_channel_search_preserves_preview_results_and_can_retry(self):
