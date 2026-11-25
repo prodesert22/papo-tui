@@ -106,6 +106,11 @@ def build_variant(
         "test_jobs": test_jobs,
         "tools": {},
         "cache_hit": os.environ.get("PAPO_CI_CACHE_HIT", "unknown"),
+        # Set by tools/ci.py: the image the job ran in, to compare a local run with GitHub's.
+        "toolchain": {
+            "image": os.environ.get("PAPO_TOOLCHAIN"),
+            "digest": os.environ.get("PAPO_TOOLCHAIN_DIGEST"),
+        },
         "instrumentation_options": {
             key: os.environ.get(key) for key in ("ASAN_OPTIONS", "UBSAN_OPTIONS")
         },

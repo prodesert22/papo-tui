@@ -1081,7 +1081,9 @@ static int process_response(history *h, uint64_t maintenance_now)
         }
         if (kind == AUTHORS) {
             if (ok) {
-                if (h->failed == NONE || h->failed == AUTHORS)
+                /* The names end the loading notice, not the notice of a jump that failed
+                 * meanwhile: that one stays until the retry. */
+                if ((h->failed == NONE || h->failed == AUTHORS) && !history_internal_jump_notice(h))
                     history_internal_notice(h, HISTORY_NOTICE_READ, "");
                 size_t i;
                 json_t *id;
@@ -1352,7 +1354,7 @@ bool history_poll(history *h)
                            : false;
         if (started && kind == AUTHORS && !auth_busy(h->auth)) {
             h->want_authors = false;
-            if (h->failed == NONE || h->failed == AUTHORS)
+            if ((h->failed == NONE || h->failed == AUTHORS) && !history_internal_jump_notice(h))
                 history_internal_notice(h, HISTORY_NOTICE_READ, "");
             json_decref(h->summary_ids);
             h->summary_ids = NULL;

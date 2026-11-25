@@ -19,5 +19,30 @@
     "name": "innosetup-7.1.0-x64.exe",
     "url": "https://github.com/jrsoftware/issrc/releases/download/is-7_1_0/innosetup-7.1.0-x64.exe",
     "sha256": "0362a383ed217d4c4239b5933866dd96d3eb2102737da92f80f6057a4b40df2f"
+  },
+  "oras": {
+    "version": "1.4.0",
+    "assets": [
+      {
+        "name": "oras_1.4.0_windows_amd64.zip",
+        "url": "https://github.com/oras-project/oras/releases/download/v1.4.0/oras_1.4.0_windows_amd64.zip",
+        "sha256": "c70d25e3463a161a5aeeddd9fe5ef882c811dde8115ab0883c0b87d3f0c50832"
+      },
+      {
+        "name": "oras_1.4.0_windows_arm64.zip",
+        "url": "https://github.com/oras-project/oras/releases/download/v1.4.0/oras_1.4.0_windows_arm64.zip",
+        "sha256": "6603fe6f0dc27cb127b069f9cd2a55bd6a00c10e34e2288055e74fb60ee24cb8"
+      },
+      {
+        "name": "oras_1.4.0_linux_amd64.tar.gz",
+        "url": "https://github.com/oras-project/oras/releases/download/v1.4.0/oras_1.4.0_linux_amd64.tar.gz",
+        "sha256": "d8e1dce2fd8ce996f1d901845b688eb0cf505a6082897606f053825bb47935d1"
+      },
+      {
+        "name": "oras_1.4.0_linux_arm64.tar.gz",
+        "url": "https://github.com/oras-project/oras/releases/download/v1.4.0/oras_1.4.0_linux_arm64.tar.gz",
+        "sha256": "0791fc200831563e498638d30e8ee8aac20ad1da2610760120fe3f770e12a8a4"
+      }
+    ]
   }
 }

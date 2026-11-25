@@ -137,13 +137,17 @@ class DiscoveryTerminal(unittest.TestCase):
 
     def assert_location_animates(self, t):
         self.wait(t, "Localizando mensagem…")
-        frames = set()
-        for _ in range(3):
-            line = next(line for line in t.screen.display if "Localizando mensagem…" in line)
-            frames.add(line)
-            self.assertNotIn("Localizando", t.screen.display[-2])
-            t.read(0.13)
-        self.assertGreater(len(frames), 1)
+
+        def spinner():
+            lines = (line for line in t.screen.display if "Localizando mensagem…" in line)
+            return next(lines, None)
+
+        first = spinner()
+        self.assertNotIn("Localizando", t.screen.display[-2])
+        # The spinner turns ten times a second, but a busy runner can draw its next turn late:
+        # the modal animates once another turn shows, however long that took.
+        self.until(t, lambda: spinner() not in (None, first))
+        self.assertNotIn("Localizando", t.screen.display[-2])
 
     def test_ancient_pin_and_search_jump_uses_two_reads_and_keeps_animated_modal(self):
         for pins in (True, False):
@@ -251,9 +255,14 @@ class DiscoveryTerminal(unittest.TestCase):
             self.wait(t, "Destino de aviso")
             t.send("\n")
             self.wait(t, "Detalhes da notificação")
-            server.delay = 0.8
+            # Slow enough to watch the modal animate. Every request waits, including the
+            # background ones, so 0.8 s each outlasted the 7 s wait on a slow runner.
+            server.delay = 0.4
             self.click(t, "[Abrir conversa]")
             self.assert_location_animates(t)
+            # The animation was seen. The jump still has pages to read, which are no longer
+            # delayed: the wait for the target is then for the jump alone, as on a busy runner.
+            server.delay = 0
             self.assert_centered_target(t, target["content"])
 
     def test_cancel_cross_channel_search_preserves_preview_results_and_can_retry(self):

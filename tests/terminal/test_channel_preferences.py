@@ -178,6 +178,16 @@ class ChannelPreferences(HistoryTerminal):
                 return sum(r[0] == "GET" and r[1].endswith("/channels") for r in server.requests)
 
             try:
+                # Signing in starts a permission refresh that reads the roles, lists the channels
+                # and ends with the server; count from after it, or its listing lands below.
+                wait_for_screen(
+                    t,
+                    lambda: (
+                        sum(r[0] == "GET" and r[1].endswith("/server") for r in server.requests)
+                        >= 2
+                    ),
+                    "The permission refresh after signing in did not finish",
+                )
                 self.menu(t)
                 listed = listings()
                 # Another device saves Nada; the server sends no event for it.
@@ -483,14 +493,30 @@ class ChannelMenuMedia(MediaTerminal):
             lambda: len({c[1:] for c in image_cells().values()}) > 8,
             "Chafa image cells were not rendered outside the menu",
         )
+        # The image is drawn again at a new size, or once its full version arrives, and
+        # its first cells show before the rest: compare against it once it holds still.
+        deadline, cells = time.monotonic() + 5, image_cells()
+        while time.monotonic() < deadline:
+            t.read(0.3)
+            latest = image_cells()
+            if latest == cells:
+                break
+            cells = latest
         # Compare visible image colors; blank padding and invisible foregrounds
         # may change when ncurses repaints the surrounding windows.
-        return image_cells()
+        return cells
 
     def assert_fallback(self, t, expected):
-        actual = self.fallback_cells(t)
-        changed = [(p, c, actual.get(p)) for p, c in expected.items() if actual.get(p) != c]
-        self.assertFalse(changed[:5], "Uncovered Chafa image cells changed")
+        # Opening or closing a menu draws the windows, then the image over them in a write of
+        # its own: on a busy machine the menu's text can be seen before the image's cells.
+        def changed():
+            actual = self.fallback_cells(t)
+            return [(p, c, actual.get(p)) for p, c in expected.items() if actual.get(p) != c]
+
+        deadline = time.monotonic() + 3
+        while changed() and time.monotonic() < deadline:
+            t.read(0.05)
+        self.assertFalse(changed()[:5], "Uncovered Chafa image cells changed")
 
     def background_parts(self, t, protocol, frame_start, placement_start, original):
         if protocol == "kitty":

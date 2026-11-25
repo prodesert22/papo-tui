@@ -31,6 +31,7 @@ struct media_stream {
 struct media_stream_server {
     GSocket *socket;
     GSocketListener *listener;
+    GCancellable *cancel; /* Ends the accept that the listener thread waits in. */
     GThread *thread;
     guint16 port;
     GMutex lock;
@@ -404,7 +405,7 @@ static gpointer accept_thread(gpointer data)
     for (;;) {
         GError *error = NULL;
         GSocketConnection *connection =
-            g_socket_listener_accept(server->listener, NULL, NULL, &error);
+            g_socket_listener_accept(server->listener, NULL, server->cancel, &error);
         if (!connection) {
             g_clear_error(&error);
             break;
@@ -484,7 +485,8 @@ media_stream_server *media_stream_server_create(void)
     if (!server->port)
         goto fail_clear;
     server->listener = g_socket_listener_new();
-    if (!server->listener ||
+    server->cancel = g_cancellable_new();
+    if (!server->listener || !server->cancel ||
         !g_socket_listener_add_socket(server->listener, server->socket, NULL, &error))
         goto fail_clear;
     server->thread = g_thread_try_new("papo-media-stream", accept_thread, server, &error);
@@ -509,6 +511,8 @@ static void server_free(media_stream_server *server)
         g_hash_table_destroy(server->streams);
     if (server->listener)
         g_object_unref(server->listener);
+    if (server->cancel)
+        g_object_unref(server->cancel);
     if (server->socket)
         g_object_unref(server->socket);
     g_cond_clear(&server->wake);
@@ -531,8 +535,10 @@ void media_stream_server_destroy(media_stream_server *server)
     g_cond_broadcast(&server->wake);
     close_token(server, NULL);
     g_mutex_unlock(&server->lock);
-    /* Closing the descriptor alone does not wake a blocking accept() on
-     * Linux; shutdown makes the pending call return. */
+    /* Closing the descriptor alone wakes a blocking accept() on no platform:
+     * shutdown makes it return on Linux, and Windows needs the cancellation. */
+    if (server->cancel)
+        g_cancellable_cancel(server->cancel);
     if (server->socket) {
         g_socket_shutdown(server->socket, TRUE, TRUE, NULL);
         g_socket_close(server->socket, NULL);

@@ -65,28 +65,26 @@ class WorkflowTests(unittest.TestCase):
                 if step.get("uses", "").startswith("actions/checkout@"):
                     self.assertEqual(step["with"]["ref"], "${{ inputs.ref || github.sha }}")
 
-    def test_verified_dependencies_are_saved_between_build_and_test(self):
-        for job, stage in (
-            ("build", "Linux Release"),
-            ("build", "Windows"),
-            ("instrumentation", "isolated variant"),
+    def test_build_and_test_are_separate_steps_of_the_local_command(self):
+        for job, stages in (
+            ("build", ("Linux Release", "Windows")),
+            ("instrumentation", ("isolated variant",)),
         ):
             steps = WORKFLOW["jobs"][job]["steps"]
-            start = next(i for i, step in enumerate(steps) if step.get("name") == "Build " + stage)
-            end = next(i for i, step in enumerate(steps) if step.get("name") == "Test " + stage)
-            self.assertIn("--build-only", steps[start]["run"])
-            self.assertIn("--test-only", steps[end]["run"])
-            self.assertTrue(
-                any(step.get("uses") == "actions/cache/save@v4" for step in steps[start + 1 : end])
-            )
+            for stage in stages:
+                build = next(step for step in steps if step.get("name") == "Build " + stage)
+                test = next(step for step in steps if step.get("name") == "Test " + stage)
+                self.assertIn("tools/ci.py run", build["run"])
+                self.assertIn("--stage build", build["run"])
+                self.assertIn("tools/ci.py run", test["run"])
+                self.assertIn("--stage test", test["run"])
 
-    def test_native_cache_fallbacks_require_the_same_toolchain_identity(self):
-        for job in WORKFLOW["jobs"].values():
-            for step in job.get("steps", []):
-                if step.get("id") not in {"linux-cache", "windows-cache", "dependencies"}:
-                    continue
-                for prefix in step["with"]["restore-keys"].splitlines():
-                    self.assertIn(".outputs.fingerprint", prefix)
+    def test_tests_never_restore_compiled_dependencies_from_a_cache(self):
+        """Dependencies come with the toolchain; a cache would bring another runner's build."""
+        for name in ("quality", "build", "instrumentation"):
+            for step in WORKFLOW["jobs"][name]["steps"]:
+                if step.get("uses", "").startswith("actions/cache"):
+                    self.assertIn("release", str(step.get("if", "")), (name, step.get("id")))
 
     def test_matrix_report_distinguishes_elapsed_and_summed_job_time(self):
         run = dict(

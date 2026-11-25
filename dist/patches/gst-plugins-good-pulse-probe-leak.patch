@@ -1,0 +1,18 @@
+--- a/ext/pulse/pulsedeviceprovider.c
++++ b/ext/pulse/pulsedeviceprovider.c
+@@ -506,11 +506,15 @@
+   pa_operation_unref (o);
+ 
+   pa_context_disconnect (c);
++  pa_context_unref (c);
+   pa_mainloop_free (m);
+ 
+   return data.devices;
+ 
+ failed:
++  if (c)
++    pa_context_unref (c);
++  pa_mainloop_free (m);
+ 
+   return NULL;
+ }

@@ -189,6 +189,17 @@ class MediaNavigation(unittest.TestCase):
                 finally:
                     self.assertTrue(t.close())
 
+    def select_gallery(self, t, server):
+        """Selects the gallery's message and opens its media once the history has fetched
+        its pictures: Enter on the message while they are still being fetched opens nothing.
+        The history fetches the ones in view first, which are not always the first one."""
+        pictures = [media.uuid(901 + i) for i in range(3)]
+        self.helper.settled(
+            t, lambda: any(p in r[1] for r in server.requests for p in pictures), seconds=10
+        )
+        t.read(0.3)
+        t.send("Gallery draft\ue00a\n")
+
     def gallery_server(self, embeds):
         server = self.helper.serve(media.MediaTerminal.images["png"], "image/png", embed=embeds)
         files = [
@@ -274,6 +285,9 @@ class MediaNavigation(unittest.TestCase):
             server.api_handler = route
             t = self.helper.open(server, protocol="kitty", size=(38, 100))
             try:
+                # As in the other scenarios, the picture is on the screen before the message
+                # is selected: selecting it earlier found no media to open with Enter.
+                self.helper.wait_frames(t)
                 t.send("\ue00a\n")
                 self.helper.wait(t, "←→ ou PgUp/PgDn outra mídia")
                 t.send("\x1bOC")  # Right arrow steps from an image to the video.
@@ -297,7 +311,7 @@ class MediaNavigation(unittest.TestCase):
         with self.gallery_server(False) as server:
             t = self.helper.open(server, protocol="kitty", size=(38, 100))
             try:
-                t.send("Gallery draft\ue00a\n")
+                self.select_gallery(t, server)
                 self.helper.wait(t, "1/3 ·")
                 for control, number in (
                     ("➡", 2),
@@ -349,7 +363,7 @@ class MediaNavigation(unittest.TestCase):
                         size=(38, 100),
                     )
                     try:
-                        t.send("Gallery draft\ue00a\n")
+                        self.select_gallery(t, server)
                         self.helper.wait(t, "1/3 ·")
                         t.send("i")
                         self.helper.wait(t, "Propriedades")

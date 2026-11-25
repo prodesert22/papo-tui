@@ -53,6 +53,8 @@ class MessageMutations(unittest.TestCase):
                 terminal.send("\x03Olá, edição!\x0eSegunda linha\n")
                 self.settled(terminal, lambda: "Editando mensagem" not in self.screen(terminal))
                 self.wait(terminal, "Olá, edição!")
+                # The history shows the edit before the request leaves: wait for the server.
+                self.settled(terminal, lambda: bool(server.mutation_calls))
                 self.assertEqual(
                     server.mutation_calls,
                     [("PUT", target["id"], {"content": "Olá, edição!\nSegunda linha"})],
@@ -160,6 +162,8 @@ class MessageMutations(unittest.TestCase):
                         self.settled(
                             terminal, lambda: "Editando mensagem" not in self.screen(terminal)
                         )
+                        # The edit leaves the editor as its request is sent, before it arrives.
+                        self.settled(terminal, lambda: len(server.mutation_calls) >= 2)
                         self.assertEqual(len(server.mutation_calls), 2)
                     else:
                         terminal.send("\x1b")
@@ -581,7 +585,10 @@ class MessageMutations(unittest.TestCase):
                     self.settled(terminal, lambda: "Editando mensagem" not in self.screen(terminal))
                     self.assertIn("Preserved draft", self.editor_text(terminal))
                     self.assertEqual(server.message_count, 0)
-                    self.assertEqual(len(server.mutation_calls), 0 if remote else 1)
+                    # The refused edit leaves the editor as its request is sent, before it arrives.
+                    expected = 0 if remote else 1
+                    self.settled(terminal, lambda: len(server.mutation_calls) >= expected)
+                    self.assertEqual(len(server.mutation_calls), expected)
                 finally:
                     self.assertTrue(terminal.close())
 

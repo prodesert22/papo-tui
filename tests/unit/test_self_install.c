@@ -289,5 +289,9 @@ int main(void)
     CHECK(holds(plain, "bin/papo-tui", "manual install"));
 
     wipe(base);
+    char *names[] = {image, target,  old_image,        new_image, other, accepted,
+                     root,  staging, accepted_staging, previous,  plain, base};
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); ++i)
+        g_free(names[i]);
     return 0;
 }

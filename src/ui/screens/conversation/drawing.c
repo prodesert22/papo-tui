@@ -248,7 +248,7 @@ void conversation_draw_tabs(view *ui)
             used += text_label(ui->tabs, 0, x + used, suffix_width, suffix);
             if (notified) {
                 mvwaddch(ui->tabs, 0, x + used++, ' ');
-                used += server_badge(ui, ui->tabs, 0, x + used, mentions, badge_pair);
+                server_badge(ui, ui->tabs, 0, x + used, mentions, badge_pair);
             }
             ui->tab_hits[i] = (click_range){x, size};
             x += size;

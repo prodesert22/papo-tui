@@ -318,8 +318,22 @@ class MessageInteractions(support.MessageInteractions):
                 self.click(terminal, "[☕ 2]")
                 self.wait(terminal, "[☕ 3]")
                 self.settled(terminal, lambda: len(server.reaction_calls) == 1)
-                # Allow the authoritative history recovery to finish before the next gesture.
-                terminal.read(1.0)
+                # A reaction reloads the history, and a new one is refused until that ends:
+                # wait for the reload's read to reach the server, then for its redraw.
+                reacted = next(
+                    i
+                    for i, r in enumerate(server.requests)
+                    if r[0] == "POST" and "/reactions" in r[1]
+                )
+                self.settled(
+                    terminal,
+                    lambda: any(
+                        r[0] == "GET" and r[1].split("?")[0].endswith("/messages")
+                        for r in server.requests[reacted:]
+                    ),
+                    seconds=8,
+                )
+                terminal.read(0.5)
                 self.click(terminal, "[☕ 3]")
                 self.wait(terminal, "[☕ 2]")
                 self.settled(terminal, lambda: len(server.reaction_calls) == 2)

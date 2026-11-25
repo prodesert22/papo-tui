@@ -402,7 +402,10 @@ void conversation_interactions_sync(view *ui)
         conversation_str(history_channel(ui->model, history_selected(ui->model)), "id");
     uint64_t generation = auth_context_generation(ui->connections->items[ui->active_tab].auth);
     if (strcmp(ui->action_channel, channel) || ui->action_generation != generation) {
-        conversation_interactions_close(ui);
+        /* A server tab's menu is about a server, not this conversation: it stays open
+         * when the history settles on a channel. Its index is still checked below. */
+        if (!ui->server_context)
+            conversation_interactions_close(ui);
         conversation_cancel_edit(ui);
         ui->navigating = ui->reaction_picker = false;
         ui->selection_pending = 0;

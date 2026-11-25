@@ -1,5 +1,6 @@
 """ConPTY backend. Shared terminal tests provide navigation and assertions."""
 
+import ctypes
 import os
 import select
 import tempfile
@@ -7,6 +8,36 @@ import time
 from winpty import Backend, PtyProcess
 
 from terminal_keys import encode_keys
+
+
+def clipboard_sequence():
+    return ctypes.windll.user32.GetClipboardSequenceNumber()
+
+
+def clipboard_text():
+    """The clipboard's Unicode text, or None when it holds none or is busy."""
+    user32, kernel32 = ctypes.windll.user32, ctypes.windll.kernel32
+    user32.GetClipboardData.restype = ctypes.c_void_p
+    kernel32.GlobalLock.restype = ctypes.c_void_p
+    kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
+    kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
+    for _ in range(50):
+        if user32.OpenClipboard(None):
+            break
+        time.sleep(0.02)
+    else:
+        return None
+    try:
+        handle = user32.GetClipboardData(13)  # CF_UNICODETEXT
+        pointer = kernel32.GlobalLock(handle) if handle else None
+        if not pointer:
+            return None
+        try:
+            return ctypes.wstring_at(pointer)
+        finally:
+            kernel32.GlobalUnlock(handle)
+    finally:
+        user32.CloseClipboard()
 
 
 def close_pty_process(child):
@@ -45,6 +76,9 @@ class WindowsTerminal:
         from terminal_support import BINARY, ObservedScreen, TerminalStream
 
         self.configuration = tempfile.TemporaryDirectory(prefix="papo-conpty-")
+        # Copies count from here: what the clipboard held before belongs to no one here.
+        self._clipboard_sequence = clipboard_sequence()
+        self._copies = []
         self._closed = False
         self._clean_exit = False
         env = dict(
@@ -85,8 +119,25 @@ class WindowsTerminal:
             raise
 
     def read(self, seconds=0.1):
+        """Show the screen what the program writes for seconds, then until its output pauses."""
+        from terminal_support import FRAME_PAUSE
+
+        self._receive(seconds, FRAME_PAUSE)
+
+    def poll(self, seconds):
+        """Show the screen what the program writes for seconds and stop there, even halfway
+        through a redraw. It is for measuring output while it flows; tests read()."""
+        self._receive(seconds, 0)
+
+    def _receive(self, seconds, pause):
+        from terminal_support import FRAME_LIMIT
+
         deadline = time.monotonic() + seconds
-        while time.monotonic() < deadline:
+        latest = float("-inf")
+        while True:
+            now = time.monotonic()
+            if now >= deadline and (now - latest >= pause or now >= deadline + FRAME_LIMIT):
+                break
             ready, _, _ = select.select([self.child.fd], [], [], 0.02)
             # PtyProcess.read() blocks in recv(1) until its entire chunk
             # decodes as UTF-8. Keep incomplete code points in ByteStream
@@ -99,6 +150,7 @@ class WindowsTerminal:
             if data:
                 self.output.extend(data)
                 self.stream.feed(data)
+                latest = time.monotonic()
             else:
                 time.sleep(0.01)
 
@@ -107,10 +159,30 @@ class WindowsTerminal:
         self.child.write(keys)
         self.read()
 
+    def copies(self):
+        """Texts the program copied, oldest first. On Windows it writes the system clipboard
+        instead of OSC 52, after the request: each change of the clipboard is one copy."""
+        sequence = clipboard_sequence()
+        if sequence != self._clipboard_sequence:
+            self._clipboard_sequence = sequence
+            text = clipboard_text()
+            if text is not None:
+                self._copies.append(text)
+        return list(self._copies)
+
     def resize(self, rows, cols):
         self.screen.resize(lines=rows, columns=cols)
         self.child.setwinsize(rows, cols)
-        self.read()
+        # ConPTY hands the new size to the program as a console event, and the program redraws
+        # after this returns; a click meanwhile lands on the old layout. The frame's bottom
+        # border on the new last row, at the new width, shows the redraw.
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline and not self.framed(cols):
+            self.read(0.05)
+
+    def framed(self, cols):
+        last = self.screen.display[-1].rstrip()
+        return len(last) == cols and last.startswith("└") and last.endswith("┘")
 
     def close(self, signal_number=None, exit_key="\x11"):
         if self._closed:

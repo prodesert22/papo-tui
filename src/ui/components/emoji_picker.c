@@ -93,12 +93,16 @@ static void alias_list(const unicode_emoji *e, char *out, size_t size)
         alias += length + strspn(alias + length, " ");
     }
 }
-/* Every name that types the item: ":thumbsup: :+1: :thumbup: :thumbs_up:". */
+/* Every name that types the item: ":thumbsup: :+1: :thumbup: :thumbs_up:".
+ * The aliases fill what the name leaves of out, so one that does not fit is
+ * left out whole instead of being cut. */
 static void item_names(emoji_picker *p, uint32_t id, char *out, size_t size)
 {
-    char aliases[384];
-    alias_list(id & ICON_CUSTOM ? NULL : emoji_catalog_get(id - 1), aliases, sizeof(aliases));
-    snprintf(out, size, ":%s:%s", item_name(p, id), aliases);
+    int written = snprintf(out, size, ":%s:", item_name(p, id));
+    if (written < 0 || (size_t)written >= size)
+        return;
+    alias_list(id & ICON_CUSTOM ? NULL : emoji_catalog_get(id - 1), out + written,
+               size - (size_t)written);
 }
 static void remember(emoji_picker *p)
 {

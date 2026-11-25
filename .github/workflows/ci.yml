@@ -24,11 +24,63 @@ env:
   PAPO_TEST_REQUIRED: '1'
 permissions:
   contents: read
+  packages: read
 concurrency:
   group: ci-${{ github.workflow }}-${{ inputs.ref || github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ !inputs.release }}
 jobs:
+  # Every job runs in one toolchain per system and architecture, named after the hash of its
+  # inputs: an image on Linux, an archive of C:\papo-ci on Windows. It is built and published only
+  # when that tag does not exist yet; tools/ci.py uses the same tag on a developer's machine.
+  toolchain:
+    if: ${{ !inputs.release || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))) }}
+    name: Toolchain (${{ matrix.platform }}, ${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            platform: linux
+            arch: aarch64
+          - runner: windows-2025
+            platform: windows
+            arch: x86_64
+          - runner: windows-11-arm
+            platform: windows
+            arch: aarch64
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      # A pull request from a fork cannot publish; its jobs build the image themselves.
+      - name: Publish the toolchain image when its inputs changed
+        if: matrix.platform == 'linux' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          echo "$REGISTRY_TOKEN" | docker login ghcr.io --username "$REGISTRY_USER" --password-stdin
+          python3 tools/ci.py image --push
+      # Only starts tools/ci.py; the toolchain brings the Python the jobs use.
+      - uses: actions/setup-python@v5
+        if: matrix.platform == 'windows'
+        with:
+          python-version: '3.13'
+      - name: Publish the Windows toolchain when its inputs changed
+        if: matrix.platform == 'windows' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: python tools/ci.py image --windows --push
   quality:
+    needs: toolchain
     if: ${{ !inputs.release || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))) }}
     runs-on: ubuntu-24.04
     steps:
@@ -36,30 +88,21 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           fetch-depth: 0
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.25'
-      - run: python -m pip install --require-hashes -r requirements/ci-linux-py313.txt
-      - name: Validate version changes before merging
-        if: github.event_name == 'pull_request'
+      - name: Toolchain image
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: python dist/release.py --changed-since "$BASE_SHA"
-      - name: Check independent quality gates concurrently
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ github.token }}
         run: |
-          python tools/quality.py & quality=$!
-          python -m unittest discover -s tests/contract -v & contract=$!
-          python -m unittest discover -s tests/distribution -v & distribution=$!
-          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 & workflow=$!
-          status=0
-          for pid in "$quality" "$contract" "$distribution" "$workflow"; do
-            wait "$pid" || status=1
-          done
-          exit "$status"
+          echo "$REGISTRY_TOKEN" | docker login ghcr.io --username "$REGISTRY_USER" --password-stdin
+          python3 tools/ci.py image
+      # Formatting, lint, contract and distribution tests, workflow lint and, for a pull
+      # request, the version change: tools/ci.py runs them together and reports each one.
+      - name: Check independent quality gates concurrently
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
+        run: python3 tools/ci.py run quality
   build:
+    needs: toolchain
     if: ${{ !inputs.release || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))) }}
     name: Build (${{ matrix.platform }}, ${{ matrix.arch }})
     strategy:
@@ -75,13 +118,9 @@ jobs:
             arch: aarch64
           - runner: windows-2025
             platform: windows
-            system: CLANG64
-            package: mingw-w64-clang-x86_64
             arch: x86_64
           - runner: windows-11-arm
             platform: windows
-            system: CLANGARM64
-            package: mingw-w64-clang-aarch64
             arch: aarch64
     runs-on: ${{ matrix.runner }}
     env:
@@ -92,39 +131,36 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.sha }}
+      # Linux tests run in the toolchain image, through the command a developer uses.
+      - name: Toolchain image
+        if: matrix.platform == 'linux' && !inputs.release
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          echo "$REGISTRY_TOKEN" | docker login ghcr.io --username "$REGISTRY_USER" --password-stdin
+          python3 tools/ci.py image
+      - name: Build Linux Release
+        if: matrix.platform == 'linux' && !inputs.release
+        run: python3 tools/ci.py run linux-release --stage build
+      - name: Test Linux Release
+        if: matrix.platform == 'linux' && !inputs.release
+        run: python3 tools/ci.py run linux-release --stage test
+      # A release packages each distribution in its own container, started from the host.
       - uses: actions/setup-python@v5
-        if: matrix.platform == 'linux'
+        if: matrix.platform == 'linux' && inputs.release
         with:
           python-version: '3.13'
           cache: pip
           cache-dependency-path: requirements/ci-linux-py313.txt
-      - name: Linux build environment
-        id: linux-env
-        if: matrix.platform == 'linux'
+      - name: Linux release environment
+        if: matrix.platform == 'linux' && inputs.release
         run: |
-          if [ '${{ inputs.release }}' = true ]; then
-            sudo apt-get update
-            sudo apt-get install -y flatpak flatpak-builder python3-venv libarchive-tools
-            python3 dist/ci_linux.py --prepare
-          else
-            sh dist/linux-deps.sh
-            if [ "$BUILD_ARCH" = x86_64 ]; then sudo apt-get install -y clang-tidy-18; fi
-          fi
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder python3-venv libarchive-tools
+          python3 dist/ci_linux.py --prepare
           python3 -m venv build/test-env
           build/test-env/bin/pip install --require-hashes -r requirements/ci-linux-py313.txt
-          build/test-env/bin/python tools/dependency_key.py >> "$GITHUB_OUTPUT"
-      - uses: actions/cache/restore@v4
-        if: matrix.platform == 'linux' && !inputs.release
-        id: linux-cache
-        with:
-          path: |
-            build/source-cache
-            build/resources
-            build/release-deps
-          key: linux-${{ matrix.runner }}-${{ matrix.arch }}-${{ steps.linux-env.outputs.fingerprint }}-${{ hashFiles('dist/dependencies.json', 'dist/bootstrap.py', 'dist/voice_dependencies.py', 'dist/patches/**', 'dist/resources.json', 'tests/fixtures/resources.json') }}
-          restore-keys: |
-            linux-${{ matrix.runner }}-${{ matrix.arch }}-${{ steps.linux-env.outputs.fingerprint }}-
-            linux-${{ matrix.runner }}-${{ steps.linux-env.outputs.fingerprint }}-
       - uses: actions/cache/restore@v4
         if: matrix.platform == 'linux' && inputs.release
         id: release-cache
@@ -146,28 +182,6 @@ jobs:
           key: flatpak-${{ matrix.arch }}-26.08-${{ hashFiles('dist/dependencies.json', 'dist/flatpak/build-dependencies.json', 'dist/resources.json') }}
           restore-keys: |
             flatpak-${{ matrix.arch }}-26.08-
-      - name: Build Linux Release
-        id: linux-build
-        if: matrix.platform == 'linux' && !inputs.release
-        env:
-          PAPO_CI_CACHE_HIT: ${{ steps.linux-cache.outputs.cache-hit }}
-          PATH: ${{ github.workspace }}/build/test-env/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-        run: |
-          build/test-env/bin/python dist/build.py --build build --prefix build/release-deps --variants release --build-only
-      - uses: actions/cache/save@v4
-        if: always() && !cancelled() && steps.linux-cache.outcome == 'success' && steps.linux-cache.outputs.cache-hit != 'true' && steps.linux-build.outputs.dependencies-ready == 'true'
-        with:
-          path: |
-            build/source-cache
-            build/resources
-            build/release-deps
-          key: ${{ steps.linux-cache.outputs.cache-primary-key }}
-      - name: Test Linux Release
-        if: matrix.platform == 'linux' && !inputs.release
-        env:
-          PAPO_CI_CACHE_HIT: ${{ steps.linux-cache.outputs.cache-hit }}
-          PATH: ${{ github.workspace }}/build/test-env/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-        run: build/test-env/bin/python dist/build.py --build build --prefix build/release-deps --variants release --test-only
       - name: Build, test and package Linux targets concurrently
         id: release-build
         if: matrix.platform == 'linux' && inputs.release
@@ -176,83 +190,29 @@ jobs:
         run: |
           version="$(build/test-env/bin/python dist/release.py "$RELEASE_REF" --require-head)"
           build/test-env/bin/python dist/ci_linux.py --arch "$BUILD_ARCH" --version "$version"
+      # Windows builds and tests in the toolchain archive, through the command a developer uses.
+      # setup-python only starts tools/ci.py; the toolchain brings the Python the jobs use.
       - uses: actions/setup-python@v5
         if: matrix.platform == 'windows'
         with:
           python-version: '3.13'
-      - uses: msys2/setup-msys2@v2
+      - name: Windows toolchain
         if: matrix.platform == 'windows'
-        with:
-          msystem: ${{ matrix.system }}
-          update: true
-          install: >-
-            base-devel git autoconf automake libtool nasm
-            ${{ matrix.package }}-toolchain ${{ matrix.package }}-cmake
-            ${{ matrix.package }}-ninja ${{ matrix.package }}-pkgconf
-            ${{ matrix.package }}-ncurses ${{ matrix.package }}-glib2
-            ${{ matrix.package }}-pango ${{ matrix.package }}-fontconfig
-            ${{ matrix.package }}-librsvg
-            ${{ matrix.package }}-libass ${{ matrix.package }}-libplacebo
-            ${{ matrix.package }}-ffmpeg ${{ matrix.package }}-libgcrypt
-            ${{ matrix.package }}-vulkan-headers ${{ matrix.package }}-openssl
-      - name: Windows Python test environment
-        id: windows-env
-        if: matrix.platform == 'windows'
-        shell: msys2 {0}
-        run: |
-          native_python="$(cygpath -u "$pythonLocation")/python.exe"
-          "$native_python" -m venv build/test-env
-          build/test-env/Scripts/python.exe -m pip install --require-hashes -r requirements/ci-windows-py313.txt
-          build/test-env/Scripts/python.exe tools/dependency_key.py >> "$GITHUB_OUTPUT"
-      - uses: actions/cache/restore@v4
-        if: matrix.platform == 'windows'
-        id: windows-cache
-        with:
-          path: |
-            build/source-cache
-            build/resources
-            build/release-deps
-          key: windows-${{ matrix.system }}-${{ steps.windows-env.outputs.fingerprint }}-${{ hashFiles('dist/dependencies.json', 'dist/bootstrap.py', 'dist/voice_dependencies.py', 'dist/patches/**', 'dist/resources.json', 'tests/fixtures/resources.json') }}
-          restore-keys: |
-            windows-${{ matrix.system }}-${{ steps.windows-env.outputs.fingerprint }}-
-      - name: Build Windows
         env:
-          PAPO_CI_CACHE_HIT: ${{ steps.windows-cache.outputs.cache-hit }}
-        id: windows-build
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: python tools/ci.py image --windows
+      - name: Build Windows
         if: matrix.platform == 'windows'
-        shell: msys2 {0}
-        run: |
-          export PATH="$PWD/build/test-env/Scripts:$PATH"
-          export PAPO_SYSTEM_BIN="$(cygpath -w "$MINGW_PREFIX/bin")"
-          python dist/build.py --build build/release --prefix build/release-deps --build-only
-      - uses: actions/cache/save@v4
-        if: always() && !cancelled() && steps.windows-cache.outcome == 'success' && steps.windows-cache.outputs.cache-hit != 'true' && steps.windows-build.outputs.dependencies-ready == 'true'
-        with:
-          path: |
-            build/source-cache
-            build/resources
-            build/release-deps
-          key: ${{ steps.windows-cache.outputs.cache-primary-key }}
+        run: python tools/ci.py run windows-release --stage build
       - name: Test Windows
         if: matrix.platform == 'windows'
-        env:
-          PAPO_CI_CACHE_HIT: ${{ steps.windows-cache.outputs.cache-hit }}
-        shell: msys2 {0}
-        run: |
-          export PATH="$PWD/build/test-env/Scripts:$PATH"
-          python dist/build.py --build build/release --prefix build/release-deps --test-only
+        run: python tools/ci.py run windows-release --stage test
       - name: ZIP, installer and installation lifecycle
         if: matrix.platform == 'windows' && inputs.release
-        shell: msys2 {0}
         env:
           RELEASE_REF: ${{ inputs.ref }}
-        run: |
-          export PATH="$PWD/build/test-env/Scripts:$PATH"
-          export ISCC="$(python dist/windows/tools.py | tail -1)"
-          version="$(python dist/release.py "$RELEASE_REF" --require-head)"
-          python dist/package.py --build build/release --output build/artifacts --formats zip,installer \
-            --arch "$BUILD_ARCH" --flavor windows --dependency-prefix build/release-deps
-          python dist/windows/verify.py --artifacts build/artifacts --version "$version" --arch "$BUILD_ARCH"
+        run: python tools/ci.py exec dist/windows/package-release.sh
       - uses: actions/cache/save@v4
         if: always() && !cancelled() && steps.release-cache.outcome == 'success' && steps.release-cache.outputs.cache-hit != 'true' && steps.release-build.outputs.dependencies-ready == 'true'
         with:
@@ -287,6 +247,7 @@ jobs:
           if-no-files-found: error
 
   instrumentation:
+    needs: toolchain
     if: ${{ !inputs.release }}
     name: Linux x86_64 (${{ matrix.variant }})
     runs-on: ubuntu-24.04
@@ -295,79 +256,32 @@ jobs:
       max-parallel: 2
       matrix:
         variant: [sanitizers, coverage]
-    env:
-      ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
-      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.sha }}
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-      - name: Prepare host
-        id: instrumentation-env
-        run: |
-          sh dist/linux-deps.sh
-          sudo apt-get install -y clang-tidy-18
-          python -m venv build/test-env
-          build/test-env/bin/python -m pip install --require-hashes -r requirements/ci-linux-py313.txt
-          build/test-env/bin/python tools/dependency_key.py >> "$GITHUB_OUTPUT"
-      - uses: actions/cache/restore@v4
-        id: dependencies
-        with:
-          path: |
-            build/source-cache
-            build/resources
-            build/release-deps
-          key: linux-ubuntu-24.04-x86_64-${{ steps.instrumentation-env.outputs.fingerprint }}-${{ hashFiles('dist/dependencies.json', 'dist/bootstrap.py', 'dist/voice_dependencies.py', 'dist/patches/**', 'dist/resources.json', 'tests/fixtures/resources.json') }}
-          restore-keys: |
-            linux-ubuntu-24.04-x86_64-${{ steps.instrumentation-env.outputs.fingerprint }}-
-            linux-ubuntu-24.04-${{ steps.instrumentation-env.outputs.fingerprint }}-
-      - name: Build isolated variant
-        id: instrumented-build
+      - name: Toolchain image
         env:
-          PAPO_CI_CACHE_HIT: ${{ steps.dependencies.outputs.cache-hit }}
-          VARIANT: ${{ matrix.variant }}
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ github.token }}
         run: |
-          export PATH="$PWD/build/test-env/bin:$PATH"
-          python dist/build.py --build build --prefix build/release-deps --variants "$VARIANT" --build-only
-      - uses: actions/cache/save@v4
-        if: always() && !cancelled() && steps.dependencies.outputs.cache-hit != 'true' && steps.instrumented-build.outputs.dependencies-ready == 'true'
-        with:
-          path: |
-            build/source-cache
-            build/resources
-            build/release-deps
-          key: ${{ steps.dependencies.outputs.cache-primary-key }}
+          echo "$REGISTRY_TOKEN" | docker login ghcr.io --username "$REGISTRY_USER" --password-stdin
+          python3 tools/ci.py image
+      - name: Build isolated variant
+        env:
+          VARIANT: ${{ matrix.variant }}
+        run: python3 tools/ci.py run "linux-$VARIANT" --stage build
+      # The test stage also analyzes the C paths and writes the coverage report, whatever
+      # the tests' result; the scheduled run instruments every scenario and repeats the
+      # sensitive ones.
       - name: Test isolated variant
         env:
-          PAPO_CI_CACHE_HIT: ${{ steps.dependencies.outputs.cache-hit }}
           VARIANT: ${{ matrix.variant }}
           FULL: ${{ github.event_name == 'schedule' }}
         run: |
-          export PATH="$PWD/build/test-env/bin:$PATH"
           options=()
-          if [ "$FULL" = true ]; then options+=(--full-instrumentation); fi
-          python dist/build.py --build build --prefix build/release-deps --variants "$VARIANT" --test-only "${options[@]}"
-      - name: Analyze C paths independently of test results
-        if: always() && matrix.variant == 'coverage' && !cancelled()
-        run: |
-          if [ -f build/coverage/compile_commands.json ]; then
-            build/test-env/bin/python tools/analyze.py --build build/coverage
-          else
-            exit 1
-          fi
-      - name: Coverage report
-        if: always() && matrix.variant == 'coverage' && !cancelled()
-        run: |
-          if [ -f build/coverage/CMakeCache.txt ]; then
-            build/test-env/bin/gcovr --root . --filter src/ --exclude 'src/model/text/emoji_data.inc' --html-details build/coverage/index.html --xml build/coverage/coverage.xml --print-summary
-          fi
-      - name: Repeat sensitive scenarios
-        if: github.event_name == 'schedule' && matrix.variant == 'sanitizers'
-        run: |
-          ctest --test-dir build/sanitizers --output-on-failure --no-tests=error --parallel 2 --repeat until-fail:10 -R 'test_grouping_survives_prepend_scroll_and_resize|test_graphical_server_badge_is_inside_tab_delimiters'
+          if [ "$FULL" = true ]; then options+=(--full); fi
+          python3 tools/ci.py run "linux-$VARIANT" --stage test "${options[@]}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -375,9 +289,9 @@ jobs:
           path: |
             build/**/ci-logs/*
             build/**/Testing/Temporary/**
-            build/coverage/*.html
-            build/coverage/*.css
-            build/coverage/*.xml
+            build/**/coverage/*.html
+            build/**/coverage/*.css
+            build/**/coverage/*.xml
 
   required:
     name: CI required

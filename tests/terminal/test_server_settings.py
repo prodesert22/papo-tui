@@ -3,10 +3,14 @@
 from test_context import main as test_main
 
 import base64
+import os
+import re
 import tempfile
 import time
 import unittest
 from pathlib import Path
+
+from wcwidth import wcswidth
 
 from history_mock import OTHER, uuid
 from server_admin_mock import (
@@ -19,7 +23,7 @@ from server_admin_mock import (
     WEBHOOK,
     ServerAdminMock,
 )
-from terminal_support import Terminal
+from terminal_support import HORIZONTAL, Terminal
 import terminal_interactions as interactions
 
 UP, DOWN, RIGHT, LEFT = "\x1bOA", "\x1bOB", "\x1bOC", "\x1bOD"
@@ -31,6 +35,7 @@ class ServerSettings(unittest.TestCase):
     screen = interactions.MessageInteractions.screen
     settled = interactions.MessageInteractions.settled
     click = interactions.MessageInteractions.click
+    resize = interactions.MessageInteractions.resize
 
     def wait(self, terminal, text, seconds=8):
         self.settled(terminal, lambda: text in self.screen(terminal), seconds=seconds)
@@ -61,7 +66,17 @@ class ServerSettings(unittest.TestCase):
         self.wait(t, "Configurações do servidor")
         t.send("\n")
         self.wait(t, TITLE)
+        self.loaded(t)
         return t
+
+    def loaded(self, terminal):
+        """Waits for the tab's data: until then a notice sits above its form, which moves up a
+        row when the data arrives, away from where a click was aimed."""
+        self.settled(
+            terminal,
+            lambda: not re.search("Carregando(?! imagem)", self.screen(terminal)),
+            seconds=8,
+        )
 
     def tabs(self, terminal):
         row = next(line for line in terminal.screen.display if "<" in line and ">" in line)
@@ -70,6 +85,7 @@ class ServerSettings(unittest.TestCase):
     def tab(self, terminal, name):
         self.click(terminal, name)
         self.wait(terminal, f"< {name} >")
+        self.loaded(terminal)
 
     def calls(self, server, method, prefix, count, seconds=6):
         def found():
@@ -85,7 +101,16 @@ class ServerSettings(unittest.TestCase):
         """Focuses the text field after label, clears it and types text."""
         self.click(terminal, label + ":")
         terminal.send("\x03" + text)
-        self.wait(terminal, text)
+        # In the field's own row: the same letters elsewhere, as in a listed name, would say
+        # nothing about the typing, and what follows could act before it ends.
+        self.settled(
+            terminal,
+            lambda: any(
+                label + ":" in line and text in line.split(label + ":", 1)[1]
+                for line in terminal.screen.display
+            ),
+            seconds=8,
+        )
 
     def test_owner_sees_every_tab_and_renames_the_server(self):
         with ServerAdminMock() as server:
@@ -313,6 +338,7 @@ class ServerSettings(unittest.TestCase):
             self.wait(t, "Vínculo do cargo removido")
             self.calls(server, "DELETE", f"/channels/{OTHER}/role/{role}", 1)
 
+    @unittest.skipIf(os.name == "nt", "Native Windows file dialogs cannot be driven through ConPTY")
     def test_emojis_are_added_from_a_file_and_deleted(self):
         with tempfile.TemporaryDirectory() as folder, ServerAdminMock() as server:
             image = Path(folder, "aceno.png")
@@ -359,7 +385,9 @@ class ServerSettings(unittest.TestCase):
         # The notice and the cursor belong to one frame, but may be read between its parts.
         self.settled(terminal, lambda: terminal.screen.cursor.y == row, seconds=4)
         for edge in (row - 1, row + 1):
-            self.assertIn("qqqq", terminal.screen.display[edge], "No border around the input")
+            self.assertIn(
+                HORIZONTAL * 4, terminal.screen.display[edge], "No border around the input"
+            )
         return row
 
     def border_gone(self, terminal, label):
@@ -368,7 +396,8 @@ class ServerSettings(unittest.TestCase):
         def gone():
             rows = [i for i, line in enumerate(terminal.screen.display) if label + ":" in line]
             return rows and all(
-                "qqqq" not in terminal.screen.display[edge] for edge in (rows[0] - 1, rows[0] + 1)
+                HORIZONTAL * 4 not in terminal.screen.display[edge]
+                for edge in (rows[0] - 1, rows[0] + 1)
             )
 
         self.settled(terminal, gone)
@@ -405,7 +434,8 @@ class ServerSettings(unittest.TestCase):
                         ),
                     )
                     self.border_gone(t, label)
-                    self.assertEqual(self.screen(t).count("Preencha o campo"), 0)
+                    # The notice is erased in its own redraw, after the border's.
+                    self.settled(t, lambda: "Preencha o campo" not in self.screen(t))
             # A name made of spaces counts as missing, and other refusals flag their field too.
             self.tab(t, "Cargos")
             self.type_in(t, "Nome", "Suporte")
@@ -433,10 +463,45 @@ class ServerSettings(unittest.TestCase):
 
     def webhooks(self, server):
         t = self.open(server)
-        t.resize(50, 110)
+        # The tab is clicked where the resized window shows it, once that is drawn.
+        self.resize(t, 50, 110)
         self.tab(t, "Webhooks")
-        self.wait(t, "Robô de deploy")
+
+        def form_in_place():
+            # While the list loads, a notice sits above the new webhook's form, which moves up
+            # a row when the list arrives. That redraw can be seen half done, with the listed
+            # webhook beside rows of the old layout; a click on a field then misses it. The
+            # form is in place once its channel shares the webhook's row and its name follows.
+            rows = t.screen.display
+            row = next((i for i, line in enumerate(rows) if "Robô de deploy" in line), None)
+            return row is not None and "< #geral >" in rows[row] and "Nome:" in rows[row + 1]
+
+        self.settled(t, form_in_place, seconds=8)
         return t
+
+    def test_two_clicks_read_at_once_are_both_acted_on(self):
+        with ServerAdminMock() as server:
+            t = self.open(server)
+            self.tab(t, "Canais")
+            self.wait(t, "< Texto >")
+            row = next(i for i, line in enumerate(t.screen.display) if "< Texto >" in line)
+            column = wcswidth(t.screen.display[row][: t.screen.display[row].index("Texto")]) + 1
+            click = f"\x1b[<0;{column + 1};{row + 1}M\x1b[<0;{column + 1};{row + 1}m"
+            # A slow terminal, or the program while busy, gets both clicks in one read. Each
+            # moves the type on; the second used to be discarded with the first one's release.
+            t.send(click + click)
+            self.wait(t, "< Categoria >")
+
+    def test_an_untouched_webhook_form_is_not_drawn_without_end(self):
+        with ServerAdminMock() as server:
+            t = self.webhooks(server)
+            # Late answers, such as the names of who created the webhooks, still draw it.
+            t.read(1)
+            written = len(t.output)
+            t.read(2)
+            # Filling the form used to count as a change to its data, which filled and drew it
+            # again without pause: over 100 kB each second on a POSIX terminal.
+            self.assertLess(len(t.output) - written, 20000)
 
     def test_a_webhook_is_created_and_its_token_is_shown_only_while_its_form_is_open(self):
         with ServerAdminMock() as server:
@@ -468,8 +533,7 @@ class ServerSettings(unittest.TestCase):
             self.assertIn("/webhooks/", self.screen(t))
             self.click(t, "Copiar token")
             self.wait(t, "Token copiado.")
-            copied = base64.b64encode(TOKEN.encode())
-            self.settled(t, lambda: b"\x1b]52;c;" + copied in t.output)
+            self.settled(t, lambda: TOKEN in t.copies())
             # Looking at another webhook drops the token for good.
             self.click(t, "Robô de deploy")
             self.wait(t, "Salvar apelido")
@@ -482,6 +546,7 @@ class ServerSettings(unittest.TestCase):
             self.assertEqual(sum(TOKEN in str(c) for c in server.admin_calls), 0)
             self.calls(server, "GET", "/webhooks", 2)
 
+    @unittest.skipIf(os.name == "nt", "Native Windows file dialogs cannot be driven through ConPTY")
     def test_nickname_avatar_and_revocation_of_a_webhook(self):
         with tempfile.TemporaryDirectory() as folder, ServerAdminMock() as server:
             image = Path(folder, "robo.png")
