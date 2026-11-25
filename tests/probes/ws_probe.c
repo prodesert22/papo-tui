@@ -179,6 +179,9 @@ int main(int argc, char **argv)
            open, auth_ws_state(client) == WS_ERROR, auth_ws_state(client) == WS_CLOSED,
            auth_ws_http_status(client), ack, presence, fragment, events,
            auth_get_state(client) == AUTH_ERROR, auth_ws_message(client));
+    /* Opening the connection starts a background permission read. The acknowledgement can
+     * arrive while one is in flight, with the client not yet ready again: let it end. */
+    finish(client);
     if (auth_get_state(client) == AUTH_READY) {
         auth_logout(client);
         bool ended = finish(client);

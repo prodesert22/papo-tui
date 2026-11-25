@@ -470,10 +470,20 @@ class Members(unittest.TestCase):
             self.menu(terminal)
             self.wait(terminal, "Banir")
             server.user_roles = []
+            emitted = len(server.requests)
             server.emit(dict(type="role_remove", user_id=uuid(1), role_id=server.roles[0]["id"]))
             self.settled(terminal, lambda: "Gerar link" not in self.screen(terminal))
             self.assertIn("Bloquear", self.screen(terminal))
             terminal.send("\x1b")
+            # The event has the client read its roles and its identity once more. Those reads
+            # are let through first: the count below is of what opening the menu starts.
+            self.settled(
+                terminal,
+                lambda: all(
+                    any(path.endswith(end) for _, path, *_ in server.requests[emitted:])
+                    for end in ("/roles", "/auth/whoami")
+                ),
+            )
             terminal.read(0.3)
             before = len(server.requests)
             self.right_click(terminal, "Bia")

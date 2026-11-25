@@ -4,6 +4,7 @@ from test_context import main as test_main
 
 import base64
 import os
+import re
 import tempfile
 import time
 import unittest
@@ -65,7 +66,17 @@ class ServerSettings(unittest.TestCase):
         self.wait(t, "Configurações do servidor")
         t.send("\n")
         self.wait(t, TITLE)
+        self.loaded(t)
         return t
+
+    def loaded(self, terminal):
+        """Waits for the tab's data: until then a notice sits above its form, which moves up a
+        row when the data arrives, away from where a click was aimed."""
+        self.settled(
+            terminal,
+            lambda: not re.search("Carregando(?! imagem)", self.screen(terminal)),
+            seconds=8,
+        )
 
     def tabs(self, terminal):
         row = next(line for line in terminal.screen.display if "<" in line and ">" in line)
@@ -74,6 +85,7 @@ class ServerSettings(unittest.TestCase):
     def tab(self, terminal, name):
         self.click(terminal, name)
         self.wait(terminal, f"< {name} >")
+        self.loaded(terminal)
 
     def calls(self, server, method, prefix, count, seconds=6):
         def found():
@@ -89,7 +101,16 @@ class ServerSettings(unittest.TestCase):
         """Focuses the text field after label, clears it and types text."""
         self.click(terminal, label + ":")
         terminal.send("\x03" + text)
-        self.wait(terminal, text)
+        # In the field's own row: the same letters elsewhere, as in a listed name, would say
+        # nothing about the typing, and what follows could act before it ends.
+        self.settled(
+            terminal,
+            lambda: any(
+                label + ":" in line and text in line.split(label + ":", 1)[1]
+                for line in terminal.screen.display
+            ),
+            seconds=8,
+        )
 
     def test_owner_sees_every_tab_and_renames_the_server(self):
         with ServerAdminMock() as server:
