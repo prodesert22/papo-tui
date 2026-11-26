@@ -31,6 +31,9 @@ install(
 install(FILES README.md BUILD.md DESTINATION ${CMAKE_INSTALL_DOCDIR})
 install(FILES docs/usage.md docs/installation.md docs/builds.md
         DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)
+install(DIRECTORY docs/usage
+        DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs
+        FILES_MATCHING PATTERN "*.md")
 if(UNIX)
     install(FILES dist/io.github.prodesert22.PapoTUI.desktop
             DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)

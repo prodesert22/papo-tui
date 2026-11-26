@@ -69,7 +69,7 @@ an AUR helper. Keep only the matching application package in the folder.
 
 For copying or pasting files/images through the local Linux clipboard, install
 **wl-clipboard** on Wayland or **xclip** on X11. Text paste through the terminal
-and F5 file selection remain available without these helpers.
+and file selection with 📎 or Ctrl+O remain available without these helpers.
 
 | System | Wayland | X11 |
 | --- | --- | --- |
@@ -115,7 +115,7 @@ Termux, run:
 
 ```sh
 pkg update
-apt install ./papo-tui-0.5.0-termux-aarch64.deb
+apt install ./papo-tui-*-termux-aarch64.deb
 papo-tui
 ```
 
@@ -182,7 +182,7 @@ for you: open **Configurações** (Settings, Ctrl+S), choose **Atualizações** 
 and select **Baixar atualização** (Download update). It saves the package where
 you choose, after checking its size and SHA-256 against the ones GitHub
 publishes, and shows the command below for your installation. See
-[Download the new version](usage.md#download-the-new-version).
+[Download the new version](usage/updates.md#download-the-new-version).
 
 | Installed from | Install the new file with |
 | --- | --- |
@@ -199,11 +199,11 @@ publishes, and shows the command below for your installation. See
 **Baixar e instalar** (Download and install) appears for an AppImage and for a
 folder unpacked from the portable archive, when you can write to the place
 that holds it; see
-[Let the program install the new version](usage.md#let-the-program-install-the-new-version).
+[Let the program install the new version](usage/updates.md#let-the-program-install-the-new-version).
 
 Both ways only accept a release whose list of checksums is signed with the
 project's key; see
-[How a download is trusted](usage.md#how-a-download-is-trusted).
+[How a download is trusted](usage/updates.md#how-a-download-is-trusted).
 
 Close the program before installing. To verify a download yourself, use the
 `SHA256SUMS` file and the signatures of the release, as its notes describe.

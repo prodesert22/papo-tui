@@ -9,107 +9,42 @@
 ![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20Android%20(Termux)-informational)
 ![Architectures](https://img.shields.io/badge/arch-x86__64%20%7C%20ARM64-informational)
 
-Terminal chat client written in C. Connect to independent Papo instances and
-chat in channels or direct messages, with message editing, deletion, replies,
-reactions, pinned messages, server message search, notifications, mentions,
-emojis, GIF search, voice calls and media in supported terminals.
+Terminal chat client for Papo, written in C. It connects to independent Papo
+instances, keeps each one in its own tab, and shows images, video and emoji in
+terminals that support graphics.
 
-- [Features](#features)
+- [About](#about)
 - [Supported platforms](#supported-platforms)
 - [Download and install](#download-and-install)
-- [Run](#run)
+- [Dependencies](#dependencies)
 - [Build from source](#build-from-source)
 - [Documentation](#documentation)
 - [Releases and license](#releases-and-license)
 
-## Features
+## About
 
-**Chat**
+Papo TUI offers:
 
-- Several servers at once, each in its own tab; **Ctrl+K** jumps to any channel
-  or DM of the connected servers by name, and unsent drafts come back the next
-  time you open the application.
-- Available channels and message actions follow your account permissions.
-  Member names follow their role color, with white as the default.
-- Open the member drawer with **👤** or **Ctrl+U** to search people, view
-  profiles, start direct messages and access available member actions.
-- Use the arrows to select DMs, and **m** or a right-click to close one from its
-  menu. Press **m/M** in the channel list, or right-click a channel, to mute it
-  or choose its notification preference.
-- Attach files with **Ctrl+O** or **📎**, or paste copied files and images with
-  **Ctrl+V** when the local clipboard is available. Files attached to messages
-  appear as cards with a **↓** button; click it, or choose **Baixar anexo** in
-  the message's context menu, to save the file where you choose.
-- Links in messages are hyperlinks for the terminal, so its own Ctrl+click opens
-  the whole address even when a long link wraps. A message that is only a link
-  also offers **Abrir no navegador** (Open in browser) in its context menu.
-- The terminal window title shows the current conversation and server, a **●**
-  when a connected server has news outside muted channels, and the total known
-  unread mentions across connected instances when there are any.
+- channels and direct messages on several servers at once, with editing,
+  deletion, replies, reactions, pinned messages, Markdown formatting and server
+  message search;
+- mentions, Unicode and server emoji, and GIF search on Wikimedia Commons;
+- a notification center, desktop notifications, sounds, unread indicators and
+  per-channel muting;
+- file attachments, clipboard paste and attachment downloads;
+- images, animated GIFs, video and audio playback with Kitty, Sixel or iTerm2
+  graphics, a Chafa character fallback and a text-only mode;
+- voice calls over GStreamer WebRTC and Opus;
+- profile and password management, and server administration: roles, channels,
+  emojis, webhooks, members and the audit log;
+- a Portuguese and English interface, accessibility options and customizable
+  shortcuts;
+- update notices, with downloads accepted only from releases signed with the
+  project's key.
 
-**Account and server management**
-
-- Change your own nickname, status, description, avatar and banner on each
-  server in **Ctrl+S → Perfil**, or with `/nick`, `/status`, `/bio`, `/avatar`
-  and `/banner` in the message box.
-- Change your password in **Ctrl+S → Conta**, or set a new one from a reset link
-  with **[Redefinir senha]** on the sign-in screen.
-- Open **Configurações do servidor** from the server tab's menu to manage the
-  server, roles, channels, emojis, members and the audit log; only the tabs your
-  permissions allow appear.
-
-**Media and voice**
-
-- Press **Ctrl+S**, or click the gear below your name at the bottom of the
-  channel list, to choose an application mode:
-
-  | Mode | Behavior |
-  | --- | --- |
-  | Normal | Kitty, Sixel or iTerm2 graphics, with a Chafa fallback. Images, animated GIFs, video and audio. |
-  | Light | Images, animated GIFs and video drawn with Chafa characters. Plays audio. |
-  | Ultralight | Text only; releases the media libraries. |
-
-  Audio attachments can keep playing in the background. Video decoding can use
-  compatible GPU drivers, with automatic CPU fallback; animated media also
-  benefit from parallel Chafa processing in text terminals.
-- Join a voice channel with Enter or a click. The buttons **🔊 🎤** beside the
-  gear toggle call audio and microphone independently; text terminals use
-  **♪ ●**. Configure devices, volumes, microphone testing and push-to-talk in
-  **Ctrl+S → Áudio**. Voice uses GStreamer WebRTC and Opus in every application
-  mode.
-
-**Interface and accessibility**
-
-- Portuguese and English: the interface follows the system language, or the
-  choice in **Ctrl+S → Aparência → Idioma**.
-- Your account's theme (dark, light or following the terminal), history display
-  and notification settings are saved on each server in **Ctrl+S → Aparência**
-  and **Ctrl+S → Notificações**, and the client plays short sounds of its own
-  for notifications, mentions and voice calls.
-- Press **Ctrl+G** for a table of shortcuts and mouse controls for the focused
-  area, or **Ctrl+/** for the global reference, which includes a search field
-  for keys, actions and areas. F1 also opens contextual help. The footer keeps
-  only the help hint alongside operational notices.
-- **Ctrl+S → Atalhos** lists every key and changes the keys of commands on this
-  device.
-- **Ctrl+S → Acessibilidade** offers high contrast, no colors, color-blind safe
-  colors, focus cues beyond color, readable role colors, a screen reader mode,
-  text symbols, emoji names, ASCII borders, visual alerts, longer notices,
-  keyboard-only use without the mouse and a second key before quitting.
-
-**Updates**
-
-- **Ctrl+S → Sobre** shows the version, the license and the address of the
-  source code.
-- Once a day the client asks GitHub whether a newer release exists and tells you
-  on the sign-in screen and in the footer. **Baixar atualização** in
-  **Ctrl+S → Atualizações** then downloads the package for your installation,
-  only from a release signed with the project's key, checks its SHA-256 and
-  shows the command that installs it.
-- An AppImage or a folder unpacked from the portable archive is replaced by the
-  program itself, with **Baixar e instalar** and then **Instalar e sair**.
-- Turn the check off in **Atualizações**, or start with `PAPO_UPDATE_CHECK=0`;
-  **Aceitar versões beta** there adds pre-releases.
+The [user guide](docs/usage.md) explains how to use each feature, with one page
+per topic in [docs/usage/](docs/usage/). The service contract is in
+[openapi.yml](openapi.yml).
 
 ## Supported platforms
 
@@ -162,36 +97,81 @@ Release files are named after the version, system and architecture
 | Windows | `papo-tui-<version>-windows-<arch>-setup.exe`, `papo-tui-<version>-windows-<arch>.zip` |
 | Termux | `papo-tui-<version>-termux-aarch64.deb` |
 
-Quick install, from the folder where you downloaded the file:
+### Quick install
+
+Run the commands from the folder where you downloaded the file. The
+[installation guide](docs/installation.md) lists the runtime packages to
+install first on each system, optional clipboard helpers, AppImage without
+FUSE, Termux repository problems, updating and removal. The
+[build comparison](docs/builds.md) summarizes every package.
+
+#### Ubuntu and Debian
 
 ```sh
-# Debian / Ubuntu
-sudo apt install ./papo-tui-*-ubuntu-*.deb   # or the -debian- package
-
-# Fedora
-sudo dnf install ./papo-tui-*-fedora-*.rpm
-
-# Arch Linux / Arch Linux ARM
-sudo pacman -U ./papo-tui-*-arch-*.pkg.tar.zst
-
-# AppImage (no installation needed)
-chmod +x PapoTUI-*.AppImage && ./PapoTUI-*.AppImage
-
-# Flatpak
-flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-flatpak install --user ./papo-tui-*-flatpak-*.flatpak
-
-# Android / Termux
-pkg update && apt install ./papo-tui-*-termux-aarch64.deb
+sudo apt install ./papo-tui-*-ubuntu-*.deb   # Ubuntu 24.04
+sudo apt install ./papo-tui-*-debian-*.deb   # Debian 13
+papo-tui
 ```
 
-On Windows, run the **installer** (current user, Start menu shortcut) or extract
-**all** of the portable ZIP and run `papo-tui.exe` from Windows Terminal.
+#### Fedora
 
-The [installation guide](docs/installation.md) lists the runtime packages to
-install first on each system, optional clipboard helpers, AppImage without FUSE,
-Termux repository problems, updating and removal. The
-[build comparison](docs/builds.md) summarizes every package.
+```sh
+sudo dnf install ./papo-tui-*-fedora-*.rpm
+papo-tui
+```
+
+#### Arch Linux and Arch Linux ARM
+
+```sh
+sudo pacman -U ./papo-tui-*-arch-*.pkg.tar.zst
+papo-tui
+```
+
+#### AppImage (any Linux)
+
+No installation needed:
+
+```sh
+chmod +x PapoTUI-*.AppImage
+./PapoTUI-*.AppImage
+```
+
+#### Portable folder (any Linux)
+
+```sh
+tar -xzf papo-tui-*-linux-*.tar.gz
+./papo-tui-*/bin/papo-tui
+```
+
+#### Flatpak (any Linux, including RHEL)
+
+```sh
+flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+flatpak install --user ./papo-tui-*-flatpak-*.flatpak
+flatpak run io.github.prodesert22.PapoTUI
+```
+
+#### Windows 11
+
+Run the **installer** (`-setup.exe`), which installs for the current user and
+adds a Start menu shortcut. For the **portable ZIP**, extract all of it and run
+the program from Windows Terminal in the extracted folder:
+
+```powershell
+.\papo-tui.exe
+```
+
+#### Android (Termux)
+
+```sh
+pkg update
+apt install ./papo-tui-*-termux-aarch64.deb
+papo-tui
+```
+
+`papo-tui --help` describes the command-line options, environment variables and
+where the application keeps its files. To start using the program, see
+[Getting started](docs/usage/getting-started.md).
 
 ### Verify the download
 
@@ -212,31 +192,40 @@ notes describe the RPM and Arch package signatures. The Windows installer and
 ZIP have no Authenticode signature, so Windows may warn that the publisher is
 unknown; verify them with their `.asc` signatures.
 
-## Run
+## Dependencies
 
-```sh
-papo-tui                                   # Linux packages and Termux
-flatpak run io.github.prodesert22.PapoTUI  # Flatpak
-```
+Papo TUI is written in C17 and builds on these libraries:
 
-```powershell
-.\papo-tui.exe                             # Windows, from the extracted ZIP folder
-```
+| Area | Libraries |
+| --- | --- |
+| Terminal interface | ncursesw and formw, libunibreak (Unicode text segmentation), md4c (Markdown) |
+| Network and data | libcurl (HTTPS and WebSocket), Jansson (JSON) |
+| Images and text drawing | Chafa, libsixel, PangoCairo, librsvg (SVG), Fontconfig, zlib, the Noto Color Emoji font |
+| Video and audio | FFmpeg, libmpv |
+| Voice calls | GStreamer WebRTC, libnice, Opus, libsrtp, WebRTC Audio Processing |
+| System integration | GLib, GModule and GIO; libsecret and libxcb, optional on Linux |
 
-Enter the instance URL and your credentials. Use **Tab** to move focus,
-**Enter** to confirm and **Ctrl+Q** to quit. `papo-tui --help` describes the
-command-line options, environment variables and where the application keeps its
-files.
+**Running a release package** needs no separate setup of these libraries: the
+DEB, RPM and Arch packages carry the program's private libraries and let the
+package manager install their declared system dependencies, the AppImage and
+the Windows ZIP/installer include their libraries beside the program, Flatpak
+uses the Freedesktop 26.08 runtime and the Termux package uses Termux
+libraries. Some features use optional programs on Linux:
 
-The [usage guide](docs/usage.md) covers controls, features and common problems.
+- `wl-clipboard` (Wayland) or `xclip` (X11) to copy and paste files and images
+  through the system clipboard;
+- `xdg-open` from xdg-utils to open links in the browser;
+- a Secret Service or KWallet credential store to remember sessions.
+
+**Building from source** needs a C17 compiler (with C++17 for the media and
+voice dependencies), **CMake 3.21+**, Ninja, pkg-config and **Python 3.10+**.
+Locked versions of the libraries above are built into a private prefix
+(`build/release-deps`), leaving system libraries untouched; the first build
+needs internet access to download them. Minimum versions are in
+[BUILD.md](BUILD.md#requirements), and the locked sources and hashes in
+[dist/dependencies.json](dist/dependencies.json).
 
 ## Build from source
-
-The build uses a **C17** compiler, **CMake 3.21+**, Ninja, pkg-config and
-**Python 3.10+**. Locked versions of ncurses, curl, Jansson, Chafa, FFmpeg,
-libmpv, GStreamer and the other media and voice libraries are built into a
-private prefix (`build/release-deps`), leaving system libraries untouched; the
-first build needs internet access to download them.
 
 On Linux, install the host packages for your distribution from
 [BUILD.md](BUILD.md#linux) (Debian/Ubuntu, Fedora, RHEL 10, Arch Linux), then:
@@ -272,17 +261,16 @@ GStreamer WebRTC stack.
 - [Packaging and releases](BUILD.md#packaging-and-releases): DEB, RPM, Arch,
   AppImage, Flatpak, Windows ZIP/installer and Termux
 
-The service contract is in [openapi.yml](openapi.yml).
-
 ## Documentation
 
 | Document | Contents |
 | --- | --- |
 | [docs/installation.md](docs/installation.md) | Installing, updating and removing each package |
 | [docs/builds.md](docs/builds.md) | Targets of each official package |
-| [docs/usage.md](docs/usage.md) | Controls, features and troubleshooting |
+| [docs/usage.md](docs/usage.md) | User guide: an index of the pages in [docs/usage/](docs/usage/), one per feature, with troubleshooting |
 | [BUILD.md](BUILD.md) | Building, testing and packaging |
 | [CHANGELOG.md](CHANGELOG.md) | Summary of each release |
+| [openapi.yml](openapi.yml) | Contract of the Papo service |
 
 Report problems in the [issue tracker](https://github.com/prodesert22/papo-tui/issues).
 
